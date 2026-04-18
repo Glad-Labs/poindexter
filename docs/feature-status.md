@@ -42,20 +42,24 @@
 
 ## Publishing & Distribution
 
-| Feature              | Status             | Notes                                                                                                                       |
-| -------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| Manual Approval      | WORKING            | Posts queue for human review. Approve/reject via API or MCP.                                                                |
-| Auto-Publish         | WORKING (disabled) | Set to 0 (off). Can enable via `auto_publish_threshold` in app_settings.                                                    |
-| Static JSON Export   | WORKING            | Pushes posts/index.json, individual posts, feed.json, categories, sitemap to R2.                                            |
-| R2/S3 Upload         | WORKING            | Cloudflare R2 configured. Works with any S3-compatible storage.                                                             |
-| RSS Feed             | WORKING            | Blog feed.xml + JSON Feed 1.1. Feed dedup via `distributed_at` column + cutoff date prevents dlvr.it spam.                  |
-| Podcast RSS          | WORKING            | Apple Podcasts-compatible RSS feed at /api/podcast/feed.xml.                                                                |
-| ISR Revalidation     | WORKING            | Triggers Next.js on-demand revalidation on publish. Pings search engines.                                                   |
-| Dev.to Cross-Posting | PARTIAL            | Code complete and tested. API key not configured. Gracefully skips if missing. 1 hour to activate.                          |
-| Newsletter           | PARTIAL            | Resend API configured. Wired into publish flow. 2 test subscribers. Enabled today — untested in production.                 |
-| X/Twitter Posting    | SCAFFOLD           | Generates post text (280 chars). Does NOT actually post — no API integration. Posts sent to Telegram for manual copy-paste. |
-| LinkedIn Posting     | SCAFFOLD           | Same as X/Twitter — generates text, doesn't post.                                                                           |
-| Video Generation     | WORKING            | Ken Burns slideshow MP4s from SDXL images + podcast audio. Host video-server on :9837. Routes + service + tests in place.   |
+| Feature              | Status             | Notes                                                                                                                |
+| -------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Manual Approval      | WORKING            | Posts queue for human review. Approve/reject via API or MCP.                                                         |
+| Auto-Publish         | WORKING (disabled) | Set to 0 (off). Can enable via `auto_publish_threshold` in app_settings.                                             |
+| Static JSON Export   | WORKING            | Pushes posts/index.json, individual posts, feed.json, categories, sitemap to R2.                                     |
+| R2/S3 Upload         | WORKING            | Cloudflare R2 configured. Works with any S3-compatible storage.                                                      |
+| RSS Feed             | WORKING            | Blog feed.xml + JSON Feed 1.1. Feed dedup via `distributed_at` column + cutoff date prevents dlvr.it spam.           |
+| Podcast RSS          | WORKING            | Apple Podcasts-compatible RSS feed at /api/podcast/feed.xml.                                                         |
+| ISR Revalidation     | WORKING            | Triggers Next.js on-demand revalidation on publish. Pings search engines.                                            |
+| Dev.to Cross-Posting | PARTIAL            | Code complete and tested. API key not configured. Gracefully skips if missing. 1 hour to activate.                   |
+| Newsletter           | PARTIAL            | Resend API configured. Wired into publish flow. 2 test subscribers. Enabled today — untested in production.          |
+| X/Twitter Posting    | SCAFFOLD           | Generates post text (280 chars). Does NOT actually post — $100/mo API. Use dlvr.it RSS bridge or manual copy-paste.  |
+| LinkedIn Posting     | WORKING            | Adapter built (services/social_adapters/linkedin.py). Needs linkedin_access_token + linkedin_org_id in app_settings. |
+| Bluesky Posting      | WORKING            | Adapter built (services/social_adapters/bluesky.py). Free, AT Protocol. Needs bluesky_handle + bluesky_app_password. |
+| Mastodon Posting     | WORKING            | Adapter built (services/social_adapters/mastodon.py). Free, any Fediverse instance.                                  |
+| Reddit Posting       | WORKING            | Adapter built (services/social_adapters/reddit.py). Free, OAuth. Posts to configured subreddits.                     |
+| YouTube Upload       | WORKING            | Adapter built (services/social_adapters/youtube.py). Wired into publish flow. Needs YouTube OAuth credentials.       |
+| Video Generation     | WORKING            | Ken Burns slideshow MP4s from SDXL images + podcast audio. Host video-server on :9837. Auto-uploads to R2 + YouTube. |
 
 ### What Distribution Actually Looks Like Today
 

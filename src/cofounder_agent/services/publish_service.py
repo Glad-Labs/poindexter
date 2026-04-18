@@ -577,7 +577,7 @@ async def publish_post_from_task(
     revalidation_success = False
     if trigger_revalidation:
         try:
-            from routes.revalidate_routes import trigger_nextjs_revalidation
+            from services.revalidation_service import trigger_nextjs_revalidation
 
             reval_paths = ["/", "/archive", "/posts", f"/posts/{slug}"]
             reval_tags = ["posts", "post-index", f"post:{slug}"]
