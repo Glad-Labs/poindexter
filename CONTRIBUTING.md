@@ -8,15 +8,13 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/poindexter.git`
 3. Run the bootstrap: `poindexter setup` — this creates `bootstrap.toml` with auto-generated secrets, starts the local Postgres + Grafana, installs dependencies, and pulls the minimum required Ollama models.
 4. Bring up the full stack: `bash scripts/start-stack.sh`
-5. Run tests: `cd src/cofounder_agent && python -m pytest tests/unit/ -q --ignore=tests/unit/services/test_web_research.py`
-
-The `--ignore` flag is a known temporary workaround for a flaky test dependency.
+5. Run tests: `cd src/cofounder_agent && python -m pytest tests/unit/ -q`
 
 ## Development Workflow
 
 1. Create a branch from `main`: `git checkout -b feat/your-feature`
 2. Make your changes
-3. Run tests and ensure they pass: `python -m pytest tests/unit/ -q --ignore=tests/unit/services/test_web_research.py`
+3. Run tests and ensure they pass: `python -m pytest tests/unit/ -q`
 4. Run linting: `npm run lint`
 5. Commit with a clear message describing what and why
 6. Open a pull request against `main`
