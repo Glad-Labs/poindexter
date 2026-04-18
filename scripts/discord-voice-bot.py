@@ -369,6 +369,116 @@ async def clear(ctx):
     await ctx.respond("Conversation history cleared.")
 
 
+# =========================================================================
+# Pipeline Management Commands — replaces OpenClaw for common operations
+# =========================================================================
+
+async def _api_call(method: str, path: str, json_data: dict | None = None) -> dict:
+    """Make an authenticated API call to the Poindexter worker."""
+    import httpx
+    async with httpx.AsyncClient(timeout=30) as client:
+        url = f"{API_URL}{path}"
+        headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
+        if method == "GET":
+            resp = await client.get(url, headers=headers)
+        elif method == "POST":
+            resp = await client.post(url, headers=headers, json=json_data or {})
+        elif method == "PUT":
+            resp = await client.put(url, headers=headers, json=json_data or {})
+        else:
+            return {"error": f"Unknown method: {method}"}
+        try:
+            return resp.json()
+        except Exception:
+            return {"status_code": resp.status_code, "text": resp.text[:200]}
+
+
+@bot.slash_command(name="health", description="Check system health")
+async def health(ctx):
+    data = await _api_call("GET", "/api/health")
+    status = data.get("status", "unknown")
+    te = data.get("components", {}).get("task_executor", {})
+    pending = te.get("pending_task_count", "?")
+    in_prog = te.get("in_progress_count", "?")
+    await ctx.respond(
+        f"**System:** {status}\n"
+        f"**Pending:** {pending} | **In-progress:** {in_prog}"
+    )
+
+
+@bot.slash_command(name="tasks", description="List posts awaiting approval")
+async def tasks(ctx):
+    data = await _api_call("GET", "/api/tasks?status=awaiting_approval")
+    task_list = data if isinstance(data, list) else data.get("tasks", [])
+    if not task_list:
+        await ctx.respond("No posts awaiting approval.")
+        return
+    lines = []
+    for t in task_list[:10]:
+        tid = str(t.get("id", "?"))[:8]
+        title = t.get("title", t.get("topic", "untitled"))[:50]
+        score = t.get("quality_score", "?")
+        lines.append(f"`{tid}` | Q:{score} | {title}")
+    await ctx.respond(f"**Awaiting Approval ({len(task_list)}):**\n" + "\n".join(lines))
+
+
+@bot.slash_command(name="approve", description="Approve a post for publishing")
+async def approve(ctx, task_id: str, schedule: str = None):
+    json_data = {"approved": True, "auto_publish": True}
+    if schedule:
+        json_data["publish_at"] = schedule
+    data = await _api_call("POST", f"/api/tasks/{task_id}/approve", json_data)
+    status = data.get("status", data.get("error", "?"))
+    await ctx.respond(f"**#{task_id}:** {status}")
+
+
+@bot.slash_command(name="reject", description="Reject a post")
+async def reject(ctx, task_id: str, reason: str = "Rejected via Discord"):
+    data = await _api_call("POST", f"/api/tasks/{task_id}/reject", {
+        "feedback": reason, "reason": "operator"
+    })
+    status = data.get("status", data.get("error", "?"))
+    await ctx.respond(f"**#{task_id}:** {status} — {reason}")
+
+
+@bot.slash_command(name="stats", description="Pipeline stats for the last 24h")
+async def stats(ctx):
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        # Query DB directly for stats
+        try:
+            import asyncpg
+            dsn = os.getenv("DATABASE_URL") or ""
+            if not dsn:
+                from brain.bootstrap import resolve_database_url
+                dsn = resolve_database_url() or ""
+            conn = await asyncpg.connect(dsn)
+            rows = await conn.fetch(
+                "SELECT status, COUNT(*) as c FROM pipeline_tasks_view "
+                "WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY status ORDER BY c DESC"
+            )
+            total_published = await conn.fetchval(
+                "SELECT COUNT(*) FROM posts WHERE status = 'published'"
+            )
+            await conn.close()
+            lines = [f"**{r['status']}:** {r['c']}" for r in rows]
+            await ctx.respond(
+                f"**Pipeline (24h):**\n" + "\n".join(lines) +
+                f"\n\n**Total published:** {total_published}"
+            )
+        except Exception as e:
+            await ctx.respond(f"Stats error: {e}")
+
+
+@bot.slash_command(name="publish_now", description="Create and auto-queue a post on a topic")
+async def publish_now(ctx, topic: str, category: str = "technology"):
+    data = await _api_call("POST", "/api/tasks", {
+        "topic": topic, "category": category
+    })
+    task_id = data.get("id", data.get("task_id", "?"))
+    await ctx.respond(f"Queued: **{topic}**\nTask: `{task_id}`")
+
+
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
         print("ERROR: discord_bot_token not found in app_settings.")
