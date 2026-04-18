@@ -46,7 +46,7 @@ def _get_company_facts() -> dict:
     }
 
 
-# Lazy-loaded — uses DB values once site_config.load() has been called
+# Loaded at module import time — uses DB values from site_config cache. Not refreshed on config changes without reimport.
 GLAD_LABS_FACTS = _get_company_facts()
 _COMPANY_NAME = GLAD_LABS_FACTS["company_name"]
 
@@ -181,8 +181,21 @@ def _load_fact_overrides_sync() -> list[tuple[str, str, str]]:
     try:
         import asyncio
         import os
+        import sys
 
         db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
+            try:
+                _proj = Path(__file__).resolve()
+                for _p in _proj.parents:
+                    if (_p / "brain" / "bootstrap.py").is_file():
+                        if str(_p) not in sys.path:
+                            sys.path.insert(0, str(_p))
+                        break
+                from brain.bootstrap import resolve_database_url
+                db_url = resolve_database_url() or ""
+            except Exception:
+                pass
         if not db_url:
             return _fact_overrides_cache
 

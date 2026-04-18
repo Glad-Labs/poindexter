@@ -1032,7 +1032,7 @@ class TaskExecutor:
                 WHERE status IN ('failed', 'rejected_retry', 'failed_revisions_requested')
                 AND created_at > NOW() - INTERVAL '{retry_window_h} hours'
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
-                AND COALESCE((metadata::jsonb->>'allow_revisions')::text, 'true') != 'false'
+                AND COALESCE((task_metadata::jsonb->>'allow_revisions')::text, 'true') != 'false'
                 LIMIT 3
             """, max_retries)
 
