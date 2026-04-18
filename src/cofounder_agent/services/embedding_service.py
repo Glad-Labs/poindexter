@@ -183,7 +183,7 @@ class EmbeddingService:
             content_hash = self._content_hash(combined)
 
             try:
-                if not await self.db.needs_reembedding("post", post_id, content_hash):
+                if not await self.db.needs_reembedding("posts", post_id, content_hash):
                     skipped += 1
                     continue
             except Exception:
@@ -218,7 +218,7 @@ class EmbeddingService:
             title = post.get("title", "")
             try:
                 await self.db.store_embedding(
-                    source_type="post",
+                    source_type="posts",
                     source_id=post_id,
                     content_hash=content_hashes[i],
                     embedding=embeddings[i],
