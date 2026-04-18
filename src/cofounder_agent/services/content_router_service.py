@@ -1597,6 +1597,14 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
                             tmp_path = tmp_path.replace(_host_home, _os.path.expanduser("~"), 1)
                         # Normalize Windows backslashes to forward slashes
                         tmp_path = tmp_path.replace("\\", "/")
+                        # Path traversal guard — SDXL response is external input
+                        _allowed_dirs = [
+                            _os.path.realpath(_os.path.expanduser("~/Downloads")),
+                            _os.path.realpath(_os.path.expanduser("~/.poindexter")),
+                        ]
+                        _resolved = _os.path.realpath(tmp_path)
+                        if not any(_resolved.startswith(d) for d in _allowed_dirs):
+                            raise RuntimeError(f"SDXL returned path outside allowed directories: {_os.path.basename(tmp_path)}")
                         if not tmp_path or not _os.path.exists(tmp_path):
                             raise RuntimeError(f"SDXL returned JSON but image_path missing or invalid: {tmp_path}")
                         logger.info("  [IMAGE-%s] SDXL generated: %s (%dms)", num, _os.path.basename(tmp_path), _sdxl_data.get("generation_time_ms", 0))
