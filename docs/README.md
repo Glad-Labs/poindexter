@@ -6,7 +6,7 @@ open-source AI content pipeline built by [Glad Labs LLC](https://www.gladlabs.io
 The docs are written for operators and contributors who want to
 **master** the system. They are comprehensive, detailed, and take
 hours to read end-to-end. If you want a guided shortcut, the $29
-[Quick Start Guide](https://www.gladlabs.io/products/quick-start)
+[Quick Start Guide](https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52)
 gets you from zero to a running instance in 30 minutes without any
 of the reading below.
 
@@ -40,22 +40,25 @@ of the reading below.
 ## Operations (running Poindexter on your own machine)
 
 - **[Local development setup](operations/local-development-setup.md)** —
-  end-to-end walkthrough of what `bootstrap.sh` does and how to
-  verify each layer came up correctly.
+  end-to-end walkthrough: `poindexter setup`, model pulls, stack
+  startup, and how to verify each layer came up correctly.
 - **[Environment variables](operations/environment-variables.md)** —
-  the small set of env vars needed to bootstrap the stack. Most
-  configuration lives in the `app_settings` Postgres table instead.
+  the small set of env vars needed for Docker bootstrap. Most
+  configuration lives in the `app_settings` Postgres table and
+  `~/.poindexter/bootstrap.toml`.
 - **[Troubleshooting](operations/troubleshooting.md)** — real
   production issues we've hit, with symptoms, root causes, and fixes.
 - **[CI / deploy chain](operations/ci-deploy-chain.md)** — how
   Poindexter itself is tested and shipped to gladlabs.io.
   Transparency only — if you're self-hosting you don't need this.
+- **[Disaster recovery](operations/disaster-recovery.md)** — recovery
+  procedures for each service, ordered by severity.
 
 ## Reference (work in progress)
 
 The reference section is the deepest layer — exhaustive catalogs of
-every setting, prompt, validator, and extension point. Mostly
-not-yet-written.
+every setting, prompt, validator, and extension point. Tracked in
+the [GitHub backlog](https://github.com/Glad-Labs/poindexter/milestones).
 
 - `reference/app-settings.md` — every key in the `app_settings`
   table, default value, what reads it. **Coming soon.**
@@ -66,29 +69,17 @@ not-yet-written.
 - `reference/validators.md` — every `ValidationIssue` category with
   example matches and score penalties. **Coming soon.**
 
-## Extending Poindexter (work in progress)
-
-- `extending/adding-a-provider.md` — plug in a new LLM provider.
-  **Coming soon.**
-- `extending/adding-a-validator.md` — add a new programmatic check.
-  **Coming soon.**
-- `extending/custom-workflows.md` — author a custom pipeline.
-  **Coming soon.**
-- `extending/writing-skills.md` — the OpenClaw skill format.
-  **Coming soon.**
-
 ---
 
 ## Paid add-ons
 
-- **[$29 Quick Start Guide](https://www.gladlabs.io/products/quick-start)** —
-  a curated 30-minute setup path with Matt's exact tuning, seed
-  data, and a one-shot install script. Skip the reading above.
-- **[$9/mo Premium Subscription](https://www.gladlabs.io/products/premium)** —
-  monthly improvements to the production prompts, access to the
-  long-form _AI Content Pipeline_ book, and direct Discord access.
-  What you're buying is the ongoing relationship, not the file
-  contents.
+- **[$29 Seed Package](https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52)** —
+  Matt's production config (235+ tuned settings), 5 premium Grafana
+  dashboards, anti-hallucination rules, and the Quick Start Guide.
+- **[$9/mo Premium](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)** —
+  monthly updated prompts, private repo access, new fact-check rules,
+  and the _AI Content Pipeline_ book chapters as they ship. Cancel
+  anytime — you keep what you downloaded.
 
 ---
 
