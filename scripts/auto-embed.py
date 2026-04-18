@@ -50,8 +50,22 @@ except ImportError as _imp_err:
 # Configuration
 # ---------------------------------------------------------------------------
 
-LOCAL_DSN = os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL", "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain")
-# Posts live in the local DB now — no need for a separate cloud connection
+# Resolve DB URL via bootstrap.toml first, env vars as fallback
+_dsn = os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL", "")
+if not _dsn:
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        for _p in _Path(__file__).resolve().parents:
+            if (_p / "brain" / "bootstrap.py").is_file():
+                if str(_p) not in _sys.path:
+                    _sys.path.insert(0, str(_p))
+                break
+        from brain.bootstrap import resolve_database_url
+        _dsn = resolve_database_url() or ""
+    except Exception:
+        pass
+LOCAL_DSN = _dsn or "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
 CLOUD_DSN = LOCAL_DSN
 OLLAMA_URL = "http://127.0.0.1:11434"
 EMBED_MODEL = "nomic-embed-text"
