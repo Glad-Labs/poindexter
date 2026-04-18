@@ -111,7 +111,10 @@ intents.voice_states = True
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
-bot = discord.Bot(intents=intents, loop=loop)
+
+GUILD_ID = int(_cfg.get("discord_guild_id", "0") or "0")
+_debug_guilds = [GUILD_ID] if GUILD_ID else None
+bot = discord.Bot(intents=intents, loop=loop, debug_guilds=_debug_guilds)
 
 conversation_history = []
 _vad_tasks = {}
