@@ -972,7 +972,7 @@ class MultiModelQA:
                 }
                 resp = await asyncio.wait_for(
                     client.post(
-                        "http://host.docker.internal:11434/api/chat",
+                        site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
                         json=payload,
                     ),
                     timeout=150,
@@ -1161,7 +1161,7 @@ class MultiModelQA:
                 }
                 resp = await asyncio.wait_for(
                     client.post(
-                        "http://host.docker.internal:11434/api/chat",
+                        site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
                         json=payload,
                     ),
                     timeout=200,
