@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
+    asyncpg
+
+WORKDIR /app
+
+COPY scripts/nvidia-smi-exporter.py /app/nvidia-smi-exporter.py
+COPY brain/ /brain/
+
+ENV PYTHONPATH="/app:/"
+
+EXPOSE 9835
+
+CMD ["python", "/app/nvidia-smi-exporter.py"]

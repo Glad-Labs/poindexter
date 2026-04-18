@@ -350,6 +350,58 @@ services:
       postgres-local:
         condition: service_healthy
 
+  # ===========================================
+  # Auto-Embed — hourly pgvector embedding sync
+  # ===========================================
+  auto-embed:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.auto-embed
+    container_name: poindexter-auto-embed
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      OLLAMA_URL: "http://host.docker.internal:11434"
+    volumes:
+      - ./scripts/auto-embed.py:/app/auto-embed.py:ro
+      - ./brain:/brain:ro
+      - ${USERPROFILE:-.}/.claude/projects/C--users-mattm/memory:/memory/claude-code:ro
+      - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+  # ===========================================
+  # GPU Metrics Exporter — nvidia-smi + HWiNFO to Prometheus
+  # ===========================================
+  gpu-exporter:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.gpu-exporter
+    container_name: poindexter-gpu-exporter
+    restart: unless-stopped
+    ports:
+      - "9835:9835"
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+    volumes:
+      - ./scripts/nvidia-smi-exporter.py:/app/nvidia-smi-exporter.py:ro
+      - ./brain:/brain:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
 # Volumes deliberately keep the gladlabs-* prefix from the pre-rebrand era.
 # Renaming a docker volume in compose creates a fresh empty volume and
 # orphans the old one — that means data loss for any existing instance.
