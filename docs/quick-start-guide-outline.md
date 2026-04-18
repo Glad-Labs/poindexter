@@ -75,13 +75,9 @@ ollama pull phi4:14b         # Works on 8GB VRAM
 
 ```bash
 curl -X POST http://localhost:8002/api/tasks \
-  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Authorization: Bearer $(grep api_token ~/.poindexter/bootstrap.toml | cut -d'"' -f2)" \
   -H "Content-Type: application/json" \
-  -d '{
-    "topic": "Why every developer needs a personal AI factory",
-    "task_type": "blog_post",
-    "category": "technology"
-  }'
+  -d '{"topic": "Why every developer needs a personal AI factory", "category": "technology"}'
 ```
 
 The pipeline will:
@@ -90,9 +86,9 @@ The pipeline will:
 2. Generate a 1500-word draft with code examples
 3. Score it on 7 quality dimensions
 4. Validate against hallucinations
-5. Auto-publish if score >= 75
+5. Queue for human approval (or auto-publish if `auto_publish_threshold` > 0)
 
-Watch progress in Grafana → Pipeline dashboard.
+Watch progress in Grafana → Pipeline Operations dashboard.
 
 ---
 
@@ -134,15 +130,15 @@ const data = await posts.json();
 
 ## 6. Monitoring Setup (3 min)
 
-Grafana comes pre-configured with 7 dashboards:
+Grafana comes pre-configured with 1 dashboard (Pipeline Operations).
+5 additional dashboards are available with the Seed Package ($29):
 
-- **Operations** — system health, pipeline status, error rates
-- **Pipeline** — content generation progress, quality scores
-- **Performance** — API response times, DB query performance
-- **Hardware** — GPU utilization, temperature, VRAM
-- **Cost** — LLM API costs, daily/monthly budgets
-- **Quality** — QA scores, rejection rates, improvement trends
-- **Content** — post analytics, publishing schedule
+- **Pipeline Operations** (free) — task status, queue depth, recent activity
+- **Approval Queue** (premium) — approval workflow + quality distribution
+- **Cost Analytics** (premium) — LLM spend, model costs, electricity
+- **Quality & Content** (premium) — QA scores, rejection trends, top posts
+- **Infrastructure** (premium) — GPU, DB, audit logs, hardware
+- **Link Registry** (premium) — internal/external link tracking
 
 ### Set up Telegram alerts:
 
@@ -168,6 +164,7 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
 
 ```bash
 curl -X PUT http://localhost:8002/api/settings/content_gen_count \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"value": "5"}'
 ```
 
