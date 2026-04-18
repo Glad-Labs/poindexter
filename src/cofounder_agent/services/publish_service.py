@@ -112,7 +112,7 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
         # IndexNow (Bing, Yandex, Naver, Seznam).
         # #198: both endpoint + key settings-backed. Setting the endpoint
         # to '' disables the ping without code changes.
-        _indexnow_key = site_config.get("indexnow_key", "34352c4f981b45698941c47eefef2fb4")
+        _indexnow_key = site_config.get("indexnow_key", "")
         _indexnow_url = site_config.get(
             "indexnow_ping_url", "https://api.indexnow.org/indexnow"
         )
