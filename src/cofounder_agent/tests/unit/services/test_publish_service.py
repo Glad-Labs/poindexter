@@ -726,7 +726,7 @@ class TestRevalidation:
         reval_mod = MagicMock()
         reval_mod.trigger_nextjs_revalidation = AsyncMock(return_value=True)
 
-        with _LazyImportContext(overrides={"routes.revalidate_routes": reval_mod}):
+        with _LazyImportContext(overrides={"services.revalidation_service": reval_mod}):
             result = await publish_post_from_task(
                 db_service=db, task=task, task_id="tid-reval",
                 trigger_revalidation=True, queue_social=False,
