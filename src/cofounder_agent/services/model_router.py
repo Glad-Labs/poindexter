@@ -203,7 +203,8 @@ class ModelRouter:
             try:
                 from services.site_config import site_config
                 use_ollama = site_config.get("use_ollama", "false").lower() == "true"
-            except Exception:
+            except Exception as e:
+                logger.warning("[MODEL_ROUTER] Failed to read use_ollama from config: %s", e)
                 use_ollama = False
 
         self.use_ollama = use_ollama
@@ -224,7 +225,8 @@ class ModelRouter:
         try:
             from services.site_config import site_config
             self._monthly_spend_limit = float(site_config.get("monthly_spend_limit", "100.0"))
-        except Exception:
+        except Exception as e:
+            logger.warning("[MODEL_ROUTER] Failed to read monthly_spend_limit: %s", e)
             self._monthly_spend_limit = 100.0
         self._session_cloud_spend = 0.0
         self._budget_exceeded_logged = False
