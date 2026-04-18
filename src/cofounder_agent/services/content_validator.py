@@ -547,9 +547,10 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
 
     # 11. Title diversity — detect repetitive opener patterns
     _BANNED_OPENERS = [
-        "beyond the", "beyond", "unlocking", "the ultimate", "the hidden",
-        "the silent", "the invisible", "the secret", "mastering",
-        "revolutionizing", "the complete", "the definitive",
+        "beyond the", "beyond", "building", "unlocking", "the ultimate",
+        "the hidden", "the silent", "the invisible", "the secret",
+        "mastering", "revolutionizing", "the complete", "the definitive",
+        "how to build", "scale your", "why you need",
     ]
     if title:
         title_lower = title.lower().strip()
