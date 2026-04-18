@@ -265,22 +265,136 @@ class VADSink(discord.sinks.Sink):
                 self._emit(uid)
 
 
+OLLAMA_URL = site_config.get("ollama_base_url", "http://host.docker.internal:11434") if 'site_config' in dir() else "http://host.docker.internal:11434"
+
+SYSTEM_PROMPT = """You are Poindexter, an AI content pipeline assistant. You help the operator manage their content pipeline through voice conversation. Keep responses concise — they'll be spoken aloud.
+
+You can take pipeline actions by including JSON on its own line:
+  {"action": "health"}
+  {"action": "tasks"}
+  {"action": "approve", "task_id": "123"}
+  {"action": "reject", "task_id": "123", "reason": "off-topic"}
+  {"action": "stats"}
+  {"action": "publish", "topic": "Why Docker matters"}
+
+Include action JSON when the user wants something done. Otherwise just chat naturally."""
+
+
+async def _execute_action(action: dict) -> str:
+    """Execute a pipeline action and return result as spoken text."""
+    import httpx
+    act = action.get("action", "")
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        if act == "health":
+            resp = await client.get(f"{API_URL}/api/health", headers=headers)
+            d = resp.json()
+            te = d.get("components", {}).get("task_executor", {})
+            return f"System is {d.get('status', '?')}. {te.get('pending_task_count', 0)} pending, {te.get('in_progress_count', 0)} in progress."
+
+        elif act == "tasks":
+            resp = await client.get(f"{API_URL}/api/tasks?status=awaiting_approval", headers=headers)
+            tasks = resp.json() if isinstance(resp.json(), list) else resp.json().get("tasks", [])
+            if not tasks:
+                return "No posts awaiting approval."
+            lines = [f"{str(t.get('id','?'))[:6]}: {t.get('title', t.get('topic','?'))[:40]}, score {t.get('quality_score','?')}" for t in tasks[:5]]
+            return f"{len(tasks)} posts waiting. " + ". ".join(lines)
+
+        elif act == "approve":
+            tid = action.get("task_id", "")
+            resp = await client.post(f"{API_URL}/api/tasks/{tid}/approve", headers=headers,
+                                     json={"approved": True, "auto_publish": True})
+            return f"Task {tid} {resp.json().get('status', 'done')}."
+
+        elif act == "reject":
+            tid = action.get("task_id", "")
+            reason = action.get("reason", "Rejected via voice")
+            resp = await client.post(f"{API_URL}/api/tasks/{tid}/reject", headers=headers,
+                                     json={"feedback": reason, "reason": "operator"})
+            return f"Task {tid} rejected. {reason}."
+
+        elif act == "stats":
+            import asyncpg
+            dsn = os.getenv("DATABASE_URL") or ""
+            if not dsn:
+                try:
+                    from brain.bootstrap import resolve_database_url
+                    dsn = resolve_database_url() or ""
+                except Exception:
+                    pass
+            if dsn:
+                conn = await asyncpg.connect(dsn)
+                rows = await conn.fetch(
+                    "SELECT status, COUNT(*) as c FROM pipeline_tasks_view "
+                    "WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY status ORDER BY c DESC"
+                )
+                total = await conn.fetchval("SELECT COUNT(*) FROM posts WHERE status = 'published'")
+                await conn.close()
+                parts = [f"{r['c']} {r['status']}" for r in rows]
+                return f"Last 24 hours: {', '.join(parts)}. Total published: {total}."
+            return "Couldn't connect to database for stats."
+
+        elif act == "publish":
+            topic = action.get("topic", "")
+            resp = await client.post(f"{API_URL}/api/tasks", headers=headers,
+                                     json={"topic": topic, "category": "technology"})
+            return f"Queued new topic: {topic}."
+
+    return "I didn't understand that action."
+
+
 async def get_claude_response(user_text: str) -> str:
+    """Send text to local Ollama with tool awareness, return spoken response."""
+    import json as _json
+
+    history_text = "\n".join(
+        f"{m['role']}: {m['content']}" for m in conversation_history[-6:]
+    )
+    prompt = f"{history_text}\nuser: {user_text}\nassistant:"
+
     try:
         import httpx
-        async with httpx.AsyncClient(timeout=60) as client:
+        ollama_url = os.getenv("OLLAMA_URL") or OLLAMA_URL
+        async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.post(
-                f"{API_URL}/api/compose/chat",
-                headers={"Authorization": f"Bearer {API_TOKEN}"},
-                json={"message": user_text, "history": conversation_history[-10:]},
+                f"{ollama_url}/api/generate",
+                json={
+                    "model": "qwen3:8b",
+                    "prompt": prompt,
+                    "system": SYSTEM_PROMPT,
+                    "stream": False,
+                    "options": {"temperature": 0.7, "num_predict": 300},
+                },
             )
             if resp.status_code == 200:
-                data = resp.json()
-                return data.get("response", data.get("text", str(data)))
-    except Exception as e:
-        print(f"[API] Failed: {e}")
+                response_text = resp.json().get("response", "").strip()
 
-    return f"I heard: '{user_text}'. (Claude API not connected yet)"
+                for line in response_text.split("\n"):
+                    line = line.strip()
+                    if line.startswith("{") and line.endswith("}"):
+                        try:
+                            action = _json.loads(line)
+                            if "action" in action:
+                                result = await _execute_action(action)
+                                clean = response_text.replace(line, "").strip()
+                                return f"{clean} {result}".strip() if clean else result
+                        except _json.JSONDecodeError:
+                            pass
+
+                return response_text or "I'm not sure how to respond to that."
+    except Exception as e:
+        print(f"[LLM] Ollama error: {e}")
+
+    lower = user_text.lower()
+    if any(w in lower for w in ["health", "status", "system"]):
+        return await _execute_action({"action": "health"})
+    elif any(w in lower for w in ["tasks", "pending", "approval", "queue"]):
+        return await _execute_action({"action": "tasks"})
+    elif any(w in lower for w in ["stats", "statistics", "numbers"]):
+        return await _execute_action({"action": "stats"})
+
+    return f"I heard: {user_text}. Ollama isn't responding — try a slash command."
 
 
 @bot.event
