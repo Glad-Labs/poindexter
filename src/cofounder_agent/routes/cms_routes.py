@@ -357,11 +357,13 @@ async def preview_post_html(preview_token: str):
     status = post.get("status", "unknown")
     quality = post.get("quality_score", "?")
     excerpt = post.get("excerpt", "")
-    featured_img = post.get("featured_image_url", "")
+    from html import escape as _esc
+    featured_img = _esc(post.get("featured_image_url", ""))
     has_podcast = post.get("has_podcast", False)
     has_video = post.get("has_video", False)
-    podcast_url = post.get("podcast_url", "")
-    video_url = post.get("video_url", "")
+    podcast_url = _esc(post.get("podcast_url", ""))
+    video_url = _esc(post.get("video_url", ""))
+    safe_title = _esc(title)
 
     # Build podcast/video players
     media_html = ""
@@ -372,7 +374,7 @@ async def preview_post_html(preview_token: str):
 
     img_html = ""
     if featured_img:
-        img_html = f'<img src="{featured_img}" style="width:100%;border-radius:12px;margin:16px 0" alt="{title}">'
+        img_html = f'<img src="{featured_img}" style="width:100%;border-radius:12px;margin:16px 0" alt="{safe_title}">'
 
     # Clean up preview content — strip the same junk the publish pipeline removes
     import re as _clean_re

@@ -227,7 +227,7 @@ def _load_fact_overrides_sync() -> list[tuple[str, str, str]]:
         _fact_overrides_ts = now
         logger.debug("[VALIDATOR] Loaded %d fact overrides from DB", len(result))
     except Exception as e:
-        logger.debug("[VALIDATOR] fact_overrides DB load failed (using cache): %s", e)
+        logger.warning("[VALIDATOR] fact_overrides DB load failed (using cache): %s", e)
 
     return _fact_overrides_cache
 
