@@ -1,86 +1,71 @@
-# Grafana Cloud Setup for Glad Labs
+# Grafana Monitoring for Poindexter
 
-Connect Grafana Cloud to your Poindexter PostgreSQL instance for production monitoring.
+**Last Updated:** 2026-04-18
 
-## Prerequisites
+Poindexter ships with a self-hosted Grafana instance (Docker container
+on port 3000) and one pre-configured dashboard. Premium dashboards
+are available with the Seed Package.
 
-- Grafana Cloud account (free tier works): https://grafana.com/products/cloud/
-- PostgreSQL connection string for the Poindexter database
+## Local Setup (ships out of the box)
 
-## 1. Add PostgreSQL Data Source
+The `docker-compose.local.yml` / `docker-compose.yml` stack includes
+Grafana with auto-provisioned datasource and dashboards. No manual
+setup needed — `bash scripts/start-stack.sh` brings it up.
 
-1. In Grafana Cloud, go to **Connections > Data sources > Add data source**
-2. Select **PostgreSQL**
-3. Configure the connection using your PostgreSQL credentials:
+- **URL:** http://localhost:3000
+- **Default credentials:** admin / `grafana_password` from `~/.poindexter/bootstrap.toml`
+- **Datasource:** `Local Brain DB` (uid: `local-brain-db`) — auto-provisioned from `provisioning/datasources/local-postgres.yml`
 
-   | Field            | Value                            |
-   | ---------------- | -------------------------------- |
-   | **Name**         | `poindexter-postgres`            |
-   | **Host**         | `<host>:<port>`                  |
-   | **Database**     | `poindexter_brain`               |
-   | **User**         | `postgres`                       |
-   | **Password**     | Your PostgreSQL password         |
-   | **TLS/SSL Mode** | `require`                        |
-   | **Version**      | 15.x (match your server version) |
+## Dashboards
 
-4. Set the data source UID to `poindexter-postgres` (used by all dashboards).
-   - After creating the source, go to **Settings** and update the UID field, or
-     note the auto-generated UID and update the dashboard JSON files.
-5. Click **Save & Test** to verify the connection.
+### Free (ships in this repo)
 
-> **Security note:** Grafana Cloud connects to your database over the public internet.
-> Ensure your PostgreSQL instance has SSL enabled and restrict network access to
-> known IPs where possible.
+| File                                  | Description                                   |
+| ------------------------------------- | --------------------------------------------- |
+| `dashboards/pipeline-operations.json` | Pipeline status, queue depth, recent activity |
 
-## 2. Import Dashboards
+### Premium (Seed Package — $29)
 
-Three dashboards are provided in `dashboards/`:
+Available in the `glad-labs-prompts` repo after purchase:
 
-| File                     | Description                          |
-| ------------------------ | ------------------------------------ |
-| `pipeline-overview.json` | Content pipeline status and velocity |
-| `cost-control.json`      | LLM spend tracking and budgets       |
-| `quality-metrics.json`   | Content quality scores and pass rate |
+| File                       | Description                                  |
+| -------------------------- | -------------------------------------------- |
+| `approval-queue.json`      | Approval workflow + quality distribution     |
+| `cost-analytics.json`      | LLM spend, model costs, electricity tracking |
+| `quality-content.json`     | QA scores, rejection trends, top posts       |
+| `infrastructure-data.json` | GPU, DB, audit logs, hardware monitoring     |
+| `link-registry.json`       | Internal/external link tracking              |
 
-### Import steps
+To import premium dashboards: **Dashboards > New > Import > Upload JSON**.
+Set the datasource to `Local Brain DB` if prompted.
 
-1. Go to **Dashboards > New > Import**
-2. Click **Upload dashboard JSON file**
-3. Select the JSON file from `dashboards/`
-4. Set the data source to `poindexter-postgres` if prompted
-5. Click **Import**
+## Alerts
 
-Repeat for each dashboard file.
+Alert contact points are configured via the Grafana UI after first
+boot (Settings > Contact Points). Tokens for Telegram/Discord are
+stored in `app_settings`, not in provisioning files.
 
-### Programmatic import (optional)
+Reference alert definitions are in `alerts/discord-alerts.yaml` —
+these are templates, not auto-provisioned.
 
-```bash
-# Using Grafana HTTP API
-GRAFANA_URL="https://<your-instance>.grafana.net"
-GRAFANA_TOKEN="glsa_..."
+## Grafana Cloud (optional)
 
-for f in dashboards/*.json; do
-  curl -X POST "$GRAFANA_URL/api/dashboards/db" \
-    -H "Authorization: Bearer $GRAFANA_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"dashboard\": $(cat "$f"), \"overwrite\": true}"
-done
-```
+If you want to use Grafana Cloud instead of the local instance:
 
-## 3. Configure Alerts
+1. Add a PostgreSQL datasource pointing at your Poindexter database
+2. Set the datasource UID to `local-brain-db` (or update the UID
+   in each dashboard JSON)
+3. Import the dashboard JSON files via the Grafana UI or API
+4. Ensure SSL is enabled if connecting over the public internet
 
-Alert rules are defined in `alerts/discord-alerts.yaml`. These are reference
-definitions -- import them manually in Grafana Cloud:
-
-1. Go to **Alerting > Alert rules > New alert rule**
-2. Use the queries and thresholds from the YAML file
-3. Set up a **Discord** contact point under **Alerting > Contact points**:
-   - Type: Discord
-   - Webhook URL: your Discord channel webhook
-4. Create a **Notification policy** routing alerts to the Discord contact point
+| Field        | Value              |
+| ------------ | ------------------ |
+| **Database** | `poindexter_brain` |
+| **User**     | `poindexter`       |
+| **Version**  | 16.x               |
 
 ## Datasource UID
 
-All dashboard JSON files reference the datasource UID `poindexter-postgres`.
-If your data source gets a different UID, update the `"uid"` field in each
-dashboard JSON file, or rename the data source UID in Grafana to match.
+All dashboard JSON files reference `"uid": "local-brain-db"`. If
+your datasource gets a different UID, either rename it in Grafana
+or find-and-replace in the dashboard JSON files.
