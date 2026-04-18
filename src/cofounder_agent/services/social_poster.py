@@ -355,4 +355,12 @@ async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
         except Exception as e:
             results["linkedin"] = {"success": False, "error": str(e)}
 
+    if "reddit" in enabled:
+        try:
+            from services.social_adapters.reddit import post_to_reddit
+            title = generic_post.text.split("\n")[0][:300] if generic_post else ""
+            results["reddit"] = await post_to_reddit(title, url)
+        except Exception as e:
+            results["reddit"] = {"success": False, "error": str(e)}
+
     return results
