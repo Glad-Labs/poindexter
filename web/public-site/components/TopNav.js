@@ -91,6 +91,12 @@ export default function TopNavigation() {
             >
               Premium
             </Link>
+            <Link
+              href="/claude-templates"
+              className="text-violet-400 hover:text-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-slate-950 rounded px-1 font-medium"
+            >
+              Templates
+            </Link>
           </div>
           <div className="flex items-center gap-4">
             {searchOpen ? (
