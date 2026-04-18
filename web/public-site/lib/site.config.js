@@ -16,7 +16,7 @@ export const SITE_DESCRIPTION = process.env.NEXT_PUBLIC_SITE_DESCRIPTION || 'One
 export const COMPANY_NAME = process.env.NEXT_PUBLIC_COMPANY_NAME || 'Glad Labs, LLC';
 export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'hello@gladlabs.io';
 export const PRIVACY_EMAIL = process.env.NEXT_PUBLIC_PRIVACY_EMAIL || 'privacy@gladlabs.io';
-export const OWNER_EMAIL = process.env.NEXT_PUBLIC_OWNER_EMAIL || 'matt@gladlabs.io';
+export const OWNER_EMAIL = process.env.NEXT_PUBLIC_OWNER_EMAIL || 'hello@gladlabs.io';
 export const NEWSLETTER_EMAIL = process.env.NEXT_PUBLIC_NEWSLETTER_EMAIL || 'newsletter@gladlabs.io';
 
 export const PODCAST_NAME = process.env.NEXT_PUBLIC_PODCAST_NAME || 'Glad Labs Podcast';

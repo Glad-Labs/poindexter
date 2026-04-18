@@ -282,6 +282,6 @@ curl http://localhost:9835/metrics | head -3 # GPU metrics
 
 ## Contact
 
-- Matt Gladding: mattg@gladlabs.io
+- Matt Gladding: hello@gladlabs.io
 - Telegram: Brain daemon sends alerts to configured chat_id
 - Discord: Ops channel receives Grafana alerts

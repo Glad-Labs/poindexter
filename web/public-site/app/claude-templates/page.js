@@ -209,7 +209,7 @@ export default function ClaudeTemplatesPage() {
             <Link href="/about" className="text-slate-400 hover:text-cyan-400 underline">
               Matt Gladding
             </Link>{' '}
-            at Glad Labs. Questions? matt@gladlabs.io
+            at Glad Labs. Questions? hello@gladlabs.io
           </p>
         </div>
       </section>
