@@ -286,6 +286,11 @@ async def generate_and_distribute_social_posts(
 
     posts = await generate_social_posts(title, slug, excerpt, keywords, ollama)
 
+    # Determine which adapters are enabled
+    enabled = set(
+        _sc.get("social_distribution_platforms", "").split(",")
+    ) - {""}
+
     for post in posts:
         header = "Twitter/X" if post.platform == "twitter" else "LinkedIn"
         notification = (
@@ -298,7 +303,56 @@ async def generate_and_distribute_social_posts(
             "[social_poster] Distributed %s post to Telegram + Discord", post.platform
         )
 
+    # Post to enabled social platforms via adapters
+    adapter_results = await _distribute_to_adapters(posts, enabled)
+    for platform, result in adapter_results.items():
+        if result.get("success"):
+            logger.info("[social_poster] Posted to %s: %s", platform, result.get("post_id", ""))
+        else:
+            logger.warning("[social_poster] %s failed: %s", platform, result.get("error", "unknown"))
+
     if not posts:
         await _notify(f"[Social Poster] Failed to generate social posts for: {title}")
 
     return posts
+
+
+async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
+    """Post to each enabled social platform adapter."""
+    results = {}
+
+    if not posts or not enabled:
+        return results
+
+    twitter_post = next((p for p in posts if p.platform == "twitter"), None)
+    linkedin_post = next((p for p in posts if p.platform == "linkedin"), None)
+    generic_post = twitter_post or linkedin_post
+    if not generic_post:
+        return results
+
+    text = generic_post.text
+    url = generic_post.post_url
+
+    if "bluesky" in enabled:
+        try:
+            from services.social_adapters.bluesky import post_to_bluesky
+            results["bluesky"] = await post_to_bluesky(text, url)
+        except Exception as e:
+            results["bluesky"] = {"success": False, "error": str(e)}
+
+    if "mastodon" in enabled:
+        try:
+            from services.social_adapters.mastodon import post_to_mastodon
+            results["mastodon"] = await post_to_mastodon(text, url)
+        except Exception as e:
+            results["mastodon"] = {"success": False, "error": str(e)}
+
+    if "linkedin" in enabled:
+        try:
+            from services.social_adapters.linkedin import post_to_linkedin
+            ln_text = linkedin_post.text if linkedin_post else text
+            results["linkedin"] = await post_to_linkedin(ln_text, url)
+        except Exception as e:
+            results["linkedin"] = {"success": False, "error": str(e)}
+
+    return results
