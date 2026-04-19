@@ -77,13 +77,15 @@ class TestRouteManifestStructure:
             assert entry[2] in worker_keys, f"Coordinator route {entry[2]} not in worker"
 
     def test_worker_manifest_has_expected_routes(self):
-        """Worker manifest should have exactly 12 route entries.
+        """Worker manifest should have exactly 13 route entries.
 
         Updated 2026-04-12: added pipeline_events (observability) +
         memory_dashboard (shared-memory stats/search) routes.
         Updated 2026-04-16 (#230): added topics_routes (URL-based seeding).
+        Updated 2026-04-19 (Phase D4): added alertmanager_webhook_router
+        for the Prometheus/Alertmanager consumer.
         """
-        assert len(_WORKER_ROUTES) == 12
+        assert len(_WORKER_ROUTES) == 13
 
     def test_worker_approval_router_is_first(self):
         """Approval router should be first in the worker manifest."""
