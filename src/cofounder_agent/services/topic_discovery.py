@@ -89,6 +89,32 @@ CATEGORY_SEARCHES = {
 }
 
 
+_STOP_WORDS = frozenset(
+    "a an the in on of to for and or but is are was were be been by with from "
+    "at as it its that this these those not no nor do does did will would "
+    "should could can may might shall into your you we they how what why when "
+    "where who which have has had here there their about just also than more "
+    "most some any all every without actually really need don t s re ve ll "
+    "new top best way beyond".split()
+)
+
+
+def _content_words(title: str) -> set[str]:
+    """Extract meaningful words from a title, stripping stop words and punctuation."""
+    import re
+    words = set(re.findall(r"[a-z0-9]+", title.lower()))
+    return words - _STOP_WORDS
+
+
+def _word_overlap_match(words_a: set[str], words_b: set[str], threshold: float = 0.4,
+                        title_a: str = "", title_b: str = "") -> bool:
+    """True if content-word overlap exceeds threshold (both directions checked)."""
+    if not words_a or not words_b:
+        return False
+    overlap = len(words_a & words_b)
+    return overlap / len(words_a) >= threshold or overlap / len(words_b) >= threshold
+
+
 class TopicDiscovery:
     """Discover trending topics from free web sources."""
 
@@ -741,56 +767,46 @@ class TopicDiscovery:
 
             for topic in topics:
                 title_lower = topic.title.lower()
-                # Exact match
                 if title_lower in all_existing:
                     topic.is_duplicate = True
                     continue
-                # Fuzzy word overlap (catches rephrased versions)
-                topic_words = set(title_lower.split())
-                if len(topic_words) <= 3:
+                topic_words = _content_words(title_lower)
+                if len(topic_words) < 2:
                     continue
                 for existing_title in all_existing:
-                    existing_words = set(existing_title.split())
-                    # Check overlap in both directions — either title
-                    # sharing >50% of meaningful words is a duplicate
-                    if len(existing_words) <= 3:
+                    existing_words = _content_words(existing_title)
+                    if len(existing_words) < 2:
                         continue
-                    overlap = len(topic_words & existing_words)
-                    fwd = overlap / len(topic_words)
-                    rev = overlap / len(existing_words)
-                    if fwd >= 0.5 or rev >= 0.5:
+                    if _word_overlap_match(topic_words, existing_words,
+                                           title_a=title_lower, title_b=existing_title):
                         topic.is_duplicate = True
                         logger.debug(
-                            "[DEDUP] '%s' matches '%s' (fwd=%.0f%% rev=%.0f%%)",
-                            topic.title[:40], existing_title[:40], fwd * 100, rev * 100,
+                            "[DEDUP] '%s' matches '%s'",
+                            topic.title[:40], existing_title[:40],
                         )
                         break
 
         except Exception as e:
             logger.warning("[TOPIC_DISCOVERY] Dedup failed: %s", e)
 
-        # Intra-batch dedup: if two topics in this batch are similar,
-        # mark the lower-scored one as duplicate.
         for i, t1 in enumerate(topics):
             if t1.is_duplicate:
                 continue
-            t1_words = set(t1.title.lower().split())
-            if len(t1_words) <= 3:
+            t1_words = _content_words(t1.title.lower())
+            if len(t1_words) < 2:
                 continue
             for t2 in topics[i + 1:]:
                 if t2.is_duplicate:
                     continue
-                t2_words = set(t2.title.lower().split())
-                if len(t2_words) <= 3:
+                t2_words = _content_words(t2.title.lower())
+                if len(t2_words) < 2:
                     continue
-                overlap = len(t1_words & t2_words)
-                fwd = overlap / len(t1_words)
-                rev = overlap / len(t2_words)
-                if fwd >= 0.5 or rev >= 0.5:
+                if _word_overlap_match(t1_words, t2_words,
+                                       title_a=t1.title.lower(), title_b=t2.title.lower()):
                     t2.is_duplicate = True
                     logger.info(
-                        "[DEDUP] Intra-batch: '%s' ≈ '%s' (fwd=%.0f%% rev=%.0f%%)",
-                        t2.title[:40], t1.title[:40], fwd * 100, rev * 100,
+                        "[DEDUP] Intra-batch: '%s' ≈ '%s'",
+                        t2.title[:40], t1.title[:40],
                     )
 
         return topics
