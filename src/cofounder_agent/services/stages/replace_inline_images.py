@@ -1,50 +1,94 @@
 """ReplaceInlineImagesStage — stage 2C of the content pipeline.
 
-Wraps the legacy ``_stage_replace_inline_images`` in content_router_service.py
-via a thin Stage-adapter shim. The legacy function is ~250 lines of
-intricate GPU-lock/SDXL/Pexels/R2-upload logic that isn't trivial to
-port cleanly in one commit — so this stage is intentionally a thin
-adapter that hands the current context off to the existing implementation.
+Finds / injects [IMAGE-N] placeholders in the draft and replaces each
+with either an SDXL-generated image or a Pexels photo. Post-processes
+the draft to strip any leaked SDXL prompt text.
 
-Detangling the legacy body into its own files (prompt builder, SDXL
-caller, Pexels fallback, R2 upload, regex scrubbers) is tracked as a
-Phase E follow-up. Shipping the wrapper now means the full stage list
-is registered and the pipeline cutover can happen as soon as every
-other stage is wrapper-or-full.
+Fully ported from ``_stage_replace_inline_images`` in content_router_service.py.
+No more thin-wrapper delegation. Helper logic is split into internal
+methods + module-level functions for readability; legacy behavior is
+preserved byte-for-byte.
+
+## Strategy (per placeholder)
+
+1. **SDXL (primary)** — Ollama generates a prompt (random inline style),
+   then the SDXL server renders. Path traversal guard on the returned
+   path; R2 upload with local-path fallback if R2 unavailable.
+2. **Pexels (fallback)** — used when SDXL fails, the server returns
+   non-200, or the generated image collides with another placeholder.
+3. **Remove placeholder** — if both fail, strip the placeholder so no
+   raw `[IMAGE-N]` reaches the reader.
+
+After all placeholders resolve, a small regex pass cleans up leaked
+italic scene descriptions, stray photo-attribution lines, and the
+like — artifacts LLMs sometimes emit adjacent to image placeholders.
 
 ## Context reads
 
 - ``task_id`` (str), ``topic`` (str), ``content`` (str)
-- ``database_service``
-- ``image_service`` (optional — lazy-gets one if not in context)
-- ``category`` (str, passed through result-dict adapter)
+- ``database_service`` (must expose ``update_task``)
+- ``image_service`` (falls back to ``get_image_service()``)
+- ``category`` (str, default ``"technology"``) — for the image decision agent
 
 ## Context writes
 
-- ``content`` (possibly modified with inline image tags)
-- ``featured_image_plan`` (if the decision agent set one)
+- ``content`` (possibly modified)
 - ``inline_images_replaced`` (int)
 - ``stages["2c_inline_images_replaced"]`` (bool)
-- ``image_style`` (str, if legacy populated it)
+- ``stages["2c_image_agent_error"]`` (str, only if the decision agent crashed)
+- ``featured_image_plan`` (optional — set when the decision agent suggests one)
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import random
+import re
+import tempfile
+import uuid
 from typing import Any
+
+import httpx
 
 from plugins.stage import StageResult
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
+
+
+_PLACEHOLDER_RE = re.compile(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]")
+_HEADING_RE = re.compile(r"^#{2,4}\s+(.+)$", re.MULTILINE)
+
+
+INLINE_STYLES: tuple[str, ...] = (
+    "photorealistic scene, cinematic lighting",
+    "isometric 3D illustration, clean vector style, soft shadows",
+    "dark moody editorial photograph, dramatic lighting",
+    "clean minimal flat design, pastel colors, geometric shapes",
+    "macro close-up photograph, extreme detail, bokeh",
+)
+
+
+SDXL_NEGATIVE_PROMPT = (
+    "text, words, letters, watermark, face, person, hands, blurry, "
+    "low quality, distorted, ugly, deformed"
+)
+
+
+# ---------------------------------------------------------------------------
+# Stage
+# ---------------------------------------------------------------------------
+
+
 class ReplaceInlineImagesStage:
     name = "replace_inline_images"
     description = "Decide + generate inline images (SDXL primary, Pexels fallback)"
-    # Legacy _get_stage_timeout returned 300s for this stage.
     timeout_seconds = 300
-    # Legacy did not halt the orchestrator; any failure inside was
-    # either logged or recovered-from silently.
     halts_on_failure = False
 
     async def execute(
@@ -52,7 +96,6 @@ class ReplaceInlineImagesStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.content_router_service import _stage_replace_inline_images
         from services.image_service import get_image_service
 
         task_id = context.get("task_id")
@@ -60,6 +103,7 @@ class ReplaceInlineImagesStage:
         content_text = context.get("content", "")
         database_service = context.get("database_service")
         image_service = context.get("image_service") or get_image_service()
+        category = context.get("category", "technology")
 
         if not content_text:
             return StageResult(
@@ -73,48 +117,406 @@ class ReplaceInlineImagesStage:
                 detail="context missing task_id or database_service",
             )
 
-        # The legacy function reads + writes a shared dict it calls
-        # `result`. Adapt our context to that shape: copy the legacy-
-        # expected keys in, run it, then copy the updated keys back onto
-        # the Stage's context_updates. The dict is passed by reference
-        # so the legacy function's mutations are visible here.
-        result_dict: dict[str, Any] = {
-            "category": context.get("category", "technology"),
-            "stages": dict(context.get("stages", {})),
-        }
+        stages = context.setdefault("stages", {})
+        updates: dict[str, Any] = {}
 
-        try:
-            new_content = await _stage_replace_inline_images(
-                database_service,
-                task_id,
-                topic,
-                content_text,
-                image_service,
-                result_dict,
+        # Look for existing placeholders from the writer; otherwise ask
+        # the Image Decision Agent to plan + inject them.
+        placeholders = _PLACEHOLDER_RE.findall(content_text)
+        if not placeholders:
+            content_text, plan = await _plan_and_inject_placeholders(
+                content_text, topic, category,
             )
-        except Exception as e:  # noqa: BLE001 — legacy swallowed errors
-            logger.warning("replace_inline_images raised: %s", e)
+            if plan is not None and plan.get("featured_image_plan"):
+                updates["featured_image_plan"] = plan["featured_image_plan"]
+            if plan is not None and plan.get("agent_error"):
+                stages["2c_image_agent_error"] = plan["agent_error"]
+            placeholders = _PLACEHOLDER_RE.findall(content_text)
+
+        if not placeholders:
+            stages["2c_inline_images_replaced"] = False
+            logger.info("No [IMAGE-N] placeholders to replace")
+            updates["stages"] = stages
             return StageResult(
-                ok=False,
-                detail=f"legacy raised: {e}",
+                ok=True,
+                detail="no placeholders",
+                context_updates=updates,
+                metrics={"inline_images_replaced": 0},
             )
 
-        # Collect the interesting keys the legacy function set.
-        updates: dict[str, Any] = {"stages": result_dict["stages"]}
-        if new_content is not None:
-            updates["content"] = new_content
-        if "featured_image_plan" in result_dict:
-            updates["featured_image_plan"] = result_dict["featured_image_plan"]
-        if "inline_images_replaced" in result_dict:
-            updates["inline_images_replaced"] = result_dict["inline_images_replaced"]
-        if "image_style" in result_dict:
-            updates["image_style"] = result_dict["image_style"]
+        logger.info(
+            "STAGE 2C: Replacing %d inline image placeholders...",
+            len(placeholders),
+        )
+
+        used_image_ids: set[str] = set()
+        for num, desc in placeholders:
+            content_text = await _resolve_one_placeholder(
+                num=num,
+                desc=desc,
+                topic=topic,
+                content_text=content_text,
+                image_service=image_service,
+                used_image_ids=used_image_ids,
+            )
+
+        content_text = _cleanup_leaked_descriptions(content_text)
+        content_text = _normalize_from_router(content_text)
+
+        # Persist the image-populated content.
+        await database_service.update_task(
+            task_id=task_id, updates={"content": content_text},
+        )
+
+        stages["2c_inline_images_replaced"] = True
+        updates.update({
+            "content": content_text,
+            "inline_images_replaced": len(used_image_ids),
+            "stages": stages,
+        })
+        logger.info("Replaced %d inline images in content", len(used_image_ids))
 
         return StageResult(
             ok=True,
-            detail=f"{updates.get('inline_images_replaced', 0)} images replaced",
+            detail=f"{len(used_image_ids)} images replaced",
             context_updates=updates,
-            metrics={
-                "inline_images_replaced": int(updates.get("inline_images_replaced", 0)),
-            },
+            metrics={"inline_images_replaced": len(used_image_ids)},
         )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _normalize_from_router(text: str) -> str:
+    """Call the legacy ``_normalize_text`` helper.
+
+    Lazy-imported — content_router_service is still the owner of the text-
+    normalization helpers during Phase E. Future cleanup lifts them into
+    a dedicated utility module.
+    """
+    from services.content_router_service import _normalize_text
+    return _normalize_text(text)
+
+
+async def _plan_and_inject_placeholders(
+    content_text: str,
+    topic: str,
+    category: str,
+) -> tuple[str, dict[str, Any] | None]:
+    """Ask the Image Decision Agent to decide + inject [IMAGE-N] placeholders.
+
+    Returns ``(content_text, info)`` where info may carry a
+    ``featured_image_plan`` (if the agent recommends one) or an
+    ``agent_error`` string (if the decision agent crashed).
+    """
+    try:
+        from services.image_decision_agent import plan_images
+    except Exception as e:  # noqa: BLE001
+        logger.error("[IMAGE_AGENT] Image Decision Agent FAILED to import: %s", e)
+        return content_text, {"agent_error": str(e)}
+
+    try:
+        plan = await plan_images(content_text, topic, category, max_images=3)
+    except Exception as agent_err:  # noqa: BLE001 — legacy fail-loud
+        logger.error("[IMAGE_AGENT] Image Decision Agent FAILED: %s", agent_err)
+        return content_text, {"agent_error": str(agent_err)}
+
+    if not plan.images:
+        return content_text, None
+
+    info: dict[str, Any] = {}
+    if plan.featured_image:
+        info["featured_image_plan"] = {
+            "source": plan.featured_image.source,
+            "style": plan.featured_image.style,
+            "prompt": plan.featured_image.prompt,
+        }
+
+    # Inject placeholders at agent-selected positions.
+    headings = list(_HEADING_RE.finditer(content_text))
+    heading_map = {
+        re.sub(r"^#+\s*", "", h.group()).strip().lower(): h for h in headings
+    }
+
+    insert_positions: list[tuple[int, int, str, str]] = []
+    for i, img in enumerate(plan.images):
+        for heading_text, h_match in heading_map.items():
+            if (
+                img.section_heading.lower() in heading_text
+                or heading_text in img.section_heading.lower()
+            ):
+                para_end = content_text.find("\n\n", h_match.end())
+                if para_end > 0:
+                    source_hint = f"{img.source}:{img.style}"
+                    insert_positions.append(
+                        (para_end, i + 1, img.prompt, source_hint),
+                    )
+                break
+
+    # Insert in reverse so earlier positions stay valid.
+    for pos, img_num, prompt, source_hint in reversed(insert_positions):
+        placeholder = f"\n[IMAGE-{img_num}: {prompt} ||{source_hint}||]\n"
+        content_text = content_text[:pos] + placeholder + content_text[pos:]
+
+    n_inserted = len(_PLACEHOLDER_RE.findall(content_text))
+    if n_inserted:
+        logger.info(
+            "[IMAGE_AGENT] Injected %d image placeholders via decision agent",
+            n_inserted,
+        )
+    return content_text, info or None
+
+
+async def _resolve_one_placeholder(
+    num: str,
+    desc: str,
+    topic: str,
+    content_text: str,
+    image_service: Any,
+    used_image_ids: set[str],
+) -> str:
+    """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it."""
+    search_query = desc.strip() if desc else topic
+    alt_text = desc.strip() if desc else f"{topic} illustration"
+    alt_text = alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:150]
+    alt_text = re.sub(r"^(?:IMAGE|FIGURE|Image|Figure)\s*[-:]\s*", "", alt_text).strip()
+
+    # Strategy 1: SDXL.
+    img_url = await _try_sdxl(num, search_query, topic)
+    if img_url and img_url not in used_image_ids:
+        used_image_ids.add(img_url)
+        content_text = _inject_html_image(
+            content_text, num, img_url, alt_text,
+            width=1024, height=1024,
+        )
+        logger.info("  [IMAGE-%s] SDXL generated + R2 uploaded", num)
+        return content_text
+
+    # Strategy 2: Pexels.
+    pexels = await _try_pexels(search_query, topic, image_service)
+    if pexels is not None:
+        img_url, photographer = pexels
+        if img_url not in used_image_ids:
+            used_image_ids.add(img_url)
+            markdown_img = (
+                f'\n\n<img src="{img_url}" alt="{alt_text}" '
+                f'width="650" height="433" loading="lazy" />\n'
+                f'<figcaption>Photo by {photographer} on Pexels</figcaption>\n\n'
+            )
+            content_text = re.sub(
+                rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1,
+            )
+            logger.info("  [IMAGE-%s] Pexels image by %s", num, photographer)
+            return content_text
+
+    # Strategy 3: strip.
+    content_text = re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
+    logger.warning("  [IMAGE-%s] no image source available, removed placeholder", num)
+    return content_text
+
+
+async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
+    """Generate an SDXL image and return its final URL (R2 or local)."""
+    from services.gpu_scheduler import gpu
+    from services.site_config import site_config
+
+    try:
+        sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
+        ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+        model = site_config.get("inline_image_prompt_model", "llama3:latest")
+        inline_style = random.choice(INLINE_STYLES)  # noqa: S311 — non-crypto rotation
+        img_prompt_req = (
+            f"Write a Stable Diffusion XL image prompt for a blog illustration about: {search_query}\n"
+            f"Article topic: {topic}\n\n"
+            f"Requirements: {inline_style}, no people, no text, no faces. "
+            "Describe a specific scene. 1 sentence only. Output ONLY the prompt."
+        )
+
+        # Step 1: ollama generates the SDXL prompt
+        async with gpu.lock("ollama", model=model):
+            async with httpx.AsyncClient(timeout=90) as client:
+                resp = await client.post(f"{ollama_url}/api/generate", json={
+                    "model": model, "prompt": img_prompt_req, "stream": False,
+                    "options": {"num_predict": 100, "temperature": 0.8, "num_ctx": 4096},
+                })
+                resp.raise_for_status()
+                sdxl_prompt = resp.json().get("response", "").strip().strip('"')
+
+        if not sdxl_prompt or len(sdxl_prompt) <= 20:
+            return None
+
+        logger.info("  [IMAGE-%s] SDXL prompt: %s...", num, sdxl_prompt[:60])
+
+        # Step 2: SDXL renders the image
+        async with gpu.lock("sdxl", model="sdxl_lightning"):
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
+                img_resp = await client.post(
+                    f"{sdxl_url}/generate",
+                    json={
+                        "prompt": sdxl_prompt,
+                        "negative_prompt": SDXL_NEGATIVE_PROMPT,
+                        "steps": 8, "guidance_scale": 2.0,
+                    },
+                    timeout=60,
+                )
+
+        if img_resp.status_code != 200:
+            logger.warning("  [IMAGE-%s] SDXL returned %s", num, img_resp.status_code)
+            return None
+
+        tmp_path = _resolve_sdxl_response(img_resp)
+        logger.info("  [IMAGE-%s] SDXL generated: %s", num, os.path.basename(tmp_path))
+
+        # Step 3: R2 upload, with local-path fallback.
+        return await _upload_to_r2_with_fallback(tmp_path)
+    except Exception as err:  # noqa: BLE001 — legacy non-fatal
+        logger.warning("  [IMAGE-%s] SDXL inline failed: %s", num, err)
+        return None
+
+
+def _resolve_sdxl_response(img_resp: httpx.Response) -> str:
+    """Decode the SDXL server's response to a local image path.
+
+    The server either:
+    - Returns JSON with ``image_path`` (when SDXL runs on the host and
+      the worker runs in docker — we translate host paths to container
+      paths using ``site_config.host_home``).
+    - Returns raw image bytes (for setups without a shared filesystem).
+
+    Raises RuntimeError on any other response shape or if the returned
+    path escapes the allowed directories (path traversal guard).
+    """
+    from services.site_config import site_config
+
+    ct = img_resp.headers.get("content-type", "")
+    if ct.startswith("application/json"):
+        data = img_resp.json()
+        tmp_path = data.get("image_path", "")
+        # Host → container path translation.
+        host_home = site_config.get("host_home", "")
+        if host_home and tmp_path.startswith(host_home):
+            tmp_path = tmp_path.replace(host_home, os.path.expanduser("~"), 1)
+        # Normalize Windows backslashes.
+        tmp_path = tmp_path.replace("\\", "/")
+        # Path traversal guard — SDXL response is external input.
+        allowed = [
+            os.path.realpath(os.path.expanduser("~/Downloads")),
+            os.path.realpath(os.path.expanduser("~/.poindexter")),
+        ]
+        resolved = os.path.realpath(tmp_path)
+        if not any(resolved.startswith(d) for d in allowed):
+            raise RuntimeError(
+                f"SDXL returned path outside allowed directories: "
+                f"{os.path.basename(tmp_path)}"
+            )
+        if not tmp_path or not os.path.exists(tmp_path):
+            raise RuntimeError(
+                f"SDXL returned JSON but image_path missing or invalid: {tmp_path}"
+            )
+        return tmp_path
+
+    if ct.startswith("image/"):
+        output_dir = os.path.join(
+            os.path.expanduser("~"), "Downloads", "glad-labs-generated-images",
+        )
+        os.makedirs(output_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            suffix=".png", delete=False, dir=output_dir,
+        ) as tmp:
+            tmp.write(img_resp.content)
+            return tmp.name
+
+    raise RuntimeError(f"SDXL returned unexpected content-type: {ct}")
+
+
+async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
+    """Upload the image to R2 and return a public URL, or fall back to a local path.
+
+    If R2 upload succeeds, the local file is cleaned up. Otherwise the
+    local path is rewritten to the worker's serve path (``/images/generated/...``)
+    so the final URL still resolves for anyone viewing the post.
+    """
+    img_url = tmp_path
+    try:
+        from services.r2_upload_service import upload_to_r2
+        r2_key = f"images/inline/{uuid.uuid4().hex[:12]}.png"
+        r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
+        if r2_url:
+            img_url = r2_url
+            try:
+                os.remove(tmp_path)
+            except OSError:  # best-effort cleanup
+                pass
+    except Exception:  # noqa: BLE001 — legacy: fall back silently
+        logger.debug("[IMAGE] R2 upload failed for inline, using local path")
+
+    # Rewrite local-dir paths to the worker's serve URL.
+    if img_url.startswith("/") and "/glad-labs-generated-images/" in img_url:
+        img_url = f"/images/generated/{os.path.basename(img_url)}"
+    return img_url
+
+
+async def _try_pexels(
+    search_query: str,
+    topic: str,
+    image_service: Any,
+) -> tuple[str, str] | None:
+    """Return ``(url, photographer)`` for a Pexels image, or None."""
+    search_words = search_query.split()[:5]
+    short_query = " ".join(search_words)
+    keywords = [topic.split()[0]] if topic and topic.strip() else []
+    try:
+        img = await image_service.search_featured_image(
+            topic=short_query, keywords=keywords,
+        )
+        if img and img.url:
+            photographer = getattr(img, "photographer", "Pexels")
+            return img.url, photographer
+    except Exception as e:  # noqa: BLE001
+        logger.error("Pexels search failed: %s", e)
+    return None
+
+
+def _inject_html_image(
+    content_text: str,
+    num: str,
+    img_url: str,
+    alt_text: str,
+    *,
+    width: int,
+    height: int,
+) -> str:
+    """Replace the numbered placeholder with an <img> tag."""
+    replacement = (
+        f'\n\n<img src="{img_url}" alt="{alt_text}" '
+        f'width="{width}" height="{height}" loading="lazy" />\n\n'
+    )
+    return re.sub(
+        rf"\[IMAGE-{num}[^\]]*\]", replacement, content_text, count=1,
+    )
+
+
+def _cleanup_leaked_descriptions(content_text: str) -> str:
+    """Strip LLM-artifact lines that sometimes accompany image placeholders."""
+    # Pattern 1: `: *description*` right after an image
+    content_text = re.sub(
+        r'(!\[[^\]]*\]\([^\)]+\))\s*\n\s*:\s+[^\n]+', r'\1', content_text,
+    )
+    # Pattern 2: standalone `*A description...*` or `*Imagine a...*`
+    content_text = re.sub(
+        r'\n\s*\*(?:A |An |Imagine |Visual |The |Split|Close)[^*]{40,}\*\s*\n',
+        '\n', content_text,
+    )
+    # Pattern 3: unclosed `*A description...` — cap at next blank line
+    content_text = re.sub(
+        r'\n\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*\n]{40,}(?=\n\n)',
+        '', content_text,
+    )
+    # Photo attribution lines
+    content_text = re.sub(
+        r'\n\s*\*?Photo by [^\n]+(?:Pexels|Unsplash|Pixabay)\*?\s*\n',
+        '\n', content_text, flags=re.IGNORECASE,
+    )
+    return content_text
