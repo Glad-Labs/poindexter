@@ -85,7 +85,7 @@ content with human oversight**, not "AI content factory" and not
 │         POINDEXTER WORKER (Central Brain)                        │
 │                     FastAPI + Python                             │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │  Multi-Provider Model Router (Ollama/OpenAI/Claude/Gemini)│ │
+│  │  Model Router (Ollama-only pipeline; HF emergency fallback)│ │
 │  │  Multi-Agent Orchestrator & Task Distribution             │ │
 │  │  Memory System & Context Management                       │ │
 │  └────────────────────────────────────────────────────────────┘ │
@@ -139,7 +139,7 @@ execution and multi-agent orchestration.
    ↓
 6. Model Router selects best AI model
    ↓
-7. LLM API call (Ollama/OpenAI/Claude/Gemini)
+7. LLM call (Ollama local inference)
    ↓
 8. Response aggregation
    ↓
@@ -195,16 +195,21 @@ execution and multi-agent orchestration.
 | **Deployment** | Local docker-compose (backend) / Vercel (frontend) | Self-hosted on your machine  | ✅ Active |
 | **Monitoring** | Grafana + Prometheus (self-hosted)                 | 6 dashboards, ~90 panels     | ✅ Active |
 
-### AI Model Providers (Multi-Provider Support)
+### AI Model Providers (Ollama-only pipeline)
 
-| Provider      | Models (production)                  | Cost | Priority |
-| ------------- | ------------------------------------ | ---- | -------- |
-| **Ollama**    | gemma3:27b, qwen3:8b, phi4:14b, etc. | Free | #1       |
-| **Anthropic** | Claude (via app_settings key)        | Paid | #2       |
-| **OpenAI**    | GPT (via app_settings key)           | Paid | #3       |
-| **Google**    | Gemini (via app_settings key)        | Paid | #4       |
+| Provider          | Models (production)                                               | Cost                               | Status      |
+| ----------------- | ----------------------------------------------------------------- | ---------------------------------- | ----------- |
+| **Ollama**        | gemma3:27b, qwen3:8b, phi4:14b, phi3, glm-4.7-5090 (custom build) | Free (local, GPU electricity only) | ✅ Primary  |
+| **HuggingFace**   | transformers direct (emergency fallback)                          | Free (CPU)                         | 🟡 Fallback |
+| ~~Anthropic~~     | _Removed session 55_                                              | —                                  | ❌          |
+| ~~OpenAI~~        | _Removed session 55_                                              | —                                  | ❌          |
+| ~~Google Gemini~~ | _Removed session 55_                                              | —                                  | ❌          |
 
-**Fallback Chain (Automatic):** Ollama (local, free) → Anthropic → OpenAI → Google → echo/mock. Use cost tiers (`free`/`budget`/`standard`/`premium`), never hardcode model names.
+**Current chain:** Ollama primary → `pipeline_fallback_model` (also Ollama, default gemma3:27b) → HuggingFace transformers (emergency, CPU).
+
+Cloud LLM providers were removed from the pipeline in session 55 to honor the "no paid APIs" rule. Customers forking the repo can re-enable them via community plugins (future Phase J of the [plugin architecture refactor](architecture/plugin-architecture.md)).
+
+Use cost tiers (`free`/`budget`/`standard`/`premium`) for model selection — never hardcode model names. Cost tiers live in `app_settings` and map to Ollama models at runtime.
 
 ---
 
@@ -332,7 +337,7 @@ GET  /api/tags                     # List tags
 
 - Self-critiquing pipeline: Creative generation → QA evaluation → Feedback → Refinement
 - Individual agent capabilities: Research, Creative, Images, Publishing, QA, Summarizer
-- Model fallback chain: Claude 3 Opus → GPT-4 → Gemini → Ollama (local, zero-cost)
+- Model fallback chain: Ollama primary → `pipeline_fallback_model` (Ollama) → HuggingFace transformers (CPU emergency)
 - Modular usage: End-to-end blog generation OR individual agent access
 - Output formatting: Markdown + SEO assets + Database compatible
 
@@ -392,11 +397,11 @@ GET  /api/tags                     # List tags
 
 #### Model Router (`services/model_router.py`)
 
-- Multi-provider AI orchestration
-- Automatic provider fallback (Claude → GPT → Gemini → Ollama)
-- Cost tracking and optimization
-- Rate limiting
-- Token counting
+- Ollama-only orchestration with cost-tier routing (free/budget/standard/premium)
+- Automatic fallback chain on Ollama: `pipeline_writer_model` → `pipeline_fallback_model` → HuggingFace transformers (CPU emergency)
+- Electricity cost tracking (per-call, based on GPU wattage × inference time × `electricity_rate_kwh`)
+- Token counting per task type (`model_token_limits_by_task` JSON in app_settings)
+- Future refactor: extracts into `LLMProvider` plugin family (GitHub [#64 Phase J](https://github.com/Glad-Labs/poindexter/issues/64))
 
 #### Multi-Agent Orchestrator (`multi_agent_orchestrator.py`)
 
