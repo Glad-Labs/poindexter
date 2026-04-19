@@ -18,15 +18,19 @@ import time
 import urllib.error
 import urllib.request
 
+from docker_utils import localize_url
+
 logger = logging.getLogger("brain.probes")
 
-# Bootstrap defaults — overridden from app_settings on first probe run
-API_URL = os.getenv("API_URL", "http://localhost:8002")
-LOCAL_OLLAMA = os.getenv("OLLAMA_URL", "http://localhost:11434")
-GITEA_URL = os.getenv("GITEA_URL", "http://localhost:3001")
-GITEA_USER = os.getenv("GITEA_USER", "poindexter")
-GITEA_PASS = os.getenv("GITEA_PASS", "")
-GITEA_REPO = os.getenv("GITEA_REPO", "poindexter/poindexter")
+# Bootstrap defaults — overridden from app_settings on first probe run.
+# localize_url rewrites `localhost` to `host.docker.internal` when running
+# inside a container, so the same DB value works in both environments.
+API_URL = localize_url(os.getenv("API_URL") or "http://localhost:8002")
+LOCAL_OLLAMA = localize_url(os.getenv("OLLAMA_URL") or "http://localhost:11434")
+GITEA_URL = localize_url(os.getenv("GITEA_URL") or "http://localhost:3001")
+GITEA_USER = os.getenv("GITEA_USER") or ""
+GITEA_PASS = os.getenv("GITEA_PASS") or os.getenv("GITEA_PASSWORD") or ""
+GITEA_REPO = os.getenv("GITEA_REPO") or "gladlabs/glad-labs-codebase"
 
 _config_synced = False
 
@@ -40,25 +44,35 @@ async def _sync_config_from_db(pool):
     network), DB values are fallback for local dev where env vars may
     not be set.
     """
-    global API_URL, LOCAL_OLLAMA, GITEA_URL, GITEA_USER, GITEA_PASS, _config_synced
+    global API_URL, LOCAL_OLLAMA, GITEA_URL, GITEA_USER, GITEA_PASS, GITEA_REPO, _config_synced
     if _config_synced:
         return
     try:
         rows = await pool.fetch(
             "SELECT key, value FROM app_settings WHERE key IN "
-            "('api_url', 'internal_api_base_url', 'ollama_base_url', 'gitea_url')"
+            "('api_url', 'internal_api_base_url', 'ollama_base_url', "
+            "'gitea_url', 'gitea_user', 'gitea_password', 'gitea_repo')"
         )
         settings = {r["key"]: r["value"] for r in rows}
-        # Only use DB values when env var wasn't explicitly set
+        # Env wins over DB so docker-compose overrides still work, but every
+        # URL loaded from the DB passes through localize_url so `localhost`
+        # values transparently become `host.docker.internal` inside a container.
         if not os.getenv("API_URL"):
-            API_URL = settings.get("internal_api_base_url") or settings.get("api_url") or API_URL
+            raw = settings.get("internal_api_base_url") or settings.get("api_url") or API_URL
+            API_URL = localize_url(raw)
         if not os.getenv("OLLAMA_URL"):
-            LOCAL_OLLAMA = settings.get("ollama_base_url") or LOCAL_OLLAMA
+            LOCAL_OLLAMA = localize_url(settings.get("ollama_base_url") or LOCAL_OLLAMA)
         if not os.getenv("GITEA_URL"):
-            GITEA_URL = settings.get("gitea_url") or GITEA_URL
+            GITEA_URL = localize_url(settings.get("gitea_url") or GITEA_URL)
+        if not os.getenv("GITEA_USER") and settings.get("gitea_user"):
+            GITEA_USER = settings["gitea_user"]
+        if not (os.getenv("GITEA_PASS") or os.getenv("GITEA_PASSWORD")) and settings.get("gitea_password"):
+            GITEA_PASS = settings["gitea_password"]
+        if not os.getenv("GITEA_REPO") and settings.get("gitea_repo"):
+            GITEA_REPO = settings["gitea_repo"]
         _config_synced = True
-        logger.info("[PROBES] Config synced: API=%s, Ollama=%s, Gitea=%s (env wins over DB)",
-                     API_URL, LOCAL_OLLAMA, GITEA_URL)
+        logger.info("[PROBES] Config synced: API=%s, Ollama=%s, Gitea=%s repo=%s (env wins over DB; URLs localized)",
+                     API_URL, LOCAL_OLLAMA, GITEA_URL, GITEA_REPO)
     except Exception as e:
         logger.warning("[PROBES] Failed to sync config from DB, using env defaults: %s", e)
 

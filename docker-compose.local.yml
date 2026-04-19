@@ -175,9 +175,10 @@ services:
       OLLAMA_URL: "http://host.docker.internal:11434"
       GRAFANA_URL: "http://grafana:3000"
       GRAFANA_PASSWORD: ${GRAFANA_PASSWORD:?Run 'poindexter setup' — GRAFANA_PASSWORD is generated in bootstrap.toml}
-      GITEA_URL: "http://gitea:3000"
-      GITEA_USER: ${GITEA_USER:-gladlabs}
-      GITEA_PASS: ${GITEA_PASSWORD:-}
+      # GITEA_* env vars removed — brain now reads gitea_url/user/password
+      # from app_settings and translates URLs with docker_utils.localize_url
+      # when IN_DOCKER=true (GitHub #61). Other URLs (API, OLLAMA, GRAFANA)
+      # are separately tracked for the same DB-first treatment.
       DISCORD_LAB_LOGS_WEBHOOK_URL: ${DISCORD_LAB_LOGS_WEBHOOK_URL:-}
       DISCORD_OPS_WEBHOOK_URL: ${DISCORD_OPS_WEBHOOK_URL:-}
       IN_DOCKER: "true"
