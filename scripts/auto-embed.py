@@ -68,23 +68,17 @@ if not _dsn:
 LOCAL_DSN = _dsn or "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
 CLOUD_DSN = LOCAL_DSN
 
-# In-Docker URL translation. Per Matt's DB-first-config rule, app_settings holds
-# canonical URLs (ollama_url, gitea_url) that work from the host (e.g.
-# http://localhost:3001). Inside a container, `localhost` loops back to the
-# container itself, not the host. When IN_DOCKER=true, rewrite `localhost` and
-# `127.0.0.1` to `host.docker.internal`, preserving the port — so the same DB
-# value works from both sides without per-env env-var overrides.
-IN_DOCKER = os.getenv("IN_DOCKER", "").lower() in ("1", "true", "yes") \
-    or Path("/.dockerenv").exists()
-
-
-def localize_url(url: str) -> str:
-    if not url or not IN_DOCKER:
-        return url
-    return (
-        url.replace("://localhost:", "://host.docker.internal:")
-           .replace("://127.0.0.1:", "://host.docker.internal:")
-    )
+# URL localization (same rules for every brain-adjacent service) lives in
+# brain.docker_utils so we only have one implementation to maintain. Prefer
+# the package import; fall back to scripts/-parallel brain/ for callers that
+# haven't set PYTHONPATH cleanly.
+try:
+    from brain.docker_utils import IN_DOCKER, localize_url, resolve_url  # noqa: F401
+except ImportError:
+    # Allow the script to run from inside the brain container (/brain on path)
+    # or with the repo root on PYTHONPATH.
+    sys.path.insert(0, str(_REPO_ROOT))
+    from brain.docker_utils import IN_DOCKER, localize_url, resolve_url  # noqa: F401
 
 
 OLLAMA_URL = localize_url(os.getenv("OLLAMA_URL") or "http://127.0.0.1:11434")
@@ -1055,28 +1049,28 @@ async def main() -> None:
         logger.info("Connecting to local pgvector DB...")
         local_conn = await asyncpg.connect(LOCAL_DSN)
 
-        # Load Gitea creds from DB, env takes precedence per-key. Needed because
-        # the DB value of gitea_url is `http://localhost:3001` (correct for host
-        # runs) but the container has to reach Gitea via `host.docker.internal`.
+        # Load Gitea config from DB via the shared resolver. Env wins per-key.
+        # URL gets localize_url automatically so the same DB value
+        # (http://localhost:3001) works from host scripts AND from inside this
+        # container (host.docker.internal:3001).
         global GITEA_URL, GITEA_USER, GITEA_PASS, GITEA_REPO
         try:
-            _env_gitea_url = os.getenv("GITEA_URL")
-            _env_gitea_user = os.getenv("GITEA_USER")
-            _env_gitea_pass = os.getenv("GITEA_PASSWORD") or os.getenv("GITEA_PASS")
-            _env_gitea_repo = os.getenv("GITEA_REPO")
-            for key in ("gitea_url", "gitea_user", "gitea_password", "gitea_repo"):
-                val = await local_conn.fetchval(
-                    "SELECT value FROM app_settings WHERE key = $1", key
-                )
-                if not val:
-                    continue
-                if key == "gitea_url" and not _env_gitea_url:
-                    GITEA_URL = localize_url(val)
-                elif key == "gitea_user" and not _env_gitea_user:
+            GITEA_URL = await resolve_url(
+                local_conn, "gitea_url",
+                default=GITEA_URL, env_var="GITEA_URL",
+            )
+            # Credentials / repo: simple env-wins-over-DB, no URL translation.
+            if not os.getenv("GITEA_USER"):
+                val = await local_conn.fetchval("SELECT value FROM app_settings WHERE key = 'gitea_user'")
+                if val:
                     GITEA_USER = val
-                elif key == "gitea_password" and not _env_gitea_pass:
+            if not (os.getenv("GITEA_PASSWORD") or os.getenv("GITEA_PASS")):
+                val = await local_conn.fetchval("SELECT value FROM app_settings WHERE key = 'gitea_password'")
+                if val:
                     GITEA_PASS = val
-                elif key == "gitea_repo" and not _env_gitea_repo:
+            if not os.getenv("GITEA_REPO"):
+                val = await local_conn.fetchval("SELECT value FROM app_settings WHERE key = 'gitea_repo'")
+                if val:
                     GITEA_REPO = val
             if GITEA_PASS:
                 logger.info("Loaded Gitea credentials from app_settings")

@@ -49,28 +49,23 @@ async def probe_status_digest(pool, notify_fn) -> dict:
         # --- Gather system health ---
         health = {}
 
-        # Resolve URLs from app_settings with localize_url, falling back to
-        # working defaults. Pre-fix, this function hardcoded localhost URLs
-        # which from inside the brain container resolved to the container
-        # itself and reported every service "DOWN" in the 6h digest even
-        # when they were fine. DB-first config + in-container translation
-        # matches the pattern in health_probes._sync_config_from_db.
-        from docker_utils import localize_url
-        site_url = "https://www.gladlabs.io"
-        api_url = localize_url("http://localhost:8002")
-        openclaw_url = localize_url("http://localhost:18789")
-        try:
-            rows = await pool.fetch(
-                "SELECT key, value FROM app_settings WHERE key IN "
-                "('site_url', 'public_site_url', 'internal_api_base_url', "
-                "'api_url', 'openclaw_gateway_url')"
-            )
-            s = {r["key"]: r["value"] for r in rows}
-            site_url = s.get("public_site_url") or s.get("site_url") or site_url
-            api_url = localize_url(s.get("internal_api_base_url") or s.get("api_url") or api_url)
-            openclaw_url = localize_url(s.get("openclaw_gateway_url") or openclaw_url)
-        except Exception as e:
-            logger.warning("[DIGEST] Could not load service URLs from app_settings: %s", e)
+        # Resolve service URLs via the shared DB-first helper. This is the
+        # same pattern health_probes uses — kept in docker_utils so the
+        # "brain reports everything DOWN because localhost loops back to
+        # itself" bug class can't recur as new services get added.
+        from docker_utils import resolve_url
+        site_url = await resolve_url(
+            pool, "public_site_url", "site_url",
+            default="https://www.gladlabs.io",
+        )
+        api_url = await resolve_url(
+            pool, "internal_api_base_url", "api_url",
+            default="http://localhost:8002",
+        )
+        openclaw_url = await resolve_url(
+            pool, "openclaw_gateway_url",
+            default="http://localhost:18789",
+        )
 
         # API health
         try:
@@ -138,10 +133,9 @@ async def probe_status_digest(pool, notify_fn) -> dict:
         alert_lines = []
         try:
             grafana_token = await pool.fetchval("SELECT value FROM app_settings WHERE key = 'grafana_api_key'")
-            grafana_url = localize_url(
-                (await pool.fetchval("SELECT value FROM app_settings WHERE key = 'grafana_url'"))
-                or "http://localhost:3000"
-            ).rstrip("/")
+            grafana_url = (await resolve_url(
+                pool, "grafana_url", default="http://localhost:3000",
+            )).rstrip("/")
             if grafana_token:
                 req = urllib.request.Request(
                     f"{grafana_url}/api/v1/provisioning/alert-rules",
