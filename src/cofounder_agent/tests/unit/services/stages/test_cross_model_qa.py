@@ -220,8 +220,7 @@ class TestResolveMaxRewrites:
 # ---------------------------------------------------------------------------
 
 
-def _patch_stage_imports(qa_review_return: Any, gate_enabled: bool = True,
-                         max_rewrites: int = 2):
+def _patch_stage_imports(qa_review_return: Any, max_rewrites: int = 2):
     """Patch every external dep at the stage's import sites."""
     fake_qa = SimpleNamespace(review=AsyncMock(return_value=qa_review_return))
     # side_effect list if qa_review_return is a list (rewrite-loop tests)
@@ -232,10 +231,6 @@ def _patch_stage_imports(qa_review_return: Any, gate_enabled: bool = True,
     settings_svc.get = AsyncMock(return_value=str(max_rewrites))
 
     return [
-        patch(
-            "services.content_router_service._is_stage_enabled",
-            AsyncMock(return_value=gate_enabled),
-        ),
         patch(
             "services.text_utils.normalize_text",
             side_effect=lambda x: x,
@@ -248,14 +243,21 @@ def _patch_stage_imports(qa_review_return: Any, gate_enabled: bool = True,
 
 @pytest.mark.asyncio
 class TestExecuteGate:
-    async def test_gate_disabled_returns_early_with_score(self):
+    """Post-Phase-E2 note: the stage no longer carries an internal
+    enable gate. StageRunner reads ``plugin.stage.cross_model_qa.enabled``
+    from app_settings and skips the stage entirely when disabled. Those
+    paths are covered by ``tests/unit/plugins/test_stage_runner.py``."""
+
+    async def test_stage_does_not_self_gate(self):
+        # Even with a "disabled" disposition, the stage executes when
+        # the runner invokes it — enforcement is at the runner layer.
         db = _FakeDb()
         ctx: dict[str, Any] = {
             "task_id": "t1", "topic": "T", "content": "body",
             "database_service": db,
             "quality_result": _early_quality_result(score=73),
         }
-        patches, _ = _patch_stage_imports(_qa_approved(), gate_enabled=False)
+        patches, _ = _patch_stage_imports(_qa_approved(score=88))
         for p in patches:
             p.start()
         try:
@@ -264,10 +266,7 @@ class TestExecuteGate:
             for p in reversed(patches):
                 p.stop()
         assert result.ok is True
-        assert result.context_updates["qa_final_score"] == 73
-        assert result.context_updates["qa_reviews"] == []
-        # Gate-disabled doesn't touch DB
-        assert len(db.updates) == 0
+        assert result.context_updates["qa_final_score"] == 88
 
 
 @pytest.mark.asyncio

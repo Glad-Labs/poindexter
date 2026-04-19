@@ -156,7 +156,6 @@ class CrossModelQAStage:
     ) -> StageResult:
         from services.audit_log import audit_log_bg
         from services.container import get_service
-        from services.content_router_service import _is_stage_enabled
         from services.multi_model_qa import MultiModelQA
         from services.text_utils import normalize_text as _normalize_text
 
@@ -174,18 +173,8 @@ class CrossModelQAStage:
 
         pool = getattr(database_service, "pool", None)
 
-        # Legacy enable-gate (pipeline_stages table).
-        if not await _is_stage_enabled(pool, "cross_model_qa"):
-            logger.info("Cross-model QA skipped (disabled in pipeline_stages)")
-            return StageResult(
-                ok=True,
-                detail="disabled in pipeline_stages",
-                context_updates={
-                    "qa_final_score": quality_result.overall_score,
-                    "qa_reviews": [],
-                },
-                metrics={"skipped": True},
-            )
+        # Enable-gate now lives on ``plugin.stage.cross_model_qa.enabled``
+        # in app_settings — StageRunner handles it before we even get here.
 
         settings_service = get_service("settings")
         qa = MultiModelQA(pool=pool, settings_service=settings_service)

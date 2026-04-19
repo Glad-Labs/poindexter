@@ -27,7 +27,6 @@ import pytest
 from services.category_resolver import (
     select_category_for_topic as _select_category_for_topic,
 )
-from services.content_router_service import _is_stage_enabled
 from services.content_task_store import ContentTaskStore, get_content_task_store
 from services.default_author import (
     get_or_create_default_author as _get_or_create_default_author,
@@ -556,42 +555,6 @@ class TestParseModelPreferences:
         model, provider = _parse_model_preferences({"draft": "  gpt-4  "})
         # Ollama-only policy: all models default to ollama provider
         assert provider == "ollama"
-
-
-# ===========================================================================
-# _is_stage_enabled
-# ===========================================================================
-
-
-@pytest.mark.unit
-class TestIsStageEnabled:
-    """Tests for pipeline stage enable/disable checks."""
-
-    @pytest.mark.asyncio
-    async def test_returns_true_when_pool_is_none(self):
-        result = await _is_stage_enabled(None, "generate_content")
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_returns_true_when_stage_not_in_db(self):
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value=None)
-        result = await _is_stage_enabled(pool, "nonexistent_stage")
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_returns_enabled_value_from_db(self):
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value={"enabled": False})
-        result = await _is_stage_enabled(pool, "generate_content")
-        assert result is False
-
-    @pytest.mark.asyncio
-    async def test_returns_true_on_db_exception(self):
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(side_effect=Exception("DB down"))
-        result = await _is_stage_enabled(pool, "any_stage")
-        assert result is True
 
 
 # ===========================================================================
