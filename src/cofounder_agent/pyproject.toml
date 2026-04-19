@@ -121,6 +121,7 @@ poindexter = "poindexter.cli.app:main"
 # full design.
 [tool.poetry.plugins."poindexter.taps"]
 hello = "cofounder_agent.plugins.samples.hello_tap:HelloTap"
+memory = "cofounder_agent.services.taps.memory:MemoryFilesTap"
 
 [tool.poetry.plugins."poindexter.probes"]
 database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
