@@ -66,6 +66,7 @@ from .registry import (
     get_stages,
     get_taps,
 )
+from .scheduler import PluginScheduler
 from .stage import Adapter, Provider, Reviewer, Stage, StageResult
 from .tap import Document, Tap
 
@@ -89,6 +90,7 @@ __all__ = [
     "Token",
     # Config + registry
     "PluginConfig",
+    "PluginScheduler",
     "ENTRY_POINT_GROUPS",
     "get_taps",
     "get_probes",
