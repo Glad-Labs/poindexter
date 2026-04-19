@@ -400,8 +400,17 @@ def _resolve_sdxl_response(img_resp: httpx.Response) -> str:
             tmp_path = tmp_path.replace(host_home, os.path.expanduser("~"), 1)
         # Normalize Windows backslashes.
         tmp_path = tmp_path.replace("\\", "/")
-        # Path traversal guard — SDXL response is external input.
+        # Path traversal guard — SDXL response is external input. The
+        # allowlist must cover the canonical container paths where SDXL
+        # writes (shared volume mount at /root/.poindexter) AND the
+        # current user's home (/home/appuser) for the legacy bytes-
+        # content codepath below which writes to ~/Downloads. Hard-coding
+        # /root/.poindexter vs using expanduser('~/.poindexter') matters
+        # because the worker runs as appuser (uid 1001), not root —
+        # ``~`` expands to /home/appuser, which is NOT where SDXL writes.
         allowed = [
+            "/root/Downloads",
+            "/root/.poindexter",
             os.path.realpath(os.path.expanduser("~/Downloads")),
             os.path.realpath(os.path.expanduser("~/.poindexter")),
         ]
