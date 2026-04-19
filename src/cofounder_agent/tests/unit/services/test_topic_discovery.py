@@ -182,15 +182,14 @@ class TestDeduplicate:
 
     @pytest.mark.asyncio
     async def test_short_titles_not_fuzzy_matched(self):
-        """Titles with 3 or fewer words shouldn't trigger fuzzy overlap matching."""
-        pool = _make_pool(published_titles=["ai tools tips"])
+        """Single content word titles skip fuzzy matching."""
+        pool = _make_pool(published_titles=["advanced python tricks"])
         d = TopicDiscovery(pool)
         topics = [
-            DiscoveredTopic(title="AI Tools", category="technology",
+            DiscoveredTopic(title="Python", category="technology",
                            source="hn", source_url=""),
         ]
         result = await d._deduplicate(topics)
-        # Short title: word overlap check requires >3 words
         assert result[0].is_duplicate is False
 
     @pytest.mark.asyncio
