@@ -145,6 +145,7 @@ DEFAULT_STAGE_ORDER: list[str] = [
     "url_validation",
     "replace_inline_images",
     "source_featured_image",
+    "cross_model_qa",
     "generate_seo_metadata",
     "generate_media_scripts",
     "capture_training_data",

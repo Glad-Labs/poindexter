@@ -151,6 +151,7 @@ generate_seo_metadata = "cofounder_agent.services.stages.generate_seo_metadata:G
 generate_media_scripts = "cofounder_agent.services.stages.generate_media_scripts:GenerateMediaScriptsStage"
 capture_training_data = "cofounder_agent.services.stages.capture_training_data:CaptureTrainingDataStage"
 finalize_task = "cofounder_agent.services.stages.finalize_task:FinalizeTaskStage"
+cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQAStage"
 
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
