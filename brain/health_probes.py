@@ -18,7 +18,7 @@ import time
 import urllib.error
 import urllib.request
 
-from docker_utils import localize_url
+from docker_utils import localize_url, resolve_url
 
 logger = logging.getLogger("brain.probes")
 
@@ -48,22 +48,25 @@ async def _sync_config_from_db(pool):
     if _config_synced:
         return
     try:
+        # URLs: shared resolver handles env-wins-over-DB + localize_url in one call.
+        API_URL = await resolve_url(
+            pool, "internal_api_base_url", "api_url",
+            default=API_URL, env_var="API_URL",
+        )
+        LOCAL_OLLAMA = await resolve_url(
+            pool, "ollama_base_url",
+            default=LOCAL_OLLAMA, env_var="OLLAMA_URL",
+        )
+        GITEA_URL = await resolve_url(
+            pool, "gitea_url",
+            default=GITEA_URL, env_var="GITEA_URL",
+        )
+        # Non-URL settings: straightforward env-wins-over-DB, no localize_url.
         rows = await pool.fetch(
             "SELECT key, value FROM app_settings WHERE key IN "
-            "('api_url', 'internal_api_base_url', 'ollama_base_url', "
-            "'gitea_url', 'gitea_user', 'gitea_password', 'gitea_repo')"
+            "('gitea_user', 'gitea_password', 'gitea_repo')"
         )
         settings = {r["key"]: r["value"] for r in rows}
-        # Env wins over DB so docker-compose overrides still work, but every
-        # URL loaded from the DB passes through localize_url so `localhost`
-        # values transparently become `host.docker.internal` inside a container.
-        if not os.getenv("API_URL"):
-            raw = settings.get("internal_api_base_url") or settings.get("api_url") or API_URL
-            API_URL = localize_url(raw)
-        if not os.getenv("OLLAMA_URL"):
-            LOCAL_OLLAMA = localize_url(settings.get("ollama_base_url") or LOCAL_OLLAMA)
-        if not os.getenv("GITEA_URL"):
-            GITEA_URL = localize_url(settings.get("gitea_url") or GITEA_URL)
         if not os.getenv("GITEA_USER") and settings.get("gitea_user"):
             GITEA_USER = settings["gitea_user"]
         if not (os.getenv("GITEA_PASS") or os.getenv("GITEA_PASSWORD")) and settings.get("gitea_password"):
