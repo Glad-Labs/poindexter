@@ -79,6 +79,13 @@ from .secrets import (
     set_secret,
 )
 from .stage import Adapter, Provider, Reviewer, Stage, StageResult
+from .stage_runner import (
+    DEFAULT_STAGE_ORDER,
+    StageRunner,
+    StageRunRecord,
+    StageRunSummary,
+    load_stage_order,
+)
 from .tap import Document, Tap
 
 __all__ = [
@@ -102,6 +109,11 @@ __all__ = [
     # Config + registry
     "PluginConfig",
     "PluginScheduler",
+    "StageRunner",
+    "StageRunRecord",
+    "StageRunSummary",
+    "DEFAULT_STAGE_ORDER",
+    "load_stage_order",
     # Secrets
     "SecretsError",
     "demote_secret",

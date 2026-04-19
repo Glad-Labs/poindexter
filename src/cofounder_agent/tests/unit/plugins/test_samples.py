@@ -114,11 +114,13 @@ class TestCoreSamplesDiscovery:
     def test_unmigrated_plugin_types_empty(self):
         samples = get_core_samples()
 
-        # Stages + specializations + packs haven't been migrated yet.
-        assert samples["stages"] == []
+        # Specializations + packs haven't been migrated yet.
         assert samples["reviewers"] == []
         assert samples["adapters"] == []
         assert samples["providers"] == []
         assert samples["packs"] == []
         # llm_providers DID migrate in Phase J — should be populated.
         assert len(samples["llm_providers"]) >= 1
+        # stages: Phase E migration in progress. At least verify_task exists.
+        stage_names = {s.name for s in samples["stages"]}
+        assert "verify_task" in stage_names
