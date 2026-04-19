@@ -130,12 +130,8 @@ def _reset_singletons_between_tests():
 
     # (content_task_store singleton removed in Phase G1 — no reset needed)
 
-    # text_utils fabricated-link scrubber cache
-    try:
-        import services.text_utils as _tu
-        _tu._slug_cache = set()
-    except Exception:  # noqa: BLE001
-        pass
+    # (text_utils _slug_cache singleton removed in Phase G1 —
+    # scrub_fabricated_links now takes known_slugs as a parameter)
 
     # image-style rotation deque
     try:
