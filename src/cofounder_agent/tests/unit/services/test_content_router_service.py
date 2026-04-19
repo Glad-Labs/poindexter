@@ -24,12 +24,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.content_router_service import (
-    _get_or_create_default_author,
-    _is_stage_enabled,
-    _select_category_for_topic,
+from services.category_resolver import (
+    select_category_for_topic as _select_category_for_topic,
 )
+from services.content_router_service import _is_stage_enabled
 from services.content_task_store import ContentTaskStore, get_content_task_store
+from services.default_author import (
+    get_or_create_default_author as _get_or_create_default_author,
+)
 from services.model_preferences import (
     parse_model_preferences as _parse_model_preferences,
 )

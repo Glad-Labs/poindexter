@@ -16,31 +16,7 @@ from .webhook_delivery_service import emit_webhook_event
 
 logger = get_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# Image-style rotation dedup (#181)
-# ---------------------------------------------------------------------------
-# Module-level tracker so concurrent/sequential tasks in the same worker
-# process don't pick the same style.  Entries are (style_name, timestamp).
-# We keep at most _STYLE_HISTORY_SIZE entries and auto-expire after
-# _STYLE_HISTORY_TTL seconds so styles become available again once enough
-# time passes (prevents permanent starvation when the style pool is small).
-import time as _time
-from collections import deque as _deque
 
-_STYLE_HISTORY_SIZE = 10
-_STYLE_HISTORY_TTL = 3600  # 1 hour
-_recent_style_picks: _deque = _deque(maxlen=_STYLE_HISTORY_SIZE)
-
-
-def _record_style_pick(style_name: str) -> None:
-    """Record that *style_name* was just chosen."""
-    _recent_style_picks.append((style_name, _time.monotonic()))
-
-
-def _get_in_memory_recent_styles() -> list:
-    """Return style names picked within the TTL window."""
-    cutoff = _time.monotonic() - _STYLE_HISTORY_TTL
-    return [name for name, ts in _recent_style_picks if ts >= cutoff]
 
 
 
@@ -392,83 +368,5 @@ async def process_content_generation_task(
         return result
 
 
-async def _select_category_for_topic(
-    topic: str, database_service: DatabaseService, requested_category: str | None = None
-) -> str | None:
-    """Select category by requested slug, keyword matching, or default to 'technology'. Returns UUID."""
-    # Priority 1: Use the requested category if valid
-    if requested_category:
-        try:
-            async with database_service.pool.acquire() as conn:
-                cat_id = await conn.fetchval(
-                    "SELECT id FROM categories WHERE slug = $1 OR name ILIKE $1", requested_category
-                )
-            if cat_id:
-                return cat_id
-        except Exception:
-            pass
-
-    topic_lower = topic.lower()
-
-    category_keywords = {
-        "technology": ["ai", "tech", "software", "cloud", "machine learning", "data", "coding", "python", "javascript", "docker", "kubernetes", "api", "database"],
-        "business": ["business", "strategy", "management", "entrepreneur", "growth", "revenue", "marketing", "saas"],
-        "startup": ["startup", "founder", "bootstrapper", "mvp", "launch", "validate", "solo founder", "side project"],
-        "security": ["security", "hack", "owasp", "zero trust", "vulnerability", "auth", "encryption", "secrets"],
-        "engineering": ["engineering", "architecture", "monorepo", "git", "technical debt", "migration", "ci/cd", "testing"],
-        "insights": ["trend", "landscape", "state of", "productivity", "remote work", "future of", "prediction"],
-    }
-
-    # Priority 2: Keyword matching
-    matched_category = "technology"  # Default
-    best_score = 0
-    for category, keywords in category_keywords.items():
-        score = sum(1 for kw in keywords if kw in topic_lower)
-        if score > best_score:
-            best_score = score
-            matched_category = category
-
-    # Get category ID
-    try:
-        async with database_service.pool.acquire() as conn:
-            cat_id = await conn.fetchval(
-                "SELECT id FROM categories WHERE slug = $1", matched_category
-            )
-        return cat_id
-    except Exception as e:
-        logger.error("Error selecting category: %s", e, exc_info=True)
-        return None
 
 
-async def _get_or_create_default_author(database_service: DatabaseService) -> str | None:
-    """Get or create the default 'Poindexter AI' author. Returns UUID."""
-    try:
-        async with database_service.pool.acquire() as conn:
-            # Try to get existing Poindexter AI author
-            author_id = await conn.fetchval(
-                "SELECT id FROM authors WHERE slug = 'poindexter-ai' LIMIT 1"
-            )
-
-            if author_id:
-                return author_id
-
-            # Create if doesn't exist
-            author_id = await conn.fetchval("""
-                INSERT INTO authors (name, slug, email, bio, avatar_url)
-                VALUES ('Poindexter AI', 'poindexter-ai', 'poindexter@glad-labs.ai', 
-                        'AI Content Generation Engine', NULL)
-                ON CONFLICT (slug) DO NOTHING
-                RETURNING id
-                """)
-
-            if author_id:
-                logger.info("Created default author: Poindexter AI (%s)", author_id)
-                return author_id
-
-            # Fallback: return any author
-            fallback_id = await conn.fetchval("SELECT id FROM authors LIMIT 1")
-            return fallback_id
-
-    except Exception as e:
-        logger.error("Error getting/creating default author: %s", e, exc_info=True)
-        return None
