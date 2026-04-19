@@ -34,7 +34,7 @@ import asyncpg
 import httpx
 import pytest
 
-from tests.integration.conftest_real_services import requires_real_services
+from tests.integration.conftest import requires_real_services
 
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio, requires_real_services]
