@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from plugins.config import PluginConfig
-from plugins.registry import get_taps
+from plugins.registry import get_core_samples, get_taps
 from services.taps._chunking import chunk_text, content_hash
 
 logger = logging.getLogger(__name__)
@@ -219,7 +219,18 @@ async def run_all(pool: Any, mem: Any) -> RunSummary:
     summary = RunSummary()
     start = time.monotonic()
 
-    for tap in get_taps():
+    # Entry_points discovery + core-sample imperative loads.
+    # De-dup by name so a core sample that also ships as an entry_point
+    # doesn't run twice.
+    seen: set[str] = set()
+    all_taps: list[Any] = []
+    for tap in list(get_taps()) + list(get_core_samples().get("taps", [])):
+        if tap.name in seen:
+            continue
+        seen.add(tap.name)
+        all_taps.append(tap)
+
+    for tap in all_taps:
         stats = await run_tap(tap, pool, mem)
         summary.taps.append(stats)
         summary.total_embedded += stats.embedded

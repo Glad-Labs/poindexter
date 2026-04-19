@@ -1,14 +1,9 @@
-"""Services module for AI content generation and management"""
+"""Services module for AI content generation and management.
 
-from .ai_content_generator import AIContentGenerator, get_content_generator
-from .content_router_service import process_content_generation_task
-from .content_task_store import ContentTaskStore
-from .seo_content_generator import get_seo_content_generator
-
-__all__ = [
-    "get_content_generator",
-    "AIContentGenerator",
-    "get_seo_content_generator",
-    "ContentTaskStore",
-    "process_content_generation_task",
-]
+Intentionally empty — no top-level re-exports. Each caller imports
+the specific submodule it needs, e.g. ``from services.content_task_store
+import ContentTaskStore``. This keeps ``import services.taps.runner``
+cheap for contexts (like the auto-embed container) that don't want to
+drag in heavy deps like yaml, structlog, pydantic via transitive
+imports from content_router_service.
+"""
