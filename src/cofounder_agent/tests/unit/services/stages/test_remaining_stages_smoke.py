@@ -322,27 +322,8 @@ class TestFinalizeTask:
 
 
 @pytest.mark.asyncio
-class TestReplaceInlineImagesWrapper:
-    async def test_calls_legacy_with_adapted_context(self):
-        async def fake_legacy(db, tid, topic, content, img_svc, result):
-            result["inline_images_replaced"] = 2
-            result["stages"]["2c_inline_images_replaced"] = True
-            return content + "\n[image]"
-
-        ctx: dict[str, Any] = {
-            "task_id": "t1", "topic": "T", "content": "body",
-            "database_service": MagicMock(),
-            "image_service": MagicMock(),
-            "category": "tech",
-        }
-        with patch(
-            "services.content_router_service._stage_replace_inline_images",
-            new=AsyncMock(side_effect=fake_legacy),
-        ):
-            result = await ReplaceInlineImagesStage().execute(ctx, {})
-        assert result.ok is True
-        assert result.context_updates["content"] == "body\n[image]"
-        assert result.context_updates["inline_images_replaced"] == 2
+class TestReplaceInlineImagesAdapter:
+    """Direct-port behavior tests. Mocks are at the external-dep boundary."""
 
     async def test_empty_content_skipped(self):
         result = await ReplaceInlineImagesStage().execute(
@@ -351,28 +332,195 @@ class TestReplaceInlineImagesWrapper:
         assert result.ok is True
         assert result.metrics.get("skipped") is True
 
+    async def test_missing_task_id_returns_not_ok(self):
+        result = await ReplaceInlineImagesStage().execute(
+            {"content": "body"}, {},
+        )
+        assert result.ok is False
+        assert "task_id" in result.detail
 
-@pytest.mark.asyncio
-class TestSourceFeaturedImageWrapper:
-    async def test_calls_legacy_and_propagates_result_keys(self):
-        async def fake_legacy(topic, tags, gen, svc, result_dict, task_id=None):
-            result_dict["featured_image_url"] = "https://img"
-            result_dict["featured_image_alt"] = "alt"
-            result_dict["image_style"] = "flat vector"
-            result_dict["stages"]["3_featured_image_found"] = True
-            return SimpleNamespace(url="https://img")
+    async def test_no_placeholders_and_no_agent_plan_leaves_content_alone(self):
+        from services.stages import replace_inline_images as mod
 
+        # Agent returns no suggestions → placeholders remain empty
+        async def no_plan(*_a, **_kw):
+            return SimpleNamespace(images=[], featured_image=None)
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
         ctx: dict[str, Any] = {
-            "task_id": "t1", "topic": "T",
-            "tags": ["a"], "generate_featured_image": True,
-            "image_service": MagicMock(),
+            "task_id": "t1", "topic": "T", "content": "no placeholders here",
+            "database_service": db, "image_service": MagicMock(),
         }
         with patch(
-            "services.content_router_service._stage_source_featured_image",
-            new=AsyncMock(side_effect=fake_legacy),
+            "services.image_decision_agent.plan_images",
+            new=AsyncMock(side_effect=no_plan),
+        ):
+            result = await ReplaceInlineImagesStage().execute(ctx, {})
+        assert result.ok is True
+        assert result.context_updates["stages"]["2c_inline_images_replaced"] is False
+        # db.update_task not called — no content change
+        db.update_task.assert_not_called()
+
+    async def test_placeholder_gets_replaced_via_pexels_fallback(self):
+        # Force SDXL to fail (by making the helper return None), verify
+        # Pexels fallback takes over and the placeholder becomes an <img>.
+        img_obj = SimpleNamespace(url="https://pexels.example/cat.jpg", photographer="Jane")
+        image_service = SimpleNamespace(search_featured_image=AsyncMock(return_value=img_obj))
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        ctx: dict[str, Any] = {
+            "task_id": "t1", "topic": "Cats", "content": "Intro\n\n[IMAGE-1: cat]\n\nOutro",
+            "database_service": db, "image_service": image_service,
+        }
+
+        # Stage calls _normalize_text via lazy import into content_router_service
+        with patch(
+            "services.stages.replace_inline_images._try_sdxl",
+            AsyncMock(return_value=None),
+        ), patch(
+            "services.content_router_service._normalize_text", side_effect=lambda x: x,
+        ):
+            result = await ReplaceInlineImagesStage().execute(ctx, {})
+        assert result.ok is True
+        body = result.context_updates["content"]
+        assert "pexels.example/cat.jpg" in body
+        assert "Jane" in body
+        assert "[IMAGE-1" not in body
+        assert result.context_updates["inline_images_replaced"] == 1
+
+    async def test_placeholder_stripped_when_both_strategies_fail(self):
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        image_service = SimpleNamespace(
+            search_featured_image=AsyncMock(return_value=None),
+        )
+        ctx: dict[str, Any] = {
+            "task_id": "t1", "topic": "X",
+            "content": "Intro [IMAGE-1: something] outro.",
+            "database_service": db, "image_service": image_service,
+        }
+        with patch(
+            "services.stages.replace_inline_images._try_sdxl",
+            AsyncMock(return_value=None),
+        ), patch(
+            "services.content_router_service._normalize_text", side_effect=lambda x: x,
+        ):
+            result = await ReplaceInlineImagesStage().execute(ctx, {})
+        assert result.ok is True
+        body = result.context_updates["content"]
+        assert "[IMAGE-1" not in body
+        assert result.context_updates["inline_images_replaced"] == 0
+
+
+class TestReplaceInlineImagesPureHelpers:
+    def test_cleanup_leaked_descriptions_strips_italic_scene(self):
+        from services.stages.replace_inline_images import _cleanup_leaked_descriptions
+        body = (
+            "<img src='x' />\n"
+            "\n*An editorial illustration of a mountain range stretching into horizon*\n"
+            "\nReal paragraph."
+        )
+        out = _cleanup_leaked_descriptions(body)
+        assert "editorial illustration" not in out
+        assert "Real paragraph." in out
+
+    def test_cleanup_strips_photo_attribution_lines(self):
+        from services.stages.replace_inline_images import _cleanup_leaked_descriptions
+        body = "Hi\n\n*Photo by Jane on Pexels*\n\nMore."
+        out = _cleanup_leaked_descriptions(body)
+        assert "Photo by Jane" not in out
+        assert "More." in out
+
+    def test_inject_html_image_substitutes_exactly_one(self):
+        from services.stages.replace_inline_images import _inject_html_image
+        body = "Start [IMAGE-1: desc] middle [IMAGE-1: other] end"
+        out = _inject_html_image(body, "1", "http://img", "alt", width=100, height=100)
+        # Only the first should be replaced
+        assert out.count("<img") == 1
+        assert "[IMAGE-1: other]" in out
+
+
+@pytest.mark.asyncio
+class TestSourceFeaturedImageAdapter:
+    """Direct-port behavior tests after wrapper removal."""
+
+    async def test_disabled_flag_skips_without_calls(self):
+        image_service = SimpleNamespace(
+            sdxl_available=False, sdxl_initialized=True,
+            search_featured_image=AsyncMock(),
+        )
+        ctx: dict[str, Any] = {
+            "topic": "T", "tags": [], "generate_featured_image": False,
+            "image_service": image_service,
+        }
+        result = await SourceFeaturedImageStage().execute(ctx, {})
+        assert result.ok is True
+        assert result.context_updates["stages"]["3_featured_image_found"] is False
+        image_service.search_featured_image.assert_not_called()
+
+    async def test_pexels_fallback_when_sdxl_unavailable(self):
+        pexels_img = SimpleNamespace(
+            url="https://pex.example/photo.jpg", photographer="Alex",
+            source="pexels", width=800, height=600,
+        )
+        image_service = SimpleNamespace(
+            sdxl_available=False, sdxl_initialized=True,  # sdxl not attempted
+            search_featured_image=AsyncMock(return_value=pexels_img),
+        )
+        ctx: dict[str, Any] = {
+            "topic": "Cats", "tags": ["kittens"],
+            "generate_featured_image": True, "image_service": image_service,
+        }
+        result = await SourceFeaturedImageStage().execute(ctx, {})
+        assert result.ok is True
+        u = result.context_updates
+        assert u["featured_image_url"] == "https://pex.example/photo.jpg"
+        assert u["featured_image_photographer"] == "Alex"
+        assert u["stages"]["3_featured_image_found"] is True
+        assert u["stages"]["3_image_source"] == "pexels"
+
+    async def test_sdxl_succeeds_populates_sdxl_source(self):
+        from services.stages.source_featured_image import GeneratedImage
+        image_service = SimpleNamespace(
+            sdxl_available=True, sdxl_initialized=True,
+            search_featured_image=AsyncMock(),
+        )
+        ctx: dict[str, Any] = {
+            "task_id": "t1", "topic": "AI", "tags": [],
+            "generate_featured_image": True, "image_service": image_service,
+        }
+        with patch(
+            "services.stages.source_featured_image._try_sdxl_featured",
+            AsyncMock(return_value=GeneratedImage(
+                url="https://r2.example/featured.jpg",
+                photographer="AI Generated (SDXL)",
+                source="sdxl_local",
+            )),
+        ):
+            result = await SourceFeaturedImageStage().execute(ctx, {})
+        u = result.context_updates
+        assert u["featured_image_url"] == "https://r2.example/featured.jpg"
+        assert u["featured_image_source"] == "sdxl_local"
+        assert u["stages"]["3_image_source"] == "sdxl"
+        # Pexels not consulted when SDXL wins
+        image_service.search_featured_image.assert_not_called()
+
+    async def test_both_strategies_fail_records_not_found(self):
+        image_service = SimpleNamespace(
+            sdxl_available=True, sdxl_initialized=True,
+            search_featured_image=AsyncMock(return_value=None),
+        )
+        ctx: dict[str, Any] = {
+            "task_id": "t1", "topic": "X", "tags": [],
+            "generate_featured_image": True, "image_service": image_service,
+        }
+        with patch(
+            "services.stages.source_featured_image._try_sdxl_featured",
+            AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
         assert result.ok is True
-        assert result.context_updates["featured_image_url"] == "https://img"
-        assert result.context_updates["image_style"] == "flat vector"
-        assert result.metrics["has_featured_image"] is True
+        assert result.context_updates["stages"]["3_featured_image_found"] is False
+        assert result.context_updates["featured_image"] is None
