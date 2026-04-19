@@ -280,6 +280,9 @@ async def _resolve_one_placeholder(
     """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it."""
     search_query = desc.strip() if desc else topic
     alt_text = desc.strip() if desc else f"{topic} illustration"
+    # Strip the `||source:style||` suffix the Image Decision Agent embeds
+    # in placeholder bodies (#240). It's a planner hint, not prose.
+    alt_text = re.sub(r"\s*\|\|[^|]*\|\|\s*", "", alt_text)
     alt_text = alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:150]
     alt_text = re.sub(r"^(?:IMAGE|FIGURE|Image|Figure)\s*[-:]\s*", "", alt_text).strip()
 
