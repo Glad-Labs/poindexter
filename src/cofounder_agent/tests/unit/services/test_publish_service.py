@@ -115,10 +115,12 @@ def _stub_lazy_imports():
     json_encoder_mod.convert_decimals = lambda x: x
     json_encoder_mod.safe_json_dumps = json.dumps
 
-    # services.content_router_service
-    content_router_mod = MagicMock()
-    content_router_mod._get_or_create_default_author = AsyncMock(return_value="author-1")
-    content_router_mod._select_category_for_topic = AsyncMock(return_value="cat-1")
+    # services.default_author + services.category_resolver — author/category
+    # helpers lifted out of content_router_service during Phase E2.
+    default_author_mod = MagicMock()
+    default_author_mod.get_or_create_default_author = AsyncMock(return_value="author-1")
+    category_resolver_mod = MagicMock()
+    category_resolver_mod.select_category_for_topic = AsyncMock(return_value="cat-1")
 
     # services.webhook_delivery_service
     webhook_mod = MagicMock()
@@ -148,7 +150,8 @@ def _stub_lazy_imports():
 
     return {
         "utils.json_encoder": json_encoder_mod,
-        "services.content_router_service": content_router_mod,
+        "services.default_author": default_author_mod,
+        "services.category_resolver": category_resolver_mod,
         "services.webhook_delivery_service": webhook_mod,
         "services.social_poster": social_mod,
         "services.devto_service": devto_mod,
@@ -254,10 +257,11 @@ class TestPublishHappyPath:
     """publish_post_from_task with valid data creates a post and returns success."""
 
     @pytest.mark.asyncio
+    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
-    async def test_creates_post_with_correct_fields(self, mock_sched, mock_ping, mock_hooks):
+    async def test_creates_post_with_correct_fields(self, mock_sched, mock_ping, mock_hooks, mock_export):
         db = _make_db()
         task = _make_task(
             topic="AI Revolution",
