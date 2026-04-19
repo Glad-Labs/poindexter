@@ -443,6 +443,50 @@ class TestReplaceInlineImagesPureHelpers:
 
 
 @pytest.mark.asyncio
+class TestReplaceInlineImagesAltTextScrub:
+    """Gitea #240 — alt text must not leak the ``||source:style||`` planner hint."""
+
+    async def _run_with_pexels(self, desc: str) -> str:
+        """Drive one placeholder through the Pexels fallback, return the rendered alt."""
+        pexels_img = SimpleNamespace(url="https://pex.example/x.jpg", photographer="Jane")
+        image_service = SimpleNamespace(
+            search_featured_image=AsyncMock(return_value=pexels_img),
+        )
+        db = MagicMock(); db.update_task = AsyncMock()
+        ctx: dict[str, Any] = {
+            "task_id": "t1", "topic": "X",
+            "content": f"Intro [IMAGE-1: {desc}] outro.",
+            "database_service": db, "image_service": image_service,
+        }
+        with patch(
+            "services.stages.replace_inline_images._try_sdxl",
+            AsyncMock(return_value=None),
+        ), patch(
+            "services.text_utils.normalize_text", side_effect=lambda x: x,
+        ):
+            result = await ReplaceInlineImagesStage().execute(ctx, {})
+        body = result.context_updates["content"]
+        # Extract alt="..." value
+        import re as _re
+        m = _re.search(r'alt="([^"]*)"', body)
+        return m.group(1) if m else ""
+
+    async def test_strips_trailing_source_hint(self):
+        alt = await self._run_with_pexels("A server room. ||pexels:real-world objects||")
+        assert "pexels" not in alt.lower()
+        assert "A server room." in alt
+
+    async def test_strips_sdxl_hint_too(self):
+        alt = await self._run_with_pexels("Cinematic blueprint ||sdxl:editorial||")
+        assert "sdxl" not in alt.lower()
+        assert "Cinematic blueprint" in alt
+
+    async def test_preserves_normal_alt(self):
+        alt = await self._run_with_pexels("Just a simple description")
+        assert alt == "Just a simple description"
+
+
+@pytest.mark.asyncio
 class TestSourceFeaturedImageAdapter:
     """Direct-port behavior tests after wrapper removal."""
 
