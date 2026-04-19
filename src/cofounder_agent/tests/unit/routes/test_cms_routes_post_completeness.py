@@ -257,11 +257,12 @@ class TestExcerptGeneration:
         assert "(" not in excerpt
         assert ")" not in excerpt
 
-    def test_preserves_bold_formatting(self):
-        """Excerpt keeps markdown bold for frontend rendering."""
+    def test_strips_bold_formatting(self):
+        """Excerpt strips markdown bold to plain text."""
         content = "This is **important** content for readers."
         excerpt = generate_excerpt_from_content(content)
-        assert "**important**" in excerpt
+        assert "important" in excerpt
+        assert "**" not in excerpt
 
 
 # ---------------------------------------------------------------------------

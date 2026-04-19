@@ -94,34 +94,42 @@ _MARKDOWN_MARKER_RE = __import__("re").compile(
 )
 
 
+_STRIP_MD_RE = __import__("re").compile(
+    r"\*{1,3}|_{1,3}"           # bold/italic markers
+    r"|!\[[^\]]*\]\([^)]*\)"    # images
+    r"|\[[^\]]*\]\([^)]*\)"     # links → keeps anchor text below
+    r"|```[^`]*```"             # fenced code blocks
+    r"|`[^`]+`"                 # inline code
+    r"|^\s*>+\s?"               # blockquotes
+    r"|^\s*[-*+]\s"             # list markers
+    r"|^\#{1,6}\s"              # headers
+)
+
+_LINK_TEXT_RE = __import__("re").compile(r"\[([^\]]+)\]\([^)]*\)")
+
+
 def generate_excerpt_from_content(content: str, length: int = 200) -> str:
-    """Generate an excerpt from markdown content, preserving basic formatting."""
+    """Generate a plain-text excerpt from markdown content."""
     if not content:
         return ""
 
-    # Remove markdown headers and get meaningful paragraphs
     lines = content.split("\n")
     excerpt_parts = []
 
     for line in lines:
-        # Skip empty lines and markdown headers
         if not line.strip() or line.startswith("#"):
             continue
 
-        # Keep line as-is to preserve **bold**, *italic* formatting
-        # Only remove problematic markdown syntax
-        cleaned = line.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
-        cleaned = cleaned.replace("`", "").replace("~", "")
+        cleaned = _LINK_TEXT_RE.sub(r"\1", line)
+        cleaned = _STRIP_MD_RE.sub("", cleaned).strip()
 
-        if cleaned.strip():
-            excerpt_parts.append(cleaned.strip())
+        if cleaned:
+            excerpt_parts.append(cleaned)
 
-        # Stop when we have enough content
         if len(" ".join(excerpt_parts)) >= length:
             break
 
     excerpt = " ".join(excerpt_parts)[:length].strip()
-    # Add ellipsis if truncated (before markdown closes)
     if len(" ".join(excerpt_parts)) > length:
         excerpt = excerpt.rsplit(" ", 1)[0] + "..."
 
