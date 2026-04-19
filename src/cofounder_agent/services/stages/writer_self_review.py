@@ -58,8 +58,8 @@ class WriterSelfReviewStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.content_router_service import _self_review_and_revise
         from services.audit_log import audit_log_bg
+        from services.self_review import self_review_and_revise as _self_review_and_revise
 
         task_id = context.get("task_id")
         topic = context.get("topic", "")

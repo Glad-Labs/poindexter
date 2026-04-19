@@ -173,23 +173,23 @@ def _patch_everything():
                 )),
             ),
         ),
-        patch("services.content_router_service._parse_model_preferences",
+        patch("services.model_preferences.parse_model_preferences",
               return_value=("glm-4.7-5090", "ollama")),
-        patch("services.content_router_service._build_writing_style_context",
+        patch("services.writing_style_context.build_writing_style_context",
               AsyncMock(return_value="style context")),
-        patch("services.content_router_service._build_rag_context",
+        patch("services.research_context.build_rag_context",
               AsyncMock(return_value="rag context")),
-        patch("services.content_router_service._generate_canonical_title",
+        patch("services.title_generation.generate_canonical_title",
               AsyncMock(return_value="Generated Title")),
-        patch("services.content_router_service._check_title_originality",
+        patch("services.title_generation.check_title_originality",
               AsyncMock(return_value={
                   "is_original": True, "max_similarity": 0.1, "similar_titles": [],
               })),
-        patch("services.content_router_service._normalize_text",
+        patch("services.text_utils.normalize_text",
               side_effect=lambda x: x),
-        patch("services.content_router_service._scrub_fabricated_links",
+        patch("services.text_utils.scrub_fabricated_links",
               side_effect=lambda x: x),
-        patch("services.content_router_service._self_review_and_revise",
+        patch("services.self_review.self_review_and_revise",
               AsyncMock(return_value=("revised text", {"revised": False, "contradictions_found": 0}))),
         patch("services.gpu_scheduler.gpu",
               SimpleNamespace(lock=_no_gpu_lock)),
@@ -274,10 +274,10 @@ class TestGenerateContentStageExecute:
             p.start()
         try:
             with patch(
-                "services.content_router_service._check_title_originality",
+                "services.title_generation.check_title_originality",
                 new=originality_mock,
             ), patch(
-                "services.content_router_service._generate_canonical_title",
+                "services.title_generation.generate_canonical_title",
                 new=title_mock,
             ):
                 result = await GenerateContentStage().execute(ctx, {})

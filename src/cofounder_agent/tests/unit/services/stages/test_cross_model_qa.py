@@ -237,7 +237,7 @@ def _patch_stage_imports(qa_review_return: Any, gate_enabled: bool = True,
             AsyncMock(return_value=gate_enabled),
         ),
         patch(
-            "services.content_router_service._normalize_text",
+            "services.text_utils.normalize_text",
             side_effect=lambda x: x,
         ),
         patch("services.multi_model_qa.MultiModelQA", return_value=fake_qa),

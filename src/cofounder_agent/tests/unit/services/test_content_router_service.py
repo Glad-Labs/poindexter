@@ -25,15 +25,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.content_router_service import (
-    ContentTaskStore,
-    _check_title_originality,
     _get_or_create_default_author,
     _is_stage_enabled,
-    _normalize_text,
-    _parse_model_preferences,
-    _scrub_fabricated_links,
     _select_category_for_topic,
-    get_content_task_store,
+)
+from services.content_task_store import ContentTaskStore, get_content_task_store
+from services.model_preferences import (
+    parse_model_preferences as _parse_model_preferences,
+)
+from services.text_utils import (
+    normalize_text as _normalize_text,
+    scrub_fabricated_links as _scrub_fabricated_links,
+)
+from services.title_generation import (
+    check_title_originality as _check_title_originality,
 )
 
 # ---------------------------------------------------------------------------
@@ -410,47 +415,47 @@ class TestScrubFabricatedLinks:
     """Tests for link scrubbing that removes hallucinated URLs."""
 
     def test_keeps_trusted_markdown_links(self):
-        from services.content_router_service import _scrub_fabricated_links
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "Check out [this repo](https://github.com/user/project) for details."
         assert "github.com/user/project" in _scrub_fabricated_links(content)
 
     def test_removes_fabricated_markdown_links(self):
-        from services.content_router_service import _scrub_fabricated_links
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "See [definition](https://www.dictionary.com/browse/example) for more."
         result = _scrub_fabricated_links(content)
         assert "dictionary.com" not in result
         assert "definition" in result  # Link text preserved
 
     def test_removes_bare_fabricated_urls(self):
-        from services.content_router_service import _scrub_fabricated_links
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "Visit https://www.randomsite.com/fake-article for info."
         result = _scrub_fabricated_links(content)
         assert "randomsite.com" not in result
 
     def test_keeps_bare_trusted_urls(self):
-        from services.content_router_service import _scrub_fabricated_links
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "See https://arxiv.org/abs/2301.12345 for the paper."
         result = _scrub_fabricated_links(content)
         assert "arxiv.org" in result
 
     def test_keeps_own_domain_links(self):
-        from services.content_router_service import _scrub_fabricated_links
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         from services.site_config import site_config
         domain = site_config.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
         assert domain in _scrub_fabricated_links(content)
 
     def test_empty_content_returns_empty(self):
-        from services.content_router_service import _scrub_fabricated_links
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         assert _scrub_fabricated_links("") == ""
 
     def test_no_links_returns_unchanged(self):
-        from services.content_router_service import _scrub_fabricated_links
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "This is plain text with no links at all."
         assert _scrub_fabricated_links(content) == content
 
     def test_multiple_fabricated_links_all_removed(self):
-        from services.content_router_service import _scrub_fabricated_links
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = (
             "See [tools](https://www.techtools.io/list) and "
             "[guide](https://www.fakesite.com/guide) for more."
@@ -884,52 +889,52 @@ class TestSanitizeGeneratedTitle:
     """
 
     def test_returns_clean_title_unchanged(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         assert _sanitize_generated_title("Why Local LLMs Beat the Cloud") \
             == "Why Local LLMs Beat the Cloud"
 
     def test_strips_quotes_and_bold(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         assert _sanitize_generated_title('"**Running Stable Diffusion Locally**"') \
             == "Running Stable Diffusion Locally"
 
     def test_strips_leading_list_marker(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         assert _sanitize_generated_title("* Top 10 FastAPI Patterns") \
             == "Top 10 FastAPI Patterns"
 
     def test_strips_heading_hash(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         assert _sanitize_generated_title("# The AI Agents Handbook") \
             == "The AI Agents Handbook"
 
     def test_strips_think_block(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         raw = "<think>Let me consider the audience.</think>\nPostgres Sharding for Beginners"
         assert _sanitize_generated_title(raw) == "Postgres Sharding for Beginners"
 
     def test_rejects_deliberation_trace(self):
         """This is the exact bug that shipped #8b13ff52 to awaiting_approval."""
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         raw = "*   Let's go with the **Question**. It is the most unique structure in this set."
         assert _sanitize_generated_title(raw) is None
 
     def test_walks_back_to_final_line_when_reasoning_precedes(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         raw = "Let me think about this.\nOptions:\n1. One\n2. Two\n\nThe GPU Memory Bottleneck"
         assert _sanitize_generated_title(raw) == "The GPU Memory Bottleneck"
 
     def test_rejects_empty(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         assert _sanitize_generated_title("") is None
         assert _sanitize_generated_title("   \n\n  ") is None
 
     def test_rejects_too_short(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         assert _sanitize_generated_title("hi") is None
 
     def test_truncates_too_long(self):
-        from services.content_router_service import _sanitize_generated_title
+        from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         out = _sanitize_generated_title("x" * 200)
         assert out is not None and len(out) <= 100 and out.endswith("...")
 

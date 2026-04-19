@@ -69,17 +69,17 @@ class GenerateContentStage:
         # form a cluster that's still being decomposed. Import-at-call
         # sidesteps any circular-import risk with content_router_service
         # during the Phase E transition.
-        from services.content_router_service import (
-            _build_writing_style_context,
-            _check_title_originality,
-            _generate_canonical_title,
-            _parse_model_preferences,
-            _self_review_and_revise,
-        )
-        from services.text_utils import normalize_text, scrub_fabricated_links
         from services import text_utils as _text_utils
         from services.ai_content_generator import get_content_generator
         from services.audit_log import audit_log_bg
+        from services.model_preferences import parse_model_preferences as _parse_model_preferences
+        from services.self_review import self_review_and_revise as _self_review_and_revise
+        from services.text_utils import normalize_text, scrub_fabricated_links
+        from services.title_generation import (
+            check_title_originality as _check_title_originality,
+            generate_canonical_title as _generate_canonical_title,
+        )
+        from services.writing_style_context import build_writing_style_context as _build_writing_style_context
 
         task_id = context.get("task_id")
         topic = context.get("topic", "")
@@ -319,8 +319,8 @@ class GenerateContentStage:
 
         # 3. RAG context via pgvector similarity search.
         try:
-            from services.content_router_service import _build_rag_context
-            rag = await _build_rag_context(database_service, topic)
+            from services.research_context import build_rag_context
+            rag = await build_rag_context(database_service, topic)
             if rag:
                 research_context = (
                     f"{research_context}\n\n{rag}" if research_context else rag
