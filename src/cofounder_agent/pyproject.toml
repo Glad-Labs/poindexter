@@ -114,6 +114,20 @@ api = "cofounder_agent.main:app"
 # Same entry point as python -m poindexter — routes through app.main.
 poindexter = "poindexter.cli.app:main"
 
+# Plugin discovery — setuptools entry_points groups used by
+# plugins.registry.get_<type>(). Any package that declares
+# entry_points under these groups will be discovered at runtime.
+# See docs/architecture/plugin-architecture.md for the full design.
+#
+# NOTE: core samples (plugins.samples.*) are discovered directly by
+# plugins.registry.get_core_samples() rather than via entry_points
+# because this project's packaging layout doesn't currently produce
+# a proper dist-info. Third-party packages (pip-installable community
+# plugins) use entry_points normally. Fixing the poetry packaging
+# config is tracked separately; until then, core samples are
+# registered imperatively and third-party plugins still get full
+# entry_points support.
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

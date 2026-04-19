@@ -57,6 +57,7 @@ from .probe import Probe, ProbeResult
 from .registry import (
     ENTRY_POINT_GROUPS,
     get_adapters,
+    get_core_samples,
     get_jobs,
     get_llm_providers,
     get_packs,
@@ -120,4 +121,5 @@ __all__ = [
     "get_providers",
     "get_packs",
     "get_llm_providers",
+    "get_core_samples",
 ]

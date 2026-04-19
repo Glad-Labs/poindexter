@@ -147,6 +147,49 @@ def get_llm_providers() -> list[Any]:
     return list(_cached(ENTRY_POINT_GROUPS["llm_providers"]))
 
 
+# ---------------------------------------------------------------------------
+# Core sample plugins — registered imperatively as a workaround for this
+# project's poetry packaging config (see pyproject.toml note). Third-party
+# community plugins use entry_points as documented; core samples are
+# imported directly until the packaging issue is resolved.
+# ---------------------------------------------------------------------------
+
+
+def get_core_samples() -> dict[str, list[Any]]:
+    """Discover sample plugins shipped under ``plugins.samples.*``.
+
+    Imports each sample module + instantiates its plugin class. Returns
+    a dict keyed by plugin type (``"taps"`` / ``"probes"`` / ``"jobs"`` /
+    etc.) so callers that want to merge core samples with entry_point-
+    discovered third-party plugins can do so cleanly.
+
+    Import failures are logged + skipped per the same policy as
+    ``_load_group()``.
+    """
+    samples: dict[str, list[Any]] = {k: [] for k in ENTRY_POINT_GROUPS}
+
+    _SAMPLES: list[tuple[str, str, str]] = [
+        # (plugin_type, module_path, class_name)
+        ("taps", "plugins.samples.hello_tap", "HelloTap"),
+        ("probes", "plugins.samples.database_probe", "DatabaseProbe"),
+        ("jobs", "plugins.samples.noop_job", "NoopJob"),
+    ]
+
+    for plugin_type, module_path, class_name in _SAMPLES:
+        try:
+            import importlib
+            module = importlib.import_module(module_path)
+            cls = getattr(module, class_name)
+            samples[plugin_type].append(cls())
+        except Exception as e:
+            logger.error(
+                "core sample load failed: %s.%s: %s",
+                module_path, class_name, e,
+            )
+
+    return samples
+
+
 def clear_registry_cache() -> None:
     """Invalidate the discovery cache.
 
