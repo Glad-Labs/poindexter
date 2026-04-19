@@ -91,27 +91,34 @@ class TestNoopJob:
 
 
 class TestCoreSamplesDiscovery:
-    """``get_core_samples()`` returns one of each type."""
+    """``get_core_samples()`` returns every imperatively-loaded core plugin.
 
-    def test_returns_expected_plugin_types(self):
+    The ``_SAMPLES`` table in ``plugins.registry`` grows as each phase
+    lands, so these tests assert the minimum contract — sample plugins
+    are present — instead of pinning exact counts that would flap every
+    phase.
+    """
+
+    def test_sample_plugins_present(self):
         samples = get_core_samples()
 
-        assert len(samples["taps"]) == 1
-        assert samples["taps"][0].name == "hello"
+        tap_names = {t.name for t in samples["taps"]}
+        probe_names = {p.name for p in samples["probes"]}
+        job_names = {j.name for j in samples["jobs"]}
 
-        assert len(samples["probes"]) == 1
-        assert samples["probes"][0].name == "database"
+        # Samples ship in every boot — their absence means registry is broken.
+        assert "hello" in tap_names
+        assert "database" in probe_names
+        assert "noop" in job_names
 
-        assert len(samples["jobs"]) == 1
-        assert samples["jobs"][0].name == "noop"
-
-    def test_unused_plugin_types_empty(self):
+    def test_unmigrated_plugin_types_empty(self):
         samples = get_core_samples()
 
-        # Not yet migrated — should be empty until Phases E + J land.
+        # Stages + specializations + packs haven't been migrated yet.
         assert samples["stages"] == []
         assert samples["reviewers"] == []
         assert samples["adapters"] == []
         assert samples["providers"] == []
         assert samples["packs"] == []
-        assert samples["llm_providers"] == []
+        # llm_providers DID migrate in Phase J — should be populated.
+        assert len(samples["llm_providers"]) >= 1

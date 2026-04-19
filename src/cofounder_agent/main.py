@@ -269,6 +269,43 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning(f"[LIFESPAN] Failed to seed model router spend: {e}", exc_info=True)
 
+        # Plugin scheduler — apscheduler + entry_point + core-sample Jobs.
+        # Runs housekeeping (sync_page_views, db_backup, render_prometheus_rules, ...)
+        # on schedules declared by the Job class; PluginConfig in app_settings
+        # overrides per install. Worker mode only — coordinator has no pool
+        # it owns (reads cloud DB read-only).
+        app.state.plugin_scheduler = None
+        if _deployment_mode == "worker" and db_service and getattr(db_service, "pool", None):
+            try:
+                from plugins.registry import get_core_samples, get_jobs
+                from plugins.scheduler import PluginScheduler
+
+                scheduler = PluginScheduler(db_service.pool)
+                # entry_point-discovered jobs (third-party installs) + core
+                # samples loaded imperatively (see registry.get_core_samples).
+                jobs = list(get_jobs()) + list(get_core_samples().get("jobs", []))
+                # Deduplicate by name — a core sample that also ships as an
+                # entry_point shouldn't register twice.
+                seen: set[str] = set()
+                unique_jobs = []
+                for job in jobs:
+                    if job.name in seen:
+                        continue
+                    seen.add(job.name)
+                    unique_jobs.append(job)
+                accepted = await scheduler.register_all(unique_jobs)
+                scheduler.start()
+                app.state.plugin_scheduler = scheduler
+                logger.info(
+                    "[LIFESPAN] PluginScheduler started with %d jobs: %s",
+                    len(accepted), accepted,
+                )
+            except Exception as e:
+                logger.warning(
+                    "[LIFESPAN] PluginScheduler failed (non-critical): %s", e,
+                    exc_info=True,
+                )
+
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
             logger.info("[OK] Application is now running")
@@ -304,6 +341,14 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 await pool_health_task
             except asyncio.CancelledError:
                 pass
+        # Stop PluginScheduler before shutting the pool down — the scheduler
+        # will try to run DB queries on the way out otherwise.
+        if getattr(app.state, "plugin_scheduler", None) is not None:
+            try:
+                await app.state.plugin_scheduler.shutdown(wait=False)
+                logger.info("[STOP] PluginScheduler stopped")
+            except Exception as e:
+                logger.error(f"[STOP] Error stopping PluginScheduler: {e}", exc_info=True)
         # Stop worker service if running in worker mode
         if hasattr(app.state, "worker_service"):
             try:

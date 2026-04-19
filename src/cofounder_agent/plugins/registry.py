@@ -173,6 +173,24 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("taps", "plugins.samples.hello_tap", "HelloTap"),
         ("probes", "plugins.samples.database_probe", "DatabaseProbe"),
         ("jobs", "plugins.samples.noop_job", "NoopJob"),
+        # Core Taps — same imperative load path as samples. Keeps them
+        # discoverable in-container without relying on a `pip install .`
+        # of poindexter-backend itself (tracked as packaging follow-up).
+        ("taps", "services.taps.memory", "MemoryFilesTap"),
+        ("taps", "services.taps.published_posts", "PostsTap"),
+        ("taps", "services.taps.audit", "AuditTap"),
+        ("taps", "services.taps.brain_knowledge", "BrainKnowledgeTap"),
+        ("taps", "services.taps.brain_decisions", "BrainDecisionsTap"),
+        ("taps", "services.taps.gitea_issues", "GiteaIssuesTap"),
+        # Core Jobs — apscheduler-driven housekeeping. Ship as imperative
+        # loads until the poetry packaging issue is resolved.
+        ("jobs", "services.jobs.sync_page_views", "SyncPageViewsJob"),
+        ("jobs", "services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
+        ("jobs", "services.jobs.db_backup", "DbBackupJob"),
+        ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),
+        # Core LLM providers.
+        ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
+        ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:
