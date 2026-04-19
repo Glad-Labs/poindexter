@@ -67,8 +67,8 @@ def _load_config_from_db() -> dict:
             rows = await conn.fetch(
                 "SELECT key, value FROM app_settings WHERE key IN "
                 "('discord_bot_token', 'discord_voice_bot_token', "
-                "'discord_voice_channel_id', "
-                "'whisper_model', 'tts_voice', 'api_token')"
+                "'discord_voice_channel_id', 'discord_guild_id', "
+                "'whisper_model', 'tts_voice', 'api_token', 'ollama_base_url')"
             )
             return {r["key"]: r["value"] for r in rows}
         finally:
@@ -268,7 +268,7 @@ class VADSink(discord.sinks.Sink):
                 self._emit(uid)
 
 
-OLLAMA_URL = site_config.get("ollama_base_url", "http://host.docker.internal:11434") if 'site_config' in dir() else "http://host.docker.internal:11434"
+OLLAMA_URL = _cfg.get("ollama_base_url", "http://host.docker.internal:11434")
 
 SYSTEM_PROMPT = """You are Poindexter, an AI content pipeline assistant. You help the operator manage their content pipeline through voice conversation. Keep responses concise — they'll be spoken aloud.
 
