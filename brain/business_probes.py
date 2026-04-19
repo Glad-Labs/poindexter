@@ -49,9 +49,32 @@ async def probe_status_digest(pool, notify_fn) -> dict:
         # --- Gather system health ---
         health = {}
 
+        # Resolve URLs from app_settings with localize_url, falling back to
+        # working defaults. Pre-fix, this function hardcoded localhost URLs
+        # which from inside the brain container resolved to the container
+        # itself and reported every service "DOWN" in the 6h digest even
+        # when they were fine. DB-first config + in-container translation
+        # matches the pattern in health_probes._sync_config_from_db.
+        from docker_utils import localize_url
+        site_url = "https://www.gladlabs.io"
+        api_url = localize_url("http://localhost:8002")
+        openclaw_url = localize_url("http://localhost:18789")
+        try:
+            rows = await pool.fetch(
+                "SELECT key, value FROM app_settings WHERE key IN "
+                "('site_url', 'public_site_url', 'internal_api_base_url', "
+                "'api_url', 'openclaw_gateway_url')"
+            )
+            s = {r["key"]: r["value"] for r in rows}
+            site_url = s.get("public_site_url") or s.get("site_url") or site_url
+            api_url = localize_url(s.get("internal_api_base_url") or s.get("api_url") or api_url)
+            openclaw_url = localize_url(s.get("openclaw_gateway_url") or openclaw_url)
+        except Exception as e:
+            logger.warning("[DIGEST] Could not load service URLs from app_settings: %s", e)
+
         # API health
         try:
-            req = urllib.request.Request("http://localhost:8002/api/health", headers={"User-Agent": "brain-probe"})
+            req = urllib.request.Request(f"{api_url.rstrip('/')}/api/health", headers={"User-Agent": "brain-probe"})
             resp = urllib.request.urlopen(req, timeout=10)
             api_data = json.loads(resp.read())
             health["api"] = "OK" if api_data.get("status") == "healthy" else "DOWN"
@@ -65,7 +88,7 @@ async def probe_status_digest(pool, notify_fn) -> dict:
 
         # Site health
         try:
-            req = urllib.request.Request("https://www.gladlabs.io", headers={"User-Agent": "brain-probe"})
+            req = urllib.request.Request(site_url, headers={"User-Agent": "brain-probe"})
             resp = urllib.request.urlopen(req, timeout=10)
             health["site"] = "OK" if resp.status == 200 else f"HTTP {resp.status}"
         except Exception:
@@ -73,7 +96,7 @@ async def probe_status_digest(pool, notify_fn) -> dict:
 
         # OpenClaw
         try:
-            req = urllib.request.Request("http://127.0.0.1:18789/", headers={"User-Agent": "brain-probe"})
+            req = urllib.request.Request(openclaw_url.rstrip("/") + "/", headers={"User-Agent": "brain-probe"})
             resp = urllib.request.urlopen(req, timeout=5)
             health["openclaw"] = "OK"
         except Exception:
@@ -115,16 +138,20 @@ async def probe_status_digest(pool, notify_fn) -> dict:
         alert_lines = []
         try:
             grafana_token = await pool.fetchval("SELECT value FROM app_settings WHERE key = 'grafana_api_key'")
+            grafana_url = localize_url(
+                (await pool.fetchval("SELECT value FROM app_settings WHERE key = 'grafana_url'"))
+                or "http://localhost:3000"
+            ).rstrip("/")
             if grafana_token:
                 req = urllib.request.Request(
-                    "http://localhost:3000/api/v1/provisioning/alert-rules",
+                    f"{grafana_url}/api/v1/provisioning/alert-rules",
                     headers={"Authorization": f"Bearer {grafana_token}", "User-Agent": "brain-probe"},
                 )
                 resp = urllib.request.urlopen(req, timeout=10)
                 rules = json.loads(resp.read())
                 # Get alert instances for state
                 req2 = urllib.request.Request(
-                    "http://localhost:3000/api/alertmanager/grafana/api/v2/alerts",
+                    f"{grafana_url}/api/alertmanager/grafana/api/v2/alerts",
                     headers={"Authorization": f"Bearer {grafana_token}", "User-Agent": "brain-probe"},
                 )
                 resp2 = urllib.request.urlopen(req2, timeout=10)
