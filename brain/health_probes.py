@@ -981,6 +981,22 @@ PROBES = {
 _failure_counts: dict[str, int] = {}
 ALERT_AFTER_FAILURES = 3  # Alert on Telegram after 3 consecutive failures
 
+# Probes whose alerts are now owned by Prometheus + Alertmanager
+# (Phase D cutover). They still RUN — their results land in brain_knowledge
+# for observability and trigger remediation — they just don't fire duplicate
+# Telegram alerts. Moving them fully out of this file is tracked as a
+# follow-up; this set is the "one source of truth for pages" boundary.
+#
+# Keep in sync with infrastructure/prometheus/alerts/infrastructure.yml
+# + app_settings prometheus.rule.* (see services/prometheus_rule_builder.py).
+PROMETHEUS_COVERED_PROBES: frozenset[str] = frozenset({
+    "db_ping",                # → PoindexterPostgresDown
+    "ollama_models",          # → PoindexterOllamaDown
+    "embeddings_freshness",   # → EmbeddingsStale
+    "cost_freshness",         # → DailySpend*/MonthlySpend*
+    "publish_rate",           # → NoPublishedPostsRecently
+})
+
 
 async def run_health_probes(pool, notify_fn=None):
     """Run all due health probes, store results in brain_knowledge, alert on failures."""
@@ -1018,9 +1034,18 @@ async def run_health_probes(pool, notify_fn=None):
         except Exception as e:
             logger.debug("[PROBES] Failed to store result for %s: %s", name, e)
 
-        # Track failures and alert
+        # Track failures and alert.
+        # Probes in PROMETHEUS_COVERED_PROBES no longer Telegram-alert —
+        # Prometheus + Alertmanager own human-visible alerts for those
+        # signals. We still track failure counts so remediation logic
+        # fires and Gitea issues get filed.
+        prom_covered = name in PROMETHEUS_COVERED_PROBES
         if ok:
-            if _failure_counts.get(name, 0) >= ALERT_AFTER_FAILURES and notify_fn:
+            if (
+                _failure_counts.get(name, 0) >= ALERT_AFTER_FAILURES
+                and notify_fn
+                and not prom_covered
+            ):
                 notify_fn(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
             _failure_counts[name] = 0
         else:
@@ -1029,11 +1054,12 @@ async def run_health_probes(pool, notify_fn=None):
                            name, _failure_counts[name], result.get("detail", ""))
             if _failure_counts[name] == ALERT_AFTER_FAILURES:
                 detail = result.get('detail', 'unknown error')
-                if notify_fn:
+                if notify_fn and not prom_covered:
                     notify_fn(
                         f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
                     )
-                # Auto-create Gitea issue for tracking
+                # Auto-create Gitea issue for tracking (always, even for
+                # Prometheus-covered probes — the issue is a paper trail, not a page).
                 _create_gitea_issue(name, detail)
 
     # --- Self-healing: execute remediation actions for persistent failures ---
