@@ -127,20 +127,28 @@ async def seed_app_settings(conn: asyncpg.Connection) -> Dict[str, int]:
 
     seed_rows = load_seed_file()
 
-    if rows_before > 0 and not missing_required:
-        logger.info(
-            f"seed: skipping — app_settings has {rows_before} rows and every "
-            "required key is already populated"
-        )
-        return {"inserted": 0, "skipped_existing": len(seed_rows), "total_seed": len(seed_rows)}
-
+    # Always run the INSERT loop — it's idempotent (ON CONFLICT DO UPDATE
+    # only fires when the existing value is empty; otherwise DO NOTHING).
+    # The previous fast-path skipped new seed keys added to the JSON file
+    # after an install had already booted, forcing manual psql INSERTs
+    # whenever a new seed key was introduced (Gitea #236). Cost of the
+    # loop on a populated DB is ~70 upserts × ~1ms = ~70ms on startup,
+    # which is well worth the "new JSON keys land automatically" property.
     if rows_before == 0:
-        logger.info(f"seed: app_settings is empty; applying full core seed ({len(seed_rows)} settings)")
-    else:
+        logger.info(
+            f"seed: app_settings is empty; applying full core seed "
+            f"({len(seed_rows)} settings)"
+        )
+    elif missing_required:
         logger.info(
             f"seed: app_settings has {rows_before} rows but is missing "
             f"{len(missing_required)} required keys "
-            f"({', '.join(sorted(missing_required))}); applying seed with INSERT...DO NOTHING"
+            f"({', '.join(sorted(missing_required))}); applying seed"
+        )
+    else:
+        logger.info(
+            f"seed: app_settings has {rows_before} rows; upserting "
+            f"{len(seed_rows)} seed keys (only missing/empty values change)"
         )
 
     # Upsert policy:
