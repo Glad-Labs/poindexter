@@ -240,8 +240,13 @@ services:
       - ./scripts:/opt/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Worker reads every tunable from app_settings (models, prompts, QA
+    # thresholds). Wait for brain-daemon to seed + validate before booting
+    # so we don't start a pipeline that silently falls through to defaults.
     depends_on:
       postgres-local:
+        condition: service_healthy
+      brain-daemon:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,json; r=json.loads(urllib.request.urlopen('http://localhost:8002/api/health').read()); e=r.get('components',{}).get('task_executor',{}); exit(1 if isinstance(e,dict) and e.get('success_count',0)==0 and e.get('error_count',0)>5 else 0)"]
@@ -274,8 +279,12 @@ services:
               capabilities: [gpu]
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # SDXL reads image_generation_model / image_negative_prompt / style
+    # settings from app_settings. Wait for brain to seed them first.
     depends_on:
       postgres-local:
+        condition: service_healthy
+      brain-daemon:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9836/health"]
@@ -346,8 +355,12 @@ services:
       interval: 60s
       timeout: 10s
       retries: 3
+    # Voice bot reads discord_voice_bot_token + LLM config from app_settings.
+    # Wait for brain to seed before booting.
     depends_on:
       postgres-local:
+        condition: service_healthy
+      brain-daemon:
         condition: service_healthy
 
   # ===========================================
