@@ -21,22 +21,6 @@ logger = get_logger(__name__)
 
 
 
-async def _is_stage_enabled(pool, stage_key: str) -> bool:
-    """Check if a pipeline stage is enabled in the database.
-
-    Returns True if the stage is enabled or if the table doesn't exist (backwards compatible).
-    """
-    if pool is None:
-        return True  # No DB = run everything (local dev)
-    try:
-        row = await pool.fetchrow(
-            "SELECT enabled FROM pipeline_stages WHERE key = $1", stage_key
-        )
-        if row is None:
-            return True  # Stage not in DB = run it (backwards compatible)
-        return row["enabled"]
-    except Exception:
-        return True  # Table doesn't exist = run everything
 
 
 
@@ -231,18 +215,16 @@ async def process_content_generation_task(
         # ---------------------------------------------------------------
         # Chunk 3: GPU switch → featured image → GPU switch back
         # ---------------------------------------------------------------
-        _pool = database_service.pool if database_service else None
         try:
             from services.gpu_scheduler import gpu as _gpu_sched
             await _gpu_sched.prepare_mode("sdxl")
         except Exception:
             logger.debug("GPU mode switch to SDXL failed (non-fatal)")
 
-        if await _is_stage_enabled(_pool, "featured_image"):
-            await _runner.run_all(result, order=["source_featured_image"])
-        else:
-            logger.info("Featured image skipped (disabled in pipeline_stages)")
-
+        # StageRunner honors plugin.stage.source_featured_image.enabled
+        # via PluginConfig; and the stage itself short-circuits when
+        # context["generate_featured_image"] is False.
+        await _runner.run_all(result, order=["source_featured_image"])
         featured_image = result.get("featured_image")
 
         try:

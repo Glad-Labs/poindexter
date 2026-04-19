@@ -71,25 +71,6 @@ class UrlValidationStage:
                 metrics={"skipped": True},
             )
 
-        # Transitional: consult the legacy pipeline_stages table. After
-        # cutover this check drops — runner's own enabled-flag suffices.
-        pool = getattr(database_service, "pool", None) if database_service else None
-        try:
-            from services.content_router_service import _is_stage_enabled
-            enabled = await _is_stage_enabled(pool, "url_validation")
-        except Exception as e:  # noqa: BLE001
-            logger.debug("legacy pipeline_stages lookup failed: %s", e)
-            enabled = True  # Fail-open on gate lookup errors.
-
-        if not enabled:
-            logger.info("URL validation skipped (disabled in pipeline_stages)")
-            return StageResult(
-                ok=True,
-                detail="skipped (legacy gate disabled)",
-                context_updates={"url_validation": {"skipped": True}},
-                metrics={"skipped": True},
-            )
-
         try:
             from services.url_validator import get_url_validator
             validator = get_url_validator()
