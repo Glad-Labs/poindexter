@@ -5,7 +5,7 @@ description = "Poindexter backend — FastAPI + specialized AI agents. Built by 
 authors = ["Matthew M. Gladding <mattg@gladlabs.io>"]
 readme = "README.md"
 packages = [
-    { include = "cofounder_agent", from = "." },
+    { include = "cofounder_agent", from = ".." },
     { include = "poindexter", from = "." }
 ]
 
@@ -115,18 +115,18 @@ api = "cofounder_agent.main:app"
 poindexter = "poindexter.cli.app:main"
 
 # Plugin discovery — setuptools entry_points groups used by
-# plugins.registry.get_<type>(). Any package that declares
-# entry_points under these groups will be discovered at runtime.
-# See docs/architecture/plugin-architecture.md for the full design.
-#
-# NOTE: core samples (plugins.samples.*) are discovered directly by
-# plugins.registry.get_core_samples() rather than via entry_points
-# because this project's packaging layout doesn't currently produce
-# a proper dist-info. Third-party packages (pip-installable community
-# plugins) use entry_points normally. Fixing the poetry packaging
-# config is tracked separately; until then, core samples are
-# registered imperatively and third-party plugins still get full
-# entry_points support.
+# plugins.registry.get_<type>(). Any package (core or third-party)
+# that declares entry_points under these groups is discovered at
+# runtime. See docs/architecture/plugin-architecture.md for the
+# full design.
+[tool.poetry.plugins."poindexter.taps"]
+hello = "cofounder_agent.plugins.samples.hello_tap:HelloTap"
+
+[tool.poetry.plugins."poindexter.probes"]
+database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
+
+[tool.poetry.plugins."poindexter.jobs"]
+noop = "cofounder_agent.plugins.samples.noop_job:NoopJob"
 
 [build-system]
 requires = ["poetry-core"]
