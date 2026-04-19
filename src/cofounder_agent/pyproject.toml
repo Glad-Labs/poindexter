@@ -134,6 +134,10 @@ database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
 [tool.poetry.plugins."poindexter.jobs"]
 noop = "cofounder_agent.plugins.samples.noop_job:NoopJob"
 
+[tool.poetry.plugins."poindexter.llm_providers"]
+ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
+openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
