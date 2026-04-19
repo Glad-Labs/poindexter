@@ -5,9 +5,14 @@ the class is a thin async-first wrapper around the database service,
 extracted so content_router_service.py can shrink to just the
 orchestrator + re-exports.
 
-Also exposes :func:`get_content_task_store` singleton (lazy-initialized),
-which the routes layer uses to avoid threading DatabaseService through
-every endpoint.
+Phase G1 removed the module-level singleton + ``get_content_task_store``
+helper. Routes/services that need a store instance construct one
+directly, typically via FastAPI ``Depends`` wrapping ``get_database_dependency``::
+
+    store = ContentTaskStore(database_service=db)
+
+Or for tests: ``ContentTaskStore(database_service=mock_db)``. No
+shared state between requests → no test pollution.
 """
 
 from __future__ import annotations
@@ -142,17 +147,3 @@ class ContentTaskStore:
         return await self.database_service.get_drafts(limit=limit, offset=offset)
 
 
-# Global unified task store (lazy-initialized).
-_content_task_store: ContentTaskStore | None = None
-
-
-def get_content_task_store(
-    database_service: DatabaseService | None = None,
-) -> ContentTaskStore:
-    """Return the global content task store; inject DB service if missing."""
-    global _content_task_store
-    if _content_task_store is None:
-        _content_task_store = ContentTaskStore(database_service)
-    elif database_service and _content_task_store.database_service is None:
-        _content_task_store.database_service = database_service
-    return _content_task_store

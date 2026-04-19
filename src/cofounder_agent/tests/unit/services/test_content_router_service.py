@@ -16,7 +16,7 @@ Covers ContentTaskStore:
 - get_drafts: returns ([], 0) when database_service is None
 - persistent_store property returns database_service
 
-Also covers get_content_task_store singleton behavior.
+ContentTaskStore is constructed inline per request; no singleton.
 """
 
 import asyncio
@@ -27,7 +27,7 @@ import pytest
 from services.category_resolver import (
     select_category_for_topic as _select_category_for_topic,
 )
-from services.content_task_store import ContentTaskStore, get_content_task_store
+from services.content_task_store import ContentTaskStore
 from services.default_author import (
     get_or_create_default_author as _get_or_create_default_author,
 )
@@ -312,52 +312,6 @@ class TestContentTaskStorePersistentStore:
     def test_persistent_store_returns_none_when_no_db(self):
         store = ContentTaskStore(database_service=None)
         assert store.persistent_store is None
-
-
-# ---------------------------------------------------------------------------
-# get_content_task_store singleton
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetContentTaskStore:
-    """get_content_task_store singleton factory tests."""
-
-    def test_returns_content_task_store_instance(self):
-        import services.content_router_service as mod
-
-        # Reset singleton for isolated test
-        mod._content_task_store = None
-        db = _make_db()
-        store = get_content_task_store(database_service=db)
-        assert isinstance(store, ContentTaskStore)
-        assert store.database_service is db
-        mod._content_task_store = None  # cleanup
-
-    def test_second_call_returns_same_instance(self):
-        import services.content_router_service as mod
-
-        mod._content_task_store = None
-        db = _make_db()
-        store1 = get_content_task_store(database_service=db)
-        store2 = get_content_task_store(database_service=db)
-        assert store1 is store2
-        mod._content_task_store = None  # cleanup
-
-    def test_injects_db_service_if_not_set_on_singleton(self):
-        # Singleton lives in services.content_task_store after Phase E2.
-        import services.content_task_store as mod
-
-        mod._content_task_store = None
-        # First call without db
-        store1 = get_content_task_store(database_service=None)
-        assert store1.database_service is None
-        # Second call with db — should inject
-        db = _make_db()
-        store2 = get_content_task_store(database_service=db)
-        assert store2 is store1
-        assert store2.database_service is db
-        mod._content_task_store = None  # cleanup
 
 
 # ===========================================================================

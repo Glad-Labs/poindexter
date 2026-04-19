@@ -254,13 +254,8 @@ class StartupManager:
                 f"   [WARNING] Migration error: {str(e)} (proceeding anyway)", exc_info=True
             )
 
-        # Inject database service into content task store
-        try:
-            from services.content_task_store import get_content_task_store
-
-            get_content_task_store(self.database_service)
-        except Exception as e:
-            logger.warning(f"   [WARNING] Content task store setup failed: {str(e)}", exc_info=True)
+        # ContentTaskStore: no longer a singleton (Phase G1). Routes that
+        # need a store instance construct one inline via Depends(db).
 
         # Initialize JWT blocklist service (issue #721 — server-side token invalidation)
         try:
