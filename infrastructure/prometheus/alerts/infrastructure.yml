@@ -1,0 +1,66 @@
+# Infrastructure alerts — Prometheus + Alertmanager counterparts
+# of the legacy brain/health_probes.py probes.
+#
+# Phase D additive-first migration (GitHub #68):
+# - These rules ship alongside the existing probe loop
+# - Fire into a non-production Telegram channel at first
+# - After 1-2 weeks of verified parity, the brain daemon's probe loop
+#   can stop running these specific checks
+
+groups:
+  - name: poindexter-infrastructure
+    interval: 30s
+    rules:
+      # --- Worker reachability ---
+      - alert: PoindexterWorkerDown
+        expr: up{job="poindexter-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Poindexter worker is not reachable"
+          description: |
+            The worker has failed Prometheus scrapes for 2+ minutes.
+            Check `docker ps` for the poindexter-worker container;
+            check logs with `docker logs poindexter-worker --tail 100`.
+
+      - alert: PoindexterWorkerUnhealthy
+        expr: poindexter_worker_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Worker reports itself unhealthy"
+          description: |
+            `/metrics` is reachable but `poindexter_worker_up` is 0.
+            The worker is alive but something in its self-check failed.
+
+      # --- Postgres ---
+      - alert: PoindexterPostgresDown
+        expr: poindexter_postgres_connected == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Worker cannot round-trip Postgres"
+          description: |
+            `SELECT 1` is failing from the worker. Likely the
+            poindexter-postgres-local container is down or the pool
+            is exhausted. Pipeline won't process tasks until fixed.
+
+      # --- Ollama ---
+      - alert: PoindexterOllamaDown
+        expr: poindexter_ollama_reachable == 0
+        for: 3m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Ollama is not reachable from the worker"
+          description: |
+            `/api/tags` on Ollama hasn't returned 200 for 3 minutes.
+            All LLM calls are failing. Check `ollama list` on the host
+            and `ollama serve` status.
