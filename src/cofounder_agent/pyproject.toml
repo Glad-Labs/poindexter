@@ -122,6 +122,11 @@ poindexter = "poindexter.cli.app:main"
 [tool.poetry.plugins."poindexter.taps"]
 hello = "cofounder_agent.plugins.samples.hello_tap:HelloTap"
 memory = "cofounder_agent.services.taps.memory:MemoryFilesTap"
+posts = "cofounder_agent.services.taps.published_posts:PostsTap"
+audit = "cofounder_agent.services.taps.audit:AuditTap"
+brain_knowledge = "cofounder_agent.services.taps.brain_knowledge:BrainKnowledgeTap"
+brain_decisions = "cofounder_agent.services.taps.brain_decisions:BrainDecisionsTap"
+gitea_issues = "cofounder_agent.services.taps.gitea_issues:GiteaIssuesTap"
 
 [tool.poetry.plugins."poindexter.probes"]
 database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
