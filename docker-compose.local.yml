@@ -53,16 +53,21 @@ services:
     image: prom/prometheus:latest
     container_name: poindexter-prometheus
     restart: unless-stopped
+    # Startup sidecar: chmod the shared rules volume world-writable so
+    # RenderPrometheusRulesJob (runs as appuser uid 1001 in the worker)
+    # can drop dynamic.yml into it. Fresh Docker volumes come owned by
+    # root with 0755 perms, which would lock the worker out otherwise.
+    user: root
+    entrypoint: >
+      sh -c "chmod 0777 /etc/prometheus/rules &&
+             exec /bin/prometheus
+               --config.file=/etc/prometheus/prometheus.yml
+               --storage.tsdb.path=/prometheus
+               --web.console.libraries=/usr/share/prometheus/console_libraries
+               --web.console.templates=/usr/share/prometheus/consoles
+               --web.enable-lifecycle"
     ports:
       - "9091:9090"
-    # --web.enable-lifecycle lets RenderPrometheusRulesJob hit /-/reload
-    # after writing DB-sourced rules to the shared prometheus-rules volume.
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --web.console.libraries=/usr/share/prometheus/console_libraries
-      - --web.console.templates=/usr/share/prometheus/consoles
-      - --web.enable-lifecycle
     volumes:
       - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
