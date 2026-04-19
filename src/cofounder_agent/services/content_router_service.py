@@ -601,22 +601,6 @@ async def _generate_canonical_title(
         return None
 
 
-async def _stage_verify_task(database_service, task_id, result):
-    """Stage 1: Verify task record exists in database."""
-    logger.info("STAGE 1: Verifying task record exists...")
-    logger.debug("[BG-TASK] Verifying task %s exists in database...", task_id)
-    try:
-        existing_task = await database_service.get_task(task_id)
-        if existing_task:
-            logger.info("Task verified in database: %s", task_id)
-            result["content_task_id"] = task_id
-            result["stages"]["1_content_task_created"] = True
-        else:
-            logger.warning("Task %s not found - this should not happen", task_id)
-            result["stages"]["1_content_task_created"] = False
-    except Exception as e:
-        logger.error("Failed to verify task: %s", e, exc_info=True)
-        result["stages"]["1_content_task_created"] = False
 
 
 def _parse_model_preferences(models_by_phase):
@@ -1057,254 +1041,6 @@ async def _self_review_and_revise(
         return content_text, meta
 
 
-async def _stage_generate_content(
-    database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
-):
-    """Stage 2: Generate blog content via AI and store in database.
-
-    Returns (content_text, model_used, metrics, title).
-    """
-    logger.info("STAGE 2: Generating blog content...")
-
-    content_generator = get_content_generator()
-    preferred_model, preferred_provider = _parse_model_preferences(models_by_phase)
-
-    # Fetch active writing style samples for voice/tone matching
-    writing_style_context = await _build_writing_style_context(database_service)
-
-    # Build research context — real links, internal posts, web sources
-    # First check if the task already has research_context from the API caller
-    research_context = ""
-    try:
-        _task_row = await database_service.get_task(task_id) if database_service else None
-        if _task_row:
-            import json as _json
-            _task_meta = _task_row.get("task_metadata") or "{}"
-            if isinstance(_task_meta, str):
-                try:
-                    _task_meta = _json.loads(_task_meta)
-                except Exception:
-                    _task_meta = {}
-            # Check task_metadata, then metadata JSONB, then top-level field
-            _metadata_jsonb = _task_row.get("metadata") or {}
-            if isinstance(_metadata_jsonb, str):
-                try:
-                    _metadata_jsonb = _json.loads(_metadata_jsonb)
-                except Exception:
-                    _metadata_jsonb = {}
-            _caller_context = (
-                _task_meta.get("research_context")
-                or _metadata_jsonb.get("research_context")
-                or _task_row.get("research_context")
-                or ""
-            )
-            if _caller_context:
-                research_context = _caller_context
-                logger.info("Research context from task: %d chars", len(research_context))
-    except Exception as e:
-        logger.debug("Failed to load task research_context: %s", e)
-
-    try:
-        from services.research_service import ResearchService
-        research_svc = ResearchService(pool=database_service.pool if database_service else None)
-        auto_context = await research_svc.build_context(topic)
-        if auto_context:
-            research_context = f"{research_context}\n\n{auto_context}" if research_context else auto_context
-            logger.info("Research context built: %d chars", len(research_context))
-    except Exception as e:
-        logger.warning("Research context skipped: %s", e)
-
-    # RAG: Embed the topic and find similar published posts via pgvector
-    try:
-        rag_context = await _build_rag_context(database_service, topic)
-        if rag_context:
-            research_context = f"{research_context}\n\n{rag_context}" if research_context else rag_context
-            logger.info("RAG context injected: %d chars", len(rag_context))
-    except Exception as e:
-        logger.warning("RAG context skipped (non-fatal): %s", e)
-
-    # Capture the research corpus on the result so the multi-model QA stage
-    # (Stage 3.5) can ground its fact-checking against the same sources the
-    # writer consulted. Without this the critic relies on stale training data.
-    result["research_context"] = research_context
-
-    from services.gpu_scheduler import gpu
-    async with gpu.lock("ollama", model=preferred_model):
-        content_text, model_used, metrics = await content_generator.generate_blog_post(
-            topic=topic,
-            style=style,
-            tone=tone,
-            target_length=target_length,
-            tags=tags or [],
-            preferred_model=preferred_model,
-            preferred_provider=preferred_provider,
-            writing_style_context=writing_style_context,
-            research_context=research_context,
-        )
-
-    # Validate content_text is not None
-    if not content_text:
-        logger.error("Content generation returned None or empty")
-        raise ValueError("Content generation failed: no content produced")
-
-    # Generate canonical title based on topic and content
-    # Inject recent titles so the LLM avoids repetition
-    logger.info("Generating title from content...")
-    primary_keyword = tags[0] if tags else topic
-    existing_titles = ""
-    try:
-        if database_service and hasattr(database_service, 'pool') and database_service.pool:
-            async with database_service.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT title FROM content_tasks WHERE status = 'published' ORDER BY created_at DESC LIMIT 20"
-                )
-                if rows:
-                    existing_titles = "\n".join(f"- {r['title']}" for r in rows if r['title'])
-    except Exception:
-        pass  # Non-critical — proceed without diversity check
-    title = await _generate_canonical_title(topic, primary_keyword, content_text[:500], existing_titles=existing_titles)
-    if not title:
-        title = topic  # Fallback to topic if title generation fails
-    logger.info("Title generated: %s", title)
-
-    # Title originality check — search the web for duplicate/near-duplicate titles
-    originality = await _check_title_originality(title)
-    if not originality["is_original"]:
-        logger.warning(
-            "[TITLE] Title too similar to existing content — regenerating with stronger uniqueness prompt"
-        )
-        # Build avoidance list from both our titles AND the web duplicates
-        avoid_list = existing_titles
-        for dup_title in originality["similar_titles"][:5]:
-            avoid_list += f"\n- {dup_title}"
-        # Retry with stronger uniqueness constraint
-        title_v2 = await _generate_canonical_title(
-            topic, primary_keyword, content_text[:500],
-            existing_titles=avoid_list,
-        )
-        if title_v2:
-            # Verify the new title is better
-            originality_v2 = await _check_title_originality(title_v2)
-            if originality_v2["max_similarity"] < originality["max_similarity"]:
-                logger.info(
-                    "[TITLE] Regenerated title is more original (%.0f%% → %.0f%%): %s",
-                    originality["max_similarity"] * 100,
-                    originality_v2["max_similarity"] * 100,
-                    title_v2,
-                )
-                title = title_v2
-            else:
-                logger.info("[TITLE] Keeping original title — regeneration wasn't more unique")
-
-    # Normalize smart quotes / special chars before persisting
-    content_text = _normalize_text(content_text)
-    title = _normalize_text(title)
-
-    # Populate real slug cache for link validation, then scrub fabricated links
-    try:
-        _links_cache = getattr(content_generator, "_internal_links_cache", [])
-        _real_slug_set = set()
-        for _link_line in _links_cache:
-            # Format: '- "Title" -> https://www.gladlabs.io/posts/slug-here'
-            if "/posts/" in _link_line:
-                _slug = _link_line.split("/posts/")[-1].strip().strip('"')
-                if _slug:
-                    _real_slug_set.add(_slug)
-        _scrub_fabricated_links._slug_cache = _real_slug_set
-    except Exception:
-        pass
-    content_text = _scrub_fabricated_links(content_text)
-
-    # Strip leaked image prompts/descriptions (LLMs sometimes output visual placeholders)
-    import re as _re_img
-    # Remove standalone italic scene descriptions: *A dramatic scene of...*
-    content_text = _re_img.sub(r'(?m)^\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*\s*$', '', content_text)
-    # Remove `: *description*` image caption patterns
-    content_text = _re_img.sub(r'(?m)^\s*:\s*\*[A-Z][^*]{30,}\*\s*$', '', content_text)
-    # Remove [IMAGE-N: description] placeholders
-    content_text = _re_img.sub(r'\[IMAGE(?:-\d+)?:\s*[^\]]+\]', '', content_text)
-    # Remove [FIGURE: description] placeholders
-    content_text = _re_img.sub(r'\[FIGURE:\s*[^\]]+\]', '', content_text)
-    # Clean up any double blank lines left behind
-    content_text = _re_img.sub(r'\n{3,}', '\n\n', content_text)
-
-    # Stage 2A: Writer self-review pass (catches internal contradictions
-    # before the QA stage rejects them). When enabled, runs a dedicated
-    # Ollama pass asking a reviewer model to find cross-section claim
-    # conflicts, then has the writer revise the draft with the specific
-    # corrections. Catches the qwen3:30b contradiction tendency at source
-    # rather than rejecting at QA and regenerating the whole topic.
-    try:
-        from services.site_config import site_config as _sr_sc
-        _self_review_enabled = str(
-            _sr_sc.get("enable_writer_self_review", "true")
-        ).lower() in ("true", "1", "yes")
-    except Exception:
-        _self_review_enabled = True
-    if _self_review_enabled:
-        try:
-            revised, sr_meta = await _self_review_and_revise(
-                content_text, title, topic,
-            )
-            if sr_meta.get("revised"):
-                logger.info(
-                    "[SELF_REVIEW] Writer revised draft — %d contradictions fixed",
-                    sr_meta.get("contradictions_found", 0),
-                )
-                content_text = revised
-            else:
-                logger.info(
-                    "[SELF_REVIEW] Draft passed self-review (%d chars)",
-                    len(content_text),
-                )
-            audit_log_bg(
-                "writer_self_review", "content_router",
-                {
-                    "contradictions_found": sr_meta.get("contradictions_found", 0),
-                    "revised": sr_meta.get("revised", False),
-                    "skipped": sr_meta.get("skipped", False),
-                    "reason": sr_meta.get("reason"),
-                },
-                task_id=task_id,
-            )
-        except Exception as _sr_err:
-            logger.warning(
-                "[SELF_REVIEW] Self-review pass failed (non-fatal): %s", _sr_err,
-            )
-
-    # Update content_task with generated content, title, and model tracking
-    await database_service.update_task(
-        task_id=task_id,
-        updates={
-            "status": "in_progress",
-            "content": content_text,
-            "title": title,
-            "model_used": model_used,
-            "models_used_by_phase": metrics.get("models_used_by_phase", {}),
-            "model_selection_log": metrics.get("model_selection_log", {}),
-        },
-    )
-
-    result["content"] = content_text
-    result["content_length"] = len(content_text)
-    result["title"] = title
-    result["model_used"] = model_used
-    result["models_used_by_phase"] = metrics.get("models_used_by_phase", {})
-    result["model_selection_log"] = metrics.get("model_selection_log", {})
-    result["stages"]["2_content_generated"] = True
-    logger.info("Content generated (%d chars) using %s", len(content_text), model_used)
-
-    # Log cloud API cost if tracked by the generator
-    cost_log = metrics.get("cost_log")
-    if cost_log and database_service:
-        try:
-            cost_log["task_id"] = task_id
-            await database_service.log_cost(cost_log)
-            logger.info("Cost logged: $%.4f (%s/%s)", cost_log["cost_usd"], cost_log["provider"], cost_log["model"])
-        except Exception as e:
-            logger.warning("Cost logging failed (non-critical): %s", e)
-
-    return content_text, model_used, metrics, title
 
 
 async def _self_review_and_revise(draft: str, title: str, topic: str) -> tuple[str, dict]:
@@ -1405,49 +1141,6 @@ async def _self_review_and_revise(draft: str, title: str, topic: str) -> tuple[s
     return draft, stats
 
 
-async def _stage_quality_evaluation(topic, tags, content_text, quality_service, result):
-    """Stage 2B: Early quality evaluation of generated content.
-
-    Returns the quality_result object.
-    """
-    logger.info("STAGE 2B: Early quality evaluation...")
-
-    quality_result = await quality_service.evaluate(
-        content=content_text,
-        context={
-            "topic": topic,
-            "keywords": tags or [topic],
-            "audience": "General",
-        },
-        method=EvaluationMethod.PATTERN_BASED,
-    )
-
-    # Validate quality_result is not None
-    if not quality_result:
-        logger.error("Quality evaluation returned None")
-        raise ValueError("Quality evaluation failed: no result produced")
-
-    result["quality_score"] = quality_result.overall_score
-    result["quality_passing"] = quality_result.passing
-    result["truncation_detected"] = quality_result.truncation_detected
-    result["quality_details_initial"] = {
-        "clarity": quality_result.dimensions.clarity,
-        "accuracy": quality_result.dimensions.accuracy,
-        "completeness": quality_result.dimensions.completeness,
-        "relevance": quality_result.dimensions.relevance,
-        "seo_quality": quality_result.dimensions.seo_quality,
-        "readability": quality_result.dimensions.readability,
-        "engagement": quality_result.dimensions.engagement,
-        "truncation_detected": quality_result.truncation_detected,
-    }
-    result["stages"]["2b_quality_evaluated_initial"] = True
-    logger.info("Initial quality evaluation complete:")
-    logger.info("   Overall Score: %.1f/100", quality_result.overall_score)
-    logger.info("   Passing: %s (threshold >=70.0)", quality_result.passing)
-    if quality_result.truncation_detected:
-        logger.warning("   TRUNCATION DETECTED -- content appears cut off mid-sentence")
-
-    return quality_result
 
 
 async def _stage_replace_inline_images(database_service, task_id, topic, content_text, image_service, result):
@@ -1940,345 +1633,12 @@ async def _stage_source_featured_image(topic, tags, generate_featured_image, ima
     return featured_image
 
 
-async def _stage_generate_seo_metadata(topic, tags, content_text, content_generator, result):
-    """Stage 4: Generate SEO metadata (title, description, keywords).
-
-    Returns (seo_title, seo_description, seo_keywords).
-    """
-    logger.info("STAGE 4: Generating SEO metadata...")
-
-    seo_generator = get_seo_content_generator(content_generator)
-    # SEOOptimizedContentGenerator wraps ContentMetadataGenerator which has generate_seo_assets
-    seo_assets = seo_generator.metadata_gen.generate_seo_assets(
-        title=topic, content=content_text, topic=topic
-    )
-
-    # Validate seo_assets is not None and is a dict
-    if not seo_assets or not isinstance(seo_assets, dict):
-        logger.error("SEO generation returned None or invalid format")
-        raise ValueError("SEO metadata generation failed: invalid result")
-
-    seo_keywords = seo_assets.get("meta_keywords") or (tags or [])
-    # Ensure seo_keywords is a list, filter out None/empty values
-    if isinstance(seo_keywords, list):
-        seo_keywords = [kw for kw in seo_keywords if kw and isinstance(kw, str) and kw.strip()][
-            :10
-        ]
-    elif seo_keywords and isinstance(seo_keywords, str):
-        seo_keywords = [seo_keywords.strip()][:10] if seo_keywords.strip() else []
-    else:
-        seo_keywords = []
-
-    seo_title = seo_assets.get("seo_title", topic)
-    if seo_title:
-        seo_title = seo_title[:60]
-    else:
-        seo_title = topic[:60]
-
-    seo_description = seo_assets.get("meta_description", "")
-    if seo_description:
-        seo_description = seo_description[:160]
-    else:
-        seo_description = topic[:160]
-
-    result["seo_title"] = seo_title
-    result["seo_description"] = seo_description
-    result["seo_keywords"] = ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or "")
-    result["stages"]["4_seo_metadata_generated"] = True
-    logger.info("SEO metadata generated:")
-    logger.info("   Title: %s", seo_title)
-    logger.info("   Description: %s...", seo_description[:80])
-    logger.info("   Keywords: %s...", ', '.join(seo_keywords[:5]))
-
-    return seo_title, seo_description, seo_keywords
 
 
-async def _stage_generate_media_scripts(
-    database_service, task_id, title, content_text, result
-):
-    """Stage 4B: Generate podcast script, video scenes, and short summary.
-
-    Uses two separate LLM calls for reliability:
-    1. Podcast script (reuses proven podcast_service logic)
-    2. Video scenes + short summary (single call, simpler parsing)
-
-    Non-critical — pipeline continues on failure.
-    """
-    logger.info("STAGE 4B: Generating media scripts (podcast + video scenes)...")
-
-    import os
-    import re
-
-    import httpx
-
-    from services.site_config import site_config
-
-    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-    # DB-configured: video_scene_model (falls back to default_ollama_model, then llama3:latest)
-    model = (
-        site_config.get("video_scene_model")
-        or site_config.get("default_ollama_model")
-        or "llama3:latest"
-    )
-    if model == "auto":
-        model = "llama3:latest"
-
-    from services.podcast_service import _normalize_for_speech, _strip_markdown
-    clean_content = _strip_markdown(content_text)
-
-    podcast_script = ""
-    video_scenes = []
-    short_summary = ""
-
-    try:
-        from services.gpu_scheduler import gpu
-
-        # --- Call 1: Podcast script (use proven podcast_service approach) ---
-        from services.podcast_service import _build_script_with_llm
-        async with gpu.lock("ollama", model=model):
-            podcast_script = await _build_script_with_llm(title, content_text)
-
-        if podcast_script and len(podcast_script) > 200:
-            logger.info("[MEDIA] Podcast script: %d chars", len(podcast_script))
-        else:
-            logger.warning("[MEDIA] Podcast script too short (%d chars)", len(podcast_script or ""))
-            podcast_script = ""
-
-        # --- Call 2: Video scenes + short summary ---
-        scene_prompt = f"""Generate TWO things for a blog post video:
-
-PART 1 — Write 6-8 numbered lines, each describing a photorealistic image for a video slideshow about this article. Each line is a Stable Diffusion XL prompt. Requirements: cinematic lighting, no people, no text, no faces, no hands, 4K quality. One scene per line.
-
-PART 2 — After a blank line, write "SHORT:" on its own line, then write a 60-second narration (about 150 words) summarizing the article for TikTok/YouTube Shorts. Start with a hook, cover 2-3 key takeaways, end with "Full article at {site_config.get('site_name', 'our site')}."
-
-ARTICLE: {title}
-
-{clean_content[:3000]}
-
-SCENES:"""
-
-        async with gpu.lock("ollama", model=model):
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(120.0, connect=5.0)
-            ) as client:
-                resp = await client.post(
-                    f"{ollama_url}/api/generate",
-                    json={
-                        "model": model,
-                        "prompt": scene_prompt,
-                        "stream": False,
-                        "options": {"num_predict": 2048, "temperature": 0.7},
-                    },
-                    timeout=120,
-                )
-                resp.raise_for_status()
-                scene_output = resp.json().get("response", "").strip()
-
-        if scene_output:
-            # Split on "SHORT:" line
-            short_split = re.split(r'(?:^|\n)\s*SHORT:\s*\n', scene_output, maxsplit=1, flags=re.IGNORECASE)
-            scenes_raw = short_split[0].strip()
-            if len(short_split) >= 2:
-                short_summary = _normalize_for_speech(short_split[1].strip())
-
-            # Parse numbered scene lines
-            for line in scenes_raw.split("\n"):
-                line = line.strip()
-                if not line:
-                    continue
-                cleaned = re.sub(r"^\d+[.):\-]\s*", "", line).strip().strip('"')
-                if len(cleaned) > 20:
-                    video_scenes.append(cleaned)
-
-            logger.info("[MEDIA] Video scenes: %d, Short summary: %d chars",
-                        len(video_scenes), len(short_summary))
-
-        # Store in result dict so finalize stage includes them in task_metadata
-        result["podcast_script"] = podcast_script
-        result["video_scenes"] = video_scenes
-        result["short_summary_script"] = short_summary
-        result["podcast_script_length"] = len(podcast_script)
-        result["video_scenes_count"] = len(video_scenes)
-        result["short_summary_length"] = len(short_summary)
-        result["stages"]["4b_media_scripts"] = True
-
-        logger.info(
-            "[MEDIA] Generated podcast script (%d chars) + %d video scenes for '%s'",
-            len(podcast_script), len(video_scenes), title[:50],
-        )
-
-    except Exception as e:
-        logger.warning("[MEDIA] Script generation failed (non-fatal): %s", e)
-        result["stages"]["4b_media_scripts"] = False
 
 
-async def _stage_capture_training_data(
-    database_service, task_id, topic, style, tone, target_length, tags,
-    content_text, quality_result, featured_image, result
-):
-    """Stage 6: Capture quality evaluation and training data in PostgreSQL.
-
-    This entire stage is non-critical — failures must never crash the pipeline.
-    """
-    logger.info("STAGE 6: Capturing training data...")
-
-    try:
-        # Capture readability metrics for context_data
-        word_count = len(content_text.split())
-        paragraph_count = len([p for p in content_text.split("\n\n") if p.strip()])
-        sentences = [s.strip() for s in content_text.split(".") if s.strip()]
-        avg_sentence_length = len(sentences) / word_count if word_count > 0 else 0
-
-        await database_service.create_quality_evaluation(
-            {
-                "content_id": task_id,
-                "task_id": task_id,
-                "overall_score": quality_result.overall_score,
-                "clarity": quality_result.dimensions.clarity,
-                "accuracy": quality_result.dimensions.accuracy,
-                "completeness": quality_result.dimensions.completeness,
-                "relevance": quality_result.dimensions.relevance,
-                "seo_quality": quality_result.dimensions.seo_quality,
-                "readability": quality_result.dimensions.readability,
-                "engagement": quality_result.dimensions.engagement,
-                "passing": quality_result.passing,
-                "feedback": quality_result.feedback,
-                "suggestions": quality_result.suggestions,
-                "evaluated_by": "ContentQualityService",
-                "evaluation_method": quality_result.evaluation_method,
-                "content_length": len(content_text),
-                "content": content_text,
-                "context_data": {
-                    "topic": topic,
-                    "style": style,
-                    "tone": tone,
-                    "target_length": target_length,
-                    "has_featured_image": featured_image is not None,
-                    "readability_metrics": {
-                        "word_count": word_count,
-                        "paragraph_count": paragraph_count,
-                        "average_sentence_length": round(avg_sentence_length, 2),
-                        "sentence_count": len(sentences),
-                    },
-                },
-            }
-        )
-    except Exception as _qe_err:
-        logger.warning("Quality evaluation insert failed (non-critical): %s", _qe_err)
-
-    # Upsert training data — ON CONFLICT in content_db handles duplicates,
-    # but wrap in try/except as a safety net for any DB errors.
-    try:
-        # quality_score is DECIMAL(3,2) i.e. 0.00-9.99; schema expects 0.0-1.0
-        normalized_score = min(quality_result.overall_score / 100, 1.0)
-
-        await database_service.create_orchestrator_training_data(
-            {
-                "execution_id": task_id,
-                "user_request": f"Generate blog post on: {topic}",
-                "intent": "content_generation",
-                "business_state": {
-                    "topic": topic,
-                    "style": style,
-                    "tone": tone,
-                    "featured_image": featured_image is not None,
-                },
-                "execution_result": "success",
-                "quality_score": normalized_score,
-                "success": quality_result.passing,
-                "tags": tags or [],
-                "source_agent": "content_router_service",
-            }
-        )
-    except Exception as _td_err:
-        logger.warning("Training data insert skipped (likely re-processed task): %s", _td_err)
-
-    result["stages"]["6_training_data_captured"] = True
-    logger.info("Training data captured for learning pipeline")
 
 
-async def _stage_finalize_task(
-    database_service, task_id, topic, style, tone, content_text,
-    quality_result, seo_title, seo_description, seo_keywords,
-    category, target_audience, result
-):
-    """Final stage: Update content_task with final status and all metadata."""
-    # ⚠️ STAGE 5 NOTE: Posts record creation is SKIPPED here.
-    # Posts should ONLY be created when task is approved via POST /api/tasks/{task_id}/approve.
-    # This maintains clean separation: generation != publishing.
-    logger.info("STAGE 5: Posts record creation SKIPPED")
-    logger.info("   Posts will be created when task is approved by user")
-    result["post_id"] = None
-    result["post_slug"] = None
-    result["stages"]["5_post_created"] = False
-    logger.info("Skipping automatic post creation")
-
-    # Normalize SEO text fields before final persist
-    seo_title = _normalize_text(seo_title) if seo_title else seo_title
-    seo_description = _normalize_text(seo_description) if seo_description else seo_description
-    content_text = _normalize_text(content_text)
-
-    # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
-    # quality_score: prefer the multi-model QA score (already promoted into
-    # result["quality_score"] when QA ran). Fall back to the early pattern eval
-    # only when QA is disabled or timed out.
-    final_quality_score = int(round(float(
-        result.get("quality_score") or quality_result.overall_score
-    )))
-    await database_service.update_task(
-        task_id=task_id,
-        updates={
-            "status": "awaiting_approval",
-            "approval_status": "pending",
-            # Clear stale error_message from any prior auto-cancel attempt
-            # by the brain daemon. Without this, a worker completion that
-            # races with brain's stuck-task cancel leaves contradictory
-            # metadata: status=awaiting_approval + error_message=
-            # "Auto-cancelled: stuck in_progress > 90m" (#198 follow-up).
-            "error_message": None,
-            "quality_score": final_quality_score,
-            "title": result.get("title") or seo_title or topic,
-            "featured_image_url": result.get("featured_image_url"),
-            "seo_title": seo_title,
-            "seo_description": seo_description,
-            "seo_keywords": ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or ""),
-            "style": style,
-            "tone": tone,
-            "category": result.get("category") or category,
-            "target_audience": target_audience or "General",
-            # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
-            "task_metadata": {
-                "featured_image_url": result.get("featured_image_url"),
-                "featured_image_alt": result.get("featured_image_alt", ""),
-                "featured_image_width": result.get("featured_image_width"),
-                "featured_image_height": result.get("featured_image_height"),
-                "featured_image_photographer": result.get("featured_image_photographer"),
-                "featured_image_source": result.get("featured_image_source"),
-                "content": content_text,
-                "seo_title": seo_title,
-                "seo_description": seo_description,
-                "seo_keywords": seo_keywords,
-                "topic": topic,
-                "style": style,
-                "tone": tone,
-                "category": result.get("category") or category,
-                "target_audience": target_audience or "General",
-                "post_id": result.get("post_id"),
-                "quality_score": final_quality_score,
-                "quality_score_early_eval": quality_result.overall_score,
-                "qa_final_score": result.get("qa_final_score"),
-                "content_length": len(content_text),
-                "word_count": len(content_text.split()),
-                # Media scripts from Stage 4B
-                "podcast_script": result.get("podcast_script", ""),
-                "video_scenes": result.get("video_scenes", []),
-                "short_summary_script": result.get("short_summary_script", ""),
-            },
-        },
-    )
-
-    result["status"] = "awaiting_approval"
-    result["approval_status"] = "pending"
 
 
 async def process_content_generation_task(
@@ -2318,41 +1678,57 @@ async def process_content_generation_task(
     logger.info("   Image Search: %s", generate_featured_image)
     logger.info("=" * 80)
 
-    result = {"task_id": task_id, "topic": topic, "status": "pending", "stages": {}, "category": category or "technology"}
+    # `result` doubles as the shared pipeline context consumed by Stage
+    # plugins. Stages read/write via context.get() / StageResult.context_updates.
+    # Populating the orchestrator's inputs here means every stage can pull
+    # what it needs without a separate adapter layer.
+    image_service = get_image_service()
+    result: dict[str, Any] = {
+        "task_id": task_id,
+        "topic": topic,
+        "status": "pending",
+        "stages": {},
+        "category": category or "technology",
+        # Orchestrator inputs — stages read these directly.
+        "style": style,
+        "tone": tone,
+        "target_length": target_length,
+        "tags": tags or [],
+        "generate_featured_image": generate_featured_image,
+        "database_service": database_service,
+        "image_service": image_service,
+        "models_by_phase": models_by_phase or {},
+        "quality_preference": quality_preference,
+        "target_audience": target_audience,
+    }
+
+    # Build the Stage runner. Stages are loaded imperatively via
+    # plugins.registry.get_core_samples since the poetry entry_points
+    # packaging fix is tracked separately (#78).
+    from plugins.registry import get_core_samples
+    from plugins.stage_runner import StageRunner
+    _runner = StageRunner(database_service.pool, get_core_samples().get("stages", []))
 
     try:
-        # Initialize unified services
         logger.info("[BG-TASK] Starting content generation for task %s...", task_id[:8])
         logger.debug("[BG-TASK] database_service = %s", database_service)
-        logger.debug(
-            "[BG-TASK] database_service.tasks = %s",
-            database_service.tasks if database_service else None,
-        )
 
-        image_service = get_image_service()
-        quality_service = UnifiedQualityService(database_service=database_service)
-        logger.debug(
-            "[BG-TASK] Services initialized: image_service=%s, quality_service=%s",
-            image_service, quality_service,
-        )
-
-        # Stage 1: Verify task record
-        await _run_stage_with_timeout(
-            _stage_verify_task(database_service, task_id, result),
-            "verify_task", task_id,
-        )
+        # ---------------------------------------------------------------
+        # Chunk 1: verify_task → generate_content
+        # ---------------------------------------------------------------
         audit_log_bg("task_started", "content_router", {"topic": topic[:100]}, task_id=task_id)
+        _summary1 = await _runner.run_all(result, order=["verify_task", "generate_content"])
+        if _summary1.halted_at == "generate_content":
+            raise RuntimeError(
+                f"Stage 'generate_content' halted — cannot continue without content "
+                f"(detail: {_summary1.records[-1].detail})"
+            )
 
-        # Stage 2: Generate blog content (critical — fail pipeline on timeout)
-        gen_result = await _run_stage_with_timeout(
-            _stage_generate_content(
-                database_service, task_id, topic, style, tone, target_length, tags, models_by_phase, result
-            ),
-            "generate_content", task_id,
-        )
-        if gen_result is None:
-            raise RuntimeError(f"Stage 'generate_content' timed out after {_get_stage_timeout('generate_content')}s — cannot continue without content")
-        content_text, model_used, metrics, title = gen_result
+        content_text = result.get("content", "")
+        model_used = result.get("model_used", "")
+        metrics = result.get("generate_metrics", {})
+        title = result.get("title", "")
+
         audit_log_bg("generation_complete", "content_router", {
             "model": model_used, "word_count": len(content_text.split()) if content_text else 0,
         }, task_id=task_id)
@@ -2384,109 +1760,52 @@ async def process_content_generation_task(
         except Exception as _exc:
             logger.debug("writer_fallback check failed: %s", _exc)
 
-        # Stage 2A.5: Writer self-review (issue #170)
-        # Opt-in via enable_writer_self_review app_setting (default false).
-        # Catches cross-section contradictions at generation time, before
-        # QA has to reject the whole draft.
-        try:
-            revised_text, self_review_stats = await _self_review_and_revise(
-                content_text, result.get("title", ""), topic,
+        # ---------------------------------------------------------------
+        # Chunk 2: writer_self_review → quality_evaluation → url_validation
+        #          → replace_inline_images (image-decision PLANNING pass,
+        #          still in ollama GPU mode)
+        # ---------------------------------------------------------------
+        _summary2 = await _runner.run_all(result, order=[
+            "writer_self_review",
+            "quality_evaluation",
+            "url_validation",
+            "replace_inline_images",
+        ])
+        if _summary2.halted_at == "quality_evaluation":
+            raise RuntimeError(
+                f"Stage 'quality_evaluation' halted — cannot continue without QA score "
+                f"(detail: {_summary2.records[-1].detail})"
             )
-            if self_review_stats.get("revised"):
-                content_text = revised_text
-                result["content"] = content_text
-                result["content_length"] = len(content_text)
+
+        # Post-QA audit. The stages populate result["quality_result"] +
+        # result["quality_score"]; surface the pass/fail into the audit log.
+        content_text = result.get("content", "")
+        quality_result = result.get("quality_result")
+        if quality_result is not None:
             audit_log_bg(
-                "writer_self_review_pass", "content_router",
-                self_review_stats, task_id=task_id,
+                "qa_passed" if quality_result.overall_score >= 50 else "qa_failed",
+                "content_router",
+                {"score": quality_result.overall_score, "stage": "early_eval"},
+                task_id=task_id,
             )
-        except Exception as _sr_exc:
-            logger.warning("[SELF_REVIEW] Stage failed (non-fatal): %s", _sr_exc)
 
-        # Stage 2B: Quality evaluation (critical — fail pipeline on timeout)
-        quality_result = await _run_stage_with_timeout(
-            _stage_quality_evaluation(topic, tags, content_text, quality_service, result),
-            "quality_evaluation", task_id,
-        )
-        if quality_result is None:
-            raise RuntimeError(f"Stage 'quality_evaluation' timed out after {_get_stage_timeout('quality_evaluation')}s — cannot continue without QA score")
-        audit_log_bg("qa_passed" if quality_result.overall_score >= 50 else "qa_failed", "content_router", {
-            "score": quality_result.overall_score, "stage": "early_eval",
-        }, task_id=task_id)
-
-        # Stage 2B.1: URL validation (non-blocking — gate-checked via pipeline_stages)
+        # ---------------------------------------------------------------
+        # Chunk 3: GPU switch → featured image → GPU switch back
+        # ---------------------------------------------------------------
         _pool = database_service.pool if database_service else None
-        _url_validation_enabled = await _is_stage_enabled(_pool, "url_validation")
-        try:
-            if not _url_validation_enabled:
-                logger.info("URL validation skipped (disabled in pipeline_stages)")
-                result["url_validation"] = {"skipped": True}
-                raise Exception("stage_disabled")
-            from services.url_validator import get_url_validator
-            _url_validator = get_url_validator()
-            _extracted_urls = _url_validator.extract_urls(content_text)
-            if _extracted_urls:
-                _url_results = await _url_validator.validate_urls(_extracted_urls)
-                _broken = {u: s for u, s in _url_results.items() if s == "invalid"}
-                result["url_validation"] = {
-                    "total_urls": len(_extracted_urls),
-                    "valid": sum(1 for v in _url_results.values() if v == "valid"),
-                    "invalid": len(_broken),
-                    "broken_urls": list(_broken.keys()),
-                }
-                if _broken:
-                    logger.warning(
-                        "URL validation: %d/%d broken links in task %s: %s",
-                        len(_broken), len(_extracted_urls), task_id[:8],
-                        ", ".join(list(_broken.keys())[:5]),
-                    )
-                else:
-                    logger.info("URL validation: all %d links valid for task %s", len(_extracted_urls), task_id[:8])
-            else:
-                result["url_validation"] = {"total_urls": 0, "valid": 0, "invalid": 0, "broken_urls": []}
-        except Exception as _url_err:
-            logger.warning("URL validation failed (non-critical): %s", _url_err)
-            result["url_validation"] = {"error": str(_url_err)}
-
-        # ---------------------------------------------------------------
-        # IMAGE PIPELINE: Plan (Ollama) → Switch GPU → Generate (SDXL/Pexels)
-        #
-        # The Image Decision Agent runs NOW while Ollama is still loaded.
-        # It plans what images to generate and where. Then we switch GPU
-        # to SDXL mode and execute the plan. No race conditions, no timeouts.
-        # ---------------------------------------------------------------
-
-        # Stage 2C (planning): Image Decision Agent analyzes content (uses Ollama)
-        # This MUST run before GPU switches to SDXL mode
-        _img_result = await _run_stage_with_timeout(
-            _stage_replace_inline_images(
-                database_service, task_id, topic, content_text, image_service, result
-            ),
-            "replace_inline_images", task_id,
-        )
-        if _img_result is not None:
-            content_text = _img_result
-
-        # Switch GPU: Ollama → SDXL for image generation
         try:
             from services.gpu_scheduler import gpu as _gpu_sched
             await _gpu_sched.prepare_mode("sdxl")
         except Exception:
             logger.debug("GPU mode switch to SDXL failed (non-fatal)")
 
-        # Stage 3: Generate featured image (now in SDXL mode)
         if await _is_stage_enabled(_pool, "featured_image"):
-            featured_image = await _run_stage_with_timeout(
-                _stage_source_featured_image(
-                    topic, tags, generate_featured_image, image_service, result, task_id=task_id
-                ),
-                "source_featured_image", task_id,
-            )
+            await _runner.run_all(result, order=["source_featured_image"])
         else:
-            featured_image = None
             logger.info("Featured image skipped (disabled in pipeline_stages)")
 
-        # Switch GPU back: SDXL → Ollama for QA review
+        featured_image = result.get("featured_image")
+
         try:
             await _gpu_sched.prepare_mode("ollama")
         except Exception:
@@ -2851,46 +2170,23 @@ async def process_content_generation_task(
                 }, task_id=task_id)
                 logger.info("[MULTI_QA] Content approved for task %s: %s", task_id[:8], _qa_result.summary.split("\\n")[0])
 
-        # Stage 4: Generate SEO metadata (non-critical — use fallbacks on timeout)
-        content_generator = get_content_generator()
-        seo_result = await _run_stage_with_timeout(
-            _stage_generate_seo_metadata(
-                topic, tags, content_text, content_generator, result
-            ),
-            "generate_seo_metadata", task_id,
-        )
-        if seo_result is not None:
-            seo_title, seo_description, seo_keywords = seo_result
-        else:
-            logger.warning("SEO metadata timed out for task %s — using topic as fallback", task_id[:8])
-            seo_title, seo_description, seo_keywords = topic[:60], topic[:160], tags or []
-
-        # Stage 4B: Generate media scripts (podcast + video scenes)
-        await _run_stage_with_timeout(
-            _stage_generate_media_scripts(
-                database_service, task_id, title, content_text, result
-            ),
-            "generate_media_scripts", task_id,
-        )
-
-        # Stage 5/6: Capture training data (non-critical — skip on timeout)
-        await _run_stage_with_timeout(
-            _stage_capture_training_data(
-                database_service, task_id, topic, style, tone, target_length, tags,
-                content_text, quality_result, featured_image, result
-            ),
-            "capture_training_data", task_id,
-        )
-
-        # Final: Update task with status and metadata
-        await _run_stage_with_timeout(
-            _stage_finalize_task(
-                database_service, task_id, topic, style, tone, content_text,
-                quality_result, seo_title, seo_description, seo_keywords,
-                category, target_audience, result
-            ),
-            "finalize_task", task_id,
-        )
+        # ---------------------------------------------------------------
+        # Chunk 5: SEO → media scripts → training data → finalize
+        # ---------------------------------------------------------------
+        # The previous inline orchestrator read stage-specific fallbacks
+        # (e.g. topic[:60] for seo_title on timeout) — now lives inside
+        # the stages themselves or in finalize_task's graceful defaults.
+        _summary5 = await _runner.run_all(result, order=[
+            "generate_seo_metadata",
+            "generate_media_scripts",
+            "capture_training_data",
+            "finalize_task",
+        ])
+        if _summary5.halted_at:
+            raise RuntimeError(
+                f"Post-QA pipeline halted at {_summary5.halted_at} "
+                f"(detail: {_summary5.records[-1].detail})"
+            )
 
         audit_log_bg("pipeline_complete", "content_router", {
             # quality_score is the promoted score that downstream gates read
