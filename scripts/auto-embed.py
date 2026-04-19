@@ -196,6 +196,70 @@ def classify_file(filename: str) -> str:
     return "knowledge"
 
 
+def chunk_text(text: str, max_chars: int = MAX_CHARS) -> List[str]:
+    """Split text into chunks at most ``max_chars`` each, preferring markdown
+    heading boundaries, falling back to paragraph boundaries, then raw slice.
+
+    The target is Ollama's ~8k token context window for nomic-embed-text.
+    Files under the limit yield a single chunk unchanged.
+
+    Splitting preference: a `# / ## / ### heading` line always starts a new
+    chunk when the accumulator would overflow, because headings are the most
+    semantically stable boundaries in our memory files. Within an oversized
+    section we fall back to `\\n\\n` paragraph splits, and for rare cases of
+    a single paragraph >max_chars we hard-slice — that's bad for retrieval
+    but beats dropping the content entirely.
+    """
+    import re
+
+    if len(text) <= max_chars:
+        return [text]
+
+    # Split on lines that start with #, ##, or ### (ATX headings). The
+    # lookahead keeps the heading attached to its following section.
+    sections = re.split(r"(?=^#{1,3} )", text, flags=re.MULTILINE)
+    chunks: List[str] = []
+    buf = ""
+    for section in sections:
+        if not section:
+            continue
+        if len(section) > max_chars:
+            # Flush accumulator before diving into the oversized section.
+            if buf:
+                chunks.append(buf)
+                buf = ""
+            # Paragraph-split inside the section.
+            paras = section.split("\n\n")
+            pbuf = ""
+            for p in paras:
+                candidate = (pbuf + "\n\n" + p) if pbuf else p
+                if len(candidate) <= max_chars:
+                    pbuf = candidate
+                else:
+                    if pbuf:
+                        chunks.append(pbuf)
+                        pbuf = ""
+                    if len(p) <= max_chars:
+                        pbuf = p
+                    else:
+                        # Last-resort hard slice.
+                        for start in range(0, len(p), max_chars):
+                            chunks.append(p[start:start + max_chars])
+            if pbuf:
+                buf = pbuf
+            continue
+        candidate = (buf + section) if buf else section
+        if len(candidate) <= max_chars:
+            buf = candidate
+        else:
+            if buf:
+                chunks.append(buf)
+            buf = section
+    if buf:
+        chunks.append(buf)
+    return chunks
+
+
 def make_relative_id(filepath: Path, origin: str) -> str:
     """Build a stable source_id from origin + optional scope + relative path.
 
@@ -555,12 +619,11 @@ async def sync_memory_files(
                     stats["skipped"] += 1
                     continue
 
-                # Use the DB-side content_hash dedup via store() — we pass
-                # the hash explicitly so the stored row matches the text
-                # we just read, and let MemoryClient's internal skip-logic
-                # decide whether to re-embed. For minimal churn we still
-                # compute the hash here and compare against the existing
-                # row before calling store(), matching the old behavior.
+                # Whole-file hash: if chunk 0's stored hash matches, we know
+                # nothing about this file has changed since the last run and
+                # can skip without rechunking. When the hash differs, we
+                # re-chunk + re-embed the whole file (simpler than trying to
+                # diff per-chunk, and the cost is low for memory files).
                 chash = content_hash(text)
                 existing = await local_conn.fetchrow(
                     """
@@ -576,22 +639,52 @@ async def sync_memory_files(
                     stats["skipped"] += 1
                     continue
 
-                metadata = {
+                chunks = chunk_text(text, max_chars=MAX_CHARS)
+                metadata_base = {
                     "filename": filepath.name,
                     "type": classify_file(filepath.name),
                     "chars": len(text),
+                    "total_chunks": len(chunks),
                 }
-                await mem.store(
-                    text=text,
-                    writer=origin,
-                    source_id=source_id,
-                    source_table=MEMORY_SOURCE,
-                    metadata=metadata,
-                    content_hash=chash,
-                    origin_path=str(filepath),
+
+                # Store every chunk with a distinct chunk_index. For single-
+                # chunk files (the common case) this is identical to the old
+                # behavior — chunks[0] is the whole text with chunk_index=0.
+                # For oversized files we split on headings so each chunk is
+                # semantically coherent.
+                for idx, chunk in enumerate(chunks):
+                    await mem.store(
+                        text=chunk,
+                        writer=origin,
+                        source_id=source_id,
+                        source_table=MEMORY_SOURCE,
+                        chunk_index=idx,
+                        metadata={**metadata_base, "chunk_index": idx},
+                        # Use whole-file hash for chunk 0 so our skip check
+                        # above keeps working; for other chunks, hash the
+                        # chunk itself so content-hash dedup stays per-chunk.
+                        content_hash=chash if idx == 0 else content_hash(chunk),
+                        origin_path=str(filepath),
+                    )
+
+                # Delete any leftover chunks from a previous larger version
+                # of the file (e.g. file shrank and now has fewer chunks).
+                await local_conn.execute(
+                    """
+                    DELETE FROM embeddings
+                    WHERE source_table = $1 AND source_id = $2
+                      AND embedding_model = $3
+                      AND chunk_index >= $4
+                    """,
+                    MEMORY_SOURCE,
+                    source_id,
+                    EMBED_MODEL,
+                    len(chunks),
                 )
+
                 stats["embedded"] += 1
-                logger.info(f"  [memory] Embedded: {source_id} ({len(text)} chars)")
+                chunk_info = f"{len(chunks)} chunk{'s' if len(chunks) != 1 else ''}" if len(chunks) > 1 else "single chunk"
+                logger.info(f"  [memory] Embedded: {source_id} ({len(text)} chars, {chunk_info})")
 
             except Exception as e:
                 stats["failed"] += 1
