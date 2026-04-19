@@ -13,6 +13,16 @@ RUN pip install --no-cache-dir asyncpg
 
 COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py ./
 
+# brain_daemon.py imports `from brain.bootstrap import ...` so the files
+# must also be accessible as a `brain.` package on PYTHONPATH. Mirror them
+# into /app/brain/ with an __init__.py so both flat and package imports work.
+RUN mkdir -p /app/brain && \
+    cp /app/bootstrap.py /app/brain/bootstrap.py && \
+    cp /app/health_probes.py /app/brain/health_probes.py && \
+    cp /app/business_probes.py /app/brain/business_probes.py && \
+    cp /app/operator_notifier.py /app/brain/operator_notifier.py && \
+    touch /app/brain/__init__.py
+
 # Non-root user with docker group (needs socket access for container restarts)
 RUN groupadd -g 999 docker 2>/dev/null || true && \
     adduser --system --uid 1001 --ingroup docker --home /home/appuser appuser && \

@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
 WORKDIR /app
 
 COPY scripts/auto-embed.py /app/auto-embed.py
+COPY src/cofounder_agent/poindexter /app/poindexter
 COPY brain/ /brain/
 
 ENV PYTHONPATH="/app:/"

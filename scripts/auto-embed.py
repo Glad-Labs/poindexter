@@ -67,7 +67,27 @@ if not _dsn:
         pass
 LOCAL_DSN = _dsn or "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
 CLOUD_DSN = LOCAL_DSN
-OLLAMA_URL = "http://127.0.0.1:11434"
+
+# In-Docker URL translation. Per Matt's DB-first-config rule, app_settings holds
+# canonical URLs (ollama_url, gitea_url) that work from the host (e.g.
+# http://localhost:3001). Inside a container, `localhost` loops back to the
+# container itself, not the host. When IN_DOCKER=true, rewrite `localhost` and
+# `127.0.0.1` to `host.docker.internal`, preserving the port — so the same DB
+# value works from both sides without per-env env-var overrides.
+IN_DOCKER = os.getenv("IN_DOCKER", "").lower() in ("1", "true", "yes") \
+    or Path("/.dockerenv").exists()
+
+
+def localize_url(url: str) -> str:
+    if not url or not IN_DOCKER:
+        return url
+    return (
+        url.replace("://localhost:", "://host.docker.internal:")
+           .replace("://127.0.0.1:", "://host.docker.internal:")
+    )
+
+
+OLLAMA_URL = localize_url(os.getenv("OLLAMA_URL") or "http://127.0.0.1:11434")
 EMBED_MODEL = "nomic-embed-text"
 MAX_CHARS = 6000  # nomic-embed-text has 8192 token context; ~6k chars stays safe
 
@@ -77,25 +97,44 @@ POSTS_SOURCE = "posts"
 ISSUES_SOURCE = "issues"
 AUDIT_SOURCE = "audit"
 
-# Gitea API
-GITEA_URL = os.getenv("GITEA_URL", "http://localhost:3001")
-GITEA_USER = os.getenv("GITEA_USER", "gladlabs")
-GITEA_PASS = os.getenv("GITEA_PASSWORD", "")
-GITEA_REPO = os.getenv("GITEA_REPO", "gladlabs/glad-labs-codebase")
+# Gitea defaults. Real values come from app_settings at connect time — these
+# placeholders just keep the script importable before the DB load.
+GITEA_URL = localize_url(os.getenv("GITEA_URL") or "http://localhost:3001")
+GITEA_USER = os.getenv("GITEA_USER") or ""
+GITEA_PASS = os.getenv("GITEA_PASSWORD") or os.getenv("GITEA_PASS") or ""
+GITEA_REPO = os.getenv("GITEA_REPO") or "gladlabs/glad-labs-codebase"
 
 # Memory directories: (path, origin label)
 #
-# 2026-04-11: The claude-code path was previously `C--users-mattm-glad-labs-website/memory`
-# which was the old per-project scope directory. Claude Code migrated to the
-# home-level `C--users-mattm` project scope; the old path still exists but only
-# contains stale audit files from March 10. MEMORY.md and every feedback_*/project_*
-# file now lives under `C--users-mattm/memory`. Result: the auto-embed job silently
-# hashed the same 2 stale files every run, so max(created_at) for source_table='memory'
-# froze at 2026-04-04 even though the job was running daily. Fix is one path edit.
+# Claude Code maintains a separate `memory/` directory per project scope, keyed
+# on the current working directory (e.g. `C--users-mattm`, `C--WINDOWS-system32`).
+# The auto-embed job must scan ALL of them — hardcoding a single scope caused
+# the 2026-04-18 incident where sessions 49-59 written from a system32 cwd were
+# silently skipped because the embedder only knew about `C--users-mattm`.
+#
+# CLAUDE_PROJECTS_DIR and OPENCLAW_MEMORY_DIR env vars override the host-level
+# Path.home() defaults so the containerized auto-embed can bind-mount these
+# directories into a fixed in-container location (see docker-compose.local.yml).
+_CLAUDE_PROJECTS = Path(
+    os.getenv("CLAUDE_PROJECTS_DIR")
+    or (Path.home() / ".claude" / "projects")
+)
+_CLAUDE_SCOPE_DIRS: List[Tuple[Path, str]] = []
+if _CLAUDE_PROJECTS.is_dir():
+    for _scope in sorted(_CLAUDE_PROJECTS.glob("C--*")):
+        _mem = _scope / "memory"
+        if _mem.is_dir():
+            _CLAUDE_SCOPE_DIRS.append((_mem, "claude-code"))
+
+_OPENCLAW_MEMORY = Path(
+    os.getenv("OPENCLAW_MEMORY_DIR")
+    or (Path.home() / ".openclaw" / "workspace" / "memory")
+)
+
 MEMORY_DIRS: List[Tuple[Path, str]] = [
-    (Path.home() / ".claude" / "projects" / "C--users-mattm" / "memory", "claude-code"),
+    *_CLAUDE_SCOPE_DIRS,
     (Path.home() / "glad-labs-website" / ".shared-context", "shared-context"),
-    (Path.home() / ".openclaw" / "workspace" / "memory", "openclaw"),
+    (_OPENCLAW_MEMORY, "openclaw"),
 ]
 
 # Logging
@@ -908,23 +947,33 @@ async def main() -> None:
         logger.info("Connecting to local pgvector DB...")
         local_conn = await asyncpg.connect(LOCAL_DSN)
 
-        # Load Gitea creds from DB if not set via env vars (DB-first config)
+        # Load Gitea creds from DB, env takes precedence per-key. Needed because
+        # the DB value of gitea_url is `http://localhost:3001` (correct for host
+        # runs) but the container has to reach Gitea via `host.docker.internal`.
         global GITEA_URL, GITEA_USER, GITEA_PASS, GITEA_REPO
-        if not GITEA_PASS:
-            try:
-                for key in ("gitea_url", "gitea_user", "gitea_password", "gitea_repo"):
-                    val = await local_conn.fetchval(
-                        "SELECT value FROM app_settings WHERE key = $1", key
-                    )
-                    if val:
-                        if key == "gitea_url": GITEA_URL = val
-                        elif key == "gitea_user": GITEA_USER = val
-                        elif key == "gitea_password": GITEA_PASS = val
-                        elif key == "gitea_repo": GITEA_REPO = val
-                if GITEA_PASS:
-                    logger.info("Loaded Gitea credentials from app_settings")
-            except Exception as e:
-                logger.debug(f"Could not load Gitea creds from DB: {e}")
+        try:
+            _env_gitea_url = os.getenv("GITEA_URL")
+            _env_gitea_user = os.getenv("GITEA_USER")
+            _env_gitea_pass = os.getenv("GITEA_PASSWORD") or os.getenv("GITEA_PASS")
+            _env_gitea_repo = os.getenv("GITEA_REPO")
+            for key in ("gitea_url", "gitea_user", "gitea_password", "gitea_repo"):
+                val = await local_conn.fetchval(
+                    "SELECT value FROM app_settings WHERE key = $1", key
+                )
+                if not val:
+                    continue
+                if key == "gitea_url" and not _env_gitea_url:
+                    GITEA_URL = localize_url(val)
+                elif key == "gitea_user" and not _env_gitea_user:
+                    GITEA_USER = val
+                elif key == "gitea_password" and not _env_gitea_pass:
+                    GITEA_PASS = val
+                elif key == "gitea_repo" and not _env_gitea_repo:
+                    GITEA_REPO = val
+            if GITEA_PASS:
+                logger.info("Loaded Gitea credentials from app_settings")
+        except Exception as e:
+            logger.debug(f"Could not load Gitea creds from DB: {e}")
 
         # Phase 1: memory files
         logger.info("--- Phase 1: Memory files ---")

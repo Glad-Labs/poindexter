@@ -360,17 +360,30 @@ services:
     container_name: poindexter-auto-embed
     restart: unless-stopped
     environment:
+      # Only DATABASE_URL is an env var by policy; everything else — ollama_url,
+      # gitea_url, etc. — lives in the app_settings DB and is loaded at runtime.
+      # The script translates `localhost:PORT` to in-network service names when
+      # it detects it's running inside Docker (IN_DOCKER=true).
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
-      OLLAMA_URL: "http://host.docker.internal:11434"
+      IN_DOCKER: "true"
+      # Point the script at the container-mount locations instead of Path.home().
+      # Mounting the whole projects/ dir means every C--* scope gets embedded
+      # automatically — no more silent skips when cwd changes (2026-04-18 incident).
+      CLAUDE_PROJECTS_DIR: /memory/claude-projects
+      OPENCLAW_MEMORY_DIR: /memory/openclaw
     volumes:
       - ./scripts/auto-embed.py:/app/auto-embed.py:ro
       - ./brain:/brain:ro
-      - ${USERPROFILE:-.}/.claude/projects/C--users-mattm/memory:/memory/claude-code:ro
+      - ${USERPROFILE:-.}/.claude/projects:/memory/claude-projects:ro
       - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Boot order: postgres (data) → brain-daemon (seeds + self-checks) → auto-embed
+    # (populates pgvector) → everything else. Per 2026-04-18 architecture discussion.
     depends_on:
       postgres-local:
+        condition: service_healthy
+      brain-daemon:
         condition: service_healthy
 
   # ===========================================
