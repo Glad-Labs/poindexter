@@ -163,6 +163,61 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
   -d '{"value": "80"}'
 ```
 
+## Plugins
+
+Poindexter is built on a small plugin framework — Taps (data in), Probes (state checks), Jobs (scheduled work), Stages (pipeline steps), Packs (prompt/style bundles), and LLMProviders (inference backends). Each Protocol lives in `src/cofounder_agent/plugins/` and registers via setuptools `entry_points`.
+
+### Using community plugins
+
+```bash
+# Install any Poindexter plugin with pip:
+pip install poindexter-tap-slack       # community Tap for Slack messages
+pip install poindexter-llm-groq        # community LLMProvider for Groq
+
+# Enable + configure via app_settings:
+curl -X PUT http://localhost:8002/api/settings/plugin.tap.slack \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"value": "{\"enabled\": true, \"interval_seconds\": 3600, \"config\": {\"workspace\": \"myteam\"}}"}'
+```
+
+Next worker restart picks up the new plugin. No code edits to Poindexter core required.
+
+### Authoring a plugin
+
+A plugin package needs three things:
+
+1. A class implementing the relevant Protocol (e.g. `Tap`):
+
+   ```python
+   # my_package/slack_tap.py
+   from poindexter.plugins import Tap, Document
+
+   class SlackTap:
+       name = "slack"
+       interval_seconds = 3600
+
+       async def extract(self, pool, config):
+           async for msg in fetch_slack_messages(config):
+               yield Document(
+                   source_id=f"slack/{msg.ts}",
+                   source_table="slack",
+                   text=msg.text,
+                   metadata={"channel": msg.channel, "user": msg.user},
+                   writer="poindexter-tap-slack",
+               )
+   ```
+
+2. Entry_points registration in `pyproject.toml`:
+
+   ```toml
+   [project.entry-points."poindexter.taps"]
+   slack = "my_package.slack_tap:SlackTap"
+   ```
+
+3. Per-install config shape documented in your README so operators know what to put under `plugin.tap.<name>.config`.
+
+See `src/cofounder_agent/plugins/samples/` for the three shipping samples (`HelloTap`, `DatabaseProbe`, `NoopJob`) and `docs/architecture/plugin-architecture.md` for the full design.
+
 ## Documentation
 
 Full technical documentation lives under [`docs/`](docs/README.md).
