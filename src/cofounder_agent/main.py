@@ -615,7 +615,9 @@ async def prometheus_metrics_canonical():
 
     from services.metrics_exporter import refresh_metrics, render_exposition
 
-    pool = getattr(app.state, "pool", None)
+    # app.state.database is the DatabaseService; its .pool is the asyncpg pool.
+    db_service = getattr(app.state, "database", None)
+    pool = getattr(db_service, "pool", None) if db_service else None
     # Ollama URL: read from app_settings via site_config if wired, else default
     try:
         from services.site_config import site_config
