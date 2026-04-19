@@ -1,39 +1,52 @@
+"""Auto-Embed — thin runner over the plugin registry.
+
+Runs as a Docker sidecar (see ``docker-compose.local.yml`` → ``auto-embed``
+service) or ad-hoc from the host. Iterates every registered Tap, fetches
+Documents, stores embeddings in pgvector. The actual per-source logic
+lives under ``services/taps/`` as plugin implementations.
+
+Pre-Phase-B history: this file used to be 1157 lines with 6 hardcoded
+phases. Phase B (GitHub #66) collapsed it onto the plugin framework.
+See ``docs/architecture/plugin-architecture.md`` for the design.
+
+## Running
+
+    # From the repo root (poetry env):
+    poetry run python scripts/auto-embed.py
+
+    # From the Docker sidecar (runs hourly):
+    docker compose -f docker-compose.local.yml up -d auto-embed
+
+## Environment
+
+Only ``DATABASE_URL`` + optional ``OLLAMA_URL`` / ``IN_DOCKER``. Every
+other knob — enable/disable per Tap, per-Tap config — lives in
+``app_settings`` under ``plugin.tap.<name>``.
 """
-Auto-Embed Cron — Keep pgvector in sync with new content.
 
-Standalone script designed to run as a Windows Scheduled Task every hour.
-Connects to both the Railway cloud DB (for published posts) and the local
-pgvector DB (for embeddings), embeds any new or changed content, and logs
-all activity to ~/.gladlabs/auto-embed.log.
-
-Dependencies: asyncpg, httpx (same as embed-memory.py)
-
-Usage:
-    pythonw scripts/auto-embed.py      # windowless (scheduled task)
-    python  scripts/auto-embed.py      # interactive with stdout
-"""
+from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict
 
 import asyncpg
 import httpx
 
-# Make `poindexter.memory` importable when this script is run from the repo
-# root or from inside the worker container. The package lives under
-# `src/cofounder_agent/poindexter/` for docker-build-context reasons; when
-# the eventual refactor moves it to `src/poindexter/`, update this path.
+# ---------------------------------------------------------------------------
+# Make `poindexter` + `plugins` + `services` importable from the worker
+# repo layout. Docker image COPYs them into /app.
+# ---------------------------------------------------------------------------
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 for _candidate in (
-    _REPO_ROOT / "src" / "cofounder_agent",  # host layout
-    Path("/app"),                             # worker container layout
+    _REPO_ROOT / "src" / "cofounder_agent",
+    Path("/app"),
 ):
     if _candidate.exists() and str(_candidate) not in sys.path:
         sys.path.insert(0, str(_candidate))
@@ -50,399 +63,105 @@ except ImportError as _imp_err:
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Resolve DB URL via bootstrap.toml first, env vars as fallback
+# Resolve DB URL via bootstrap.toml first, env vars as fallback.
 _dsn = os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL", "")
 if not _dsn:
     try:
-        import sys as _sys
         from pathlib import Path as _Path
         for _p in _Path(__file__).resolve().parents:
             if (_p / "brain" / "bootstrap.py").is_file():
-                if str(_p) not in _sys.path:
-                    _sys.path.insert(0, str(_p))
+                if str(_p) not in sys.path:
+                    sys.path.insert(0, str(_p))
                 break
         from brain.bootstrap import resolve_database_url
         _dsn = resolve_database_url() or ""
     except Exception:
         pass
 LOCAL_DSN = _dsn or "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
-CLOUD_DSN = LOCAL_DSN
 
-# URL localization (same rules for every brain-adjacent service) lives in
-# brain.docker_utils so we only have one implementation to maintain. Prefer
-# the package import; fall back to scripts/-parallel brain/ for callers that
-# haven't set PYTHONPATH cleanly.
-try:
-    from brain.docker_utils import IN_DOCKER, localize_url, resolve_url  # noqa: F401
-except ImportError:
-    # Allow the script to run from inside the brain container (/brain on path)
-    # or with the repo root on PYTHONPATH.
-    sys.path.insert(0, str(_REPO_ROOT))
-    from brain.docker_utils import IN_DOCKER, localize_url, resolve_url  # noqa: F401
+# URL localization — same pattern used by brain.docker_utils and the
+# plugins ecosystem. When IN_DOCKER=true, rewrites localhost URLs to
+# host.docker.internal so DB values that are correct from the host
+# also work from inside the container.
+IN_DOCKER = os.getenv("IN_DOCKER", "").lower() in ("1", "true", "yes") \
+    or Path("/.dockerenv").exists()
 
 
-OLLAMA_URL = localize_url(os.getenv("OLLAMA_URL") or "http://127.0.0.1:11434")
+def _localize_url(url: str) -> str:
+    if not url or not IN_DOCKER:
+        return url
+    return (
+        url.replace("://localhost:", "://host.docker.internal:")
+           .replace("://127.0.0.1:", "://host.docker.internal:")
+    )
+
+
+OLLAMA_URL = _localize_url(os.getenv("OLLAMA_URL") or "http://127.0.0.1:11434")
 EMBED_MODEL = "nomic-embed-text"
-MAX_CHARS = 6000  # nomic-embed-text has 8192 token context; ~6k chars stays safe
+OPENCLAW_SQLITE_PATH = Path.home() / ".openclaw" / "memory" / "main.sqlite"
 
-# Source tables
-MEMORY_SOURCE = "memory"
-POSTS_SOURCE = "posts"
-ISSUES_SOURCE = "issues"
-AUDIT_SOURCE = "audit"
-
-# Gitea defaults. Real values come from app_settings at connect time — these
-# placeholders just keep the script importable before the DB load.
-GITEA_URL = localize_url(os.getenv("GITEA_URL") or "http://localhost:3001")
-GITEA_USER = os.getenv("GITEA_USER") or ""
-GITEA_PASS = os.getenv("GITEA_PASSWORD") or os.getenv("GITEA_PASS") or ""
-GITEA_REPO = os.getenv("GITEA_REPO") or "gladlabs/glad-labs-codebase"
-
-# Memory directories: (path, origin label)
-#
-# Claude Code maintains a separate `memory/` directory per project scope, keyed
-# on the current working directory (e.g. `C--users-mattm`, `C--WINDOWS-system32`).
-# The auto-embed job must scan ALL of them — hardcoding a single scope caused
-# the 2026-04-18 incident where sessions 49-59 written from a system32 cwd were
-# silently skipped because the embedder only knew about `C--users-mattm`.
-#
-# CLAUDE_PROJECTS_DIR and OPENCLAW_MEMORY_DIR env vars override the host-level
-# Path.home() defaults so the containerized auto-embed can bind-mount these
-# directories into a fixed in-container location (see docker-compose.local.yml).
-_CLAUDE_PROJECTS = Path(
-    os.getenv("CLAUDE_PROJECTS_DIR")
-    or (Path.home() / ".claude" / "projects")
-)
-_CLAUDE_SCOPE_DIRS: List[Tuple[Path, str]] = []
-if _CLAUDE_PROJECTS.is_dir():
-    for _scope in sorted(_CLAUDE_PROJECTS.glob("C--*")):
-        _mem = _scope / "memory"
-        if _mem.is_dir():
-            _CLAUDE_SCOPE_DIRS.append((_mem, "claude-code"))
-
-_OPENCLAW_MEMORY = Path(
-    os.getenv("OPENCLAW_MEMORY_DIR")
-    or (Path.home() / ".openclaw" / "workspace" / "memory")
-)
-
-MEMORY_DIRS: List[Tuple[Path, str]] = [
-    *_CLAUDE_SCOPE_DIRS,
-    (Path.home() / "glad-labs-website" / ".shared-context", "shared-context"),
-    (_OPENCLAW_MEMORY, "openclaw"),
-]
-
+# ---------------------------------------------------------------------------
 # Logging
+# ---------------------------------------------------------------------------
+
 LOG_DIR = Path.home() / ".gladlabs"
-LOG_FILE = LOG_DIR / "auto-embed.log"
-
-# ---------------------------------------------------------------------------
-# Logging setup
-# ---------------------------------------------------------------------------
-
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "auto-embed.log"
 
 logger = logging.getLogger("auto-embed")
 logger.setLevel(logging.INFO)
 
-file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
-file_handler.setFormatter(logging.Formatter(
+_file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter(
     "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
 ))
-logger.addHandler(file_handler)
+logger.addHandler(_file_handler)
 
-# Also log to stdout when run interactively
 if sys.stdout and sys.stdout.isatty():
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    logger.addHandler(stdout_handler)
-
-# ---------------------------------------------------------------------------
-# Helpers (shared with embed-memory.py logic)
-# ---------------------------------------------------------------------------
-
-
-def content_hash(text: str) -> str:
-    """SHA-256 hash of content for deduplication."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def classify_file(filename: str) -> str:
-    """Infer a type tag from the filename."""
-    name = filename.lower().replace(".md", "")
-    if "handoff" in name or "session" in name:
-        return "handoff"
-    if "feedback" in name or "preference" in name:
-        return "feedback"
-    if "decision" in name:
-        return "decision"
-    if "identity" in name or "profile" in name or "career" in name or "voice" in name:
-        return "identity"
-    if "project" in name or "strategy" in name or "vision" in name:
-        return "project"
-    if "audit" in name or "report" in name:
-        return "audit"
-    if "state" in name or "current" in name:
-        return "state"
-    if "issue" in name:
-        return "issues"
-    if "memory" in name or "shared" in name:
-        return "index"
-    return "knowledge"
-
-
-def chunk_text(text: str, max_chars: int = MAX_CHARS) -> List[str]:
-    """Split text into chunks at most ``max_chars`` each, preferring markdown
-    heading boundaries, falling back to paragraph boundaries, then raw slice.
-
-    The target is Ollama's ~8k token context window for nomic-embed-text.
-    Files under the limit yield a single chunk unchanged.
-
-    Splitting preference: a `# / ## / ### heading` line always starts a new
-    chunk when the accumulator would overflow, because headings are the most
-    semantically stable boundaries in our memory files. Within an oversized
-    section we fall back to `\\n\\n` paragraph splits, and for rare cases of
-    a single paragraph >max_chars we hard-slice — that's bad for retrieval
-    but beats dropping the content entirely.
-    """
-    import re
-
-    if len(text) <= max_chars:
-        return [text]
-
-    # Split on lines that start with #, ##, or ### (ATX headings). The
-    # lookahead keeps the heading attached to its following section.
-    sections = re.split(r"(?=^#{1,3} )", text, flags=re.MULTILINE)
-    chunks: List[str] = []
-    buf = ""
-    for section in sections:
-        if not section:
-            continue
-        if len(section) > max_chars:
-            # Flush accumulator before diving into the oversized section.
-            if buf:
-                chunks.append(buf)
-                buf = ""
-            # Paragraph-split inside the section.
-            paras = section.split("\n\n")
-            pbuf = ""
-            for p in paras:
-                candidate = (pbuf + "\n\n" + p) if pbuf else p
-                if len(candidate) <= max_chars:
-                    pbuf = candidate
-                else:
-                    if pbuf:
-                        chunks.append(pbuf)
-                        pbuf = ""
-                    if len(p) <= max_chars:
-                        pbuf = p
-                    else:
-                        # Last-resort hard slice.
-                        for start in range(0, len(p), max_chars):
-                            chunks.append(p[start:start + max_chars])
-            if pbuf:
-                buf = pbuf
-            continue
-        candidate = (buf + section) if buf else section
-        if len(candidate) <= max_chars:
-            buf = candidate
-        else:
-            if buf:
-                chunks.append(buf)
-            buf = section
-    if buf:
-        chunks.append(buf)
-    return chunks
-
-
-def make_relative_id(filepath: Path, origin: str) -> str:
-    """Build a stable source_id from origin + optional scope + relative path.
-
-    For the `claude-code` origin every project scope (`C--users-mattm`,
-    `C--WINDOWS-system32`, etc.) has its own `memory/` directory, so the
-    scope name is prepended to the path to avoid same-filename collisions
-    on the `(source_table, source_id, chunk_index, embedding_model)` unique
-    constraint. Without this, a `MEMORY.md` in two scopes would upsert
-    the same row — whichever scope was scanned last would silently win.
-    """
-    for dir_path, dir_origin in MEMORY_DIRS:
-        if dir_origin != origin:
-            continue
-        if str(filepath).startswith(str(dir_path)):
-            rel = filepath.relative_to(dir_path)
-            # For claude-code, include the parent scope directory in source_id
-            # (e.g. `C--WINDOWS-system32/memory` → prefix `C--WINDOWS-system32`).
-            if origin == "claude-code":
-                scope = dir_path.parent.name  # e.g. "C--users-mattm"
-                return f"{origin}/{scope}/{rel.as_posix()}"
-            return f"{origin}/{rel.as_posix()}"
-    return f"{origin}/{filepath.name}"
-
-
-def collect_files() -> List[Tuple[Path, str]]:
-    """Collect all .md files from all memory directories."""
-    files = []
-    for dir_path, origin in MEMORY_DIRS:
-        if not dir_path.exists():
-            logger.debug(f"  [skip] Directory not found: {dir_path}")
-            continue
-        md_files = sorted(dir_path.rglob("*.md"))
-        logger.debug(f"  [{origin}] Found {len(md_files)} .md files in {dir_path}")
-        for f in md_files:
-            files.append((f, origin))
-    return files
+    _stdout = logging.StreamHandler(sys.stdout)
+    _stdout.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(_stdout)
 
 
 # ---------------------------------------------------------------------------
-# Ollama
+# Pre-flight checks
 # ---------------------------------------------------------------------------
 
 
 async def check_ollama(client: httpx.AsyncClient) -> bool:
-    """Return True if Ollama is reachable and model is available."""
+    """Return True if Ollama is reachable and the embed model is present."""
     try:
         resp = await client.get(f"{OLLAMA_URL}/api/tags", timeout=5.0)
         resp.raise_for_status()
         models = [m.get("name", "") for m in resp.json().get("models", [])]
-        # Model names may include ":latest" suffix
         found = any(EMBED_MODEL in m for m in models)
         if not found:
-            logger.warning(f"Ollama is up but model '{EMBED_MODEL}' not found. Available: {models}")
+            logger.warning(
+                "Ollama is up but model %r not found. Available: %s",
+                EMBED_MODEL, models,
+            )
         return found
     except Exception as e:
-        logger.warning(f"Ollama not reachable: {e}")
+        logger.warning("Ollama not reachable: %s", e)
         return False
 
 
-async def embed_text(client: httpx.AsyncClient, text: str) -> List[float]:
-    """Call Ollama embed API for a single text, truncating if needed."""
-    if len(text) > MAX_CHARS:
-        text = text[:MAX_CHARS]
-    resp = await client.post(
-        f"{OLLAMA_URL}/api/embed",
-        json={"model": EMBED_MODEL, "input": text},
-        timeout=60.0,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    embeddings = data.get("embeddings", [])
-    if not embeddings:
-        raise RuntimeError("No embeddings returned from Ollama")
-    return embeddings[0]
-
-
 # ---------------------------------------------------------------------------
-# DB helpers
-# ---------------------------------------------------------------------------
-
-
-async def needs_reembedding(
-    conn: asyncpg.Connection, source_table: str, source_id: str, new_hash: str
-) -> bool:
-    """Check if content hash has changed (or row doesn't exist)."""
-    row = await conn.fetchrow(
-        """SELECT content_hash FROM embeddings
-           WHERE source_table = $1 AND source_id = $2
-             AND chunk_index = 0 AND embedding_model = $3""",
-        source_table,
-        source_id,
-        EMBED_MODEL,
-    )
-    if row is None:
-        return True
-    return row["content_hash"] != new_hash
-
-
-async def store_embedding(
-    conn: asyncpg.Connection,
-    source_table: str,
-    source_id: str,
-    chash: str,
-    text_preview: str,
-    embedding: List[float],
-    metadata: Dict[str, Any],
-    writer: str = "worker",
-) -> None:
-    """Upsert embedding row.
-
-    2026-04-12: Added the `writer` column from migration 024. The three
-    phases that still use this helper (posts, issues, audit) are all
-    produced by the worker — the default `writer='worker'` is correct
-    for every current caller. Slice 3b follow-up will migrate those
-    phases to MemoryClient and this helper can then be removed.
-    """
-    now = datetime.now(timezone.utc)
-    vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
-    metadata_json = json.dumps(metadata)
-
-    # Map the phase-level source_table to a more specific writer so the
-    # /memory dashboard can distinguish audit sync events from Gitea
-    # issue sync events without having to join source_table.
-    if source_table == "issues":
-        writer = "gitea"
-
-    await conn.execute(
-        """
-        INSERT INTO embeddings (source_table, source_id, chunk_index, content_hash,
-                                text_preview, embedding_model, embedding, metadata,
-                                writer, origin_path,
-                                created_at, updated_at)
-        VALUES ($1, $2, 0, $3, $4, $5, $6::vector, $7::jsonb, $8, $9, $10, $10)
-        ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
-        DO UPDATE SET content_hash  = EXCLUDED.content_hash,
-                      text_preview  = EXCLUDED.text_preview,
-                      embedding     = EXCLUDED.embedding,
-                      metadata      = EXCLUDED.metadata,
-                      writer        = EXCLUDED.writer,
-                      updated_at    = EXCLUDED.updated_at
-        """,
-        source_table,
-        source_id,
-        chash,
-        text_preview[:500],
-        EMBED_MODEL,
-        vector_str,
-        metadata_json,
-        writer,
-        source_id,  # origin_path defaults to source_id for legacy phases
-        now,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Phase 1b: OpenClaw SQLite chunks
+# Legacy Phase: OpenClaw SQLite pre-embedded chunks
 # ---------------------------------------------------------------------------
 #
-# OpenClaw maintains its own memory store at ~/.openclaw/memory/main.sqlite.
-# When we discovered on 2026-04-11 that the `~/.openclaw/memory/*.md` path
-# was only picking up one stale 2026-03-22.md file, the real story was:
-# OpenClaw moved to a SQLite-backed store that pre-chunks, embeds, and tracks
-# files internally. The 10 source markdown files still exist as rows in the
-# sqlite `files` table along with 80 pre-computed nomic-embed-text vectors
-# in the `chunks` table — we just never read it.
+# OpenClaw stores its own pgvector-compatible embeddings in
+# ~/.openclaw/memory/main.sqlite. We copy them verbatim (no re-embed,
+# no Ollama call) into our embeddings table so OpenClaw's knowledge is
+# queryable from this pool.
 #
-# This phase ingests those chunks straight into pgvector without re-embedding.
-# Embeddings are bit-for-bit identical (same nomic-embed-text model,
-# 768 dim, same tokenizer) so the cosine math lines up with everything else
-# already in the table. Each chunk becomes one row:
-#   source_table = 'memory'
-#   source_id    = 'openclaw/<path>'
-#   chunk_index  = 0,1,2,... per file
-#   metadata     = {"origin": "openclaw-sqlite", "start_line", "end_line"}
-#
-# If OpenClaw is not installed / the sqlite file is missing, this phase
-# is a no-op — do not fail the overall run.
-
-OPENCLAW_SQLITE_PATH = Path.home() / ".openclaw" / "memory" / "main.sqlite"
+# Not yet migrated to a Tap because the Document contract assumes text
+# that gets embedded in the runner — OpenClaw provides pre-computed
+# vectors. Migration tracked separately; for now it stays inline.
 
 
 async def sync_openclaw_sqlite(local_conn: asyncpg.Connection) -> Dict[str, int]:
-    """Ingest pre-embedded chunks from OpenClaw's SQLite memory store.
-
-    2026-04-12: Migrated to `MemoryClient.store(embedding=...)` as part of
-    Gitea #192 slice 3b. The pre-computed vectors from OpenClaw are passed
-    through explicitly — no Ollama round-trip — while the upsert logic and
-    writer column flow through the same library every other caller uses.
-    """
+    """Ingest pre-embedded chunks from OpenClaw's SQLite memory store."""
     stats = {"embedded": 0, "skipped": 0, "failed": 0}
 
     if not _HAS_MEMORY_CLIENT or MemoryClient is None:
@@ -452,7 +171,8 @@ async def sync_openclaw_sqlite(local_conn: asyncpg.Connection) -> Dict[str, int]
 
     if not OPENCLAW_SQLITE_PATH.exists():
         logger.info(
-            f"OpenClaw SQLite not found at {OPENCLAW_SQLITE_PATH} — skipping phase"
+            "OpenClaw SQLite not found at %s — skipping phase",
+            OPENCLAW_SQLITE_PATH,
         )
         return stats
 
@@ -468,21 +188,20 @@ async def sync_openclaw_sqlite(local_conn: asyncpg.Connection) -> Dict[str, int]
         cur.execute(
             """
             SELECT id, path, source, start_line, end_line, model, text, embedding
-            FROM chunks
-            WHERE embedding IS NOT NULL
-            ORDER BY path, start_line
+              FROM chunks
+             WHERE embedding IS NOT NULL
+             ORDER BY path, start_line
             """
         )
         rows = cur.fetchall()
         conn.close()
     except Exception as e:
-        logger.error(f"Could not read OpenClaw SQLite: {e}")
+        logger.error("Could not read OpenClaw SQLite: %s", e)
         stats["failed"] += 1
         return stats
 
-    logger.info(f"OpenClaw: {len(rows)} pre-embedded chunks in main.sqlite")
+    logger.info("OpenClaw: %d pre-embedded chunks in main.sqlite", len(rows))
 
-    # Group chunks per file so we can assign stable chunk_index values.
     chunks_by_path: Dict[str, list] = {}
     for row in rows:
         chunks_by_path.setdefault(row[1], []).append(row)
@@ -490,44 +209,29 @@ async def sync_openclaw_sqlite(local_conn: asyncpg.Connection) -> Dict[str, int]
     async with MemoryClient(dsn=LOCAL_DSN, ollama_url=OLLAMA_URL) as mem:
         for path, chunks in chunks_by_path.items():
             source_id = f"openclaw/{path}"
-            for chunk_index, (
-                chunk_id,
-                _path,
-                _source,
-                start_line,
-                end_line,
-                model,
-                text,
-                emb_str,
-            ) in enumerate(chunks):
+            for chunk_index, (_cid, _path, _source, start_line, end_line, model, text, emb_str) in enumerate(chunks):
                 try:
-                    # OpenClaw stores embeddings as JSON-encoded float arrays.
                     vec = json.loads(emb_str)
                     if not isinstance(vec, list) or len(vec) != 768:
                         logger.warning(
-                            f"  [openclaw] {source_id}#{chunk_index}: unexpected "
-                            f"embedding shape (got {type(vec).__name__} len={len(vec) if isinstance(vec, list) else '?'})"
+                            "  [openclaw] %s#%d: unexpected embedding shape",
+                            source_id, chunk_index,
                         )
                         stats["failed"] += 1
                         continue
-
-                    # `model` from OpenClaw is "nomic-embed-text:latest" —
-                    # strip the :latest tag so queries by embedding_model
-                    # align with ours.
                     embed_model = (model or EMBED_MODEL).replace(":latest", "")
 
-                    # Skip if already in pgvector with the same hash. The
-                    # hash IS the OpenClaw chunk id (SHA-256 of the text).
-                    existing = await local_conn.fetchrow(
+                    content_hash = __import__("hashlib").sha256(
+                        (text or "").encode("utf-8")
+                    ).hexdigest()
+
+                    existing = await local_conn.fetchval(
                         """SELECT content_hash FROM embeddings
-                           WHERE source_table = $1 AND source_id = $2
-                             AND chunk_index = $3 AND embedding_model = $4""",
-                        MEMORY_SOURCE,
-                        source_id,
-                        chunk_index,
-                        embed_model,
+                           WHERE source_table = 'memory' AND source_id = $1
+                             AND chunk_index = $2 AND embedding_model = $3""",
+                        source_id, chunk_index, embed_model,
                     )
-                    if existing is not None and existing["content_hash"] == chunk_id:
+                    if existing == content_hash:
                         stats["skipped"] += 1
                         continue
 
@@ -535,505 +239,39 @@ async def sync_openclaw_sqlite(local_conn: asyncpg.Connection) -> Dict[str, int]
                         text=text or "",
                         writer="openclaw",
                         source_id=source_id,
-                        source_table=MEMORY_SOURCE,
+                        source_table="memory",
                         chunk_index=chunk_index,
-                        embedding=vec,
-                        content_hash=chunk_id,
-                        embedding_model=embed_model,
                         metadata={
-                            "origin": "openclaw-sqlite",
-                            "openclaw_source": _source,
+                            "path": path,
                             "start_line": start_line,
                             "end_line": end_line,
-                            "filename": Path(path).name,
                         },
+                        content_hash=content_hash,
                         origin_path=path,
+                        embedding=vec,
                     )
                     stats["embedded"] += 1
-
                 except Exception as e:
+                    logger.warning(
+                        "  [openclaw] FAIL %s#%d: %s", source_id, chunk_index, e,
+                    )
                     stats["failed"] += 1
-                    logger.error(
-                        f"  [openclaw] FAIL {source_id}#{chunk_index}: {e}"
-                    )
 
     return stats
 
 
 # ---------------------------------------------------------------------------
-# Phase 1: Memory files (same logic as embed-memory.py)
-# ---------------------------------------------------------------------------
-
-
-async def sync_memory_files(
-    local_conn: asyncpg.Connection, http: httpx.AsyncClient
-) -> Dict[str, int]:
-    """Scan memory dirs, embed new/changed files via `poindexter.memory.MemoryClient`.
-
-    2026-04-12: Migrated from direct `store_embedding` / `needs_reembedding`
-    calls to MemoryClient as part of Gitea #192 slice 3b. This means the
-    `writer` column gets set correctly for every memory file (the `origin`
-    label from MEMORY_DIRS becomes the writer value), content_hash dedup
-    uses the same SHA-256 the rest of the pipeline does, and any future
-    embeddings schema change only has to be made in MemoryClient.
-
-    Falls back to the legacy path if MemoryClient fails to import — lets
-    `auto-embed.py` keep working from oddball environments where the
-    poindexter package isn't reachable.
-    """
-    del http  # legacy param kept for signature compat; MemoryClient owns HTTP
-    stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-    if not _HAS_MEMORY_CLIENT or MemoryClient is None:
-        logger.error(
-            "sync_memory_files: MemoryClient unavailable (%s). This should not happen "
-            "inside the worker container or from the repo root — fix the import path "
-            "in auto-embed.py.",
-            _MEMORY_CLIENT_IMPORT_ERR,
-        )
-        stats["failed"] += 1
-        return stats
-
-    files = collect_files()
-    logger.info(
-        f"Memory: {len(files)} .md files found across {len(MEMORY_DIRS)} directories"
-    )
-
-    # One MemoryClient for the whole batch — it pools the DB connection and
-    # the Ollama HTTP client, so per-file overhead is negligible. We pass
-    # LOCAL_DSN / OLLAMA_URL explicitly so this script works from any
-    # environment (the hardcoded fallbacks in MemoryClient default to
-    # host.docker.internal / DATABASE_URL which may not be set here).
-    async with MemoryClient(dsn=LOCAL_DSN, ollama_url=OLLAMA_URL) as mem:
-        for filepath, origin in files:
-            source_id = make_relative_id(filepath, origin)
-            try:
-                text = filepath.read_text(encoding="utf-8")
-                if not text.strip():
-                    stats["skipped"] += 1
-                    continue
-
-                # Whole-file hash: if chunk 0's stored hash matches, we know
-                # nothing about this file has changed since the last run and
-                # can skip without rechunking. When the hash differs, we
-                # re-chunk + re-embed the whole file (simpler than trying to
-                # diff per-chunk, and the cost is low for memory files).
-                chash = content_hash(text)
-                existing = await local_conn.fetchrow(
-                    """
-                    SELECT content_hash FROM embeddings
-                    WHERE source_table = $1 AND source_id = $2
-                      AND chunk_index = 0 AND embedding_model = $3
-                    """,
-                    MEMORY_SOURCE,
-                    source_id,
-                    EMBED_MODEL,
-                )
-                if existing and existing["content_hash"] == chash:
-                    stats["skipped"] += 1
-                    continue
-
-                chunks = chunk_text(text, max_chars=MAX_CHARS)
-                metadata_base = {
-                    "filename": filepath.name,
-                    "type": classify_file(filepath.name),
-                    "chars": len(text),
-                    "total_chunks": len(chunks),
-                }
-
-                # Store every chunk with a distinct chunk_index. For single-
-                # chunk files (the common case) this is identical to the old
-                # behavior — chunks[0] is the whole text with chunk_index=0.
-                # For oversized files we split on headings so each chunk is
-                # semantically coherent.
-                for idx, chunk in enumerate(chunks):
-                    await mem.store(
-                        text=chunk,
-                        writer=origin,
-                        source_id=source_id,
-                        source_table=MEMORY_SOURCE,
-                        chunk_index=idx,
-                        metadata={**metadata_base, "chunk_index": idx},
-                        # Use whole-file hash for chunk 0 so our skip check
-                        # above keeps working; for other chunks, hash the
-                        # chunk itself so content-hash dedup stays per-chunk.
-                        content_hash=chash if idx == 0 else content_hash(chunk),
-                        origin_path=str(filepath),
-                    )
-
-                # Delete any leftover chunks from a previous larger version
-                # of the file (e.g. file shrank and now has fewer chunks).
-                await local_conn.execute(
-                    """
-                    DELETE FROM embeddings
-                    WHERE source_table = $1 AND source_id = $2
-                      AND embedding_model = $3
-                      AND chunk_index >= $4
-                    """,
-                    MEMORY_SOURCE,
-                    source_id,
-                    EMBED_MODEL,
-                    len(chunks),
-                )
-
-                stats["embedded"] += 1
-                chunk_info = f"{len(chunks)} chunk{'s' if len(chunks) != 1 else ''}" if len(chunks) > 1 else "single chunk"
-                logger.info(f"  [memory] Embedded: {source_id} ({len(text)} chars, {chunk_info})")
-
-            except Exception as e:
-                stats["failed"] += 1
-                logger.error(f"  [memory] FAIL {source_id}: {e}")
-
-    return stats
-
-
-# ---------------------------------------------------------------------------
-# Phase 2: Published posts from cloud DB
-# ---------------------------------------------------------------------------
-
-
-async def fetch_published_posts(cloud_conn: asyncpg.Connection) -> List[asyncpg.Record]:
-    """Fetch all published posts from the Railway cloud DB."""
-    return await cloud_conn.fetch(
-        """SELECT id, title, slug, content, excerpt, status, published_at, created_at, updated_at
-           FROM posts
-           WHERE status = 'published'
-           ORDER BY published_at DESC NULLS LAST"""
-    )
-
-
-async def sync_published_posts(
-    local_conn: asyncpg.Connection,
-    cloud_conn: asyncpg.Connection,
-    http: httpx.AsyncClient,
-) -> Dict[str, int]:
-    """Embed any published posts not yet in local pgvector. Returns stats dict."""
-    stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-    posts = await fetch_published_posts(cloud_conn)
-    logger.info(f"Posts: {len(posts)} published posts found in cloud DB")
-
-    for post in posts:
-        post_id = str(post["id"])
-        # #198 audit: unified on UUID source_id so auto-embed and the
-        # publish-hook embedder (services/embedding_service.embed_post)
-        # share one namespace. Historical `post/slug-hash` rows from
-        # before 2026-04-16 get cleaned up by the backfill migration.
-        source_id = post_id
-        try:
-            # Build the embeddable text: title + excerpt + content
-            parts = []
-            if post["title"]:
-                parts.append(f"# {post['title']}")
-            if post["excerpt"]:
-                parts.append(post["excerpt"])
-            if post["content"]:
-                parts.append(post["content"])
-            text = "\n\n".join(parts)
-
-            if not text.strip():
-                stats["skipped"] += 1
-                continue
-
-            chash = content_hash(text)
-            if not await needs_reembedding(local_conn, POSTS_SOURCE, source_id, chash):
-                stats["skipped"] += 1
-                continue
-
-            embedding = await embed_text(http, text)
-            metadata = {
-                "post_id": post_id,
-                "slug": post["slug"],
-                "title": post["title"],
-                "status": post["status"],
-                "published_at": post["published_at"].isoformat() if post["published_at"] else None,
-                "chars": len(text),
-            }
-            preview = text[:500].replace("\n", " ").strip()
-            await store_embedding(local_conn, POSTS_SOURCE, source_id, chash, preview, embedding, metadata)
-            stats["embedded"] += 1
-            logger.info(f"  [post] Embedded: {source_id} ({len(text)} chars)")
-
-        except Exception as e:
-            stats["failed"] += 1
-            logger.error(f"  [post] FAIL {source_id}: {e}")
-
-    return stats
-
-
-# ---------------------------------------------------------------------------
-# Phase 3: Gitea issues
-# ---------------------------------------------------------------------------
-
-
-async def sync_gitea_issues(
-    local_conn: asyncpg.Connection, http: httpx.AsyncClient
-) -> Dict[str, int]:
-    """Embed new/changed Gitea issues."""
-    stats = {"embedded": 0, "skipped": 0, "failed": 0}
-    page = 1
-    all_issues = []
-
-    while True:
-        try:
-            resp = await http.get(
-                f"{GITEA_URL}/api/v1/repos/{GITEA_REPO}/issues",
-                params={"state": "all", "limit": 50, "page": page},
-                auth=(GITEA_USER, GITEA_PASS),
-                timeout=15,
-            )
-            if resp.status_code != 200:
-                logger.warning(f"Gitea API returned {resp.status_code}")
-                break
-            batch = resp.json()
-            if not batch:
-                break
-            all_issues.extend(batch)
-            page += 1
-            if len(batch) < 50:
-                break
-        except Exception as e:
-            logger.warning(f"Gitea API error: {e}")
-            break
-
-    logger.info(f"  Found {len(all_issues)} Gitea issues")
-
-    for issue in all_issues:
-        try:
-            num = issue["number"]
-            title = issue.get("title", "")
-            body = (issue.get("body") or "")[:3000]
-            state = issue.get("state", "")
-            labels = ", ".join(l["name"] for l in issue.get("labels", []))
-
-            text = f"Issue #{num}: {title}\nState: {state}\nLabels: {labels}\n\n{body}"
-            content_hash = hashlib.sha256(text.encode()).hexdigest()
-            source_id = str(num)
-
-            existing = await local_conn.fetchval(
-                "SELECT content_hash FROM embeddings WHERE source_table = $1 AND source_id = $2 AND embedding_model = $3",
-                ISSUES_SOURCE, source_id, EMBED_MODEL,
-            )
-            if existing == content_hash:
-                stats["skipped"] += 1
-                continue
-
-            emb = await embed_text(http, text[:MAX_CHARS])
-
-            await local_conn.execute(
-                """INSERT INTO embeddings (source_table, source_id, content_hash, chunk_index,
-                   text_preview, embedding_model, embedding, metadata)
-                   VALUES ($1, $2, $3, 0, $4, $5, $6::vector, $7::jsonb)
-                   ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
-                   DO UPDATE SET content_hash = $3, embedding = $6::vector,
-                   text_preview = $4, metadata = $7::jsonb, updated_at = NOW()""",
-                ISSUES_SOURCE, source_id, content_hash, text[:500], EMBED_MODEL,
-                json.dumps(emb), json.dumps({"title": title, "state": state, "labels": labels}),
-            )
-            stats["embedded"] += 1
-        except Exception as e:
-            stats["failed"] += 1
-            logger.error(f"  [issue] FAIL #{issue.get('number', '?')}: {e}")
-
-    return stats
-
-
-# ---------------------------------------------------------------------------
-# Phase 4: Audit log entries (significant events only)
-# ---------------------------------------------------------------------------
-
-
-async def sync_audit_entries(
-    local_conn: asyncpg.Connection, http: httpx.AsyncClient
-) -> Dict[str, int]:
-    """Embed recent audit log entries (errors + significant events)."""
-    stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-    rows = await local_conn.fetch(
-        """SELECT id, event_type, source, task_id, details, severity, timestamp
-           FROM audit_log
-           WHERE severity IN ('error', 'warning')
-           ORDER BY timestamp DESC LIMIT 200"""
-    )
-    logger.info(f"  Found {len(rows)} audit entries to check")
-
-    for row in rows:
-        try:
-            audit_id = str(row["id"])
-            details = json.loads(row["details"]) if row["details"] else {}
-            text = (
-                f"Audit: {row['event_type']} [{row['severity']}]\n"
-                f"Source: {row['source']}\n"
-                f"Task: {row['task_id'] or 'N/A'}\n"
-                f"Time: {row['timestamp']}\n"
-                f"Details: {json.dumps(details)[:2000]}"
-            )
-            content_hash = hashlib.sha256(text.encode()).hexdigest()
-
-            existing = await local_conn.fetchval(
-                "SELECT content_hash FROM embeddings WHERE source_table = $1 AND source_id = $2 AND embedding_model = $3",
-                AUDIT_SOURCE, audit_id, EMBED_MODEL,
-            )
-            if existing == content_hash:
-                stats["skipped"] += 1
-                continue
-
-            emb = await embed_text(http, text[:MAX_CHARS])
-
-            # 2026-04-16 (#198 audit): include `writer` so audit rows
-            # are attributed to 'auto-embed' in the /memory dashboard
-            # instead of appearing with writer=NULL.
-            await local_conn.execute(
-                """INSERT INTO embeddings (source_table, source_id, content_hash, chunk_index,
-                   text_preview, embedding_model, embedding, metadata, writer)
-                   VALUES ($1, $2, $3, 0, $4, $5, $6::vector, $7::jsonb, $8)
-                   ON CONFLICT (source_table, source_id, chunk_index, embedding_model)
-                   DO UPDATE SET content_hash = $3, embedding = $6::vector,
-                   text_preview = $4, metadata = $7::jsonb,
-                   writer = COALESCE(EXCLUDED.writer, embeddings.writer),
-                   updated_at = NOW()""",
-                AUDIT_SOURCE, audit_id, content_hash, text[:500], EMBED_MODEL,
-                json.dumps(emb), json.dumps({
-                    "event_type": row["event_type"],
-                    "severity": row["severity"],
-                    "source": row["source"],
-                }),
-                "auto-embed",
-            )
-            stats["embedded"] += 1
-        except Exception as e:
-            stats["failed"] += 1
-            logger.error(f"  [audit] FAIL #{row.get('id', '?')}: {e}")
-
-    return stats
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Phase 5: Brain knowledge + decisions (defined here so main() can call it)
-# ---------------------------------------------------------------------------
-
-BRAIN_SOURCE = "brain"
-
-
-async def sync_brain_tables(
-    local_conn: asyncpg.Connection,
-    http: httpx.AsyncClient,
-) -> Dict[str, int]:
-    """Embed brain_knowledge and brain_decisions into pgvector.
-
-    This makes brain-daemon's decisions and knowledge searchable by all
-    agents (Claude Code, OpenClaw, MCP tools).  Writer tag: 'brain-daemon'.
-    """
-    stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-    # --- brain_knowledge: entity/attribute/value facts ---
-    try:
-        rows = await local_conn.fetch(
-            "SELECT id, entity, attribute, value, source, confidence, updated_at "
-            "FROM brain_knowledge ORDER BY updated_at DESC LIMIT 500"
-        )
-        logger.info(f"Brain knowledge: {len(rows)} facts found")
-        for row in rows:
-            source_id = f"brain_knowledge/{row['id']}"
-            text = f"{row['entity']}: {row['attribute']} = {row['value']}"
-            if row["source"]:
-                text += f" (source: {row['source']})"
-            if not text.strip() or len(text) < 10:
-                stats["skipped"] += 1
-                continue
-            chash = content_hash(text)
-            if not await needs_reembedding(local_conn, BRAIN_SOURCE, source_id, chash):
-                stats["skipped"] += 1
-                continue
-            try:
-                embedding = await embed_text(http, text)
-                metadata = {
-                    "entity": row["entity"],
-                    "attribute": row["attribute"],
-                    "source": row["source"],
-                    "confidence": float(row["confidence"]) if row["confidence"] else None,
-                }
-                preview = text[:500].replace("\n", " ").strip()
-                await store_embedding(
-                    local_conn, BRAIN_SOURCE, source_id, chash,
-                    preview, embedding, metadata, writer="brain-daemon",
-                )
-                stats["embedded"] += 1
-            except Exception as e:
-                logger.debug(f"Failed to embed brain_knowledge {row['id']}: {e}")
-                stats["failed"] += 1
-    except Exception as e:
-        logger.error(f"brain_knowledge fetch failed: {e}")
-
-    # --- brain_decisions: decision audit trail ---
-    try:
-        rows = await local_conn.fetch(
-            "SELECT id, decision, reasoning, context, confidence, created_at "
-            "FROM brain_decisions ORDER BY created_at DESC LIMIT 200"
-        )
-        logger.info(f"Brain decisions: {len(rows)} decisions found")
-        for row in rows:
-            source_id = f"brain_decisions/{row['id']}"
-            parts = [f"Decision: {row['decision']}"]
-            if row["reasoning"]:
-                parts.append(f"Reasoning: {row['reasoning']}")
-            if row["context"]:
-                ctx = row["context"]
-                if isinstance(ctx, str):
-                    parts.append(f"Context: {ctx[:300]}")
-                elif isinstance(ctx, dict):
-                    parts.append(f"Context: {json.dumps(ctx)[:300]}")
-            text = "\n".join(parts)
-            if len(text) < 20:
-                stats["skipped"] += 1
-                continue
-            chash = content_hash(text)
-            if not await needs_reembedding(local_conn, BRAIN_SOURCE, source_id, chash):
-                stats["skipped"] += 1
-                continue
-            try:
-                embedding = await embed_text(http, text)
-                metadata = {
-                    "decision": row["decision"][:200],
-                    "confidence": float(row["confidence"]) if row["confidence"] else None,
-                    "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                }
-                preview = text[:500].replace("\n", " ").strip()
-                await store_embedding(
-                    local_conn, BRAIN_SOURCE, source_id, chash,
-                    preview, embedding, metadata, writer="brain-daemon",
-                )
-                stats["embedded"] += 1
-            except Exception as e:
-                logger.debug(f"Failed to embed brain_decisions {row['id']}: {e}")
-                stats["failed"] += 1
-    except Exception as e:
-        logger.error(f"brain_decisions fetch failed: {e}")
-
-    return stats
-
-
-# ---------------------------------------------------------------------------
-# Main entry point
+# Main — thin dispatcher over the plugin registry
 # ---------------------------------------------------------------------------
 
 
 async def main() -> None:
-    """Run every registered Tap + legacy OpenClaw SQLite phase.
+    """Run every registered Tap + the legacy OpenClaw SQLite phase.
 
-    Post-Phase-B: this function is a thin dispatcher over the plugin
-    registry. Every data source is a Tap in ``services/taps/`` registered
-    via entry_points. Adding a new source is `pip install poindexter-tap-X`
-    + flipping the enabled flag in app_settings — no edits here.
-
-    One remaining legacy phase: OpenClaw SQLite. Its pre-embedded vector
-    rows don't fit the standard Document contract; migration will happen
-    in a follow-up commit. Everything else runs via ``run_all()``.
+    Every Tap lives under ``services/taps/`` and registers via
+    ``importlib.metadata.entry_points``. Adding a new data source is
+    ``pip install poindexter-tap-X`` + flipping the enabled flag in
+    ``app_settings`` — no edits here.
     """
     start = datetime.now(timezone.utc)
     logger.info("=" * 60)
@@ -1041,34 +279,29 @@ async def main() -> None:
     logger.info("=" * 60)
 
     http = httpx.AsyncClient()
-
-    # Pre-flight: check Ollama
     if not await check_ollama(http):
-        logger.warning("Ollama is down or model unavailable — skipping this run.")
+        logger.warning("Ollama down or model missing — skipping this run.")
         await http.aclose()
         return
 
-    # The plugin runner needs a pool (for PluginConfig + dedup), not a single
-    # conn. Build a small pool scoped to this run.
     try:
         pool = await asyncpg.create_pool(LOCAL_DSN, min_size=1, max_size=4)
     except Exception as e:
-        logger.error(f"Could not connect to local pgvector DB: {e}")
+        logger.error("Could not connect to local pgvector DB: %s", e)
         await http.aclose()
         return
 
     local_conn = None
-
     try:
-        # Import lazily so host-path runs without the in-tree poindexter
-        # module on sys.path still reach this main(); they'll only hit
-        # the error if they actually tried to run the registry path.
         from services.taps.runner import run_all
 
-        # Use the same MemoryClient the pre-refactor pipeline used, bound
-        # to our pool + Ollama URL. MemoryClient handles the actual embed
-        # HTTP call + writes to the embeddings table.
-        from poindexter.memory import MemoryClient
+        if not _HAS_MEMORY_CLIENT or MemoryClient is None:
+            logger.error(
+                "poindexter.memory.MemoryClient unavailable (%s). "
+                "Cannot run the Tap registry; exiting.",
+                _MEMORY_CLIENT_IMPORT_ERR,
+            )
+            return
 
         async with MemoryClient(dsn=LOCAL_DSN, ollama_url=OLLAMA_URL) as mem:
             summary = await run_all(pool, mem)
@@ -1081,9 +314,7 @@ async def main() -> None:
                 ts.name, status, ts.embedded, ts.skipped, ts.failed, ts.duration_s,
             )
 
-        # Legacy Phase 1b: OpenClaw SQLite pre-embedded chunks. Not yet a Tap
-        # because its vectors are pre-computed (skips the standard embed step).
-        # Migrating this is a separate commit (see GitHub #66 comment).
+        # Legacy OpenClaw SQLite phase. Will migrate to a Tap later.
         openclaw_stats = {"embedded": 0, "skipped": 0, "failed": 0}
         try:
             local_conn = await asyncpg.connect(LOCAL_DSN)
@@ -1096,7 +327,7 @@ async def main() -> None:
                 openclaw_stats["failed"],
             )
         except Exception as e:
-            logger.error(f"OpenClaw SQLite sync failed: {e}")
+            logger.error("OpenClaw SQLite sync failed: %s", e)
             openclaw_stats = {"embedded": 0, "skipped": 0, "failed": 1}
 
         total_embedded = summary.total_embedded + openclaw_stats["embedded"]
@@ -1111,7 +342,7 @@ async def main() -> None:
         logger.info("Auto-Embed run complete.\n")
 
     except Exception as e:
-        logger.exception(f"Fatal error: {e}")
+        logger.exception("Fatal error: %s", e)
     finally:
         if local_conn:
             await local_conn.close()

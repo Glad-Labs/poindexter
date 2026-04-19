@@ -9,8 +9,18 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
 
 WORKDIR /app
 
+# Phase B (GitHub #66): auto-embed is now a thin runner over the plugins/
+# registry. We COPY:
+#   - the script itself
+#   - poindexter.memory (MemoryClient used to store embeddings)
+#   - brain helpers (docker_utils, etc.)
+#   - the plugins/ package (Protocols, registry, config, secrets)
+#   - the services/taps/ package (the Tap implementations that
+#     register via entry_points)
 COPY scripts/auto-embed.py /app/auto-embed.py
 COPY src/cofounder_agent/poindexter /app/poindexter
+COPY src/cofounder_agent/plugins /app/plugins
+COPY src/cofounder_agent/services /app/services
 COPY brain/ /brain/
 
 ENV PYTHONPATH="/app:/"
