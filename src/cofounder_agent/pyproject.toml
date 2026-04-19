@@ -139,6 +139,9 @@ expire_stale_approvals = "cofounder_agent.services.jobs.expire_stale_approvals:E
 db_backup = "cofounder_agent.services.jobs.db_backup:DbBackupJob"
 render_prometheus_rules = "cofounder_agent.services.jobs.render_prometheus_rules:RenderPrometheusRulesJob"
 
+[tool.poetry.plugins."poindexter.stages"]
+verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
+
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
 openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"

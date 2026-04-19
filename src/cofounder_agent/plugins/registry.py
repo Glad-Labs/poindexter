@@ -191,6 +191,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
+        # Core Stages (Phase E migration — one per file, unblocks tearing
+        # down content_router_service.py over a handful of commits).
+        ("stages", "services.stages.verify_task", "VerifyTaskStage"),
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:
