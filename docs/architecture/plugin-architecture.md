@@ -1,8 +1,16 @@
 # Plugin Architecture
 
 **Last Updated:** April 19, 2026
-**Status:** 📐 Design — implementation tracked in GitHub umbrella [#64](https://github.com/Glad-Labs/poindexter/issues/64) and child phases [#65-#71](https://github.com/Glad-Labs/poindexter/issues/64#issuecomment-4275105700)
+**Status:** 📐 Design — umbrella [#64](https://github.com/Glad-Labs/poindexter/issues/64) v3 locked; child phases [#65-#72](https://github.com/Glad-Labs/poindexter/issues/64#issuecomment-4276031164) rewritten to match
 **Scope:** Canonical in-repo reference for how Poindexter is evolving from a handful of god-files into a plugin-shaped system.
+
+> **v3 locked decisions (2026-04-19):**
+>
+> - **Secrets encryption-at-rest** is core scope (Phase A delivers via pgcrypto), not "known gap."
+> - **Tracing + observability instrumentation** (OTel, Tempo, OpenLLMetry) is **deferred** to a post-refactor Phase I. We'll know what to monitor after the refactor is done.
+> - **Phase J (`LLMProvider` plugin family)** confirmed as core scope. Swap Ollama → vllm/llama.cpp/TGI/LocalAI by one app_settings row.
+> - **Phase A0 (integration harness, #21)** shipped 2026-04-19. Phase A is unblocked.
+> - Other v2 gaps (config schema versioning, resource limits, plugin-to-plugin deps) → Phase I.
 
 ---
 
@@ -172,33 +180,34 @@ One row per plugin instance. Enable/disable is a toggle. Inventory-ing installed
 
 Refer to GitHub issues for the actionable scope. Suggested execution order:
 
-| Phase | Issue                                                    | Dependency | Purpose                                                                                                                                          |
-| ----- | -------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A0    | [#21](https://github.com/Glad-Labs/poindexter/issues/21) | —          | Integration test harness with real Postgres + real Ollama. Non-negotiable prerequisite — without it we can't verify refactor preserves behavior. |
-| A     | [#65](https://github.com/Glad-Labs/poindexter/issues/65) | A0         | Plugin foundation: Protocols, entry_points discovery, PluginConfig reader, apscheduler wrapper, sample migration per type.                       |
-| B     | [#66](https://github.com/Glad-Labs/poindexter/issues/66) | A          | Taps: split `auto-embed.py`. Internal Python Taps + SingerTap wrapper.                                                                           |
-| C     | [#67](https://github.com/Glad-Labs/poindexter/issues/67) | A          | Jobs: port `idle_worker.py` onto apscheduler.                                                                                                    |
-| D     | [#68](https://github.com/Glad-Labs/poindexter/issues/68) | A          | Probes: additive-first Prometheus migration. Ship metrics, verify alerts, then delete legacy.                                                    |
-| E     | [#69](https://github.com/Glad-Labs/poindexter/issues/69) | A          | Pipeline: #20 split of `content_router`. Stage / Reviewer / Adapter / Provider specializations.                                                  |
-| F     | [#70](https://github.com/Glad-Labs/poindexter/issues/70) | A, B       | Topic Sources: split `topic_discovery.py`.                                                                                                       |
-| G     | [#71](https://github.com/Glad-Labs/poindexter/issues/71) | A          | Image Providers: split `image_service.py`.                                                                                                       |
-| J     | (TBD)                                                    | A          | LLMProvider plugin family. Low risk — mostly extraction of the existing `OllamaClient` into the Protocol.                                        |
-| H     | (TBD)                                                    | A–J        | SaaS lifecycle. Subprocess/container isolation for untrusted community plugins. Web UI CRUD. Deferred until managed SaaS is on the calendar.     |
+| Phase | Issue                                                    | Dependency | Purpose                                                                                                                                                                                                                             |
+| ----- | -------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A0    | [#21](https://github.com/Glad-Labs/poindexter/issues/21) | —          | ✅ **SHIPPED 2026-04-19.** Integration test harness with real Postgres + real Ollama. 6 smoke tests pass.                                                                                                                           |
+| A     | [#65](https://github.com/Glad-Labs/poindexter/issues/65) | A0         | Plugin foundation: Protocols, entry_points discovery, PluginConfig reader, apscheduler wrapper, **pgcrypto secrets encryption**, sample migration per type.                                                                         |
+| B     | [#66](https://github.com/Glad-Labs/poindexter/issues/66) | A          | Taps: split `auto-embed.py`. Internal Python Taps + SingerTap wrapper shipping a working `tap-gitea` demo.                                                                                                                          |
+| C     | [#67](https://github.com/Glad-Labs/poindexter/issues/67) | A          | Jobs: port `idle_worker.py` onto apscheduler. DIY scheduler deleted.                                                                                                                                                                |
+| D     | [#68](https://github.com/Glad-Labs/poindexter/issues/68) | A          | Probes: Prometheus metrics + Alertmanager rules, brain daemon becomes Alertmanager webhook consumer. **Additive-first** — 1-2 weeks parallel-run before deleting legacy.                                                            |
+| E     | [#69](https://github.com/Glad-Labs/poindexter/issues/69) | A          | Pipeline: #20 split of `content_router`. Stage / Reviewer / Adapter / Provider specializations.                                                                                                                                     |
+| F     | [#70](https://github.com/Glad-Labs/poindexter/issues/70) | A, B       | Topic Sources: split `topic_discovery.py`.                                                                                                                                                                                          |
+| G     | [#71](https://github.com/Glad-Labs/poindexter/issues/71) | A          | Image Providers: split `image_service.py`.                                                                                                                                                                                          |
+| J     | [#72](https://github.com/Glad-Labs/poindexter/issues/72) | A          | LLMProvider plugin family. `OpenAICompatProvider` + `OllamaNativeProvider` as core. Exit criterion: swap Ollama → vllm/llama.cpp/TGI/LocalAI/LiteLLM by one app_settings row.                                                       |
+| I     | (future)                                                 | A–J        | Post-refactor observability upgrade (OTel, Tempo, OpenLLMetry, Langfuse eval) + plugin config schema versioning + per-plugin resource limits + plugin-to-plugin deps. **Deferred** — we'll know what to monitor after the refactor. |
+| H     | (future)                                                 | A–J        | SaaS lifecycle. Subprocess/container isolation for untrusted community plugins. Web UI CRUD. Deferred until managed SaaS is on the calendar.                                                                                        |
 
 Phase A must be fully shipped before any other phase merges. A half-done plugin framework is worse than the current god files because it creates ambiguity about where new code lives.
 
 ## Observability strategy
 
-The refactor adopts one unified observability stack — the Grafana family — because it's already running and it's AGPL-3/Apache-2.
+**In-scope for the refactor (Phase D):** Prometheus metrics + Alertmanager rules + existing Grafana dashboards. Brain daemon pivots from running a probe loop to consuming Alertmanager webhooks. Zero new services to run — everything leans on infra we already have.
 
-- **Metrics:** Prometheus scrapes a `/metrics` endpoint from every service via `prometheus_client`. Business metrics (revenue, post count, embedding freshness) expose as gauges.
-- **Alerts:** Alertmanager rules in `infrastructure/prometheus/alerts/`. Routes to Telegram/Discord via webhook.
-- **Traces:** OpenTelemetry SDK auto-instruments FastAPI + asyncpg + httpx + Ollama. Tempo (Grafana stack) as the trace backend. Same Grafana UI you're already looking at.
-- **LLM-specific traces:** OpenLLMetry conventions emit spans with prompt / response / tokens / cost / routing decision / CoT tokens as attributes. Sits alongside HTTP and DB spans in the same trace waterfall. Langfuse (MIT, self-host) is a deferred richer option for prompt playground + eval tooling.
+**Deferred to post-refactor Phase I:** OpenTelemetry instrumentation, Tempo for distributed traces, OpenLLMetry conventions for LLM-specific spans, Langfuse for prompt playground + eval tooling. Rationale (Matt's 2026-04-19 decision): we'll know what to trace after the refactor is done and we can see where the pain actually lives. Adding tracing before that risks building dashboards for pre-refactor shapes.
+
+**In the meantime:**
+
 - **Logs:** structlog (already in stack). Request-ID propagation added as part of Phase D.
-- **LLM cost:** native `cost_logs` table stays as the cheapest source of truth for electricity + token counts. Augmented, not replaced, by OTel spans.
+- **LLM cost:** native `cost_logs` table stays — cheapest source of truth for electricity + token counts.
 
-One pane of glass. No new vendor UIs to learn.
+One pane of glass (Grafana). No new vendor UIs.
 
 ## Dependency audit
 
@@ -217,17 +226,26 @@ Removed in prior sessions: Anthropic, OpenAI, Google Gemini, Sentry, Railway, Wo
 
 ## Known gaps (tracked, not blocking)
 
-These become their own issues when we need them. None block the refactor.
+**Moved into core scope (Phase A):**
 
-- Secrets encryption-at-rest (pgcrypto / vault / SQLCipher)
+- ~~Secrets encryption-at-rest~~ — now core (pgcrypto) per 2026-04-19 lock-in.
+
+**Deferred to Phase I (future, after refactor ships):**
+
 - Plugin config schema versioning + migrations
 - Per-plugin resource limits (CPU/memory quotas)
 - Plugin-to-plugin dependency resolution
+- Full observability stack (OTel, Tempo, OpenLLMetry, Langfuse)
+
+**Other standing debt (becomes its own issue when needed):**
+
 - Bare `except Exception:` sweep (125 swallowing blocks across services + routes)
 - `memory_system.py` dead code (966 lines — pyproject.toml marks it superseded by pgvector)
 - `unified_orchestrator.py` + `task_executor.py` vs `content_router_service.py` — which is canonical? Resolve before Phase E.
 - Routes decomposition (`task_publishing_routes.py` 1049 lines, `cms_routes.py` 959 lines)
 - 50-migration consolidation pass
+- Dependency license audit
+- Swap Google Analytics for Plausible/Matomo (only remaining non-OSS surface)
 - Dependency license audit
 - Swap GA for Plausible/Matomo
 
