@@ -78,6 +78,7 @@ playwright = "^1.47"
 pyasn1 = ">=0.6.3"
 mcp = ">=1.23.0"
 pillow = ">=12.2.0"
+apscheduler = "^3.11.2"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
