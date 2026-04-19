@@ -4,7 +4,7 @@ Ports ``_stage_generate_content`` from content_router_service.py with
 byte-equivalent observable behavior. The helpers this stage depends on
 (``_build_writing_style_context``, ``_build_rag_context``,
 ``_generate_canonical_title``, ``_check_title_originality``,
-``_normalize_text``, ``_scrub_fabricated_links``,
+``normalize_text``, ``_scrub_fabricated_links``,
 ``_self_review_and_revise``, ``_parse_model_preferences``) stay in
 content_router_service.py for now — we import them here until Phase E
 cleanup lifts them into shared utility modules.
@@ -73,11 +73,11 @@ class GenerateContentStage:
             _build_writing_style_context,
             _check_title_originality,
             _generate_canonical_title,
-            _normalize_text,
             _parse_model_preferences,
-            _scrub_fabricated_links,
             _self_review_and_revise,
         )
+        from services.text_utils import normalize_text, scrub_fabricated_links
+        from services import text_utils as _text_utils
         from services.ai_content_generator import get_content_generator
         from services.audit_log import audit_log_bg
 
@@ -174,8 +174,8 @@ class GenerateContentStage:
                     logger.info("[TITLE] Keeping original title — regeneration wasn't more unique")
 
         # Normalize smart quotes / special chars.
-        content_text = _normalize_text(content_text)
-        title = _normalize_text(title)
+        content_text = normalize_text(content_text)
+        title = normalize_text(title)
 
         # Populate real slug cache for link validation, then scrub fabricated links.
         try:
@@ -186,10 +186,10 @@ class GenerateContentStage:
                     _slug = _link_line.split("/posts/")[-1].strip().strip('"')
                     if _slug:
                         _real_slug_set.add(_slug)
-            _scrub_fabricated_links._slug_cache = _real_slug_set  # type: ignore[attr-defined]
+            _text_utils._slug_cache = _real_slug_set
         except Exception:  # noqa: BLE001 — best-effort slug cache
             pass
-        content_text = _scrub_fabricated_links(content_text)
+        content_text = scrub_fabricated_links(content_text)
 
         # Strip leaked image prompts / descriptions. LLMs sometimes emit
         # visual placeholders that we don't want in the body.

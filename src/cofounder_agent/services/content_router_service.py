@@ -144,139 +144,14 @@ async def _is_stage_enabled(pool, stage_key: str) -> bool:
 
 
 # ============================================================================
-# TEXT NORMALIZATION — replace Unicode smart quotes / dashes with ASCII
+# TEXT NORMALIZATION — canonical home is services/text_utils.py (Phase E2).
+# Legacy names re-exported so older callers keep working.
 # ============================================================================
 
-def _normalize_text(text: str) -> str:
-    """Replace Unicode smart quotes, dashes, and special whitespace with ASCII equivalents.
-
-    Ollama (and other LLMs) frequently produce these characters, which can cause
-    encoding / rendering issues on the public site.
-    """
-    if not text:
-        return text
-    return (
-        text
-        .replace("\u2019", "'")   # right single quote
-        .replace("\u2018", "'")   # left single quote
-        .replace("\u201c", '"')   # left double quote
-        .replace("\u201d", '"')   # right double quote
-        .replace("\u2014", "--")  # em dash
-        .replace("\u2013", "-")   # en dash
-        .replace("\u2026", "...") # ellipsis
-        .replace("\u00a0", " ")   # non-breaking space
-        .replace("\u2011", "-")   # non-breaking hyphen
-    )
-
-
-def _scrub_fabricated_links(content: str) -> str:
-    """Remove fabricated/hallucinated URLs from LLM-generated content.
-
-    Local LLMs hallucinate URLs that don't exist — linking to random domains
-    like dictionary.com, example.com, or made-up paths on real domains.
-    This scrubs markdown links whose domains aren't in the trusted allowlist,
-    keeping the link text but removing the bogus href.
-    """
-    import re
-
-    from services.site_config import site_config
-
-    # Domains we trust (our own site + major reference sites).
-    # Shipped default is a tech/developer default set; customers in
-    # other niches override via app_settings.trusted_source_domains as
-    # a comma-separated list (#198).
-    _default_trusted = {
-        "github.com", "arxiv.org", "docs.python.org", "docs.rs",
-        "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
-        "en.wikipedia.org", "news.ycombinator.com", "dev.to",
-        "kubernetes.io", "docker.com", "docs.docker.com",
-        "vercel.com", "nextjs.org", "react.dev", "go.dev",
-        "pytorch.org", "huggingface.co", "openai.com",
-        "www.rust-lang.org", "blog.rust-lang.org", "crates.io",
-        "pypi.org", "npmjs.com", "www.npmjs.com",
-        "youtube.com", "www.youtube.com",
-    }
-    _override_csv = site_config.get("trusted_source_domains", "")
-    if _override_csv:
-        trusted_domains = {
-            d.strip().lower() for d in _override_csv.split(",") if d.strip()
-        }
-    else:
-        trusted_domains = set(_default_trusted)
-    # Add own domain dynamically from config
-    _own_domain = site_config.get("site_domain", "")
-    if _own_domain:
-        trusted_domains.add(_own_domain)
-        trusted_domains.add(f"www.{_own_domain}")
-
-    # Cache of real internal post slugs (populated lazily)
-    _real_slugs: set = set()
-
-    def _is_trusted(url: str) -> bool:
-        try:
-            from urllib.parse import urlparse
-            host = urlparse(url).hostname or ""
-            return any(host == d or host.endswith("." + d) for d in trusted_domains)
-        except Exception:
-            return False
-
-    def _is_real_internal_link(url: str) -> bool:
-        """Check if an internal link points to an actual published post."""
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        host = parsed.hostname or ""
-        if _own_domain and _own_domain not in host:
-            return True  # Not our link, don't check
-        path = parsed.path or ""
-        if not path.startswith("/posts/"):
-            return True  # Not a post link (could be /about, /archive, etc.)
-        slug = path.split("/posts/")[-1].strip("/")
-        if not slug:
-            return True
-        # Lazy-load real slugs from the internal links cache
-        if not _real_slugs:
-            try:
-                _cache = getattr(_scrub_fabricated_links, "_slug_cache", None)
-                if _cache:
-                    _real_slugs.update(_cache)
-            except Exception:
-                pass
-        if _real_slugs:
-            return slug in _real_slugs
-        # If no cache, accept it (will be caught at URL validation stage)
-        return True
-
-    scrubbed_count = 0
-
-    # Handle markdown links: [text](url)
-    def _replace_md_link(m):
-        nonlocal scrubbed_count
-        text, url = m.group(1), m.group(2)
-        if not _is_trusted(url):
-            scrubbed_count += 1
-            return text  # Keep text, drop fake link
-        if not _is_real_internal_link(url):
-            scrubbed_count += 1
-            return text  # Drop fabricated internal link, keep text
-        return m.group(0)  # Keep valid link
-
-    content = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", _replace_md_link, content)
-
-    # Handle bare URLs that aren't in markdown links
-    def _replace_bare_url(m):
-        nonlocal scrubbed_count
-        url = m.group(0)
-        if _is_trusted(url):
-            return url
-        scrubbed_count += 1
-        return ""  # Remove bare fabricated URLs entirely
-
-    content = re.sub(r"(?<!\()https?://[^\s\)\]\"'>,]+", _replace_bare_url, content)
-
-    if scrubbed_count > 0:
-        logger.info("[LINK_SCRUB] Removed %d fabricated link(s) from generated content", scrubbed_count)
-
-    return content
+from services.text_utils import (  # noqa: F401 — re-exported for legacy callers
+    normalize_text as _normalize_text,
+    scrub_fabricated_links as _scrub_fabricated_links,
+)
 
 
 # ============================================================================

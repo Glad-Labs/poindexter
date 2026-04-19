@@ -48,7 +48,7 @@ class FinalizeTaskStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.content_router_service import _normalize_text
+        from services.text_utils import normalize_text as _normalize_text
 
         task_id = context.get("task_id")
         database_service = context.get("database_service")

@@ -156,11 +156,9 @@ class CrossModelQAStage:
     ) -> StageResult:
         from services.audit_log import audit_log_bg
         from services.container import get_service
-        from services.content_router_service import (
-            _is_stage_enabled,
-            _normalize_text,
-        )
+        from services.content_router_service import _is_stage_enabled
         from services.multi_model_qa import MultiModelQA
+        from services.text_utils import normalize_text as _normalize_text
 
         database_service = context.get("database_service")
         task_id = context.get("task_id", "")

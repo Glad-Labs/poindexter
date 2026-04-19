@@ -190,14 +190,14 @@ class ReplaceInlineImagesStage:
 
 
 def _normalize_from_router(text: str) -> str:
-    """Call the legacy ``_normalize_text`` helper.
+    """Proxy to :func:`services.text_utils.normalize_text`.
 
-    Lazy-imported — content_router_service is still the owner of the text-
-    normalization helpers during Phase E. Future cleanup lifts them into
-    a dedicated utility module.
+    Kept as a local helper so the call site in :meth:`ReplaceInlineImagesStage.execute`
+    stays readable (``_normalize_from_router(content_text)``); lazy import
+    preserves lock-free startup.
     """
-    from services.content_router_service import _normalize_text
-    return _normalize_text(text)
+    from services.text_utils import normalize_text
+    return normalize_text(text)
 
 
 async def _plan_and_inject_placeholders(
