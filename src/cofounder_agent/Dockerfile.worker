@@ -56,10 +56,16 @@ RUN python -m playwright install chromium && \
 # Copy application code
 COPY . .
 
-# Non-root user
+# Non-root user. chmod 0711 on /root so appuser can *traverse* it to reach
+# SDXL-generated images under /root/.poindexter/generated-images/ (via the
+# compose volume mount) — the directory's own 0777 perms let appuser read
+# files; only /root itself blocked traversal until now. Without this,
+# featured-image generation silently fell back to Pexels because
+# os.path.exists() on the SDXL-returned path raised PermissionError.
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
-    chown -R appuser:appgroup /app
+    chown -R appuser:appgroup /app && \
+    chmod 0711 /root
 USER appuser
 
 # Health check endpoint
