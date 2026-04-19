@@ -389,6 +389,10 @@ services:
       - ./brain:/brain:ro
       - ${USERPROFILE:-.}/.claude/projects:/memory/claude-projects:ro
       - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
+      # Persist ~/.gladlabs/auto-embed.log to the host so `tail -f` works
+      # without needing `docker exec`. Script writes to Path.home()/.gladlabs
+      # which resolves to /root/.gladlabs inside the container (GitHub #62).
+      - ${USERPROFILE:-.}/.gladlabs:/root/.gladlabs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Boot order: postgres (data) → brain-daemon (seeds + self-checks) → auto-embed
