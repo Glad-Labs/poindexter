@@ -1,0 +1,69 @@
+# Alertmanager config — Phase D (GitHub #68).
+#
+# Routing strategy:
+# - All alerts initially go to the brain-daemon webhook endpoint for
+#   auto-remediation evaluation. Brain decides whether to auto-fix or
+#   escalate to a human.
+# - Critical infrastructure alerts (severity=critical,
+#   category=infrastructure) additionally fire a direct Telegram ping
+#   so a human sees them even if brain is down.
+# - Business alerts (category=business) route to the 6h digest channel.
+# - Content alerts (category=content) go to ops-feedback — informational
+#   but not paging.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Top-level default: everything hits brain's webhook consumer first.
+  receiver: brain-webhook
+  group_by: ["alertname", "category"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Critical infra → also page Matt directly via Telegram.
+    - matchers:
+        - severity = "critical"
+        - category = "infrastructure"
+      receiver: telegram-urgent
+      continue: true  # also flow to brain-webhook
+
+    # Business alerts → 6h digest.
+    - matchers:
+        - category = "business"
+      receiver: telegram-digest
+      continue: true
+
+receivers:
+  # Brain daemon's webhook consumer. Brain decides auto-remediate vs.
+  # escalate based on rules in app_settings (plugin.remediation.*).
+  - name: brain-webhook
+    webhook_configs:
+      - url: http://brain-daemon:8080/webhooks/alertmanager
+        send_resolved: true
+
+  # Direct Telegram ping for critical infra — bypasses brain in case
+  # brain itself is the problem.
+  - name: telegram-urgent
+    webhook_configs:
+      - url: http://worker:8002/api/webhooks/alertmanager/urgent
+        send_resolved: false
+
+  # Business digest. Routed through the worker so existing
+  # Telegram-send infrastructure in services/ handles the actual
+  # message formatting + chat_id lookup.
+  - name: telegram-digest
+    webhook_configs:
+      - url: http://worker:8002/api/webhooks/alertmanager/digest
+        send_resolved: false
+
+# Inhibition rules — suppress lower-severity alerts when a related
+# higher-severity one is firing.
+inhibit_rules:
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ["alertname", "instance"]
