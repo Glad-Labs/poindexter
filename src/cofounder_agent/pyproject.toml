@@ -137,6 +137,7 @@ noop = "cofounder_agent.plugins.samples.noop_job:NoopJob"
 sync_page_views = "cofounder_agent.services.jobs.sync_page_views:SyncPageViewsJob"
 expire_stale_approvals = "cofounder_agent.services.jobs.expire_stale_approvals:ExpireStaleApprovalsJob"
 db_backup = "cofounder_agent.services.jobs.db_backup:DbBackupJob"
+render_prometheus_rules = "cofounder_agent.services.jobs.render_prometheus_rules:RenderPrometheusRulesJob"
 
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
