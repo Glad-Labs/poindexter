@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 import asyncpg
 
 from health_probes import run_health_probes
+from seed_loader import seed_app_settings
 
 try:
     from business_probes import run_business_probes
@@ -956,6 +957,22 @@ async def main():
     logger.info("[BRAIN] Connecting to local brain DB...")
     pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3)
     logger.info("[BRAIN] Connected. Starting brain daemon (once=%s)", one_shot)
+
+    # Boot-controller phase 1: seed app_settings from the embedded core seed
+    # if the table is empty or missing required keys. Idempotent — safe to
+    # call every boot. See GitHub #63 (brain-as-boot-controller) and
+    # brain/seed_app_settings.json for the core-seed inventory.
+    try:
+        async with pool.acquire() as conn:
+            seed_result = await seed_app_settings(conn)
+        logger.info(
+            "[BRAIN] Seed phase complete: %d inserted, %d already present, %d total in seed",
+            seed_result["inserted"],
+            seed_result["skipped_existing"],
+            seed_result["total_seed"],
+        )
+    except Exception as e:
+        logger.error("[BRAIN] Seed phase FAILED: %s — continuing with existing app_settings", e, exc_info=True)
 
     # Load config from DB (site URLs, Telegram tokens, etc.)
     await _load_config_from_db(pool)

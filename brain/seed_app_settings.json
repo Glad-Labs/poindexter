@@ -1,0 +1,456 @@
+{
+  "_meta": {
+    "name": "Poindexter core seed",
+    "description": "Free-tier starter settings. The brain bootstraps this into app_settings on first boot when the table is empty. Designed to be the minimum viable config to make the pipeline runnable — docker compose up, visit /api/health, submit a task. For the optimized production seed (site-specific models, tuned QA workflows, image styles, writing styles), see the premium Quick Start Guide product on Lemon Squeezy.",
+    "version": "1",
+    "tier": "free",
+    "last_updated": "2026-04-18"
+  },
+  "settings": [
+    {
+      "key": "site_name",
+      "value": "My Content Site",
+      "category": "identity",
+      "description": "Brand/site name used across all services"
+    },
+    {
+      "key": "site_domain",
+      "value": "localhost:3000",
+      "category": "identity",
+      "description": "Production domain (no protocol)"
+    },
+    {
+      "key": "site_url",
+      "value": "http://localhost:3000",
+      "category": "identity",
+      "description": "Full production URL with protocol"
+    },
+    {
+      "key": "site_description",
+      "value": "AI-powered content platform",
+      "category": "identity",
+      "description": "Longer site description used in meta tags"
+    },
+    {
+      "key": "site_tagline",
+      "value": "Technology & Innovation",
+      "category": "identity",
+      "description": "Short tagline used in metadata"
+    },
+
+    {
+      "key": "company_name",
+      "value": "My Company",
+      "category": "identity",
+      "description": "Legal company name"
+    },
+    {
+      "key": "company_founder_name",
+      "value": "",
+      "category": "identity",
+      "description": "Founder name used in writer prompts"
+    },
+    {
+      "key": "company_team_size",
+      "value": "1",
+      "category": "identity",
+      "description": "Team size for content validation"
+    },
+    {
+      "key": "company_products",
+      "value": "",
+      "category": "identity",
+      "description": "Comma-separated real products (for hallucination checks)"
+    },
+
+    {
+      "key": "support_email",
+      "value": "support@example.com",
+      "category": "identity",
+      "description": "Support contact email"
+    },
+    {
+      "key": "privacy_email",
+      "value": "privacy@example.com",
+      "category": "identity",
+      "description": "Privacy/GDPR contact email"
+    },
+    {
+      "key": "owner_email",
+      "value": "",
+      "category": "identity",
+      "description": "Site owner email"
+    },
+    {
+      "key": "owner_name",
+      "value": "",
+      "category": "identity",
+      "description": "Site owner display name"
+    },
+
+    {
+      "key": "api_base_url",
+      "value": "http://worker:8002",
+      "category": "identity",
+      "description": "Backend API base URL (in-network for Docker)"
+    },
+    {
+      "key": "public_site_url",
+      "value": "http://localhost:3000",
+      "category": "site",
+      "description": "Customer-facing site URL"
+    },
+
+    {
+      "key": "ollama_base_url",
+      "value": "http://host.docker.internal:11434",
+      "category": "infrastructure",
+      "description": "Ollama API endpoint (uses host.docker.internal so containers can reach host Ollama)"
+    },
+
+    {
+      "key": "pipeline_writer_model",
+      "value": "ollama/gemma3:27b",
+      "category": "models",
+      "description": "Primary content generation model. gemma3:27b is the free-tier default (widely available, no specialized hardware required)"
+    },
+    {
+      "key": "pipeline_critic_model",
+      "value": "ollama/gemma3:27b",
+      "category": "models",
+      "description": "QA/content review model"
+    },
+    {
+      "key": "pipeline_fallback_model",
+      "value": "ollama/gemma3:27b",
+      "category": "models",
+      "description": "Fallback model when primary is unavailable"
+    },
+    {
+      "key": "pipeline_seo_model",
+      "value": "ollama/qwen3:8b",
+      "category": "models",
+      "description": "SEO title/description generation (smaller, faster)"
+    },
+    {
+      "key": "pipeline_social_model",
+      "value": "ollama/qwen3:8b",
+      "category": "models",
+      "description": "Social media post generation"
+    },
+    {
+      "key": "pipeline_refinement_model",
+      "value": "ollama/gemma3:27b",
+      "category": "pipeline",
+      "description": "Content refinement stage. Premium seed swaps this for a higher-capability model."
+    },
+    {
+      "key": "pipeline_research_model",
+      "value": "ollama/gemma3:27b",
+      "category": "pipeline",
+      "description": "Research stage. Premium seed swaps this for a higher-capability model."
+    },
+    {
+      "key": "pipeline_factcheck_model",
+      "value": "programmatic",
+      "category": "pipeline",
+      "description": "Fact-checking mode: 'programmatic' or an LLM provider"
+    },
+
+    {
+      "key": "model_role_writer",
+      "value": "ollama/gemma3:27b",
+      "category": "model_roles",
+      "description": "Free-tier default writer. Premium seed upgrades to a specialized creative-writing model."
+    },
+    {
+      "key": "model_role_critic",
+      "value": "ollama/gemma3:27b",
+      "category": "model_roles",
+      "description": "Quality scoring / structured JSON output"
+    },
+    {
+      "key": "model_role_factchecker",
+      "value": "ollama/gemma3:27b",
+      "category": "model_roles",
+      "description": "Fact-checking. Kept separate from writer on purpose."
+    },
+    {
+      "key": "model_role_seo",
+      "value": "ollama/qwen3:8b",
+      "category": "model_roles",
+      "description": "SEO / metadata. Small model is fine."
+    },
+    {
+      "key": "model_role_image_prompt",
+      "value": "ollama/qwen3:8b",
+      "category": "model_roles",
+      "description": "Generates SDXL prompts from post content"
+    },
+    {
+      "key": "model_role_summarizer",
+      "value": "ollama/qwen3:8b",
+      "category": "model_roles",
+      "description": "Fast summaries, short-form copy"
+    },
+
+    {
+      "key": "default_model_tier",
+      "value": "budget",
+      "category": "pipeline",
+      "description": "Default cost tier (free/budget/standard/premium/flagship)"
+    },
+    {
+      "key": "cloud_api_mode",
+      "value": "disabled",
+      "category": "models",
+      "description": "Cloud API mode: disabled, emergency_only, fallback, always. Free tier runs Ollama-only."
+    },
+    {
+      "key": "cloud_api_daily_limit",
+      "value": "0",
+      "category": "models",
+      "description": "Hard cap on cloud API calls per day in emergency mode"
+    },
+
+    {
+      "key": "qa_overall_score_threshold",
+      "value": "70",
+      "category": "quality",
+      "description": "Minimum overall QA score (0-100) to pass"
+    },
+    {
+      "key": "qa_final_score_threshold",
+      "value": "70",
+      "category": "quality",
+      "description": "Multi-model QA final approval threshold"
+    },
+    {
+      "key": "qa_critical_dimension_floor",
+      "value": "50",
+      "category": "quality",
+      "description": "Minimum score on any single dimension"
+    },
+    {
+      "key": "qa_validator_weight",
+      "value": "0.4",
+      "category": "quality",
+      "description": "Weight for programmatic validator"
+    },
+    {
+      "key": "qa_critic_weight",
+      "value": "0.6",
+      "category": "quality",
+      "description": "Weight for LLM critic"
+    },
+
+    {
+      "key": "auto_publish_threshold",
+      "value": "0",
+      "category": "pipeline",
+      "description": "Auto-publish score threshold (0 = disabled, human approval required)"
+    },
+    {
+      "key": "require_human_approval",
+      "value": "true",
+      "category": "pipeline",
+      "description": "All publishes require human approval"
+    },
+    {
+      "key": "staging_mode",
+      "value": "true",
+      "category": "pipeline",
+      "description": "Posts go to draft + preview token instead of publishing"
+    },
+    {
+      "key": "content_quality_minimum",
+      "value": "70",
+      "category": "pipeline",
+      "description": "Minimum quality to even queue for approval"
+    },
+    {
+      "key": "min_curation_score",
+      "value": "70",
+      "category": "pipeline",
+      "description": "Minimum QA score to surface for review"
+    },
+    {
+      "key": "max_posts_per_day",
+      "value": "3",
+      "category": "pipeline",
+      "description": "Hard cap on publishes per day"
+    },
+    {
+      "key": "daily_post_limit",
+      "value": "1",
+      "category": "pipeline",
+      "description": "Soft cap on generation per day"
+    },
+    {
+      "key": "content_weekly_cap",
+      "value": "3",
+      "category": "pipeline",
+      "description": "Maximum new posts per week (0 = unlimited)"
+    },
+    {
+      "key": "max_approval_queue",
+      "value": "10",
+      "category": "pipeline",
+      "description": "Queue size before generation throttles"
+    },
+    {
+      "key": "max_task_retries",
+      "value": "3",
+      "category": "pipeline",
+      "description": "Max retry attempts for failed tasks"
+    },
+    {
+      "key": "max_tokens_per_request",
+      "value": "4000",
+      "category": "pipeline",
+      "description": "Max tokens per LLM call"
+    },
+    {
+      "key": "max_tokens_per_task",
+      "value": "16000",
+      "category": "pipeline",
+      "description": "Max tokens summed across a whole task"
+    },
+    {
+      "key": "publish_spacing_hours",
+      "value": "4",
+      "category": "pipeline",
+      "description": "Minimum hours between publishes"
+    },
+    {
+      "key": "approval_ttl_days",
+      "value": "7",
+      "category": "pipeline",
+      "description": "Days before unapproved posts auto-expire"
+    },
+    {
+      "key": "stale_task_timeout_minutes",
+      "value": "180",
+      "category": "pipeline",
+      "description": "Task considered stale after this"
+    },
+    {
+      "key": "task_sweep_interval_seconds",
+      "value": "300",
+      "category": "pipeline",
+      "description": "Seconds between stale-task sweeps"
+    },
+
+    {
+      "key": "daily_budget_usd",
+      "value": "1.00",
+      "category": "pipeline",
+      "description": "Daily LLM spend budget in USD (ignored if cloud_api_mode=disabled)"
+    },
+    {
+      "key": "daily_spend_limit",
+      "value": "1.00",
+      "category": "cost",
+      "description": "Hard cap on daily AI spend in USD"
+    },
+    {
+      "key": "monthly_spend_limit",
+      "value": "20.00",
+      "category": "cost",
+      "description": "Hard cap on monthly AI spend in USD"
+    },
+    {
+      "key": "cost_alert_threshold_pct",
+      "value": "80",
+      "category": "cost",
+      "description": "Alert when spend exceeds this % of limit"
+    },
+
+    {
+      "key": "enable_memory_system",
+      "value": "true",
+      "category": "features",
+      "description": "Enable agent memory (pgvector)"
+    },
+    {
+      "key": "enable_mcp_server",
+      "value": "true",
+      "category": "features",
+      "description": "Enable Model Context Protocol server"
+    },
+    {
+      "key": "enable_training_capture",
+      "value": "false",
+      "category": "features",
+      "description": "Capture training data from pipeline runs"
+    },
+    {
+      "key": "redis_enabled",
+      "value": "false",
+      "category": "features",
+      "description": "Enable Redis for caching and pub/sub"
+    },
+
+    {
+      "key": "content_min_word_count",
+      "value": "800",
+      "category": "content",
+      "description": "Minimum word count for blog posts"
+    },
+    {
+      "key": "content_target_word_count",
+      "value": "1500",
+      "category": "content",
+      "description": "Target word count for blog posts"
+    },
+    {
+      "key": "content_max_refinement_attempts",
+      "value": "3",
+      "category": "content",
+      "description": "Max refinement iterations"
+    },
+    {
+      "key": "content_temperature",
+      "value": "0.7",
+      "category": "tokens",
+      "description": "Temperature for content generation"
+    },
+    {
+      "key": "qa_temperature",
+      "value": "0.3",
+      "category": "tokens",
+      "description": "Temperature for QA review"
+    },
+
+    {
+      "key": "image_primary_source",
+      "value": "ai_generation",
+      "category": "image",
+      "description": "Primary image source: 'pexels' or 'ai_generation'"
+    },
+    {
+      "key": "enable_featured_image",
+      "value": "true",
+      "category": "image",
+      "description": "Generate featured images for posts"
+    },
+    {
+      "key": "image_generation_model",
+      "value": "sdxl_lightning",
+      "category": "image",
+      "description": "AI image generation model"
+    },
+    {
+      "key": "image_negative_prompt",
+      "value": "text, words, letters, numbers, watermark, signature, logo, face, person, human, hands, fingers, blurry, low quality, distorted, deformed",
+      "category": "image",
+      "description": "Negative prompt for all SDXL generations"
+    },
+    {
+      "key": "image_style_default",
+      "value": "professional digital art, abstract technology concept, blue and cyan color scheme, clean modern aesthetic, no people, no text, no faces, no letters",
+      "category": "image",
+      "description": "Default SDXL style for uncategorized posts"
+    }
+  ]
+}
