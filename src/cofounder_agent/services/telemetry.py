@@ -21,9 +21,13 @@ except (ImportError, AttributeError) as e:
     TracerProvider = None  # type: ignore[assignment,misc]
     BatchSpanProcessor = None  # type: ignore[assignment,misc]
     OPENTELEMETRY_AVAILABLE = False
-    logging.error(
-        f"[setup_telemetry] OpenTelemetry not fully available: {e}. Tracing disabled.",
-        exc_info=True,
+    # Log as INFO, not ERROR with traceback — the package is intentionally
+    # optional (not in pyproject core deps). The try/except exists
+    # precisely because tracing is opt-in, so a missing import is expected,
+    # not an error that should spam the boot log.
+    logging.info(
+        "[setup_telemetry] OpenTelemetry not available (%s) — tracing disabled",
+        e,
     )
 
 # Suppress connection-pool spam from urllib3 (connection refused to OTLP endpoint is a known
