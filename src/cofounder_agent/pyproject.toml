@@ -133,6 +133,7 @@ database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
 
 [tool.poetry.plugins."poindexter.jobs"]
 noop = "cofounder_agent.plugins.samples.noop_job:NoopJob"
+sync_page_views = "cofounder_agent.services.jobs.sync_page_views:SyncPageViewsJob"
 
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
