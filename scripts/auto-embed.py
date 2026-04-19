@@ -197,10 +197,25 @@ def classify_file(filename: str) -> str:
 
 
 def make_relative_id(filepath: Path, origin: str) -> str:
-    """Build a stable source_id from origin + relative path."""
+    """Build a stable source_id from origin + optional scope + relative path.
+
+    For the `claude-code` origin every project scope (`C--users-mattm`,
+    `C--WINDOWS-system32`, etc.) has its own `memory/` directory, so the
+    scope name is prepended to the path to avoid same-filename collisions
+    on the `(source_table, source_id, chunk_index, embedding_model)` unique
+    constraint. Without this, a `MEMORY.md` in two scopes would upsert
+    the same row — whichever scope was scanned last would silently win.
+    """
     for dir_path, dir_origin in MEMORY_DIRS:
-        if dir_origin == origin and str(filepath).startswith(str(dir_path)):
+        if dir_origin != origin:
+            continue
+        if str(filepath).startswith(str(dir_path)):
             rel = filepath.relative_to(dir_path)
+            # For claude-code, include the parent scope directory in source_id
+            # (e.g. `C--WINDOWS-system32/memory` → prefix `C--WINDOWS-system32`).
+            if origin == "claude-code":
+                scope = dir_path.parent.name  # e.g. "C--users-mattm"
+                return f"{origin}/{scope}/{rel.as_posix()}"
             return f"{origin}/{rel.as_posix()}"
     return f"{origin}/{filepath.name}"
 
