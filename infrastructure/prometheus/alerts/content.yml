@@ -1,0 +1,81 @@
+# Content-pipeline alerts — Phase D (GitHub #68).
+# Counterparts to brain/health_probes.py probes related to content quality,
+# publishing, embeddings, and cost.
+
+groups:
+  - name: poindexter-content
+    interval: 1m
+    rules:
+      # --- Embeddings pipeline ---
+      - alert: EmbeddingsStale
+        expr: |
+          (time() - max(poindexter_embeddings_total)) > 21600
+          # Gauge hasn't been refreshed in 6h — auto-embed likely not running
+        for: 10m
+        labels:
+          severity: warning
+          category: content
+        annotations:
+          summary: "auto-embed hasn't updated embeddings_total gauge recently"
+          description: |
+            `poindexter_embeddings_total` hasn't changed in 6h. Either the
+            auto-embed container is stuck or the Tap runner is failing
+            silently. Check `docker logs poindexter-auto-embed` and
+            `tail ~/.gladlabs/auto-embed.log`.
+
+      # --- Publishing pipeline ---
+      - alert: NoPublishedPostsRecently
+        expr: |
+          (poindexter_posts_total{status="published"} offset 24h) == poindexter_posts_total{status="published"}
+        for: 48h
+        labels:
+          severity: info
+          category: content
+        annotations:
+          summary: "No new posts published in 48h"
+          description: |
+            Published post count hasn't grown in 48h. Either content
+            generation is stalled, QA is rejecting everything, or the
+            approval queue is backed up awaiting Matt.
+
+  - name: poindexter-business
+    interval: 1m
+    rules:
+      # --- Cost guard ---
+      - alert: DailySpendApproachingLimit
+        expr: poindexter_daily_spend_usd > 4.0
+        for: 5m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Daily AI spend >$4 (approaching $5 soft limit)"
+          description: |
+            `cost_logs` shows >$4 spent in the last 24h. Check
+            `plugin.llm_provider.primary.*` — maybe a workflow flipped
+            to a paid provider unintentionally.
+
+      - alert: DailySpendOverBudget
+        expr: poindexter_daily_spend_usd > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          category: business
+        annotations:
+          summary: "Daily AI spend exceeded $5 cap"
+          description: |
+            Cost budget blown. Pipeline should have stopped itself but
+            didn't. Check cost_guard logic + app_settings
+            daily_spend_limit.
+
+      - alert: MonthlySpendHigh
+        expr: poindexter_monthly_spend_usd > 15.0
+        for: 10m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Monthly AI spend above $15"
+          description: |
+            Running high for a solo install. Expected monthly is
+            usually <$10 with Ollama-only defaults.

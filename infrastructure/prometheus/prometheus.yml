@@ -1,12 +1,33 @@
 global:
   scrape_interval: 15s
 
+# Alertmanager connection — Phase D (GitHub #68).
+# Brain daemon will subscribe to Alertmanager webhooks for auto-remediation
+# once parallel-run is verified; legacy brain probes continue to run in the
+# meantime so there's no coverage gap.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - alerts/*.yml
+
 scrape_configs:
   - job_name: nvidia-smi
     static_configs:
       - targets: ["host.docker.internal:9835"]
 
+  # Phase D canonical path — exposition produced via prometheus_client.
+  # Same worker, new path; additive to /api/prometheus below.
   - job_name: poindexter-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["worker:8002"]
+
+  # Legacy hand-built exposition path. Will be folded into /metrics once
+  # every metric has migrated (tracked as Phase D follow-up).
+  - job_name: poindexter-worker-legacy
     metrics_path: /api/prometheus
     static_configs:
       - targets: ["worker:8002"]
