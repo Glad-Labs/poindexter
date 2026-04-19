@@ -49,7 +49,7 @@ permissions, outside the repo). No `.env` file is needed.
 | `COMPANY_NAME`         | `Glad Labs`                         | Publisher name used in generated content's `<author>` tag                                                             |
 | `DEFAULT_OLLAMA_MODEL` | `auto`                              | Ollama model the router picks when no override                                                                        |
 | `DEVELOPMENT_MODE`     | `true`                              | Enables dev bypasses (token, CORS). **Never set in prod.**                                                            |
-| `ENVIRONMENT`          | `production`                        | Log tag + Sentry environment                                                                                          |
+| `ENVIRONMENT`          | `production`                        | Log tag (Sentry integration removed — local monitoring via Grafana + brain probes)                                    |
 | `GRAFANA_USER`         | `admin`                             | Grafana admin username                                                                                                |
 | `LOCAL_POSTGRES_USER`  | `poindexter`                        | Local Postgres user                                                                                                   |
 | `LOCAL_POSTGRES_DB`    | `poindexter_brain`                  | Local Postgres database name                                                                                          |

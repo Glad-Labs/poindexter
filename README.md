@@ -141,12 +141,13 @@ Any Frontend (reads static JSON from CDN)
 ## Stack
 
 - **Backend:** Python 3.12 / FastAPI / asyncpg
-- **AI:** Ollama (local) + optional cloud fallback (Anthropic, OpenAI, Google)
+- **AI:** Ollama (local inference, Ollama-only pipeline). Community plugins can add any OpenAI-compat backend — vllm, llama.cpp, SGLang, TGI, LocalAI, LiteLLM — by config; paid-API connectors (Anthropic, OpenAI, Groq, OpenRouter) are community-plugin territory.
+- **Embeddings:** `nomic-embed-text` via Ollama → pgvector
 - **Database:** PostgreSQL 16 + pgvector for embeddings
-- **Monitoring:** Grafana + Prometheus + Telegram alerts
+- **Monitoring:** Grafana + Prometheus + Alertmanager (Telegram/Discord webhooks)
 - **Storage:** Any S3-compatible (Cloudflare R2, AWS S3, MinIO)
-- **CI/CD:** Woodpecker CI (self-hosted) or GitHub Actions
-- **Infrastructure:** Docker Compose (10 containers)
+- **CI/CD:** Gitea Actions (self-hosted) or GitHub Actions
+- **Infrastructure:** Docker Compose (~12 containers)
 
 ## Configuration
 

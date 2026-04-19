@@ -44,40 +44,31 @@ Poindexter implements a sophisticated self-critiquing content generation pipelin
         └──────────────────────────┐
                                    │
         ┌──────────────────────────▼──────────┐
-        │ Model Router (Multi-Provider)       │
-        │ Ollama → Claude → OpenAI → Gemini   │
+        │ Model Router (Ollama-only pipeline) │
+        │ → Ollama local inference            │
         └─────────────────────────────────────┘
 ```
 
 ---
 
-## 🔀 Model Router & Multi-Provider LLM Access
+## 🔀 Model Router & LLM Access
 
-### Intelligent Fallback Routing
-
-Poindexter uses an intelligent fallback routing system to ensure high availability and cost efficiency. All LLM calls pass through the `ModelRouter` service.
+Poindexter's default pipeline runs Ollama-only: all inference on local hardware, zero paid API cost. Anthropic / OpenAI / Google Gemini were removed from the pipeline to honor the "no paid APIs" rule (session 55). `services/model_router.py` still exists as the tier-selection logic; the `ModelProvider` enum currently enumerates `OLLAMA` and `HUGGINGFACE` (as emergency fallback).
 
 **Location:** `src/cofounder_agent/services/model_router.py`
 
-### Provider Priority Chain
-
-The system attempts providers in the following order (based on keys in `app_settings`):
-
-1. **Ollama** (Local, Zero-Cost)
-2. **Anthropic Claude** (cloud fallback)
-3. **OpenAI** (cloud fallback)
-4. **Google Gemini** (cloud fallback)
+A future refactor (GitHub [#64](https://github.com/Glad-Labs/poindexter/issues/64) Phase J) will extract inference into an `LLMProvider` plugin family. The default shipping providers will remain OSS-only — Ollama, llama.cpp server, vllm, SGLang, HuggingFace TGI, LM Studio, LocalAI, LiteLLM gateway — all reachable via a generic `OpenAICompatProvider` by swapping one `app_settings` row. Community plugins can wrap paid providers (Anthropic, OpenAI, Groq, OpenRouter) and distribute via pypi; the core install stays free.
 
 ### Cost-Tier Execution Logic
 
 Instead of hardcoding model names, the system uses **Cost Tiers** for intelligent execution:
 
-| Tier         | Production Models                 | Usage Case                      |
-| ------------ | --------------------------------- | ------------------------------- |
-| **Free**     | Ollama: qwen3:8b, phi4:14b        | SEO, image decisions, summaries |
-| **Budget**   | Ollama: gemma3:27b                | QA reviews, fallback critic     |
-| **Standard** | Ollama: qwen3:30b, glm-4.7        | Writing, content generation     |
-| **Premium**  | Cloud: Claude Haiku (via API key) | Cross-model QA review           |
+| Tier         | Current Models                                                 | Usage Case                      |
+| ------------ | -------------------------------------------------------------- | ------------------------------- |
+| **Free**     | Ollama: qwen3:8b, phi4:14b, phi3                               | SEO, image decisions, summaries |
+| **Budget**   | Ollama: gemma3:27b                                             | QA reviews, fallback critic     |
+| **Standard** | Ollama: glm-4.7 (custom build)                                 | Writing, content generation     |
+| **Premium**  | _(no active premium tier; cloud models retired from pipeline)_ | N/A                             |
 
 ---
 
@@ -443,23 +434,21 @@ async def generate_post(self, topic: str) -> str:
 
 ## 📊 Agent Configuration
 
-### Model Fallback Chain (Prioritizes Ollama)
+### Model Fallback Chain (Ollama-only)
 
-Agents automatically route requests through this prioritized fallback chain:
+The pipeline runs Ollama-only. There is no cloud fallback — cloud LLM providers (Anthropic, OpenAI, Google Gemini) were removed in session 55 to honor the "no paid APIs" rule.
 
 ```text
-1. Ollama (Local, Zero-Cost)
-   ↓ [If unavailable or model not found]
-2. Claude 3 Opus (Anthropic, Best Quality)
-   ↓ [If quota exceeded or error]
-3. GPT-4 (OpenAI, Fast & Capable)
-   ↓ [If rate limited or expensive]
-4. Gemini Pro (Google, Lower Cost)
-   ↓ [If all else fails]
-5. Fallback Model (Gemini Flash or equivalent)
+1. Ollama (primary — local inference on RTX 5090 32GB VRAM)
+   ↓ [if primary model errors or returns empty]
+2. pipeline_fallback_model (default: gemma3:27b, also on Ollama)
+   ↓ [if Ollama itself is down]
+3. HuggingFace transformers (emergency fallback, on-CPU)
 ```
 
-**Benefits of Ollama-First Approach:**
+The `cloud_api_mode` app_setting exists (`disabled` / `emergency_only` / `fallback` / `always`) and is set to `disabled` by default. Customers forking the repo can re-enable cloud providers by installing a community plugin (`pip install poindexter-llm-anthropic` etc., future Phase J) and flipping the setting.
+
+**Benefits of the Ollama-only approach:**
 
 - ✅ 100% free local inference
 - ✅ No API rate limits
@@ -470,42 +459,24 @@ Agents automatically route requests through this prioritized fallback chain:
 
 ### Model Selection per Agent
 
-```python
-# Configure which AI model each agent uses
-# Agents inherit from LLMClient which handles fallback chain
-AGENT_CONFIG = {
-    "research": {
-        "preferred_model": "gpt-4",  # Use search capability
-        "fallback_chain": ["claude-opus", "gpt-4", "gemini-pro", "ollama"],
-        "temperature": 0.3,  # Factual, precise
-        "max_tokens": 2000,
-    },
-    "creative": {
-        "preferred_model": "claude-opus",  # Best for writing
-        "fallback_chain": ["gpt-4", "gemini-pro", "ollama"],
-        "temperature": 0.7,  # Creative, varied
-        "max_tokens": 3000,
-    },
-    "qa": {
-        "preferred_model": "gpt-4",  # Good at evaluation
-        "fallback_chain": ["claude-opus", "gemini-pro", "ollama"],
-        "temperature": 0.2,  # Analytical, precise
-        "max_tokens": 1000,
-    },
-    "image": {
-        "preferred_model": "gpt-4-vision",  # Image understanding
-        "fallback_chain": ["claude-opus", "ollama"],
-        "temperature": 0.5,
-        "max_tokens": 500,
-    },
-    "publishing": {
-        "preferred_model": "gpt-3.5",  # Fast formatting
-        "fallback_chain": ["gemini-pro", "ollama"],
-        "temperature": 0.1,  # Precise formatting
-        "max_tokens": 500,
-    },
-}
-```
+Agent-to-model assignment is **DB-configurable, Ollama-only**. The mapping lives in `app_settings` under keys like `pipeline_writer_model`, `pipeline_critic_model`, `model_role_writer`, `model_role_critic`, `model_role_factchecker`, etc. Changing an agent's model is a `UPDATE app_settings SET value = 'ollama/qwen3:8b' WHERE key = 'model_role_seo'` — no code change, no redeploy.
+
+Current defaults (as of April 2026):
+
+| Role                       | app_settings key                                        | Default model                                                                          |
+| -------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Writer (long-form content) | `pipeline_writer_model` / `model_role_writer`           | `ollama/gemma3:27b` (free-tier seed); `ollama/glm-4.7-5090:latest` (Matt's production) |
+| Critic (QA review)         | `pipeline_critic_model` / `model_role_critic`           | `ollama/gemma3:27b`                                                                    |
+| Fact-checker               | `model_role_factchecker`                                | `ollama/gemma3:27b`                                                                    |
+| SEO / metadata             | `pipeline_seo_model` / `model_role_seo`                 | `ollama/qwen3:8b`                                                                      |
+| Image prompt crafter       | `model_role_image_prompt`                               | `ollama/qwen3:8b`                                                                      |
+| Summarizer / short-form    | `model_role_summarizer`                                 | `ollama/qwen3:8b` (also `phi3:latest` in some roles)                                   |
+| Refinement / research      | `pipeline_refinement_model` / `pipeline_research_model` | `ollama/gemma3:27b` (free seed); `ollama/glm-4.7-5090:latest` (production)             |
+| Fallback                   | `pipeline_fallback_model`                               | `ollama/gemma3:27b`                                                                    |
+
+Temperatures are also DB-configurable (`content_temperature = 0.7`, `qa_temperature = 0.3`, defaults).
+
+No cloud model references remain in the pipeline. The free-tier seed (`brain/seed_app_settings.json`) ships only Ollama models that a fresh install can actually pull; Matt's production DB overlays those with his custom 5090-tuned `glm-4.7-5090:latest` build via the premium pack.
 
 ### Agent Capabilities Matrix
 
