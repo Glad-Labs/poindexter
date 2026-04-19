@@ -21,6 +21,13 @@ For local development without Redis, set REDIS_ENABLED=false
 The system will work normally but without cache benefits.
 """
 
+# Lazy type-hint evaluation — the ``Redis`` type may resolve to ``None``
+# when the ``redis`` package isn't installed, which makes the union
+# ``Redis | None`` evaluate to ``None | None`` at class-definition time
+# and crash with TypeError. Keeping hints as strings defers the
+# resolution until a type-checker consumes them (never at runtime).
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
