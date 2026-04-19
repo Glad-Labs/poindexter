@@ -145,6 +145,12 @@ generate_content = "cofounder_agent.services.stages.generate_content:GenerateCon
 writer_self_review = "cofounder_agent.services.stages.writer_self_review:WriterSelfReviewStage"
 quality_evaluation = "cofounder_agent.services.stages.quality_evaluation:QualityEvaluationStage"
 url_validation = "cofounder_agent.services.stages.url_validation:UrlValidationStage"
+replace_inline_images = "cofounder_agent.services.stages.replace_inline_images:ReplaceInlineImagesStage"
+source_featured_image = "cofounder_agent.services.stages.source_featured_image:SourceFeaturedImageStage"
+generate_seo_metadata = "cofounder_agent.services.stages.generate_seo_metadata:GenerateSeoMetadataStage"
+generate_media_scripts = "cofounder_agent.services.stages.generate_media_scripts:GenerateMediaScriptsStage"
+capture_training_data = "cofounder_agent.services.stages.capture_training_data:CaptureTrainingDataStage"
+finalize_task = "cofounder_agent.services.stages.finalize_task:FinalizeTaskStage"
 
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
