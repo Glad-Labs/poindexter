@@ -32,7 +32,7 @@ class TestExecute:
         }
         stats = {"revised": True, "contradictions_found": 2, "skipped": False}
         with patch(
-            "services.content_router_service._self_review_and_revise",
+            "services.self_review.self_review_and_revise",
             AsyncMock(return_value=("Revised content.", stats)),
         ), patch("services.audit_log.audit_log_bg", MagicMock()):
             result = await WriterSelfReviewStage().execute(ctx, {})
@@ -51,7 +51,7 @@ class TestExecute:
         }
         stats = {"revised": False, "contradictions_found": 0, "skipped": False}
         with patch(
-            "services.content_router_service._self_review_and_revise",
+            "services.self_review.self_review_and_revise",
             AsyncMock(return_value=("ignored", stats)),
         ), patch("services.audit_log.audit_log_bg", MagicMock()):
             result = await WriterSelfReviewStage().execute(ctx, {})
@@ -72,7 +72,7 @@ class TestExecute:
             "content": "something",
         }
         with patch(
-            "services.content_router_service._self_review_and_revise",
+            "services.self_review.self_review_and_revise",
             AsyncMock(side_effect=RuntimeError("boom")),
         ):
             result = await WriterSelfReviewStage().execute(ctx, {})

@@ -291,7 +291,7 @@ class TestFinalizeTask:
             "database_service": db,
         }
         with patch(
-            "services.content_router_service._normalize_text",
+            "services.text_utils.normalize_text",
             side_effect=lambda x: x,
         ):
             result = await FinalizeTaskStage().execute(ctx, {})
@@ -380,7 +380,7 @@ class TestReplaceInlineImagesAdapter:
             "services.stages.replace_inline_images._try_sdxl",
             AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service._normalize_text", side_effect=lambda x: x,
+            "services.text_utils.normalize_text", side_effect=lambda x: x,
         ):
             result = await ReplaceInlineImagesStage().execute(ctx, {})
         assert result.ok is True
@@ -405,7 +405,7 @@ class TestReplaceInlineImagesAdapter:
             "services.stages.replace_inline_images._try_sdxl",
             AsyncMock(return_value=None),
         ), patch(
-            "services.content_router_service._normalize_text", side_effect=lambda x: x,
+            "services.text_utils.normalize_text", side_effect=lambda x: x,
         ):
             result = await ReplaceInlineImagesStage().execute(ctx, {})
         assert result.ok is True

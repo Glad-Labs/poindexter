@@ -256,7 +256,7 @@ class StartupManager:
 
         # Inject database service into content task store
         try:
-            from services.content_router_service import get_content_task_store
+            from services.content_task_store import get_content_task_store
 
             get_content_task_store(self.database_service)
         except Exception as e:

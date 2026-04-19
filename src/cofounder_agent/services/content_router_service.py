@@ -63,53 +63,6 @@ async def _is_stage_enabled(pool, stage_key: str) -> bool:
         return True  # Table doesn't exist = run everything
 
 
-# ============================================================================
-# TEXT NORMALIZATION — canonical home is services/text_utils.py (Phase E2).
-# Legacy names re-exported so older callers keep working.
-# ============================================================================
-
-from services.text_utils import (  # noqa: F401 — re-exported for legacy callers
-    normalize_text as _normalize_text,
-    scrub_fabricated_links as _scrub_fabricated_links,
-)
-
-# ============================================================================
-# HELPER RE-EXPORTS (Phase E2) — the canonical modules listed below own the
-# implementations now. These aliases keep the legacy underscore-prefixed
-# import path (`from services.content_router_service import _X`) working for
-# stage files + tests that haven't migrated yet. Drop these in a follow-up
-# once every caller imports from the canonical location.
-# ============================================================================
-
-from services.model_preferences import parse_model_preferences as _parse_model_preferences  # noqa: F401, E501
-from services.writing_style_context import build_writing_style_context as _build_writing_style_context  # noqa: F401, E501
-from services.research_context import build_rag_context as _build_rag_context  # noqa: F401, E501
-from services.title_generation import (  # noqa: F401
-    check_title_originality as _check_title_originality,
-    generate_canonical_title as _generate_canonical_title,
-    sanitize_generated_title as _sanitize_generated_title,
-)
-from services.self_review import self_review_and_revise as _self_review_and_revise  # noqa: F401, E501
-
-
-
-# ============================================================================
-# TASK STORE — canonical home is services/content_task_store.py (Phase E2).
-# ============================================================================
-
-from services.content_task_store import (  # noqa: F401 — legacy alias
-    ContentTaskStore,
-    get_content_task_store,
-)
-
-
-# ============================================================================
-# BACKGROUND TASK PROCESSORS
-# ============================================================================
-
-
-
-
 
 
 
