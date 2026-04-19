@@ -548,6 +548,49 @@ async def health():
     return {"status": "ok", "service": "cofounder-agent"}
 
 
+# ===== PROMETHEUS METRICS ENDPOINT =====
+# Phase D (GitHub #68): Prometheus exposition-format metrics at /metrics.
+# Additive — the existing /api/metrics JSON endpoint below is unchanged.
+# Once Alertmanager rules are in place and parallel-run confidence is high,
+# the brain daemon's probe loop can start deleting functions that now have
+# metric counterparts. See services/metrics_exporter.py.
+
+
+@app.get("/metrics")
+async def prometheus_metrics_canonical():
+    """Prometheus scrape endpoint (Phase D canonical path).
+
+    Returns exposition-format text via ``services.metrics_exporter``.
+    The legacy ``/api/prometheus`` endpoint below hand-builds its own
+    output; this one uses ``prometheus_client`` properly. Migration of
+    the legacy endpoint's metrics into this exporter is tracked as a
+    Phase D follow-up — both endpoints work in parallel meanwhile.
+    """
+    from fastapi import Response
+
+    from services.metrics_exporter import refresh_metrics, render_exposition
+
+    pool = getattr(app.state, "pool", None)
+    # Ollama URL: read from app_settings via site_config if wired, else default
+    try:
+        from services.site_config import site_config
+        ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+    except Exception:
+        ollama_url = "http://host.docker.internal:11434"
+
+    if pool is not None:
+        try:
+            await refresh_metrics(pool, ollama_url)
+        except Exception as e:
+            # Never fail /metrics — Prometheus will alert on "endpoint down"
+            # which is not what we want for a refresh hiccup.
+            import logging as _logging
+            _logging.getLogger(__name__).warning("/metrics refresh failed: %s", e)
+
+    body, content_type = render_exposition()
+    return Response(content=body, media_type=content_type)
+
+
 # ===== METRICS ENDPOINT =====
 # Consolidated from: /api/metrics, /metrics, /tasks/metrics, etc.
 

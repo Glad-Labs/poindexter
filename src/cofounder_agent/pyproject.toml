@@ -79,6 +79,7 @@ pyasn1 = ">=0.6.3"
 mcp = ">=1.23.0"
 pillow = ">=12.2.0"
 apscheduler = "^3.11.2"
+prometheus-client = "^0.25.0"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
