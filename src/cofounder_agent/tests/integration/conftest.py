@@ -38,14 +38,29 @@ as-is. A missing or unreachable Ollama skips the relevant tests.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Iterator
 
 import asyncpg
 import httpx
 import pytest
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped event loop. pytest-asyncio's default event_loop is
+# function-scoped, which conflicts with our session-scoped async fixtures
+# (real_pool, real_ollama_url). Override here so everything coordinates.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ Each test handles its own setup inside the shared worker. State leaks between te
 
 ## 2. Real-services harness (new, scaffold for GitHub #21)
 
-`conftest_real_services.py` + `test_harness_smoke.py`.
+`conftest.py` + `test_harness_smoke.py` (fixtures auto-discovered by pytest).
 
 Designed for tests that need **real Postgres + real Ollama**, but **strict isolation from Matt's operating database**. Uses a separate `poindexter_test` DB on the same Postgres instance. Tables can be truncated between tests for a clean slate.
 
