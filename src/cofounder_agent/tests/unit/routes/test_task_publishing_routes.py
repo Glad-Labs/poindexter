@@ -329,12 +329,12 @@ class TestApproveTask:
         with (
             _mock_model_converter() as mc,
             patch(
-                "services.content_router_service._get_or_create_default_author",
+                "services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
                 return_value="author-1",
             ),
             patch(
-                "services.content_router_service._select_category_for_topic",
+                "services.category_resolver.select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
@@ -433,12 +433,12 @@ class TestPublishTask:
         with (
             _mock_model_converter() as mc,
             patch(
-                "services.content_router_service._get_or_create_default_author",
+                "services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
                 return_value="author-1",
             ),
             patch(
-                "services.content_router_service._select_category_for_topic",
+                "services.category_resolver.select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
@@ -509,12 +509,12 @@ class TestPublishTask:
         with (
             _mock_model_converter() as mc,
             patch(
-                "services.content_router_service._get_or_create_default_author",
+                "services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
                 return_value="author-1",
             ),
             patch(
-                "services.content_router_service._select_category_for_topic",
+                "services.category_resolver.select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),
@@ -558,12 +558,12 @@ class TestPublishTask:
         with (
             _mock_model_converter() as mc,
             patch(
-                "services.content_router_service._get_or_create_default_author",
+                "services.default_author.get_or_create_default_author",
                 new_callable=AsyncMock,
                 return_value="author-1",
             ),
             patch(
-                "services.content_router_service._select_category_for_topic",
+                "services.category_resolver.select_category_for_topic",
                 new_callable=AsyncMock,
                 return_value="cat-1",
             ),

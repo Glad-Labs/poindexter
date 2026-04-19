@@ -402,13 +402,11 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 4. Get author + category
     # ---------------------------------------------------------------
-    from services.content_router_service import (
-        _get_or_create_default_author,
-        _select_category_for_topic,
-    )
+    from services.category_resolver import select_category_for_topic
+    from services.default_author import get_or_create_default_author
 
-    author_id = await _get_or_create_default_author(db_service)
-    category_id = await _select_category_for_topic(post_title, db_service)
+    author_id = await get_or_create_default_author(db_service)
+    category_id = await select_category_for_topic(post_title, db_service)
 
     # ---------------------------------------------------------------
     # 4b. Determine scheduled publish time (content spacing)

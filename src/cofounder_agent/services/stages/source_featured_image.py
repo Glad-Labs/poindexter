@@ -253,9 +253,9 @@ async def _build_sdxl_prompt(
     on_style_picked: Any,
 ) -> str:
     """Pick a rotation style + ask Ollama for an editorial prompt."""
-    from services.content_router_service import (
-        _get_in_memory_recent_styles,
-        _record_style_pick,
+    from services.image_style_rotation import (
+        get_in_memory_recent_styles as _get_in_memory_recent_styles,
+        record_style_pick as _record_style_pick,
     )
     from services.site_config import site_config
 
