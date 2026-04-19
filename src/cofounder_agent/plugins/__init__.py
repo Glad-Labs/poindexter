@@ -67,6 +67,16 @@ from .registry import (
     get_taps,
 )
 from .scheduler import PluginScheduler
+from .secrets import (
+    SecretsError,
+    demote_secret,
+    ensure_pgcrypto,
+    get_secret,
+    is_encrypted,
+    migrate_plaintext_secrets,
+    rotate_key,
+    set_secret,
+)
 from .stage import Adapter, Provider, Reviewer, Stage, StageResult
 from .tap import Document, Tap
 
@@ -91,6 +101,15 @@ __all__ = [
     # Config + registry
     "PluginConfig",
     "PluginScheduler",
+    # Secrets
+    "SecretsError",
+    "demote_secret",
+    "ensure_pgcrypto",
+    "get_secret",
+    "is_encrypted",
+    "migrate_plaintext_secrets",
+    "rotate_key",
+    "set_secret",
     "ENTRY_POINT_GROUPS",
     "get_taps",
     "get_probes",
