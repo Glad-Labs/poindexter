@@ -197,6 +197,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("stages", "services.stages.generate_content", "GenerateContentStage"),
         ("stages", "services.stages.writer_self_review", "WriterSelfReviewStage"),
         ("stages", "services.stages.quality_evaluation", "QualityEvaluationStage"),
+        ("stages", "services.stages.url_validation", "UrlValidationStage"),
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:
