@@ -487,7 +487,7 @@
 
     {
       "key": "pipeline.stages.order",
-      "value": "[\"verify_task\", \"generate_content\", \"writer_self_review\", \"quality_evaluation\", \"url_validation\", \"replace_inline_images\", \"source_featured_image\", \"generate_seo_metadata\", \"generate_media_scripts\", \"capture_training_data\", \"finalize_task\"]",
+      "value": "[\"verify_task\", \"generate_content\", \"writer_self_review\", \"quality_evaluation\", \"url_validation\", \"replace_inline_images\", \"source_featured_image\", \"cross_model_qa\", \"generate_seo_metadata\", \"generate_media_scripts\", \"capture_training_data\", \"finalize_task\"]",
       "category": "pipeline",
       "description": "Ordered list of Stage names the content pipeline runs. Operators can disable (drop from list), reorder, or insert third-party stages without a code deploy. Falls back to DEFAULT_STAGE_ORDER if missing."
     }
