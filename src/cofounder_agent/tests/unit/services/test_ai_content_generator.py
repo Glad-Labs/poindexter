@@ -567,9 +567,19 @@ class TestContentValidationResultExpanded:
 class TestPopulateInternalLinksCache:
     @pytest.mark.asyncio
     async def test_no_database_url_returns_empty(self, monkeypatch):
+        """When DATABASE_URL is unset AND the brain.bootstrap fallback returns nothing,
+        the cache stays empty.
+
+        _populate_internal_links_cache falls back to
+        ``brain.bootstrap.resolve_database_url`` when the env var is missing —
+        without stubbing that, this test would pick up the DSN from the
+        operator's on-disk bootstrap.toml and silently succeed. Mock the
+        fallback to return empty to test the intended "no DB" path.
+        """
         gen = _make_generator()
         monkeypatch.delenv("DATABASE_URL", raising=False)
-        await gen._populate_internal_links_cache()
+        with patch("brain.bootstrap.resolve_database_url", return_value=""):
+            await gen._populate_internal_links_cache()
         assert gen._internal_links_cache == []
 
     @pytest.mark.asyncio
