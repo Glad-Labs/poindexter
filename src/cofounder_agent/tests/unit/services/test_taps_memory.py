@@ -189,7 +189,7 @@ class TestMemoryFilesTapExtract:
                 assert doc.writer == "claude-code"
 
     @pytest.mark.asyncio
-    async def test_metadata_includes_type_and_chunk_index(self, populated_projects):
+    async def test_metadata_includes_type_and_chars(self, populated_projects):
         projects, openclaw = populated_projects
         tap = MemoryFilesTap()
 
@@ -202,17 +202,20 @@ class TestMemoryFilesTapExtract:
             },
         ):
             assert "type" in doc.metadata
-            assert "chunk_index" in doc.metadata
-            assert "total_chunks" in doc.metadata
-            assert doc.metadata["chunk_index"] == 0  # all test files fit in one chunk
-            assert doc.metadata["total_chunks"] == 1
+            assert "chars" in doc.metadata
+            assert "filename" in doc.metadata
+            assert "origin_path" in doc.metadata
 
     @pytest.mark.asyncio
-    async def test_oversize_file_yields_multiple_documents(self, tmp_path: Path):
+    async def test_yields_one_document_per_file_regardless_of_size(self, tmp_path: Path):
+        """Taps yield one Document per file — chunking happens in the runner.
+
+        This keeps every Tap's contract simple and lets the chunking policy
+        change in one place (services/taps/_chunking.py + the runner).
+        """
         projects = tmp_path / "projects"
         (projects / "C--test" / "memory").mkdir(parents=True)
 
-        # Build a file >MAX_CHARS with heading boundaries for clean splitting.
         big_content = (
             "# Section A\n" + ("a" * 4000) + "\n"
             "# Section B\n" + ("b" * 4000) + "\n"
@@ -234,13 +237,11 @@ class TestMemoryFilesTapExtract:
         ):
             docs.append(doc)
 
-        assert len(docs) >= 2
-        # All docs for the same file share source_id but have distinct chunk_index.
-        assert all(d.source_id == "claude-code/C--test/big.md" for d in docs)
-        indices = sorted(d.metadata["chunk_index"] for d in docs)
-        assert indices == list(range(len(docs)))
-        # Every chunk reports total_chunks == len(docs)
-        assert all(d.metadata["total_chunks"] == len(docs) for d in docs)
+        # Single document per file; full content preserved.
+        assert len(docs) == 1
+        assert docs[0].source_id == "claude-code/C--test/big.md"
+        assert docs[0].text == big_content
+        assert docs[0].metadata["chars"] == len(big_content)
 
     @pytest.mark.asyncio
     async def test_empty_files_skipped(self, tmp_path: Path):

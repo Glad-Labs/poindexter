@@ -1024,13 +1024,20 @@ async def sync_brain_tables(
 
 
 async def main() -> None:
-    """Run all phases. Restored 2026-04-16 after regression in 87adc204
-    (#198 data-flow audit) — the previous main() silently returned
-    right after the Ollama check, so every cron run was a no-op.
+    """Run every registered Tap + legacy OpenClaw SQLite phase.
+
+    Post-Phase-B: this function is a thin dispatcher over the plugin
+    registry. Every data source is a Tap in ``services/taps/`` registered
+    via entry_points. Adding a new source is `pip install poindexter-tap-X`
+    + flipping the enabled flag in app_settings — no edits here.
+
+    One remaining legacy phase: OpenClaw SQLite. Its pre-embedded vector
+    rows don't fit the standard Document contract; migration will happen
+    in a follow-up commit. Everything else runs via ``run_all()``.
     """
     start = datetime.now(timezone.utc)
     logger.info("=" * 60)
-    logger.info("Auto-Embed run started")
+    logger.info("Auto-Embed run started (plugin runner)")
     logger.info("=" * 60)
 
     http = httpx.AsyncClient()
@@ -1041,115 +1048,74 @@ async def main() -> None:
         await http.aclose()
         return
 
-    local_conn: Optional[asyncpg.Connection] = None
-    cloud_conn: Optional[asyncpg.Connection] = None
+    # The plugin runner needs a pool (for PluginConfig + dedup), not a single
+    # conn. Build a small pool scoped to this run.
+    try:
+        pool = await asyncpg.create_pool(LOCAL_DSN, min_size=1, max_size=4)
+    except Exception as e:
+        logger.error(f"Could not connect to local pgvector DB: {e}")
+        await http.aclose()
+        return
+
+    local_conn = None
 
     try:
-        # Connect to local pgvector
-        logger.info("Connecting to local pgvector DB...")
-        local_conn = await asyncpg.connect(LOCAL_DSN)
+        # Import lazily so host-path runs without the in-tree poindexter
+        # module on sys.path still reach this main(); they'll only hit
+        # the error if they actually tried to run the registry path.
+        from services.taps.runner import run_all
 
-        # Load Gitea config from DB via the shared resolver. Env wins per-key.
-        # URL gets localize_url automatically so the same DB value
-        # (http://localhost:3001) works from host scripts AND from inside this
-        # container (host.docker.internal:3001).
-        global GITEA_URL, GITEA_USER, GITEA_PASS, GITEA_REPO
-        try:
-            GITEA_URL = await resolve_url(
-                local_conn, "gitea_url",
-                default=GITEA_URL, env_var="GITEA_URL",
+        # Use the same MemoryClient the pre-refactor pipeline used, bound
+        # to our pool + Ollama URL. MemoryClient handles the actual embed
+        # HTTP call + writes to the embeddings table.
+        from poindexter.memory import MemoryClient
+
+        async with MemoryClient(dsn=LOCAL_DSN, ollama_url=OLLAMA_URL) as mem:
+            summary = await run_all(pool, mem)
+
+        logger.info("--- Tap runner summary ---")
+        for ts in summary.taps:
+            status = "disabled" if not ts.enabled else "ok"
+            logger.info(
+                "  %-20s %s %d embedded, %d skipped, %d failed (%.2fs)",
+                ts.name, status, ts.embedded, ts.skipped, ts.failed, ts.duration_s,
             )
-            # Credentials / repo: simple env-wins-over-DB, no URL translation.
-            if not os.getenv("GITEA_USER"):
-                val = await local_conn.fetchval("SELECT value FROM app_settings WHERE key = 'gitea_user'")
-                if val:
-                    GITEA_USER = val
-            if not (os.getenv("GITEA_PASSWORD") or os.getenv("GITEA_PASS")):
-                val = await local_conn.fetchval("SELECT value FROM app_settings WHERE key = 'gitea_password'")
-                if val:
-                    GITEA_PASS = val
-            if not os.getenv("GITEA_REPO"):
-                val = await local_conn.fetchval("SELECT value FROM app_settings WHERE key = 'gitea_repo'")
-                if val:
-                    GITEA_REPO = val
-            if GITEA_PASS:
-                logger.info("Loaded Gitea credentials from app_settings")
-        except Exception as e:
-            logger.debug(f"Could not load Gitea creds from DB: {e}")
 
-        # Phase 1: memory files
-        logger.info("--- Phase 1: Memory files ---")
-        mem_stats = await sync_memory_files(local_conn, http)
-
-        # Phase 1b: OpenClaw pre-embedded chunks from its SQLite store
-        logger.info("--- Phase 1b: OpenClaw SQLite chunks ---")
+        # Legacy Phase 1b: OpenClaw SQLite pre-embedded chunks. Not yet a Tap
+        # because its vectors are pre-computed (skips the standard embed step).
+        # Migrating this is a separate commit (see GitHub #66 comment).
+        openclaw_stats = {"embedded": 0, "skipped": 0, "failed": 0}
         try:
+            local_conn = await asyncpg.connect(LOCAL_DSN)
             openclaw_stats = await sync_openclaw_sqlite(local_conn)
+            logger.info(
+                "  %-20s ok %d embedded, %d skipped, %d failed",
+                "openclaw_sqlite",
+                openclaw_stats["embedded"],
+                openclaw_stats["skipped"],
+                openclaw_stats["failed"],
+            )
         except Exception as e:
             logger.error(f"OpenClaw SQLite sync failed: {e}")
             openclaw_stats = {"embedded": 0, "skipped": 0, "failed": 1}
 
-        # Phase 2: published posts
-        logger.info("--- Phase 2: Published posts ---")
-        try:
-            cloud_conn = await asyncpg.connect(CLOUD_DSN, timeout=15)
-            post_stats = await sync_published_posts(local_conn, cloud_conn, http)
-        except Exception as e:
-            logger.error(f"Cloud DB connection failed: {e}")
-            post_stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-        # Phase 3: Gitea issues
-        logger.info("--- Phase 3: Gitea issues ---")
-        try:
-            issue_stats = await sync_gitea_issues(local_conn, http)
-        except Exception as e:
-            logger.error(f"Gitea issues sync failed: {e}")
-            issue_stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-        # Phase 4: Audit log entries
-        logger.info("--- Phase 4: Audit log ---")
-        try:
-            audit_stats = await sync_audit_entries(local_conn, http)
-        except Exception as e:
-            logger.error(f"Audit log sync failed: {e}")
-            audit_stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-        # Phase 5: Brain knowledge + decisions → pgvector
-        logger.info("--- Phase 5: Brain knowledge & decisions ---")
-        try:
-            brain_stats = await sync_brain_tables(local_conn, http)
-        except Exception as e:
-            logger.error(f"Brain tables sync failed: {e}")
-            brain_stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-        # Summary
-        total_embedded = (
-            mem_stats["embedded"]
-            + openclaw_stats["embedded"]
-            + post_stats["embedded"]
-            + issue_stats["embedded"]
-            + audit_stats["embedded"]
-            + brain_stats["embedded"]
-        )
+        total_embedded = summary.total_embedded + openclaw_stats["embedded"]
+        total_failed = summary.total_failed + openclaw_stats["failed"]
         elapsed = (datetime.now(timezone.utc) - start).total_seconds()
-        logger.info("--- Summary ---")
-        logger.info(f"  Memory:   {mem_stats['embedded']} embedded, {mem_stats['skipped']} skipped, {mem_stats['failed']} failed")
-        logger.info(f"  OpenClaw: {openclaw_stats['embedded']} embedded, {openclaw_stats['skipped']} skipped, {openclaw_stats['failed']} failed")
-        logger.info(f"  Posts:    {post_stats['embedded']} embedded, {post_stats['skipped']} skipped, {post_stats['failed']} failed")
-        logger.info(f"  Issues:   {issue_stats['embedded']} embedded, {issue_stats['skipped']} skipped, {issue_stats['failed']} failed")
-        logger.info(f"  Audit:    {audit_stats['embedded']} embedded, {audit_stats['skipped']} skipped, {audit_stats['failed']} failed")
-        logger.info(f"  Brain:    {brain_stats['embedded']} embedded, {brain_stats['skipped']} skipped, {brain_stats['failed']} failed")
-        logger.info(f"  Total embedded: {total_embedded}")
-        logger.info(f"  Elapsed: {elapsed:.1f}s")
+
+        logger.info("")
+        logger.info(
+            "  TOTAL: %d embedded, %d failed across %d tap(s) + 1 legacy phase in %.1fs",
+            total_embedded, total_failed, len(summary.taps), elapsed,
+        )
         logger.info("Auto-Embed run complete.\n")
 
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        logger.exception(f"Fatal error: {e}")
     finally:
         if local_conn:
             await local_conn.close()
-        if cloud_conn:
-            await cloud_conn.close()
+        await pool.close()
         await http.aclose()
 
 

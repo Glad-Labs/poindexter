@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, List, Tuple
 
 from plugins.tap import Document
-from services.taps._chunking import chunk_text, classify_file
+from services.taps._chunking import classify_file
 
 logger = logging.getLogger(__name__)
 
@@ -151,23 +151,21 @@ class MemoryFilesTap:
                 source_id = _build_source_id(origin, scope, rel)
                 file_type = classify_file(filepath.name)
 
-                chunks = chunk_text(text)
-                total_chunks = len(chunks)
-                for chunk_index, chunk in enumerate(chunks):
-                    yield Document(
-                        source_id=source_id,
-                        source_table="memory",
-                        text=chunk,
-                        metadata={
-                            "filename": filepath.name,
-                            "type": file_type,
-                            "chars": len(text),
-                            "chunk_index": chunk_index,
-                            "total_chunks": total_chunks,
-                            "origin_path": str(filepath),
-                        },
-                        writer=origin,
-                    )
+                # One Document per file. The runner handles chunking based
+                # on text length — that keeps every Tap's contract simple
+                # and lets the chunking policy change in one place.
+                yield Document(
+                    source_id=source_id,
+                    source_table="memory",
+                    text=text,
+                    metadata={
+                        "filename": filepath.name,
+                        "type": file_type,
+                        "chars": len(text),
+                        "origin_path": str(filepath),
+                    },
+                    writer=origin,
+                )
 
         logger.info(
             "MemoryFilesTap: scanned %d memory file(s) across %d directories",
