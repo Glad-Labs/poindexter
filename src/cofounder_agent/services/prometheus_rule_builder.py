@@ -1,0 +1,331 @@
+"""Render Prometheus alert rules from ``app_settings`` (DB-first).
+
+Phase D follow-up (GitHub #68). Alert thresholds and rule bodies live in
+``app_settings`` so operators can tune without editing YAML or rebuilding
+the worker image. The repo still ships with sensible defaults — the
+brain seeds them into ``app_settings`` on first boot (see
+``brain/seed_app_settings.json``), but every value can be overridden
+with a single ``UPDATE app_settings ...``.
+
+## Key scheme
+
+``prometheus.threshold.<name>``
+    Scalar value (stored as a string in app_settings.value, parsed at
+    render time). Referenced inside rule expressions as
+    ``{threshold.<name>}``. Examples:
+
+    - ``prometheus.threshold.daily_spend_warning = "4.0"``
+    - ``prometheus.threshold.embeddings_stale_seconds = "21600"``
+
+``prometheus.rule.<alert_name>``
+    Full JSON override for a single alert. Partial keys are merged on
+    top of the built-in default, so an operator who just wants to
+    disable one alert writes ``{"enabled": false}`` and nothing else.
+
+    Keys:
+    - ``enabled`` (bool, default true)
+    - ``expr`` (string — may reference ``{threshold.X}``)
+    - ``for`` (duration string, e.g. ``"5m"``)
+    - ``severity`` (``"info"``, ``"warning"``, ``"critical"``)
+    - ``category`` (``"infrastructure"``, ``"content"``, ``"business"``)
+    - ``group`` (which Prometheus group the rule lives in)
+    - ``interval`` (group evaluation interval, e.g. ``"30s"``)
+    - ``summary``, ``description`` (annotation strings)
+
+## Rendering
+
+:func:`build_current` is the entry point — reads both key prefixes,
+merges with :data:`DEFAULT_RULES` / :data:`DEFAULT_THRESHOLDS`, returns a
+YAML string suitable for Prometheus's ``rule_files`` directive.
+
+YAML is hand-rendered (no PyYAML dep) because the shape is fixed and
+Prometheus's parser is strict about quoting in expressions — manual
+control beats fighting ``safe_dump`` quirks.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Defaults — also used as the seed in brain/seed_app_settings.json.
+# ---------------------------------------------------------------------------
+
+DEFAULT_THRESHOLDS: dict[str, str] = {
+    # Content pipeline
+    "embeddings_stale_seconds": "21600",  # 6h
+    # Business / cost guards
+    "daily_spend_warning_usd": "4.0",
+    "daily_spend_critical_usd": "5.0",
+    "monthly_spend_warning_usd": "15.0",
+}
+
+
+# Each rule entry is the canonical shape. The built-in list ships the
+# current Phase-D alerts as-is.
+DEFAULT_RULES: dict[str, dict[str, Any]] = {
+    # Infrastructure alerts (PoindexterWorkerDown, PoindexterPostgresDown,
+    # PoindexterOllamaDown, PoindexterWorkerUnhealthy) live in the static
+    # infrastructure/prometheus/alerts/infrastructure.yml file — they have
+    # no thresholds to configure and they need to fire even when the DB
+    # is down (which is exactly when dynamic-rules rendering would fail).
+    # Only content + business rules live here, since those are the ones
+    # with tunable numbers.
+
+    # --- Content ---
+    "EmbeddingsStale": {
+        "enabled": True,
+        "group": "poindexter-content",
+        "interval": "1m",
+        "expr": "(time() - max(poindexter_embeddings_total)) > {threshold.embeddings_stale_seconds}",
+        "for": "10m",
+        "severity": "warning",
+        "category": "content",
+        "summary": "auto-embed hasn't updated embeddings_total gauge recently",
+        "description": (
+            "poindexter_embeddings_total hasn't changed in the configured window. "
+            "Either the auto-embed container is stuck or the Tap runner is failing "
+            "silently. Check `docker logs poindexter-auto-embed` and "
+            "`tail ~/.gladlabs/auto-embed.log`."
+        ),
+    },
+    "NoPublishedPostsRecently": {
+        "enabled": True,
+        "group": "poindexter-content",
+        "interval": "1m",
+        "expr": (
+            '(poindexter_posts_total{status="published"} offset 24h) == '
+            'poindexter_posts_total{status="published"}'
+        ),
+        "for": "48h",
+        "severity": "info",
+        "category": "content",
+        "summary": "No new posts published in 48h",
+        "description": (
+            "Published post count hasn't grown in 48h. Either content "
+            "generation is stalled, QA is rejecting everything, or the "
+            "approval queue is backed up awaiting human review."
+        ),
+    },
+    # --- Business / cost ---
+    "DailySpendApproachingLimit": {
+        "enabled": True,
+        "group": "poindexter-business",
+        "interval": "1m",
+        "expr": "poindexter_daily_spend_usd > {threshold.daily_spend_warning_usd}",
+        "for": "5m",
+        "severity": "warning",
+        "category": "business",
+        "summary": "Daily AI spend approaching the soft cap",
+        "description": (
+            "cost_logs shows elevated daily spend. Check "
+            "plugin.llm_provider.primary.* — maybe a workflow flipped "
+            "to a paid provider unintentionally."
+        ),
+    },
+    "DailySpendOverBudget": {
+        "enabled": True,
+        "group": "poindexter-business",
+        "interval": "1m",
+        "expr": "poindexter_daily_spend_usd > {threshold.daily_spend_critical_usd}",
+        "for": "2m",
+        "severity": "critical",
+        "category": "business",
+        "summary": "Daily AI spend exceeded hard cap",
+        "description": (
+            "Cost budget blown. Pipeline should have stopped itself but "
+            "didn't. Check cost_guard logic + app_settings daily_spend_limit."
+        ),
+    },
+    "MonthlySpendHigh": {
+        "enabled": True,
+        "group": "poindexter-business",
+        "interval": "1m",
+        "expr": "poindexter_monthly_spend_usd > {threshold.monthly_spend_warning_usd}",
+        "for": "10m",
+        "severity": "warning",
+        "category": "business",
+        "summary": "Monthly AI spend running high",
+        "description": (
+            "Running high for the expected Ollama-only defaults. Review "
+            "cost_logs to see which provider is driving spend."
+        ),
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Loading
+# ---------------------------------------------------------------------------
+
+
+THRESHOLD_PREFIX = "prometheus.threshold."
+RULE_PREFIX = "prometheus.rule."
+
+
+async def load_thresholds(pool_or_conn: Any) -> dict[str, str]:
+    """Return ``threshold_name -> value`` with defaults filled in.
+
+    Reads every ``prometheus.threshold.*`` row and overlays onto
+    :data:`DEFAULT_THRESHOLDS`, so any key the operator hasn't touched
+    still has a sane default at render time.
+    """
+    out = dict(DEFAULT_THRESHOLDS)
+    rows = await _fetch_prefix(pool_or_conn, THRESHOLD_PREFIX)
+    for key, raw in rows:
+        name = key[len(THRESHOLD_PREFIX):]
+        if raw is None:
+            continue
+        out[name] = str(raw).strip()
+    return out
+
+
+async def load_rules(pool_or_conn: Any) -> dict[str, dict[str, Any]]:
+    """Return ``alert_name -> rule-dict`` with defaults + DB overrides merged.
+
+    Unknown rule names (rows without a corresponding default) are
+    accepted as-is — the DB can define entirely new alerts. Partial
+    overrides merge shallowly on top of the default.
+    """
+    import json
+
+    merged: dict[str, dict[str, Any]] = {}
+    for name, default in DEFAULT_RULES.items():
+        merged[name] = dict(default)
+
+    rows = await _fetch_prefix(pool_or_conn, RULE_PREFIX)
+    for key, raw in rows:
+        name = key[len(RULE_PREFIX):]
+        if not raw:
+            continue
+        try:
+            override = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning(
+                "prometheus.rule.%s has malformed JSON; ignoring override", name
+            )
+            continue
+        if not isinstance(override, dict):
+            logger.warning(
+                "prometheus.rule.%s is not a JSON object; ignoring override", name
+            )
+            continue
+        base = merged.get(name) or {}
+        base.update(override)
+        merged[name] = base
+
+    return merged
+
+
+async def _fetch_prefix(
+    pool_or_conn: Any, prefix: str
+) -> list[tuple[str, str | None]]:
+    """SELECT key, value FROM app_settings WHERE key LIKE prefix||'%'."""
+    # Escape SQL LIKE wildcards from the prefix just in case.
+    escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    rows = await pool_or_conn.fetch(
+        "SELECT key, value FROM app_settings WHERE key LIKE $1 ESCAPE '\\'",
+        f"{escaped}%",
+    )
+    return [(r["key"], r["value"]) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+
+def _substitute_thresholds(expr: str, thresholds: dict[str, str]) -> str:
+    """Replace ``{threshold.X}`` tokens in an expr with the numeric value."""
+    out = expr
+    # Cheap literal substitution — there are never enough thresholds to
+    # make a regex worth it, and {a} style placeholders would conflict
+    # with PromQL's braces.
+    for name, value in thresholds.items():
+        out = out.replace("{threshold." + name + "}", value)
+    return out
+
+
+def render_yaml(
+    thresholds: dict[str, str],
+    rules: dict[str, dict[str, Any]],
+) -> str:
+    """Render rules to the YAML format Prometheus's ``rule_files`` expects.
+
+    Groups rules by their ``group`` field, preserving the interval of
+    the first rule seen per group. Disabled rules are omitted entirely
+    (Prometheus has no "disabled" concept — the rule just doesn't exist).
+    """
+    groups: dict[str, dict[str, Any]] = {}
+    for name, rule in rules.items():
+        if not rule.get("enabled", True):
+            continue
+        group_name = rule.get("group") or "poindexter-default"
+        group = groups.setdefault(
+            group_name,
+            {"name": group_name, "interval": rule.get("interval", "1m"), "rules": []},
+        )
+        expr = _substitute_thresholds(str(rule.get("expr", "vector(0)")), thresholds)
+        group["rules"].append(
+            {
+                "alert": name,
+                "expr": expr,
+                "for": str(rule.get("for", "5m")),
+                "severity": str(rule.get("severity", "info")),
+                "category": str(rule.get("category", "content")),
+                "summary": str(rule.get("summary", "")),
+                "description": str(rule.get("description", "")),
+            }
+        )
+
+    lines: list[str] = [
+        "# Rendered by RenderPrometheusRulesJob — do not edit by hand.",
+        "# Source of truth: app_settings.prometheus.rule.* + prometheus.threshold.*",
+        "groups:",
+    ]
+    for group_name in sorted(groups):
+        group = groups[group_name]
+        lines.append(f"  - name: {_yaml_scalar(group['name'])}")
+        lines.append(f"    interval: {_yaml_scalar(group['interval'])}")
+        lines.append("    rules:")
+        for rule in group["rules"]:
+            lines.append(f"      - alert: {_yaml_scalar(rule['alert'])}")
+            lines.append(f"        expr: {_yaml_quoted(rule['expr'])}")
+            lines.append(f"        for: {_yaml_scalar(rule['for'])}")
+            lines.append("        labels:")
+            lines.append(f"          severity: {_yaml_scalar(rule['severity'])}")
+            lines.append(f"          category: {_yaml_scalar(rule['category'])}")
+            lines.append("        annotations:")
+            lines.append(f"          summary: {_yaml_quoted(rule['summary'])}")
+            lines.append(f"          description: {_yaml_quoted(rule['description'])}")
+    lines.append("")  # trailing newline
+    return "\n".join(lines)
+
+
+def _yaml_scalar(value: str) -> str:
+    """Emit a plain YAML scalar — quote only if needed for safety."""
+    text = str(value)
+    if not text:
+        return '""'
+    if text[0] in "!&*[]{},|>'\"#%@`" or text.strip() != text:
+        return _yaml_quoted(text)
+    return text
+
+
+def _yaml_quoted(value: str) -> str:
+    """Emit a double-quoted YAML string with escaping."""
+    text = str(value)
+    text = text.replace("\\", "\\\\").replace('"', '\\"')
+    text = text.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    return f'"{text}"'
+
+
+async def build_current(pool_or_conn: Any) -> str:
+    """Convenience: load thresholds + rules and render the YAML."""
+    thresholds = await load_thresholds(pool_or_conn)
+    rules = await load_rules(pool_or_conn)
+    return render_yaml(thresholds, rules)

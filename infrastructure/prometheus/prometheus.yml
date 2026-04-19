@@ -11,7 +11,12 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 rule_files:
+  # Static alerts shipped with the repo — safety net if DB seeding is broken.
   - alerts/*.yml
+  # DB-sourced rules rendered by RenderPrometheusRulesJob every 5 min.
+  # Volume is shared with the worker; `/-/reload` picks up changes without
+  # a container restart (see docker-compose.local.yml prometheus.command).
+  - rules/*.yml
 
 scrape_configs:
   - job_name: nvidia-smi

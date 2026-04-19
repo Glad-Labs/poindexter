@@ -55,9 +55,18 @@ services:
     restart: unless-stopped
     ports:
       - "9091:9090"
+    # --web.enable-lifecycle lets RenderPrometheusRulesJob hit /-/reload
+    # after writing DB-sourced rules to the shared prometheus-rules volume.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+      - --web.enable-lifecycle
     volumes:
       - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus-rules:/etc/prometheus/rules
       - prometheus-data:/prometheus
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -261,6 +270,9 @@ services:
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
       - ./src/cofounder_agent:/app:ro
       - ./scripts:/opt/scripts:ro
+      # Shared with the prometheus container — RenderPrometheusRulesJob
+      # writes the DB-sourced rule YAML here; prometheus reads it.
+      - prometheus-rules:/etc/prometheus/rules
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Worker reads every tunable from app_settings (models, prompts, QA
@@ -471,6 +483,8 @@ volumes:
     name: gladlabs-gitea-runner-data
   prometheus-data:
     name: gladlabs-prometheus-data
+  prometheus-rules:
+    name: gladlabs-prometheus-rules
   alertmanager-data:
     name: gladlabs-alertmanager-data
   pgadmin-data:

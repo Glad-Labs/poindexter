@@ -451,6 +451,38 @@
       "value": "professional digital art, abstract technology concept, blue and cyan color scheme, clean modern aesthetic, no people, no text, no faces, no letters",
       "category": "image",
       "description": "Default SDXL style for uncategorized posts"
+    },
+
+    {
+      "key": "prometheus.threshold.embeddings_stale_seconds",
+      "value": "21600",
+      "category": "prometheus",
+      "description": "Seconds without an embeddings_total change before EmbeddingsStale fires (default 6h)"
+    },
+    {
+      "key": "prometheus.threshold.daily_spend_warning_usd",
+      "value": "4.0",
+      "category": "prometheus",
+      "description": "Daily LLM spend (USD) that triggers a warning alert"
+    },
+    {
+      "key": "prometheus.threshold.daily_spend_critical_usd",
+      "value": "5.0",
+      "category": "prometheus",
+      "description": "Daily LLM spend (USD) that triggers a critical alert — pipeline should have already stopped"
+    },
+    {
+      "key": "prometheus.threshold.monthly_spend_warning_usd",
+      "value": "15.0",
+      "category": "prometheus",
+      "description": "Monthly LLM spend (USD) that triggers a warning alert"
+    },
+
+    {
+      "key": "plugin.job.render_prometheus_rules",
+      "value": "{\"enabled\": true, \"interval_seconds\": 300, \"config\": {\"output_path\": \"/etc/prometheus/rules/dynamic.yml\", \"prometheus_url\": \"http://prometheus:9090\", \"reload_on_change\": true}}",
+      "category": "plugins",
+      "description": "Config for RenderPrometheusRulesJob — renders app_settings rules into the Prometheus rules dir and hits /-/reload on change"
     }
   ]
 }
