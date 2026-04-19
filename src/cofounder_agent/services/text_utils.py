@@ -61,15 +61,6 @@ def normalize_text(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-# Cross-call cache of real internal post slugs. Populated by the content
-# generation stage after it fetches the internal-links snapshot from the
-# content generator, then read here when checking ``/posts/<slug>`` links.
-#
-# Kept as a module attribute (not a function attr) so tests can reset it
-# cleanly: ``text_utils._slug_cache = set()``.
-_slug_cache: set[str] = set()
-
-
 DEFAULT_TRUSTED_DOMAINS: frozenset[str] = frozenset({
     "github.com", "arxiv.org", "docs.python.org", "docs.rs",
     "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
@@ -83,18 +74,28 @@ DEFAULT_TRUSTED_DOMAINS: frozenset[str] = frozenset({
 })
 
 
-def scrub_fabricated_links(content: str) -> str:
+def scrub_fabricated_links(
+    content: str,
+    known_slugs: set[str] | None = None,
+) -> str:
     """Remove fabricated/hallucinated URLs from LLM-generated content.
 
     Keeps the link text for markdown links, drops the href. Removes bare
     URLs whose host isn't trusted. Internal ``/posts/<slug>`` links get
-    an additional check against :data:`_slug_cache` — if the slug isn't
-    one the content generator actually saw, treat it as fabricated.
+    an additional check against ``known_slugs``: if the slug isn't one
+    the content generator actually saw, treat it as fabricated.
+
+    When ``known_slugs`` is None (or empty), all internal links pass —
+    the URL-validation stage later in the pipeline catches stragglers.
+    Callers that DO have a real-slug set (e.g. the generate_content
+    stage pulls it from ``content_generator._internal_links_cache``)
+    should pass it explicitly.
     """
     from services.site_config import site_config
 
     trusted = _resolve_trusted_domains(site_config)
     own_domain = (site_config.get("site_domain", "") or "").lower()
+    slug_allowlist = known_slugs or set()
 
     scrubbed_count = 0
 
@@ -122,9 +123,9 @@ def scrub_fabricated_links(content: str) -> str:
         slug = path.split("/posts/")[-1].strip("/")
         if not slug:
             return True
-        if _slug_cache:
-            return slug in _slug_cache
-        # No cache yet — accept, URL validation stage will catch stragglers.
+        if slug_allowlist:
+            return slug in slug_allowlist
+        # No cache provided — accept, URL validation stage will catch stragglers.
         return True
 
     def _replace_md_link(m: re.Match[str]) -> str:

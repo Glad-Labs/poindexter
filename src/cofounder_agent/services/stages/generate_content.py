@@ -69,7 +69,6 @@ class GenerateContentStage:
         # form a cluster that's still being decomposed. Import-at-call
         # sidesteps any circular-import risk with content_router_service
         # during the Phase E transition.
-        from services import text_utils as _text_utils
         from services.ai_content_generator import get_content_generator
         from services.audit_log import audit_log_bg
         from services.model_preferences import parse_model_preferences as _parse_model_preferences
@@ -177,19 +176,19 @@ class GenerateContentStage:
         content_text = normalize_text(content_text)
         title = normalize_text(title)
 
-        # Populate real slug cache for link validation, then scrub fabricated links.
+        # Build the real-slug allowlist from the content generator's
+        # internal-links cache, then scrub fabricated links using it.
+        real_slug_set: set[str] = set()
         try:
-            _links_cache = getattr(content_generator, "_internal_links_cache", [])
-            _real_slug_set: set[str] = set()
-            for _link_line in _links_cache:
-                if "/posts/" in _link_line:
-                    _slug = _link_line.split("/posts/")[-1].strip().strip('"')
-                    if _slug:
-                        _real_slug_set.add(_slug)
-            _text_utils._slug_cache = _real_slug_set
-        except Exception:  # noqa: BLE001 — best-effort slug cache
+            links_cache = getattr(content_generator, "_internal_links_cache", [])
+            for link_line in links_cache:
+                if "/posts/" in link_line:
+                    slug = link_line.split("/posts/")[-1].strip().strip('"')
+                    if slug:
+                        real_slug_set.add(slug)
+        except Exception:  # noqa: BLE001 — best-effort, empty slug set is fine
             pass
-        content_text = scrub_fabricated_links(content_text)
+        content_text = scrub_fabricated_links(content_text, known_slugs=real_slug_set)
 
         # Strip leaked image prompts / descriptions. LLMs sometimes emit
         # visual placeholders that we don't want in the body.

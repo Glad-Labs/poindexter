@@ -188,7 +188,7 @@ def _patch_everything():
         patch("services.text_utils.normalize_text",
               side_effect=lambda x: x),
         patch("services.text_utils.scrub_fabricated_links",
-              side_effect=lambda x: x),
+              side_effect=lambda x, **_kw: x),
         patch("services.self_review.self_review_and_revise",
               AsyncMock(return_value=("revised text", {"revised": False, "contradictions_found": 0}))),
         patch("services.gpu_scheduler.gpu",

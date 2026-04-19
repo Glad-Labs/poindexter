@@ -5,7 +5,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from services import text_utils
 from services.text_utils import (
     DEFAULT_TRUSTED_DOMAINS,
     normalize_text,
@@ -38,10 +37,6 @@ class TestScrubFabricatedLinks:
         }
         defaults.update(kwargs)
         return SimpleNamespace(get=lambda k, d="": defaults.get(k, d))
-
-    def setup_method(self):
-        # Reset module-level slug cache between tests.
-        text_utils._slug_cache = set()
 
     def test_keeps_trusted_markdown_link(self):
         body = "See [docs](https://github.com/python/cpython) for more."
@@ -82,26 +77,24 @@ class TestScrubFabricatedLinks:
         assert "example.com/about" in out
         assert "www.example.com/blog" in out
 
-    def test_internal_posts_slug_cache_filters_fakes(self):
+    def test_internal_posts_slug_allowlist_filters_fakes(self):
         body = "See [real](https://example.com/posts/real-slug) vs [fake](https://example.com/posts/made-up)."
-        text_utils._slug_cache = {"real-slug"}
         with patch(
             "services.site_config.site_config",
             self._site_cfg(site_domain="example.com"),
         ):
-            out = scrub_fabricated_links(body)
+            out = scrub_fabricated_links(body, known_slugs={"real-slug"})
         assert "posts/real-slug" in out
         assert "posts/made-up" not in out  # dropped; text "fake" preserved
         assert "fake" in out
 
-    def test_empty_slug_cache_accepts_internal_links(self):
+    def test_no_slug_allowlist_accepts_internal_links(self):
         body = "See [x](https://example.com/posts/any-slug)."
-        text_utils._slug_cache = set()  # empty → accept everything
         with patch(
             "services.site_config.site_config",
             self._site_cfg(site_domain="example.com"),
         ):
-            out = scrub_fabricated_links(body)
+            out = scrub_fabricated_links(body)  # known_slugs defaults to None
         assert "posts/any-slug" in out
 
     def test_default_trusted_domains_freezeset(self):
