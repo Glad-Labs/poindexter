@@ -195,6 +195,8 @@ def get_core_samples() -> dict[str, list[Any]]:
         # down content_router_service.py over a handful of commits).
         ("stages", "services.stages.verify_task", "VerifyTaskStage"),
         ("stages", "services.stages.generate_content", "GenerateContentStage"),
+        ("stages", "services.stages.writer_self_review", "WriterSelfReviewStage"),
+        ("stages", "services.stages.quality_evaluation", "QualityEvaluationStage"),
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:

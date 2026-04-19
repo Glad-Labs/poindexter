@@ -142,6 +142,8 @@ render_prometheus_rules = "cofounder_agent.services.jobs.render_prometheus_rules
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"
+writer_self_review = "cofounder_agent.services.stages.writer_self_review:WriterSelfReviewStage"
+quality_evaluation = "cofounder_agent.services.stages.quality_evaluation:QualityEvaluationStage"
 
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
