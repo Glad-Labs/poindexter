@@ -951,9 +951,9 @@ class TaskExecutor:
             f"Semantic duplicate: topic '{topic[:80]}' is ≥{threshold:.2f} similar to "
             f"{len(matches)} existing published post(s). Top matches:\n"
             + "\n".join(match_lines)
-            + f"\n\nIf this topic really is different enough, either lower "
-            f"semantic_dedup_threshold in app_settings or disable the check entirely "
-            f"with enable_semantic_dedup=false."
+            + "\n\nIf this topic really is different enough, either lower "
+            "semantic_dedup_threshold in app_settings or disable the check entirely "
+            "with enable_semantic_dedup=false."
         )
         return reason, matches
 

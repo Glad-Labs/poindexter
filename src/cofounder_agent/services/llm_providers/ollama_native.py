@@ -15,7 +15,8 @@ Config (``plugin.llm_provider.ollama_native`` in ``app_settings``):
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from plugins.llm_provider import Completion, Token
 

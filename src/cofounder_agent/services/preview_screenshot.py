@@ -25,8 +25,6 @@ Behavior on missing deps:
 
 from __future__ import annotations
 
-from typing import Optional
-
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -40,7 +38,7 @@ async def capture_preview_screenshot(
     full_page: bool = True,
     timeout_ms: int = 30000,
     wait_after_load_ms: int = 500,
-) -> Optional[bytes]:
+) -> bytes | None:
     """Render ``preview_url`` in headless chromium and return the PNG bytes.
 
     Returns ``None`` if playwright is not installed, if the browser

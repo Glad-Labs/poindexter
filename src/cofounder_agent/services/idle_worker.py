@@ -999,6 +999,7 @@ class IdleWorker:
             if uploaded > 0:
                 try:
                     import httpx as _hx
+
                     from services.r2_upload_service import upload_to_r2
                     from services.site_config import site_config as _scfg
                     _api_base = _scfg.get("internal_api_base_url", "http://localhost:8002")
@@ -2017,6 +2018,7 @@ class IdleWorker:
         dump_file = os.path.join(backup_dir, f"poindexter-db-{timestamp}.dump")
         try:
             import asyncio
+
             # Parse DATABASE_URL for pg_dump connection params.
             # The pool connects via Docker networking (postgres-local:5432)
             # and we need the same host, not localhost.

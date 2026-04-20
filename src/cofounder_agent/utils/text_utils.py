@@ -8,7 +8,6 @@ quality_service, approval_routes, and task_routes.
 
 import json
 import re
-from typing import Union
 
 # ---------------------------------------------------------------------------
 # Stopwords
@@ -155,7 +154,6 @@ _STOPWORDS: frozenset = frozenset(
         "above",
         "below",
         "even",
-        "than",
         "then",
         "there",
         "here",
@@ -284,7 +282,7 @@ def extract_title_from_content(content: str) -> tuple[str | None, str | None]:
     return None, content
 
 
-def normalize_seo_keywords(keywords: Union[str, list, None]) -> str:
+def normalize_seo_keywords(keywords: str | list | None) -> str:
     """
     Normalise an SEO keyword value to a comma-separated string for DB storage.
 

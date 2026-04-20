@@ -33,8 +33,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import List
-
 
 # nomic-embed-text has an 8192 token context window; ~6k chars stays
 # comfortably under. Overridable per-call for tests or special cases.
@@ -75,7 +73,7 @@ def classify_file(filename: str) -> str:
     return "knowledge"
 
 
-def chunk_text(text: str, max_chars: int = MAX_CHARS) -> List[str]:
+def chunk_text(text: str, max_chars: int = MAX_CHARS) -> list[str]:
     """Split text into chunks at most ``max_chars`` each.
 
     Splitting preference (strongest → weakest):
@@ -94,7 +92,7 @@ def chunk_text(text: str, max_chars: int = MAX_CHARS) -> List[str]:
     # Split on lines that start with #, ##, or ### (ATX headings). The
     # lookahead keeps the heading attached to its following section.
     sections = re.split(r"(?=^#{1,3} )", text, flags=re.MULTILINE)
-    chunks: List[str] = []
+    chunks: list[str] = []
     buf = ""
     for section in sections:
         if not section:

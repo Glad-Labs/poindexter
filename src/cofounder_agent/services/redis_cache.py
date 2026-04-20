@@ -123,7 +123,7 @@ class RedisCache:
         self._enabled = enabled
 
     @classmethod
-    async def create(cls) -> "RedisCache":
+    async def create(cls) -> RedisCache:
         """
         Factory method to create a RedisCache instance with environment configuration.
 

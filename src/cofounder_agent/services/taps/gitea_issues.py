@@ -26,7 +26,8 @@ Per-install overrides in ``plugin.tap.gitea_issues`` JSON blob:
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 

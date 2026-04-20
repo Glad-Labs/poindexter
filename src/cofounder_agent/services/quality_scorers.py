@@ -496,7 +496,7 @@ def detect_truncation(content: str) -> bool:
         return True
 
     # If the last line is very short and looks like a fragment, it's truncated
-    if not last_line[-1] in ".!?)\"':*" and len(last_line) > 20:
+    if last_line[-1] not in ".!?)\"':*" and len(last_line) > 20:
         logger.warning(
             f"[TRUNCATION] Content appears truncated -- last line: ...{last_line[-80:]}"
         )

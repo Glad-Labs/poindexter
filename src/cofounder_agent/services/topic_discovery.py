@@ -850,7 +850,6 @@ class TopicDiscovery:
         "vram", "ddr5", "nvme", "pcie",
         "pc build", "custom build", "workstation",
         "benchmark", "overclock", "cooling",
-        "homelab", "home server",
         # Gaming (core niche)
         "gaming", "game dev", "game engine",
         "steam", "xbox", "playstation", "nintendo",
