@@ -181,6 +181,7 @@ def _load_fact_overrides_sync() -> list[tuple[str, str, str]]:
         import asyncio
         import os
         import sys
+        from pathlib import Path
 
         db_url = os.getenv("DATABASE_URL", "")
         if not db_url:
