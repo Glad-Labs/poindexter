@@ -452,7 +452,8 @@ class TestGetPostBySlugCompleteness:
         post = data["data"]
         for field in ("published_at", "created_at", "updated_at"):
             val = post[field]
-            assert val is not None and "T" in val, f"{field} not ISO formatted: {val}"
+            assert val is not None, f"{field} is None"
+            assert "T" in val, f"{field} not ISO formatted: {val}"
 
     def test_tags_gracefully_empty_on_error(self):
         """If tags query fails, tags should be empty list, not error."""

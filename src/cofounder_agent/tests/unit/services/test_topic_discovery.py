@@ -392,7 +392,8 @@ class TestCategorySearches:
         for cat, queries in CATEGORY_SEARCHES.items():
             assert len(queries) > 0, f"Category {cat} has no queries"
             for q in queries:
-                assert isinstance(q, str) and len(q) > 5
+                assert isinstance(q, str)
+                assert len(q) > 5
 
 
 # ===========================================================================

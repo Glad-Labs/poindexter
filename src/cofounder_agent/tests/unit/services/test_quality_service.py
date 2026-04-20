@@ -448,7 +448,8 @@ class TestEvaluatePublicAPI:
         assert isinstance(result, QualityAssessment)
         assert result.evaluation_method == EvaluationMethod.PATTERN_BASED
         assert 0 <= result.overall_score <= 100
-        assert result.word_count is not None and result.word_count > 10
+        assert result.word_count is not None
+        assert result.word_count > 10
         assert result.content_length == len(content)
 
     @pytest.mark.asyncio

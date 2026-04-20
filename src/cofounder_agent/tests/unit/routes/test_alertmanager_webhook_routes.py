@@ -299,4 +299,6 @@ class TestWebhookEndpoint:
         resp = self._post(client, {"alerts": []})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["count"] == 0 and data["persisted"] == 0 and data["paged"] == 0
+        assert data["count"] == 0
+        assert data["persisted"] == 0
+        assert data["paged"] == 0

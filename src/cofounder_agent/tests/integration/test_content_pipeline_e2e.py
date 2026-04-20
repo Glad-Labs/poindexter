@@ -485,8 +485,9 @@ class TestThinkingModels:
                 temperature=0.3,
             )
             text = result["text"]
-            assert text and len(text.strip()) > 0, (
-                f"{glm_model} returned empty content — may need larger token budget"
+            assert text, f"{glm_model} returned no content"
+            assert len(text.strip()) > 0, (
+                f"{glm_model} returned whitespace-only content — may need larger token budget"
             )
             words = text.strip().split()
             assert len(words) >= 5, f"{glm_model} output too short ({len(words)} words): {text[:200]}"
