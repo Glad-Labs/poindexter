@@ -21,7 +21,10 @@ import pytest
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run an async coroutine. Uses asyncio.run() so each test gets a fresh
+    event loop — works regardless of what prior tests did to the main
+    thread's default loop."""
+    return asyncio.run(coro)
 
 
 def _make_pool(already_applied=None, fetchval_side_effect=None):

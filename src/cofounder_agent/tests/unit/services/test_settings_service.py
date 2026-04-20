@@ -43,7 +43,9 @@ def _row(key, value, category="general", description=None, is_secret=False, upda
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run an async coroutine on a fresh event loop — avoids pollution
+    from prior tests that closed the main thread's default loop."""
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

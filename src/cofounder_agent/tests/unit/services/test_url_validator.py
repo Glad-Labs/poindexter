@@ -124,7 +124,7 @@ class TestCache:
 @pytest.mark.unit
 class TestValidateUrl:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_returns_true_on_200(self, validator):
         mock_resp = MagicMock()
@@ -195,7 +195,7 @@ class TestValidateUrl:
 @pytest.mark.unit
 class TestValidateUrls:
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_empty_list_returns_empty_dict(self, validator):
         result = self._run(validator.validate_urls([]))
