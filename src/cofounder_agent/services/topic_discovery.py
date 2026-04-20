@@ -487,43 +487,25 @@ class TopicDiscovery:
             return []
 
     async def _search_by_category(self, categories: list[str] | None = None) -> list[DiscoveredTopic]:
-        """Search DuckDuckGo for trending topics per category."""
-        topics = []
-        target_categories = categories or list(CATEGORY_SEARCHES.keys())
+        """Delegate to ``services.topic_sources.web_search.WebSearchSource``.
 
+        Phase F slice 4 moved the implementation. This wrapper preserves
+        the legacy signature (``categories=[...]`` positional arg) and
+        log message so callers + tests that still go through
+        ``self._search_by_category`` keep working.
+        """
+        from services.topic_sources.web_search import WebSearchSource
+        source = WebSearchSource()
+        cfg: dict[str, Any] = {"max_categories_per_run": 3, "results_per_query": 3}
+        if categories:
+            cfg["categories"] = list(categories)
         try:
-            from services.web_research import WebResearcher
-            researcher = WebResearcher()
-
-            for cat in target_categories[:3]:  # Limit to 3 categories per run
-                queries = CATEGORY_SEARCHES.get(cat, [])
-                if not queries:
-                    continue
-
-                # Pick one random query
-                import random
-                query = random.choice(queries)
-
-                results = await researcher.search_simple(query, num_results=3)
-                for r in results:
-                    title = r.get("title", "")
-                    if not title:
-                        continue
-                    rewritten = self._rewrite_as_blog_topic(title)
-                    if not rewritten:
-                        continue
-                    topics.append(DiscoveredTopic(
-                        title=rewritten,
-                        category=cat,
-                        source="ddg_search",
-                        source_url=r.get("url", ""),
-                        relevance_score=2.0,
-                    ))
-
+            topics = await source.extract(self.pool, cfg)
             logger.info("[TOPIC_DISCOVERY] DuckDuckGo: %d topics", len(topics))
+            return topics
         except Exception as e:
             logger.warning("[TOPIC_DISCOVERY] DuckDuckGo search failed: %s", e)
-        return topics
+            return []
 
     async def _discover_from_codebase(self) -> list[DiscoveredTopic]:
         """Discover topics by mining the vector database for interesting content.

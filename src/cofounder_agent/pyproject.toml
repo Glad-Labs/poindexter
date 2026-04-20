@@ -144,6 +144,7 @@ postgres_vacuum = "cofounder_agent.services.jobs.postgres_vacuum:PostgresVacuumJ
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
 devto = "cofounder_agent.services.topic_sources.devto:DevtoSource"
+web_search = "cofounder_agent.services.topic_sources.web_search:WebSearchSource"
 
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
