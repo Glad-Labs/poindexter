@@ -139,6 +139,7 @@ sync_page_views = "cofounder_agent.services.jobs.sync_page_views:SyncPageViewsJo
 expire_stale_approvals = "cofounder_agent.services.jobs.expire_stale_approvals:ExpireStaleApprovalsJob"
 db_backup = "cofounder_agent.services.jobs.db_backup:DbBackupJob"
 render_prometheus_rules = "cofounder_agent.services.jobs.render_prometheus_rules:RenderPrometheusRulesJob"
+postgres_vacuum = "cofounder_agent.services.jobs.postgres_vacuum:PostgresVacuumJob"
 
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"

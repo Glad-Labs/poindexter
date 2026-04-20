@@ -189,6 +189,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
         ("jobs", "services.jobs.db_backup", "DbBackupJob"),
         ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),
+        ("jobs", "services.jobs.postgres_vacuum", "PostgresVacuumJob"),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
