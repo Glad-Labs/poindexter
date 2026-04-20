@@ -237,9 +237,12 @@ if command -v ollama >/dev/null 2>&1; then
     if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
         ok "Ollama is running"
         info "Pulling minimum required models (this may take a while)..."
-        ollama pull nomic-embed-text 2>/dev/null && ok "nomic-embed-text (embeddings)" || warn "Failed to pull nomic-embed-text"
-        ollama pull qwen3:8b 2>/dev/null && ok "qwen3:8b (fast tasks, image decisions, SEO)" || warn "Failed to pull qwen3:8b"
-        ollama pull gemma3:27b 2>/dev/null && ok "gemma3:27b (QA reviews, fallback)" || warn "Failed to pull gemma3:27b"
+        # Stderr stays unsuppressed on `ollama pull` — pull failures
+        # (disk full, network, manifest 404) are worth showing to the
+        # operator before the single-line warn at end of chain.
+        ollama pull nomic-embed-text && ok "nomic-embed-text (embeddings)" || warn "Failed to pull nomic-embed-text — see error above"
+        ollama pull qwen3:8b && ok "qwen3:8b (fast tasks, image decisions, SEO)" || warn "Failed to pull qwen3:8b — see error above"
+        ollama pull gemma3:27b && ok "gemma3:27b (QA reviews, fallback)" || warn "Failed to pull gemma3:27b — see error above"
         info ""
         info "Minimum models pulled. For better writing quality, also pull a larger model:"
         info "  ollama pull qwen3:30b     # Good balance of speed and quality (18GB)"
