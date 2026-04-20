@@ -23,7 +23,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-
 # Probe categories — used for registration, routing, and dashboard grouping.
 CATEGORY_INFRASTRUCTURE = "infrastructure"  # DB, worker, Ollama, site, disk
 CATEGORY_CONTENT = "content"  # quality, publishing, embeddings, SEO

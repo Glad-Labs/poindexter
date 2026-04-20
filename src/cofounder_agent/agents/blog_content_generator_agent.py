@@ -9,7 +9,7 @@ This agent:
 3. Returns results compatible with workflow executor
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from services.ai_content_generator import get_content_generator
 from services.logger_config import get_logger

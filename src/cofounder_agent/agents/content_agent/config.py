@@ -8,10 +8,10 @@ import sys
 from pathlib import Path as _PathType
 
 
-def _fix_sys_path():
+def _fix_sys_path(path_cls=_PathType):
     """Fix sys.path to prioritize venv site-packages."""
     try:
-        venv_site_packages = _PathType(sys.prefix) / "Lib" / "site-packages"
+        venv_site_packages = path_cls(sys.prefix) / "Lib" / "site-packages"
         if venv_site_packages.exists():
             venv_site_packages_str = str(venv_site_packages)
             # Ensure venv's site-packages is first in the path

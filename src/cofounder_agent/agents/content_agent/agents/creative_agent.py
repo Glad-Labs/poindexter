@@ -1,6 +1,5 @@
 import json
 import re
-from typing import Optional
 
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager

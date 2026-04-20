@@ -32,9 +32,10 @@ need to re-discover.
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
+from collections.abc import Iterable
+from functools import cache
 from importlib.metadata import EntryPoint, entry_points
-from typing import Any, Iterable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def _load_group(group: str) -> list[Any]:
     return instances
 
 
-@lru_cache(maxsize=None)
+@cache
 def _cached(group: str) -> tuple[Any, ...]:
     """Cached tuple wrapper around ``_load_group``.
 

@@ -36,7 +36,7 @@ Usage:
 import asyncio
 import json
 from collections.abc import Callable
-from typing import Any, Dict, Optional
+from typing import Any
 
 import aiohttp
 import websockets

@@ -16,7 +16,7 @@ import pickle
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 import asyncpg
@@ -166,7 +166,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 # Check if memories table exists
                 result = await conn.fetchval("""
                     SELECT EXISTS(
-                        SELECT 1 FROM information_schema.tables 
+                        SELECT 1 FROM information_schema.tables
                         WHERE table_name = 'memories'
                     );
                 """)
@@ -204,11 +204,11 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 # Load recent and important memories
                 rows = await conn.fetch(
                     """
-                    SELECT id, content, memory_type, importance, confidence, 
-                           created_at, last_accessed, access_count, tags, 
+                    SELECT id, content, memory_type, importance, confidence,
+                           created_at, last_accessed, access_count, tags,
                            related_memories, metadata, embedding
-                    FROM memories 
-                    ORDER BY last_accessed DESC 
+                    FROM memories
+                    ORDER BY last_accessed DESC
                     LIMIT $1
                 """,
                     self.max_recent_memories,
@@ -390,8 +390,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO memories 
-                    (id, content, memory_type, importance, confidence, created_at, 
+                    INSERT INTO memories
+                    (id, content, memory_type, importance, confidence, created_at,
                      last_accessed, access_count, tags, related_memories, metadata, embedding)
                     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     ON CONFLICT (id) DO UPDATE SET
@@ -508,7 +508,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
                     """
-                    UPDATE memories 
+                    UPDATE memories
                     SET last_accessed = $1, access_count = $2
                     WHERE id = $3::uuid
                 """,
@@ -813,7 +813,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 outdated_rows = await conn.fetch(
                     """
                     SELECT id FROM memories
-                    WHERE last_accessed < $1 
+                    WHERE last_accessed < $1
                     AND importance <= $2
                     AND access_count < 3
                 """,

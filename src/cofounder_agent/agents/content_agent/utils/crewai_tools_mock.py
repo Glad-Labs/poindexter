@@ -6,7 +6,6 @@ that relies on web search, file reading, or code execution will produce degraded
 output when running against these mocks. Install crewai-tools for real functionality.
 """
 
-from typing import Optional
 
 from services.logger_config import get_logger
 
