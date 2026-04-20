@@ -390,7 +390,10 @@ class AdminDatabase(DatabaseServiceMixin):
                     description,
                 )
                 self._invalidate_settings_cache()
-                logger.info("Setting saved: %s = %s", key, value_str[:50])
+                # Never log the value — some keys are credentials and this
+                # runs at INFO so it lands in persistent log files. Key
+                # name + length is enough to confirm the write happened.
+                logger.info("Setting saved: %s (value length=%d)", key, len(value_str))
                 return True
         except Exception as e:
             logger.error(
