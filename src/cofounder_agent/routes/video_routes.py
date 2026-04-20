@@ -190,7 +190,7 @@ async def generate_video(post_id: str):
             )
     except Exception as e:
         logger.error("Video generate DB error: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Database error")
+        raise HTTPException(status_code=500, detail="Database error") from e
 
     if not row:
         raise HTTPException(status_code=404, detail="Published post not found")

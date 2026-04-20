@@ -221,9 +221,9 @@ async def approve_task(
                 if resolved:
                     task_id = str(resolved)
                 elif not task_id.isdigit():
-                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'")
+                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'") from None
             elif not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format")
+                raise HTTPException(status_code=400, detail="Invalid task ID format") from None
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -451,9 +451,9 @@ async def publish_task(
                 if resolved:
                     task_id = str(resolved)
                 elif not task_id.isdigit():
-                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'")
+                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'") from None
             elif not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format")
+                raise HTTPException(status_code=400, detail="Invalid task ID format") from None
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -649,9 +649,9 @@ async def reject_task(
                 if resolved:
                     task_id = str(resolved)
                 elif not task_id.isdigit():
-                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'")
+                    raise HTTPException(status_code=400, detail=f"No task found matching prefix '{task_id}'") from None
             elif not task_id.isdigit():
-                raise HTTPException(status_code=400, detail="Invalid task ID format")
+                raise HTTPException(status_code=400, detail="Invalid task ID format") from None
 
         # Fetch task
         task = await db_service.get_task(task_id)
