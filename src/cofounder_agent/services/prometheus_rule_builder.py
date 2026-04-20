@@ -81,7 +81,15 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-content",
         "interval": "1m",
-        "expr": "(time() - max(poindexter_embeddings_total)) > {threshold.embeddings_stale_seconds}",
+        # Alert when the embeddings_total gauge hasn't grown at all in
+        # the configured window — auto-embed is either stuck or the tap
+        # runner is failing silently. The window is configured via the
+        # threshold (converted from seconds to a Prometheus duration at
+        # render time — see :func:`_render_rule`).
+        # Previously this expression read ``time() - max(embeddings_total)``,
+        # which subtracted the COUNT from the unix timestamp — always ≫ 0
+        # so the alert fired permanently.
+        "expr": "sum(increase(poindexter_embeddings_total[{threshold.embeddings_stale_seconds}s])) == 0",
         "for": "10m",
         "severity": "warning",
         "category": "content",
