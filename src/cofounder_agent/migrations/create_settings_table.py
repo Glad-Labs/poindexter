@@ -59,7 +59,7 @@ async def run_migration():
             # Check if table already exists
             result = await conn.fetch("""
                 SELECT EXISTS(
-                    SELECT FROM information_schema.tables 
+                    SELECT FROM information_schema.tables
                     WHERE table_name = 'settings'
                 )
             """)
@@ -96,8 +96,8 @@ async def run_migration():
 
             # Verify table
             result = await conn.fetch("""
-                SELECT column_name, data_type 
-                FROM information_schema.columns 
+                SELECT column_name, data_type
+                FROM information_schema.columns
                 WHERE table_name = 'settings'
                 ORDER BY ordinal_position
             """)

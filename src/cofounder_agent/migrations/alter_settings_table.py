@@ -36,7 +36,7 @@ async def run_migration():
             table_exists = await conn.fetchval(
                 """
                 SELECT EXISTS(
-                    SELECT FROM information_schema.tables 
+                    SELECT FROM information_schema.tables
                     WHERE table_name = 'settings'
                 )
             """
@@ -52,7 +52,7 @@ async def run_migration():
             # Get existing columns
             existing_cols = await conn.fetch(
                 """
-                SELECT column_name FROM information_schema.columns 
+                SELECT column_name FROM information_schema.columns
                 WHERE table_name = 'settings'
             """
             )

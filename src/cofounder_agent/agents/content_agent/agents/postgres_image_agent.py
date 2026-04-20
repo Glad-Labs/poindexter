@@ -6,7 +6,6 @@ Replaces Strapi image upload with direct database storage of image metadata and 
 
 import json
 from pathlib import Path
-from typing import List, Optional
 
 from services.logger_config import get_logger
 
@@ -333,7 +332,6 @@ def get_image_agent() -> "PostgreSQLImageAgent":
     Returns a PostgreSQLImageAgent configured from application settings.
     Note: caller must supply llm_client and pexels_client before use.
     """
-    from ..config import config
     from ..services.llm_client import LLMClient
     from ..services.pexels_client import PexelsClient
 

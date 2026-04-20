@@ -16,7 +16,7 @@ Models are organized by domain:
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 

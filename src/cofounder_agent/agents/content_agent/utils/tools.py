@@ -1,5 +1,4 @@
 import os
-from typing import Optional
 
 from services.logger_config import get_logger
 

@@ -9,7 +9,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 # Third-party imports
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
@@ -27,6 +27,7 @@ from services.container import service_container
 # Import services
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
+
 try:
     from services.sentry_integration import setup_sentry
 except ImportError:
@@ -41,12 +42,9 @@ from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
 from utils.startup_manager import StartupManager
 
-try:
-    import sentry_sdk  # pylint: disable=unused-import
+from importlib.util import find_spec
 
-    SENTRY_AVAILABLE = True
-except ImportError:
-    SENTRY_AVAILABLE = False
+SENTRY_AVAILABLE = find_spec("sentry_sdk") is not None
 
 # PostgreSQL database service is now the primary service
 DATABASE_SERVICE_AVAILABLE = True

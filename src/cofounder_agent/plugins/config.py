@@ -52,7 +52,7 @@ class PluginConfig:
         plugin_type: str,
         name: str,
         defaults: dict[str, Any] | None = None,
-    ) -> "PluginConfig":
+    ) -> PluginConfig:
         """Load a plugin's config from ``app_settings``.
 
         Behavior when the row doesn't exist:

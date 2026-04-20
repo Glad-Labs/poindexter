@@ -186,6 +186,19 @@ class WritingSample(Base):
     updated_at = Column(DateTime)
 
 
+class Setting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String(255), primary_key=True)
+    value = Column(Text)
+    category = Column(String(100))
+    description = Column(Text)
+    is_secret = Column(Boolean)
+    is_active = Column(Boolean)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
 # ---------------------------------------------------------------------------
 # Admin views — control what's shown and how
 # ---------------------------------------------------------------------------

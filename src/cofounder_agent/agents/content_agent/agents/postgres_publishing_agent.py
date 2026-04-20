@@ -4,7 +4,6 @@ PostgreSQL-based Publishing Agent - Stores content directly to PostgreSQL.
 Replaces Strapi publishing with direct database inserts to posts table.
 """
 
-from typing import Optional, Tuple
 
 from services.logger_config import get_logger
 

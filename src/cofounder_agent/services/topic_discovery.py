@@ -159,7 +159,7 @@ class TopicDiscovery:
 
         if web_tasks:
             sources = await asyncio.gather(*web_tasks, return_exceptions=True)
-            for name, result in zip(web_source_names, sources):
+            for name, result in zip(web_source_names, sources, strict=True):
                 if isinstance(result, list):
                     all_topics.extend(result)
                 elif isinstance(result, Exception):

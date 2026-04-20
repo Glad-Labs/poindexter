@@ -6,7 +6,7 @@ Provides type-safe conversion with automatic timestamp handling.
 """
 
 import json
-from typing import Any, Dict, List, Type, TypeVar
+from typing import Any, TypeVar
 from uuid import UUID
 
 from schemas.database_response_models import (

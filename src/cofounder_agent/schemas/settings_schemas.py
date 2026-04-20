@@ -5,7 +5,6 @@ Consolidated schemas for settings management and configuration.
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 

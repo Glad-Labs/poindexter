@@ -41,9 +41,9 @@ async def run_migration():
         async with pool.acquire() as conn:
             # Check if columns already exist
             result = await conn.fetch("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'content_tasks' 
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'content_tasks'
                 AND column_name IN ('estimated_cost', 'actual_cost', 'cost_breakdown')
             """)
 
@@ -54,7 +54,7 @@ async def run_migration():
             if "estimated_cost" not in existing_columns:
                 logger.info("Adding estimated_cost column...")
                 await conn.execute("""
-                    ALTER TABLE content_tasks 
+                    ALTER TABLE content_tasks
                     ADD COLUMN estimated_cost DECIMAL(10,6) DEFAULT 0.0
                 """)
                 logger.info("✅ Added estimated_cost column")
@@ -65,7 +65,7 @@ async def run_migration():
             if "actual_cost" not in existing_columns:
                 logger.info("Adding actual_cost column...")
                 await conn.execute("""
-                    ALTER TABLE content_tasks 
+                    ALTER TABLE content_tasks
                     ADD COLUMN actual_cost DECIMAL(10,6) DEFAULT NULL
                 """)
                 logger.info("✅ Added actual_cost column")
@@ -76,7 +76,7 @@ async def run_migration():
             if "cost_breakdown" not in existing_columns:
                 logger.info("Adding cost_breakdown column...")
                 await conn.execute("""
-                    ALTER TABLE content_tasks 
+                    ALTER TABLE content_tasks
                     ADD COLUMN cost_breakdown JSONB DEFAULT NULL
                 """)
                 logger.info("✅ Added cost_breakdown column")
@@ -85,9 +85,9 @@ async def run_migration():
 
             # Verify columns
             result = await conn.fetch("""
-                SELECT column_name, data_type 
-                FROM information_schema.columns 
-                WHERE table_name = 'content_tasks' 
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_name = 'content_tasks'
                 AND column_name IN ('estimated_cost', 'actual_cost', 'cost_breakdown')
                 ORDER BY column_name
             """)

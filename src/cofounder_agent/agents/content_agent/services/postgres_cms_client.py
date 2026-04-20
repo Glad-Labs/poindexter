@@ -4,7 +4,7 @@ PostgreSQL-based CMS client for storing content directly to the database.
 Replaces Strapi with direct PostgreSQL storage for posts, categories, tags, and media.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import uuid4
 
 import asyncpg
@@ -173,7 +173,7 @@ class PostgresCMSClient:
                 # Insert post
                 await conn.execute(
                     """
-                    INSERT INTO posts (id, title, slug, content, excerpt, featured_image_url, 
+                    INSERT INTO posts (id, title, slug, content, excerpt, featured_image_url,
                                       seo_title, seo_description, seo_keywords, status)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 """,

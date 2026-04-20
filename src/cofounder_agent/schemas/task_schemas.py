@@ -4,7 +4,7 @@ Task Management Schemas
 Consolidates all Pydantic models for task management endpoints
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
