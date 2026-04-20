@@ -376,7 +376,7 @@ class TestQualityEvaluationPhase:
     @pytest.mark.asyncio
     async def test_execute_missing_content_raises(self):
         phase = _make_quality_phase()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Missing required input.*content"):
             await phase.execute(inputs={"topic": "AI"}, config={})
         assert phase.status == "failed"
 
@@ -491,7 +491,7 @@ class TestSearchImagePhase:
     @pytest.mark.asyncio
     async def test_execute_missing_topic_raises(self):
         phase = _make_search_image_phase()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Missing required input.*topic"):
             await phase.execute(inputs={}, config={"enabled": True})
 
     def test_phase_type(self):
@@ -538,7 +538,7 @@ class TestGenerateSEOPhase:
     @pytest.mark.asyncio
     async def test_execute_missing_inputs_raises(self):
         phase = _make_seo_phase()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Missing required input.*content"):
             await phase.execute(inputs={"topic": "AI"}, config={})  # content missing
         assert phase.status == "failed"
 
@@ -662,7 +662,7 @@ class TestCaptureTrainingDataPhase:
     @pytest.mark.asyncio
     async def test_execute_missing_required_inputs_raises(self):
         phase = _make_capture_phase()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Missing required input"):
             await phase.execute(inputs={"topic": "AI"}, config={})  # overall_score missing
         assert phase.status == "failed"
 
@@ -852,7 +852,7 @@ class TestCreatePostPhase:
     @pytest.mark.asyncio
     async def test_execute_missing_content_raises(self):
         phase = _make_create_post_phase()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Missing required input.*content"):
             await phase.execute(
                 inputs={"topic": "AI"},  # content missing
                 config={},
@@ -990,7 +990,7 @@ class TestPublishPostPhase:
     @pytest.mark.asyncio
     async def test_execute_missing_post_id_raises(self):
         phase = _make_publish_post_phase()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Missing required input.*post_id"):
             await phase.execute(inputs={"slug": "some-slug"}, config={})
         assert phase.status == "failed"
 
