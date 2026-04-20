@@ -144,14 +144,24 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.warning(f"[LIFESPAN] Settings service failed (non-critical): {e}", exc_info=True)
             app.state.settings_service = None
 
-        # Load site config from DB (identity, settings — replaces env vars)
+        # Load site config from DB (identity, settings — replaces env vars).
+        # Stash on app.state so routes + stages can Depends() it instead of
+        # reaching into the module-level singleton (Gitea #242).
         try:
             from services.site_config import site_config
             db_pool = services["database"].pool
             loaded = await site_config.load(db_pool)
+            app.state.site_config = site_config
             logger.info("[LIFESPAN] Site config loaded: %d settings from DB", loaded)
         except Exception as e:
             logger.warning("[LIFESPAN] Site config load failed (using env fallbacks): %s", e)
+            # Still attach the module singleton so Depends() works — it will
+            # fall back to env/defaults for misses until the DB is reachable.
+            try:
+                from services.site_config import site_config
+                app.state.site_config = site_config
+            except Exception:  # noqa: BLE001
+                app.state.site_config = None
 
         # Load prompt templates from DB (overrides YAML files)
         try:
