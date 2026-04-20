@@ -128,11 +128,6 @@ class IdleWorker:
             results["image_regen"] = await self._regenerate_stock_images()
             await self._persist_mark_run("image_regen")
 
-        # Backfill podcast episodes for posts missing them. No Job counterpart.
-        if self._is_due("podcast_backfill", 240):
-            results["podcast_backfill"] = await self._backfill_podcasts()
-            await self._persist_mark_run("podcast_backfill")
-
         # Anomaly detection — statistical outlier monitoring. No Job counterpart.
         if self._is_due("anomaly_detect", 240):
             results["anomaly_detect"] = await self._detect_anomalies()
@@ -444,105 +439,6 @@ class IdleWorker:
 
         except Exception as e:
             logger.warning("[IDLE] Image regeneration failed: %s", e)
-            return {"error": str(e)}
-
-    async def _backfill_podcasts(self) -> dict:
-        """Generate podcast episodes for published posts that don't have them yet.
-
-        Also uploads generated episodes to R2 CDN and rebuilds the podcast
-        RSS feed — previously only the publish flow did this (#208).
-        """
-        try:
-            import os
-
-            import asyncpg
-
-            from services.podcast_service import PodcastService
-
-            cloud_url = os.getenv("DATABASE_URL", "")
-            if not cloud_url:
-                return {"note": "no cloud DB"}
-
-            cloud = await asyncpg.connect(cloud_url)
-            posts = await cloud.fetch("""
-                SELECT id::text, title, content
-                FROM posts WHERE status = 'published'
-                ORDER BY published_at DESC LIMIT 20
-            """)
-
-            svc = PodcastService()
-            generated = 0
-            uploaded = 0
-
-            # First pass: sync existing local episodes to R2 (runs until all caught up)
-            try:
-                from services.r2_upload_service import upload_podcast_episode
-                sync_count = 0
-                for post in posts:
-                    if svc.episode_exists(post["id"]) and sync_count < 5:
-                        try:
-                            r2_url = await upload_podcast_episode(post["id"])
-                            if r2_url:
-                                sync_count += 1
-                        except Exception:
-                            pass
-                if sync_count > 0:
-                    uploaded += sync_count
-                    logger.info("[IDLE] Synced %d podcast episodes to R2", sync_count)
-            except ImportError:
-                pass
-
-            # Second pass: generate new episodes for posts that don't have them
-            for post in posts:
-                if svc.episode_exists(post["id"]):
-                    continue
-                try:
-                    result = await svc.generate_episode(
-                        post_id=post["id"],
-                        title=post["title"],
-                        content=post["content"] or "",
-                    )
-                    if result.success:
-                        generated += 1
-                        logger.info("[IDLE] Generated podcast for: %s", post["title"][:40])
-                        # Upload to R2 CDN (#208)
-                        try:
-                            from services.r2_upload_service import upload_podcast_episode
-                            r2_url = await upload_podcast_episode(post["id"])
-                            if r2_url:
-                                uploaded += 1
-                                logger.info("[IDLE] Uploaded podcast to R2: %s", post["id"][:8])
-                        except Exception as r2_err:
-                            logger.warning("[IDLE] R2 upload failed for %s: %s", post["id"][:8], r2_err)
-                    if generated >= 2:  # Max 2 per cycle
-                        break
-                except Exception as e:
-                    logger.warning("[IDLE] Podcast backfill failed for %s: %s", post["title"][:30], e)
-
-            # Rebuild podcast RSS feed on R2 if we uploaded anything
-            if uploaded > 0:
-                try:
-                    import httpx as _hx
-
-                    from services.r2_upload_service import upload_to_r2
-                    from services.site_config import site_config as _scfg
-                    _api_base = _scfg.get("internal_api_base_url", "http://localhost:8002")
-                    async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                        _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
-                        _feed_path = os.path.join(os.path.expanduser("~"), ".poindexter", "podcast-feed.xml")
-                        with open(_feed_path, "w") as _f:
-                            _f.write(_feed.text)
-                        await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
-                        logger.info("[IDLE] Podcast RSS feed rebuilt on R2")
-                except Exception as feed_err:
-                    logger.warning("[IDLE] Podcast feed rebuild failed (non-fatal): %s", feed_err)
-
-            await cloud.close()
-            if generated == 0:
-                self._mark_completed("podcast_backfill")
-            return {"generated": generated, "uploaded": uploaded}
-        except Exception as e:
-            logger.warning("[IDLE] Podcast backfill failed: %s", e)
             return {"error": str(e)}
 
     async def _check_memory_staleness(self) -> dict:
