@@ -12,6 +12,17 @@ Features:
 - Content metrics and performance tracking
 
 ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
+
+v2.5 deliberate non-migration: this file is the legacy Ollama-native
+content orchestrator. It uses OllamaClient.resolve_model() +
+list_models() for dynamic model discovery, electricity cost tracking
+via the result dict, and a retry/fallback chain (Ollama → HF) — none
+of which fit cleanly behind the LLMProvider Protocol without either
+lossy adaptation or Protocol bloat. The stages-based pipeline in
+services/stages/* is the plugin-aware replacement; when it fully
+subsumes generate_blog_post() this file will be deleted wholesale
+(v2.8 scope). Until then, keeping the Ollama plumbing direct here is
+intentional — see the same precedent at services/multi_model_qa.py.
 """
 
 import asyncio
