@@ -61,18 +61,26 @@ class DevToCrossPostService:
         self._api_key_loaded = False
 
     async def _get_api_key(self) -> str | None:
-        """Fetch the Dev.to API key from app_settings (cached per instance)."""
+        """Fetch + decrypt the Dev.to API key from app_settings.
+
+        Cached per instance — one DB round-trip per DevtoService.
+        ``devto_api_key`` is flagged ``is_secret=true`` after the
+        2026-04-20 hardening sweep, so this goes through
+        ``plugins.secrets.get_secret`` to handle the ``enc:v1:``
+        ciphertext prefix.
+
+        Raises on pool/decryption failure (no try/except — caller
+        handles). Previous implementation swallowed every exception,
+        which hid misconfiguration (wrong DSN, missing key) behind a
+        generic "posting skipped" log entry.
+        """
         if self._api_key_loaded:
             return self._api_key
-        try:
-            row = await self.pool.fetchrow(
-                "SELECT value FROM app_settings WHERE key = 'devto_api_key'"
-            )
-            self._api_key = row["value"] if row and row["value"] else None
-            self._api_key_loaded = True
-        except Exception as e:
-            logger.debug("[DEVTO] Failed to load API key: %s", e)
-            self._api_key_loaded = True
+
+        from plugins.secrets import get_secret
+        async with self.pool.acquire() as conn:
+            self._api_key = await get_secret(conn, "devto_api_key")
+        self._api_key_loaded = True
         return self._api_key
 
     @staticmethod

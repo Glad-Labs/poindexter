@@ -55,9 +55,19 @@ async def mock_async_client(response):
 
 
 def make_image_service_with_key() -> ImageService:
-    """Return an ImageService with a fake Pexels API key injected."""
-    with patch.dict("os.environ", {"PEXELS_API_KEY": "fake-pexels-key"}):
-        return ImageService()
+    """Return an ImageService with a fake Pexels API key injected.
+
+    Post-encrypt refactor: ``ImageService()`` no longer reads the key
+    at __init__ (secrets aren't in site_config; require an async DB
+    fetch). Tests set the fields directly here and flip
+    ``_pexels_key_checked_db`` so the lazy DB lookup is skipped.
+    """
+    svc = ImageService()
+    svc.pexels_api_key = "fake-pexels-key"
+    svc.pexels_available = True
+    svc.pexels_headers = {"Authorization": "fake-pexels-key"}
+    svc._pexels_key_checked_db = True
+    return svc
 
 
 def make_image_service_no_key() -> ImageService:
@@ -856,73 +866,84 @@ class TestGenerateImage:
 
 
 class TestEnsurePexelsKey:
+    """Tests for the DB-first (encrypted) Pexels API key loader.
+
+    Post-refactor, ``_ensure_pexels_key`` only has two paths:
+    1. Already-checked flag → no-op
+    2. Query ``plugins.secrets.get_secret`` via the shared pool from
+       ``services.container.get_service("database")``
+
+    No more site_config fallback, no more ``os.getenv("LOCAL_DATABASE_URL")``
+    fresh-connection fallback — those contradicted the "DB-first, no
+    hardcoded configs" policy.
+    """
+
     @pytest.mark.asyncio
-    async def test_already_has_key_noop(self):
+    async def test_already_checked_noop(self):
         svc = ImageService()
         svc.pexels_api_key = "existing-key"
-        svc._pexels_key_checked_db = True  # already checked
+        svc._pexels_key_checked_db = True
 
-        # Should not import asyncpg or touch site_config
-        with patch("services.image_service.os.getenv") as mock_env:
+        # Should not touch the container at all.
+        with patch("services.container.get_service") as mock_get:
             await svc._ensure_pexels_key()
-        # If it short-circuited, getenv was never called
-        mock_env.assert_not_called()
+        mock_get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_loads_from_site_config_when_missing(self):
+    async def test_loads_from_db_via_get_secret(self):
         svc = ImageService()
-        svc.pexels_api_key = ""
+        svc._pexels_key_checked_db = False
 
-        fake_sc = MagicMock()
-        fake_sc.get.return_value = "from-site-config"
+        fake_conn = AsyncMock()
+        fake_pool_ctx = AsyncMock()
+        fake_pool_ctx.__aenter__ = AsyncMock(return_value=fake_conn)
+        fake_pool_ctx.__aexit__ = AsyncMock(return_value=False)
 
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=fake_sc)}):
+        fake_db_service = MagicMock()
+        fake_db_service.pool = MagicMock()
+        fake_db_service.pool.acquire = MagicMock(return_value=fake_pool_ctx)
+
+        with patch("services.container.get_service", return_value=fake_db_service), \
+             patch("plugins.secrets.get_secret", new=AsyncMock(return_value="decrypted-key")):
             await svc._ensure_pexels_key()
 
-        assert svc.pexels_api_key == "from-site-config"
+        assert svc.pexels_api_key == "decrypted-key"
         assert svc.pexels_available is True
-        assert svc.pexels_headers == {"Authorization": "from-site-config"}
-
-    @pytest.mark.asyncio
-    async def test_no_db_url_logs_warning(self, monkeypatch):
-        svc = ImageService()
-        svc.pexels_api_key = ""
-
-        # site_config returns empty
-        fake_sc = MagicMock()
-        fake_sc.get.return_value = ""
-
-        # No DATABASE_URL or LOCAL_DATABASE_URL
-        monkeypatch.delenv("DATABASE_URL", raising=False)
-        monkeypatch.delenv("LOCAL_DATABASE_URL", raising=False)
-
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=fake_sc)}):
-            await svc._ensure_pexels_key()
-
-        # No key loaded — graceful fallback, no exception
-        assert svc.pexels_api_key == ""
+        assert svc.pexels_headers == {"Authorization": "decrypted-key"}
         assert svc._pexels_key_checked_db is True
 
     @pytest.mark.asyncio
-    async def test_db_exception_logged_not_raised(self, monkeypatch):
+    async def test_no_db_service_sets_unavailable(self):
         svc = ImageService()
-        svc.pexels_api_key = ""
+        svc._pexels_key_checked_db = False
 
-        fake_sc = MagicMock()
-        fake_sc.get.return_value = ""
+        with patch("services.container.get_service", return_value=None):
+            await svc._ensure_pexels_key()
 
-        monkeypatch.setenv("LOCAL_DATABASE_URL", "postgresql://fake")
+        assert svc.pexels_api_key is None
+        assert svc.pexels_available is False
+        assert svc._pexels_key_checked_db is True
 
-        fake_asyncpg = MagicMock()
-        fake_asyncpg.connect = AsyncMock(side_effect=RuntimeError("conn refused"))
+    @pytest.mark.asyncio
+    async def test_db_returns_empty_leaves_unavailable(self):
+        svc = ImageService()
+        svc._pexels_key_checked_db = False
 
-        with patch.dict("sys.modules", {
-            "services.site_config": MagicMock(site_config=fake_sc),
-            "asyncpg": fake_asyncpg,
-        }):
-            await svc._ensure_pexels_key()  # should not raise
+        fake_conn = AsyncMock()
+        fake_pool_ctx = AsyncMock()
+        fake_pool_ctx.__aenter__ = AsyncMock(return_value=fake_conn)
+        fake_pool_ctx.__aexit__ = AsyncMock(return_value=False)
 
-        assert svc.pexels_api_key == ""
+        fake_db_service = MagicMock()
+        fake_db_service.pool = MagicMock()
+        fake_db_service.pool.acquire = MagicMock(return_value=fake_pool_ctx)
+
+        with patch("services.container.get_service", return_value=fake_db_service), \
+             patch("plugins.secrets.get_secret", new=AsyncMock(return_value=None)):
+            await svc._ensure_pexels_key()
+
+        assert svc.pexels_api_key is None
+        assert svc.pexels_available is False
 
 
 # ---------------------------------------------------------------------------
