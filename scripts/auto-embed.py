@@ -117,10 +117,13 @@ _file_handler.setFormatter(logging.Formatter(
 ))
 logger.addHandler(_file_handler)
 
-if sys.stdout and sys.stdout.isatty():
-    _stdout = logging.StreamHandler(sys.stdout)
-    _stdout.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    logger.addHandler(_stdout)
+# Always log to stdout so ``docker logs poindexter-auto-embed`` is useful.
+# (Previously gated on ``isatty()``, which made the container silent because
+# Docker's captured stdout is not a TTY. Still writes to the file handler
+# above regardless.)
+_stdout = logging.StreamHandler(sys.stdout)
+_stdout.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logger.addHandler(_stdout)
 
 
 # ---------------------------------------------------------------------------
