@@ -7,7 +7,7 @@ progress to WebSocket clients in real-time.
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from services.logger_config import get_logger
@@ -38,7 +38,7 @@ class WorkflowProgress:
 
     def __post_init__(self):
         if not self.timestamp:
-            self.timestamp = datetime.now().isoformat()
+            self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
@@ -90,7 +90,7 @@ class WorkflowProgressService:
 
         progress.status = "executing"
         progress.message = message
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
 
         self._notify_callbacks(execution_id, progress)
         return progress
@@ -119,7 +119,7 @@ class WorkflowProgressService:
                 f"Executing phase {phase_index + 1}/{progress.total_phases}: {phase_name}"
             )
 
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
 
         self._notify_callbacks(execution_id, progress)
         return progress
@@ -154,7 +154,7 @@ class WorkflowProgressService:
         progress.message = (
             f"Completed phase {progress.completed_phases}/{progress.total_phases}: {phase_name}"
         )
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
 
         self._notify_callbacks(execution_id, progress)
         return progress
@@ -179,7 +179,7 @@ class WorkflowProgressService:
         }
 
         progress.message = f"Phase failed: {phase_name} - {error}"
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
 
         self._notify_callbacks(execution_id, progress)
         return progress
@@ -202,7 +202,7 @@ class WorkflowProgressService:
         progress.elapsed_time = duration_ms or 0.0
         progress.estimated_remaining = 0.0
         progress.message = message
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
 
         # Store final output in phase results
         if final_output:
@@ -230,7 +230,7 @@ class WorkflowProgressService:
             if failed_phase
             else f"Workflow failed: {error}"
         )
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
 
         self._notify_callbacks(execution_id, progress)
         return progress
@@ -253,7 +253,7 @@ class WorkflowProgressService:
             remaining_percent = 100 - progress.progress_percent
             progress.estimated_remaining = time_per_percent * remaining_percent
 
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
         self._notify_callbacks(execution_id, progress)
         return progress
 

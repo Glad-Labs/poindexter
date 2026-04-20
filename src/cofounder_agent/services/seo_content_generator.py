@@ -14,7 +14,7 @@ Integrates all missing features from the original content agent:
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from services.logger_config import get_logger
@@ -81,7 +81,7 @@ class EnhancedBlogPost:
             "content": self.content,
             "excerpt": self.excerpt,
             "slug": self.metadata.slug,
-            "date": datetime.now().isoformat(),
+            "date": datetime.now(timezone.utc).isoformat(),
             "featured": False,
             "category": self.metadata.category,
             "tags": self.metadata.tags,
@@ -186,7 +186,7 @@ class ContentMetadataGenerator:
             "headline": blog_post.get("title"),
             "description": blog_post.get("excerpt"),
             "author": {"@type": "Organization", "name": site_config.get("site_name", "AI Content Pipeline")},
-            "datePublished": datetime.now().isoformat(),
+            "datePublished": datetime.now(timezone.utc).isoformat(),
             "keywords": ",".join(blog_post.get("keywords", [])),
             "image": blog_post.get("featured_image_url"),
         }

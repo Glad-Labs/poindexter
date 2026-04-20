@@ -5,7 +5,7 @@ Provides endpoints for budget tracking and operational metrics.
 All endpoints require JWT authentication.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 # Create metrics router
 metrics_router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
-_start_time = datetime.now()
+_start_time = datetime.now(timezone.utc)
 
 
 @metrics_router.get("/costs/budget")
@@ -85,7 +85,7 @@ async def get_operational_metrics(
     - timestamp: ISO 8601 UTC
     """
     try:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         uptime = (now - _start_time).total_seconds()
 
         # --- Task queue depth from DB ---
@@ -113,13 +113,11 @@ async def get_operational_metrics(
         # --- Task executor in-memory stats ---
         executor_stats: dict[str, Any] = {}
         try:
-            from services.service_container import (
-                get_service_container,  # type: ignore[import-untyped]
-            )
+            from services.container import get_service
 
-            container = get_service_container()
-            if container and hasattr(container, "task_executor") and container.task_executor:
-                executor_stats = container.task_executor.get_stats()
+            task_executor = get_service("task_executor")
+            if task_executor and hasattr(task_executor, "get_stats"):
+                executor_stats = task_executor.get_stats()
         except Exception as ex_err:
             logger.debug("[operational_metrics] Executor stats unavailable: %s", ex_err)
 
