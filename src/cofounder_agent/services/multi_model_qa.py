@@ -544,6 +544,14 @@ class MultiModelQA:
         import re
 
         try:
+            # v2.3 deliberate non-migration: this path stays on the concrete
+            # OllamaClient because it uses Ollama-specific features that the
+            # Provider Protocol intentionally does not expose:
+            #   - configure_electricity() for local GPU cost attribution
+            #   - check_health() short-circuit
+            #   - raw result dict fields (cost, duration_seconds, tokens)
+            # These are the core of the critic-cost telemetry (see
+            # feedback_no_paid_apis + session_58 electricity tracking).
             from services.ollama_client import OllamaClient
 
             # Explicit 90s timeout on the main critic — thinking models (glm-4.7,
@@ -695,6 +703,9 @@ class MultiModelQA:
         import re
 
         try:
+            # v2.3 deliberate non-migration: same rationale as the main
+            # critic call above — electricity tracking + health probe are
+            # OllamaClient-specific and essential for cost telemetry.
             from services.ollama_client import OllamaClient
 
             # 60s per gate — gates use shorter prompts (max_tokens=600) and
