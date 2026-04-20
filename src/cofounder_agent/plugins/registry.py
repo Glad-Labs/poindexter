@@ -51,6 +51,7 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "providers": "poindexter.providers",
     "packs": "poindexter.packs",
     "llm_providers": "poindexter.llm_providers",
+    "topic_sources": "poindexter.topic_sources",
 }
 
 
@@ -147,6 +148,11 @@ def get_llm_providers() -> list[Any]:
     return list(_cached(ENTRY_POINT_GROUPS["llm_providers"]))
 
 
+def get_topic_sources() -> list[Any]:
+    """Return all registered TopicSource instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["topic_sources"]))
+
+
 # ---------------------------------------------------------------------------
 # Core sample plugins — registered imperatively as a workaround for this
 # project's poetry packaging config (see pyproject.toml note). Third-party
@@ -190,6 +196,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.db_backup", "DbBackupJob"),
         ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),
         ("jobs", "services.jobs.postgres_vacuum", "PostgresVacuumJob"),
+        # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
+        # pgvector-knowledge / codebase-scan / web-search migrate later.
+        ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
