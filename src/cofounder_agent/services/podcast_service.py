@@ -41,9 +41,6 @@ logger = get_logger(__name__)
 
 PODCAST_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
 
-# Default voice from DB config, with voice pool for rotation
-VOICE_PRIMARY = site_config.get("tts_voice", "en-US-AvaMultilingualNeural")
-
 # Voice rotation pool — cycle through for variety across episodes
 VOICE_POOL = [
     "en-US-AvaMultilingualNeural",       # Female, American (default)

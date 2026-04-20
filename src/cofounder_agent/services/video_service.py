@@ -27,8 +27,22 @@ from services.site_config import site_config
 logger = get_logger(__name__)
 
 VIDEO_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "video"
-VIDEO_SERVER_URL = site_config.get("video_server_url", "http://host.docker.internal:9837")
-SDXL_SERVER_URL = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
+
+
+def _video_server_url() -> str:
+    """Resolve VIDEO_SERVER_URL from site_config per-call.
+
+    Previously captured at module-import time. Since this module
+    imports before site_config.load() completes, the cached value was
+    always the hardcoded default — changing video_server_url in
+    app_settings had no effect until worker restart.
+    """
+    return site_config.get("video_server_url", "http://host.docker.internal:9837")
+
+
+def _sdxl_server_url() -> str:
+    """Resolve SDXL_SERVER_URL from site_config per-call (same rationale)."""
+    return site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
 
 
 @dataclass
@@ -111,7 +125,7 @@ async def _generate_images_for_video(
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{SDXL_SERVER_URL}/generate",
+                    f"{_sdxl_server_url()}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         "steps": 4, "guidance_scale": 1.0,
@@ -194,7 +208,7 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{SDXL_SERVER_URL}/generate",
+                    f"{_sdxl_server_url()}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         "steps": 4, "guidance_scale": 1.0,
@@ -301,7 +315,7 @@ async def generate_video_for_post(
     logger.info("[VIDEO] Rendering video (%d images + audio)", len(image_paths))
     try:
         async with httpx.AsyncClient(timeout=600) as client:
-            resp = await client.post(f"{VIDEO_SERVER_URL}/generate", json={
+            resp = await client.post(f"{_video_server_url()}/generate", json={
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
@@ -484,7 +498,7 @@ async def generate_short_video_for_post(
     logger.info("[SHORT] Rendering short video (%d images, summary audio)", len(image_paths))
     try:
         async with httpx.AsyncClient(timeout=300) as client:
-            resp = await client.post(f"{VIDEO_SERVER_URL}/generate-short", json={
+            resp = await client.post(f"{_video_server_url()}/generate-short", json={
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
