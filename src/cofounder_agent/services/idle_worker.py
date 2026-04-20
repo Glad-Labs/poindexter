@@ -133,11 +133,6 @@ class IdleWorker:
             results["podcast_backfill"] = await self._backfill_podcasts()
             await self._persist_mark_run("podcast_backfill")
 
-        # Backfill videos for posts missing them. No Job counterpart.
-        if self._is_due("video_backfill", 360):
-            results["video_backfill"] = await self._backfill_videos()
-            await self._persist_mark_run("video_backfill")
-
         # Anomaly detection — statistical outlier monitoring. No Job counterpart.
         if self._is_due("anomaly_detect", 240):
             results["anomaly_detect"] = await self._detect_anomalies()
@@ -548,59 +543,6 @@ class IdleWorker:
             return {"generated": generated, "uploaded": uploaded}
         except Exception as e:
             logger.warning("[IDLE] Podcast backfill failed: %s", e)
-            return {"error": str(e)}
-
-    async def _backfill_videos(self) -> dict:
-        """Generate videos for published posts that have podcasts but no video."""
-        try:
-            import os
-
-            import asyncpg
-
-            from services.podcast_service import PODCAST_DIR
-            from services.video_service import VIDEO_DIR, generate_video_for_post
-
-            cloud_url = os.getenv("DATABASE_URL", "")
-            if not cloud_url:
-                return {"note": "no cloud DB"}
-
-            cloud = await asyncpg.connect(cloud_url)
-            posts = await cloud.fetch("""
-                SELECT id::text, title, content
-                FROM posts WHERE status = 'published'
-                ORDER BY published_at DESC LIMIT 20
-            """)
-
-            generated = 0
-            for post in posts:
-                post_id = post["id"]
-                podcast_path = PODCAST_DIR / f"{post_id}.mp3"
-                video_path = VIDEO_DIR / f"{post_id}.mp4"
-
-                # Only generate video if podcast exists but video doesn't
-                if not podcast_path.exists() or video_path.exists():
-                    continue
-
-                try:
-                    result = await generate_video_for_post(
-                        post_id=post_id,
-                        title=post["title"],
-                        content=post["content"] or "",
-                    )
-                    if result.success:
-                        generated += 1
-                        logger.info("[IDLE] Generated video for: %s", post["title"][:40])
-                    if generated >= 1:  # Max 1 per cycle (GPU-heavy)
-                        break
-                except Exception as e:
-                    logger.warning("[IDLE] Video backfill failed for %s: %s", post["title"][:30], e)
-
-            await cloud.close()
-            if generated == 0:
-                self._mark_completed("video_backfill")
-            return {"generated": generated}
-        except Exception as e:
-            logger.warning("[IDLE] Video backfill failed: %s", e)
             return {"error": str(e)}
 
     async def _check_memory_staleness(self) -> dict:

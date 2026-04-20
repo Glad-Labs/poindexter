@@ -155,6 +155,7 @@ sync_shared_context = "cofounder_agent.services.jobs.sync_shared_context:SyncSha
 auto_embed_posts = "cofounder_agent.services.jobs.auto_embed_posts:AutoEmbedPostsJob"
 analyze_topic_gaps = "cofounder_agent.services.jobs.analyze_topic_gaps:AnalyzeTopicGapsJob"
 sync_newsletter_subscribers = "cofounder_agent.services.jobs.sync_newsletter_subscribers:SyncNewsletterSubscribersJob"
+backfill_videos = "cofounder_agent.services.jobs.backfill_videos:BackfillVideosJob"
 
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
