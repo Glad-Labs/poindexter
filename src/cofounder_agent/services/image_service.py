@@ -562,56 +562,66 @@ class ImageService:
         Returns None if Ollama is unavailable or the response is empty
         — callers fall back to the raw topic.
         """
+        # Migrated v2.2: use the Provider Protocol rather than constructing
+        # OllamaClient directly. Keeps image_service swap-able across
+        # local inference backends (Ollama, vllm, llama.cpp) by
+        # changing ``plugin.llm_provider.primary.free`` in app_settings.
         try:
             import asyncio
 
-            from services.ollama_client import OllamaClient
+            from plugins.registry import get_llm_providers
         except Exception:
             return None
 
-        # #198: tunable via app_settings so operators can bump timeouts
-        # on slower hardware without a redeploy.
+        # Tuning constants via app_settings (#198).
         from services.site_config import site_config as _sc
         _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
-        client = OllamaClient(timeout=_client_timeout)
+        _model = _sc.get("image_search_query_model", "gemma3:27b")
+        _max_tokens = _sc.get_int("image_search_query_max_tokens", 30)
+        _temp = _sc.get_float("image_search_query_temperature", 0.4)
+        _generate_timeout = _sc.get_int("image_search_query_timeout_seconds", 20)
+
+        providers = {p.name: p for p in get_llm_providers()}
+        provider = providers.get("ollama_native")
+        if provider is None:
+            logger.debug("LLM semantic query: ollama_native provider not registered")
+            return None
+
+        prompt = (
+            "Convert this blog topic into a 3-5 word Pexels stock photo "
+            "search query that represents the CONCEPT or ABSTRACT IDEA, "
+            "NOT the literal words. Avoid brand names, product names, and "
+            "technical jargon — Pexels doesn't have photos of software.\n\n"
+            "Focus on what the reader cares about: the work being done, "
+            "the problem being solved, the emotion involved, or the "
+            "industry context.\n\n"
+            "Examples:\n"
+            "- Topic: 'Postgres row-level security for multi-tenant SaaS'\n"
+            "  Query: secure database architecture\n"
+            "- Topic: 'When to choose DuckDB over Postgres for analytics'\n"
+            "  Query: data analytics dashboard\n"
+            "- Topic: 'Building a FastAPI background task queue'\n"
+            "  Query: server room infrastructure\n"
+            "- Topic: 'Why local LLMs beat cloud APIs for indie hackers'\n"
+            "  Query: modern developer workspace\n"
+            "- Topic: 'Kubernetes pod lifecycle debugging'\n"
+            "  Query: data center network cables\n\n"
+            f"Topic: {topic}\n\n"
+            "Respond with ONLY the search query (3-5 words, no quotes, no explanation):"
+        )
+
         try:
-            prompt = (
-                "Convert this blog topic into a 3-5 word Pexels stock photo "
-                "search query that represents the CONCEPT or ABSTRACT IDEA, "
-                "NOT the literal words. Avoid brand names, product names, and "
-                "technical jargon — Pexels doesn't have photos of software.\n\n"
-                "Focus on what the reader cares about: the work being done, "
-                "the problem being solved, the emotion involved, or the "
-                "industry context.\n\n"
-                "Examples:\n"
-                "- Topic: 'Postgres row-level security for multi-tenant SaaS'\n"
-                "  Query: secure database architecture\n"
-                "- Topic: 'When to choose DuckDB over Postgres for analytics'\n"
-                "  Query: data analytics dashboard\n"
-                "- Topic: 'Building a FastAPI background task queue'\n"
-                "  Query: server room infrastructure\n"
-                "- Topic: 'Why local LLMs beat cloud APIs for indie hackers'\n"
-                "  Query: modern developer workspace\n"
-                "- Topic: 'Kubernetes pod lifecycle debugging'\n"
-                "  Query: data center network cables\n\n"
-                f"Topic: {topic}\n\n"
-                "Respond with ONLY the search query (3-5 words, no quotes, no explanation):"
-            )
-            # Tuning constants via app_settings (#198).
-            _model = _sc.get("image_search_query_model", "gemma3:27b")
-            _max_tokens = _sc.get_int("image_search_query_max_tokens", 30)
-            _temp = _sc.get_float("image_search_query_temperature", 0.4)
-            _generate_timeout = _sc.get_int("image_search_query_timeout_seconds", 20)
-            result = await asyncio.wait_for(
-                client.generate(
-                    prompt=prompt,
+            completion = await asyncio.wait_for(
+                provider.complete(
+                    messages=[{"role": "user", "content": prompt}],
                     model=_model,
                     temperature=_temp,
                     max_tokens=_max_tokens,
+                    timeout_s=_client_timeout,
                 ),
                 timeout=_generate_timeout,
             )
-            text = (result.get("text") or "").strip()
+            text = (completion.text or "").strip()
             # Strip common LLM quote/markdown wrappers
             text = text.strip('"').strip("'").strip("`").strip()
             # Take first non-empty line (models sometimes add an empty trailer)
@@ -621,9 +631,6 @@ class ImageService:
                     return line
         except Exception as e:
             logger.debug("LLM semantic query failed for '%s': %s", topic[:40], e)
-        finally:
-            with suppress(Exception):
-                await client.close()
         return None
 
     async def search_featured_image(
