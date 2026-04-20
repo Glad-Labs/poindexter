@@ -221,17 +221,16 @@ class ImageService:
     """
 
     def __init__(self):
-        """Initialize image service"""
-        from services.site_config import site_config
-        self.pexels_api_key = site_config.get("pexels_api_key")
-        self._pexels_key_checked_db = bool(self.pexels_api_key)
+        """Initialize image service.
 
-        if not self.pexels_api_key:
-            logger.info(
-                "Pexels API key not in config or env — will check app_settings DB on first use"
-            )
-
-        self.pexels_available = bool(self.pexels_api_key)
+        The Pexels API key is a secret (encrypted in app_settings) and
+        therefore NOT loaded into site_config at startup. We defer the
+        actual fetch to ``_refresh_pexels_key()``, which runs on first
+        use from an async context with a real DB pool.
+        """
+        self.pexels_api_key: str | None = None
+        self._pexels_key_checked_db = False
+        self.pexels_available = False
         # #198: tunable for API version changes / private image proxies
         from services.site_config import site_config as _sc_pex
         self.pexels_base_url = _sc_pex.get(
@@ -497,54 +496,43 @@ class ImageService:
     # =========================================================================
 
     async def _ensure_pexels_key(self) -> None:
-        """Load Pexels API key from app_settings DB if not already set.
+        """Load + decrypt the Pexels API key from app_settings.
 
-        DB-first: the key lives in app_settings (key='pexels_api_key').
-        Falls back to PEXELS_API_KEY env var (already checked in __init__).
-        Only queries the DB once per service lifetime to avoid repeated lookups.
+        Cached per service instance — subsequent calls are no-ops once
+        the key is resolved. Uses the shared DatabaseService pool from
+        the DI container, not a fresh asyncpg.connect — that kept a
+        LOCAL_DATABASE_URL fallback hardcoded here, contradicting the
+        DB-first/bootstrap-only env-var policy.
+
+        Raises on any pool/decryption failure (no try/except swallowing).
+        Callers that need a soft-fail path should catch upstream.
         """
-        # Refresh from site_config in case it loaded after __init__
-        if not self.pexels_api_key:
-            from services.site_config import site_config
-            self.pexels_api_key = site_config.get("pexels_api_key", "")
-            if self.pexels_api_key:
-                self.pexels_available = True
-                self.pexels_headers = {"Authorization": self.pexels_api_key}
-                return
-
-        if self.pexels_api_key or self._pexels_key_checked_db:
+        if self._pexels_key_checked_db:
             return
 
-        self._pexels_key_checked_db = True
+        from services.container import get_service
+        from plugins.secrets import get_secret
 
-        try:
-            import asyncpg
-
-            db_url = os.getenv(
-                "LOCAL_DATABASE_URL",
-                os.getenv("DATABASE_URL", ""),
+        db_service = get_service("database")
+        if db_service is None or not getattr(db_service, "pool", None):
+            logger.warning(
+                "DatabaseService not registered in DI container — "
+                "pexels_api_key cannot be loaded. Callers will see pexels_available=False."
             )
-            if not db_url:
-                logger.warning("No DATABASE_URL available — cannot load pexels_api_key from DB")
-                return
+            self._pexels_key_checked_db = True
+            return
 
-            conn = await asyncpg.connect(db_url)
-            try:
-                row = await conn.fetchrow(
-                    "SELECT value FROM app_settings WHERE key = $1",
-                    "pexels_api_key",
-                )
-                if row and row["value"]:
-                    self.pexels_api_key = row["value"]
-                    self.pexels_available = True
-                    self.pexels_headers = {"Authorization": self.pexels_api_key}
-                    logger.info("Pexels API key loaded from app_settings DB")
-                else:
-                    logger.warning("pexels_api_key not found in app_settings table")
-            finally:
-                await conn.close()
-        except Exception:
-            logger.error("Failed to load pexels_api_key from DB", exc_info=True)
+        async with db_service.pool.acquire() as conn:
+            value = await get_secret(conn, "pexels_api_key")
+
+        self._pexels_key_checked_db = True
+        if value:
+            self.pexels_api_key = value
+            self.pexels_available = True
+            self.pexels_headers = {"Authorization": value}
+            logger.info("Pexels API key loaded from app_settings (encrypted)")
+        else:
+            logger.warning("pexels_api_key not set in app_settings")
 
     # =========================================================================
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)

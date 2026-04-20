@@ -27,9 +27,32 @@ SITE_URL = _site_url()
 
 
 def make_mock_pool(api_key_row=None) -> AsyncMock:
-    """Return an AsyncMock that behaves like an asyncpg pool."""
+    """Return an AsyncMock that behaves like an asyncpg pool.
+
+    Supports both the legacy ``pool.fetchrow`` path (still used by
+    other code) and the new ``async with pool.acquire() as conn``
+    pattern used by _get_api_key after the encrypt migration.
+
+    ``api_key_row`` — if a dict with ``value``, the acquire context
+    yields a conn whose fetchrow returns it (so plugins.secrets can
+    decide encrypted vs plaintext). None means "no row".
+    """
     pool = AsyncMock()
     pool.fetchrow = AsyncMock(return_value=api_key_row)
+
+    # acquire() must return an async context manager yielding a conn.
+    conn = AsyncMock()
+    if api_key_row is None:
+        conn.fetchrow = AsyncMock(return_value=None)
+    else:
+        # get_secret reads both value AND is_secret. Provide both.
+        row_with_secret = {**api_key_row, "is_secret": False}
+        conn.fetchrow = AsyncMock(return_value=row_with_secret)
+
+    acquire_ctx = AsyncMock()
+    acquire_ctx.__aenter__ = AsyncMock(return_value=conn)
+    acquire_ctx.__aexit__ = AsyncMock(return_value=False)
+    pool.acquire = MagicMock(return_value=acquire_ctx)
     return pool
 
 
@@ -173,25 +196,38 @@ class TestCrossPostNoApiKey:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_db_fetch_fails(self):
-        pool = AsyncMock()
-        pool.fetchrow = AsyncMock(side_effect=Exception("connection refused"))
+    async def test_db_fetch_failure_propagates(self):
+        """After the 2026-04-20 secrets refactor, _get_api_key no longer
+        swallows pool errors. Matt explicitly asked for no try/except
+        eating — if the DB pool is borked, we want to see it, not
+        silently skip Dev.to."""
+        pool = MagicMock()
+        failing_ctx = AsyncMock()
+        failing_ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("connection refused"))
+        failing_ctx.__aexit__ = AsyncMock(return_value=False)
+        pool.acquire = MagicMock(return_value=failing_ctx)
+
         svc = DevToCrossPostService(pool)
-        result = await svc.cross_post(
-            title="Test",
-            content_markdown="Content",
-            canonical_url="https://www.gladlabs.io/posts/test",
-        )
-        assert result is None
+        with pytest.raises(RuntimeError, match="connection refused"):
+            await svc.cross_post(
+                title="Test",
+                content_markdown="Content",
+                canonical_url="https://www.gladlabs.io/posts/test",
+            )
 
     @pytest.mark.asyncio
     async def test_api_key_cached_after_first_load(self):
+        # After the encrypt migration, the key comes via a conn from
+        # pool.acquire() rather than pool.fetchrow() directly. Caching
+        # is verified by checking the conn inside the acquired context
+        # is only queried once.
         pool = make_mock_pool(api_key_row=None)
         svc = DevToCrossPostService(pool)
         await svc.cross_post("T", "C", "https://www.gladlabs.io/posts/t")
         await svc.cross_post("T2", "C2", "https://www.gladlabs.io/posts/t2")
-        # fetchrow should only be called once (cached)
-        assert pool.fetchrow.call_count == 1
+        # pool.acquire was called once (first cross_post); the second
+        # short-circuits on _api_key_loaded.
+        assert pool.acquire.call_count == 1
 
 
 # ---------------------------------------------------------------------------
