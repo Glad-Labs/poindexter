@@ -32,6 +32,13 @@ receivers:
     webhook_configs:
       - url: http://worker:8002/api/webhooks/alertmanager
         send_resolved: true
+        # Bearer token auth — the worker rejects any POST without the
+        # matching Authorization header. Token lives in app_settings
+        # as `alertmanager_webhook_token` (is_secret=true, encrypted
+        # at rest). Mounted at /etc/alertmanager/webhook-token so a
+        # single file rotation swaps the value without a config reload.
+        http_config:
+          bearer_token_file: /etc/alertmanager/webhook-token
 
 # Inhibition rules — suppress lower-severity alerts when a related
 # higher-severity one is firing.

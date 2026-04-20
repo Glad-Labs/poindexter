@@ -94,6 +94,10 @@ services:
     volumes:
       - ./infrastructure/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager
+      # Bearer token for the Poindexter webhook receiver. Must match
+      # app_settings.alertmanager_webhook_token. Rotate via:
+      #   UPDATE app_settings ... ; echo -n <new> > file ; docker restart poindexter-alertmanager
+      - ${USERPROFILE:-.}/.poindexter/alertmanager-webhook-token:/etc/alertmanager/webhook-token:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

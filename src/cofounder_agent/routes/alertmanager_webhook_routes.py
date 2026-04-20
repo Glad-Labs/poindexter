@@ -18,18 +18,26 @@ one endpoint — Phase-D ships sooner, and the dispatch logic is simpler
 to reason about in code than spread across YAML routing trees. Brain
 can read ``alert_events`` directly via DB since it shares the pool.
 
-Endpoint is unauthenticated: it only reachable inside the Docker
-network (no port exposed). Tracked as follow-up issue for HMAC/bearer
-before any external exposure.
+## Authentication
+
+Bearer token via ``Authorization: Bearer <token>`` header. The token
+is stored in ``app_settings.alertmanager_webhook_token`` (is_secret=true,
+encrypted at rest). Alertmanager injects it via ``http_config.bearer_token``
+in its routing config.
+
+If the token row is empty OR missing, the endpoint rejects every
+request with 503 — fail-closed, so a misconfigured install can't
+silently accept unsigned webhooks. Tests override the dependency.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
@@ -37,6 +45,57 @@ from utils.route_utils import get_database_dependency
 logger: logging.Logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/webhooks", tags=["alertmanager"])
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+
+async def verify_alertmanager_token(
+    authorization: str | None = Header(default=None),
+    db: Any = Depends(get_database_dependency),
+) -> None:
+    """Reject the webhook unless the Authorization header carries the
+    bearer token stored in ``app_settings.alertmanager_webhook_token``.
+
+    Fail-closed semantics:
+    - Missing header -> 401
+    - Malformed header (no ``Bearer `` prefix) -> 401
+    - Empty or unset token in app_settings -> 503 (server misconfigured)
+    - Token mismatch -> 401
+
+    The token is stored ``is_secret=true`` so it's encrypted at rest;
+    ``plugins.secrets.get_secret`` transparently decrypts. ``hmac.compare_digest``
+    is used for the comparison to avoid timing side channels.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="alertmanager webhook requires Bearer token",
+        )
+    submitted = authorization[len("Bearer "):].strip()
+
+    from plugins.secrets import get_secret
+    async with db.pool.acquire() as conn:
+        expected = await get_secret(conn, "alertmanager_webhook_token")
+
+    if not expected:
+        logger.error(
+            "alertmanager webhook: alertmanager_webhook_token is unset; "
+            "rejecting all inbound webhooks until configured"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="webhook auth not configured",
+        )
+
+    if not hmac.compare_digest(submitted, expected):
+        logger.warning("alertmanager webhook: token mismatch")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid Bearer token",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +263,7 @@ async def _maybe_remediate(pool: Any, alert: dict[str, Any]) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/alertmanager")
+@router.post("/alertmanager", dependencies=[Depends(verify_alertmanager_token)])
 async def alertmanager_webhook(
     payload: dict[str, Any],
     db: Any = Depends(get_database_dependency),
