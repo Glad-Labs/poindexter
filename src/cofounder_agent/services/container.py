@@ -1,31 +1,30 @@
 """
 Service Container for Glad Labs AI Co-Founder
 
-This module provides a centralized service registry and dependency injection mechanism.
+Centralized service registry. Each ``ServiceContainer`` instance owns its
+own services dict — no shared class-level state, so tests can build an
+isolated container without polluting siblings.
+
+A module-level ``service_container`` instance is kept for back-compat,
+but routes should prefer ``request.app.state.service_container`` (stashed
+in lifespan) and tests should build a fresh ``ServiceContainer()``.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import FastAPI
 
-# Import configuration
-from config import get_config
-
-# Get configuration
-config = get_config()
-
 
 class ServiceContainer:
-    """Centralized service registry and dependency injection container."""
+    """Centralized service registry.
 
-    _instance: Optional["ServiceContainer"] = None
-    _services: dict[str, Any] = {}
+    Instance-scoped: each container instance has its own ``_services``
+    dict. No singleton enforcement — callers choose between the
+    module-level instance (legacy callers) and ``app.state`` (routes).
+    """
 
-    def __new__(cls) -> "ServiceContainer":
-        """Singleton pattern for ServiceContainer."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+    def __init__(self) -> None:
+        self._services: dict[str, Any] = {}
 
     def register(self, name: str, service: Any) -> None:
         """Register a service in the container."""
@@ -44,27 +43,26 @@ class ServiceContainer:
         self._services.clear()
 
 
-# Global service container instance
+# Module-level instance — legacy callers (main.py lifespan,
+# a handful of lazily-imported services) use this. New code should
+# prefer ``request.app.state.service_container`` or a fresh instance.
 service_container = ServiceContainer()
 
 
 def get_service(name: str) -> Any:
-    """Get a service from the global container."""
+    """Get a service from the module-level container."""
     return service_container.get(name)
 
 
 def register_service(name: str, service: Any) -> None:
-    """Register a service in the global container."""
+    """Register a service in the module-level container."""
     service_container.register(name, service)
 
 
 def initialize_services(app: FastAPI, **services) -> None:
-    """
-    Initialize services and register them in the container.
-
-    Args:
-        app: FastAPI application instance
-        **services: Services to register
-    """
+    """Register services in the module-level container and stash the
+    container on ``app.state.service_container`` so route dependencies
+    can access it without importing the module-level instance."""
     for name, service in services.items():
         register_service(name, service)
+    app.state.service_container = service_container

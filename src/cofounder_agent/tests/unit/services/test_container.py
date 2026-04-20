@@ -1,8 +1,8 @@
 """
 Unit tests for services/container.py
 
-Tests the ServiceContainer singleton pattern, registration,
-retrieval, and helper functions.
+Tests ServiceContainer instance isolation, registration, retrieval,
+and module-level helper functions.
 """
 
 from unittest.mock import MagicMock
@@ -28,13 +28,16 @@ def reset_container():
     service_container._services.update(saved)
 
 
-class TestServiceContainerSingleton:
-    """ServiceContainer uses the singleton pattern."""
+class TestServiceContainerInstances:
+    """ServiceContainer instances are independent (no shared state)."""
 
-    def test_singleton_returns_same_instance(self):
+    def test_each_instance_has_own_services(self):
         a = ServiceContainer()
         b = ServiceContainer()
-        assert a is b
+        svc = MagicMock()
+        a.register("alpha", svc)
+        assert a.get("alpha") is svc
+        assert b.get("alpha") is None
 
     def test_global_service_container_is_instance(self):
         assert isinstance(service_container, ServiceContainer)
@@ -89,12 +92,16 @@ class TestHelperFunctions:
         db = MagicMock()
         cache = MagicMock()
         app = MagicMock()
+        app.state = MagicMock()
         initialize_services(app, database=db, cache=cache)
         assert get_service("database") is db
         assert get_service("cache") is cache
+        # initialize_services also stashes the container on app.state
+        assert app.state.service_container is service_container
 
     def test_initialize_services_empty_kwargs(self):
         """Calling with no services should not raise."""
         app = MagicMock()
+        app.state = MagicMock()
         initialize_services(app)
         assert get_service("database") is None
