@@ -488,7 +488,7 @@ async def up(pool):
         statements = [s.strip() for s in BASE_SCHEMA_SQL.split(";") if s.strip()]
         for statement in statements:
             # Skip comments-only blocks
-            lines = [l for l in statement.split("\n") if l.strip() and not l.strip().startswith("--")]
+            lines = [line for line in statement.split("\n") if line.strip() and not line.strip().startswith("--")]
             if not lines:
                 continue
             try:

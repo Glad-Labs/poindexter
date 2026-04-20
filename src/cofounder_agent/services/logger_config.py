@@ -76,7 +76,7 @@ if LOG_LEVEL not in VALID_LOG_LEVELS:
 
 
 def _add_request_id(
-    logger: logging.Logger, method_name: str, event_dict: dict
+    _logger: logging.Logger, _method_name: str, event_dict: dict
 ) -> dict:
     """
     Structlog processor that injects the current request ID into every log event.

@@ -112,10 +112,11 @@ def validate_constraints(
 
     violation_message = None
     if not within_tolerance:
-        if actual_words < min_words:
-            violation_message = f"Content too short: {actual_words} words (target: {target_words} ±{constraints.word_count_tolerance}%)"
-        else:
-            violation_message = f"Content too long: {actual_words} words (target: {target_words} ±{constraints.word_count_tolerance}%)"
+        direction = "short" if actual_words < min_words else "long"
+        violation_message = (
+            f"[{phase_name}] Content too {direction}: {actual_words} words "
+            f"(target: {target_words} ±{constraints.word_count_tolerance}%)"
+        )
 
     return ConstraintCompliance(
         word_count_actual=actual_words,

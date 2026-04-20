@@ -258,6 +258,27 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/*" = ["ARG"]
+# FastAPI routes: Depends(...) parameters intentionally hold auth/db handles
+# without being referenced in the body. request: Request is often supplied
+# by middleware for downstream handlers. Don't flag those.
+"routes/*" = ["ARG001"]
+"middleware/*" = ["ARG002"]
+# main.py hosts a handful of FastAPI routes directly (legacy); same rule
+# applies — Depends() params may be unused in the body.
+"main.py" = ["ARG001"]
+# Exception handlers (request, exc) and startup/shutdown hooks get
+# framework-mandated params.
+"utils/middleware_config.py" = ["ARG001"]
+"utils/route_registration.py" = ["ARG001"]
+# Stub/no-op broadcasters — **kwargs swallow caller args for API compat.
+"services/websocket_event_broadcaster.py" = ["ARG001"]
+"services/progress_broadcaster.py" = ["ARG001"]
+# Social adapters share a Protocol signature — not every adapter needs
+# every kwarg.
+"services/social_adapters/*" = ["ARG001", "ARG002"]
+# Quality scorers all share a (content, context, cfg) signature for
+# uniform dispatch, even when individual scorers don't read all three.
+"services/quality_scorers.py" = ["ARG001"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

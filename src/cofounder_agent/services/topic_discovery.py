@@ -104,8 +104,7 @@ def _content_words(title: str) -> set[str]:
     return words - _STOP_WORDS
 
 
-def _word_overlap_match(words_a: set[str], words_b: set[str], threshold: float = 0.4,
-                        title_a: str = "", title_b: str = "") -> bool:
+def _word_overlap_match(words_a: set[str], words_b: set[str], threshold: float = 0.4) -> bool:
     """True if content-word overlap exceeds threshold (both directions checked)."""
     if not words_a or not words_b:
         return False
@@ -493,8 +492,7 @@ class TopicDiscovery:
                     existing_words = _content_words(existing_title)
                     if len(existing_words) < 2:
                         continue
-                    if _word_overlap_match(topic_words, existing_words,
-                                           title_a=title_lower, title_b=existing_title):
+                    if _word_overlap_match(topic_words, existing_words):
                         topic.is_duplicate = True
                         logger.debug(
                             "[DEDUP] '%s' matches '%s'",
@@ -517,8 +515,7 @@ class TopicDiscovery:
                 t2_words = _content_words(t2.title.lower())
                 if len(t2_words) < 2:
                     continue
-                if _word_overlap_match(t1_words, t2_words,
-                                       title_a=t1.title.lower(), title_b=t2.title.lower()):
+                if _word_overlap_match(t1_words, t2_words):
                     t2.is_duplicate = True
                     logger.info(
                         "[DEDUP] Intra-batch: '%s' ≈ '%s'",

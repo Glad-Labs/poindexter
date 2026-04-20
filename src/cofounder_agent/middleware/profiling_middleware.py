@@ -147,7 +147,7 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
                         "count": len(profiles),
                         "max_duration_ms": round(max(durations), 2),
                         "min_duration_ms": round(min(durations), 2),
-                        "status_codes": list(set(p.status_code for p in profiles)),
+                        "status_codes": list({p.status_code for p in profiles}),
                     }
 
         return slow_stats

@@ -358,7 +358,7 @@ def score_engagement(content: str, cfg: dict | None = None) -> float:
     paragraphs = [p for p in content.split("\n\n") if p.strip()]
     if len(paragraphs) >= 4:
         score += 0.5
-    if len(set(len(p.split()) // 10 for p in paragraphs)) > 2:
+    if len({len(p.split()) // 10 for p in paragraphs}) > 2:
         score += 0.5
 
     # Code blocks (technical engagement signal)
@@ -477,7 +477,7 @@ def detect_truncation(content: str) -> bool:
         return False
 
     # Get the last non-empty line
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
     if not lines:
         return False
 

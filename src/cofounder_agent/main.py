@@ -31,7 +31,11 @@ from services.quality_service import UnifiedQualityService
 try:
     from services.sentry_integration import setup_sentry
 except ImportError:
-    setup_sentry = lambda *a, **kw: None  # Sentry not installed
+    def setup_sentry(*_args, **_kwargs):
+        """Stub when Sentry is not installed."""
+        return None
+from importlib.util import find_spec
+
 from services.telemetry import setup_telemetry
 from utils.connection_health import ConnectionPoolHealth
 
@@ -41,8 +45,6 @@ from utils.middleware_config import MiddlewareConfig
 from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
 from utils.startup_manager import StartupManager
-
-from importlib.util import find_spec
 
 SENTRY_AVAILABLE = find_spec("sentry_sdk") is not None
 

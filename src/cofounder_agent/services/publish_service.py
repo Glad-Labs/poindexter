@@ -795,7 +795,7 @@ async def publish_post_from_task(
     # 11f. Newsletter to subscribers (fire-and-forget)
     # ---------------------------------------------------------------
     if _should_run_post_publish_hooks():
-        async def _send_newsletter(pid: str, ptitle: str, pexcerpt: str, pslug: str) -> None:
+        async def _send_newsletter(_pid: str, ptitle: str, pexcerpt: str, pslug: str) -> None:
             try:
                 from services.newsletter_service import send_post_newsletter
                 _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
