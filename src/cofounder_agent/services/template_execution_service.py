@@ -127,7 +127,7 @@ class TemplateExecutionService:
         self,
         template_name: str,
         skip_phases: list[str] | None = None,
-        quality_threshold: float | None = None,
+        quality_threshold: float | None = None,  # noqa: ARG002 — reserved for per-template override; today threshold flows from app_settings
         owner_id: str = "system",
         tags: list[str] | None = None,
     ) -> CustomWorkflow:

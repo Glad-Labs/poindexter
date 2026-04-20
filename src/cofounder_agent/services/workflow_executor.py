@@ -303,7 +303,10 @@ class WorkflowExecutor:
         return inputs, traces
 
     async def _execute_phase(
-        self, phase: WorkflowPhase, inputs: dict[str, Any], execution_id: str
+        self,
+        phase: WorkflowPhase,
+        inputs: dict[str, Any],
+        execution_id: str,  # noqa: ARG002 — kept for downstream tracing/logging hooks; most phases don't need it today but the signature is shared across phase executors
     ) -> PhaseResult:
         """
         Execute a single phase and return the result.

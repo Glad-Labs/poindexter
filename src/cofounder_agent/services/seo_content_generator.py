@@ -106,7 +106,12 @@ class ContentMetadataGenerator:
     def __init__(self, llm_provider_manager=None):
         self.llm = llm_provider_manager
 
-    def generate_seo_assets(self, title: str, content: str, topic: str) -> dict[str, Any]:
+    def generate_seo_assets(
+        self,
+        title: str,
+        content: str,
+        topic: str,  # noqa: ARG002 — kept for signature parity with the LLM-backed variant; pattern-based extractors use title + content only
+    ) -> dict[str, Any]:
         """
         Generate SEO assets: title, meta description, keywords, slug.
 
@@ -191,7 +196,11 @@ class ContentMetadataGenerator:
             "image": blog_post.get("featured_image_url"),
         }
 
-    def generate_category_and_tags(self, content: str, topic: str) -> dict[str, Any]:
+    def generate_category_and_tags(
+        self,
+        content: str,
+        topic: str,  # noqa: ARG002 — signature parity; keyword match runs on content only
+    ) -> dict[str, Any]:
         """Suggest appropriate category and tags"""
         # Category inference based on keywords
         categories = {
@@ -253,7 +262,7 @@ class SEOOptimizedContentGenerator:
         tone: str = "professional",
         target_length: int = 1500,
         tags_input: list[str] | None = None,
-        generate_images: bool = True,
+        generate_images: bool = True,  # noqa: ARG002 — legacy kwarg; image generation is now driven by stages/source_featured_image.py regardless of this flag
     ) -> EnhancedBlogPost:
         """
         Generate a complete, SEO-optimized blog post with all metadata and assets.

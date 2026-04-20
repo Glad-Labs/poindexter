@@ -36,7 +36,7 @@ except ImportError:
     )
 
     class _NoOpLimiter:
-        def limit(self, *args, **kwargs):
+        def limit(self, *args, **kwargs):  # noqa: ARG002 — signature compat with slowapi.Limiter
             def decorator(func):
                 return func
 

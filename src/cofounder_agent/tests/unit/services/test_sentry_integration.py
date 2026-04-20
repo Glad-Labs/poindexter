@@ -1,10 +1,9 @@
 """Tests for sentry_integration service."""
 
+from importlib.util import find_spec
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from importlib.util import find_spec
 
 _has_sentry = find_spec("sentry_sdk") is not None
 

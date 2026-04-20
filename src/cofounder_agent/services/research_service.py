@@ -170,7 +170,11 @@ class ResearchService:
         self.pool = pool
         self.settings = settings_service
 
-    async def build_context(self, topic: str, category: str = "technology") -> str:
+    async def build_context(
+        self,
+        topic: str,
+        category: str = "technology",  # noqa: ARG002 — reserved for future per-category research sources (e.g., HN for tech, Dribbble for design)
+    ) -> str:
         """Build research context string for the generation prompt.
 
         Returns a formatted string with:

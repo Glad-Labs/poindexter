@@ -370,7 +370,10 @@ class StatusTransitionValidator:
         return len(errors) == 0, errors
 
     def _validate_context(
-        self, from_status: str, to_status: str, context: dict[str, Any]
+        self,
+        from_status: str,  # noqa: ARG002 — reserved for future source-status-aware rules (e.g., "draft→published must have publish_at")
+        to_status: str,
+        context: dict[str, Any],
     ) -> list[str]:
         """
         Validate additional context for specific transitions.

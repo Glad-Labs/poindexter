@@ -69,7 +69,11 @@ class SentryIntegration:
     _sentry_enabled = False
 
     @classmethod
-    def initialize(cls, app: FastAPI, service_name: str = "cofounder-agent"):
+    def initialize(
+        cls,
+        app: FastAPI,  # noqa: ARG003 — main.py passes the app; FastApiIntegration hooks globally, doesn't need the instance
+        service_name: str = "cofounder-agent",
+    ):
         """
         Initialize Sentry SDK with FastAPI integration.
 
