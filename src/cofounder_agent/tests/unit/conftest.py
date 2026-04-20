@@ -133,12 +133,8 @@ def _reset_singletons_between_tests():
     # (text_utils _slug_cache singleton removed in Phase G1 —
     # scrub_fabricated_links now takes known_slugs as a parameter)
 
-    # image-style rotation deque
-    try:
-        import services.image_style_rotation as _isr
-        _isr.reset_history()
-    except Exception:  # noqa: BLE001
-        pass
+    # (image_style_rotation singleton removed in Phase G1 —
+    # ImageStyleTracker is now a class; workers inject an instance.)
 
     # plugin registry entry-point cache (lru_cache)
     try:
