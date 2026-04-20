@@ -32,6 +32,7 @@ logger = get_logger(__name__)
 
 from services.site_config import site_config
 
+
 def _devto_api_base() -> str:
     """Dev.to (or self-hosted Forem) API base. Tunable so customers
     running a private Forem instance — or pointing at a future Dev.to
