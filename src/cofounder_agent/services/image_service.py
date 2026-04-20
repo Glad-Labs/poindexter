@@ -32,7 +32,6 @@ from services.logger_config import get_logger
 # time below for the diffusers-missing warning — the rest of the file
 # uses `logger` from get_logger().
 _import_logger = get_logger(__name__)
-import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -510,8 +509,8 @@ class ImageService:
         if self._pexels_key_checked_db:
             return
 
-        from services.container import get_service
         from plugins.secrets import get_secret
+        from services.container import get_service
 
         db_service = get_service("database")
         if db_service is None or not getattr(db_service, "pool", None):

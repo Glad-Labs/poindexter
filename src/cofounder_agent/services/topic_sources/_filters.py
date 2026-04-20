@@ -14,7 +14,6 @@ import re
 # breaks while we migrate. These should eventually live here only.
 from services.topic_discovery import CATEGORY_SEARCHES
 
-
 # Patterns that indicate news / current events / merch / personal anecdotes
 # — not evergreen editorial content. Moved verbatim from TopicDiscovery._NEWS_PATTERNS.
 _NEWS_PATTERNS = [

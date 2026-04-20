@@ -58,6 +58,7 @@ DEFAULT_TABLES: tuple[str, ...] = (
 # allows more but we restrict on purpose — any table name containing a
 # quote or semicolon is a config bug.
 import re
+
 _SAFE_IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
