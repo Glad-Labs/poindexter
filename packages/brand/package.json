@@ -1,0 +1,26 @@
+{
+  "name": "@glad-labs/brand",
+  "version": "0.1.0",
+  "description": "Glad Labs brand system — colors, typography, effects, components. Shared across gladlabs.io (publishing) and gladlabs.ai (storefront).",
+  "license": "AGPL-3.0-or-later",
+  "author": "Glad Labs, LLC",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "./src/tokens/*.css"
+  ],
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./tokens": "./src/tokens/index.css",
+    "./tokens/colors.css": "./src/tokens/colors.css",
+    "./tokens/typography.css": "./src/tokens/typography.css",
+    "./tokens/effects.css": "./src/tokens/effects.css",
+    "./components/*": "./src/components/*"
+  },
+  "files": [
+    "src"
+  ]
+}

@@ -1,0 +1,41 @@
+/*
+  Glad Labs — color tokens (E3).
+  Red-green-colorblind safe: primary interactive = cyan (blue spectrum),
+  secondary = amber (unambiguously warm). Mint only as cyan-adjacent success.
+  Never encode information by green vs red alone — status components must
+  pair color with icon + label.
+*/
+:root {
+  /* ─── Surface ─────────────────────────────────────── */
+  --gl-base: #070a0f; /* deep navy-black, primary bg */
+  --gl-surface: #101520; /* elevated surface (cards, logs) */
+  --gl-surface-2: #182030; /* one step up when surface-on-surface */
+
+  /* ─── Text ─────────────────────────────────────── */
+  --gl-text: #d8e0e8; /* primary cool off-white */
+  --gl-text-muted: #7a8a92; /* secondary / metadata / disabled */
+  --gl-text-dim: #4e5a62; /* tertiary — timestamps, captions */
+
+  /* ─── Accents ─────────────────────────────────────── */
+  --gl-cyan: #00e5ff; /* primary interactive — CTAs, active, links */
+  --gl-cyan-dim: #00b3cc; /* muted cyan — hover-out, borders */
+  --gl-amber: #ffb74d; /* categorical accent — tags, warnings, emphasis */
+  --gl-amber-dim: #cc8a2d;
+  --gl-mint: #7afbc4; /* success (paired with ✓ icon always) */
+  --gl-red: #ff6b6b; /* error (paired with ✕ icon always) */
+  --gl-blue: #3d7cff; /* structural links in long-form copy */
+
+  /* ─── Interactive states ─────────────────────────────────────── */
+  --gl-cyan-bg: rgba(0, 229, 255, 0.08); /* cyan fill at low opacity */
+  --gl-cyan-border: rgba(0, 229, 255, 0.18);
+  --gl-cyan-glow: rgba(0, 229, 255, 0.35);
+
+  /* ─── Hairlines ─────────────────────────────────────── */
+  --gl-hairline: rgba(255, 255, 255, 0.08);
+  --gl-hairline-strong: rgba(255, 255, 255, 0.15);
+
+  /* ─── On-color foregrounds (for legibility on accent fills) ───── */
+  --gl-on-cyan: #001820;
+  --gl-on-amber: #1a0f00;
+  --gl-on-mint: #031810;
+}

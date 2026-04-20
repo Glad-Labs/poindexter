@@ -1,0 +1,76 @@
+/*
+  Glad Labs — effect tokens (E3).
+  Scanlines + radial cyan wash = the "this is a Glad Labs surface" signature.
+  Applied once on <body> or a full-viewport container.
+*/
+
+/* Page-level atmosphere: subtle CRT scanlines + top-right cyan wash. */
+.gl-atmosphere {
+  position: relative;
+}
+.gl-atmosphere::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 2px
+    ),
+    radial-gradient(
+      ellipse at top right,
+      rgba(0, 229, 255, 0.05),
+      transparent 55%
+    );
+}
+.gl-atmosphere > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* Reduce motion respect — kill the subtle radial shift if user asked. */
+@media (prefers-reduced-motion: reduce) {
+  .gl-atmosphere::before {
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.008) 0px,
+      rgba(255, 255, 255, 0.008) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+  }
+}
+
+/* Left-border accent used on cards + log blocks — the E3 "tick" motif. */
+.gl-tick-left {
+  border-left: 3px solid var(--gl-cyan);
+}
+.gl-tick-left--amber {
+  border-left-color: var(--gl-amber);
+}
+.gl-tick-left--mint {
+  border-left-color: var(--gl-mint);
+}
+
+/* HUD bracket frame — wraps inline labels in `[ … ]` via pseudo-elements. */
+.gl-hud::before {
+  content: '[';
+  margin-right: 0.4em;
+  color: var(--gl-cyan);
+}
+.gl-hud::after {
+  content: ']';
+  margin-left: 0.4em;
+  color: var(--gl-cyan);
+}
+
+/* Cyan glow for focus states — accessibility without breaking the aesthetic. */
+.gl-focus-ring:focus-visible {
+  outline: 2px solid var(--gl-cyan);
+  outline-offset: 2px;
+}
