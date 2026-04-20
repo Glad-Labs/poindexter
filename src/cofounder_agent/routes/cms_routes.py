@@ -696,8 +696,8 @@ async def update_post(
 
         set_parts = []
         params = []
-        for i, (col, val) in enumerate(filtered.items(), 1):
-            col = SQLIdentifierValidator.safe_identifier(col, "column")
+        for i, (raw_col, val) in enumerate(filtered.items(), 1):
+            col = SQLIdentifierValidator.safe_identifier(raw_col, "column")
             set_parts.append(f"{col} = ${i}")
             params.append(val)
         params.append(post_id)
