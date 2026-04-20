@@ -43,3 +43,29 @@ scrape_configs:
     scrape_interval: 30s
     static_configs:
       - targets: ["host.docker.internal:9182"]
+
+  # Uptime Kuma — HTTP / TCP monitor response times & up/down status.
+  # Auth via API key (password-only basic auth). Key lives in
+  # ~/.poindexter/bootstrap.toml as uptime_kuma_api_key.
+  - job_name: uptime-kuma
+    scrape_interval: 30s
+    metrics_path: /metrics
+    basic_auth:
+      username: ""
+      password: "uk1_3Q6UA_-CzuydfWqNPxKXtZTTjg1vRU9NUNqnkXvp"
+    static_configs:
+      - targets: ["uptime-kuma:3001"]
+
+  # Tempo internal metrics (ingest rate, block uploads, RED of the
+  # metrics_generator). Pairs with the tempo-config.yml metrics_generator
+  # that remote_writes span-metrics back into Prometheus.
+  - job_name: tempo
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["tempo:3200"]
+
+  # Pyroscope self-metrics (ingest rate, active profiles).
+  - job_name: pyroscope
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["pyroscope:4040"]
