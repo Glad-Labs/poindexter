@@ -56,12 +56,23 @@ class OpenAICompatProvider:
         self._default_base_url = "http://host.docker.internal:11434/v1"
 
     def _resolve_config(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Per-call overrides from PluginConfig merge with kwargs."""
+        """Per-call overrides from PluginConfig merge with kwargs.
+
+        ``kwargs["timeout_s"]`` beats the config's ``timeout_seconds``
+        — lets callers pin a tight per-request timeout (QA reviewers,
+        self-review) without editing the provider config.
+        """
         cfg = kwargs.get("_provider_config") or {}
+        per_call_timeout = kwargs.get("timeout_s")
+        timeout = (
+            per_call_timeout
+            if per_call_timeout is not None
+            else cfg.get("timeout_seconds", 120)
+        )
         return {
             "base_url": (cfg.get("base_url") or self._default_base_url).rstrip("/"),
             "api_key": cfg.get("api_key") or "",
-            "timeout": cfg.get("timeout_seconds", 120),
+            "timeout": timeout,
             "default_embed_model": cfg.get("default_embed_model", "nomic-embed-text"),
         }
 
