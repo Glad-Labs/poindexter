@@ -21,7 +21,6 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 """
 
 import logging
-import os
 
 from fastapi import FastAPI
 
@@ -89,10 +88,10 @@ class SentryIntegration:
             logger.debug("Sentry already initialized")
             return cls._sentry_enabled
 
-        # Get configuration from site_config (falls back to env vars)
+        # Get configuration from site_config (falls back to env vars).
         sentry_dsn = site_config.get("sentry_dsn", "").strip()
         sentry_enabled = site_config.get("sentry_enabled", "true").lower() in ("true", "1", "yes")
-        environment = os.getenv("ENVIRONMENT", "development")
+        environment = site_config.get("environment", "development") or "development"
         release = site_config.get("app_version", "3.0.1")
 
         # Skip initialization if DSN not configured or explicitly disabled
