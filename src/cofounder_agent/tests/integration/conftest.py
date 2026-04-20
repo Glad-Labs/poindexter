@@ -180,7 +180,7 @@ async def clean_test_tables(real_pool: asyncpg.Pool) -> AsyncIterator[asyncpg.Po
         if rows:
             names = ", ".join(f'"{r["tablename"]}"' for r in rows)
             await conn.execute(f"TRUNCATE {names} RESTART IDENTITY CASCADE")
-    yield real_pool
+    return real_pool
 
 
 # ---------------------------------------------------------------------------

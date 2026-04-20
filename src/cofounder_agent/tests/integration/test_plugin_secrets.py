@@ -43,7 +43,7 @@ async def pgcrypto_ready(migrations_applied, clean_test_tables: asyncpg.Pool):
             await ensure_pgcrypto(conn)
         except SecretsError as e:
             pytest.skip(f"pgcrypto unavailable on this Postgres: {e}")
-    yield clean_test_tables
+    return clean_test_tables
 
 
 async def test_set_then_get_round_trip(pgcrypto_ready: asyncpg.Pool, secret_key_env):
