@@ -106,6 +106,17 @@ async def process_content_generation_task(
     # Populating the orchestrator's inputs here means every stage can pull
     # what it needs without a separate adapter layer.
     image_service = get_image_service()
+    # Settings + style tracker — pulled from the container/app.state during
+    # transition to full DI (#242). Falls back to fresh instances when a
+    # stage is invoked outside the lifespan-wired context (e.g. tests).
+    try:
+        from services.container import get_service as _get_service
+        _settings_service = _get_service("settings")
+    except Exception:  # noqa: BLE001
+        _settings_service = None
+    from services.image_style_rotation import ImageStyleTracker as _IST
+    _style_tracker = _IST()
+
     result: dict[str, Any] = {
         "task_id": task_id,
         "topic": topic,
@@ -123,6 +134,9 @@ async def process_content_generation_task(
         "models_by_phase": models_by_phase or {},
         "quality_preference": quality_preference,
         "target_audience": target_audience,
+        # Shared services threaded via context (replaces singletons).
+        "settings_service": _settings_service,
+        "image_style_tracker": _style_tracker,
     }
 
     # Build the Stage runner. Stages are loaded imperatively via

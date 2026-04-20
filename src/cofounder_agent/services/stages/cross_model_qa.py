@@ -155,7 +155,6 @@ class CrossModelQAStage:
         config: dict[str, Any],
     ) -> StageResult:
         from services.audit_log import audit_log_bg
-        from services.container import get_service
         from services.multi_model_qa import MultiModelQA
         from services.text_utils import normalize_text as _normalize_text
 
@@ -176,7 +175,19 @@ class CrossModelQAStage:
         # Enable-gate now lives on ``plugin.stage.cross_model_qa.enabled``
         # in app_settings — StageRunner handles it before we even get here.
 
-        settings_service = get_service("settings")
+        # Pull settings_service from context (Phase G1 — no container singleton).
+        # The orchestrator threads it through as ``context["settings_service"]``
+        # from the worker's lifespan. Falls back to the legacy container lookup
+        # for callers that don't yet populate context (route-direct invocations
+        # during the transition window).
+        settings_service = context.get("settings_service")
+        if settings_service is None:
+            try:
+                from services.container import get_service as _get_service
+                settings_service = _get_service("settings")
+            except Exception:  # noqa: BLE001
+                settings_service = None
+
         qa = MultiModelQA(pool=pool, settings_service=settings_service)
 
         max_rewrites = await _resolve_max_rewrites(settings_service, default=2)
