@@ -306,6 +306,7 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
 
         from services.embedding_service import EmbeddingService
         from services.embeddings_db import EmbeddingsDatabase
+        from services.llm_providers.ollama_native import OllamaNativeProvider
         from services.ollama_client import OllamaClient
 
         # We need a DB pool, Ollama, and the embeddings_db + service.
@@ -339,12 +340,16 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
 
             embeddings_db = EmbeddingsDatabase(pool)
 
-            # OllamaClient reads OLLAMA_URL or site_config — for a CLI run
-            # from the host, OLLAMA_URL env var is the most reliable path.
-            # If site_config hasn't been loaded, fall back to localhost.
+            # CLI-specific path: the user supplies OLLAMA_URL (or we fall
+            # back to localhost). site_config isn't loaded in this
+            # standalone process, so we bypass the plugin-config lookup
+            # and instantiate an OllamaNativeProvider pointing at the URL
+            # directly. Other callers use get_llm_providers() where config
+            # flows from app_settings — that's the normal path.
             ollama_url = _os.getenv("OLLAMA_URL") or "http://localhost:11434"
-            ollama = OllamaClient(base_url=ollama_url)
-            svc = EmbeddingService(ollama_client=ollama, embeddings_db=embeddings_db)
+            provider = OllamaNativeProvider()
+            provider._client = OllamaClient(base_url=ollama_url)
+            svc = EmbeddingService(provider=provider, embeddings_db=embeddings_db)
 
             embedded, skipped, failed = 0, 0, 0
             with click.progressbar(rows, label="Embedding posts") as bar:
@@ -364,7 +369,7 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
                         failed += 1
                         click.echo(f"\n  FAILED for {row['id']}: {e}", err=True)
 
-            await ollama.close()
+            await provider._client.close()
             click.secho(
                 f"Done. embedded={embedded}  skipped (unchanged)={skipped}  "
                 f"failed={failed}",

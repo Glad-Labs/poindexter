@@ -3,7 +3,13 @@ Unit tests for services/embedding_service.py
 
 Tests EmbeddingService orchestration: embed_post, embed_brain_knowledge,
 embed_all_posts (batch), deduplication via content hashing, and error handling.
-All external dependencies (OllamaClient, EmbeddingsDatabase) are mocked.
+All external dependencies (LLMProvider, EmbeddingsDatabase) are mocked.
+
+## v2.2b migration
+
+The ``ollama`` fixture now stands in for an ``LLMProvider`` — mocks
+``embed()`` and optionally ``embed_batch()``. EmbeddingService no
+longer holds an OllamaClient reference.
 """
 
 import hashlib
@@ -35,6 +41,8 @@ def _make_post(post_id=1, title="Test Title", excerpt="Test excerpt", content="T
 
 @pytest.fixture
 def ollama():
+    """Mock LLMProvider — named ``ollama`` for historical reasons; in
+    v2.2b it's actually a Provider Protocol mock, not an OllamaClient."""
     mock = AsyncMock()
     mock.embed = AsyncMock(return_value=SAMPLE_EMBEDDING)
     mock.embed_batch = AsyncMock(return_value=[SAMPLE_EMBEDDING, SAMPLE_EMBEDDING])
@@ -51,7 +59,7 @@ def embeddings_db():
 
 @pytest.fixture
 def service(ollama, embeddings_db):
-    return EmbeddingService(ollama_client=ollama, embeddings_db=embeddings_db)
+    return EmbeddingService(provider=ollama, embeddings_db=embeddings_db)
 
 
 # ---------------------------------------------------------------------------
