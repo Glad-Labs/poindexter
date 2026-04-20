@@ -39,7 +39,10 @@ def _import_publishing_module():
     # Otherwise, mock the circular bit so we can import cleanly
     import importlib
 
-    # Ensure task_routes is loaded first (it triggers the cycle)
+    # Ensure task_routes is loaded first — it registers the sub-router,
+    # and triggering *this* import first seeds sys.modules so the cycle
+    # resolves cleanly when task_publishing_routes imports back from it.
+    import routes.task_routes  # noqa: F401
 
     return importlib.import_module("routes.task_publishing_routes")
 
