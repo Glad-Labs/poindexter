@@ -93,7 +93,11 @@ class TestLogQueryPerformance:
 
     @pytest.mark.asyncio
     async def test_monitoring_disabled_still_returns_value(self, monkeypatch):
-        monkeypatch.setattr("services.decorators.ENABLE_QUERY_MONITORING", False)
+        # Monitoring is gated on _enable_query_monitoring() which reads
+        # from site_config. Patch the helper directly — previously this
+        # patched a module-level constant that was captured at import
+        # time (the bug fixed in this file).
+        monkeypatch.setattr("services.decorators._enable_query_monitoring", lambda: False)
 
         @log_query_performance(operation="disabled_op", category="test")
         async def fast_query():
