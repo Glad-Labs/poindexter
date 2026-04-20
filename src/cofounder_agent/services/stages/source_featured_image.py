@@ -336,7 +336,9 @@ async def _load_recent_published_styles() -> list[str]:
     """Fetch the 5 most-recently-published posts' image_style from metadata."""
     try:
         import asyncpg
-        cloud_url = os.environ.get("DATABASE_URL", "")
+
+        from services.site_config import site_config as _sc
+        cloud_url = _sc.get("database_url", "")
         if not cloud_url:
             return []
         conn = await asyncpg.connect(cloud_url)

@@ -16,7 +16,6 @@ Config (``plugin.job.sync_page_views``):
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from plugins.job import JobResult
@@ -31,11 +30,12 @@ class SyncPageViewsJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        cloud_url = os.getenv("DATABASE_URL") or ""
+        from services.site_config import site_config
+        cloud_url = site_config.get("database_url", "") or ""
         if not cloud_url:
             return JobResult(
                 ok=True,
-                detail="no DATABASE_URL configured — skipping",
+                detail="no database_url configured — skipping",
                 changes_made=0,
             )
 
