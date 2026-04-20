@@ -295,3 +295,71 @@ class TestOllamaNativeDelegation:
 
         assert vec == [0.5, 0.6]
         mock_client.embed.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_complete_forwards_timeout_s_kwarg(self):
+        """v2.1: ``timeout_s`` kwarg should flow through to
+        OllamaClient.generate(timeout=...) so callers can pin a
+        per-call timeout without constructing a new client."""
+        provider = OllamaNativeProvider()
+        mock_client = MagicMock()
+        mock_client.generate = AsyncMock(return_value={
+            "response": "ok", "model": "gemma3:27b",
+            "prompt_eval_count": 1, "eval_count": 1, "done_reason": "stop",
+        })
+        provider._client = mock_client
+
+        await provider.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="gemma3:27b",
+            timeout_s=90,
+        )
+        call = mock_client.generate.await_args.kwargs
+        assert call["timeout"] == 90
+
+    @pytest.mark.asyncio
+    async def test_complete_omits_timeout_when_not_set(self):
+        """When caller doesn't pass ``timeout_s``, the provider should
+        pass ``timeout=None`` so OllamaClient uses its configured
+        default (600s)."""
+        provider = OllamaNativeProvider()
+        mock_client = MagicMock()
+        mock_client.generate = AsyncMock(return_value={
+            "response": "ok", "model": "gemma3:27b",
+            "prompt_eval_count": 1, "eval_count": 1, "done_reason": "stop",
+        })
+        provider._client = mock_client
+
+        await provider.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="gemma3:27b",
+        )
+        call = mock_client.generate.await_args.kwargs
+        assert call["timeout"] is None
+
+
+class TestOpenAICompatTimeoutPrecedence:
+    """v2.1: ``timeout_s`` kwarg should override config.timeout_seconds."""
+
+    @pytest.mark.asyncio
+    async def test_kwarg_beats_provider_config(self):
+        provider = OpenAICompatProvider()
+        cfg = provider._resolve_config({
+            "_provider_config": {"timeout_seconds": 200},
+            "timeout_s": 15,
+        })
+        assert cfg["timeout"] == 15
+
+    @pytest.mark.asyncio
+    async def test_config_used_when_no_kwarg(self):
+        provider = OpenAICompatProvider()
+        cfg = provider._resolve_config({
+            "_provider_config": {"timeout_seconds": 200},
+        })
+        assert cfg["timeout"] == 200
+
+    @pytest.mark.asyncio
+    async def test_default_when_neither_set(self):
+        provider = OpenAICompatProvider()
+        cfg = provider._resolve_config({})
+        assert cfg["timeout"] == 120  # default

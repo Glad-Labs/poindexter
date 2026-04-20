@@ -60,6 +60,10 @@ class OllamaNativeProvider:
         ``prompt`` + ``system`` split that OllamaClient.generate expects.
         For multi-turn conversations this lossy but matches
         current OllamaClient usage across the codebase.
+
+        Recognized kwargs: ``temperature``, ``max_tokens``, ``timeout_s``
+        (per-call override of OllamaClient.timeout for callers like
+        self-review that need tighter QA windows).
         """
         client = self._get_client()
         system = next((m["content"] for m in messages if m.get("role") == "system"), None)
@@ -77,6 +81,7 @@ class OllamaNativeProvider:
             temperature=kwargs.get("temperature", 0.7),
             max_tokens=kwargs.get("max_tokens"),
             stream=False,
+            timeout=kwargs.get("timeout_s"),
         )
 
         text = result.get("response") or result.get("text") or ""

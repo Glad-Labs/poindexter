@@ -94,8 +94,21 @@ class LLMProvider(Protocol):
             model: Model identifier as the backend expects it (e.g.
                 ``"gemma3:27b"`` for Ollama, ``"Qwen/Qwen2.5-32B-Instruct"``
                 for vllm).
-            **kwargs: Per-call overrides (``temperature``, ``max_tokens``,
-                ``top_p``, etc.). Provider-specific kwargs ignored silently.
+            **kwargs: Per-call overrides. Recognized standard kwargs:
+
+                - ``temperature`` (float, default 0.7)
+                - ``max_tokens`` (int, default None)
+                - ``top_p`` (float, default None)
+                - ``timeout_s`` (int, per-call override of the provider's
+                  configured timeout — use when a specific call needs a
+                  tighter window than the default)
+                - ``_provider_config`` (dict, dispatcher-injected; don't
+                  set this manually — ``dispatch_complete`` populates it
+                  from ``plugin.llm_provider.<name>`` in app_settings)
+
+                Provider-specific kwargs (Ollama ``num_ctx`` etc.) are
+                accepted via ``**kwargs`` but ignored silently by
+                providers that don't understand them.
         """
         ...
 

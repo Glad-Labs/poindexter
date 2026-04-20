@@ -348,6 +348,7 @@ class OllamaClient:
         temperature: float = 0.7,
         max_tokens: int | None = None,
         stream: bool = False,
+        timeout: int | None = None,
     ) -> dict[str, Any]:
         """Generate completion from Ollama model.
 
@@ -355,8 +356,13 @@ class OllamaClient:
         the prompt/system into chat messages. The legacy /api/generate endpoint
         was removed in newer Ollama versions. Return shape is preserved for
         backwards compatibility with callers that read 'text' and 'response'.
+
+        ``timeout`` (seconds) overrides ``self.timeout`` for this single
+        call only — lets callers (QA reviewers, writer self-review) set
+        aggressive timeouts without constructing a whole new client.
         """
         model = await self.resolve_model(model)
+        call_timeout = timeout if timeout is not None else self.timeout
 
         # Build chat messages from prompt + optional system
         messages: list[dict[str, str]] = []
@@ -376,7 +382,7 @@ class OllamaClient:
 
         try:
             response = await self.client.post(
-                f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
+                f"{self.base_url}/api/chat", json=payload, timeout=call_timeout
             )
             response.raise_for_status()
             result = response.json()
