@@ -49,7 +49,7 @@ class WorkerClient:
             )
         self._client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "WorkerClient":
+    async def __aenter__(self) -> WorkerClient:
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={

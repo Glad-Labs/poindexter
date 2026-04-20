@@ -10,7 +10,6 @@ Lemon Squeezy License API docs:
 from __future__ import annotations
 
 import asyncio
-import json
 import platform
 import socket
 from datetime import datetime, timezone
@@ -62,7 +61,7 @@ async def _get_pool():
                 break
         from brain.bootstrap import resolve_database_url
     except Exception as e:  # pragma: no cover — shouldn't happen
-        raise click.ClickException(f"bootstrap module import failed: {e}")
+        raise click.ClickException(f"bootstrap module import failed: {e}") from e
 
     dsn = resolve_database_url()
     if not dsn:
@@ -172,7 +171,6 @@ async def _status() -> None:
     """Show premium license status."""
     conn = await _get_pool()
     try:
-        active = await _get_setting(conn, "premium_active", "false")
         license_key = await _get_setting(conn, "premium_license_key")
         email = await _get_setting(conn, "premium_email")
         instance_id = await _get_setting(conn, "premium_instance_id")

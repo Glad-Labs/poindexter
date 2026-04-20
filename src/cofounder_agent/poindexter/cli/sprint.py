@@ -96,7 +96,7 @@ def sprint_issues(state: str, limit: int, label: str, json_output: bool) -> None
         number = i.get("number", "?")
         title = i.get("title", "")
         ms = (i.get("milestone") or {}).get("title") or "no milestone"
-        labels = ", ".join(l.get("name", "") for l in (i.get("labels") or [])) or "-"
+        labels = ", ".join(label.get("name", "") for label in (i.get("labels") or [])) or "-"
         click.echo(f"  #{number}  {title[:76]}")
         click.secho(f"      [{ms}]  labels: {labels}", fg="bright_black")
 

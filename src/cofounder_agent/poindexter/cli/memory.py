@@ -23,7 +23,6 @@ import click
 
 from poindexter.memory import MemoryClient, MemoryHit
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -304,6 +303,7 @@ def memory_backfill_posts(since: str, dry_run: bool) -> None:
 
     async def _backfill() -> None:
         import asyncpg
+
         from services.embedding_service import EmbeddingService
         from services.embeddings_db import EmbeddingsDatabase
         from services.ollama_client import OllamaClient
