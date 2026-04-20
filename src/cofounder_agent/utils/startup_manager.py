@@ -91,8 +91,9 @@ class StartupManager:
             # Step 3: Setup Redis cache
             await self._setup_redis_cache()
 
-            # Step 4: Initialize model consolidation
-            await self._initialize_model_consolidation()
+            # Step 4: (v2.4) ModelConsolidationService removed — LLM access
+            # now flows through the plugin registry (OllamaNativeProvider +
+            # OpenAICompatProvider). Nothing to initialize at startup.
 
             # Step 5: Initialize content critique loop
             await self._initialize_content_critique()
@@ -290,21 +291,6 @@ class StartupManager:
                 f"   [WARNING] Redis cache error: {e!s} (continuing without cache)",
                 exc_info=True,
             )
-
-    async def _initialize_model_consolidation(self) -> None:
-        """Initialize unified model consolidation service"""
-        logger.info("  [INFO] Initializing unified model consolidation service...")
-        try:
-            from services.model_consolidation_service import initialize_model_consolidation_service
-
-            initialize_model_consolidation_service()
-            logger.info(
-                "   Model consolidation service initialized (Ollama->HF->Google->Anthropic->OpenAI)"
-            )
-        except Exception as e:
-            error_msg = f"Model consolidation initialization failed: {e!s}"
-            logger.error(f"   {error_msg}", exc_info=True)
-            # Don't fail startup - models are optional
 
     async def _initialize_content_critique(self) -> None:
         """DEPRECATED: Content critique is now handled by UnifiedQualityService in TaskExecutor"""

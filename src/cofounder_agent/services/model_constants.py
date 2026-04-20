@@ -1,10 +1,9 @@
 """
 Model Constants and Definitions
 
-Centralized location for model metadata to avoid duplication across:
-- cost_calculator.py
-- model_router.py
-- model_consolidation_service.py
+Centralized location for model metadata. Shared by cost_calculator.py
+and model_router.py. (model_consolidation_service.py was deleted in v2.4
+— its referencing comment lived on here.)
 """
 
 

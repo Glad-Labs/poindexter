@@ -103,12 +103,16 @@ async def generate_canonical_title(
 ) -> str | None:
     """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles."""
     try:
-        from services.model_consolidation_service import get_model_consolidation_service
+        from plugins.registry import get_llm_providers
         from services.prompt_manager import get_prompt_manager
         from services.site_config import site_config
 
         pm = get_prompt_manager()
-        service = get_model_consolidation_service()
+        providers = {p.name: p for p in get_llm_providers()}
+        provider = providers.get("ollama_native")
+        if provider is None:
+            logger.warning("[TITLE_GEN] ollama_native provider not registered; skipping")
+            return None
 
         prompt = pm.get_prompt(
             "seo.generate_title",
@@ -121,8 +125,12 @@ async def generate_canonical_title(
                 "Your title must be DISTINCTLY DIFFERENT in structure and wording."
             )
 
-        result = await service.generate(
-            prompt=prompt,
+        model = (
+            site_config.get("pipeline_writer_model") or "gemma3:27b"
+        ).removeprefix("ollama/")
+        result = await provider.complete(
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
             temperature=0.7,
             max_tokens=site_config.get_int(
                 "content_router_seo_title_max_tokens", 4000,
