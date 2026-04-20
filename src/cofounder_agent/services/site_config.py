@@ -94,20 +94,27 @@ class SiteConfig:
             return 0
 
     async def get_secret(self, key: str, default: str = "") -> str:
-        """Async-fetch a secret value from app_settings.
+        """Async-fetch and decrypt a secret value from app_settings.
 
         Secrets aren't kept in the in-memory ``_config`` dict (load()
         filters them out), so each call is one DB query. That's fine —
         secrets are read rarely and at well-defined points (uploads,
         API calls). Falls back to the uppercase env var, then default.
+
+        Handles both encrypted (``enc:v1:...`` prefix) and legacy
+        plaintext rows transparently. Delegates to
+        ``plugins.secrets.get_secret`` which owns the decryption logic.
         """
         if self._pool is not None:
             try:
-                row = await self._pool.fetchrow(
-                    "SELECT value FROM app_settings WHERE key = $1", key
-                )
-                if row and row["value"]:
-                    return str(row["value"])
+                async with self._pool.acquire() as conn:
+                    # plugins.secrets.get_secret handles both encrypted
+                    # and plaintext rows — returns None if the row
+                    # doesn't exist.
+                    from plugins.secrets import get_secret as _plugin_get_secret
+                    value = await _plugin_get_secret(conn, key)
+                    if value is not None and value != "":
+                        return str(value)
             except Exception as e:
                 logger.warning(
                     "[SITE_CONFIG] get_secret(%s) query failed: %s", key, e
