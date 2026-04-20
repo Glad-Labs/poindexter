@@ -296,20 +296,19 @@ class WorkflowValidator:
             elif isinstance(phase, dict):
                 # Convert dict to WorkflowPhase
                 normalized.append(WorkflowPhase(**phase))
-            else:
-                # Try to extract phase name if it's a different type
-                if hasattr(phase, "name"):
-                    # Assume it's a PhaseConfig or similar
-                    normalized.append(
-                        WorkflowPhase(
-                            index=len(normalized),
-                            name=phase.name,
-                            user_inputs=getattr(phase, "metadata", {}),
-                            model_overrides=None,
-                            skip=False,
-                        )
+            # Try to extract phase name if it's a different type
+            elif hasattr(phase, "name"):
+                # Assume it's a PhaseConfig or similar
+                normalized.append(
+                    WorkflowPhase(
+                        index=len(normalized),
+                        name=phase.name,
+                        user_inputs=getattr(phase, "metadata", {}),
+                        model_overrides=None,
+                        skip=False,
                     )
-                else:
-                    logger.warning("Could not normalize phase: %s", phase)
+                )
+            else:
+                logger.warning("Could not normalize phase: %s", phase)
 
         return normalized

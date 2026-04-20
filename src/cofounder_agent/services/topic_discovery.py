@@ -588,10 +588,9 @@ class TopicDiscovery:
                 # Multi-word keywords: substring match is fine
                 if kw in title_lower:
                     return True
-            else:
-                # Single-word keywords: require word boundary
-                if re.search(rf"\b{re.escape(kw)}\b", title_lower):
-                    return True
+            # Single-word keywords: require word boundary
+            elif re.search(rf"\b{re.escape(kw)}\b", title_lower):
+                return True
         return False
 
     def _classify_category(self, title: str) -> str:
