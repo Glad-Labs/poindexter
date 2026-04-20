@@ -503,6 +503,163 @@ services:
         condition: service_healthy
 
   # ===========================================
+  # Uptime Kuma — uptime monitoring + public status page
+  # ===========================================
+  # Covers GH #74. Pings the worker /api/health, Grafana, Postgres,
+  # Ollama, and any external dependencies on a schedule. Exposes a
+  # Prometheus /metrics endpoint so Grafana can graph uptime history
+  # alongside the rest of the poindexter dashboards. Status page
+  # served on 3002 for humans.
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: poindexter-uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3002:3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "extra/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================
+  # Tempo — distributed tracing (OTLP) backend
+  # ===========================================
+  # Receives OTLP spans from the worker (services/telemetry.py wires
+  # FastAPIInstrumentor + the LLM-dispatcher spans from v2.7). Grafana
+  # reads from Tempo via the provisioned datasource. No public port —
+  # only Grafana and the worker need to reach it, and they do so via
+  # the shared docker network.
+  tempo:
+    image: grafana/tempo:2.7.0
+    container_name: poindexter-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo-config.yml"]
+    ports:
+      - "3200:3200"   # Tempo HTTP (Grafana datasource)
+      - "4317:4317"   # OTLP gRPC (worker exports traces here)
+      - "4318:4318"   # OTLP HTTP (alt path)
+    volumes:
+      - ./infrastructure/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo-data:/var/tempo
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3200/ready | grep -q ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================
+  # Pyroscope — continuous profiling (the P in LGTM+P)
+  # ===========================================
+  # Covers GH #75. Accepts pprof samples from the worker when the
+  # Python agent is enabled (enable_pyroscope=true in app_settings).
+  # Grafana reads profiles via the provisioned datasource. No external
+  # port — only Grafana and the worker need to reach it.
+  pyroscope:
+    image: grafana/pyroscope:1.9.1
+    container_name: poindexter-pyroscope
+    restart: unless-stopped
+    command: ["server"]
+    ports:
+      - "4040:4040"   # Pyroscope HTTP (Grafana datasource + worker ingest)
+    volumes:
+      - pyroscope-data:/var/lib/pyroscope
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:4040/ready | grep -q ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================
+  # GlitchTip — Sentry-compatible error tracking (OSS)
+  # ===========================================
+  # Covers GH #77. Runs three containers: web (Django), worker (Celery),
+  # and its own Postgres. The worker is intentionally separate from the
+  # poindexter Postgres to keep error-tracking state isolated from
+  # business data (different backup cadence, different retention).
+  # DSN lives in app_settings.sentry_dsn — services/sentry_integration.py
+  # already reads it and points the existing SDK at whatever URL is
+  # there. Set it to http://glitchtip:8000/<project_id>/<public_key> to
+  # route worker exceptions to GlitchTip instead of Sentry SaaS.
+  glitchtip-db:
+    image: postgres:16-alpine
+    container_name: poindexter-glitchtip-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD:?Run 'poindexter setup' — GLITCHTIP_DB_PASSWORD is generated in bootstrap.toml}
+      POSTGRES_DB: glitchtip
+    volumes:
+      - glitchtip-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    container_name: poindexter-glitchtip-redis
+    restart: unless-stopped
+    volumes:
+      - glitchtip-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:latest
+    container_name: poindexter-glitchtip-web
+    restart: unless-stopped
+    ports:
+      - "8080:8000"
+    environment:
+      DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?}@glitchtip-db:5432/glitchtip"
+      REDIS_URL: "redis://glitchtip-redis:6379/0"
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?Run 'poindexter setup' — GLITCHTIP_SECRET_KEY is generated in bootstrap.toml}
+      PORT: "8000"
+      EMAIL_URL: "consolemail://"   # drops emails into container logs; swap for real SMTP when you want invites
+      GLITCHTIP_DOMAIN: "${GLITCHTIP_DOMAIN:-http://localhost:8080}"
+      DEFAULT_FROM_EMAIL: "glitchtip@localhost"
+      CELERY_WORKER_AUTOSCALE: "1,3"
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8000/api/0/organizations/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:latest
+    container_name: poindexter-glitchtip-worker
+    restart: unless-stopped
+    command: ./bin/run-celery-with-beat.sh
+    environment:
+      DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?}@glitchtip-db:5432/glitchtip"
+      REDIS_URL: "redis://glitchtip-redis:6379/0"
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?}
+      EMAIL_URL: "consolemail://"
+      DEFAULT_FROM_EMAIL: "glitchtip@localhost"
+      CELERY_WORKER_AUTOSCALE: "1,3"
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_healthy
+
+  # ===========================================
   # GPU Metrics Exporter — nvidia-smi + HWiNFO to Prometheus
   # ===========================================
   gpu-exporter:
@@ -557,3 +714,13 @@ volumes:
     name: gladlabs-loki-data
   promtail-positions:
     name: gladlabs-promtail-positions
+  uptime-kuma-data:
+    name: gladlabs-uptime-kuma-data
+  tempo-data:
+    name: gladlabs-tempo-data
+  glitchtip-db-data:
+    name: gladlabs-glitchtip-db-data
+  glitchtip-redis-data:
+    name: gladlabs-glitchtip-redis-data
+  pyroscope-data:
+    name: gladlabs-pyroscope-data

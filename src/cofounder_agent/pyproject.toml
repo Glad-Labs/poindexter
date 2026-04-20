@@ -80,9 +80,13 @@ mcp = ">=1.23.0"
 pillow = ">=12.2.0"
 apscheduler = "^3.11.2"
 prometheus-client = "^0.25.0"
+# Continuous profiling — LGTM+P stack (GH #75). Opt-in via app_settings
+# enable_pyroscope; services/profiling.py configures the agent.
+pyroscope-io = { version = "^0.8.5", optional = true }
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
+profiling = ["pyroscope-io"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing
