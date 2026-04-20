@@ -459,6 +459,46 @@ services:
         condition: service_healthy
 
   # ===========================================
+  # Loki — log aggregation (stdout from every container, queryable in Grafana)
+  # ===========================================
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: poindexter-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infrastructure/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3100/ready | grep -q ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================
+  # Promtail — tails every container's json log file and ships to Loki
+  # ===========================================
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: poindexter-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./infrastructure/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # Read-only access to Docker's container log files.
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Docker socket for service discovery (container labels, names).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Promtail remembers where it left off across restarts.
+      - promtail-positions:/var/log
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  # ===========================================
   # GPU Metrics Exporter — nvidia-smi + HWiNFO to Prometheus
   # ===========================================
   gpu-exporter:
@@ -509,3 +549,7 @@ volumes:
     name: gladlabs-alertmanager-data
   pgadmin-data:
     name: gladlabs-pgadmin-data
+  loki-data:
+    name: gladlabs-loki-data
+  promtail-positions:
+    name: gladlabs-promtail-positions
