@@ -144,8 +144,8 @@ class Config:
         self.LOG_DIR = os.path.join(self.BASE_DIR, "content-agent", "logs")
         self.APP_LOG_FILE = os.path.join(self.LOG_DIR, "app.log")
         self.PROMPTS_LOG_FILE = os.path.join(self.LOG_DIR, "prompts.log")
-        self.MAX_LOG_SIZE_MB = int(os.getenv("MAX_LOG_SIZE_MB", 5))
-        self.MAX_LOG_BACKUP_COUNT = int(os.getenv("MAX_LOG_BACKUP_COUNT", 3))
+        self.MAX_LOG_SIZE_MB = int(os.getenv("MAX_LOG_SIZE_MB", "5"))
+        self.MAX_LOG_BACKUP_COUNT = int(os.getenv("MAX_LOG_BACKUP_COUNT", "3"))
 
         # --- Google Cloud Pub/Sub Configuration ---
         self.PUBSUB_TOPIC = os.getenv("PUBSUB_TOPIC", "agent-commands")

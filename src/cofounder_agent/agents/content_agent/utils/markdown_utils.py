@@ -5,8 +5,8 @@ def markdown_to_strapi_blocks(md_content: str) -> list:
     """
     blocks = []
     # Split content by lines and process each line
-    for line in md_content.split("\\n"):
-        line = line.strip()
+    for raw in md_content.split("\\n"):
+        line = raw.strip()
         if not line:
             continue
 

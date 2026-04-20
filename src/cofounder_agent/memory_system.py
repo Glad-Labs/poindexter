@@ -672,8 +672,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         word_counts = {}
 
         # Filter and count words
-        for word in words:
-            word = word.strip('.,!?":()[]{}').lower()
+        for raw in words:
+            word = raw.strip('.,!?":()[]{}').lower()
             if len(word) >= min_length and word.isalpha():
                 word_counts[word] = word_counts.get(word, 0) + 1
 

@@ -100,7 +100,7 @@ class QAAgent:
 
             # Ensure feedback is not empty
             feedback = feedback.strip() if feedback else "No feedback provided."
-            if not feedback or feedback == "null" or feedback == "None":
+            if not feedback or feedback in {"null", "None"}:
                 feedback = "QA review completed. Content ready for approval decision."
         except Exception as e:
             logger.error(f"QAAgent: Error parsing response data: {e}", exc_info=True)

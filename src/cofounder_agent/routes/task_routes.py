@@ -570,7 +570,8 @@ async def list_tasks(
 
         # Convert raw task dicts to UnifiedTaskResponse objects if needed
         validated_tasks = []
-        for task in tasks:
+        for raw_task in tasks:
+            task = raw_task
             if isinstance(task, dict):
                 # Normalize seo_keywords in all nested locations
                 task = _normalize_seo_keywords_in_task(task)
