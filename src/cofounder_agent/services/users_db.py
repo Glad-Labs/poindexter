@@ -322,7 +322,7 @@ class UsersDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 result = await conn.execute(sql, *params)
                 # Result is a string like "DELETE 1"
-                return "1" in result or "1" == result
+                return "1" in result or result == "1"
         except Exception as e:
             logger.error(
                 "[unlink_oauth_account] Error unlinking OAuth account for user_id=%s, provider=%s: %s",

@@ -67,7 +67,7 @@ class SyncService:
         await self.connect()
         return self
 
-    async def __aexit__(self, *exc: Any) -> None:
+    async def __aexit__(self, *exc: object) -> None:
         await self.close()
 
     # ------------------------------------------------------------------

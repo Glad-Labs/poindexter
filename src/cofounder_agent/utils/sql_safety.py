@@ -225,7 +225,7 @@ class ParameterizedQueryBuilder:
         """
         # Validate identifiers
         table = SQLIdentifierValidator.safe_identifier(table, "table")
-        column_names = [SQLIdentifierValidator.safe_identifier(c, "column") for c in columns.keys()]
+        column_names = [SQLIdentifierValidator.safe_identifier(c, "column") for c in columns]
 
         # Build INSERT clause
         placeholders = [self.add_param(v) for v in columns.values()]
