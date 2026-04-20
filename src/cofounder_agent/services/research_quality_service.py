@@ -8,7 +8,6 @@ from Serper API results to improve research quality.
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional
 
 from services.logger_config import get_logger
 

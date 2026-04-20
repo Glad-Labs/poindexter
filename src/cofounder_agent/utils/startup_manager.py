@@ -15,7 +15,7 @@ Handles all startup and shutdown operations for Poindexter (the AI cofounder pip
 """
 
 import os
-from typing import Any, Dict
+from typing import Any
 
 from services.logger_config import get_logger
 

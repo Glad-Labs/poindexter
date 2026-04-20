@@ -8,7 +8,7 @@ and its callers.
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 

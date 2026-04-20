@@ -21,7 +21,7 @@ Usage:
 import functools
 import time
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 

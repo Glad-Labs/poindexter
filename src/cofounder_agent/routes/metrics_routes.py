@@ -6,7 +6,7 @@ All endpoints require JWT authentication.
 """
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 

@@ -4,7 +4,6 @@ WebSocket Event Broadcaster — stubbed out (no clients connect).
 All public functions retained as async no-ops so callers don't break.
 """
 
-from typing import Any, Dict, Optional
 
 from services.logger_config import get_logger
 

@@ -7,7 +7,6 @@ Centralized location for model metadata to avoid duplication across:
 - model_consolidation_service.py
 """
 
-from typing import Dict
 
 # Model cost definitions (API call costs in USD)
 MODEL_COSTS: dict[str, float] = {

@@ -23,7 +23,6 @@ Usage:
 import json
 import re
 import uuid
-from typing import List, Optional
 
 import httpx
 

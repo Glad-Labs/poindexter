@@ -17,7 +17,6 @@ Usage:
 
 import re
 from dataclasses import dataclass, field
-from typing import List
 
 from services.logger_config import get_logger
 

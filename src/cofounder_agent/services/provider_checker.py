@@ -5,7 +5,6 @@ Centralized utility to check which AI providers are available and configured.
 Eliminates duplicate environment variable checks across the codebase.
 """
 
-from typing import Dict, Set
 
 from services.logger_config import get_logger
 

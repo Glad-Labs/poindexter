@@ -8,7 +8,7 @@ to be streamed to WebSocket clients in real-time.
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 

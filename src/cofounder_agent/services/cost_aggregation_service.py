@@ -11,7 +11,7 @@ Built on top of DatabaseService's log_cost() and get_task_costs() methods.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 

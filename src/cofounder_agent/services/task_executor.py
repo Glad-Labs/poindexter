@@ -4,10 +4,9 @@ import asyncio
 import json
 
 # Local OpenClaw notification — worker sends messages through the local gateway
-import os as _os
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx as _httpx
 
@@ -16,7 +15,7 @@ from services.logger_config import get_logger
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
 from .error_handler import ServiceError
-from .quality_service import QualityAssessment, UnifiedQualityService
+from .quality_service import UnifiedQualityService
 from .usage_tracker import get_usage_tracker
 from .webhook_delivery_service import emit_webhook_event
 

@@ -22,7 +22,6 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 
 import logging
 import os
-from typing import Optional
 
 from fastapi import FastAPI
 

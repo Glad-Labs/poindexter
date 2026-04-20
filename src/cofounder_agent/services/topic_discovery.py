@@ -23,7 +23,6 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 import httpx
 
@@ -617,7 +616,6 @@ class TopicDiscovery:
         ]
 
         try:
-            import hashlib
 
             # Get the embedding function
             ollama_url = site_config.get("ollama_base_url", "http://localhost:11434")

@@ -8,7 +8,7 @@ progress to WebSocket clients in real-time.
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 

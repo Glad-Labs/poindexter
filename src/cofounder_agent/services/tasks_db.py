@@ -11,7 +11,7 @@ Handles all task-related database operations including:
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 from asyncpg import Pool

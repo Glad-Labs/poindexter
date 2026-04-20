@@ -9,7 +9,6 @@ OpenClaw skills and Grafana alerts use this token.
 """
 
 import os
-from typing import Optional
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer

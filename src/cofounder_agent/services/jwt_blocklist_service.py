@@ -22,7 +22,7 @@ at startup after migrations run).
 """
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 

@@ -6,7 +6,7 @@ This module provides centralized metrics collection and reporting.
 
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Import configuration
 from config import get_config

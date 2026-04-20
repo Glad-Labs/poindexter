@@ -21,7 +21,6 @@ Usage:
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Optional
 
 from services.content_validator import ValidationResult, validate_content
 from services.logger_config import get_logger

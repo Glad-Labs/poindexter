@@ -11,7 +11,6 @@ requested.
 
 import os
 import time
-from typing import Optional
 
 from services.logger_config import get_logger
 

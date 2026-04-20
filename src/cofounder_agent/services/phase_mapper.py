@@ -6,7 +6,7 @@ It uses semantic matching to find appropriate field connections.
 """
 
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from services.logger_config import get_logger
 from services.phase_registry import PhaseDefinition, PhaseRegistry

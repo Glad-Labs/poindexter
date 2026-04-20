@@ -8,7 +8,7 @@ quality_service, approval_routes, and task_routes.
 
 import json
 import re
-from typing import List, Optional, Tuple, Union
+from typing import Union
 
 # ---------------------------------------------------------------------------
 # Stopwords
