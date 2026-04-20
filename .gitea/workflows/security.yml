@@ -1,0 +1,88 @@
+# Gitea Actions mirror of .github/workflows/security.yml. Runs the same
+# gitleaks / Trivy / SBOM+grype gates on the private monorepo so breakage
+# is caught before the mirror to GitHub. No SARIF upload here — Gitea has
+# no code-scanning tab — results stay in the job logs + artifacts.
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
+
+jobs:
+  gitleaks:
+    name: gitleaks — secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+          ./gitleaks version
+      - name: Run gitleaks (baselined — only NEW findings fail)
+        run: |
+          ./gitleaks detect \
+            --config=.gitleaks.toml \
+            --baseline-path=.gitleaks-baseline.json \
+            --source=. \
+            --verbose \
+            --redact \
+            --exit-code=1
+
+  trivy-fs:
+    name: Trivy — filesystem vuln scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Trivy
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.58.0
+          trivy --version
+      - name: Scan filesystem (fail on HIGH/CRITICAL)
+        run: |
+          trivy fs . \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format table \
+            --skip-dirs '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
+      - name: Scan Dockerfiles / compose for misconfig
+        run: |
+          trivy config . \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --format table \
+            --skip-dirs '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
+
+  sbom-grype:
+    name: SBOM + grype scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install syft + grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin v1.18.0
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin v0.85.0
+          syft version
+          grype version
+      - name: Generate SBOM (CycloneDX JSON)
+        run: syft packages dir:. -o cyclonedx-json=sbom.cdx.json
+      - name: Scan SBOM with grype (fail on HIGH/CRITICAL)
+        run: grype sbom:sbom.cdx.json --fail-on high --only-fixed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          retention-days: 30

@@ -1,0 +1,36 @@
+# gitleaks config — repo-local overrides on top of the bundled default rules.
+# Reason this file exists: bootstrap.toml example snippets, migration docs,
+# and the GlitchTip DSN format (http://<public_key>@host/<project_id>) look
+# like secrets but aren't. Allowlist them here so gitleaks doesn't fire on
+# our own docs.
+#
+# Historical findings: .gitleaks-baseline.json freezes the 336 pre-adoption
+# leaks detected when this gate landed (all credentials rotated already —
+# see `session_52_polish.md`). CI passes the baseline so only NEW leaks
+# fail the gate. Do not remove the baseline without re-triaging it.
+
+title = "Poindexter gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for paths that can't realistically contain real secrets"
+paths = [
+  '''(?i).*\.lock$''',
+  '''(?i).*\.min\.js$''',
+  '''(?i)CHANGELOG\.md$''',
+  '''(?i)^brain/seed_app_settings\.json$''',
+  # Grafana-provisioned dashboard JSON is public config, not secrets.
+  '''(?i)^infrastructure/grafana/dashboards/.*\.json$''',
+]
+
+# Specific examples gitleaks mis-flags. Keep this list tight — every entry
+# is a place we've decided a string that LOOKS like a secret isn't one.
+regexTarget = "line"
+regexes = [
+  # GlitchTip/Sentry DSNs document the public-key form in docs + docker-compose.
+  '''http://[0-9a-f]{32}@[a-z0-9\-]+:\d+/\d+''',
+  # bootstrap.toml example placeholders written as "<generated>" etc.
+  '''<generated[^>]*>''',
+]
