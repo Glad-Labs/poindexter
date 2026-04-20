@@ -13,6 +13,7 @@ import json
 import logging
 import os
 from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -145,18 +146,18 @@ class MemoryClient:
             self._http = httpx.AsyncClient(timeout=30.0)
 
     async def close(self) -> None:
-        """Close the pool + HTTP client. Safe to call multiple times."""
+        """Close the pool + HTTP client. Safe to call multiple times.
+
+        Suppression is narrow to the teardown path — raising here would
+        mask the real error that sent us into close() in the first place.
+        """
         if self._http is not None:
-            try:
+            with suppress(Exception):
                 await self._http.aclose()
-            except Exception:
-                pass
             self._http = None
         if self._pool is not None:
-            try:
+            with suppress(Exception):
                 await self._pool.close()
-            except Exception:
-                pass
             self._pool = None
 
     async def __aenter__(self) -> MemoryClient:

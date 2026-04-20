@@ -7,7 +7,7 @@ Implements PostgreSQL database with REST API command queue integration.
 import asyncio
 import os
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from importlib.util import find_spec
 from typing import Any
@@ -340,16 +340,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.info("[STOP] Shutting down application")
         if scheduled_publisher_task is not None:
             scheduled_publisher_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await scheduled_publisher_task
-            except asyncio.CancelledError:
-                pass
         if pool_health_task is not None:
             pool_health_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await pool_health_task
-            except asyncio.CancelledError:
-                pass
         # Stop PluginScheduler before shutting the pool down — the scheduler
         # will try to run DB queries on the way out otherwise.
         if getattr(app.state, "plugin_scheduler", None) is not None:

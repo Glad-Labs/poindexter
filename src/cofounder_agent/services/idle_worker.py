@@ -3,6 +3,7 @@
 import json
 import os
 import time
+from contextlib import suppress
 
 from services.logger_config import get_logger
 from services.site_config import site_config
@@ -28,10 +29,8 @@ class IdleWorker:
             )
             for row in rows:
                 task_name = row["key"].replace("idle_last_run_", "")
-                try:
+                with suppress(ValueError, TypeError):
                     self._last_run[task_name] = float(row["value"])
-                except (ValueError, TypeError):
-                    pass
             self._schedules_loaded = True
             if rows:
                 logger.debug("[IDLE] Loaded %d persisted schedule timestamps", len(rows))
@@ -903,10 +902,8 @@ class IdleWorker:
                             os.remove(output_path)
                     except Exception as e:
                         logger.warning("[IDLE] Image regen failed for %s: %s", post["title"][:30], e)
-                        try:
+                        with suppress(OSError):
                             os.remove(output_path)
-                        except Exception:
-                            pass
             finally:
                 await cloud.close()
 
@@ -1280,12 +1277,10 @@ class IdleWorker:
             pass
 
         global_threshold = 6 * 3600
-        try:
+        with suppress(ValueError, TypeError):
             global_threshold = int(
                 await self._get_setting("memory_stale_threshold_seconds", "21600")
             )
-        except (ValueError, TypeError):
-            pass
 
         stale_writers: list[dict] = []
         alerts_fired: list[str] = []
@@ -1846,15 +1841,16 @@ class IdleWorker:
         except Exception as e:
             logger.debug("[IDLE] nvidia-smi detection failed (expected on cloud): %s", e)
 
-        # --- Log changes to audit_log ---
+        # --- Log changes to audit_log (best-effort; don't fail the whole
+        # refresh if the audit sink is down). ---
         if changes:
             try:
                 await self.pool.execute(
                     "INSERT INTO audit_log (event_type, source, details, severity) VALUES ($1, $2, $3, $4)",
                     "utility_rates_updated", "idle_worker", json.dumps(changes), "info",
                 )
-            except Exception:
-                pass  # audit log is best-effort
+            except Exception as e:
+                logger.debug("[IDLE] utility rates audit_log insert failed: %s", e)
 
         return {"changes": changes} if changes else {"note": "all utility rates current"}
 
@@ -1915,7 +1911,8 @@ class IdleWorker:
                         })
 
             if failures:
-                # Log each failure to audit_log
+                # Log each failure to audit_log (best-effort — don't want a
+                # post-verification run crashing because audit_log is full).
                 for f in failures:
                     try:
                         await self.pool.execute(
@@ -1924,8 +1921,8 @@ class IdleWorker:
                             "publish_verify_failed", "idle_worker",
                             json.dumps(f), "warning",
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("[IDLE] publish_verify audit_log insert failed: %s", e)
 
                 logger.warning(
                     "[IDLE] Publish verification: %d/%d failed — %s",
@@ -2156,8 +2153,9 @@ class IdleWorker:
                         f"- JSON export: {len(backed_up)} tables\n"
                     ),
                 )
-            except Exception:
-                pass  # Don't fail the backup over a Gitea issue
+            except Exception as e:
+                # Don't fail the backup over a Gitea issue — log and keep going.
+                logger.warning("[IDLE] could not create Gitea issue for backup failure: %s", e)
 
         logger.info(
             "[BACKUP] Complete — pg_dump=%s, R2=%s, JSON=%d tables, dir=%s",

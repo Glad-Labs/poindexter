@@ -18,6 +18,7 @@ Auth token resolution order:
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from typing import Any
 
 import httpx
@@ -62,10 +63,11 @@ class WorkerClient:
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         if self._client is not None:
-            try:
+            with suppress(Exception):
+                # aclose() failure during teardown is non-actionable — no
+                # outstanding requests to salvage, and raising here would
+                # mask the original exception if __aexit__ is in finally.
                 await self._client.aclose()
-            except Exception:
-                pass
             self._client = None
 
     async def get(self, path: str, **kwargs: Any) -> httpx.Response:

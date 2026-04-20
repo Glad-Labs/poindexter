@@ -26,6 +26,7 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 import asyncio
 import importlib
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -611,10 +612,8 @@ class ImageService:
         except Exception as e:
             logger.debug("LLM semantic query failed for '%s': %s", topic[:40], e)
         finally:
-            try:
+            with suppress(Exception):
                 await client.close()
-            except Exception:
-                pass
         return None
 
     async def search_featured_image(

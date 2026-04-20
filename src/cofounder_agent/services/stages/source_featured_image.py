@@ -51,6 +51,7 @@ import os
 import random
 import tempfile
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -423,10 +424,8 @@ async def _upload_featured_to_r2(output_path: str, task_id: str | None) -> str:
         r2_url = await upload_to_r2(output_path, r2_key, content_type="image/jpeg")
         if r2_url:
             logger.info("Uploaded to R2: %s", r2_url[:80])
-            try:
-                os.remove(output_path)
-            except OSError:  # best-effort
-                pass
+            with suppress(OSError):
+                os.remove(output_path)  # best-effort cleanup
             return r2_url
         logger.warning("R2 upload returned None, using local path")
     except Exception as e:  # noqa: BLE001

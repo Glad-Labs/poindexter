@@ -65,6 +65,7 @@ import logging
 import os
 import tempfile
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -230,7 +231,5 @@ class SingerTap:
 
         finally:
             for path in (config_path, state_path):
-                try:
+                with suppress(OSError):
                     Path(path).unlink(missing_ok=True)
-                except Exception:
-                    pass

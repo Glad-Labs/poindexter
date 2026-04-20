@@ -6,6 +6,7 @@ Provides type-safe conversion with automatic timestamp handling.
 """
 
 import json
+from contextlib import suppress
 from typing import Any, TypeVar
 from uuid import UUID
 
@@ -69,10 +70,9 @@ class ModelConverter:
         for key in json_fields:
             if key in data and data[key] is not None:
                 if isinstance(data[key], str):
-                    try:
+                    with suppress(json.JSONDecodeError, TypeError):
                         data[key] = json.loads(data[key])
-                    except (json.JSONDecodeError, TypeError):
-                        pass  # Keep as string if not valid JSON
+                        # fall-through keeps the original string on failure
 
         # Handle list/array fields
         array_fields = ["tag_ids", "tags"]

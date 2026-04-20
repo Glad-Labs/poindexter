@@ -5,6 +5,7 @@ import json
 
 # Local OpenClaw notification — worker sends messages through the local gateway
 import time
+from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
 
@@ -588,15 +589,15 @@ class TaskExecutor:
                         topic[:40], quality_score, min_curation_score,
                     )
                     await self.database_service.update_task(task_id, {"status": "rejected"})
-                    try:
+                    # Webhook delivery is best-effort; don't mask the rejection
+                    # with an emitter failure.
+                    with suppress(Exception):
                         await emit_webhook_event(
                             getattr(self.database_service, "cloud_pool", None) or self.database_service.pool,
                             "task.auto_rejected",
                             {"task_id": task_id, "topic": topic, "quality_score": quality_score,
                              "reason": f"score {quality_score:.0f} < {min_curation_score:.0f}"},
                         )
-                    except Exception:
-                        pass
                     return
 
                 # Check if human approval is required before publishing

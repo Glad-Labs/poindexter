@@ -11,6 +11,7 @@ Uses ADD COLUMN IF NOT EXISTS (PostgreSQL 9.6+) for safety.
 Runs idempotently — safe to re-run on any database.
 """
 
+from contextlib import suppress
 
 RECONCILE_SQL = """
 -- ============================================================
@@ -110,12 +111,10 @@ async def up(pool):
         for statement in RECONCILE_SQL.split(";"):
             statement = statement.strip()
             if statement and not statement.startswith("--"):
-                try:
+                # Column may already exist with different type, or table may
+                # not exist — both are fine, we're only ensuring columns exist.
+                with suppress(Exception):
                     await conn.execute(statement + ";")
-                except Exception:
-                    # Column may already exist with different type, or table may not exist
-                    # Both are fine — we're just ensuring columns exist
-                    pass
 
 
 async def down(pool):
