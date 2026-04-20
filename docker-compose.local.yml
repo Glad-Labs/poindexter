@@ -274,6 +274,11 @@ services:
       # Mirrored from ~/.poindexter/bootstrap.toml poindexter_secret_key.
       # Without this, plugins/secrets.py raises SecretsError on read.
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
+      # The /app mount is read-only, so file logging inside the container
+      # fails silently. Rely on stdout — Docker's log driver captures it
+      # and ``docker logs poindexter-worker`` plus any centralized log
+      # shipper (Loki/Promtail later) can read from there.
+      LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
