@@ -40,7 +40,6 @@ def _import_publishing_module():
     import importlib
 
     # Ensure task_routes is loaded first (it triggers the cycle)
-    import routes.task_routes
 
     return importlib.import_module("routes.task_publishing_routes")
 

@@ -4,12 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-_has_sentry = False
-try:
-    import sentry_sdk
-    _has_sentry = True
-except ImportError:
-    pass
+from importlib.util import find_spec
+
+_has_sentry = find_spec("sentry_sdk") is not None
 
 
 @pytest.mark.skipif(not _has_sentry, reason="sentry-sdk not installed")
