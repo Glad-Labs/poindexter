@@ -52,6 +52,7 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "packs": "poindexter.packs",
     "llm_providers": "poindexter.llm_providers",
     "topic_sources": "poindexter.topic_sources",
+    "image_providers": "poindexter.image_providers",
 }
 
 
@@ -153,6 +154,11 @@ def get_topic_sources() -> list[Any]:
     return list(_cached(ENTRY_POINT_GROUPS["topic_sources"]))
 
 
+def get_image_providers() -> list[Any]:
+    """Return all registered ImageProvider instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["image_providers"]))
+
+
 # ---------------------------------------------------------------------------
 # Core sample plugins — registered imperatively as a workaround for this
 # project's poetry packaging config (see pyproject.toml note). Third-party
@@ -201,6 +207,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
         ("topic_sources", "services.topic_sources.devto", "DevtoSource"),
         ("topic_sources", "services.topic_sources.web_search", "WebSearchSource"),
+        # Core ImageProviders — Phase G migration. Pexels first (search);
+        # SDXL generation provider lands in a follow-up slice.
+        ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),

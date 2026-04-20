@@ -146,6 +146,9 @@ hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource
 devto = "cofounder_agent.services.topic_sources.devto:DevtoSource"
 web_search = "cofounder_agent.services.topic_sources.web_search:WebSearchSource"
 
+[tool.poetry.plugins."poindexter.image_providers"]
+pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
+
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"
