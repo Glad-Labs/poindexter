@@ -32,9 +32,28 @@ def _cfg(key: str, default: str) -> str:
     from services.site_config import site_config
     return site_config.get(key, default)
 
-SLOW_QUERY_THRESHOLD_MS = int(_cfg("slow_query_threshold_ms", "100"))
-LOG_ALL_QUERIES = _cfg("log_all_queries", "false").lower() == "true"
-ENABLE_QUERY_MONITORING = _cfg("enable_query_monitoring", "true").lower() == "true"
+
+def _slow_query_threshold_ms() -> int:
+    """Read SLOW_QUERY_THRESHOLD_MS from site_config per-call.
+
+    Previously captured at module import time — but the decorators
+    module imports before site_config.load() runs in lifespan, so the
+    captured values were always the env-var/default fallback. Switching
+    settings in app_settings had no effect until a worker restart,
+    which contradicts the DB-first config promise.
+    """
+    try:
+        return int(_cfg("slow_query_threshold_ms", "100"))
+    except (ValueError, TypeError):
+        return 100
+
+
+def _log_all_queries() -> bool:
+    return _cfg("log_all_queries", "false").lower() == "true"
+
+
+def _enable_query_monitoring() -> bool:
+    return _cfg("enable_query_monitoring", "true").lower() == "true"
 
 
 def log_query_performance(
@@ -66,7 +85,7 @@ def log_query_performance(
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
             # Skip if monitoring disabled
-            if not ENABLE_QUERY_MONITORING:
+            if not _enable_query_monitoring():
                 return await func(*args, **kwargs)
 
             # Start timing
@@ -101,7 +120,7 @@ def log_query_performance(
 
                 # Determine if this is a slow query
                 threshold = (
-                    slow_threshold_ms if slow_threshold_ms is not None else SLOW_QUERY_THRESHOLD_MS
+                    slow_threshold_ms if slow_threshold_ms is not None else _slow_query_threshold_ms()
                 )
                 is_slow = duration_ms > threshold
 
@@ -141,7 +160,7 @@ def log_query_performance(
                         f"[{operation}] ⚠️  SLOW QUERY: {duration_ms:.2f}ms (threshold: {threshold}ms)",
                         extra=context,
                     )
-                elif LOG_ALL_QUERIES:
+                elif _log_all_queries():
                     logger.info(
                         f"[{operation}] Query completed in {duration_ms:.2f}ms", extra=context
                     )
