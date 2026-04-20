@@ -30,7 +30,7 @@ try:
 except ImportError:
     def setup_sentry(*_args, **_kwargs):
         """Stub when Sentry is not installed."""
-        return None
+        return
 
 from services.telemetry import setup_telemetry
 from utils.connection_health import ConnectionPoolHealth

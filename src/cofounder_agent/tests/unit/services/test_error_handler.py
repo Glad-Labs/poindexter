@@ -10,13 +10,13 @@ from fastapi import status
 
 from services.error_handler import (
     AppError,
+    AppTimeoutError,
     ConflictError,
     DatabaseError,
     ErrorCode,
     ForbiddenError,
     NotFoundError,
     ServiceError,
-    TimeoutError,
     UnauthorizedError,
     ValidationError,
     handle_error,
@@ -109,12 +109,9 @@ class TestSubclassStatusCodes:
         err = ServiceError("llm timeout")
         assert err.http_status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
-    def test_timeout_error_is_504_or_500(self):
-        err = TimeoutError("llm call timed out")
-        assert err.http_status_code in (
-            status.HTTP_504_GATEWAY_TIMEOUT,
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+    def test_timeout_error_is_504(self):
+        err = AppTimeoutError("llm call timed out")
+        assert err.http_status_code == status.HTTP_504_GATEWAY_TIMEOUT
 
 
 # ---------------------------------------------------------------------------

@@ -155,10 +155,9 @@ class HuggingFaceClient:
 
                     logger.error("Unexpected response format: %s", data)
                     raise ValueError(f"Unexpected response format: {data}")
-                else:
-                    error_text = await response.text()
-                    logger.error("HuggingFace error (%s): %s", response.status, error_text)
-                    raise ServiceError(f"HuggingFace error: {response.status} - {error_text}")
+                error_text = await response.text()
+                logger.error("HuggingFace error (%s): %s", response.status, error_text)
+                raise ServiceError(f"HuggingFace error: {response.status} - {error_text}")
 
         except asyncio.TimeoutError as exc:
             logger.error("HuggingFace request timeout for model %s", model, exc_info=True)

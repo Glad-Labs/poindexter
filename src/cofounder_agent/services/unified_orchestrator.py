@@ -960,7 +960,7 @@ class UnifiedOrchestrator:
                     quality_score,
                 )
                 break
-            elif iteration < max_iterations:
+            if iteration < max_iterations:
                 logger.info("[%s] QA Rejected - Refining...", request.request_id)
                 # Get model selection for refine phase
                 refine_model = self._get_model_for_phase(

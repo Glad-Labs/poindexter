@@ -257,8 +257,14 @@ class ServiceError(AppError):
     http_status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
-class TimeoutError(AppError):
-    """Operation timeout errors (504)"""
+class AppTimeoutError(AppError):
+    """Operation timeout errors (504).
+
+    Named ``AppTimeoutError`` (not ``TimeoutError``) to avoid shadowing
+    the stdlib builtin — having both in scope silently routes
+    ``except TimeoutError`` / ``raise TimeoutError`` to whichever one
+    was imported last, which is the kind of bug you chase for hours.
+    """
 
     error_code = ErrorCode.TIMEOUT_ERROR
     http_status_code = status.HTTP_504_GATEWAY_TIMEOUT

@@ -89,10 +89,10 @@ class FinalizeTaskStage:
         early_eval_score = (
             quality_result.overall_score if quality_result else 0
         )
-        final_quality_score = int(round(float(
+        final_quality_score = round(float(
             qa_score_from_context if qa_score_from_context is not None
             else early_eval_score
-        )))
+        ))
 
         # seo_keywords: accept either a pre-built comma-joined string or
         # a list — the legacy finalize accepted both.
