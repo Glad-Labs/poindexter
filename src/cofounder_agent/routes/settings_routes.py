@@ -16,9 +16,6 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
 from middleware.api_token_auth import verify_api_token
-from services.logger_config import get_logger
-
-logger = get_logger(__name__)
 from schemas.settings_schemas import (
     SettingCategoryEnum,
     SettingCreate,
@@ -29,7 +26,10 @@ from schemas.settings_schemas import (
     SettingUpdate,
 )
 from services.database_service import DatabaseService
+from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
+
+logger = get_logger(__name__)
 
 
 def _setting_attr(setting: Any, attr: str, default: Any = None) -> Any:

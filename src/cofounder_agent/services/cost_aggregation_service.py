@@ -33,7 +33,7 @@ class CostAggregationService:
         self.db = db_service
         self.monthly_budget = 150.0  # Default solopreneur budget
 
-    async def get_summary(self, user_id: str | None = None) -> dict[str, Any]:
+    async def get_summary(self) -> dict[str, Any]:
         """
         Get cost summary for current month
 
@@ -120,14 +120,13 @@ class CostAggregationService:
             return self._get_empty_summary()
 
     async def get_breakdown_by_phase(
-        self, period: str = "week", user_id: str | None = None
+        self, period: str = "week"
     ) -> dict[str, Any]:
         """
         Get cost breakdown by pipeline phase
 
         Args:
             period: "today", "week", or "month"
-            user_id: Filter by user (optional)
 
         Returns: {
             "period": "week",
@@ -202,7 +201,7 @@ class CostAggregationService:
             return self._get_empty_breakdown_by_phase(period)
 
     async def get_breakdown_by_model(
-        self, period: str = "week", user_id: str | None = None
+        self, period: str = "week"
     ) -> dict[str, Any]:
         """
         Get cost breakdown by AI model
@@ -370,7 +369,7 @@ class CostAggregationService:
             return self._get_empty_history(period)
 
     async def get_budget_status(
-        self, monthly_budget: float = 150.0, user_id: str | None = None
+        self, monthly_budget: float = 150.0
     ) -> dict[str, Any]:
         """
         Get current budget status and alerts

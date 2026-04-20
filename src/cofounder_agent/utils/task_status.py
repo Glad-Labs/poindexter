@@ -7,7 +7,13 @@ Provides enterprise-level task status management with:
 - Helper functions for UI and validation
 """
 
+from datetime import datetime, timezone
 from enum import Enum
+from typing import Any
+
+from services.logger_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class TaskStatus(str, Enum):
@@ -291,13 +297,6 @@ def transition_with_validation(
 # ============================================================================
 # STATUS TRANSITION VALIDATOR WITH HISTORY TRACKING
 # ============================================================================
-
-from datetime import datetime, timezone
-from typing import Any
-
-from services.logger_config import get_logger
-
-logger = get_logger(__name__)
 
 
 class StatusTransitionValidator:

@@ -27,10 +27,9 @@ import uuid
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
-
-from services.site_config import site_config
 
 
 def _devto_api_base() -> str:

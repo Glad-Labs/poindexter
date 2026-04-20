@@ -35,6 +35,7 @@ Matt's policy.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any
 
@@ -57,8 +58,6 @@ DEFAULT_TABLES: tuple[str, ...] = (
 # Safe identifier regex: lowercase letters, digits, underscores. PostgreSQL
 # allows more but we restrict on purpose — any table name containing a
 # quote or semicolon is a config bug.
-import re
-
 _SAFE_IDENT = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 

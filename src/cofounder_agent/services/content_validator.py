@@ -16,9 +16,11 @@ Usage:
 """
 
 import re
+import time as _time
 from dataclasses import dataclass, field
 
 from services.logger_config import get_logger
+from services.site_config import site_config as _sc
 
 logger = get_logger(__name__)
 
@@ -26,8 +28,6 @@ logger = get_logger(__name__)
 # COMPANY FACTS — ground truth for fact-checking (configurable)
 # Override via environment variables for your own brand
 # ============================================================================
-
-from services.site_config import site_config as _sc
 
 
 def _get_company_facts() -> dict:
@@ -159,8 +159,6 @@ FIRST_PERSON_TITLE_PATTERNS = [
 # Known-wrong facts are now loaded from the `fact_overrides` DB table.
 # Manage via pgAdmin or API — no redeployment needed.
 # Cached in-memory with a 5-minute TTL.
-import time as _time
-
 _fact_overrides_cache: list[tuple[str, str, str]] = []
 _fact_overrides_ts: float = 0.0
 _FACT_OVERRIDES_TTL = 300  # seconds

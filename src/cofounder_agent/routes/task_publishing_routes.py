@@ -955,7 +955,6 @@ async def generate_task_image(
                     output_path=output_path,
                     num_inference_steps=50,  # Good quality/speed balance
                     guidance_scale=7.5,
-                    high_quality=False,
                     task_id=task_id,
                 )
 

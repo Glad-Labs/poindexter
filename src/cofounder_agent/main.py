@@ -9,6 +9,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from importlib.util import find_spec
 from typing import Any
 
 # Third-party imports
@@ -17,10 +18,6 @@ from pydantic import BaseModel, field_validator
 
 # Import configuration
 from config import get_config
-
-# Load configuration
-config = get_config()
-
 from middleware.api_token_auth import verify_api_token
 from services.container import service_container
 
@@ -34,7 +31,6 @@ except ImportError:
     def setup_sentry(*_args, **_kwargs):
         """Stub when Sentry is not installed."""
         return None
-from importlib.util import find_spec
 
 from services.telemetry import setup_telemetry
 from utils.connection_health import ConnectionPoolHealth
@@ -45,6 +41,9 @@ from utils.middleware_config import MiddlewareConfig
 from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
 from utils.startup_manager import StartupManager
+
+# Load configuration
+config = get_config()
 
 SENTRY_AVAILABLE = find_spec("sentry_sdk") is not None
 
@@ -379,7 +378,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
-from services.site_config import site_config as _site_cfg
+from services.site_config import site_config as _site_cfg  # noqa: E402
 
 _site_name = _site_cfg.get("site_name", "AI Content Pipeline")
 
