@@ -273,6 +273,10 @@ ignore = [
 # Stub/no-op broadcasters — **kwargs swallow caller args for API compat.
 "services/websocket_event_broadcaster.py" = ["ARG001"]
 "services/progress_broadcaster.py" = ["ARG001"]
+# Namespace-package sys.path fixes must run before imports.
+"agents/content_agent/services/llm_client.py" = ["E402"]
+"agents/content_agent/services/pexels_client.py" = ["E402"]
+"agents/content_agent/config.py" = ["E402"]
 # Social adapters share a Protocol signature — not every adapter needs
 # every kwarg.
 "services/social_adapters/*" = ["ARG001", "ARG002"]

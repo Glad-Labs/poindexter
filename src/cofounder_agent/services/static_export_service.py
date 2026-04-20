@@ -26,6 +26,7 @@ Usage:
 
 import json
 import os
+import re as _re_markdown
 import tempfile
 from datetime import datetime, timezone
 from typing import Any
@@ -141,8 +142,6 @@ def _post_summary(post: dict) -> dict:
         "distributed_at": post["distributed_at"].isoformat() if post.get("distributed_at") else None,
     }
 
-
-import re as _re_markdown
 
 # Cheap heuristic: any of these markers means the content has markdown
 # that MUST be converted even when the first character is `<` (a leading

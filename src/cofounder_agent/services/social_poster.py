@@ -25,6 +25,9 @@ from datetime import datetime, timezone
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import site_config as _sc
+from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
+from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
 
 from .ollama_client import OllamaClient
 
@@ -34,13 +37,7 @@ logger = get_logger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-from services.site_config import site_config as _sc
-
 SITE_BASE_URL = _sc.get("site_url", "https://localhost:3000")
-
-# Notification targets (mirrors task_executor._notify_openclaw)
-from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
-from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
 
 _OPENCLAW_URL = _sc.get("openclaw_gateway_url", "http://localhost:18789")
 # Same key as task_executor._notify_openclaw uses; unifying here.

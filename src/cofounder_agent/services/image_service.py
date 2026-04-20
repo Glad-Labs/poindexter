@@ -25,6 +25,11 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 
 import asyncio
 import importlib
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
 
 from services.logger_config import get_logger
 
@@ -32,11 +37,6 @@ from services.logger_config import get_logger
 # time below for the diffusers-missing warning — the rest of the file
 # uses `logger` from get_logger().
 _import_logger = get_logger(__name__)
-import time
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any
 
 try:
     import httpx
@@ -863,7 +863,6 @@ class ImageService:
         negative_prompt: str | None = None,
         num_inference_steps: int | None = None,
         guidance_scale: float | None = None,
-        high_quality: bool = True,
         task_id: str | None = None,
         model: ImageModel | None = None,
     ) -> bool:
@@ -876,7 +875,6 @@ class ImageService:
             negative_prompt: Negative prompt for quality improvement
             num_inference_steps: Override inference steps (defaults to model config)
             guidance_scale: Override guidance scale (defaults to model config)
-            high_quality: Optimize for high quality
             task_id: Optional task ID for progress tracking via WebSocket
             model: Which model to use (defaults to IMAGE_MODEL env or sdxl_lightning)
 

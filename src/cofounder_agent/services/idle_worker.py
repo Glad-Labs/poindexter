@@ -881,7 +881,7 @@ class IdleWorker:
                     try:
                         success = await svc.generate_image(
                             prompt=prompt, output_path=output_path,
-                            negative_prompt=negative, high_quality=False,
+                            negative_prompt=negative,
                         )
                         if success and os.path.exists(output_path):
                             import asyncio
