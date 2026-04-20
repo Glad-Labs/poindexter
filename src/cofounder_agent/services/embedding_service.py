@@ -1,18 +1,31 @@
 """
 Embedding Service
 
-Orchestrator that coordinates embedding generation (via OllamaClient) with
+Orchestrator that coordinates embedding generation (via an LLMProvider) with
 storage and deduplication (via EmbeddingsDatabase). Provides high-level
 methods for embedding posts and brain knowledge triples.
+
+## Migration note (v2.2b, 2026-04-20)
+
+The ctor used to take ``ollama_client: OllamaClient``. It now takes an
+``LLMProvider`` instance instead — callers get one via::
+
+    from plugins.registry import get_llm_providers
+    provider = {p.name: p for p in get_llm_providers()}["ollama_native"]
+
+Batch embedding (``embed_all_posts``) uses the provider's
+``embed_batch`` method when available (optional, not part of the
+Protocol). Providers without it fall through to a per-text loop of
+``embed()`` calls.
 """
 
 import hashlib
 from typing import Any
 
+from plugins.llm_provider import LLMProvider
 from services.logger_config import get_logger
 
 from .embeddings_db import EmbeddingsDatabase
-from .ollama_client import OllamaClient
 
 logger = get_logger(__name__)
 
@@ -21,21 +34,43 @@ class EmbeddingService:
     """
     High-level embedding orchestrator.
 
-    Combines OllamaClient (vector generation) with EmbeddingsDatabase
-    (storage and similarity search). Uses SHA-256 content hashing to
-    skip re-embedding unchanged content.
+    Combines an ``LLMProvider`` (vector generation via the plugin
+    Protocol) with ``EmbeddingsDatabase`` (storage and similarity
+    search). Uses SHA-256 content hashing to skip re-embedding
+    unchanged content.
     """
 
-    def __init__(self, ollama_client: OllamaClient, embeddings_db: EmbeddingsDatabase):
+    def __init__(
+        self,
+        provider: LLMProvider,
+        embeddings_db: EmbeddingsDatabase,
+        embed_model: str = "nomic-embed-text",
+    ):
         """
         Initialize embedding service.
 
         Args:
-            ollama_client: OllamaClient instance for generating embeddings.
-            embeddings_db: EmbeddingsDatabase instance for storage and search.
+            provider: LLMProvider for generating embeddings (typically
+                the ``ollama_native`` provider from the registry).
+            embeddings_db: EmbeddingsDatabase for storage and search.
+            embed_model: Embedding model name; passed to the provider
+                on each embed call.
         """
-        self.ollama = ollama_client
+        self.provider = provider
         self.db = embeddings_db
+        self.embed_model = embed_model
+
+    async def _embed_one(self, text: str) -> list[float]:
+        """Single-text embed via the provider."""
+        return await self.provider.embed(text, model=self.embed_model)
+
+    async def _embed_many(self, texts: list[str]) -> list[list[float]]:
+        """Batch embed, falling back to a per-text loop if the provider
+        doesn't expose ``embed_batch``."""
+        batch_fn = getattr(self.provider, "embed_batch", None)
+        if batch_fn:
+            return await batch_fn(texts, model=self.embed_model)
+        return [await self._embed_one(t) for t in texts]
 
     @staticmethod
     def _content_hash(text: str) -> str:
@@ -75,7 +110,7 @@ class EmbeddingService:
                 logger.info("Skipping post embedding (unchanged)", post_id=post_id)
                 return None
 
-            embedding = await self.ollama.embed(combined)
+            embedding = await self._embed_one(combined)
             embedding_id = await self.db.store_embedding(
                 source_type="posts",
                 source_id=post_id,
@@ -125,7 +160,7 @@ class EmbeddingService:
                 )
                 return None
 
-            embedding = await self.ollama.embed(combined)
+            embedding = await self._embed_one(combined)
             embedding_id = await self.db.store_embedding(
                 source_type="brain_knowledge",
                 source_id=source_id,
@@ -203,9 +238,10 @@ class EmbeddingService:
             )
             return {"embedded": 0, "skipped": skipped, "failed": 0}
 
-        # Batch embed all texts at once
+        # Batch embed all texts at once (falls back to a loop inside
+        # _embed_many when the provider doesn't expose embed_batch).
         try:
-            embeddings = await self.ollama.embed_batch(combined_texts)
+            embeddings = await self._embed_many(combined_texts)
         except Exception as e:
             logger.error(
                 "[embed_all_posts] Batch embedding failed: %s", e, exc_info=True

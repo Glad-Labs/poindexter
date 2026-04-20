@@ -127,3 +127,17 @@ class OllamaNativeProvider:
         """Embed via Ollama's /api/embed."""
         client = self._get_client()
         return await client.embed(text, model=model or "nomic-embed-text")
+
+    async def embed_batch(
+        self, texts: list[str], model: str = "nomic-embed-text",
+    ) -> list[list[float]]:
+        """Batch embed — Ollama-specific, for EmbeddingService.embed_all_posts.
+
+        Not part of the LLMProvider Protocol itself; callers duck-type
+        via ``getattr(provider, "embed_batch", None)`` and fall back to
+        a loop of single ``embed()`` calls when absent. Exposing it here
+        keeps the batch-HTTP optimization available through the Provider
+        interface so EmbeddingService can migrate cleanly.
+        """
+        client = self._get_client()
+        return await client.embed_batch(texts, model=model)
