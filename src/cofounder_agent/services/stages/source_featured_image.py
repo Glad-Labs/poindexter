@@ -136,11 +136,21 @@ class SourceFeaturedImageStage:
             image_service.sdxl_available or not image_service.sdxl_initialized
         )
         if sdxl_attempted:
+            # Pull / lazily-create the style-rotation tracker. Production
+            # keeps one long-lived instance per worker process (stashed on
+            # app.state by lifespan); tests inject their own mock; absent
+            # context just builds a fresh one here.
+            style_tracker = context.get("image_style_tracker")
+            if style_tracker is None:
+                from services.image_style_rotation import ImageStyleTracker
+                style_tracker = ImageStyleTracker()
+
             sdxl_image = await _try_sdxl_featured(
                 topic=topic,
                 existing_prompt=context.get("featured_image_prompt", ""),
                 task_id=task_id,
                 on_style_picked=lambda s: updates.update({"image_style": s}),
+                style_tracker=style_tracker,
             )
             if sdxl_image is not None:
                 stages["3_featured_image_found"] = True
@@ -219,6 +229,7 @@ async def _try_sdxl_featured(
     existing_prompt: str,
     task_id: str | None,
     on_style_picked: Any,  # callable that records the chosen style
+    style_tracker: Any,    # ImageStyleTracker instance
 ) -> GeneratedImage | None:
     """Full SDXL path: pick style → build prompt → render → upload to R2."""
     from services.site_config import site_config
@@ -227,7 +238,7 @@ async def _try_sdxl_featured(
         negative = site_config.get("image_negative_prompt", DEFAULT_NEGATIVE)
         sdxl_prompt = existing_prompt
         if not sdxl_prompt:
-            sdxl_prompt = await _build_sdxl_prompt(topic, on_style_picked)
+            sdxl_prompt = await _build_sdxl_prompt(topic, on_style_picked, style_tracker)
 
         sdxl_url = site_config.get(
             "sdxl_server_url", "http://host.docker.internal:9836",
@@ -251,23 +262,20 @@ async def _try_sdxl_featured(
 async def _build_sdxl_prompt(
     topic: str,
     on_style_picked: Any,
+    style_tracker: Any,
 ) -> str:
     """Pick a rotation style + ask Ollama for an editorial prompt."""
-    from services.image_style_rotation import (
-        get_in_memory_recent_styles as _get_in_memory_recent_styles,
-        record_style_pick as _record_style_pick,
-    )
     from services.site_config import site_config
 
     styles = _load_styles_from_settings() or list(DEFAULT_STYLES)
 
     recent = await _load_recent_published_styles()
-    mem_recent = _get_in_memory_recent_styles()
+    mem_recent = style_tracker.recent()
     all_recent = set(recent) | set(mem_recent)
 
     available = [s for s in styles if s[0] not in all_recent] or styles
     chosen_style, style_tags = random.choice(available)  # noqa: S311 — non-crypto rotation
-    _record_style_pick(chosen_style)
+    style_tracker.record(chosen_style)
     on_style_picked(chosen_style)
 
     ollama_url = site_config.get(
