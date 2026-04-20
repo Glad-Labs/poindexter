@@ -430,121 +430,61 @@ class TopicDiscovery:
         return topics
 
     async def _scrape_hackernews(self) -> list[DiscoveredTopic]:
-        """Scrape top stories from Hacker News API (free, no auth).
+        """Delegate to ``services.topic_sources.hackernews.HackerNewsSource``.
 
-        Configurable via app_settings:
-        - hn_top_stories (default 20) — how many to fetch
-        - hn_min_score (default 50) — filter stories below this score
+        Phase F moved the implementation into its own plugin-style module.
+        This method is a thin back-compat wrapper so existing callers
+        and tests that mock ``self._scrape_hackernews`` continue to work.
+        Legacy app_settings keys (``hn_top_stories`` / ``hn_min_score``)
+        are read here so operators don't have to migrate their config.
         """
-        topics = []
-        # Load per-source config (Phase 2 of #227)
+        from services.topic_sources.hackernews import HackerNewsSource
+        # Translate the legacy per-source app_setting keys into the
+        # config dict the new source expects.
         hn_top = await self._get_int_setting("hn_top_stories", 20)
         hn_min_score = await self._get_int_setting("hn_min_score", 50)
+        source = HackerNewsSource()
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(10.0, connect=3.0)
-            ) as client:
-                # Get top story IDs
-                resp = await client.get(
-                    "https://hacker-news.firebaseio.com/v0/topstories.json",
-                    timeout=10,
-                )
-                story_ids = resp.json()[:hn_top]
-
-                # Fetch story details (concurrent, limited)
-                sem = asyncio.Semaphore(5)
-                async def fetch_story(sid):
-                    async with sem:
-                        r = await client.get(
-                            f"https://hacker-news.firebaseio.com/v0/item/{sid}.json",
-                            timeout=10,
-                        )
-                        return r.json()
-
-                stories = await asyncio.gather(*[fetch_story(sid) for sid in story_ids], return_exceptions=True)
-
-                for story in stories:
-                    if isinstance(story, Exception) or not isinstance(story, dict):
-                        continue
-                    title = story.get("title", "")
-                    url = story.get("url", "")
-                    score = story.get("score", 0)
-
-                    if not title or score < hn_min_score:
-                        continue
-
-                    # Classify category
-                    category = self._classify_category(title)
-
-                    rewritten = self._rewrite_as_blog_topic(title)
-                    if not rewritten:
-                        continue  # Skip product launches (Show HN, Launch HN, etc.)
-                    topics.append(DiscoveredTopic(
-                        title=rewritten,
-                        category=category,
-                        source="hackernews",
-                        source_url=url or f"https://news.ycombinator.com/item?id={story.get('id')}",
-                        relevance_score=min(score / 100, 5.0),  # Normalize HN score
-                    ))
-
+            topics = await source.extract(
+                self.pool,
+                {"top_stories": hn_top, "min_score": hn_min_score},
+            )
             logger.info("[TOPIC_DISCOVERY] HackerNews: %d topics", len(topics))
+            return topics
         except Exception as e:
             logger.warning("[TOPIC_DISCOVERY] HackerNews scrape failed: %s", e)
-        return topics
+            return []
 
     async def _scrape_devto(self) -> list[DiscoveredTopic]:
-        """Scrape trending articles from Dev.to API (free, no auth).
+        """Delegate to ``services.topic_sources.devto.DevtoSource``.
 
-        Configurable via app_settings:
-        - devto_per_page (default 15)
-        - devto_top_days (default 7)
-        - devto_min_reactions (default 20)
-        - devto_tag (default empty = all tags; e.g. "ai" or "python")
+        Phase F moved the implementation into its own module. This
+        wrapper reads the legacy app_settings keys so operator config
+        stays compatible.
         """
-        topics = []
+        from services.topic_sources.devto import DevtoSource
         per_page = await self._get_int_setting("devto_per_page", 15)
         top_days = await self._get_int_setting("devto_top_days", 7)
         min_reactions = await self._get_int_setting("devto_min_reactions", 20)
         tag = (await self._get_str_setting("devto_tag", "")).strip()
+        api_base = site_config.get("devto_api_base", "https://dev.to/api")
+        source = DevtoSource()
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(10.0, connect=3.0)
-            ) as client:
-                url_params = f"per_page={per_page}&top={top_days}"
-                if tag:
-                    url_params += f"&tag={tag}"
-                # #198: devto_api_base tunable for self-hosted Forem / API version changes
-                _devto_base = site_config.get("devto_api_base", "https://dev.to/api").rstrip("/")
-                resp = await client.get(
-                    f"{_devto_base}/articles?{url_params}",
-                    timeout=10,
-                )
-                articles = resp.json()
-
-                for article in articles:
-                    title = article.get("title", "")
-                    url = article.get("url", "")
-                    reactions = article.get("positive_reactions_count", 0)
-
-                    if not title or reactions < min_reactions:
-                        continue
-
-                    rewritten = self._rewrite_as_blog_topic(title)
-                    if not rewritten:
-                        continue
-                    category = self._classify_category(rewritten)
-                    topics.append(DiscoveredTopic(
-                        title=rewritten,
-                        category=category,
-                        source="devto",
-                        source_url=url,
-                        relevance_score=min(reactions / 50, 5.0),
-                    ))
-
+            topics = await source.extract(
+                self.pool,
+                {
+                    "per_page": per_page,
+                    "top_days": top_days,
+                    "min_reactions": min_reactions,
+                    "tag": tag,
+                    "api_base": api_base,
+                },
+            )
             logger.info("[TOPIC_DISCOVERY] Dev.to: %d topics", len(topics))
+            return topics
         except Exception as e:
             logger.warning("[TOPIC_DISCOVERY] Dev.to scrape failed: %s", e)
-        return topics
+            return []
 
     async def _search_by_category(self, categories: list[str] | None = None) -> list[DiscoveredTopic]:
         """Search DuckDuckGo for trending topics per category."""
