@@ -31,7 +31,7 @@ async def self_review_and_revise(
     - ``contradictions_found`` (int) — count the detector returned.
     - ``revised`` (bool) — True only when we accepted the revision.
     """
-    from services.ollama_client import OllamaClient
+    from plugins.registry import get_llm_providers
     from services.site_config import site_config
 
     stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
@@ -65,19 +65,30 @@ async def self_review_and_revise(
         "If you find none, reply with exactly: PASS"
     )
 
-    try:
-        client = OllamaClient(
-            timeout=site_config.get_int(
-                "content_router_contradiction_timeout_seconds", 120,
-            ),
+    # v2.3: Provider Protocol instead of concrete OllamaClient. The
+    # timeout knob survives via the new ``timeout_s`` kwarg (v2.1).
+    timeout_s = site_config.get_int(
+        "content_router_contradiction_timeout_seconds", 120,
+    )
+    providers = {p.name: p for p in get_llm_providers()}
+    provider = providers.get("ollama_native")
+    if provider is None:
+        logger.warning(
+            "[SELF_REVIEW] ollama_native provider not registered; skipping",
         )
-        result = await client.generate(
-            prompt=review_prompt, model=review_model, temperature=0.2,
+        return draft, stats
+
+    try:
+        result = await provider.complete(
+            messages=[{"role": "user", "content": review_prompt}],
+            model=review_model,
+            temperature=0.2,
             max_tokens=site_config.get_int(
                 "content_router_contradiction_review_max_tokens", 1500,
             ),
+            timeout_s=timeout_s,
         )
-        review_text = (result.get("text") or "").strip()
+        review_text = (result.text or "").strip()
 
         if not review_text or review_text.upper().startswith("PASS"):
             return draft, stats
@@ -97,13 +108,16 @@ async def self_review_and_revise(
             "Output only the revised draft. Keep the structure, length, and tone "
             "identical. Only change what's needed to resolve the contradictions."
         )
-        revised = await client.generate(
-            prompt=revise_prompt, model=review_model, temperature=0.3,
+        revised = await provider.complete(
+            messages=[{"role": "user", "content": revise_prompt}],
+            model=review_model,
+            temperature=0.3,
             max_tokens=site_config.get_int(
                 "content_router_contradiction_revise_max_tokens", 8000,
             ),
+            timeout_s=timeout_s,
         )
-        revised_text = (revised.get("text") or "").strip()
+        revised_text = (revised.text or "").strip()
 
         # Guard: revision must be a reasonable length — thinking-model fallthroughs
         # can return near-empty strings even on long input.
