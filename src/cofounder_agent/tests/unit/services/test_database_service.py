@@ -16,11 +16,8 @@ from services.database_service import DatabaseService
 
 
 def _has_brain_module():
-    try:
-        import brain.bootstrap
-        return True
-    except ImportError:
-        return False
+    from importlib.util import find_spec
+    return find_spec("brain.bootstrap") is not None
 
 # ---------------------------------------------------------------------------
 # Helpers
