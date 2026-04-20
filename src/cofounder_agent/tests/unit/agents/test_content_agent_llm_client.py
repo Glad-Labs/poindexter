@@ -3,11 +3,12 @@ Unit tests for agents/content_agent/services/llm_client.py — LLMClient
 
 Tests focus on (all network calls mocked):
 - _get_cache_path(): hash-based path generation
-- generate_json(): cache hit path, ollama path, gemini path, error handling
+- generate_json(): cache hit path, ollama path, error handling
 - generate_text(): cache hit path, ollama path, error handling
 - generate_summary(): ollama/local fallback path, cache hit
 - Provider routing: "local" and "ollama" treated identically
 - Initialization: unsupported provider raises ValueError
+- v2.8 Gemini path removed — legacy 'gemini' value downgrades to ollama
 """
 
 import hashlib
@@ -23,44 +24,6 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
 
 
 # ---------------------------------------------------------------------------
-# Helpers — build LLMClient bypassing real I/O
-# ---------------------------------------------------------------------------
-
-
-def _make_client(provider: str = "ollama", tmp_dir: str | None = None):
-    """Build an LLMClient with mocked config and no real filesystem access."""
-    with (
-        patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-        patch("agents.content_agent.services.llm_client.genai", None),
-        patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
-    ):
-        mock_cfg.LLM_PROVIDER = provider
-        mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
-        mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-        mock_cfg.GEMINI_API_KEY = "test-gemini-key"
-        mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-        mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-        # Use tmp_dir or a fake path for cache
-        cache_base = tmp_dir or "/tmp/test_cache"
-        mock_cfg.BASE_DIR = cache_base
-
-        from agents.content_agent.services.llm_client import LLMClient
-
-        with patch.object(Path, "mkdir"):
-            client = LLMClient()
-            # Override cache_dir to a real temp dir if given, else mock it
-            if tmp_dir:
-                client.cache_dir = Path(tmp_dir)
-            else:
-                client.cache_dir = MagicMock(spec=Path)
-                client.cache_dir.__truediv__ = lambda self, other: MagicMock(
-                    spec=Path, exists=MagicMock(return_value=False)
-                )
-
-    return client
-
-
-# ---------------------------------------------------------------------------
 # Initialization
 # ---------------------------------------------------------------------------
 
@@ -69,7 +32,6 @@ class TestLLMClientInit:
     def test_ollama_provider_initializes_without_error(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -88,7 +50,6 @@ class TestLLMClientInit:
     def test_local_provider_treated_same_as_ollama(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "local"
@@ -107,41 +68,33 @@ class TestLLMClientInit:
     def test_unsupported_provider_raises_value_error(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "unsupported_llm"
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
 
             from agents.content_agent.services.llm_client import LLMClient
 
-            with pytest.raises(ValueError, match="Unsupported LLM provider"):
+            with pytest.raises(ValueError, match="Unsupported LLM_PROVIDER"):
                 LLMClient()
 
-    def test_gemini_falls_back_to_ollama_when_genai_unavailable(self, tmp_path):
-        """When genai is None and provider is 'gemini', silently falls back to ollama."""
+    def test_legacy_gemini_value_silently_downgrades_to_ollama(self, tmp_path):
+        """v2.8 removed the Gemini path; legacy LLM_PROVIDER='gemini' must
+        still boot so stale configs don't break existing deployments."""
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "gemini"
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = "test-key"
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
 
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
-            # Falls back to ollama since genai module is None
             assert client.provider == "ollama"
 
 
@@ -154,7 +107,6 @@ class TestGetCachePath:
     def test_returns_path_based_on_prompt_hash(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -178,7 +130,6 @@ class TestGetCachePath:
     def test_different_prompts_produce_different_paths(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -200,7 +151,6 @@ class TestGetCachePath:
     def test_same_prompt_different_format_produces_different_paths(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -237,7 +187,6 @@ class TestGenerateJsonOllama:
     async def test_returns_parsed_dict_from_ollama(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -270,7 +219,6 @@ class TestGenerateJsonOllama:
     async def test_extracts_json_from_markdown_fenced_response(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -303,7 +251,6 @@ class TestGenerateJsonOllama:
     async def test_raises_value_error_on_non_json_response(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -334,7 +281,6 @@ class TestGenerateJsonOllama:
     async def test_raises_value_error_when_response_key_missing(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -372,7 +318,6 @@ class TestGenerateJsonOllama:
 
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -410,7 +355,6 @@ class TestGenerateTextOllama:
     async def test_returns_text_from_ollama(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -448,7 +392,6 @@ class TestGenerateTextOllama:
 
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -478,7 +421,6 @@ class TestGenerateTextOllama:
     async def test_returns_cached_text_without_http_call(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -508,7 +450,6 @@ class TestGenerateTextOllama:
     async def test_caches_result_after_successful_generation(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -555,7 +496,6 @@ class TestGenerateSummary:
     async def test_ollama_provider_falls_back_to_text_generation(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -591,7 +531,6 @@ class TestGenerateSummary:
     async def test_returns_cached_summary_without_http_call(self, tmp_path):
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -619,127 +558,6 @@ class TestGenerateSummary:
 
 
 # ---------------------------------------------------------------------------
-# Gemini run_in_executor path — issue #780
-# ---------------------------------------------------------------------------
-
-
-class TestGeminiRunInExecutor:
-    """
-    Verify that Gemini generate_content() calls are dispatched to a thread
-    via run_in_executor and never block the event loop (issue #780).
-    """
-
-    def _make_gemini_client(self, tmp_path):
-        """Build a Gemini LLMClient with a mocked google.genai module."""
-        mock_genai = MagicMock()
-        mock_model = MagicMock()
-        mock_genai.GenerativeModel.return_value = mock_model
-
-        with (
-            patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", mock_genai),
-            patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
-        ):
-            mock_cfg.LLM_PROVIDER = "gemini"
-            mock_cfg.BASE_DIR = str(tmp_path)
-            mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
-            mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = "fake-api-key"
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
-            from agents.content_agent.services.llm_client import LLMClient
-
-            client = LLMClient()
-            client.cache_dir = tmp_path
-            # Replace model with a fresh mock so we can inspect calls
-            client.model = mock_model
-            client.summarizer_model = mock_model
-
-        return client, mock_model
-
-    @pytest.mark.asyncio
-    async def test_generate_json_gemini_uses_run_in_executor(self, tmp_path):
-        """generate_json with Gemini provider must call run_in_executor, not block."""
-        client, mock_model = self._make_gemini_client(tmp_path)
-
-        mock_response = MagicMock()
-        mock_response.text = '{"key": "value"}'
-        mock_model.generate_content.return_value = mock_response
-
-        import asyncio
-
-        with patch.object(
-            asyncio.get_event_loop(),
-            "run_in_executor",
-            wraps=asyncio.get_event_loop().run_in_executor,
-        ) as mock_executor:
-            result = await client.generate_json("test prompt")
-
-        assert result == {"key": "value"}
-        # run_in_executor is called for the Gemini blocking call (and possibly by
-        # aiofiles for the cache write). Assert the Gemini callable was dispatched.
-        all_callables = [
-            call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2
-        ]
-        assert (
-            client._generate_json_gemini in all_callables
-        ), "Expected _generate_json_gemini to be dispatched via run_in_executor"
-
-    @pytest.mark.asyncio
-    async def test_generate_text_gemini_uses_run_in_executor(self, tmp_path):
-        """generate_text with Gemini provider must call run_in_executor."""
-        client, mock_model = self._make_gemini_client(tmp_path)
-
-        mock_response = MagicMock()
-        mock_response.text = "Generated text output"
-        mock_model.generate_content.return_value = mock_response
-
-        import asyncio
-
-        with patch.object(
-            asyncio.get_event_loop(),
-            "run_in_executor",
-            wraps=asyncio.get_event_loop().run_in_executor,
-        ) as mock_executor:
-            result = await client.generate_text("test prompt")
-
-        assert result == "Generated text output"
-        all_callables = [
-            call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2
-        ]
-        assert (
-            client._generate_text_gemini in all_callables
-        ), "Expected _generate_text_gemini to be dispatched via run_in_executor"
-
-    @pytest.mark.asyncio
-    async def test_generate_summary_gemini_uses_run_in_executor(self, tmp_path):
-        """generate_summary with Gemini provider must call run_in_executor."""
-        client, mock_model = self._make_gemini_client(tmp_path)
-
-        mock_response = MagicMock()
-        mock_response.text = "Summary output"
-        mock_model.generate_content.return_value = mock_response
-
-        import asyncio
-
-        with patch.object(
-            asyncio.get_event_loop(),
-            "run_in_executor",
-            wraps=asyncio.get_event_loop().run_in_executor,
-        ) as mock_executor:
-            result = await client.generate_summary("test prompt")
-
-        assert result == "Summary output"
-        all_callables = [
-            call.args[1] for call in mock_executor.call_args_list if len(call.args) >= 2
-        ]
-        assert (
-            client._generate_summary_gemini in all_callables
-        ), "Expected _generate_summary_gemini to be dispatched via run_in_executor"
-
-
-# ---------------------------------------------------------------------------
 # Async file I/O — issue #789
 # ---------------------------------------------------------------------------
 
@@ -755,7 +573,6 @@ class TestAsyncFileIO:
         """Cache hit in generate_text must use aiofiles.open, not Path.read_text."""
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"
@@ -789,7 +606,6 @@ class TestAsyncFileIO:
         """Cache hit in generate_summary must use aiofiles.open, not Path.read_text."""
         with (
             patch("agents.content_agent.services.llm_client.config") as mock_cfg,
-            patch("agents.content_agent.services.llm_client.genai", None),
             patch("agents.content_agent.services.llm_client._fix_sys_path_for_venv"),
         ):
             mock_cfg.LLM_PROVIDER = "ollama"

@@ -598,18 +598,12 @@ class TestShutdown:
         )
         mgr.task_executor = mock_executor
 
-        # Stub out HuggingFace cleanup
-        mock_hf = MagicMock()
-        mock_hf.ModelConsolidationService = MagicMock()
         mock_hf_client = MagicMock()
         mock_hf_client._session_cleanup = AsyncMock()
 
         with patch.dict(
             "sys.modules",
-            {
-                "services.model_consolidation_service": mock_hf,
-                "services.huggingface_client": mock_hf_client,
-            },
+            {"services.huggingface_client": mock_hf_client},
         ):
             _run(mgr.shutdown())
 
@@ -621,16 +615,12 @@ class TestShutdown:
         mock_executor.running = False
         mgr.task_executor = mock_executor
 
-        mock_hf = MagicMock()
         mock_hf_client = MagicMock()
         mock_hf_client._session_cleanup = AsyncMock()
 
         with patch.dict(
             "sys.modules",
-            {
-                "services.model_consolidation_service": mock_hf,
-                "services.huggingface_client": mock_hf_client,
-            },
+            {"services.huggingface_client": mock_hf_client},
         ):
             _run(mgr.shutdown())
 
@@ -640,16 +630,12 @@ class TestShutdown:
         mgr = _make_manager()
         mgr.task_executor = None
 
-        mock_hf = MagicMock()
         mock_hf_client = MagicMock()
         mock_hf_client._session_cleanup = AsyncMock()
 
         with patch.dict(
             "sys.modules",
-            {
-                "services.model_consolidation_service": mock_hf,
-                "services.huggingface_client": mock_hf_client,
-            },
+            {"services.huggingface_client": mock_hf_client},
         ):
             _run(mgr.shutdown())
 
@@ -659,16 +645,12 @@ class TestShutdown:
         mock_redis.close = AsyncMock()
         mgr.redis_cache = mock_redis
 
-        mock_hf = MagicMock()
         mock_hf_client = MagicMock()
         mock_hf_client._session_cleanup = AsyncMock()
 
         with patch.dict(
             "sys.modules",
-            {
-                "services.model_consolidation_service": mock_hf,
-                "services.huggingface_client": mock_hf_client,
-            },
+            {"services.huggingface_client": mock_hf_client},
         ):
             _run(mgr.shutdown())
 
@@ -680,16 +662,12 @@ class TestShutdown:
         mock_db.close = AsyncMock()
         mgr.database_service = mock_db
 
-        mock_hf = MagicMock()
         mock_hf_client = MagicMock()
         mock_hf_client._session_cleanup = AsyncMock()
 
         with patch.dict(
             "sys.modules",
-            {
-                "services.model_consolidation_service": mock_hf,
-                "services.huggingface_client": mock_hf_client,
-            },
+            {"services.huggingface_client": mock_hf_client},
         ):
             _run(mgr.shutdown())
 
@@ -707,16 +685,12 @@ class TestShutdown:
         mock_db.close = AsyncMock()
         mgr.database_service = mock_db
 
-        mock_hf = MagicMock()
         mock_hf_client = MagicMock()
         mock_hf_client._session_cleanup = AsyncMock()
 
         with patch.dict(
             "sys.modules",
-            {
-                "services.model_consolidation_service": mock_hf,
-                "services.huggingface_client": mock_hf_client,
-            },
+            {"services.huggingface_client": mock_hf_client},
         ):
             _run(mgr.shutdown())
 
@@ -726,17 +700,9 @@ class TestShutdown:
         """If huggingface_client doesn't have _session_cleanup, ImportError is caught."""
         mgr = _make_manager()
 
-        mock_hf = MagicMock()
-        # No huggingface_client in sys.modules — force ImportError path
-        modules = dict(sys.modules)
-        modules.pop("services.huggingface_client", None)
-
-        with patch.dict(
-            "sys.modules", {"services.model_consolidation_service": mock_hf}, clear=False
-        ):
-            # Patch huggingface_client to raise ImportError on import
-            with patch.dict("sys.modules", {"services.huggingface_client": None}):
-                _run(mgr.shutdown())  # Must not raise
+        # Patch huggingface_client to raise ImportError on import
+        with patch.dict("sys.modules", {"services.huggingface_client": None}):
+            _run(mgr.shutdown())  # Must not raise
 
 
 # ---------------------------------------------------------------------------

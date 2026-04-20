@@ -37,10 +37,8 @@ def _fix_sys_path_for_venv():
 # Execute the fix immediately when this module is imported
 _fix_sys_path_for_venv()
 
-import asyncio
 import hashlib
 import json
-import os
 import time
 
 from services.logger_config import get_logger
@@ -53,87 +51,50 @@ import httpx
 from agents.content_agent.config import config
 from agents.content_agent.utils.helpers import extract_json_from_string
 
-# Import google-genai (official SDK — google-generativeai removed, see Issue #404)
-genai = None
-try:
-    import google.genai as genai_module
-
-    genai = genai_module
-    logger.info("google.genai successfully imported")
-except (ImportError, ModuleNotFoundError) as e:
-    logger.warning(f"google.genai not available: {e}. Gemini provider will fall back to Ollama.")
-
 
 class LLMClient:
     """Client for interacting with a configured Large Language Model.
 
-    v2.6 deliberate non-migration: this class belongs to the content_agent
-    subsystem (parallel to the stages-based pipeline) and already speaks
-    its own plugin-selection dialect via config.LLM_PROVIDER (gemini /
-    ollama / local). Migrating its raw httpx calls to get_llm_providers()
-    would require rewriting 818 lines of tests (11 httpx.AsyncClient
-    patches + 13 Gemini-path assertions) with no runtime benefit —
-    LLMProvider plugins hit the same Ollama endpoint this client hits
-    directly. The Gemini path is dead per the no-paid-APIs policy and
-    will be stripped wholesale in v2.8 tech-debt cleanup; at that point
-    the remaining local-only LLMClient can either stay as-is (thin
-    facade over httpx to one endpoint) or get collapsed into
-    get_llm_providers() without the Gemini SDK dependency in the way.
+    v2.8: Gemini support removed (dead per no-paid-APIs policy). This is
+    now a thin local/ollama facade over httpx. The ``provider`` attribute
+    and the ``LLM_PROVIDER`` config still exist for forward-compat with
+    any future local backend swap (vllm, llama.cpp), but only
+    ``"local"`` / ``"ollama"`` are accepted. For historical context on
+    why this file wasn't collapsed into ``get_llm_providers()``, see the
+    v2.6 commit message — TL;DR: parallel subsystem, 818 lines of tests,
+    same endpoint either way.
     """
 
     def __init__(self, model_name: "str | None" = None):
-        """
-        Initializes the LLM client based on the provider specified in the config.
+        """Initialize the local LLM client.
 
         Args:
-            model_name: Optional specific model to use (e.g., "gemini-2.5-flash", "gpt-4")
-                       If not provided, uses the configured default model.
+            model_name: Optional model override. Defaults to
+                ``config.LOCAL_LLM_MODEL_NAME``.
         """
         self.provider = config.LLM_PROVIDER
-        self.model_name_override = model_name  # Store for potential use
-        self.model = None
-        self.summarizer_model = None
+        self.model_name_override = model_name
         self.cache_dir = Path(config.BASE_DIR) / ".cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._cleanup_stale_cache()
 
-        try:
-            if self.provider == "gemini":
-                # Check if google-genai is available
-                # If Poetry broke the import, fall back to Ollama gracefully
-                if not genai:
-                    logger.warning(
-                        "⚠️ Gemini provider requested but google-genai module unavailable. "
-                        "This is often due to Poetry's namespace package handling. "
-                        "Falling back to Ollama for content generation."
-                    )
-                    self.provider = "ollama"
-                else:
-                    # Gemini is available - use it
-                    if not config.GEMINI_API_KEY:
-                        raise ValueError(
-                            "GEMINI_API_KEY (or GOOGLE_API_KEY) not found in config for gemini provider."
-                        )
-
-                    os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
-
-                    # Use override model if provided, otherwise use config default
-                    model_to_use = model_name if model_name else config.GEMINI_MODEL
-                    self.model = genai.GenerativeModel(model_to_use)  # type: ignore[attr-defined]
-                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)  # type: ignore[attr-defined]
-                    logger.info(f"✅ Initialized Gemini client with model: {model_to_use}")
-
-            if self.provider in {"local", "ollama"}:
-                # Treat Ollama as a local provider - both use the same HTTP API endpoint
-                logger.info(f"✅ Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
-
-            elif self.provider == "gemini":
-                pass  # Already handled above
-            else:
-                raise ValueError(f"Unsupported LLM provider: {self.provider}")
-        except Exception as e:
-            logger.error(f"Failed to initialize LLM client: {e}", exc_info=True)
-            raise
+        # Accept legacy "gemini" value by silently downgrading to ollama —
+        # existing configs in the wild may still say gemini even though
+        # the path is gone. Anything else is a config error.
+        if self.provider == "gemini":
+            logger.warning(
+                "LLM_PROVIDER=gemini is no longer supported (v2.8 removed "
+                "the Gemini path). Falling back to local/ollama."
+            )
+            self.provider = "ollama"
+        if self.provider not in {"local", "ollama"}:
+            raise ValueError(
+                f"Unsupported LLM_PROVIDER: {self.provider!r}. "
+                "Only 'local' / 'ollama' are supported."
+            )
+        logger.info(
+            "[LLMClient] local provider at %s", config.LOCAL_LLM_API_URL,
+        )
 
     def _cleanup_stale_cache(self, max_age_days: int = 30, max_size_mb: int = 500) -> None:
         """Remove stale cache files older than max_age_days or if total exceeds max_size_mb."""
@@ -192,16 +153,7 @@ class LLMClient:
         _llm_start = time.perf_counter()
         _status = "success"
         try:
-            if self.provider == "gemini":
-                # Run the synchronous Gemini SDK call in a thread so it does
-                # not block the event loop (issue #780).
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(None, self._generate_json_gemini, prompt)
-            elif self.provider in {"local", "ollama"}:
-                result = await self._generate_json_local(prompt)
-            else:
-                logger.error(f"Unsupported LLM provider: {self.provider}")
-                return {}
+            result = await self._generate_json_local(prompt)
         except Exception:
             _status = "error"
             raise
@@ -217,17 +169,6 @@ class LLMClient:
                 await f.write(json.dumps(result))
 
         return result
-
-    def _generate_json_gemini(self, prompt: str) -> dict:
-        try:
-            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
-            return json.loads(response.text)
-        except json.JSONDecodeError:
-            logger.error("Failed to decode JSON from Gemini response.", exc_info=True)
-            return {}
-        except Exception as e:
-            logger.error(f"Error generating JSON content from Gemini: {e}", exc_info=True)
-            return {}
 
     async def _generate_json_local(self, prompt: str) -> dict:
         try:
@@ -276,16 +217,7 @@ class LLMClient:
         _llm_start = time.perf_counter()
         _status = "success"
         try:
-            if self.provider == "gemini":
-                # Run the synchronous Gemini SDK call in a thread so it does
-                # not block the event loop (issue #780).
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(None, self._generate_text_gemini, prompt)
-            elif self.provider in {"local", "ollama"}:
-                result = await self._generate_text_local(prompt)
-            else:
-                logger.error(f"Unsupported LLM provider: {self.provider}")
-                return ""
+            result = await self._generate_text_local(prompt)
         except Exception:
             _status = "error"
             raise
@@ -305,14 +237,6 @@ class LLMClient:
                 logger.warning(f"Failed to cache result: {e}")
 
         return result
-
-    def _generate_text_gemini(self, prompt: str) -> str:
-        try:
-            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
-            return response.text
-        except Exception as e:
-            logger.error(f"Error generating text content from Gemini: {e}", exc_info=True)
-            return ""
 
     async def _generate_text_local(self, prompt: str) -> str:
         try:
@@ -346,21 +270,10 @@ class LLMClient:
         _llm_start = time.perf_counter()
         _status = "success"
         try:
-            if self.provider == "gemini":
-                # Run the synchronous Gemini SDK call in a thread so it does
-                # not block the event loop (issue #780).
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(None, self._generate_summary_gemini, prompt)
-            elif self.provider in {"local", "ollama"}:
-                # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
-                # or use a specific endpoint if available. For now, we use the main model.
-                logger.warning(
-                    "Summarization with local/ollama provider falls back to the main model."
-                )
-                result = await self._generate_text_local(prompt)
-            else:
-                logger.error(f"Unsupported LLM provider: {self.provider}")
-                return ""
+            # Local backend has no dedicated summarizer endpoint; reuse the
+            # main text path with a summarization-framed prompt (callers
+            # already shape the prompt this way).
+            result = await self._generate_text_local(prompt)
         except Exception:
             _status = "error"
             raise
@@ -380,11 +293,3 @@ class LLMClient:
                 logger.warning(f"Failed to cache summary: {e}")
 
         return result
-
-    def _generate_summary_gemini(self, prompt: str) -> str:
-        try:
-            response = self.summarizer_model.generate_content(prompt)  # type: ignore[union-attr]
-            return response.text
-        except Exception as e:
-            logger.error(f"Error generating summary from Gemini: {e}", exc_info=True)
-            return ""
