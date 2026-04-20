@@ -129,6 +129,7 @@ brain_knowledge = "cofounder_agent.services.taps.brain_knowledge:BrainKnowledgeT
 brain_decisions = "cofounder_agent.services.taps.brain_decisions:BrainDecisionsTap"
 gitea_issues = "cofounder_agent.services.taps.gitea_issues:GiteaIssuesTap"
 claude_code_sessions = "cofounder_agent.services.taps.claude_code_sessions:ClaudeCodeSessionsTap"
+openclaw_sqlite = "cofounder_agent.services.taps.openclaw_sqlite:OpenClawSQLiteTap"
 
 [tool.poetry.plugins."poindexter.probes"]
 database = "cofounder_agent.plugins.samples.database_probe:DatabaseProbe"
