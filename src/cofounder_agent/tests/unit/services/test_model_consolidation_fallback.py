@@ -68,7 +68,7 @@ def _failing_adapter(exc: Exception) -> AsyncMock:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def service() -> ModelConsolidationService:
     """Return a ModelConsolidationService with _initialize_adapters() no-oped.
 

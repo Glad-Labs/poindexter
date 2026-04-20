@@ -17,19 +17,19 @@ from services.research_service import KNOWN_REFERENCES, ResearchService
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_pool():
     pool = AsyncMock()
     pool.fetch = AsyncMock(return_value=[])
     return pool
 
 
-@pytest.fixture()
+@pytest.fixture
 def service(mock_pool):
     return ResearchService(pool=mock_pool)
 
 
-@pytest.fixture()
+@pytest.fixture
 def service_no_pool():
     return ResearchService(pool=None)
 

@@ -31,7 +31,7 @@ def make_service() -> WritingStyleIntegrationService:
     return svc
 
 
-@pytest.fixture()
+@pytest.fixture
 def service() -> WritingStyleIntegrationService:
     return make_service()
 

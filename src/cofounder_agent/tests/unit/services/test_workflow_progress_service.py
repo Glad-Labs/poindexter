@@ -57,7 +57,7 @@ class TestWorkflowProgress:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def svc() -> WorkflowProgressService:
     return WorkflowProgressService()
 

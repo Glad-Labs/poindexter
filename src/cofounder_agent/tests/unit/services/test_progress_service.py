@@ -15,7 +15,7 @@ from services.progress_service import GenerationProgress, ProgressService, get_p
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def service() -> ProgressService:
     """Fresh ProgressService for each test."""
     return ProgressService()

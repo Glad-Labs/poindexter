@@ -30,7 +30,7 @@ def make_result(
     return r
 
 
-@pytest.fixture()
+@pytest.fixture
 def service() -> ResearchQualityService:
     return ResearchQualityService()
 
