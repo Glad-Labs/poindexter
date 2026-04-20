@@ -182,6 +182,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("taps", "services.taps.brain_knowledge", "BrainKnowledgeTap"),
         ("taps", "services.taps.brain_decisions", "BrainDecisionsTap"),
         ("taps", "services.taps.gitea_issues", "GiteaIssuesTap"),
+        ("taps", "services.taps.claude_code_sessions", "ClaudeCodeSessionsTap"),
         # Core Jobs — apscheduler-driven housekeeping. Ship as imperative
         # loads until the poetry packaging issue is resolved.
         ("jobs", "services.jobs.sync_page_views", "SyncPageViewsJob"),
