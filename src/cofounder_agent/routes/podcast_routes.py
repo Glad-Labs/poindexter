@@ -9,6 +9,7 @@ Endpoints:
 """
 
 from datetime import datetime, timezone
+from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,7 +18,7 @@ from fastapi.responses import FileResponse, Response
 from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 from services.podcast_service import PODCAST_DIR, PodcastService
-from services.site_config import site_config
+from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -30,11 +31,11 @@ router = APIRouter(prefix="/api/podcast", tags=["podcast"])
 _R2_FALLBACK = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
 
 
-def _site_url() -> str:
+def _site_url(site_config: Any) -> str:
     return site_config.require("site_url")
 
 
-def _r2_url() -> str:
+def _r2_url(site_config: Any) -> str:
     """Get R2 CDN base URL, with DB override support."""
     return site_config.get("r2_public_url", _R2_FALLBACK)
 
@@ -58,7 +59,9 @@ def _rfc2822(dt: datetime) -> str:
 
 
 @router.get("/feed.xml", response_class=Response)
-async def podcast_feed():
+async def podcast_feed(
+    site_config: Any = Depends(get_site_config_dependency),
+):
     """Generate a valid podcast RSS feed (Apple Podcasts / Spotify compatible)."""
     # Lazy import to avoid circular deps
     from utils.route_utils import get_services
@@ -71,7 +74,7 @@ async def podcast_feed():
     if not episodes_on_disk:
         # Return a valid but empty feed
         return Response(
-            content=_build_rss_xml([]),
+            content=_build_rss_xml([], site_config),
             media_type="application/rss+xml; charset=utf-8",
         )
 
@@ -114,14 +117,14 @@ async def podcast_feed():
             "duration_seconds": 0,  # Estimated on the fly if needed
         })
 
-    xml_content = _build_rss_xml(episodes)
+    xml_content = _build_rss_xml(episodes, site_config)
     return Response(
         content=xml_content,
         media_type="application/rss+xml; charset=utf-8",
     )
 
 
-def _build_rss_xml(episodes: list[dict]) -> str:
+def _build_rss_xml(episodes: list[dict], site_config: Any) -> str:
     """Build a podcast RSS XML string following Apple Podcasts spec."""
     rss = Element("rss")
     rss.set("version", "2.0")
@@ -133,7 +136,7 @@ def _build_rss_xml(episodes: list[dict]) -> str:
 
     # Channel metadata
     SubElement(channel, "title").text = site_config.get("podcast_name", "Podcast")
-    SubElement(channel, "link").text = _site_url()
+    SubElement(channel, "link").text = _site_url(site_config)
     SubElement(channel, "language").text = "en-us"
     SubElement(channel, "description").text = site_config.get(
         "podcast_description", "Podcast feed"
@@ -170,7 +173,7 @@ def _build_rss_xml(episodes: list[dict]) -> str:
 
     # Atom self-link
     atom_link = SubElement(channel, "{http://www.w3.org/2005/Atom}link")
-    atom_link.set("href", f"{_site_url()}/api/podcast/feed.xml")
+    atom_link.set("href", f"{_site_url(site_config)}/api/podcast/feed.xml")
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
@@ -178,8 +181,8 @@ def _build_rss_xml(episodes: list[dict]) -> str:
     _domain = site_config.get("site_domain", "podcast")
     # Bump via: UPDATE app_settings SET value = 'v3' WHERE key = 'podcast_cdn_version';
     _cdn_ver = site_config.get("podcast_cdn_version", "v2")
-    _r2 = _r2_url()
-    _site = _site_url()
+    _r2 = _r2_url(site_config)
+    _site = _site_url(site_config)
 
     # Episodes
     for ep in episodes:
