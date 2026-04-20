@@ -567,8 +567,6 @@ def initialize_model_consolidation_service():
 
 def get_model_consolidation_service() -> ModelConsolidationService:
     """Get the global model consolidation service (lazy-initialized)"""
-    global _model_consolidation_service
-
     if _model_consolidation_service is None:
         initialize_model_consolidation_service()
 

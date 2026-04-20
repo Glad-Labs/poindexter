@@ -414,7 +414,7 @@ def _auto_provision() -> str:
         # Surface container logs to help the operator debug.
         logs = subprocess.run(
             ["docker", "logs", "--tail", "50", _AUTO_CONTAINER],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False,
         )
         raise click.ClickException(
             f"Postgres did not become ready: {reason}\n\n"

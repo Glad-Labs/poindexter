@@ -1419,7 +1419,7 @@ class IdleWorker:
                         continue
                     overlap = len(set(words1) & set(words2)) / max(len(set(words1)), len(set(words2)))
                     if overlap > 0.7:
-                        duplicates.append((posts[i]["title"][:50], [p for p in posts if p["id"] == id2][0]["title"][:50]))
+                        duplicates.append((posts[i]["title"][:50], next(p for p in posts if p["id"] == id2)["title"][:50]))
 
             if duplicates:
                 body = "## Potential Duplicate Posts\n\n" + "\n".join(f"- \"{a}\" vs \"{b}\"" for a, b in duplicates[:10])

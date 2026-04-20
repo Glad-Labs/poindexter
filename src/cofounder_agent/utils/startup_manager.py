@@ -34,6 +34,9 @@ class StartupManager:
         self.custom_workflows_service = None
         self.template_execution_service = None
         self.startup_error = None
+        # Hold strong refs to long-running background tasks so asyncio's
+        # weakref tracking doesn't GC them mid-loop. (ruff RUF006)
+        self._background_tasks: set = set()
 
     def _validate_secrets(self) -> None:
         """Check that secrets have been set (auto-generated or explicit).
@@ -192,7 +195,9 @@ class StartupManager:
                     pool_monitor = ConnectionPoolHealth(self.database_service.pool)
                     import asyncio
 
-                    asyncio.create_task(pool_monitor.auto_health_check())
+                    task = asyncio.create_task(pool_monitor.auto_health_check())
+                    self._background_tasks.add(task)
+                    task.add_done_callback(self._background_tasks.discard)
                     logger.info("   ConnectionPoolHealth monitor started")
                 except Exception as monitor_err:
                     logger.warning(

@@ -50,7 +50,7 @@ class WorkflowRequest:
         if not self.user_id:
             raise ValueError("user_id is required")
         if not isinstance(self.input_data, dict):
-            raise ValueError("input_data must be a dict")
+            raise TypeError("input_data must be a dict")
 
         # Auto-generate IDs if not provided
         if not self.request_id:
