@@ -190,7 +190,7 @@ class TestTriggerNextjsRevalidation:
             yield
 
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_returns_true_on_200(self):
         mock_client = _make_mock_httpx_client(status_code=200)

@@ -86,7 +86,7 @@ class TestHandleRouteError:
     def _run(self, coro):
         import asyncio
 
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_http_exception_is_returned_unchanged(self):
         original = HTTPException(status_code=418, detail="I'm a teapot")
