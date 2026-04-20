@@ -62,7 +62,7 @@ class TestSQLIdentifierValidatorSafeIdentifier:
             SQLIdentifierValidator.safe_identifier("bad-table", "table")
 
     def test_raises_for_empty_identifier(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             SQLIdentifierValidator.safe_identifier("", "column")
 
 
