@@ -253,8 +253,8 @@ class TestRequestIDMiddlewareDispatch:
             request = _make_request(incoming_id=incoming)
             response = _make_response()
 
-            async def call_next(req):
-                return response
+            async def call_next(req, _resp=response):
+                return _resp
 
             result = await mw.dispatch(request, call_next)
             assert HEADER_NAME in result.headers
@@ -269,8 +269,8 @@ class TestRequestIDMiddlewareDispatch:
             request = _make_request()  # no incoming ID → generate fresh one
             response = _make_response()
 
-            async def call_next(req):
-                return response
+            async def call_next(req, _resp=response):
+                return _resp
 
             result = await mw.dispatch(request, call_next)
             ids.append(result.headers[HEADER_NAME])

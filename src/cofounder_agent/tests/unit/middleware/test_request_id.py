@@ -7,9 +7,7 @@ and logging filter injection.
 
 import logging
 import uuid
-from unittest.mock import patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

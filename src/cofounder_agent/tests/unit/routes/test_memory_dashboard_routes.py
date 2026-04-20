@@ -5,8 +5,8 @@ Tests the helper functions and route structure.
 DB-dependent endpoints are tested with mocked MemoryClient.
 """
 
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 

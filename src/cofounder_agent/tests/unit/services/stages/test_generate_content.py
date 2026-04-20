@@ -25,7 +25,6 @@ from services.stages.generate_content import (
     _strip_leaked_image_prompts,
 )
 
-
 # ---------------------------------------------------------------------------
 # Pure helpers — no patching required
 # ---------------------------------------------------------------------------

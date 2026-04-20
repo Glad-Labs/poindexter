@@ -86,18 +86,18 @@ def make_image_service_no_key() -> ImageService:
 
 class TestFeaturedImageMetadata:
     def _make_meta(self, **kwargs) -> FeaturedImageMetadata:
-        defaults = dict(
-            url="https://example.com/photo.jpg",
-            thumbnail="https://example.com/thumb.jpg",
-            photographer="John Smith",
-            photographer_url="https://example.com/@john",
-            width=1920,
-            height=1080,
-            alt_text="A photo",
-            caption="Photo caption",
-            source="pexels",
-            search_query="nature",
-        )
+        defaults = {
+            "url": "https://example.com/photo.jpg",
+            "thumbnail": "https://example.com/thumb.jpg",
+            "photographer": "John Smith",
+            "photographer_url": "https://example.com/@john",
+            "width": 1920,
+            "height": 1080,
+            "alt_text": "A photo",
+            "caption": "Photo caption",
+            "source": "pexels",
+            "search_query": "nature",
+        }
         defaults.update(kwargs)
         return FeaturedImageMetadata(**defaults)  # type: ignore[arg-type]
 
@@ -232,7 +232,7 @@ class TestSearchFeaturedImage:
     @pytest.mark.asyncio
     async def test_excludes_person_keywords(self):
         svc = make_image_service_with_key()
-        resp = make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
+        make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
         captured_queries = []
 
         async def capture_pexels_search(query, **kwargs):
@@ -971,7 +971,7 @@ class TestModelIntrospection:
 
     def test_list_available_models_entries_have_metadata(self):
         models = ImageService.list_available_models()
-        for value, meta in models.items():
+        for _value, meta in models.items():
             assert "display_name" in meta
             assert "default_steps" in meta
             assert "vram_gb" in meta

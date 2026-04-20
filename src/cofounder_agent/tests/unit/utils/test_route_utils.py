@@ -558,7 +558,7 @@ class TestGetEnhancedStatusChangeService:
         from unittest.mock import patch
 
         import utils.route_utils as mod
-        from utils.route_utils import ServiceContainer, get_enhanced_status_change_service
+        from utils.route_utils import ServiceContainer
 
         c = ServiceContainer()
         mock_db = MagicMock()

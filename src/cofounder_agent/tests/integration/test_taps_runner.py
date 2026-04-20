@@ -8,13 +8,14 @@ instead of the real auto-embed flow so each test stays focused.
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import asyncpg
 import pytest
 
 from plugins import Document, PluginConfig
-from services.taps.runner import TapStats, run_tap
+from services.taps.runner import run_tap
 from tests.integration.conftest import requires_real_services
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio, requires_real_services]

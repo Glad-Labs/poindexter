@@ -14,7 +14,6 @@ Covers:
 - Flow 7: Rejecting with allow_revisions=True produces rejected_retry status
 """
 
-import sys
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 

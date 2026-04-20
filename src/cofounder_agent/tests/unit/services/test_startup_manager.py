@@ -114,7 +114,6 @@ class TestValidateSecretsDevelopment:
 class TestValidateSecretsEdgeCases:
     def test_unset_env_var_does_not_raise(self):
         """Unset vars (empty string) are not treated as violations — only log."""
-        env = {"ENVIRONMENT": "production"}
         # Remove the known-default vars from the environment to simulate unset
         clean_env = {
             k: v

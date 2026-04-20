@@ -1,6 +1,5 @@
 """Tests for worker_service."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

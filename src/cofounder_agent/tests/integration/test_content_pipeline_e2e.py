@@ -16,7 +16,6 @@ Requirements:
   - Marked with @pytest.mark.integration (excluded from unit test suite)
 """
 
-import asyncio
 import json
 import re
 

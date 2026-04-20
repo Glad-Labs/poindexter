@@ -9,7 +9,6 @@ executes the module source in an isolated namespace with the
 appropriate mocks.
 """
 
-import os
 import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch

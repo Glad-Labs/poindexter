@@ -29,7 +29,6 @@ async def test_blog_workflow():
     """Test complete blog workflow execution"""
     from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
     from services.phase_registry import PhaseRegistry
-    from services.workflow_executor import WorkflowExecutor
 
     # Create workflow with blog phases
     workflow = CustomWorkflow(  # type: ignore[call-arg]

@@ -234,7 +234,7 @@ class TestTaskDelegation:
         mocks["tasks"].get_tasks_paginated = AsyncMock(
             return_value={"tasks": [], "total": 0, "offset": 0, "limit": 20}
         )
-        result = await svc.get_tasks_paginated(offset=0, limit=20, status="pending")
+        await svc.get_tasks_paginated(offset=0, limit=20, status="pending")
         mocks["tasks"].get_tasks_paginated.assert_awaited_once_with(0, 20, "pending", None, None)
 
     @pytest.mark.asyncio
@@ -268,7 +268,7 @@ class TestContentDelegation:
         svc = make_service()
         mocks = _attach_mock_modules(svc)
         mocks["content"].get_post_by_slug = AsyncMock(return_value={"slug": "my-post"})
-        result = await svc.get_post_by_slug("my-post")
+        await svc.get_post_by_slug("my-post")
         mocks["content"].get_post_by_slug.assert_awaited_once_with("my-post")
 
     @pytest.mark.asyncio
@@ -276,7 +276,7 @@ class TestContentDelegation:
         svc = make_service()
         mocks = _attach_mock_modules(svc)
         mocks["content"].get_metrics = AsyncMock(return_value={"total_posts": 10})
-        result = await svc.get_metrics()
+        await svc.get_metrics()
         mocks["content"].get_metrics.assert_awaited_once()
 
 
@@ -310,7 +310,7 @@ class TestAdminDelegation:
         svc = make_service()
         mocks = _attach_mock_modules(svc)
         mocks["admin"].get_setting = AsyncMock(return_value={"key": "theme", "value": "dark"})
-        result = await svc.get_setting("theme")
+        await svc.get_setting("theme")
         mocks["admin"].get_setting.assert_awaited_once_with("theme")
 
     @pytest.mark.asyncio

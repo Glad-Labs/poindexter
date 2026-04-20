@@ -95,12 +95,11 @@ class TestEnsureSession:
     @pytest.mark.asyncio
     async def test_creates_session_when_none(self):
         client = WorkflowProgressClient()
-        import aiohttp
 
         with patch("aiohttp.ClientSession") as MockSession:
             MockSession.return_value = MagicMock()
             MockSession.return_value.closed = False
-            session = await client._ensure_session()
+            await client._ensure_session()
             MockSession.assert_called_once()
             assert client.session is not None
 
@@ -127,7 +126,7 @@ class TestEnsureSession:
             new_session = MagicMock()
             new_session.closed = False
             MockSession.return_value = new_session
-            session = await client._ensure_session()
+            await client._ensure_session()
             MockSession.assert_called_once()
 
 
@@ -338,7 +337,7 @@ class TestCompletePhase:
         mock_session.post = MagicMock(return_value=cm)
 
         with patch.object(client, "_ensure_session", AsyncMock(return_value=mock_session)):
-            result = await client.complete_phase(
+            await client.complete_phase(
                 "exec-1", "research", phase_output={"key": "val"}, duration_ms=5000
             )
 
@@ -377,7 +376,7 @@ class TestFailPhase:
         mock_session.post = MagicMock(return_value=cm)
 
         with patch.object(client, "_ensure_session", AsyncMock(return_value=mock_session)):
-            result = await client.fail_phase("exec-1", "research", error="Timeout")
+            await client.fail_phase("exec-1", "research", error="Timeout")
 
         call_args = mock_session.post.call_args
         assert "phase/fail/exec-1" in call_args[0][0]
@@ -440,7 +439,7 @@ class TestMarkFailed:
         mock_session.post = MagicMock(return_value=cm)
 
         with patch.object(client, "_ensure_session", AsyncMock(return_value=mock_session)):
-            result = await client.mark_failed("exec-1", error="OOM", failed_phase="research")
+            await client.mark_failed("exec-1", error="OOM", failed_phase="research")
 
         call_args = mock_session.post.call_args
         assert "fail/exec-1" in call_args[0][0]
@@ -602,12 +601,12 @@ class TestSubscribeProgress:
 
         async def aiter():
             yield json_mod.dumps(message_data)
-            raise Exception("disconnect")  # triggers auto_reconnect=False raise
+            raise ConnectionError("disconnect")  # triggers auto_reconnect=False raise
 
         mock_ws.__aiter__ = lambda self: aiter()
 
         with patch("websockets.connect", return_value=mock_ws):
-            with pytest.raises(Exception):
+            with pytest.raises(ConnectionError):
                 await client.subscribe_progress("exec-1", sync_cb, auto_reconnect=False)
 
         assert received == [message_data]

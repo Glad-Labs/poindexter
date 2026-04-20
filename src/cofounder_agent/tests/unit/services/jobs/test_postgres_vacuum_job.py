@@ -6,8 +6,8 @@ validation, per-table success/failure aggregation.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

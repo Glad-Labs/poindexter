@@ -36,7 +36,6 @@ import pytest
 
 from services.site_config import site_config
 
-
 # ---------------------------------------------------------------------------
 # Layer 1 — brand-identity seed (legacy)
 # ---------------------------------------------------------------------------

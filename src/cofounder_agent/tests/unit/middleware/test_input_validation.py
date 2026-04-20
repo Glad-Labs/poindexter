@@ -303,7 +303,6 @@ class TestDispatch:
         req.url.query = ""
         req.url.__str__ = MagicMock(return_value="http://localhost/api/tasks")
 
-        from starlette.responses import JSONResponse
 
         async def call_next(r):
             return MagicMock()

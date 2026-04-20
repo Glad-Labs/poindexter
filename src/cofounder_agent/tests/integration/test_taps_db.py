@@ -11,9 +11,6 @@ tested separately.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
-
 import asyncpg
 import pytest
 

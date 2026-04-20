@@ -19,7 +19,6 @@ Covers ContentTaskStore:
 ContentTaskStore is constructed inline per request; no singleton.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -36,6 +35,8 @@ from services.model_preferences import (
 )
 from services.text_utils import (
     normalize_text as _normalize_text,
+)
+from services.text_utils import (
     scrub_fabricated_links as _scrub_fabricated_links,
 )
 from services.title_generation import (
@@ -394,8 +395,8 @@ class TestScrubFabricatedLinks:
         assert "arxiv.org" in result
 
     def test_keeps_own_domain_links(self):
-        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         from services.site_config import site_config
+        from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         domain = site_config.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
         assert domain in _scrub_fabricated_links(content)

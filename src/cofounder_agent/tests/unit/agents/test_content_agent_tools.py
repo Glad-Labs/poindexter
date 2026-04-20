@@ -10,7 +10,7 @@ Covers:
 - CrewAIToolsFactory — singleton caching, reset, and tool-list methods
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # Helpers — patch the entire crewai_tools import shim so tests run without

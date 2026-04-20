@@ -28,7 +28,6 @@ from routes.cms_routes import (
     map_featured_image_to_coverimage,
     router,
 )
-from tests.unit.routes.conftest import TEST_USER
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -124,12 +123,9 @@ SAMPLE_CATEGORY_ROW = {
 # ---------------------------------------------------------------------------
 
 
-try:
-    import markdown as _md_check
+from importlib.util import find_spec  # noqa: E402
 
-    HAS_MARKDOWN = True
-except ImportError:
-    HAS_MARKDOWN = False
+HAS_MARKDOWN = find_spec("markdown") is not None
 
 _skip_no_markdown = pytest.mark.skipif(
     not HAS_MARKDOWN, reason="python-markdown not installed in test env"

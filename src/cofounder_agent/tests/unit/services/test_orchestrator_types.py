@@ -109,12 +109,12 @@ class TestExecutionStatus:
 
 class TestRequest:
     def _make_request(self, **overrides) -> Request:
-        defaults = dict(
-            request_id="req-001",
-            original_text="Write a blog post",
-            request_type=RequestType.CONTENT_CREATION,
-            extracted_intent="create blog post",
-        )
+        defaults = {
+            "request_id": "req-001",
+            "original_text": "Write a blog post",
+            "request_type": RequestType.CONTENT_CREATION,
+            "extracted_intent": "create blog post",
+        }
         defaults.update(overrides)
         return Request(**defaults)  # type: ignore[arg-type]
 
@@ -226,12 +226,12 @@ class TestExecutionContext:
 
 class TestExecutionResult:
     def _make_result(self, **overrides) -> ExecutionResult:
-        defaults = dict(
-            request_id="req-res-001",
-            request_type=RequestType.CONTENT_CREATION,
-            status=ExecutionStatus.COMPLETED,
-            output={"html": "<p>Hello</p>"},
-        )
+        defaults = {
+            "request_id": "req-res-001",
+            "request_type": RequestType.CONTENT_CREATION,
+            "status": ExecutionStatus.COMPLETED,
+            "output": {"html": "<p>Hello</p>"},
+        }
         defaults.update(overrides)
         return ExecutionResult(**defaults)  # type: ignore[arg-type]
 

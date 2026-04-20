@@ -15,7 +15,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import routes.settings_routes as settings_module
 from middleware.api_token_auth import verify_api_token
 from routes.settings_routes import router
 from utils.route_utils import get_database_dependency

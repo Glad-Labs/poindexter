@@ -11,14 +11,12 @@ HTTP helper, self-healer, and Gitea-issue deduplicator.
 
 from __future__ import annotations
 
-import json
 import time
 import urllib.error
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from brain import health_probes as hp
 
 

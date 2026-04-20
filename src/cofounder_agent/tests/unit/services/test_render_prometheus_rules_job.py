@@ -16,7 +16,6 @@ import pytest
 from plugins.job import Job, JobResult
 from services.jobs.render_prometheus_rules import RenderPrometheusRulesJob
 
-
 # ---------------------------------------------------------------------------
 # Protocol / metadata
 # ---------------------------------------------------------------------------

@@ -196,7 +196,7 @@ class TestTaskMetricsErrorRate:
 
     def test_all_success_gives_zero_rate(self):
         m = TaskMetrics("task-4")
-        for i in range(4):
+        for _i in range(4):
             m.record_llm_call(
                 phase="research",
                 model="gpt-4",

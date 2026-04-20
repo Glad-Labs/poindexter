@@ -201,13 +201,13 @@ class TestListPrompts:
     def test_filter_by_blog_category(self, pm: UnifiedPromptManager):
         result = pm.list_prompts(category=PromptCategory.BLOG_GENERATION)
         assert len(result) > 0
-        for key, data in result.items():
+        for _key, data in result.items():
             assert data["category"] == PromptCategory.BLOG_GENERATION.value
 
     def test_filter_by_seo_category(self, pm: UnifiedPromptManager):
         result = pm.list_prompts(category=PromptCategory.SEO_METADATA)
         assert len(result) > 0
-        for key, data in result.items():
+        for _key, data in result.items():
             assert data["category"] == PromptCategory.SEO_METADATA.value
 
     def test_filter_by_qa_category(self, pm: UnifiedPromptManager):
@@ -216,7 +216,7 @@ class TestListPrompts:
 
     def test_result_contains_expected_fields(self, pm: UnifiedPromptManager):
         result = pm.list_prompts()
-        for key, data in result.items():
+        for _key, data in result.items():
             assert "category" in data
             assert "description" in data
             assert "output_format" in data
@@ -260,7 +260,7 @@ class TestExportPromptsAsJson:
 
     def test_template_is_nonempty_string(self, pm: UnifiedPromptManager):
         parsed = json.loads(pm.export_prompts_as_json())
-        for key, entry in parsed.items():
+        for _key, entry in parsed.items():
             assert isinstance(entry["template"], str)
             assert len(entry["template"]) > 0
 

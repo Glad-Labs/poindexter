@@ -5,7 +5,6 @@ Tests all pure scoring functions with edge cases and boundary conditions.
 No DB or LLM calls — all functions are stateless heuristics.
 """
 
-from unittest.mock import patch
 
 import pytest
 

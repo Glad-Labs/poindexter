@@ -119,7 +119,7 @@ async def test_get_with_default(
     migrations_applied, clean_test_tables: asyncpg.Pool
 ) -> None:
     """PluginConfig.get() reads from config dict with a default."""
-    async with clean_test_tables.acquire() as conn:
+    async with clean_test_tables.acquire():
         cfg = PluginConfig(
             plugin_type="tap", name="demo",
             config={"endpoint": "https://example.com"},

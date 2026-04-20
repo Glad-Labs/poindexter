@@ -213,7 +213,6 @@ class TestCreateWritingSample:
         # Track execute calls
         execute_calls = []
         async with pool.acquire() as conn:
-            original_execute = conn.execute
 
             async def _capture_execute(sql, *args):
                 execute_calls.append(sql.strip()[:60])
@@ -221,7 +220,7 @@ class TestCreateWritingSample:
 
             conn.execute = _capture_execute
 
-        result = await db.create_writing_sample(
+        await db.create_writing_sample(
             user_id="user-123",
             title="Active Sample",
             content="Content here",

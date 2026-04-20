@@ -474,7 +474,7 @@ class TestGetHistoryTrends:
         # fetch was called with a start_date ~30 days ago
         args = conn.fetch.await_args.args
         assert len(args) == 2  # SQL + start_date
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         start_date = args[1]
         delta_days = (now - start_date).days
@@ -606,7 +606,7 @@ class TestGetBudgetStatusProjection:
         # Freeze "now" so days_elapsed is deterministic. With a high burn rate
         # projected_final_cost can reliably exceed 110% of the budget.
         with patch("services.cost_aggregation_service.datetime") as mock_dt:
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime, timezone
             fixed_now = datetime(2026, 4, 5, 12, 0, 0, tzinfo=timezone.utc)
             mock_dt.now = MagicMock(return_value=fixed_now)
             # Pass-through for other datetime usage (timedelta constructor etc.)

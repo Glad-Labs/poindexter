@@ -547,7 +547,7 @@ class TestHandleContentCreation:
         request = _make_content_request()
 
         with (
-            patch(f"{_CONSTRAINT_UTILS}.ContentConstraints") as MockConstraints,
+            patch(f"{_CONSTRAINT_UTILS}.ContentConstraints"),
             patch(
                 f"{_CONSTRAINT_UTILS}.calculate_phase_targets",
                 return_value={"research": 300, "creative": 1200, "qa": 1200},

@@ -82,7 +82,7 @@ class TestCapturePreviewScreenshot:
         with patch(
             "services.preview_screenshot.async_playwright",
             create=True,
-        ) as patched:
+        ):
             # We need to patch the import inside the function.
             # The function does `from playwright.async_api import async_playwright`
             # so we patch that module.
@@ -90,7 +90,6 @@ class TestCapturePreviewScreenshot:
                 "sys.modules",
                 {"playwright": MagicMock(), "playwright.async_api": MagicMock()},
             ):
-                import importlib
                 import services.preview_screenshot as mod
 
                 # Patch the import within the function by replacing the whole
