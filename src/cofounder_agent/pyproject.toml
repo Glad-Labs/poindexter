@@ -142,6 +142,7 @@ render_prometheus_rules = "cofounder_agent.services.jobs.render_prometheus_rules
 postgres_vacuum = "cofounder_agent.services.jobs.postgres_vacuum:PostgresVacuumJob"
 check_published_links = "cofounder_agent.services.jobs.check_published_links:CheckPublishedLinksJob"
 flag_missing_seo = "cofounder_agent.services.jobs.flag_missing_seo:FlagMissingSeoJob"
+detect_duplicate_posts = "cofounder_agent.services.jobs.detect_duplicate_posts:DetectDuplicatePostsJob"
 
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
