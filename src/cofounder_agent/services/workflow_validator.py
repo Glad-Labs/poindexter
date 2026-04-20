@@ -215,7 +215,7 @@ class WorkflowValidator:
                     )
 
         except PhaseMappingError as e:
-            errors.append(f"{prefix}: {str(e)}")
+            errors.append(f"{prefix}: {e!s}")
         except Exception as e:
             logger.error(
                 "[validate_workflow] Could not validate mapping for phase_index=%d, phase_name=%r: %s",
@@ -224,7 +224,7 @@ class WorkflowValidator:
                 str(e),
                 exc_info=True,
             )
-            warnings.append(f"Could not validate mapping for phase {phase_index}: {str(e)}")
+            warnings.append(f"Could not validate mapping for phase {phase_index}: {e!s}")
 
         return errors, warnings
 

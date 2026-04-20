@@ -522,7 +522,7 @@ class PodcastService:
         selected_voice = VOICE_POOL[voice_index]
         # Try selected voice first, then remaining pool voices, then fallbacks
         remaining_pool = [v for v in VOICE_POOL if v != selected_voice]
-        voices_to_try = [selected_voice] + remaining_pool + VOICE_FALLBACKS
+        voices_to_try = [selected_voice, *remaining_pool, *VOICE_FALLBACKS]
         last_error = None
         logger.info("[PODCAST] Voice rotation: selected '%s' (index %d) for post %s",
                     selected_voice, voice_index, post_id[:12])

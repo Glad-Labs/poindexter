@@ -6,7 +6,7 @@ import pytest
 
 _has_sentry = False
 try:
-    import sentry_sdk  # noqa: F401
+    import sentry_sdk
     _has_sentry = True
 except ImportError:
     pass

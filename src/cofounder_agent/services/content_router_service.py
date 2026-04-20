@@ -107,7 +107,7 @@ async def process_content_generation_task(
     try:
         from services.container import get_service as _get_service
         _settings_service = _get_service("settings")
-    except Exception:  # noqa: BLE001
+    except Exception:
         _settings_service = None
     from services.image_style_rotation import ImageStyleTracker as _IST
     _style_tracker = _IST()

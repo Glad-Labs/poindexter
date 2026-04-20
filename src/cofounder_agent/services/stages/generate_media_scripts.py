@@ -150,7 +150,7 @@ class GenerateMediaScriptsStage:
                     "short_summary_length": len(short_summary),
                 },
             )
-        except Exception as e:  # noqa: BLE001 — legacy: non-critical, log + continue
+        except Exception as e:
             logger.warning("[MEDIA] Script generation failed (non-fatal): %s", e)
             stages = context.setdefault("stages", {})
             stages["4b_media_scripts"] = False

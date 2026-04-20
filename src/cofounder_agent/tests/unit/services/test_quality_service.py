@@ -425,9 +425,9 @@ class TestQualityDimensionsAverage:
 # ---------------------------------------------------------------------------
 
 
-from unittest.mock import AsyncMock, MagicMock  # noqa: E402
+from unittest.mock import AsyncMock, MagicMock
 
-from services.quality_service import (  # noqa: E402
+from services.quality_service import (
     EvaluationMethod,
     QualityAssessment,
     get_content_quality_service,

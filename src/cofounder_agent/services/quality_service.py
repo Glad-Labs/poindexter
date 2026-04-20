@@ -35,7 +35,7 @@ import re
 from typing import Any
 
 from services.logger_config import get_logger
-from services.quality_models import (  # noqa: F401 — re-exported below
+from services.quality_models import (
     EvaluationMethod,
     QualityAssessment,
     QualityDimensions,
@@ -204,7 +204,7 @@ class UnifiedQualityService:
                 ),
                 overall_score=5.0,
                 passing=False,
-                feedback=f"Evaluation error: {str(e)}",
+                feedback=f"Evaluation error: {e!s}",
                 suggestions=["Unable to evaluate at this time"],
                 evaluation_method=method,
                 evaluated_by="UnifiedQualityService-Error",

@@ -83,7 +83,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
             raise
         except ValueError as e:
             # Return 400 for validation errors
-            logger.warning(f"Request validation error: {str(e)}", exc_info=True)
+            logger.warning(f"Request validation error: {e!s}", exc_info=True)
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={"detail": str(e)},
@@ -91,7 +91,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             # Log unexpected errors
             logger.error(
-                f"Request validation middleware error for {request.url.path}: {type(e).__name__}: {str(e)}",
+                f"Request validation middleware error for {request.url.path}: {type(e).__name__}: {e!s}",
                 exc_info=True,
             )
             return JSONResponse(

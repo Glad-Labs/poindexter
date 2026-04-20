@@ -28,7 +28,7 @@ class HelloTap:
 
     async def extract(
         self,
-        pool: Any,  # noqa: ARG002 — required by Tap Protocol, this sample doesn't need it
+        pool: Any,
         config: dict[str, Any],
     ) -> AsyncIterator[Document]:
         greeting = config.get("greeting", "hello")

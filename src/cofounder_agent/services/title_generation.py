@@ -140,7 +140,7 @@ async def generate_canonical_title(
             )
         return None
 
-    except Exception as e:  # noqa: BLE001 — legacy non-fatal
+    except Exception as e:
         logger.warning("Error generating canonical title: %s", e, exc_info=True)
         return None
 
@@ -173,7 +173,7 @@ async def check_title_originality(title: str) -> dict:
         enabled = site_config.get_bool("qa_title_originality_enabled", True)
         if not enabled:
             return result
-    except Exception:  # noqa: BLE001
+    except Exception:
         threshold = 0.6
 
     try:
@@ -211,7 +211,7 @@ async def check_title_originality(title: str) -> dict:
                 result["max_similarity"] * 100,
             )
 
-    except Exception as e:  # noqa: BLE001 — legacy non-fatal
+    except Exception as e:
         logger.warning("[TITLE] Originality check skipped (non-fatal): %s", e)
 
     return result

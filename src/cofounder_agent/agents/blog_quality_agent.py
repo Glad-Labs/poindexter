@@ -127,7 +127,7 @@ class BlogQualityAgent:
             }
 
         except Exception as e:
-            logger.error(f"[BlogQualityAgent] Error: {str(e)}", exc_info=True)
+            logger.error(f"[BlogQualityAgent] Error: {e!s}", exc_info=True)
             return {
                 "status": "failed",
                 "error": str(e),

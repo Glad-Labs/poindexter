@@ -91,7 +91,7 @@ class WorkflowExecutor:
         try:
             phase_mappings = build_full_phase_pipeline(phase_names)
         except PhaseMappingError as e:
-            raise WorkflowExecutionError(f"Failed to build phase pipeline: {str(e)}") from e
+            raise WorkflowExecutionError(f"Failed to build phase pipeline: {e!s}") from e
 
         # Initialize results storage
         phase_results: dict[str, PhaseResult] = {}

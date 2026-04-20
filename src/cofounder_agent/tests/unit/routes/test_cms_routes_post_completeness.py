@@ -123,7 +123,7 @@ SAMPLE_CATEGORY_ROW = {
 # ---------------------------------------------------------------------------
 
 
-from importlib.util import find_spec  # noqa: E402
+from importlib.util import find_spec
 
 HAS_MARKDOWN = find_spec("markdown") is not None
 

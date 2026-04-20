@@ -204,7 +204,7 @@ async def _dispatch_to_operator(alert: dict[str, Any]) -> None:
     """
     try:
         from services.task_executor import _notify_openclaw
-    except Exception as e:  # noqa: BLE001 — import-time issues must not crash webhook
+    except Exception as e:
         logger.warning("alertmanager webhook: _notify_openclaw unavailable: %s", e)
         return
 
@@ -212,7 +212,7 @@ async def _dispatch_to_operator(alert: dict[str, Any]) -> None:
     message = _format_alert_message(alert)
     try:
         await _notify_openclaw(message, critical=severity == "critical")
-    except Exception as e:  # noqa: BLE001 — don't let a dispatch failure crash the webhook
+    except Exception as e:
         logger.warning("alertmanager webhook: operator dispatch failed: %s", e)
 
 
@@ -283,7 +283,7 @@ async def alertmanager_webhook(
     pool = db.pool
     try:
         await _ensure_table(pool)
-    except Exception as e:  # noqa: BLE001 — still process, just don't persist
+    except Exception as e:
         logger.exception("alertmanager webhook: ensure_table failed: %s", e)
 
     persisted = 0
@@ -296,7 +296,7 @@ async def alertmanager_webhook(
         try:
             await _insert_alert(pool, alert)
             persisted += 1
-        except Exception as e:  # noqa: BLE001 — log & continue
+        except Exception as e:
             logger.warning("alertmanager webhook: insert failed: %s", e)
 
         if _should_page_operator(alert):
@@ -307,7 +307,7 @@ async def alertmanager_webhook(
             rem = await _maybe_remediate(pool, alert)
             if rem:
                 remediated += 1
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("alertmanager webhook: remediation lookup failed: %s", e)
 
     logger.info(

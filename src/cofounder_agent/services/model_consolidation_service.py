@@ -509,7 +509,7 @@ class ModelConsolidationService:
 
         # All providers failed
         self.metrics["failed_requests"] += 1
-        error_msg = f"All model providers failed. Last error: {str(last_error)}"
+        error_msg = f"All model providers failed. Last error: {last_error!s}"
         logger.error("All providers exhausted", error=error_msg, exc_info=last_error)
         raise ServiceError(error_msg)
 

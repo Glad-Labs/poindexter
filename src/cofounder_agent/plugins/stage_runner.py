@@ -244,7 +244,7 @@ class StageRunner:
                 halted=halts,
                 elapsed_ms=elapsed,
             )
-        except Exception as e:  # noqa: BLE001 — stage crashed; don't let it propagate
+        except Exception as e:
             elapsed = int((time.time() - t0) * 1000)
             logger.exception("stage_runner: %r raised: %s", name, e)
             return StageRunRecord(

@@ -294,7 +294,7 @@ class UnifiedOrchestrator:
                 "request_id": request_id,
                 "status": "error",
                 "error": str(e),
-                "message": f"An error occurred processing your request: {str(e)}",
+                "message": f"An error occurred processing your request: {e!s}",
             }
 
     # ========================================================================
@@ -681,7 +681,7 @@ class UnifiedOrchestrator:
                 request_type=request.request_type,
                 status=ExecutionStatus.FAILED,
                 output=str(e),
-                feedback=f"Content creation failed: {str(e)}",
+                feedback=f"Content creation failed: {e!s}",
             )
 
     # --------------------------------------------------------------------

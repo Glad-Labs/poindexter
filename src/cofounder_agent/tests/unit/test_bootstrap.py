@@ -19,7 +19,7 @@ for _p in _HERE.parents:
             sys.path.insert(0, str(_p))
         break
 
-from brain import bootstrap  # noqa: E402
+from brain import bootstrap
 
 
 @pytest.fixture

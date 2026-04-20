@@ -17,7 +17,7 @@ from services.database_service import DatabaseService
 
 def _has_brain_module():
     try:
-        import brain.bootstrap  # noqa: F401
+        import brain.bootstrap
         return True
     except ImportError:
         return False

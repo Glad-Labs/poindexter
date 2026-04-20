@@ -51,7 +51,7 @@ class RenderPrometheusRulesJob:
 
         try:
             rendered = await build_current(pool)
-        except Exception as e:  # noqa: BLE001 — job must not raise
+        except Exception as e:
             logger.exception("render_prometheus_rules: build failed: %s", e)
             return JobResult(ok=False, detail=f"build failed: {e}", changes_made=0)
 

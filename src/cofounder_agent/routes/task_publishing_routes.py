@@ -869,7 +869,7 @@ async def generate_task_image(
                                         # Store image URL and metadata in task for persistence
                                         # Track this image URL in recent_image_urls for future filtering
                                         updated_recent_urls = (
-                                            recently_used + [image_url]
+                                            [*recently_used, image_url]
                                             if recently_used
                                             else [image_url]
                                         )
@@ -894,7 +894,7 @@ async def generate_task_image(
                                 logger.error(
                                     "Failed to parse Pexels response JSON: %s", je, exc_info=True
                                 )
-                                raise ValueError(f"Invalid JSON from Pexels API: {str(je)}") from je
+                                raise ValueError(f"Invalid JSON from Pexels API: {je!s}") from je
                         elif resp.status == 429:
                             logger.warning("Pexels rate limit exceeded")
                             raise HTTPException(

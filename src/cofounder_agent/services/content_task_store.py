@@ -102,7 +102,7 @@ class ContentTaskStore:
             )
             return task_id
 
-        except Exception as e:  # noqa: BLE001 — re-raise after logging
+        except Exception as e:
             logger.error("[CONTENT_TASK_STORE] ERROR: %s", e, exc_info=True)
             raise
 

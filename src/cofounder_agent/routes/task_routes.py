@@ -694,8 +694,8 @@ async def delete_task(
 # SUB-ROUTERS
 # ============================================================================
 # Imported late to avoid circular imports — these routers depend on `router`.
-from routes.task_publishing_routes import publishing_router  # noqa: E402
-from routes.task_status_routes import status_router  # noqa: E402
+from routes.task_publishing_routes import publishing_router
+from routes.task_status_routes import status_router
 
 router.include_router(status_router)
 router.include_router(publishing_router)

@@ -65,7 +65,7 @@ async def build_writing_style_context(
         )
         return "\n\n".join(excerpts)
 
-    except Exception as e:  # noqa: BLE001 — legacy non-fatal path
+    except Exception as e:
         logger.warning(
             "Failed to load writing style samples (non-fatal, proceeding without): %s",
             e, exc_info=True,

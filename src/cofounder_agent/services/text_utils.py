@@ -105,14 +105,14 @@ def scrub_fabricated_links(
             return any(
                 host == d or host.endswith("." + d) for d in trusted
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
 
     def _is_real_internal_link(url: str) -> bool:
         """True if an internal /posts/<slug> link points to a known slug."""
         try:
             parsed = urlparse(url)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return True
         host = (parsed.hostname or "").lower()
         if own_domain and own_domain not in host:

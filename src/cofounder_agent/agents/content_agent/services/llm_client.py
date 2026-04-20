@@ -248,7 +248,7 @@ class LLMClient:
             raise
         except json.JSONDecodeError as e:
             logger.error(f"Failed to decode JSON from local LLM response: {e}", exc_info=True)
-            raise ValueError(f"LLM response was not valid JSON: {str(e)}") from e
+            raise ValueError(f"LLM response was not valid JSON: {e!s}") from e
 
     async def generate_text(self, prompt: str) -> str:
         """Generates plain text content using the configured LLM, with caching (async)."""

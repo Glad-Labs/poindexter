@@ -62,7 +62,7 @@ class VerifyTaskStage:
         logger.info("STAGE 1: Verifying task record exists...")
         try:
             existing = await database_service.get_task(task_id)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.error("Failed to verify task: %s", e, exc_info=True)
             stages["1_content_task_created"] = False
             return StageResult(

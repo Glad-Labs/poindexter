@@ -115,7 +115,7 @@ class BlogImageAgent:
             }
 
         except Exception as e:
-            logger.error(f"[BlogImageAgent] Error: {str(e)}", exc_info=True)
+            logger.error(f"[BlogImageAgent] Error: {e!s}", exc_info=True)
             return {
                 "status": "failed",
                 "error": str(e),

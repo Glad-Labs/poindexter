@@ -139,7 +139,7 @@ def _reset_singletons_between_tests():
     try:
         from plugins.registry import clear_registry_cache
         clear_registry_cache()
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     # site_config has a module-level dict; preserve the brand keys we
@@ -150,7 +150,7 @@ def _reset_singletons_between_tests():
         # Re-seed in case a test wiped the brand keys.
         for k, v in _TEST_BRAND_CONFIG.items():
             _sc._config.setdefault(k, v)
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     # settings_service caches the DB read; clear to force re-fetch.
@@ -162,7 +162,7 @@ def _reset_singletons_between_tests():
             # Instance cache — some tests build an instance with a fake pool,
             # later tests shouldn't see that cache.
             pass  # instance-scoped; no module-level state to reset here.
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     # container service registry (the DI holder used by get_service).
@@ -170,5 +170,5 @@ def _reset_singletons_between_tests():
         from services import container
         if hasattr(container, "_services"):
             container._services = {}
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass

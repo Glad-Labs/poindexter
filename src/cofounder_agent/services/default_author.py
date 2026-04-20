@@ -48,6 +48,6 @@ async def get_or_create_default_author(
             # concurrent insert and we missed the RETURNING value.
             return await conn.fetchval("SELECT id FROM authors LIMIT 1")
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Error getting/creating default author: %s", e, exc_info=True)
         return None

@@ -119,7 +119,7 @@ async def self_review_and_revise(
             "[SELF_REVIEW] Revision too short (%d chars), keeping original (%d chars)",
             len(revised_text), len(draft),
         )
-    except Exception as e:  # noqa: BLE001 — legacy non-fatal
+    except Exception as e:
         logger.warning("[SELF_REVIEW] Self-review failed (non-fatal): %s", e)
 
     return draft, stats
