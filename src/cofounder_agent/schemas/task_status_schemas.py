@@ -7,7 +7,7 @@ with comprehensive status handling.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TaskStatusUpdateRequest(BaseModel):
@@ -37,7 +37,8 @@ class TaskStatusUpdateRequest(BaseModel):
         description="Result data to store with the status update",
     )
 
-    @validator("status")
+    @field_validator("status")
+    @classmethod
     def validate_status(cls, v):
         """Validate status is a known value."""
         valid_statuses = [
@@ -127,7 +128,7 @@ class TaskStatusFilterRequest(BaseModel):
     statuses: list[str] = Field(
         ...,
         description="List of statuses to filter by",
-        min_items=1,  # type: ignore[call-overload]
+        min_length=1,
     )
     limit: int = Field(
         100,
@@ -149,7 +150,8 @@ class TaskStatusFilterRequest(BaseModel):
         description="Sort order (asc or desc)",
     )
 
-    @validator("statuses")
+    @field_validator("statuses")
+    @classmethod
     def validate_statuses(cls, v):
         """Validate all statuses are valid."""
         valid_statuses = {
@@ -168,7 +170,8 @@ class TaskStatusFilterRequest(BaseModel):
                 raise ValueError(f"Invalid status: {status}")
         return [s.lower() for s in v]
 
-    @validator("sort_order")
+    @field_validator("sort_order")
+    @classmethod
     def validate_sort_order(cls, v):
         """Validate sort order."""
         if v.lower() not in ["asc", "desc"]:

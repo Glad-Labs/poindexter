@@ -58,7 +58,7 @@ class UnifiedTaskRequest(BaseModel):
         True, description="Search for featured image (blog_post only)"
     )
     tags: list[str] | None = Field(
-        None, min_items=0, max_items=10, description="Tags for categorization (max 10)"  # type: ignore[call-overload]
+        None, min_length=0, max_length=10, description="Tags for categorization (max 10)",
     )
 
     # SOCIAL MEDIA SPECIFIC

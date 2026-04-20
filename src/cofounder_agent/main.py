@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 # Third-party imports
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 
 # Import configuration
 from config import get_config
@@ -786,8 +786,9 @@ class CommandRequest(BaseModel):
     command: str
     context: dict[str, Any] | None = None
 
-    @validator("command")
-    def _command_must_not_be_empty(cls, v: str) -> str:  # pylint: disable=no-self-argument
+    @field_validator("command")
+    @classmethod
+    def _command_must_not_be_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("command must be a non-empty string")
         return v
