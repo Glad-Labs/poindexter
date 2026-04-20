@@ -19,8 +19,6 @@ from importlib.util import find_spec
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-HAS_MARKDOWN = find_spec("markdown") is not None
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -31,6 +29,8 @@ from routes.cms_routes import (
     map_featured_image_to_coverimage,
     router,
 )
+
+HAS_MARKDOWN = find_spec("markdown") is not None
 
 # ---------------------------------------------------------------------------
 # Helpers

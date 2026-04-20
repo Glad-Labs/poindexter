@@ -286,8 +286,12 @@ ignore = [
 "utils/middleware_config.py" = ["ARG001"]
 "utils/route_registration.py" = ["ARG001"]
 # Stub/no-op broadcasters — **kwargs swallow caller args for API compat.
-"services/websocket_event_broadcaster.py" = ["ARG001"]
+"services/websocket_event_broadcaster.py" = ["ARG001", "ARG004"]
 "services/progress_broadcaster.py" = ["ARG001"]
+"services/websocket_manager.py" = ["ARG002"]
+# Mock crewai_tools shim — matches third-party library signatures even
+# though we only ever log a warning.
+"agents/content_agent/utils/crewai_tools_mock.py" = ["ARG002"]
 # Namespace-package sys.path fixes must run before imports.
 "agents/content_agent/services/llm_client.py" = ["E402"]
 "agents/content_agent/services/pexels_client.py" = ["E402"]
@@ -298,6 +302,20 @@ ignore = [
 # Quality scorers all share a (content, context, cfg) signature for
 # uniform dispatch, even when individual scorers don't read all three.
 "services/quality_scorers.py" = ["ARG001"]
+# Pipeline Stage Protocol: execute(context, config). Most stages read
+# from context and don't need config — the arg is part of the contract
+# so every stage can be dispatched uniformly.
+"services/stages/*" = ["ARG002"]
+# Job Protocol: run(pool, config). Subprocess jobs (db_backup,
+# auto_embed_posts, sync_shared_context) don't need the pool — they
+# shell out to a CLI that reads DATABASE_URL itself.
+"services/jobs/*" = ["ARG002"]
+# Plugin sample implementations are Protocol-contract reference stubs.
+# The whole point is to show the minimum shape, not to use every arg.
+"plugins/samples/*" = ["ARG002"]
+# Phase executors share the Phase Protocol signature even when a given
+# phase doesn't need the config kwarg.
+"services/phases/*" = ["ARG002"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
