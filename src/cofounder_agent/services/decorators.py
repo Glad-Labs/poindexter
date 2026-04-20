@@ -27,10 +27,12 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-def _cfg(key: str, default: str) -> str:
-    """Read from site_config (falls back to env vars automatically)."""
+def _site_config():
+    """Lazy site_config lookup — avoids import-cycle headaches and
+    ensures we always see the loaded values, not a stale import-time
+    snapshot. See ``_slow_query_threshold_ms`` for the rationale."""
     from services.site_config import site_config
-    return site_config.get(key, default)
+    return site_config
 
 
 def _slow_query_threshold_ms() -> int:
@@ -41,19 +43,19 @@ def _slow_query_threshold_ms() -> int:
     captured values were always the env-var/default fallback. Switching
     settings in app_settings had no effect until a worker restart,
     which contradicts the DB-first config promise.
+
+    Uses site_config.get_int which already validates and falls back
+    to the default on bad data — no try/except needed here.
     """
-    try:
-        return int(_cfg("slow_query_threshold_ms", "100"))
-    except (ValueError, TypeError):
-        return 100
+    return _site_config().get_int("slow_query_threshold_ms", 100)
 
 
 def _log_all_queries() -> bool:
-    return _cfg("log_all_queries", "false").lower() == "true"
+    return _site_config().get_bool("log_all_queries", False)
 
 
 def _enable_query_monitoring() -> bool:
-    return _cfg("enable_query_monitoring", "true").lower() == "true"
+    return _site_config().get_bool("enable_query_monitoring", True)
 
 
 def log_query_performance(
