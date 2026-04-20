@@ -29,8 +29,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator, List, Tuple
+from typing import Any
 
 from plugins.tap import Document
 from services.taps._chunking import classify_file
@@ -45,7 +46,7 @@ def _discover_memory_dirs(
     claude_projects_dir: str | None = None,
     openclaw_memory_dir: str | None = None,
     shared_context_dir: str | None = None,
-) -> List[Tuple[Path, str, str]]:
+) -> list[tuple[Path, str, str]]:
     """Return the list of ``(path, origin, scope)`` tuples to scan.
 
     - ``origin`` is the ``writer`` label stored on each Document
@@ -81,7 +82,7 @@ def _discover_memory_dirs(
         Path.home() / "glad-labs-website" / ".shared-context",
     )
 
-    dirs: List[Tuple[Path, str, str]] = []
+    dirs: list[tuple[Path, str, str]] = []
 
     if projects_root and projects_root.is_dir():
         for scope_dir in sorted(projects_root.glob("C--*")):

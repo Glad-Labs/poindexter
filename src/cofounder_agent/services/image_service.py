@@ -566,6 +566,7 @@ class ImageService:
         """
         try:
             import asyncio
+
             from services.ollama_client import OllamaClient
         except Exception:
             return None

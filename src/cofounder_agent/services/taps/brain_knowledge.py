@@ -12,7 +12,8 @@ Config (``plugin.tap.brain_knowledge``):
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from plugins.tap import Document
 

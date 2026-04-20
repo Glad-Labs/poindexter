@@ -76,9 +76,13 @@ class GenerateContentStage:
         from services.text_utils import normalize_text, scrub_fabricated_links
         from services.title_generation import (
             check_title_originality as _check_title_originality,
+        )
+        from services.title_generation import (
             generate_canonical_title as _generate_canonical_title,
         )
-        from services.writing_style_context import build_writing_style_context as _build_writing_style_context
+        from services.writing_style_context import (
+            build_writing_style_context as _build_writing_style_context,
+        )
 
         task_id = context.get("task_id")
         topic = context.get("topic", "")

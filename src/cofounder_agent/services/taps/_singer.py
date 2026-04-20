@@ -64,8 +64,9 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from plugins.tap import Document
 

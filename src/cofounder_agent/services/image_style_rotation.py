@@ -17,7 +17,6 @@ from __future__ import annotations
 import time
 from collections import deque
 
-
 STYLE_HISTORY_SIZE = 10
 STYLE_HISTORY_TTL = 3600  # 1 hour
 
