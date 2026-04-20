@@ -18,7 +18,13 @@ import time
 import urllib.error
 import urllib.request
 
-from docker_utils import localize_url, resolve_url
+try:
+    # When brain/ is on sys.path directly (container runtime), import bare.
+    from docker_utils import localize_url, resolve_url
+except ImportError:
+    # When imported as ``brain.health_probes`` (tests, notebooks), use
+    # package-qualified path.
+    from brain.docker_utils import localize_url, resolve_url
 
 logger = logging.getLogger("brain.probes")
 
