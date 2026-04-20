@@ -885,7 +885,15 @@ async def probe_quality_trend(pool) -> dict:
 
 
 async def probe_topic_quality(pool) -> dict:
-    """Probe: Monitor topic discovery quality via rejection and low-score rates (7d)."""
+    """Probe: Monitor rejection rate and attribute the dominant driver (7d).
+
+    Rejections come from multiple upstream stages, not just low quality.
+    Reporting just "72% rejected — topics too low quality" when 0% of
+    tasks failed the quality threshold was misleading (issue #235) —
+    the actual driver in that case was semantic dedup. The probe now
+    breaks down rejections by audit-log category and names the winner
+    in the detail message.
+    """
     try:
         row = await pool.fetchrow("""
             SELECT
@@ -902,7 +910,46 @@ async def probe_topic_quality(pool) -> dict:
             return {"ok": True, "detail": "no tasks created in last 7 days (pipeline idle)"}
         rejection_rate = rejected / total * 100
         low_quality_rate = low_quality / total * 100
+
+        # Attribute rejections to their actual drivers by counting the
+        # rejection-category audit events in the same 7d window. If a
+        # task hits multiple gates, the first-written event wins — that
+        # matches the operator-facing reality (what stopped it first).
+        driver_rows = await pool.fetch("""
+            SELECT event, COUNT(*) AS n
+            FROM audit_log
+            WHERE event IN (
+                'semantic_dedup_rejected',
+                'qa_rejected',
+                'topic_rejected',
+                'title_not_original',
+                'content_validation_rejected'
+            )
+              AND created_at > NOW() - INTERVAL '7 days'
+            GROUP BY event
+            ORDER BY n DESC
+            LIMIT 3
+        """)
+        drivers = {r["event"]: r["n"] for r in driver_rows}
+        top_driver = next(iter(drivers), None)
+
         healthy = rejection_rate <= 30
+        if healthy:
+            suffix = ""
+        elif top_driver:
+            # Be specific about the cause: "dedup" or "quality", not a
+            # generic "low quality" claim when quality wasn't the issue.
+            label = {
+                "semantic_dedup_rejected": "duplicate topics (feeds re-surfacing covered ground)",
+                "qa_rejected": "QA threshold (tighten writer or loosen gate)",
+                "topic_rejected": "topic selector rejecting (filters too strict)",
+                "title_not_original": "titles colliding with web content",
+                "content_validation_rejected": "content validator failing",
+            }.get(top_driver, top_driver)
+            suffix = f" — driver: {label} ({drivers[top_driver]}/{rejected})"
+        else:
+            suffix = " — cause unknown (no matching audit events)"
+
         return {
             "ok": healthy,
             "total_tasks": total,
@@ -910,8 +957,13 @@ async def probe_topic_quality(pool) -> dict:
             "rejection_rate": round(rejection_rate, 1),
             "low_quality_count": low_quality,
             "low_quality_rate": round(low_quality_rate, 1),
-            "detail": f"{rejection_rate:.0f}% rejected, {low_quality_rate:.0f}% below 70 quality ({total} tasks)"
-            + ("" if healthy else " — topics too low quality"),
+            "drivers": drivers,
+            "top_driver": top_driver,
+            "detail": (
+                f"{rejection_rate:.0f}% rejected, "
+                f"{low_quality_rate:.0f}% below 70 quality ({total} tasks)"
+                + suffix
+            ),
         }
     except Exception as e:
         return {"ok": False, "detail": str(e)[:200]}
