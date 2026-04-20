@@ -483,17 +483,16 @@ class WorkflowExecutor:
                 if "index" not in phase:
                     phase["index"] = i
                 normalized.append(WorkflowPhase(**phase))
-            else:
-                # Try to coerce to WorkflowPhase
-                if hasattr(phase, "name"):
-                    normalized.append(
-                        WorkflowPhase(
-                            index=i,
-                            name=phase.name,
-                            user_inputs=getattr(phase, "metadata", {}),
-                            model_overrides=None,
-                            skip=False,
-                        )
+            # Try to coerce to WorkflowPhase
+            elif hasattr(phase, "name"):
+                normalized.append(
+                    WorkflowPhase(
+                        index=i,
+                        name=phase.name,
+                        user_inputs=getattr(phase, "metadata", {}),
+                        model_overrides=None,
+                        skip=False,
                     )
+                )
 
         return normalized

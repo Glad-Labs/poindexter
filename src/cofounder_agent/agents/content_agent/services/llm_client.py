@@ -16,7 +16,7 @@ def _fix_sys_path_for_venv():
             # Create new sys.path with venv site-packages FIRST
             new_path = [venv_site_packages_str]
             for p in sys.path:
-                if p != venv_site_packages_str and p != "":
+                if p not in (venv_site_packages_str, ""):
                     new_path.append(p)
             sys.path[:] = new_path
             # Force Python to reload the module cache
@@ -109,7 +109,7 @@ class LLMClient:
                     self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)  # type: ignore[attr-defined]
                     logger.info(f"✅ Initialized Gemini client with model: {model_to_use}")
 
-            if self.provider == "local" or self.provider == "ollama":
+            if self.provider in {"local", "ollama"}:
                 # Treat Ollama as a local provider - both use the same HTTP API endpoint
                 logger.info(f"✅ Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
 
@@ -183,7 +183,7 @@ class LLMClient:
                 # not block the event loop (issue #780).
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(None, self._generate_json_gemini, prompt)
-            elif self.provider == "local" or self.provider == "ollama":
+            elif self.provider in {"local", "ollama"}:
                 result = await self._generate_json_local(prompt)
             else:
                 logger.error(f"Unsupported LLM provider: {self.provider}")
@@ -267,7 +267,7 @@ class LLMClient:
                 # not block the event loop (issue #780).
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(None, self._generate_text_gemini, prompt)
-            elif self.provider == "local" or self.provider == "ollama":
+            elif self.provider in {"local", "ollama"}:
                 result = await self._generate_text_local(prompt)
             else:
                 logger.error(f"Unsupported LLM provider: {self.provider}")
@@ -337,7 +337,7 @@ class LLMClient:
                 # not block the event loop (issue #780).
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(None, self._generate_summary_gemini, prompt)
-            elif self.provider == "local" or self.provider == "ollama":
+            elif self.provider in {"local", "ollama"}:
                 # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
                 # or use a specific endpoint if available. For now, we use the main model.
                 logger.warning(

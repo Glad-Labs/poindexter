@@ -770,7 +770,7 @@ class TaskExecutor:
             # ⚠️ IMPORTANT: Don't store incomplete content for failed tasks
             # Only store content if task is approved/successful
             # This prevents partial/truncated content from appearing in the database
-            if final_status == "failed" or final_status == "rejected":
+            if final_status in {"failed", "rejected"}:
                 logger.warning(
                     "[WARN] Task status is '%s' - NOT storing content to prevent partial/truncated data",
                     final_status,
