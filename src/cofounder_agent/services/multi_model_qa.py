@@ -335,7 +335,6 @@ class MultiModelQA:
             from services.content_validator import verify_content_urls
             url_issues = await verify_content_urls(content)
             dead_links = [i for i in url_issues if i.category == "dead_link"]
-            no_citations = [i for i in url_issues if i.category == "no_citations"]
 
             if dead_links:
                 # Dead links block publish — this is a fabricated/hallucinated URL

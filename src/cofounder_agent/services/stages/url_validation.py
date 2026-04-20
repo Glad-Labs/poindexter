@@ -57,7 +57,6 @@ class UrlValidationStage:
     ) -> StageResult:
         content_text = context.get("content", "")
         task_id = context.get("task_id", "")
-        database_service = context.get("database_service")
 
         if not content_text:
             return StageResult(
