@@ -161,7 +161,7 @@ class TestRun:
         pool = _make_pool([
             {"id": "p1", "title": "Post", "content": " ".join(urls)},
         ])
-        client = _patched_httpx_client({u: 200 for u in urls})
+        client = _patched_httpx_client(dict.fromkeys(urls, 200))
 
         with patch(
             "services.jobs.check_published_links.httpx.AsyncClient",
