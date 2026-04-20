@@ -13,11 +13,22 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 ## Development Workflow
 
 1. Create a branch from `main`: `git checkout -b feat/your-feature`
-2. Make your changes
-3. Run tests and ensure they pass: `python -m pytest tests/unit/ -q`
-4. Run linting: `npm run lint`
-5. Commit with a clear message describing what and why
-6. Open a pull request against `main`
+2. Install the pre-commit hooks once per clone: `pip install pre-commit && pre-commit install` — this wires up `gitleaks` (secret scan) and a few formatting checks so commits are blocked before anything sensitive lands in history.
+3. Make your changes
+4. Run tests and ensure they pass: `python -m pytest tests/unit/ -q`
+5. Run linting: `npm run lint`
+6. Commit with a clear message describing what and why
+7. Open a pull request against `main`
+
+## CI security gates
+
+Every PR and every push to `main` runs three automated security gates (see `.github/workflows/security.yml` + `.gitea/workflows/security.yml`):
+
+- **gitleaks** — secret scan across the diff + full history, blocks on any finding
+- **Trivy** — filesystem CVE scan, fails the build on HIGH / CRITICAL fixed vulnerabilities
+- **syft + grype** — generates a CycloneDX SBOM, scans it for HIGH / CRITICAL CVEs, and uploads the SBOM as a workflow artifact
+
+Dependencies are kept current by Dependabot (`.github/dependabot.yml`) with a weekly PR batch. Patch and minor bumps auto-rebase onto `dev`; majors wait on human review.
 
 ## What We're Looking For
 

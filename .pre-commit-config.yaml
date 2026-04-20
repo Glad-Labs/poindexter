@@ -1,0 +1,22 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        # gitleaks' pre-commit hook runs `protect --staged` by default, which
+        # scans only what's in the commit — it won't hit the historical 336
+        # findings frozen in .gitleaks-baseline.json.
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=5120']
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        exclude: '^infrastructure/grafana/dashboards/.*\.json$'
+      - id: end-of-file-fixer
+        exclude: '\.(svg|json)$'
+      - id: trailing-whitespace
+        exclude: '\.md$'

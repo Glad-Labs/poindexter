@@ -258,6 +258,12 @@ The free tier runs the pipeline end-to-end. The paid tiers give you months of tu
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
+## Security & SBOM
+
+- Report vulnerabilities to **security@gladlabs.io** (see [SECURITY.md](SECURITY.md))
+- Every push to `main` runs gitleaks (secret scan), Trivy (CVE scan), and syft+grype (SBOM + CVE scan against the SBOM) — see [`.github/workflows/security.yml`](.github/workflows/security.yml)
+- A CycloneDX-JSON **SBOM is published as a workflow artifact** on every release; enterprise buyers can also request one directly at the contact address above
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE) — Copyright 2025-2026 Matthew M. Gladding
