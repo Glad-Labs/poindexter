@@ -65,7 +65,21 @@ except (ImportError, ModuleNotFoundError) as e:
 
 
 class LLMClient:
-    """Client for interacting with a configured Large Language Model."""
+    """Client for interacting with a configured Large Language Model.
+
+    v2.6 deliberate non-migration: this class belongs to the content_agent
+    subsystem (parallel to the stages-based pipeline) and already speaks
+    its own plugin-selection dialect via config.LLM_PROVIDER (gemini /
+    ollama / local). Migrating its raw httpx calls to get_llm_providers()
+    would require rewriting 818 lines of tests (11 httpx.AsyncClient
+    patches + 13 Gemini-path assertions) with no runtime benefit —
+    LLMProvider plugins hit the same Ollama endpoint this client hits
+    directly. The Gemini path is dead per the no-paid-APIs policy and
+    will be stripped wholesale in v2.8 tech-debt cleanup; at that point
+    the remaining local-only LLMClient can either stay as-is (thin
+    facade over httpx to one endpoint) or get collapsed into
+    get_llm_providers() without the Gemini SDK dependency in the way.
+    """
 
     def __init__(self, model_name: "str | None" = None):
         """
