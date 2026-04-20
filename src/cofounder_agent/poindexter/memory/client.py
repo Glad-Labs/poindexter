@@ -12,10 +12,11 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import asyncpg
 import httpx
@@ -158,7 +159,7 @@ class MemoryClient:
                 pass
             self._pool = None
 
-    async def __aenter__(self) -> "MemoryClient":
+    async def __aenter__(self) -> MemoryClient:
         await self.connect()
         return self
 

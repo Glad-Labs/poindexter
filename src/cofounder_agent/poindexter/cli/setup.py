@@ -128,7 +128,7 @@ def _rewrite_to_host(url: str) -> str | None:
 
 
 async def _check_http_endpoint(
-    url: str, *, timeout: float = 5.0, label: str = "http"
+    url: str, *, timeout: float = 5.0,
 ) -> tuple[bool, str]:
     """GET url, return (ok, detail). Never raises.
 
@@ -404,7 +404,7 @@ def _auto_provision() -> str:
     except subprocess.CalledProcessError as e:
         raise click.ClickException(
             f"docker run failed: {e.stderr.strip() if e.stderr else e}"
-        )
+        ) from e
 
     dsn = f"postgresql://{_AUTO_USER}:{password}@localhost:{_AUTO_PORT}/{_AUTO_DB}"
 
@@ -649,7 +649,7 @@ def _run_check(bootstrap) -> None:
     api_url = asyncio.run(_setting_value(dsn, "api_base_url"))
     if api_url:
         ok, reason = asyncio.run(
-            _check_http_endpoint(f"{api_url.rstrip('/')}/health", label="worker")
+            _check_http_endpoint(f"{api_url.rstrip('/')}/health")
         )
         _status_line("worker API", ok, f"{api_url} — {reason}")
         if not ok:
@@ -663,7 +663,7 @@ def _run_check(bootstrap) -> None:
     )
     if ollama_url:
         ok, reason = asyncio.run(
-            _check_http_endpoint(f"{ollama_url.rstrip('/')}/api/tags", label="ollama")
+            _check_http_endpoint(f"{ollama_url.rstrip('/')}/api/tags")
         )
         _status_line("ollama", ok, f"{ollama_url} — {reason}")
         if not ok:
