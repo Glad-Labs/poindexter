@@ -138,11 +138,14 @@ async def handle_route_error(
         error_type = "PermissionDeniedError"
         detail = "Permission denied"
 
-    # Log with appropriate level
+    # Log with appropriate level. ``exc_info=error`` captures the traceback
+    # unambiguously — this helper is called outside the except block that
+    # caught the exception, so ``exc_info=True`` would look at sys.exc_info()
+    # which may not still be set.
     if status_code >= 500:
         log_instance.error(
             f"[{operation}] {error_type}: {error!s}",
-            exc_info=True,
+            exc_info=error,
             extra={"operation": operation, "error_type": error_type},
         )
     else:
@@ -187,7 +190,7 @@ def handle_service_error(
 
     log_instance.error(
         f"[SERVICE:{operation}] {error_type}: {error!s}",
-        exc_info=True,
+        exc_info=error,
         extra={"operation": operation, "service": "backend", "error_type": error_type},
     )
 

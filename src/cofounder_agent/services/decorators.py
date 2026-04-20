@@ -93,6 +93,7 @@ def log_query_performance(
             # Start timing
             start_time = time.perf_counter()
             error_occurred = False
+            captured_exc: Exception | None = None
             result = None
             result_count = None
 
@@ -111,8 +112,9 @@ def log_query_performance(
 
                 return result
 
-            except Exception:
+            except Exception as e:
                 error_occurred = True
+                captured_exc = e
                 raise
 
             finally:
@@ -150,12 +152,16 @@ def log_query_performance(
                     if safe_kwargs:
                         context["params"] = safe_kwargs
 
-                # Log based on performance
+                # Log based on performance. Explicit ``exc_info=captured_exc``
+                # rather than ``exc_info=True`` — we're in a finally block,
+                # and while sys.exc_info() *is* populated during unwinding,
+                # passing the captured exception is unambiguous and makes
+                # ruff's LOG014 check happy.
                 if error_occurred:
                     logger.error(
                         f"[{operation}] Query failed after {duration_ms:.2f}ms",
                         extra=context,
-                        exc_info=True,
+                        exc_info=captured_exc,
                     )
                 elif is_slow:
                     logger.warning(

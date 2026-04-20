@@ -297,9 +297,12 @@ def handle_error(
     if isinstance(error, AppError):
         return error
 
-    # Log the error if requested
+    # Log the error if requested. Pass the exception object explicitly
+    # rather than ``exc_info=True`` — handle_error is often called outside
+    # an ``except`` block (e.g., from a callback), so sys.exc_info() may
+    # be empty. ``exc_info=error`` always captures the right traceback.
     if log_exception:
-        logger.error("Unhandled exception: %s", error, exc_info=True)
+        logger.error("Unhandled exception: %s", error, exc_info=error)
 
     # Convert to ServiceError — do not expose raw exception message in HTTP response
     details = context or {}
