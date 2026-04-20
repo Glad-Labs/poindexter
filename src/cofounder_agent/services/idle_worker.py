@@ -75,32 +75,32 @@ class IdleWorker:
         self._last_run[f"{task_name}_completed"] = time.time()
 
     async def run_cycle(self) -> dict:
-        """Run one cycle of all due idle tasks. Returns summary."""
+        """Run one cycle of all due idle tasks. Returns summary.
+
+        **This cycle is the shrinking residue of the pre-plugin scheduler.**
+        PluginScheduler (main.py lifespan) now owns every job that has a
+        services/jobs/ counterpart — sync_page_views, audit_published_quality,
+        crosspost_to_devto, etc. are all registered via entry_points and run
+        on apscheduler. The tasks that still live here are the ones that
+        either (a) have no Job counterpart yet (image regen, podcast/video
+        backfill, anomaly detection, memory-staleness, embedding refresh)
+        or (b) are event-driven rather than scheduled (topic discovery,
+        scheduled-post publishing).
+
+        When you port one of the remaining methods to services/jobs/, delete
+        its call here too so the pipeline doesn't double-dispatch.
+        """
         await self._load_persisted_schedules()
         results = {}
 
-        # Lightweight syncs run regardless of pipeline activity
-        if self._is_due("sync_page_views", 30):
-            results["sync_page_views"] = await self._sync_page_views()
-            await self._persist_mark_run("sync_page_views")
-
-        if self._is_due("sync_newsletter_subscribers", 60):
-            results["sync_newsletter_subscribers"] = await self._sync_newsletter_subscribers()
-            await self._persist_mark_run("sync_newsletter_subscribers")
-
-        # Publish scheduled posts whose publish_at time has arrived
+        # Publish scheduled posts whose publish_at time has arrived.
+        # Event-driven (publish_at is a per-task timestamp), no Job counterpart.
         results["scheduled_publishes"] = await self._publish_scheduled_posts()
 
-        # Expire stale approval queue items (every 6 hours)
-        if self._is_due("expire_stale_approvals", 360):
-            results["expire_stale_approvals"] = await self._expire_stale_approvals()
-            await self._persist_mark_run("expire_stale_approvals")
-
-        # --- Non-GPU tasks: run even when pipeline is busy ---
-        # Topic discovery — event-driven (issue #229):
-        # Fires on signals (queue_low, stale_content, rejection_streak, manual).
-        # 24h safety-net cron kept as fallback so the system never stalls
-        # completely if signal evaluation breaks.
+        # Topic discovery — event-driven (issue #229). Fires on signals
+        # (queue_low, stale_content, rejection_streak, manual). 24h safety-net
+        # kept as fallback so the system never stalls completely if signal
+        # evaluation breaks.
         should_discover, reason = await self._should_trigger_discovery()
         if should_discover:
             logger.info("[IDLE] Topic discovery triggered by signal: %s", reason)
@@ -108,21 +108,10 @@ class IdleWorker:
             results["topic_discovery"]["trigger"] = reason
             await self._persist_mark_run("topic_discovery")
         elif self._is_due("topic_discovery", 1440):
-            # 24h safety net — shouldn't be needed if signals work
             logger.warning("[IDLE] Topic discovery: 24h safety-net triggered (signals not firing?)")
             results["topic_discovery"] = await self._discover_and_queue_topics()
             results["topic_discovery"]["trigger"] = "safety_net_24h"
             await self._persist_mark_run("topic_discovery")
-
-        # Topic gap analysis (DB query only, no GPU)
-        if self._is_due("topic_gaps", 1440):
-            results["topic_gaps"] = await self._analyze_topic_gaps()
-            await self._persist_mark_run("topic_gaps")
-
-        # Shared context sync (filesystem + DB, no GPU)
-        if self._is_due("context_sync", 30):
-            results["context_sync"] = await self._sync_shared_context()
-            await self._persist_mark_run("context_sync")
 
         # --- GPU/heavy tasks: skip when pipeline is actively generating ---
         pending = await self.pool.fetchrow(
@@ -134,102 +123,39 @@ class IdleWorker:
                 return results
             return {"skipped": True, "reason": f"{pending['c']} active tasks"}
 
-        # 1. Quality audit on published posts (every 6 hours)
-        if self._is_due("quality_audit", 360):
-            results["quality_audit"] = await self._audit_published_quality()
-            await self._persist_mark_run("quality_audit")
-
-        # 2. Broken link check (every 12 hours)
-        if self._is_due("link_check", 720):
-            results["link_check"] = await self._check_published_links()
-            await self._persist_mark_run("link_check")
-
-        # 3. Threshold tuning (every 12 hours)
-        if self._is_due("threshold_tune", 720):
-            results["threshold_tune"] = await self._tune_thresholds()
-            await self._persist_mark_run("threshold_tune")
-
-        # 4. Stale embedding refresh (every 4 hours)
+        # Stale embedding refresh — not the same as auto_embed_posts (which
+        # is covered by services/jobs/auto_embed_posts). This one detects
+        # rows whose embedding is old and refreshes them.
         if self._is_due("embedding_refresh", 240):
             results["embedding_refresh"] = await self._refresh_stale_embeddings()
             await self._persist_mark_run("embedding_refresh")
 
-        # 8. Auto-embed new/changed posts (every 2 hours)
-        if self._is_due("auto_embed", 120):
-            results["auto_embed"] = await self._auto_embed_posts()
-            await self._persist_mark_run("auto_embed")
-
-        # 9. Regenerate stock photo images with SDXL (every 6 hours, 5 per cycle)
+        # Regenerate stock photo images with SDXL (every 6 hours, 5 per cycle).
+        # GPU-heavy, no Job counterpart.
         if self._is_due("image_regen", 360):
             results["image_regen"] = await self._regenerate_stock_images()
             await self._persist_mark_run("image_regen")
 
-        # 10. Backfill podcast episodes for posts missing them (every 4 hours, 2 per cycle)
+        # Backfill podcast episodes for posts missing them. No Job counterpart.
         if self._is_due("podcast_backfill", 240):
             results["podcast_backfill"] = await self._backfill_podcasts()
             await self._persist_mark_run("podcast_backfill")
 
-        # 11. Backfill videos for posts missing them (every 6 hours, 1 per cycle)
+        # Backfill videos for posts missing them. No Job counterpart.
         if self._is_due("video_backfill", 360):
             results["video_backfill"] = await self._backfill_videos()
             await self._persist_mark_run("video_backfill")
 
-        # 12. Fix uncategorized posts (every 12 hours)
-        if self._is_due("fix_categories", 720):
-            results["fix_categories"] = await self._fix_uncategorized_posts()
-            await self._persist_mark_run("fix_categories")
-
-        # 11. Fix posts missing SEO metadata (every 12 hours)
-        if self._is_due("fix_seo", 720):
-            results["fix_seo"] = await self._fix_missing_seo()
-            await self._persist_mark_run("fix_seo")
-
-        # 12. Clean broken internal links (every 24 hours)
-        if self._is_due("fix_internal_links", 1440):
-            results["fix_internal_links"] = await self._fix_broken_internal_links()
-            await self._persist_mark_run("fix_internal_links")
-
-        # 13. Remove broken external links (every 24 hours)
-        if self._is_due("fix_external_links", 1440):
-            results["fix_external_links"] = await self._fix_broken_external_links()
-            await self._persist_mark_run("fix_external_links")
-
-        # 14. Fix duplicate titles (every 24 hours)
-        if self._is_due("fix_duplicates", 1440):
-            results["fix_duplicates"] = await self._detect_duplicate_posts()
-            await self._persist_mark_run("fix_duplicates")
-            await self._persist_mark_run("auto_embed")
-
-        # 15. Anomaly detection — statistical outlier monitoring (every 4 hours)
+        # Anomaly detection — statistical outlier monitoring. No Job counterpart.
         if self._is_due("anomaly_detect", 240):
             results["anomaly_detect"] = await self._detect_anomalies()
             await self._persist_mark_run("anomaly_detect")
 
-        # 16. Auto-update electricity rate + GPU power from public data (every 30 days)
-        if self._is_due("utility_rates", 43200):
-            results["utility_rates"] = await self._update_utility_rates()
-            await self._persist_mark_run("utility_rates")
-
-        # 17. Memory staleness check — alert when any pgvector writer goes stale
+        # Memory staleness check — alert when any pgvector writer goes stale
         # (every 30 min; internal cooldown prevents Discord spam).
         if self._is_due("memory_stale_check", 30):
             results["memory_stale_check"] = await self._check_memory_staleness()
             await self._persist_mark_run("memory_stale_check")
-
-        # 17. Post-publish verification — check recently published posts are accessible (every 2 hours)
-        if self._is_due("publish_verify", 120):
-            results["publish_verify"] = await self._verify_published_posts()
-            await self._persist_mark_run("publish_verify")
-
-        # 18. Dev.to cross-posting — cross-post published posts not yet on Dev.to (every 6 hours)
-        if self._is_due("devto_crosspost", 360):
-            results["devto_crosspost"] = await self._crosspost_to_devto()
-            await self._persist_mark_run("devto_crosspost")
-
-        # 19. Database backup — export key tables as JSON to local disk (every 24 hours)
-        if self._is_due("db_backup", 720):
-            results["db_backup"] = await self._backup_database()
-            await self._persist_mark_run("db_backup")
 
         if results:
             logger.info("[IDLE] Completed %d background tasks: %s",
