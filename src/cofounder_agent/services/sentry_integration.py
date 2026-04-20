@@ -37,7 +37,7 @@ try:
 
     try:
         from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration  # type: ignore
-    except ImportError:
+    except Exception:
         SqlAlchemyIntegration = None  # type: ignore[assignment,misc]
 
     SENTRY_AVAILABLE = True
@@ -98,13 +98,12 @@ class SentryIntegration:
         environment = site_config.get("environment", "development") or "development"
         release = site_config.get("app_version", "3.0.1")
 
-        # Skip initialization if DSN not configured or explicitly disabled
+        # Skip initialization if DSN not configured or explicitly disabled.
+        # Do NOT set _initialized here — lifespan re-runs this after site_config
+        # loads, and if we latched to "already initialized" on the empty read
+        # from a module-level call, the real DSN would never take effect.
         if not sentry_dsn:
-            logger.info("[WARNING] Sentry DSN not configured (SENTRY_DSN env var)")
-            logger.info(
-                "   To enable error tracking, set: export SENTRY_DSN='https://key@sentry.io/project-id'"
-            )
-            cls._initialized = True
+            logger.info("[WARNING] Sentry DSN not configured (site_config.sentry_dsn)")
             cls._sentry_enabled = False
             return False
 
@@ -115,24 +114,22 @@ class SentryIntegration:
             return False
 
         try:
-            # Initialize Sentry with comprehensive integrations
+            integrations = [
+                FastApiIntegration(),  # type: ignore[misc]
+                StarletteIntegration(),  # type: ignore[misc]
+                AsyncioIntegration(),  # type: ignore[misc]
+                LoggingIntegration(  # type: ignore[misc]
+                    level=logging.INFO,
+                    event_level=logging.ERROR,
+                ),
+                ThreadingIntegration(propagate_hub=True),  # type: ignore[misc]
+            ]
+            if SqlAlchemyIntegration is not None:
+                integrations.append(SqlAlchemyIntegration())  # type: ignore[misc]
+
             sentry_sdk.init(
                 dsn=sentry_dsn,
-                integrations=[
-                    # Framework integrations
-                    FastApiIntegration(),  # type: ignore[misc]
-                    StarletteIntegration(),  # type: ignore[misc]
-                    AsyncioIntegration(),  # type: ignore[misc]
-                    # Database and ORM integrations
-                    SqlAlchemyIntegration(),  # type: ignore[misc]
-                    # Logging integration with custom level
-                    LoggingIntegration(  # type: ignore[misc]
-                        level=logging.INFO,  # Capture info level and above
-                        event_level=logging.ERROR,  # Send error level events to Sentry
-                    ),
-                    # Threading integration for background tasks
-                    ThreadingIntegration(propagate_hub=True),  # type: ignore[misc]
-                ],
+                integrations=integrations,
                 # Environment and release information
                 environment=environment,
                 release=release,

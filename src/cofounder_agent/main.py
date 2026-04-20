@@ -162,6 +162,24 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             except Exception:
                 app.state.site_config = None
 
+        # Re-initialize observability stack now that site_config is loaded from
+        # DB. Module-level setup() calls earlier saw empty values — this is the
+        # first point where sentry_dsn / enable_pyroscope / enable_tracing are
+        # actually populated. Each setup is guarded internally.
+        try:
+            setup_sentry(app, service_name="cofounder-agent")
+        except Exception as e:
+            logger.warning("[LIFESPAN] sentry re-init failed: %s", e)
+        try:
+            setup_telemetry(app)
+        except Exception as e:
+            logger.warning("[LIFESPAN] telemetry re-init failed: %s", e)
+        try:
+            from services.profiling import setup_pyroscope
+            setup_pyroscope()
+        except Exception as e:
+            logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
+
         # Load prompt templates from DB (overrides YAML files)
         try:
             from services.prompt_manager import get_prompt_manager
