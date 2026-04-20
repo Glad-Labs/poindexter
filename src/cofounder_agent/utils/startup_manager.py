@@ -544,18 +544,9 @@ class StartupManager:
                 except Exception as e:
                     logger.error(f"   Error closing Redis cache: {e}", exc_info=True)
 
-            # Close HuggingFace client session (prevents connection leak)
-            try:
-                logger.info("  Closing HuggingFace client sessions...")
-                try:
-                    from services.huggingface_client import _session_cleanup
-
-                    await _session_cleanup()
-                    logger.info("   HuggingFace sessions closed")
-                except (ImportError, AttributeError):
-                    logger.debug("   HuggingFace client sessions already cleaned or not in use")
-            except Exception as e:
-                logger.debug(f"   HuggingFace cleanup (non-critical): {e}")
+            # (v2.8) HuggingFace client cleanup block removed — the HF path
+            # is gone per the no-paid-APIs policy, so there are no sessions
+            # to close. The shutdown tests stopped patching the import too.
 
             # Close database connection
             if self.database_service:

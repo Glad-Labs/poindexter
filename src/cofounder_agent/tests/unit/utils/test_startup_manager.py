@@ -13,7 +13,7 @@ Covers:
 - _initialize_custom_workflows_service(): with DB, without DB, Exception
 - _initialize_template_execution_service(): with service, without service, Exception
 - _log_startup_summary(): smoke test (no crash)
-- shutdown(): executor running, executor stopped/None, redis, DB, HuggingFace, Exception
+- shutdown(): executor running, executor stopped/None, redis, DB, Exception
 - initialize_all_services(): success path, Exception path, SystemExit re-raise
 
 All tests are pure — zero DB, LLM, or network calls.
@@ -598,14 +598,7 @@ class TestShutdown:
         )
         mgr.task_executor = mock_executor
 
-        mock_hf_client = MagicMock()
-        mock_hf_client._session_cleanup = AsyncMock()
-
-        with patch.dict(
-            "sys.modules",
-            {"services.huggingface_client": mock_hf_client},
-        ):
-            _run(mgr.shutdown())
+        _run(mgr.shutdown())
 
         mock_executor.stop.assert_awaited_once()
 
@@ -615,14 +608,7 @@ class TestShutdown:
         mock_executor.running = False
         mgr.task_executor = mock_executor
 
-        mock_hf_client = MagicMock()
-        mock_hf_client._session_cleanup = AsyncMock()
-
-        with patch.dict(
-            "sys.modules",
-            {"services.huggingface_client": mock_hf_client},
-        ):
-            _run(mgr.shutdown())
+        _run(mgr.shutdown())
 
         mock_executor.stop.assert_not_called()
 
@@ -630,14 +616,7 @@ class TestShutdown:
         mgr = _make_manager()
         mgr.task_executor = None
 
-        mock_hf_client = MagicMock()
-        mock_hf_client._session_cleanup = AsyncMock()
-
-        with patch.dict(
-            "sys.modules",
-            {"services.huggingface_client": mock_hf_client},
-        ):
-            _run(mgr.shutdown())
+        _run(mgr.shutdown())
 
     def test_shutdown_closes_redis(self):
         mgr = _make_manager()
@@ -645,14 +624,7 @@ class TestShutdown:
         mock_redis.close = AsyncMock()
         mgr.redis_cache = mock_redis
 
-        mock_hf_client = MagicMock()
-        mock_hf_client._session_cleanup = AsyncMock()
-
-        with patch.dict(
-            "sys.modules",
-            {"services.huggingface_client": mock_hf_client},
-        ):
-            _run(mgr.shutdown())
+        _run(mgr.shutdown())
 
         mock_redis.close.assert_awaited_once()
 
@@ -662,14 +634,7 @@ class TestShutdown:
         mock_db.close = AsyncMock()
         mgr.database_service = mock_db
 
-        mock_hf_client = MagicMock()
-        mock_hf_client._session_cleanup = AsyncMock()
-
-        with patch.dict(
-            "sys.modules",
-            {"services.huggingface_client": mock_hf_client},
-        ):
-            _run(mgr.shutdown())
+        _run(mgr.shutdown())
 
         mock_db.close.assert_awaited_once()
 
@@ -685,24 +650,9 @@ class TestShutdown:
         mock_db.close = AsyncMock()
         mgr.database_service = mock_db
 
-        mock_hf_client = MagicMock()
-        mock_hf_client._session_cleanup = AsyncMock()
-
-        with patch.dict(
-            "sys.modules",
-            {"services.huggingface_client": mock_hf_client},
-        ):
-            _run(mgr.shutdown())
+        _run(mgr.shutdown())
 
         mock_db.close.assert_awaited_once()
-
-    def test_shutdown_huggingface_import_error_handled(self):
-        """If huggingface_client doesn't have _session_cleanup, ImportError is caught."""
-        mgr = _make_manager()
-
-        # Patch huggingface_client to raise ImportError on import
-        with patch.dict("sys.modules", {"services.huggingface_client": None}):
-            _run(mgr.shutdown())  # Must not raise
 
 
 # ---------------------------------------------------------------------------

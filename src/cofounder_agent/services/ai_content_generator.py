@@ -1,28 +1,29 @@
 """
 Unified AI Content Generator Service
 
-Handles blog post generation with fallback through multiple providers:
-1. Local Ollama (free, RTX 5070 optimized)
-2. HuggingFace (free tier)
+Handles blog post generation on local Ollama with a fallback template
+when the model is unreachable. This is the legacy Ollama-native
+orchestrator — the stages-based pipeline in services/stages/* is the
+plugin-aware replacement and will eventually delete this file
+wholesale.
 
 Features:
-- Intelligent provider fallback strategy
+- Ollama model discovery + retry across installed models
 - Self-checking and validation throughout generation
 - Quality assurance with refinement loops
 - Content metrics and performance tracking
+- Electricity cost tracking from the Ollama result dict
 
 ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 
-v2.5 deliberate non-migration: this file is the legacy Ollama-native
-content orchestrator. It uses OllamaClient.resolve_model() +
-list_models() for dynamic model discovery, electricity cost tracking
-via the result dict, and a retry/fallback chain (Ollama → HF) — none
-of which fit cleanly behind the LLMProvider Protocol without either
-lossy adaptation or Protocol bloat. The stages-based pipeline in
-services/stages/* is the plugin-aware replacement; when it fully
-subsumes generate_blog_post() this file will be deleted wholesale
-(v2.8 scope). Until then, keeping the Ollama plumbing direct here is
-intentional — see the same precedent at services/multi_model_qa.py.
+v2.5 deliberate non-migration: this file uses OllamaClient-specific
+features (resolve_model, list_models, result["cost"]) that don't fit
+cleanly behind the LLMProvider Protocol without lossy adaptation.
+Same precedent as services/multi_model_qa.py.
+
+HuggingFace fallback path removed in v2.8 per the no-paid-APIs policy —
+the HF gate was always returning False via ProviderChecker in
+production, so the ~70 LOC of HF retry plumbing was dead weight.
 """
 
 import asyncio
@@ -38,7 +39,6 @@ import httpx
 from services.logger_config import get_logger
 
 from .prompt_manager import get_prompt_manager
-from .provider_checker import ProviderChecker
 
 logger = get_logger(__name__)
 
@@ -78,10 +78,6 @@ class AIContentGenerator:
         self.max_refinement_attempts = _sc.get_int("content_gen_max_refinement_attempts", 3)
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
-        logger.debug(
-            "   HuggingFace token: %s",
-            "set" if ProviderChecker.is_huggingface_available() else "not set",
-        )
 
     async def _check_ollama_async(self):
         """Async check if Ollama is running - call this once before using Ollama"""
@@ -354,13 +350,9 @@ class AIContentGenerator:
         logger.info("Quality threshold: %s", self.quality_threshold)
         logger.info("Preferred model: %s", preferred_model or "auto")
         logger.info("Preferred provider: %s", preferred_provider or "auto")
-        logger.info(
-            "HuggingFace token: %s",
-            "yes" if ProviderChecker.is_huggingface_available() else "no",
-        )
         logger.info("%s\n", "=" * 80)
 
-        # Provider priority: Ollama → HuggingFace → template
+        # Provider priority: Ollama → template (HF removed in v2.8).
         effective_provider = preferred_provider
         if not effective_provider:
             logger.info("No provider specified, will try fallback chain (Ollama first)")
@@ -418,7 +410,6 @@ class AIContentGenerator:
                 "skipped_ollama": skip_ollama,
                 "decision_tree": {
                     "ollama_available": use_ollama,
-                    "huggingface_token_available": ProviderChecker.is_huggingface_available(),
                 },
             },
         }
@@ -436,10 +427,6 @@ class AIContentGenerator:
         logger.info(
             "   ├─ Ollama (local):     %s",
             "available" if use_ollama else "not available/skipped",
-        )
-        logger.info(
-            "   ├─ HuggingFace (cloud): %s",
-            "token set" if ProviderChecker.is_huggingface_available() else "no token",
         )
         logger.info("   └─ Fallback:           Available (generic template)")
         logger.info("%s\n", "=" * 80)
@@ -843,86 +830,8 @@ class AIContentGenerator:
 
         return None
 
-    async def _try_huggingface(
-        self, ctx: dict[str, Any]
-    ) -> tuple[str, str, dict[str, Any]] | None:
-        """Try HuggingFace provider. Returns result tuple or None."""
-        metrics = ctx["metrics"]
-        generation_prompt = ctx["generation_prompt"]
-        target_length = ctx["target_length"]
-        topic = ctx["topic"]
-        attempts = ctx["attempts"]
-        start_time = ctx["start_time"]
-
-        # 2. Try HuggingFace (free tier, online)
-        if not ProviderChecker.is_huggingface_available():
-            return None
-
-        logger.info("Attempting content generation with HuggingFace...")
-        try:
-            from .huggingface_client import HuggingFaceClient
-
-            hf = HuggingFaceClient(api_token=ProviderChecker.get_huggingface_api_key())
-
-            # Try recommended models
-            for model_id in [
-                "mistralai/Mistral-7B-Instruct-v0.1",
-                "meta-llama/Llama-2-7b-chat",
-                "tiiuae/falcon-7b-instruct",
-            ]:
-                try:
-                    logger.debug("Trying HuggingFace model: %s", model_id)
-                    metrics["generation_attempts"] += 1
-
-                    # Calculate max tokens for HuggingFace generation (2.5x multiplier)
-                    max_tokens_hf = int(target_length * 3.0)
-                    generated_content = await asyncio.wait_for(
-                        hf.generate(
-                            model=model_id,
-                            prompt=generation_prompt,
-                            max_tokens=max_tokens_hf,  # 2.0x multiplier ensures full content generation
-                            temperature=0.7,
-                        ),
-                        timeout=60,
-                    )
-
-                    if generated_content and len(generated_content) > 100:
-                        # Self-check: Validate content quality
-                        validation = self._validate_content(generated_content, topic, target_length)
-                        metrics["validation_results"].append(
-                            {
-                                "attempt": metrics["generation_attempts"],
-                                "score": validation.quality_score,
-                                "issues": validation.issues,
-                                "passed": validation.is_valid,
-                            }
-                        )
-
-                        if validation.is_valid:
-                            metrics["model_used"] = model_id.split("/")[-1]
-                            metrics["models_used_by_phase"]["draft"] = metrics[
-                                "model_used"
-                            ]  # Track phase
-                            metrics["final_quality_score"] = validation.quality_score
-                            metrics["generation_time_seconds"] = time.time() - start_time
-                            logger.info("[OK] Content generated and approved with HuggingFace")
-                            return generated_content, metrics["model_used"], metrics
-
-                except asyncio.TimeoutError:
-                    logger.debug("HuggingFace model %s timed out", model_id)
-                    continue
-                except Exception as e:
-                    logger.debug("HuggingFace model %s failed: %s", model_id, e)
-                    continue
-
-        except Exception as e:
-            logger.warning("HuggingFace generation failed: %s", e, exc_info=True)
-            attempts.append(("HuggingFace", str(e)))
-
-        return None
-
-    # Paid provider methods (_try_anthropic, _try_gemini_fallback, _try_openai) removed.
-    # Policy: Ollama-only. See session 55 notes.
+    # v2.8 removed _try_huggingface + all paid-provider fallback methods.
+    # Only the Ollama path + fallback template remain.
 
     def _handle_all_providers_failed(self, ctx: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
         """Handle the case where all AI providers failed. Returns fallback content."""
@@ -944,10 +853,6 @@ class AIContentGenerator:
             logger.warning("   [FAIL] %s: %s", provider, error)
         logger.warning("Provider summary:")
         logger.warning("   - Ollama:      %s (tried/available)", use_ollama)
-        logger.warning(
-            "   - HuggingFace: %s (token available)",
-            ProviderChecker.is_huggingface_available(),
-        )
         logger.warning("%s\n", "=" * 80)
 
         # Capture in Sentry as a distinct message so alert rules can target it.
@@ -992,7 +897,7 @@ class AIContentGenerator:
 
         Features:
         - User-selected model support (respects frontend UI choices)
-        - Intelligent provider fallback (Ollama → HuggingFace)
+        - Ollama-only generation with fallback template if unreachable
         - Self-validation and quality checking
         - Refinement loop for rejected content
         - Full metrics tracking
@@ -1004,7 +909,8 @@ class AIContentGenerator:
             target_length: Target word count
             tags: Content tags
             preferred_model: User-selected model (e.g., 'qwen3.5:35b')
-            preferred_provider: User-selected provider ('ollama', 'huggingface')
+            preferred_provider: User-selected provider (accepts 'ollama';
+                any other value routes straight to the fallback template)
             writing_style_context: Optional writing style excerpts to include in the prompt
                 for voice/tone matching
 
@@ -1025,12 +931,7 @@ class AIContentGenerator:
         if result:
             return result
 
-        # 2. Try HuggingFace (free tier, online)
-        result = await self._try_huggingface(ctx)
-        if result:
-            return result
-
-        # All providers failed — return fallback template
+        # Ollama failed — return fallback template. (HF path removed v2.8.)
         return self._handle_all_providers_failed(ctx)
 
     def _generate_fallback_content(
@@ -1121,7 +1022,6 @@ async def test_generation():
 
     logger.info("Testing content generation...")
     logger.debug("Ollama available: %s", generator.ollama_available)
-    logger.debug("HuggingFace token: %s", "yes" if generator.hf_token else "no")
 
     logger.info("Generating blog post...")
     content, model, metrics = await generator.generate_blog_post(
