@@ -538,7 +538,7 @@ async def get_post_by_slug(
             # Get post
             post_row = await conn.fetchrow(
                 """
-                SELECT id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
+                SELECT id, title, slug, content, excerpt, featured_image_url, cover_image_url,
                        category_id, published_at, created_at, updated_at,
                        seo_title, seo_description, seo_keywords, status, author_id
                 FROM posts

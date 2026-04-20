@@ -91,12 +91,12 @@ async def subscribe_to_newsletter(
         # Insert new subscriber
         subscriber_id = await (getattr(db, "cloud_pool", None) or db.pool).fetchval(
             """
-            INSERT INTO newsletter_subscribers 
-            (email, first_name, last_name, company, interest_categories, 
+            INSERT INTO newsletter_subscribers
+            (email, first_name, last_name, company, interest_categories,
              ip_address, user_agent, marketing_consent, verified)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (email) DO UPDATE 
-            SET unsubscribed_at = NULL, 
+            ON CONFLICT (email) DO UPDATE
+            SET unsubscribed_at = NULL,
                 verified = TRUE,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING id
@@ -176,7 +176,7 @@ async def get_subscriber_count(
     """Get total active newsletter subscribers count"""
     try:
         count = await (getattr(db, "cloud_pool", None) or db.pool).fetchval("""
-            SELECT COUNT(*) FROM newsletter_subscribers 
+            SELECT COUNT(*) FROM newsletter_subscribers
             WHERE unsubscribed_at IS NULL AND verified = TRUE
             """)
 

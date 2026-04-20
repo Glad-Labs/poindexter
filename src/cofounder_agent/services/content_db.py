@@ -398,7 +398,7 @@ class ContentDatabase(DatabaseServiceMixin):
 
             sql = """
                 INSERT INTO quality_evaluations (
-                    content_id, task_id, overall_score, clarity, accuracy, 
+                    content_id, task_id, overall_score, clarity, accuracy,
                     completeness, relevance, seo_quality, readability, engagement,
                     passing, feedback, suggestions, evaluated_by, evaluation_method,
                     context_data, content_length,

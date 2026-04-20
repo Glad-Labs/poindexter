@@ -19,22 +19,22 @@ async def up(pool):
             started_at TIMESTAMP WITH TIME ZONE,
             completed_at TIMESTAMP WITH TIME ZONE,
             duration_ms INTEGER,
-            
+
             initial_input JSONB,
             phase_results JSONB DEFAULT '{}'::jsonb,
             final_output JSONB,
             error_message TEXT,
-            
+
             progress_percent INTEGER DEFAULT 0,
             completed_phases INTEGER DEFAULT 0,
             total_phases INTEGER DEFAULT 0,
-            
+
             tags JSONB DEFAULT '[]'::jsonb,
             metadata JSONB DEFAULT '{}'::jsonb,
-            
-            CONSTRAINT fk_workflow_executions_workflow 
-                FOREIGN KEY(workflow_id) 
-                REFERENCES custom_workflows(id) 
+
+            CONSTRAINT fk_workflow_executions_workflow
+                FOREIGN KEY(workflow_id)
+                REFERENCES custom_workflows(id)
                 ON DELETE CASCADE
         );
         """
@@ -43,14 +43,14 @@ async def up(pool):
     # Create indexes for common queries
     await pool.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow_id 
+        CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow_id
         ON workflow_executions(workflow_id);
         """
     )
 
     await pool.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_workflow_executions_owner_id 
+        CREATE INDEX IF NOT EXISTS idx_workflow_executions_owner_id
         ON workflow_executions(owner_id);
         """
     )

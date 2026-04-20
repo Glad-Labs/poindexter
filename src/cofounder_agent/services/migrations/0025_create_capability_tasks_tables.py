@@ -17,23 +17,23 @@ async def up(pool):
             name VARCHAR(255) NOT NULL,
             description TEXT,
             owner_id VARCHAR(255) NOT NULL,
-            
+
             -- Task definition
             steps JSONB NOT NULL,  -- Array of steps
             tags JSONB DEFAULT '[]'::jsonb,  -- Tagging for organization
-            
+
             -- Metadata
             created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            
+
             -- Status and versioning
             is_active BOOLEAN DEFAULT TRUE,
             version INTEGER DEFAULT 1,
-            
+
             -- Cost and performance tracking
             estimated_cost_cents INTEGER,
             avg_duration_ms FLOAT,
-            
+
             -- Metrics
             execution_count INTEGER DEFAULT 0,
             success_count INTEGER DEFAULT 0,
@@ -50,37 +50,37 @@ async def up(pool):
             id VARCHAR(36) PRIMARY KEY,
             task_id VARCHAR(36) NOT NULL,
             owner_id VARCHAR(255) NOT NULL,
-            
+
             -- Execution status
             status VARCHAR(50) NOT NULL,  -- pending, running, completed, failed
             error_message TEXT,
-            
+
             -- Execution results
             step_results JSONB DEFAULT '[]'::jsonb,  -- Array of step results
             final_outputs JSONB DEFAULT '{}'::jsonb,  -- Final step outputs
-            
+
             -- Performance metrics
             total_duration_ms FLOAT,
             progress_percent INTEGER DEFAULT 0,
             completed_steps INTEGER DEFAULT 0,
             total_steps INTEGER NOT NULL,
-            
+
             -- Cost tracking (if any billable steps)
             cost_cents INTEGER,
-            
+
             -- Timestamps
             started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
             completed_at TIMESTAMP WITH TIME ZONE,
             created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            
+
             -- Metadata
             tags JSONB DEFAULT '[]'::jsonb,
             metadata JSONB DEFAULT '{}'::jsonb,
-            
+
             -- Foreign key
             CONSTRAINT fk_capability_executions_task
-                FOREIGN KEY(task_id) 
-                REFERENCES capability_tasks(id) 
+                FOREIGN KEY(task_id)
+                REFERENCES capability_tasks(id)
                 ON DELETE CASCADE
         );
         """
