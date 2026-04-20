@@ -24,6 +24,13 @@ import httpx
 from services.logger_config import get_logger
 from services.site_config import site_config
 
+
+def _read_bytes(path: str) -> bytes:
+    """Sync file-read helper for ``asyncio.to_thread`` — keeps the event
+    loop free while we pull a multi-MB video into memory (ASYNC230)."""
+    with open(path, "rb") as f:
+        return f.read()
+
 logger = get_logger(__name__)
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -112,13 +119,16 @@ async def upload_to_youtube(
             if not upload_url:
                 return {"success": False, "post_id": None, "error": "No upload URL returned"}
 
-            # Upload the file
-            with open(video_path, "rb") as f:
-                upload_resp = await client.put(
-                    upload_url,
-                    headers={"Content-Type": "video/mp4"},
-                    content=f.read(),
-                )
+            # Upload the file. Read off the event loop — video MP4s are
+            # typically tens of MB; a blocking read at that size stalls
+            # every other coroutine (ASYNC230).
+            import asyncio
+            content = await asyncio.to_thread(_read_bytes, video_path)
+            upload_resp = await client.put(
+                upload_url,
+                headers={"Content-Type": "video/mp4"},
+                content=content,
+            )
 
             if upload_resp.status_code in (200, 201):
                 data = upload_resp.json()
