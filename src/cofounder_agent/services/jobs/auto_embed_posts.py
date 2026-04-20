@@ -5,7 +5,9 @@ This is the pipeline that keeps ``posts`` in pgvector current with the
 posts table — when new posts land or existing ones change, the embed
 script picks them up and writes the vector to ``embeddings``.
 
-The heavy lifting lives in auto-embed.py; this job is the wrapper.
+Wraps the shared ``_subprocess_runner.run_python_script`` helper so
+spawn / timeout / exit-code handling stays consistent with
+``SyncSharedContextJob`` and other script-driven jobs.
 
 ## Config (``plugin.job.auto_embed_posts``)
 
@@ -18,22 +20,19 @@ The heavy lifting lives in auto-embed.py; this job is the wrapper.
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 from typing import Any
 
 from plugins.job import JobResult
 from services.site_config import site_config
 
+from ._subprocess_runner import resolve_scripts_dir, run_python_script
+
 logger = logging.getLogger(__name__)
 
 
 def _default_script_path() -> str:
-    """In-container: /opt/scripts/auto-embed.py; host: scripts/auto-embed.py."""
-    if os.path.isdir("/opt/scripts"):
-        return "/opt/scripts/auto-embed.py"
-    return "scripts/auto-embed.py"
+    return f"{resolve_scripts_dir()}/auto-embed.py"
 
 
 class AutoEmbedPostsJob:
@@ -48,55 +47,15 @@ class AutoEmbedPostsJob:
         phase = str(config.get("phase", "posts"))
         cwd = site_config.get("repo_root", "/app")
 
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "python", script_path, "--phase", phase,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-            )
-        except FileNotFoundError as e:
-            return JobResult(
-                ok=False,
-                detail=f"python or script not found: {e}",
-                changes_made=0,
-            )
-        except Exception as e:
-            logger.exception("AutoEmbedPostsJob: spawn failed: %s", e)
-            return JobResult(ok=False, detail=f"spawn failed: {e}", changes_made=0)
-
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout_s,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            return JobResult(
-                ok=False,
-                detail=f"auto-embed exceeded {timeout_s}s timeout",
-                changes_made=0,
-            )
-
-        output = (stdout or b"").decode("utf-8", errors="replace").strip()
-        err = (stderr or b"").decode("utf-8", errors="replace").strip()
-
-        if proc.returncode != 0:
-            logger.warning(
-                "AutoEmbedPostsJob: script exited %d: %s",
-                proc.returncode, err[:400],
-            )
-            return JobResult(
-                ok=False,
-                detail=f"script exited {proc.returncode}: {err[:200]}",
-                changes_made=0,
-            )
-
-        # auto-embed.py prints running counts; the tail is the final summary.
-        tail = output[-100:] if output else "done"
-        logger.info("AutoEmbedPostsJob: %s", tail)
+        result = await run_python_script(
+            script_path,
+            "--phase", phase,
+            cwd=cwd,
+            timeout_s=timeout_s,
+            logger_name="AutoEmbedPostsJob",
+        )
         return JobResult(
-            ok=True,
-            detail=f"phase={phase}: {tail}",
-            changes_made=1,
+            ok=result.ok,
+            detail=f"phase={phase}: {result.detail}",
+            changes_made=1 if result.ok else 0,
         )
