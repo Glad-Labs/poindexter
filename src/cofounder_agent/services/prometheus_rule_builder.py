@@ -58,6 +58,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_THRESHOLDS: dict[str, str] = {
     # Content pipeline
     "embeddings_stale_seconds": "21600",  # 6h
+    # Infrastructure (Gitea #238 recovery)
+    "postgres_p99_latency_seconds": "0.1",  # alert when SELECT 1 > 100ms p99
+    "embeddings_missing_posts": "3",  # alert when >3 published posts lack embeddings
     # Business / cost guards
     "daily_spend_warning_usd": "4.0",
     "daily_spend_critical_usd": "5.0",
@@ -119,12 +122,83 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "approval queue is backed up awaiting human review."
         ),
     },
+    # Gitea #238 — recovers nuances the retired brain probes measured.
+    "PostsNotEmbedded": {
+        "enabled": True,
+        "group": "poindexter-content",
+        "interval": "1m",
+        # Catches the "3 new posts published, 0 got embedded" case that
+        # the embeddings_total rate alone misses when overall traffic
+        # keeps the rate positive.
+        "expr": (
+            "poindexter_embeddings_missing_posts > "
+            "{threshold.embeddings_missing_posts}"
+        ),
+        "for": "10m",
+        "severity": "warning",
+        "category": "content",
+        "summary": "Published posts piling up without embeddings",
+        "description": (
+            "Published posts are not getting embeddings. Auto-embed is "
+            "either wedged or the embeddings-writer pipeline is erroring "
+            "silently for new posts. Run `poindexter memory backfill-posts "
+            "--since 1d --dry-run` to inspect."
+        ),
+    },
+    # --- Infrastructure (Gitea #238) ---
+    "PostgresSlowQuery": {
+        "enabled": True,
+        "group": "poindexter-infra",
+        "interval": "1m",
+        # p99 latency of the SELECT 1 liveness probe. Recovers the
+        # "DB up but slow" nuance the retired db_ping probe measured;
+        # the 0/1 connected gauge doesn't discriminate slow from failed.
+        "expr": (
+            "histogram_quantile(0.99, "
+            "sum(rate(poindexter_postgres_query_latency_seconds_bucket[5m])) "
+            "by (le)) > {threshold.postgres_p99_latency_seconds}"
+        ),
+        "for": "5m",
+        "severity": "warning",
+        "category": "infra",
+        "summary": "Postgres SELECT 1 p99 latency exceeding threshold",
+        "description": (
+            "SELECT 1 round-trip p99 > threshold for 5m. DB is reachable "
+            "but degraded — check for long-running queries (pg_stat_activity), "
+            "connection-pool saturation, or disk I/O pressure."
+        ),
+    },
+    "OllamaNoModelsLoaded": {
+        "enabled": True,
+        "group": "poindexter-infra",
+        "interval": "1m",
+        # "Up but empty" — /api/tags returns 200 with []. The existing
+        # OllamaReachable gauge passes this case, which is why it needs
+        # a dedicated alert.
+        "expr": "poindexter_ollama_model_count == 0",
+        "for": "2m",
+        "severity": "critical",
+        "category": "infra",
+        "summary": "Ollama is up but has no models loaded",
+        "description": (
+            "Ollama /api/tags returns 200 but the models list is empty. "
+            "Pipeline can't generate anything. Run `ollama pull gemma3:27b` "
+            "(and the configured embed model) on the GPU host."
+        ),
+    },
     # --- Business / cost ---
+    # Cost alerts include an ``unless approval_queue_length > 0`` cross-check
+    # so they don't fire while the pipeline is throttling on pending human
+    # approvals (Gitea #238 — matches the retired cost_freshness probe's
+    # ``expected_idle`` logic).
     "DailySpendApproachingLimit": {
         "enabled": True,
         "group": "poindexter-business",
         "interval": "1m",
-        "expr": "poindexter_daily_spend_usd > {threshold.daily_spend_warning_usd}",
+        "expr": (
+            "poindexter_daily_spend_usd > {threshold.daily_spend_warning_usd} "
+            "unless poindexter_approval_queue_length > 0"
+        ),
         "for": "5m",
         "severity": "warning",
         "category": "business",
@@ -139,7 +213,10 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-business",
         "interval": "1m",
-        "expr": "poindexter_daily_spend_usd > {threshold.daily_spend_critical_usd}",
+        "expr": (
+            "poindexter_daily_spend_usd > {threshold.daily_spend_critical_usd} "
+            "unless poindexter_approval_queue_length > 0"
+        ),
         "for": "2m",
         "severity": "critical",
         "category": "business",
