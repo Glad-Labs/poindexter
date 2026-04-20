@@ -28,6 +28,9 @@ class ExpireStaleApprovalsJob:
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         ttl_days = int(config.get("ttl_days", 0))
         if not ttl_days:
+            # Legacy back-compat: check app_settings for the old
+            # `approval_ttl_days` key. A failure here just means we fall
+            # through to the hard-coded 7-day default.
             try:
                 async with pool.acquire() as conn:
                     raw = await conn.fetchval(
@@ -35,8 +38,11 @@ class ExpireStaleApprovalsJob:
                     )
                     if raw:
                         ttl_days = int(raw)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "ExpireStaleApprovalsJob: legacy app_settings lookup failed "
+                    "(continuing with default TTL): %s", e,
+                )
         if not ttl_days:
             ttl_days = 7
 
