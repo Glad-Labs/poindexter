@@ -367,7 +367,7 @@ class TestCreateQualityEvaluation:
         pool = _make_pool(fetchrow_side_effect=RuntimeError("DB down"))
         db = _make_db(pool)
 
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             await db.create_quality_evaluation(
                 {"content_id": "c-1", "overall_score": 80, "criteria": {}}
             )
@@ -419,7 +419,7 @@ class TestCreateQualityImprovementLog:
         pool = _make_pool(fetchrow_side_effect=RuntimeError("DB down"))
         db = _make_db(pool)
 
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             await db.create_quality_improvement_log(
                 {"content_id": "c-1", "initial_score": 55.0, "improved_score": 75.0}
             )
@@ -519,7 +519,7 @@ class TestCreateOrchestratorTrainingData:
         pool = _make_pool(fetchrow_side_effect=RuntimeError("DB down"))
         db = _make_db(pool)
 
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             await db.create_orchestrator_training_data({"execution_id": "exec-3"})
 
 

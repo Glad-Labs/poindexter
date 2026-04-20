@@ -34,7 +34,6 @@ from services.stages.generate_seo_metadata import (
 from services.stages.replace_inline_images import ReplaceInlineImagesStage
 from services.stages.source_featured_image import SourceFeaturedImageStage
 
-
 # ---------------------------------------------------------------------------
 # Protocol conformance — all six new stages in one sweep.
 # ---------------------------------------------------------------------------
@@ -340,7 +339,6 @@ class TestReplaceInlineImagesAdapter:
         assert "task_id" in result.detail
 
     async def test_no_placeholders_and_no_agent_plan_leaves_content_alone(self):
-        from services.stages import replace_inline_images as mod
 
         # Agent returns no suggestions → placeholders remain empty
         async def no_plan(*_a, **_kw):
@@ -452,7 +450,8 @@ class TestReplaceInlineImagesAltTextScrub:
         image_service = SimpleNamespace(
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
-        db = MagicMock(); db.update_task = AsyncMock()
+        db = MagicMock()
+        db.update_task = AsyncMock()
         ctx: dict[str, Any] = {
             "task_id": "t1", "topic": "X",
             "content": f"Intro [IMAGE-1: {desc}] outro.",

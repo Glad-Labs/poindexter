@@ -20,7 +20,6 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from routes.revalidate_routes import router, trigger_nextjs_revalidation
-from tests.unit.routes.conftest import TEST_USER
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token-for-revalidate"}
 

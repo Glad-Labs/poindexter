@@ -17,14 +17,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.topic_source import DiscoveredTopic, TopicSource
+from plugins.topic_source import TopicSource
 from services.topic_sources._filters import (
     classify_category,
     is_news_or_junk,
     rewrite_as_blog_topic,
 )
 from services.topic_sources.hackernews import HackerNewsSource
-
 
 # ---------------------------------------------------------------------------
 # Filters

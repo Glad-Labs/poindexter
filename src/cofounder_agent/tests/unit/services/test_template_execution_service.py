@@ -380,7 +380,7 @@ class TestTemplateMetadata:
 
     def test_each_template_has_estimated_duration(self):
         defs = TemplateExecutionService.get_template_definitions()
-        for name, config in defs.items():
+        for _name, config in defs.items():
             assert "estimated_duration_seconds" in config
             assert isinstance(config["estimated_duration_seconds"], int)
             assert config["estimated_duration_seconds"] > 0

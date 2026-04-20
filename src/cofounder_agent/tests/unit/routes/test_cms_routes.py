@@ -22,7 +22,6 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from routes.cms_routes import router
-from tests.unit.routes.conftest import TEST_USER
 
 # ---------------------------------------------------------------------------
 # Helper: build a minimal app.
@@ -462,6 +461,7 @@ class TestConvertMarkdownToHtml:
     def test_error_falls_back_to_original(self):
         """If markdown library raises, return the raw content unchanged."""
         from unittest.mock import patch
+
         from routes.cms_routes import convert_markdown_to_html
         with patch("markdown.markdown", side_effect=RuntimeError("parser broke")):
             result = convert_markdown_to_html("# Title\n\nBody.")

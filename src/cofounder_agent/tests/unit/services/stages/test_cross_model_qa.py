@@ -17,13 +17,12 @@ import pytest
 
 from plugins.stage import Stage
 from services.stages.cross_model_qa import (
-    CrossModelQAStage,
     QA_AGGREGATE_REWRITE_PROMPT,
+    CrossModelQAStage,
     _build_rejection_reason,
     _resolve_max_rewrites,
     aggregate_issues_to_fix,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test fixtures

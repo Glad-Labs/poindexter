@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from routes.metrics_routes import metrics_router
-from tests.unit.routes.conftest import TEST_USER, make_mock_db
+from tests.unit.routes.conftest import make_mock_db
 from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------

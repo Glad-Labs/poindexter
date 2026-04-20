@@ -25,14 +25,13 @@ from routes.alertmanager_webhook_routes import (
 )
 from utils.route_utils import get_database_dependency
 
-
 # ---------------------------------------------------------------------------
 # Fake asyncpg pool — records every SQL + args; fetchval returns scripted values.
 # ---------------------------------------------------------------------------
 
 
 class _FakeConn:
-    def __init__(self, parent: "_FakePool"):
+    def __init__(self, parent: _FakePool):
         self._parent = parent
 
     async def execute(self, sql: str, *args: Any) -> str:
@@ -45,7 +44,7 @@ class _FakeConn:
 
 
 class _FakePoolCtx:
-    def __init__(self, parent: "_FakePool"):
+    def __init__(self, parent: _FakePool):
         self._parent = parent
 
     async def __aenter__(self) -> _FakeConn:

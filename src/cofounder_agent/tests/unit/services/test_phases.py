@@ -162,8 +162,6 @@ class TestBasePhaseValidateInputs:
             BasePhase,
             PhaseConfig,
             PhaseInputSpec,
-            PhaseInputType,
-            PhaseOutputSpec,
         )
 
         class _StubPhase(BasePhase):

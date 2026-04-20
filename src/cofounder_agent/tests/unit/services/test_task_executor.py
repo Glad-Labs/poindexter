@@ -19,8 +19,6 @@ import pytest
 
 from services.error_handler import ServiceError
 from services.task_executor import (
-    MAX_TASK_RETRIES,
-    STALE_TASK_TIMEOUT_MINUTES,
     TaskExecutor,
 )
 
@@ -742,7 +740,6 @@ class TestTaskMetricsWiring:
 
     def test_task_metrics_logs_structured_summary(self, caplog):
         """After recording two phases the summary log includes phase names."""
-        import logging
 
         from services.metrics_service import TaskMetrics
 

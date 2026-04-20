@@ -189,7 +189,7 @@ class TestProfileStorageLimits:
     def test_slow_endpoint_history_capped_at_100(self):
         mw = _make_mw()
 
-        for i in range(110):
+        for _i in range(110):
             p = ProfileData("/api/slow", "GET")
             p.complete(200)
             p.is_slow = True

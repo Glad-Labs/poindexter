@@ -236,7 +236,7 @@ class TestAddTask:
             conn.fetchval = AsyncMock(side_effect=RuntimeError("DB down"))
 
         db = _make_db(pool)
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             await db.add_task({"topic": "AI"})
 
 
@@ -352,7 +352,7 @@ class TestUpdateTask:
     async def test_no_updates_calls_get_task(self):
         db = _make_db()
         db.get_task = AsyncMock(return_value={"task_id": "t-1"})
-        result = await db.update_task("t-1", {})
+        await db.update_task("t-1", {})
         db.get_task.assert_awaited_once_with("t-1")
 
     @pytest.mark.asyncio

@@ -16,19 +16,16 @@ Run with:
     python -m pytest tests/unit/services/test_memory_client.py -v
 """
 
-import asyncio
-import hashlib
 import os
-from unittest.mock import AsyncMock, patch
-
-import pytest
 
 # Ensure the poindexter package is importable from the test runner
 import sys
+
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from poindexter.memory import MemoryClient, MemoryHit
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

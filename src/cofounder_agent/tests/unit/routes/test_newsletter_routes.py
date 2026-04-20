@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from routes.newsletter_routes import router
-from tests.unit.routes.conftest import TEST_USER
 from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 

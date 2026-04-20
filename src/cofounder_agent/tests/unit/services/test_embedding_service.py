@@ -7,7 +7,7 @@ All external dependencies (OllamaClient, EmbeddingsDatabase) are mocked.
 """
 
 import hashlib
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 

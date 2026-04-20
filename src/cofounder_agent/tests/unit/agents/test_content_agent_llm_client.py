@@ -367,7 +367,6 @@ class TestGenerateJsonOllama:
     @pytest.mark.asyncio
     async def test_returns_cached_json_without_http_call(self, tmp_path):
         """If cache file exists, result is returned without hitting the network."""
-        import aiofiles
 
         cached_data = {"cached": True, "value": 42}
 

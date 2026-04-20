@@ -7,7 +7,6 @@ Tests mock both entry points.
 """
 
 import os
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -231,7 +230,7 @@ class TestUploadPodcastEpisode:
 
             # Patch at module level
             import services.r2_upload_service as mod
-            original_dir = os.path.expanduser("~")
+            os.path.expanduser("~")
             with patch.object(mod, "upload_to_r2", mock_upload):
                 # Call directly with patched path
                 from services.r2_upload_service import upload_to_r2 as real_upload

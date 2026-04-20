@@ -1,7 +1,7 @@
 """Tests for embeddings_db service."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -101,7 +101,7 @@ class TestSearchSimilar:
     async def test_search_without_source_type(self, db, mock_pool):
         _, conn = mock_pool
         conn.fetch.return_value = []
-        results = await db.search_similar([0.1])
+        await db.search_similar([0.1])
         query = conn.fetch.call_args[0][0]
         assert "source_table = $2" not in query
 

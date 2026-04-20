@@ -216,7 +216,7 @@ class TestRunRefinementGuards:
             side_effect=["# Refined content", '{"title":"T","meta_description":"M"}']
         )
 
-        result = await agent.run(post, is_refinement=True)
+        await agent.run(post, is_refinement=True)
         # LLM was called (for refinement + SEO)
         assert llm_client.generate_text.call_count >= 1
 

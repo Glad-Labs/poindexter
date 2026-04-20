@@ -4,7 +4,7 @@ Tests for video service — narrated slideshow video generation from posts.
 
 import os
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -369,7 +369,7 @@ class TestGenerateImagesForVideo:
         mock_client_sdxl.__aexit__ = AsyncMock(return_value=False)
         mock_client_sdxl.post = AsyncMock(return_value=sdxl_resp)
 
-        frames_dir = tmp_path / "video" / "frames"
+        tmp_path / "video" / "frames"
 
         with patch("services.video_service.VIDEO_DIR", tmp_path / "video"), \
              patch("services.video_service.httpx.AsyncClient", side_effect=[

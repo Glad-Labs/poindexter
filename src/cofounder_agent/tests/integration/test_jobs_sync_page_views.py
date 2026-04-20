@@ -37,7 +37,7 @@ class TestSyncPageViewsJob:
         # Point the cloud DSN at the same test DB so sync is a no-op
         # but the CREATE TABLE path runs.
         async with clean_test_tables.acquire() as conn:
-            dsn = str(conn._addr) if hasattr(conn, "_addr") else None
+            str(conn._addr) if hasattr(conn, "_addr") else None
         # Use an actual DSN for the test DB via asyncpg connect string.
         # The real services fixture exposes it via environment.
         import os

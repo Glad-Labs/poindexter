@@ -227,7 +227,7 @@ class TestRegisterAllRoutes:
         with patch("utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
-            result = register_all_routes(app, deployment_mode="coordinator")
+            register_all_routes(app, deployment_mode="coordinator")
         assert app.include_router.call_count == len(_COORDINATOR_ROUTES)
 
     def test_default_mode_is_coordinator(self):
@@ -235,6 +235,6 @@ class TestRegisterAllRoutes:
         with patch("utils.route_registration.importlib.import_module") as mock_import:
             mock_module = MagicMock()
             mock_import.return_value = mock_module
-            result = register_all_routes(app)
+            register_all_routes(app)
         # Default should register coordinator route count
         assert app.include_router.call_count == len(_COORDINATOR_ROUTES)

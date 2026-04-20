@@ -16,7 +16,6 @@ from plugins import (
     Job,
     JobResult,
     Probe,
-    ProbeResult,
     Tap,
     get_core_samples,
 )

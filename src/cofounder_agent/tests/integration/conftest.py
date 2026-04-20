@@ -40,14 +40,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator, Iterator
 
 import asyncpg
 import httpx
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Session-scoped event loop. pytest-asyncio's default event_loop is

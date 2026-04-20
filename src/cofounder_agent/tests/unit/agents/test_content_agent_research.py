@@ -209,7 +209,7 @@ class TestWorkflowResearchAgentAdapter:
             adapter._agent = AsyncMock()
             adapter._agent.run = AsyncMock(return_value="")
 
-            result = await adapter.run({"prompt": "Fallback topic", "keywords": []})
+            await adapter.run({"prompt": "Fallback topic", "keywords": []})
 
             adapter._agent.run.assert_awaited_once_with(topic="Fallback topic", keywords=[])
 
@@ -217,7 +217,7 @@ class TestWorkflowResearchAgentAdapter:
     async def test_returns_success_when_agent_is_none(self):
         with (
             patch("agents.content_agent.agents.research_agent.config") as mock_config,
-            patch("agents.content_agent.agents.research_agent.CrewAIToolsFactory") as mock_tools,
+            patch("agents.content_agent.agents.research_agent.CrewAIToolsFactory"),
             patch("agents.content_agent.agents.research_agent.ResearchQualityService"),
         ):
             mock_config.SERPER_API_KEY = None  # Forces init error

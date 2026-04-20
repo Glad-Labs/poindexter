@@ -1,7 +1,8 @@
 """Tests for PipelineDB — the pipeline table write module."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.pipeline_db import PipelineDB
 

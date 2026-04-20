@@ -36,7 +36,6 @@ import pytest
 
 from tests.integration.conftest import requires_real_services
 
-
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio, requires_real_services]
 
 

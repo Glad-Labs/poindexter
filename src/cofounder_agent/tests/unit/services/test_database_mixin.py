@@ -155,7 +155,7 @@ class TestTimestampConversion:
             "refinement_timestamp",
             "modified_at",
         ]
-        data = {f: dt for f in fields}
+        data = dict.fromkeys(fields, dt)
         result = convert(data)
         for f in fields:
             assert isinstance(result[f], str), f"{f} not converted"

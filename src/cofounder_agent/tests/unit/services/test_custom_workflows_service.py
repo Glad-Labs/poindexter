@@ -103,8 +103,8 @@ def _make_service(pool=None) -> CustomWorkflowsService:
     db_service = _make_db_service(pool)
     with (
         patch("services.custom_workflows_service.PhaseRegistry") as MockRegistry,
-        patch("services.custom_workflows_service.WorkflowValidator") as MockValidator,
-        patch("services.custom_workflows_service.WorkflowExecutor") as MockExecutor,
+        patch("services.custom_workflows_service.WorkflowValidator"),
+        patch("services.custom_workflows_service.WorkflowExecutor"),
     ):
         mock_registry = MagicMock()
         MockRegistry.get_instance.return_value = mock_registry
