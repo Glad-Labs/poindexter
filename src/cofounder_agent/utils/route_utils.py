@@ -21,7 +21,7 @@ Found in: content_routes, task_routes, subtask_routes, bulk_task_routes, setting
 
 from typing import Any, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from services.logger_config import get_logger
 
@@ -220,6 +220,35 @@ def get_database_dependency() -> Any:
     if db is None:
         raise RuntimeError("Database service not initialized")
     return db
+
+
+def get_site_config_dependency(request: Request) -> Any:
+    """FastAPI dependency that returns the lifespan-bound SiteConfig.
+
+    Phase H (#242) is migrating every caller from the module-level
+    ``services.site_config.site_config`` singleton to this DI pattern.
+    The singleton still exists in parallel during the transition; this
+    function returns the SAME instance (attached to ``app.state`` in
+    main.py's lifespan), so routes that switch to ``Depends()`` behave
+    identically to ones still importing directly.
+
+    Usage::
+
+        from fastapi import Depends
+        from utils.route_utils import get_site_config_dependency
+
+        @router.get("/foo")
+        async def handler(cfg = Depends(get_site_config_dependency)):
+            site_url = cfg.require("site_url")
+    """
+    sc = getattr(request.app.state, "site_config", None)
+    if sc is None:
+        # Fallback during transition — the module singleton is still
+        # loaded and usable. Once every caller uses Depends(), lifespan
+        # is the sole construction site and this branch goes away.
+        from services.site_config import site_config as _legacy_sc
+        return _legacy_sc
+    return sc
 
 
 def get_orchestrator_dependency() -> Any:
