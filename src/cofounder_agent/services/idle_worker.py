@@ -280,10 +280,10 @@ class IdleWorker:
                     else:
                         logger.warning("[SCHEDULED] Publish failed for %s: %s", task_id, result.error)
                 except Exception as e:
-                    logger.error("[SCHEDULED] Error publishing %s: %s", task_id, e)
+                    logger.exception("[SCHEDULED] Error publishing %s: %s", task_id, e)
             return {"published": published, "checked": len(rows)}
         except Exception as e:
-            logger.error("[SCHEDULED] Error checking scheduled posts: %s", e)
+            logger.exception("[SCHEDULED] Error checking scheduled posts: %s", e)
             return {"published": 0, "error": str(e)}
 
     async def _expire_stale_approvals(self) -> dict:

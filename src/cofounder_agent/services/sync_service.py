@@ -86,7 +86,7 @@ class SyncService:
                 )
                 logger.info("Connected to cloud DB")
             except Exception as exc:
-                logger.error("Failed to connect to cloud DB: %s", exc)
+                logger.exception("Failed to connect to cloud DB: %s", exc)
                 self._cloud_pool = None
 
         if not self.local_url:
@@ -99,7 +99,7 @@ class SyncService:
                 )
                 logger.info("Connected to local DB")
             except Exception as exc:
-                logger.error("Failed to connect to local DB: %s", exc)
+                logger.exception("Failed to connect to local DB: %s", exc)
                 self._local_pool = None
 
     async def close(self) -> None:

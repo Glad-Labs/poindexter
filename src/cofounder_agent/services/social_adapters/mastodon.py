@@ -50,5 +50,5 @@ async def post_to_mastodon(text: str, url: str, **kwargs) -> dict:
                 return {"success": False, "post_id": None, "error": err}
 
     except Exception as e:
-        logger.error("[MASTODON] Error: %s", e)
+        logger.exception("[MASTODON] Error: %s", e)
         return {"success": False, "post_id": None, "error": str(e)}

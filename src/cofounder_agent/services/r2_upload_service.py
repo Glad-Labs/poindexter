@@ -138,7 +138,7 @@ async def upload_to_r2(
         logger.warning("[STORAGE] boto3 not installed — cannot upload")
         return None
     except Exception as e:
-        logger.error("[STORAGE] Upload failed for %s: %s", r2_key, e)
+        logger.exception("[STORAGE] Upload failed for %s: %s", r2_key, e)
         return None
 
 

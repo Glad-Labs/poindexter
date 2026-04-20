@@ -74,5 +74,5 @@ async def post_to_linkedin(text: str, url: str, **kwargs) -> dict:
                 return {"success": False, "post_id": None, "error": err}
 
     except Exception as e:
-        logger.error("[LINKEDIN] Error: %s", e)
+        logger.exception("[LINKEDIN] Error: %s", e)
         return {"success": False, "post_id": None, "error": str(e)}
