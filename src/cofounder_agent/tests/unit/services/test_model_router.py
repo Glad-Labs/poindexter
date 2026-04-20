@@ -291,7 +291,8 @@ class TestGetModelForPhase:
         for tier in ("fast", "balanced", "quality"):
             for phase in phases:
                 result = get_model_for_phase(phase, {}, tier)
-                assert isinstance(result, str) and len(result) > 0
+                assert isinstance(result, str)
+                assert len(result) > 0
 
 
 # ---------------------------------------------------------------------------

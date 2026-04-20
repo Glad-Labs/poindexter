@@ -405,7 +405,8 @@ class TestConvertMarkdownToHtml:
     def test_headings_convert_to_h_tags(self):
         from routes.cms_routes import convert_markdown_to_html
         html = convert_markdown_to_html("# Title\n\nParagraph.")
-        assert "<h1>" in html and "</h1>" in html
+        assert "<h1>" in html
+        assert "</h1>" in html
         assert "Title" in html
         assert "<p>" in html
 

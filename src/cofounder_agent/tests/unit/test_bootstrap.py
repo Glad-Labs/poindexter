@@ -140,5 +140,6 @@ class TestRequireDatabaseUrl:
         with pytest.raises(SystemExit) as exc:
             bootstrap.require_database_url(source="pytest")
         assert exc.value.code == 2
-        assert calls and calls[0]["source"] == "pytest"
+        assert calls
+        assert calls[0]["source"] == "pytest"
         assert calls[0]["severity"] == "critical"

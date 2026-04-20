@@ -146,7 +146,8 @@ class TestBasePhaseValidateInputs:
         phase = _make_content_phase()
         is_valid, error = await phase.validate_inputs({})
         assert is_valid is False
-        assert error is not None and "topic" in error
+        assert error is not None
+        assert "topic" in error
 
     @pytest.mark.asyncio
     async def test_optional_input_absent_still_valid(self):
@@ -277,7 +278,8 @@ class TestGenerateContentPhase:
                     config={},
                 )
         assert phase.status == "failed"
-        assert phase.error is not None and "LLM unavailable" in phase.error
+        assert phase.error is not None
+        assert "LLM unavailable" in phase.error
 
     def test_phase_type(self):
         from services.phases.content_phases import GenerateContentPhase

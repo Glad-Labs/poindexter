@@ -39,19 +39,23 @@ class TestRouteManifestStructure:
 
     def test_all_module_paths_are_non_empty_strings(self):
         for module_path, _, _, _ in _ROUTE_MANIFEST:
-            assert isinstance(module_path, str) and module_path
+            assert isinstance(module_path, str)
+            assert module_path
 
     def test_all_router_attrs_are_non_empty_strings(self):
         for _, router_attr, _, _ in _ROUTE_MANIFEST:
-            assert isinstance(router_attr, str) and router_attr
+            assert isinstance(router_attr, str)
+            assert router_attr
 
     def test_all_status_keys_are_non_empty_strings(self):
         for _, _, status_key, _ in _ROUTE_MANIFEST:
-            assert isinstance(status_key, str) and status_key
+            assert isinstance(status_key, str)
+            assert status_key
 
     def test_all_descriptions_are_non_empty_strings(self):
         for _, _, _, description in _ROUTE_MANIFEST:
-            assert isinstance(description, str) and description
+            assert isinstance(description, str)
+            assert description
 
     def test_status_keys_are_unique(self):
         keys = [entry[2] for entry in _ROUTE_MANIFEST]
@@ -96,7 +100,8 @@ class TestRouteManifestStructure:
         for entry in _WORKER_ROUTES:
             assert len(entry) == 4
             for field in entry:
-                assert isinstance(field, str) and field
+                assert isinstance(field, str)
+                assert field
 
 
 class TestRegisterAllRoutes:

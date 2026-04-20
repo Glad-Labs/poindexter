@@ -233,9 +233,8 @@ class TestRunRefinementGuards:
         result = await agent.run(post, is_refinement=False)
         # Should have called llm for draft + SEO assets
         assert llm_client.generate_text.call_count == 2
-        assert result.raw_content is not None and result.raw_content.startswith(
-            "# Initial content here"
-        )
+        assert result.raw_content is not None
+        assert result.raw_content.startswith("# Initial content here")
 
 
 # ---------------------------------------------------------------------------
@@ -314,4 +313,5 @@ class TestGenerateSeoAssets:
         post = make_blog_post(topic="A" * 200)  # Very long topic
         result = await agent._generate_seo_assets(post)
 
-        assert result.meta_description is not None and len(result.meta_description) <= 160
+        assert result.meta_description is not None
+        assert len(result.meta_description) <= 160

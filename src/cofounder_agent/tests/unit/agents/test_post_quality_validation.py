@@ -143,10 +143,14 @@ class TestPostCompletenessForPublishing:
     def test_essential_content_fields_populated(self):
         """A publish-ready post must have title, slug, content, and meta_description."""
         post = _make_full_post()
-        assert post.title is not None and len(post.title) > 0
-        assert post.slug is not None and len(post.slug) > 0
-        assert post.raw_content is not None and len(post.raw_content) > 0
-        assert post.meta_description is not None and len(post.meta_description) > 0
+        assert post.title is not None
+        assert len(post.title) > 0
+        assert post.slug is not None
+        assert len(post.slug) > 0
+        assert post.raw_content is not None
+        assert len(post.raw_content) > 0
+        assert post.meta_description is not None
+        assert len(post.meta_description) > 0
 
     def test_slug_is_url_safe(self):
         """Slug must contain only lowercase alphanumeric chars and hyphens."""
@@ -186,27 +190,30 @@ class TestPostCompletenessForPublishing:
     def test_images_present_with_alt_text(self):
         """Published post should have at least one image with alt text."""
         post = _make_full_post()
-        assert post.images is not None and len(post.images) > 0, "No images attached"
+        assert post.images is not None, "No images attached"
+        assert len(post.images) > 0, "No images attached"
         for img in post.images:
             assert img.public_url is not None, "Image missing public_url"
-            assert (
-                img.alt_text is not None and len(img.alt_text) > 0
-            ), "Image missing alt_text (accessibility requirement)"
+            assert img.alt_text is not None, "Image missing alt_text"
+            assert len(img.alt_text) > 0, "Image has empty alt_text"
 
     def test_category_populated(self):
         """Post must have a category for content organization."""
         post = _make_full_post()
-        assert post.category is not None and len(post.category) > 0
+        assert post.category is not None
+        assert len(post.category) > 0
 
     def test_primary_keyword_populated(self):
         """Post must have a primary keyword for SEO targeting."""
         post = _make_full_post()
-        assert post.primary_keyword is not None and len(post.primary_keyword) > 0
+        assert post.primary_keyword is not None
+        assert len(post.primary_keyword) > 0
 
     def test_target_audience_populated(self):
         """Post must have a defined target audience."""
         post = _make_full_post()
-        assert post.target_audience is not None and len(post.target_audience) > 0
+        assert post.target_audience is not None
+        assert len(post.target_audience) > 0
 
     def test_writing_style_set(self):
         """Post should have a writing style for consistency."""
@@ -307,17 +314,19 @@ class TestImageMetadataCompleteness:
         """Every image must have a public URL for rendering."""
         post = _make_full_post()
         for i, img in enumerate(post.images):
-            assert img.public_url is not None and img.public_url.startswith(
-                "http"
-            ), f"Image {i} missing valid public_url"
+            assert img.public_url is not None, f"Image {i} missing public_url"
+            assert img.public_url.startswith("http"), (
+                f"Image {i} public_url is not http-scheme"
+            )
 
     def test_all_images_have_alt_text(self):
         """Every image must have alt text for WCAG compliance."""
         post = _make_full_post()
         for i, img in enumerate(post.images):
-            assert (
-                img.alt_text is not None and len(img.alt_text) >= 10
-            ), f"Image {i} alt_text too short or missing (WCAG 1.1.1)"
+            assert img.alt_text is not None, f"Image {i} alt_text missing (WCAG 1.1.1)"
+            assert len(img.alt_text) >= 10, (
+                f"Image {i} alt_text too short (WCAG 1.1.1): {img.alt_text!r}"
+            )
 
     def test_image_alt_text_not_generic(self):
         """Alt text should be descriptive, not generic like 'image' or 'photo'."""

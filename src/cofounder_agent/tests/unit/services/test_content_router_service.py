@@ -856,7 +856,9 @@ class TestSanitizeGeneratedTitle:
     def test_truncates_too_long(self):
         from services.title_generation import sanitize_generated_title as _sanitize_generated_title
         out = _sanitize_generated_title("x" * 200)
-        assert out is not None and len(out) <= 100 and out.endswith("...")
+        assert out is not None
+        assert len(out) <= 100
+        assert out.endswith("...")
 
 
 

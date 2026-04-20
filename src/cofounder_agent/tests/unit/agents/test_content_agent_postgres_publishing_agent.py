@@ -177,7 +177,8 @@ class TestRun:
         post.slug = None
 
         result = await agent.run(post)
-        assert result.slug is not None and " " not in result.slug
+        assert result.slug is not None
+        assert " " not in result.slug
         assert result.slug == result.slug.lower()
 
     @pytest.mark.asyncio
@@ -188,7 +189,8 @@ class TestRun:
 
         result = await agent.run(post)
         # Content is short so no ellipsis should be added
-        assert result.meta_description is not None and "..." not in result.meta_description
+        assert result.meta_description is not None
+        assert "..." not in result.meta_description
 
 
 # ---------------------------------------------------------------------------
