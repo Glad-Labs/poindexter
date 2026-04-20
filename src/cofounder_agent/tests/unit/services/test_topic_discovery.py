@@ -302,7 +302,9 @@ class TestScrapeHackerNews:
     async def test_handles_network_error(self):
         d = TopicDiscovery(AsyncMock())
 
-        with patch("services.topic_discovery.httpx.AsyncClient") as mock_client_cls:
+        # httpx is imported inside the source module after Phase F;
+        # patch the source's httpx reference, not the legacy dispatcher's.
+        with patch("services.topic_sources.hackernews.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(side_effect=httpx.ConnectError("offline"))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -345,7 +347,7 @@ class TestScrapeDevTo:
     async def test_handles_network_error(self):
         d = TopicDiscovery(AsyncMock())
 
-        with patch("services.topic_discovery.httpx.AsyncClient") as mock_client_cls:
+        with patch("services.topic_sources.devto.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(side_effect=httpx.ConnectError("offline"))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

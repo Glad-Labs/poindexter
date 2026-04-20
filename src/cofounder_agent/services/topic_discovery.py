@@ -24,8 +24,6 @@ import json
 import re
 from dataclasses import dataclass
 
-import httpx
-
 from services.logger_config import get_logger
 from services.site_config import site_config
 
@@ -427,149 +425,27 @@ class TopicDiscovery:
             return []
 
     async def _discover_from_codebase(self) -> list[DiscoveredTopic]:
-        """Discover topics by mining the vector database for interesting content.
+        """Delegate to ``services.topic_sources.codebase.CodebaseSource``.
 
-        This is Poindexter's core differentiator: it knows YOUR codebase, YOUR
-        decisions, YOUR infrastructure. No other tool does this.
-
-        Source-agnostic: works with whatever you embed — git commits, issues,
-        documents, Slack messages, Notion pages. The embedding pipeline is the
-        pluggable layer; topic discovery just searches what's there.
-
-        Technique: semantic search across all embeddings for high-interest
-        technical patterns, then extract candidate topics from the results.
+        Phase F slice 6 moved the implementation. The wrapper reads the
+        legacy ``topic_discovery_ideation_lookback_days`` app_setting
+        and threads it through so operators who've tuned the window
+        don't have to migrate their config.
         """
-        topics: list[DiscoveredTopic] = []
+        from services.topic_sources.codebase import CodebaseSource
         if not self.pool:
-            return topics
-
-        # Seed queries — broad technical themes that surface interesting content
-        # from ANY source type in the vector DB
-        seed_queries = [
-            "interesting architecture decisions and technical tradeoffs",
-            "performance optimization and scaling challenges",
-            "infrastructure automation and self-healing systems",
-            "developer tools and workflow improvements",
-            "database design and data pipeline engineering",
-            "AI and machine learning in production systems",
-            "monitoring alerting and observability patterns",
-            "content generation and quality assurance automation",
-        ]
-
+            return []
+        lookback = site_config.get_int("topic_discovery_ideation_lookback_days", 30)
+        source = CodebaseSource()
         try:
-
-            # Get the embedding function
-            ollama_url = site_config.get("ollama_base_url", "http://localhost:11434")
-            embed_model = site_config.get("embed_model", "nomic-embed-text") or "nomic-embed-text"
-
-            async with httpx.AsyncClient(timeout=30) as client:
-                seen_sources: set[str] = set()  # Dedup by source_id
-
-                for query in seed_queries:
-                    try:
-                        # Generate embedding for the seed query
-                        resp = await client.post(
-                            f"{ollama_url}/api/embeddings",
-                            json={"model": embed_model, "prompt": query},
-                            timeout=15,
-                        )
-                        if resp.status_code != 200:
-                            continue
-                        embedding = resp.json().get("embedding", [])
-                        if not embedding:
-                            continue
-
-                        vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
-
-                        # Search across ALL source types — issues, memory, audit, everything
-                        # Exclude 'posts' to avoid suggesting topics we already wrote about
-                        _lb_days = site_config.get_int("topic_discovery_ideation_lookback_days", 30)
-                        rows = await self.pool.fetch(
-                            f"""
-                            SELECT source_table, source_id, text_preview,
-                                   1 - (embedding <=> $1::vector) as similarity
-                            FROM embeddings
-                            WHERE source_table != 'posts'
-                              AND created_at > NOW() - INTERVAL '{_lb_days} days'
-                            ORDER BY embedding <=> $1::vector
-                            LIMIT 5
-                            """,
-                            vec_str,
-                        )
-
-                        for row in rows:
-                            sim = float(row["similarity"])
-                            source_id = row["source_id"]
-
-                            # Skip low-relevance or already-seen results
-                            if sim < 0.4 or source_id in seen_sources:
-                                continue
-                            seen_sources.add(source_id)
-
-                            preview = (row["text_preview"] or "")[:300].strip()
-                            if len(preview) < 30:
-                                continue
-
-                            # Extract a topic from the embedding text
-                            topic_title = self._extract_topic_from_embedding(
-                                preview, row["source_table"]
-                            )
-                            if topic_title:
-                                topics.append(DiscoveredTopic(
-                                    title=topic_title,
-                                    category="technology",
-                                    source=f"embeddings:{row['source_table']}",
-                                    source_url="",
-                                    relevance_score=min(0.9, sim + 0.3),
-                                ))
-
-                    except Exception as e:
-                        logger.debug("[TOPIC_DISCOVERY] Seed query '%s' failed: %s", query[:30], e)
-                        continue
-
-            logger.info("[TOPIC_DISCOVERY] Vector DB: %d topics from %d seed queries", len(topics), len(seed_queries))
-
+            topics = await source.extract(
+                self.pool, {"lookback_days": lookback},
+            )
+            logger.info("[TOPIC_DISCOVERY] Vector DB: %d topics", len(topics))
+            return topics
         except Exception as e:
             logger.warning("[TOPIC_DISCOVERY] Vector DB scan failed: %s", e)
-
-        return topics
-
-    def _extract_topic_from_embedding(self, text: str, source_table: str) -> str | None:
-        """Extract a blog-worthy topic from an embedding's text preview.
-
-        Works with any source type — the topic is derived from the content,
-        not the source format. This is what makes it source-agnostic.
-        """
-        if not text or len(text) < 30:
-            return None
-
-        # For issues: skip — internal Gitea issues about our own system are not
-        # suitable for public blog topics.  They produce titles like
-        # "Engineering Insight: monitoring: health check endpoint does not expose..."
-        if source_table == "issues":
-            return None
-
-        # For memory: skip — internal system state (preferences, decisions, config)
-        # is not suitable for blog topics.  Memory-derived topics produced garbage
-        # like "Behind the Decisions: name: Autonomous work style description: ..."
-        if source_table == "memory":
-            return None
-
-        # For audit: skip — internal audit logs are not blog topics
-        if source_table == "audit":
-            return None
-
-        # For published posts: these can inspire "related topic" suggestions
-        if source_table == "posts":
-            for line in text.split("\n"):
-                line = line.strip().lstrip("-# ")
-                if len(line) > 40:
-                    return line[:80]
-            return None
-
-        # All other internal sources: skip by default.
-        # Only explicitly handled source types (posts) produce topics.
-        return None
+            return []
 
     async def _deduplicate(self, topics: list[DiscoveredTopic]) -> list[DiscoveredTopic]:
         """Mark topics that duplicate existing published posts."""

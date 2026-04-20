@@ -146,6 +146,7 @@ hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource
 devto = "cofounder_agent.services.topic_sources.devto:DevtoSource"
 web_search = "cofounder_agent.services.topic_sources.web_search:WebSearchSource"
 knowledge = "cofounder_agent.services.topic_sources.knowledge:KnowledgeSource"
+codebase = "cofounder_agent.services.topic_sources.codebase:CodebaseSource"
 
 [tool.poetry.plugins."poindexter.image_providers"]
 pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
