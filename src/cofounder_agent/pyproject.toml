@@ -149,6 +149,7 @@ fix_broken_external_links = "cofounder_agent.services.jobs.fix_broken_external_l
 fix_uncategorized_posts = "cofounder_agent.services.jobs.fix_uncategorized_posts:FixUncategorizedPostsJob"
 tune_publish_threshold = "cofounder_agent.services.jobs.tune_publish_threshold:TunePublishThresholdJob"
 verify_published_posts = "cofounder_agent.services.jobs.verify_published_posts:VerifyPublishedPostsJob"
+crosspost_to_devto = "cofounder_agent.services.jobs.crosspost_to_devto:CrosspostToDevtoJob"
 
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
