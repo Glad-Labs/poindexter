@@ -70,11 +70,11 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(
                     """
                     INSERT INTO writing_samples (
-                        user_id, title, description, content, 
+                        user_id, title, description, content,
                         is_active, word_count, char_count, created_at, updated_at
                     )
                     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-                    RETURNING id, user_id, title, description, content, is_active, 
+                    RETURNING id, user_id, title, description, content, is_active,
                               word_count, char_count, created_at, updated_at
                     """,
                     user_id,
@@ -112,7 +112,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    SELECT id, user_id, title, description, content, is_active, 
+                    SELECT id, user_id, title, description, content, is_active,
                            word_count, char_count, metadata, created_at, updated_at
                     FROM writing_samples WHERE id = $1
                     """,
@@ -179,9 +179,9 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    SELECT id, user_id, title, description, content, is_active, 
+                    SELECT id, user_id, title, description, content, is_active,
                            word_count, char_count, metadata, created_at, updated_at
-                    FROM writing_samples 
+                    FROM writing_samples
                     WHERE user_id = $1 AND is_active = TRUE
                     LIMIT 1
                     """,
@@ -219,7 +219,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 # Activate the specified sample
                 row = await conn.fetchrow(
                     """
-                    UPDATE writing_samples 
+                    UPDATE writing_samples
                     SET is_active = TRUE, updated_at = NOW()
                     WHERE id = $1 AND user_id = $2
                     RETURNING id, user_id, title, description, content, is_active,

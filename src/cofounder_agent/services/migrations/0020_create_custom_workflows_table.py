@@ -20,7 +20,7 @@ async def up(pool):
             updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
             tags JSONB DEFAULT '[]'::jsonb,
             is_template BOOLEAN DEFAULT FALSE,
-            
+
             CONSTRAINT custom_workflows_name_owner_unique UNIQUE(name, owner_id)
         );
         """
@@ -29,7 +29,7 @@ async def up(pool):
     # Create indexes for common queries
     await pool.execute(
         """
-        CREATE INDEX IF NOT EXISTS idx_custom_workflows_owner_id 
+        CREATE INDEX IF NOT EXISTS idx_custom_workflows_owner_id
         ON custom_workflows(owner_id);
         """
     )

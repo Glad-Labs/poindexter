@@ -482,11 +482,11 @@ In main.py:
 
 In task_routes.py:
     db_service = None
-    
+
     def set_db_service(service: DatabaseService):
         global db_service
         db_service = service
-    
+
     @app.get("/tasks")
     async def list_tasks():
         tasks = await db_service.tasks.get_all_tasks(limit=100)
@@ -505,7 +505,7 @@ NEW PATTERN 1 (Using global service function):
 
 In main.py:
     from utils.route_utils import initialize_services
-    
+
     services = await startup_manager.initialize_all_services()
     initialize_services(
         app,
@@ -515,7 +515,7 @@ In main.py:
 
 In task_routes.py:
     from utils.route_utils import get_services
-    
+
     @app.get("/tasks")
     async def list_tasks():
         db = get_services().get_database()
@@ -534,13 +534,13 @@ NEW PATTERN 2 (Using FastAPI Depends):
 
 In main.py:
     from utils.route_utils import initialize_services
-    
+
     services = await startup_manager.initialize_all_services()
     initialize_services(app, database_service=services['database'])
 
 In task_routes.py:
     from utils.route_utils import get_database_dependency
-    
+
     @app.get("/tasks")
     async def list_tasks(db = Depends(get_database_dependency)):
         tasks = await db.tasks.get_all_tasks(limit=100)
@@ -562,7 +562,7 @@ In main.py:
 
 In task_routes.py:
     from utils.route_utils import get_db_from_request
-    
+
     @app.get("/tasks")
     async def list_tasks(request: Request):
         db = get_db_from_request(request)

@@ -158,7 +158,7 @@ class CostAggregationService:
             async with self.db.pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT phase, 
+                    SELECT phase,
                            COALESCE(SUM(cost_usd), 0) as total_cost,
                            COUNT(*) as task_count
                     FROM cost_logs
