@@ -158,4 +158,4 @@ def setup_telemetry(app, service_name="cofounder-agent"):
     except Exception as e:
         # If telemetry setup fails entirely, just log and continue
         logging.error(f"[setup_telemetry] Error setting up telemetry: {e}", exc_info=True)
-        logging.error("[TELEMETRY] Application will continue without OpenTelemetry tracing")
+        logging.exception("[TELEMETRY] Application will continue without OpenTelemetry tracing")

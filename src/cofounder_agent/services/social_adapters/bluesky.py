@@ -95,5 +95,5 @@ async def post_to_bluesky(text: str, url: str, **kwargs) -> dict:
                 return {"success": False, "post_id": None, "error": err}
 
     except Exception as e:
-        logger.error("[BLUESKY] Error: %s", e)
+        logger.exception("[BLUESKY] Error: %s", e)
         return {"success": False, "post_id": None, "error": str(e)}

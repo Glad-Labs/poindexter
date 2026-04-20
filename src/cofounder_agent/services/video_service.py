@@ -355,7 +355,7 @@ async def generate_video_for_post(
                 return VideoResult(success=False, error=error_msg)
 
     except Exception as e:
-        logger.error("[VIDEO] Video server error: %s", e)
+        logger.exception("[VIDEO] Video server error: %s", e)
         return VideoResult(success=False, error=str(e))
 
 
@@ -533,7 +533,7 @@ async def generate_short_video_for_post(
                 return VideoResult(success=False, error=error_msg)
 
     except Exception as e:
-        logger.error("[SHORT] Video server error: %s", e)
+        logger.exception("[SHORT] Video server error: %s", e)
         return VideoResult(success=False, error=str(e))
 
 

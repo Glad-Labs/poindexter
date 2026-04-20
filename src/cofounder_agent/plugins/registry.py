@@ -77,7 +77,7 @@ def _load_group(group: str) -> list[Any]:
         try:
             target = ep.load()
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "plugin discovery: failed to load %s entry_point %r: %s",
                 group, ep.name, e,
             )
@@ -85,7 +85,7 @@ def _load_group(group: str) -> list[Any]:
         try:
             instance = target() if callable(target) else target
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "plugin discovery: failed to instantiate %s plugin %r: %s",
                 group, ep.name, e,
             )
@@ -254,7 +254,7 @@ def get_core_samples() -> dict[str, list[Any]]:
             cls = getattr(module, class_name)
             samples[plugin_type].append(cls())
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "core sample load failed: %s.%s: %s",
                 module_path, class_name, e,
             )

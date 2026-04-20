@@ -143,7 +143,7 @@ class MemoryFilesTap:
                 try:
                     text = filepath.read_text(encoding="utf-8")
                 except Exception as e:
-                    logger.error("MemoryFilesTap: read failed for %s: %s", filepath, e)
+                    logger.exception("MemoryFilesTap: read failed for %s: %s", filepath, e)
                     continue
                 if not text.strip():
                     continue

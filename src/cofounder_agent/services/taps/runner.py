@@ -187,7 +187,7 @@ async def run_tap(tap: Any, pool: Any, mem: Any) -> TapStats:
             try:
                 outcome = await _store_document(mem, pool, doc)
             except Exception as e:
-                logger.error("Tap %s: store failed for %s: %s", stats.name, doc.source_id, e)
+                logger.exception("Tap %s: store failed for %s: %s", stats.name, doc.source_id, e)
                 stats.failed += 1
                 continue
             if outcome == "embedded":

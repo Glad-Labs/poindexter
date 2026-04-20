@@ -215,13 +215,13 @@ async def _plan_and_inject_placeholders(
     try:
         from services.image_decision_agent import plan_images
     except Exception as e:
-        logger.error("[IMAGE_AGENT] Image Decision Agent FAILED to import: %s", e)
+        logger.exception("[IMAGE_AGENT] Image Decision Agent FAILED to import: %s", e)
         return content_text, {"agent_error": str(e)}
 
     try:
         plan = await plan_images(content_text, topic, category, max_images=3)
     except Exception as agent_err:
-        logger.error("[IMAGE_AGENT] Image Decision Agent FAILED: %s", agent_err)
+        logger.exception("[IMAGE_AGENT] Image Decision Agent FAILED: %s", agent_err)
         return content_text, {"agent_error": str(agent_err)}
 
     if not plan.images:
@@ -486,7 +486,7 @@ async def _try_pexels(
             photographer = getattr(img, "photographer", "Pexels")
             return img.url, photographer
     except Exception as e:
-        logger.error("Pexels search failed: %s", e)
+        logger.exception("Pexels search failed: %s", e)
     return None
 
 

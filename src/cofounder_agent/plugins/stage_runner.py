@@ -236,7 +236,7 @@ class StageRunner:
             )
         except asyncio.TimeoutError:
             elapsed = int((time.time() - t0) * 1000)
-            logger.error("stage_runner: %r timed out after %ds", name, timeout)
+            logger.exception("stage_runner: %r timed out after %ds", name, timeout)
             return StageRunRecord(
                 name=name,
                 ok=False,

@@ -66,7 +66,7 @@ async def _upload_json(key: str, data: str, content_type: str = "application/jso
         url = await upload_to_r2(tmp.name, f"{_STATIC_PREFIX}/{key}", content_type)
         return url
     except Exception as e:
-        logger.error("[STATIC_EXPORT] Upload failed for %s: %s", key, e)
+        logger.exception("[STATIC_EXPORT] Upload failed for %s: %s", key, e)
         return None
     finally:
         if tmp and os.path.exists(tmp.name):

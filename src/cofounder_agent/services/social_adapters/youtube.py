@@ -144,5 +144,5 @@ async def upload_to_youtube(
                 return {"success": False, "post_id": None, "error": f"Upload failed: {upload_resp.text[:200]}"}
 
     except Exception as e:
-        logger.error("[YOUTUBE] Error: %s", e)
+        logger.exception("[YOUTUBE] Error: %s", e)
         return {"success": False, "post_id": None, "error": str(e)}
