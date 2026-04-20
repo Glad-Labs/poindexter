@@ -158,6 +158,7 @@ sync_newsletter_subscribers = "cofounder_agent.services.jobs.sync_newsletter_sub
 backfill_videos = "cofounder_agent.services.jobs.backfill_videos:BackfillVideosJob"
 backfill_podcasts = "cofounder_agent.services.jobs.backfill_podcasts:BackfillPodcastsJob"
 detect_anomalies = "cofounder_agent.services.jobs.detect_anomalies:DetectAnomaliesJob"
+check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
 
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
