@@ -394,26 +394,97 @@
   "templating": {
     "list": [
       {
-        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "allValue": ".+",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
         "datasource": { "type": "loki", "uid": "local-loki" },
-        "definition": "label_values(container)",
+        "definition": "",
         "hide": 0,
         "includeAll": true,
         "label": "Container",
         "multi": true,
         "name": "container",
-        "options": [],
-        "query": {
-          "label": "container",
-          "refId": "LokiVariableQueryEditor-VariableQuery",
-          "stream": "",
-          "type": 1
-        },
-        "refresh": 2,
-        "regex": "",
+        "options": [
+          { "selected": true, "text": "All", "value": "$__all" },
+          {
+            "selected": false,
+            "text": "poindexter-worker",
+            "value": "poindexter-worker"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-brain-daemon",
+            "value": "poindexter-brain-daemon"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-auto-embed",
+            "value": "poindexter-auto-embed"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-sdxl-server",
+            "value": "poindexter-sdxl-server"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-voice-bot",
+            "value": "poindexter-voice-bot"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-grafana",
+            "value": "poindexter-grafana"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-prometheus",
+            "value": "poindexter-prometheus"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-loki",
+            "value": "poindexter-loki"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-promtail",
+            "value": "poindexter-promtail"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-postgres-local",
+            "value": "poindexter-postgres-local"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-alertmanager",
+            "value": "poindexter-alertmanager"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-pgadmin",
+            "value": "poindexter-pgadmin"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-gpu-exporter",
+            "value": "poindexter-gpu-exporter"
+          },
+          {
+            "selected": false,
+            "text": "gladlabs-gitea",
+            "value": "gladlabs-gitea"
+          },
+          {
+            "selected": false,
+            "text": "gladlabs-gitea-runner",
+            "value": "gladlabs-gitea-runner"
+          }
+        ],
+        "query": "",
+        "queryValue": "",
         "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
+        "type": "custom"
       }
     ]
   },
