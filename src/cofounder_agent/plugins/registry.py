@@ -208,6 +208,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("topic_sources", "services.topic_sources.devto", "DevtoSource"),
         ("topic_sources", "services.topic_sources.web_search", "WebSearchSource"),
         ("topic_sources", "services.topic_sources.knowledge", "KnowledgeSource"),
+        ("topic_sources", "services.topic_sources.codebase", "CodebaseSource"),
         # Core ImageProviders — Phase G migration. Pexels first (search);
         # SDXL generation provider lands in a follow-up slice.
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
