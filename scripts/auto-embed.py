@@ -27,13 +27,11 @@ other knob — enable/disable per Tap, per-Tap config — lives in
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict
 
 import asyncpg
 import httpx
@@ -98,7 +96,6 @@ def _localize_url(url: str) -> str:
 
 OLLAMA_URL = _localize_url(os.getenv("OLLAMA_URL") or "http://127.0.0.1:11434")
 EMBED_MODEL = "nomic-embed-text"
-OPENCLAW_SQLITE_PATH = Path.home() / ".openclaw" / "memory" / "main.sqlite"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -147,120 +144,6 @@ async def check_ollama(client: httpx.AsyncClient) -> bool:
     except Exception as e:
         logger.warning("Ollama not reachable: %s", e)
         return False
-
-
-# ---------------------------------------------------------------------------
-# Legacy Phase: OpenClaw SQLite pre-embedded chunks
-# ---------------------------------------------------------------------------
-#
-# OpenClaw stores its own pgvector-compatible embeddings in
-# ~/.openclaw/memory/main.sqlite. We copy them verbatim (no re-embed,
-# no Ollama call) into our embeddings table so OpenClaw's knowledge is
-# queryable from this pool.
-#
-# Not yet migrated to a Tap because the Document contract assumes text
-# that gets embedded in the runner — OpenClaw provides pre-computed
-# vectors. Migration tracked separately; for now it stays inline.
-
-
-async def sync_openclaw_sqlite(local_conn: asyncpg.Connection) -> Dict[str, int]:
-    """Ingest pre-embedded chunks from OpenClaw's SQLite memory store."""
-    stats = {"embedded": 0, "skipped": 0, "failed": 0}
-
-    if not _HAS_MEMORY_CLIENT or MemoryClient is None:
-        logger.error("sync_openclaw_sqlite: MemoryClient unavailable — skipping phase")
-        stats["failed"] += 1
-        return stats
-
-    if not OPENCLAW_SQLITE_PATH.exists():
-        logger.info(
-            "OpenClaw SQLite not found at %s — skipping phase",
-            OPENCLAW_SQLITE_PATH,
-        )
-        return stats
-
-    try:
-        import sqlite3
-    except ImportError:
-        logger.warning("sqlite3 not available — skipping OpenClaw phase")
-        return stats
-
-    try:
-        conn = sqlite3.connect(str(OPENCLAW_SQLITE_PATH))
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT id, path, source, start_line, end_line, model, text, embedding
-              FROM chunks
-             WHERE embedding IS NOT NULL
-             ORDER BY path, start_line
-            """
-        )
-        rows = cur.fetchall()
-        conn.close()
-    except Exception as e:
-        logger.error("Could not read OpenClaw SQLite: %s", e)
-        stats["failed"] += 1
-        return stats
-
-    logger.info("OpenClaw: %d pre-embedded chunks in main.sqlite", len(rows))
-
-    chunks_by_path: Dict[str, list] = {}
-    for row in rows:
-        chunks_by_path.setdefault(row[1], []).append(row)
-
-    async with MemoryClient(dsn=LOCAL_DSN, ollama_url=OLLAMA_URL) as mem:
-        for path, chunks in chunks_by_path.items():
-            source_id = f"openclaw/{path}"
-            for chunk_index, (_cid, _path, _source, start_line, end_line, model, text, emb_str) in enumerate(chunks):
-                try:
-                    vec = json.loads(emb_str)
-                    if not isinstance(vec, list) or len(vec) != 768:
-                        logger.warning(
-                            "  [openclaw] %s#%d: unexpected embedding shape",
-                            source_id, chunk_index,
-                        )
-                        stats["failed"] += 1
-                        continue
-                    embed_model = (model or EMBED_MODEL).replace(":latest", "")
-
-                    content_hash = __import__("hashlib").sha256(
-                        (text or "").encode("utf-8")
-                    ).hexdigest()
-
-                    existing = await local_conn.fetchval(
-                        """SELECT content_hash FROM embeddings
-                           WHERE source_table = 'memory' AND source_id = $1
-                             AND chunk_index = $2 AND embedding_model = $3""",
-                        source_id, chunk_index, embed_model,
-                    )
-                    if existing == content_hash:
-                        stats["skipped"] += 1
-                        continue
-
-                    await mem.store(
-                        text=text or "",
-                        writer="openclaw",
-                        source_id=source_id,
-                        source_table="memory",
-                        chunk_index=chunk_index,
-                        metadata={
-                            "path": path,
-                            "start_line": start_line,
-                            "end_line": end_line,
-                        },
-                        content_hash=content_hash,
-                        origin_path=path,
-                        embedding=vec,
-                    )
-                    stats["embedded"] += 1
-                except Exception as e:
-                    logger.warning(
-                        "  [openclaw] FAIL %s#%d: %s", source_id, chunk_index, e,
-                    )
-                    stats["failed"] += 1
-
-    return stats
 
 
 # ---------------------------------------------------------------------------
@@ -317,30 +200,19 @@ async def main() -> None:
                 ts.name, status, ts.embedded, ts.skipped, ts.failed, ts.duration_s,
             )
 
-        # Legacy OpenClaw SQLite phase. Will migrate to a Tap later.
-        openclaw_stats = {"embedded": 0, "skipped": 0, "failed": 0}
-        try:
-            local_conn = await asyncpg.connect(LOCAL_DSN)
-            openclaw_stats = await sync_openclaw_sqlite(local_conn)
-            logger.info(
-                "  %-20s ok %d embedded, %d skipped, %d failed",
-                "openclaw_sqlite",
-                openclaw_stats["embedded"],
-                openclaw_stats["skipped"],
-                openclaw_stats["failed"],
-            )
-        except Exception as e:
-            logger.error("OpenClaw SQLite sync failed: %s", e)
-            openclaw_stats = {"embedded": 0, "skipped": 0, "failed": 1}
+        # OpenClaw SQLite is now a proper Tap (services/taps/openclaw_sqlite.py,
+        # registered via poindexter.taps entry_points) — it appears above
+        # with every other Tap. GitHub #79 follow-up: the precomputed
+        # embeddings ride through via Document.precomputed_embedding so
+        # Ollama isn't called twice.
 
-        total_embedded = summary.total_embedded + openclaw_stats["embedded"]
-        total_failed = summary.total_failed + openclaw_stats["failed"]
         elapsed = (datetime.now(timezone.utc) - start).total_seconds()
 
         logger.info("")
         logger.info(
-            "  TOTAL: %d embedded, %d failed across %d tap(s) + 1 legacy phase in %.1fs",
-            total_embedded, total_failed, len(summary.taps), elapsed,
+            "  TOTAL: %d embedded, %d failed across %d tap(s) in %.1fs",
+            summary.total_embedded, summary.total_failed,
+            len(summary.taps), elapsed,
         )
         logger.info("Auto-Embed run complete.\n")
 

@@ -45,6 +45,12 @@ class Document:
     - ``metadata`` — JSON-safe dict; stored alongside the embedding.
     - ``writer`` — origin label (``claude-code``, ``openclaw``, ``worker``,
       ``singer:tap-github``). Tracks who/what produced the document.
+    - ``precomputed_embedding`` — optional 768-dim vector when the upstream
+      source already has an embedding attached. OpenClaw chunks ship with
+      a ``nomic-embed-text`` vector already; when this field is set, the
+      runner stores the document with this vector instead of calling
+      Ollama again. Saves cost and avoids drift across embedder versions.
+      Must be None or a 768-float list matching the rest of the store.
     """
 
     source_id: str
@@ -52,6 +58,7 @@ class Document:
     text: str
     metadata: dict[str, Any] = field(default_factory=dict)
     writer: str = "unknown"
+    precomputed_embedding: list[float] | None = None
 
 
 @runtime_checkable

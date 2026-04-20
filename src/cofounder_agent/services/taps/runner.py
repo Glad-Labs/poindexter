@@ -123,6 +123,12 @@ async def _store_document(mem: Any, pool: Any, doc: Any) -> str:
     """Persist one Document (with chunking + dedup). Returns one of:
 
     ``"embedded"``, ``"skipped"``, ``"failed"``.
+
+    When the Document carries a ``precomputed_embedding``, skip the
+    chunking pipeline entirely and store as a single row with the
+    provided vector. Callers that ship their own embeddings (e.g.
+    OpenClaw whose chunks are already nomic-embed-text-vectorized)
+    use this path to avoid paying for Ollama twice.
     """
     text = doc.text
     if not text or not text.strip():
@@ -136,6 +142,35 @@ async def _store_document(mem: Any, pool: Any, doc: Any) -> str:
         )
     if existing == full_hash:
         return "skipped"
+
+    precomputed = getattr(doc, "precomputed_embedding", None)
+    if precomputed is not None:
+        # Single-row store path — the upstream source already chunked
+        # the text when it generated the vector, so re-chunking here
+        # would fracture the embedding.
+        await mem.store(
+            text=text,
+            writer=doc.writer,
+            source_id=doc.source_id,
+            source_table=doc.source_table,
+            chunk_index=0,
+            metadata={
+                **doc.metadata,
+                "chars": len(text),
+                "total_chunks": 1,
+                "chunk_index": 0,
+                "precomputed": True,
+            },
+            content_hash=full_hash,
+            origin_path=doc.metadata.get("origin_path", ""),
+            embedding=precomputed,
+        )
+        # Clean up any stale chunks from a prior re-chunked store.
+        async with pool.acquire() as conn:
+            await _delete_stale_chunks(
+                conn, doc.source_table, doc.source_id, EMBED_MODEL, 1,
+            )
+        return "embedded"
 
     chunks = chunk_text(text)
     total_chunks = len(chunks)
