@@ -294,7 +294,7 @@ class UnifiedOrchestrator:
                 "request_id": request_id,
                 "status": "error",
                 "error": str(e),
-                "message": "An error occurred processing your request: %s" % str(e),
+                "message": "An error occurred processing your request: {}".format(str(e)),
             }
 
     # ========================================================================
@@ -569,7 +569,7 @@ class UnifiedOrchestrator:
             logger.info("   - Quality Preference: %s", quality_preference)
 
             # Generate task ID
-            task_id = "task_%s_%s" % (
+            task_id = "task_{}_{}".format(
                 int(datetime.now(timezone.utc).timestamp()),
                 uuid.uuid4().hex[:6],
             )
@@ -684,7 +684,7 @@ class UnifiedOrchestrator:
                 request_type=request.request_type,
                 status=ExecutionStatus.FAILED,
                 output=str(e),
-                feedback="Content creation failed: %s" % str(e),
+                feedback="Content creation failed: {}".format(str(e)),
             )
 
     # --------------------------------------------------------------------
@@ -856,7 +856,7 @@ class UnifiedOrchestrator:
                 timeout=DRAFT_TIMEOUT_S,
             )
         except asyncio.TimeoutError:
-            raise TimeoutError("Creative draft timed out after %ds" % DRAFT_TIMEOUT_S) from None
+            raise TimeoutError(f"Creative draft timed out after {DRAFT_TIMEOUT_S}s") from None
         draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
 
         creative_compliance = validate_constraints(
@@ -928,7 +928,7 @@ class UnifiedOrchestrator:
                 )
             except asyncio.TimeoutError:
                 raise TimeoutError(
-                    "QA evaluation timed out after %ds (iteration %d)" % (QA_TIMEOUT_S, iteration)
+                    f"QA evaluation timed out after {QA_TIMEOUT_S}s (iteration {iteration})"
                 ) from None
 
             approval_bool = quality_result.passing
@@ -953,7 +953,7 @@ class UnifiedOrchestrator:
                         compliance.violation_message,
                     )
                     approval_bool = False
-                    feedback += " [CONSTRAINT: %s]" % compliance.violation_message
+                    feedback += " [CONSTRAINT: {}]".format(compliance.violation_message)
 
             if approval_bool:
                 logger.info(
@@ -987,8 +987,7 @@ class UnifiedOrchestrator:
                     )
                 except asyncio.TimeoutError:
                     raise TimeoutError(
-                        "Creative refinement timed out after %ds (iteration %d)"
-                        % (REFINEMENT_TIMEOUT_S, iteration)
+                        f"Creative refinement timed out after {REFINEMENT_TIMEOUT_S}s (iteration {iteration})"
                     ) from None
 
         qa_compliance = validate_constraints(
@@ -1043,11 +1042,11 @@ class UnifiedOrchestrator:
             )
         except asyncio.TimeoutError:
             raise TimeoutError(
-                "Formatting/publishing timed out after %ds" % FORMATTING_TIMEOUT_S
+                f"Formatting/publishing timed out after {FORMATTING_TIMEOUT_S}s"
             ) from None
 
         formatted_content = getattr(result_post, "raw_content", str(content))
-        excerpt = getattr(result_post, "meta_description", "Article about %s" % topic)
+        excerpt = getattr(result_post, "meta_description", f"Article about {topic}")
         return formatted_content, excerpt
 
     def _build_approval_result(
@@ -1091,7 +1090,7 @@ class UnifiedOrchestrator:
                 "violation_message": overall_compliance.violation_message,
             },
             "message": "✅ Content ready for human review. Human approval required before publishing.",
-            "next_action": "POST /api/content/tasks/%s/approve with human decision" % task_id,
+            "next_action": "POST /api/content/tasks/{}/approve with human decision".format(task_id),
         }
 
         logger.info("[%s] Pipeline complete. Awaiting human approval.", request.request_id)
@@ -1121,8 +1120,8 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output="Executed %s subtask for: %s" % (subtask_type, topic),
-            feedback="Subtask '%s' queued for execution" % subtask_type,
+            output="Executed {} subtask for: {}".format(subtask_type, topic),
+            feedback="Subtask '{}' queued for execution".format(subtask_type),
         )
 
     async def _handle_financial_analysis(self, request: Request) -> ExecutionResult:
@@ -1222,7 +1221,7 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output="Retrieved information for: %s" % query,
+            output="Retrieved information for: {}".format(query),
             feedback="Query executed",
         )
 
@@ -1236,7 +1235,7 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output="Decision support for: %s" % question,
+            output="Decision support for: {}".format(question),
             feedback="Decision analysis provided",
         )
 
