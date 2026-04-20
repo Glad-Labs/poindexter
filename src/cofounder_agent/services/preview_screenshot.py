@@ -25,6 +25,8 @@ Behavior on missing deps:
 
 from __future__ import annotations
 
+from contextlib import suppress
+
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -96,10 +98,8 @@ async def capture_preview_screenshot(
                 )
                 return png_bytes
             finally:
-                try:
+                with suppress(Exception):
                     await browser.close()
-                except Exception:
-                    pass
     except Exception as e:
         logger.warning(
             "[preview_screenshot] capture failed for %s: %s",

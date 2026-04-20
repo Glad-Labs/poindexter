@@ -47,6 +47,7 @@ import random
 import re
 import tempfile
 import uuid
+from contextlib import suppress
 from typing import Any
 
 import httpx
@@ -457,10 +458,8 @@ async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
         r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
         if r2_url:
             img_url = r2_url
-            try:
-                os.remove(tmp_path)
-            except OSError:  # best-effort cleanup
-                pass
+            with suppress(OSError):
+                os.remove(tmp_path)  # best-effort cleanup
     except Exception:  # noqa: BLE001 — legacy: fall back silently
         logger.debug("[IMAGE] R2 upload failed for inline, using local path")
 

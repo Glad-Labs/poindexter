@@ -18,6 +18,7 @@ import asyncio
 import os
 import re
 import time
+from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
 
@@ -822,10 +823,12 @@ class AIContentGenerator:
             # this, every content-generation attempt leaked an AsyncClient
             # (the client was only closed inside the success-return path).
             if ollama is not None:
-                try:
+                with suppress(Exception):
+                    # Teardown path: raising here would mask whatever put
+                    # us in finally. Leaked sockets are worse than silenced
+                    # close errors only if close() genuinely does work,
+                    # and in practice httpx.aclose is already best-effort.
                     await ollama.close()
-                except Exception:
-                    pass
 
         return None
 

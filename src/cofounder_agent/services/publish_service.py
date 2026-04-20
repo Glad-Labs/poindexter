@@ -15,6 +15,7 @@ import json
 import os
 import random
 import re
+from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -36,10 +37,10 @@ def _spawn_background(coro, name: str | None = None) -> asyncio.Task:
     reference so asyncio doesn't collect it mid-run."""
     task = asyncio.ensure_future(coro)
     if name:
-        try:
+        # set_name is best-effort; some event-loop implementations don't
+        # support it, but it's only used for debug visibility.
+        with suppress(Exception):
             task.set_name(name)
-        except Exception:
-            pass
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
     return task

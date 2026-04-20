@@ -19,6 +19,7 @@ Usage from task_executor or any post-publish hook:
     )
 """
 
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -163,10 +164,8 @@ async def _generate_social_text(
         return ""
     finally:
         if owns_client:
-            try:
+            with suppress(Exception):
                 await client.close()
-            except Exception:
-                pass
 
 
 # ---------------------------------------------------------------------------

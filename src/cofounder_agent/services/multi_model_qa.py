@@ -19,6 +19,7 @@ Usage:
         # Safe to publish
 """
 
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -422,12 +423,10 @@ class MultiModelQA:
         # gate stays binary because title/body mismatch is usually clear-cut.
         consistency_veto_threshold = 50.0
         if self.settings:
-            try:
+            with suppress(ValueError, TypeError):
                 consistency_veto_threshold = float(
                     await self.settings.get("qa_consistency_veto_threshold") or 50
                 )
-            except Exception:
-                pass
 
         def _reviewer_vetoes(r: ReviewerResult) -> bool:
             if r.approved:

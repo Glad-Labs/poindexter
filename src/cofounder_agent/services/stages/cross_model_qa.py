@@ -50,6 +50,7 @@ never return that.
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from typing import Any
 
 from plugins.stage import StageResult
@@ -487,10 +488,8 @@ async def _rewrite_draft(
                 )
                 revised = (fb_result.get("text") or "").strip()
         finally:
-            try:
+            with suppress(Exception):
                 await client.close()
-            except Exception:  # noqa: BLE001
-                pass
     except Exception as e:  # noqa: BLE001 — legacy swallowed errors
         logger.warning(
             "[QA_REWRITE] Task %s: rewrite failed (non-fatal): %s",
