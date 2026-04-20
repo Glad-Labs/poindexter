@@ -203,6 +203,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.db_backup", "DbBackupJob"),
         ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),
         ("jobs", "services.jobs.postgres_vacuum", "PostgresVacuumJob"),
+        ("jobs", "services.jobs.check_published_links", "CheckPublishedLinksJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
