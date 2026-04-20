@@ -29,18 +29,9 @@ from services.ai_content_generator import AIContentGenerator, ContentValidationR
 
 
 def _make_generator() -> AIContentGenerator:
-    """Instantiate AIContentGenerator with mocked heavy dependencies."""
-    with (
-        patch(
-            "services.ai_content_generator.ProviderChecker.is_huggingface_available",
-            return_value=False,
-        ),
-        patch(
-            "services.ai_content_generator.ProviderChecker.is_gemini_available", return_value=False
-        ),
-    ):
-        gen = AIContentGenerator(quality_threshold=7.5)
-    return gen
+    """Instantiate AIContentGenerator. ProviderChecker is gone post-v2.8
+    so no provider-availability patches are needed anymore."""
+    return AIContentGenerator(quality_threshold=7.5)
 
 
 def _good_content(topic: str = "Python programming", word_count: int = 1000) -> str:
@@ -121,17 +112,7 @@ class TestAIContentGeneratorInit:
         assert gen.quality_threshold == 7.5
 
     def test_custom_quality_threshold(self):
-        with (
-            patch(
-                "services.ai_content_generator.ProviderChecker.is_huggingface_available",
-                return_value=False,
-            ),
-            patch(
-                "services.ai_content_generator.ProviderChecker.is_gemini_available",
-                return_value=False,
-            ),
-        ):
-            gen = AIContentGenerator(quality_threshold=6.0)
+        gen = AIContentGenerator(quality_threshold=6.0)
         assert gen.quality_threshold == 6.0
 
     def test_initial_state(self):
@@ -613,7 +594,6 @@ class TestHandleAllProvidersFailed:
             },
             "attempts": [
                 ("ollama", "connection refused"),
-                ("huggingface", "no token"),
             ],
             "start_time": 0.0,
             "use_ollama": False,
@@ -672,7 +652,6 @@ class TestGenerateBlogPost:
             "llama3",
             {"model_used": "llama3", "final_quality_score": 8.5},
         ))
-        gen._try_huggingface = AsyncMock()
         gen._handle_all_providers_failed = MagicMock()
 
         content, model, metrics = await gen.generate_blog_post(
@@ -684,37 +663,15 @@ class TestGenerateBlogPost:
         assert model == "llama3"
         assert metrics["final_quality_score"] == 8.5
         gen._try_ollama.assert_awaited_once()
-        gen._try_huggingface.assert_not_awaited()
         gen._handle_all_providers_failed.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_falls_through_to_huggingface_when_ollama_fails(self):
+    async def test_falls_through_to_fallback_when_ollama_fails(self):
+        """Post-v2.8: no HF path, so Ollama failure → fallback template."""
         gen = _make_generator()
         gen._populate_internal_links_cache = AsyncMock()
         gen._prepare_generation_context = AsyncMock(return_value={"some": "ctx"})
         gen._try_ollama = AsyncMock(return_value=None)
-        gen._try_huggingface = AsyncMock(return_value=(
-            "hf generated content", "hf-model", {"final_quality_score": 7.0},
-        ))
-        gen._handle_all_providers_failed = MagicMock()
-
-        content, model, _ = await gen.generate_blog_post(
-            topic="x", style="technical", tone="professional",
-            target_length=1000, tags=[],
-        )
-        assert content == "hf generated content"
-        assert model == "hf-model"
-        gen._try_ollama.assert_awaited_once()
-        gen._try_huggingface.assert_awaited_once()
-        gen._handle_all_providers_failed.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_falls_through_to_fallback_when_all_fail(self):
-        gen = _make_generator()
-        gen._populate_internal_links_cache = AsyncMock()
-        gen._prepare_generation_context = AsyncMock(return_value={"some": "ctx"})
-        gen._try_ollama = AsyncMock(return_value=None)
-        gen._try_huggingface = AsyncMock(return_value=None)
         gen._handle_all_providers_failed = MagicMock(return_value=(
             "fallback content", "Fallback (no AI)", {"final_quality_score": 0.0},
         ))
@@ -726,6 +683,7 @@ class TestGenerateBlogPost:
         assert content == "fallback content"
         assert "Fallback" in model
         assert metrics["final_quality_score"] == 0.0
+        gen._try_ollama.assert_awaited_once()
         gen._handle_all_providers_failed.assert_called_once()
 
 
@@ -842,13 +800,16 @@ class TestPrepareGenerationContext:
 
     @pytest.mark.asyncio
     async def test_skip_ollama_when_explicit_non_ollama_provider(self):
+        """Any provider value that isn't ollama/auto should route straight
+        to the fallback template. (Post-v2.8: there are no other real
+        providers, but the skip-branch itself still exists.)"""
         gen = _make_generator()
         gen._check_ollama_async = AsyncMock()
         gen._load_generation_prompts = MagicMock(return_value=("sys", "gen", lambda f, i, c: "x"))
 
         ctx = await gen._prepare_generation_context(
             topic="AI", style="s", tone="t", target_length=1000, tags=[],
-            preferred_model=None, preferred_provider="huggingface",
+            preferred_model=None, preferred_provider="disabled",
         )
 
         assert ctx["skip_ollama"] is True
