@@ -218,6 +218,9 @@ services:
       DISCORD_LAB_LOGS_WEBHOOK_URL: ${DISCORD_LAB_LOGS_WEBHOOK_URL:-}
       DISCORD_OPS_WEBHOOK_URL: ${DISCORD_OPS_WEBHOOK_URL:-}
       IN_DOCKER: "true"
+      # Mirror of bootstrap.toml poindexter_secret_key — needed so the
+      # brain can read is_secret=true rows via get_secret().
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./brain:/brain:ro
@@ -267,6 +270,10 @@ services:
       COMPANY_NAME: ${COMPANY_NAME:-Glad Labs}
       HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
       API_TOKEN: ${API_TOKEN:?Run 'poindexter setup' — API_TOKEN is generated in bootstrap.toml}
+      # Symmetric key for decrypting is_secret=true rows in app_settings.
+      # Mirrored from ~/.poindexter/bootstrap.toml poindexter_secret_key.
+      # Without this, plugins/secrets.py raises SecretsError on read.
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
@@ -424,6 +431,9 @@ services:
       # automatically — no more silent skips when cwd changes (2026-04-18 incident).
       CLAUDE_PROJECTS_DIR: /memory/claude-projects
       OPENCLAW_MEMORY_DIR: /memory/openclaw
+      # auto-embed calls get_secret('gitea_password') to auth against
+      # the local Gitea tap. Needs the symmetric key to decrypt it.
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
       - ./scripts/auto-embed.py:/app/auto-embed.py:ro
       - ./brain:/brain:ro
