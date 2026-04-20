@@ -579,12 +579,15 @@ class OllamaClient:
                     )
                     await asyncio.sleep(delay)
 
+        # Pass the captured exception explicitly — we're outside the except
+        # block by the time we reach here, so ``exc_info=True`` would look
+        # at sys.exc_info() which may be stale.
         logger.error(
             "[generate_with_retry] All attempts exhausted",
             error=str(last_error),
             max_retries=max_retries,
             model=model,
-            exc_info=True,
+            exc_info=last_error,
         )
         raise last_error if last_error else OllamaError("Generation failed after all retries")
 
