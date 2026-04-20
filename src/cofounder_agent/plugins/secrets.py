@@ -57,6 +57,12 @@ _ENC_PREFIX = "enc:v1:"
 # to reach the DB in the first place, so they live outside the DB.
 _KEY_ENV = "POINDEXTER_SECRET_KEY"
 
+# Track keys we've already warned about so get_secret doesn't spam the
+# log every call when a secret is still plaintext. Session-local —
+# clears on process restart, which is the right window: if the DBA
+# re-plaintexts a key mid-session we want to warn again.
+_WARNED_PLAINTEXT: set[str] = set()
+
 
 class SecretsError(Exception):
     """Raised when the helper can't encrypt/decrypt — bad key, missing
@@ -117,11 +123,13 @@ async def get_secret(conn: Any, key: str) -> str | None:
         return ""
 
     if not is_encrypted(value):
-        logger.warning(
-            "get_secret: key=%r has is_secret=true but no encryption sentinel; "
-            "returning plaintext. Run migrate_plaintext_secrets to fix.",
-            key,
-        )
+        if key not in _WARNED_PLAINTEXT:
+            _WARNED_PLAINTEXT.add(key)
+            logger.warning(
+                "get_secret: key=%r has is_secret=true but no encryption sentinel; "
+                "returning plaintext. Run migrate_plaintext_secrets to fix.",
+                key,
+            )
         return value
 
     stripped = value[len(_ENC_PREFIX):]
