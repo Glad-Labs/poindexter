@@ -5,8 +5,6 @@ import: publish_service → routes was violating the one-way dependency
 rule (routes should import services, not vice versa).
 """
 
-import os
-
 import httpx
 
 from services.logger_config import get_logger
@@ -59,7 +57,7 @@ async def trigger_nextjs_revalidation(
 
     if not revalidate_secret:
         revalidate_secret = site_config.get("revalidate_secret", "")
-    environment = os.getenv("ENVIRONMENT", "development").lower()
+    environment = (site_config.get("environment", "development") or "development").lower()
 
     if not revalidate_secret:
         logger.error("REVALIDATE_SECRET is not set — refusing to revalidate in %s", environment)
