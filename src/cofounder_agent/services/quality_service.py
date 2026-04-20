@@ -430,15 +430,15 @@ class UnifiedQualityService:
 
         # Average dimension scores (equal weight)
         p = pattern_assessment.dimensions
-        l = llm_assessment.dimensions
+        ll = llm_assessment.dimensions
         combined_dims = QualityDimensions(
-            clarity=(p.clarity + l.clarity) / 2,
-            accuracy=(p.accuracy + l.accuracy) / 2,
-            completeness=(p.completeness + l.completeness) / 2,
-            relevance=(p.relevance + l.relevance) / 2,
-            seo_quality=(p.seo_quality + l.seo_quality) / 2,
-            readability=(p.readability + l.readability) / 2,
-            engagement=(p.engagement + l.engagement) / 2,
+            clarity=(p.clarity + ll.clarity) / 2,
+            accuracy=(p.accuracy + ll.accuracy) / 2,
+            completeness=(p.completeness + ll.completeness) / 2,
+            relevance=(p.relevance + ll.relevance) / 2,
+            seo_quality=(p.seo_quality + ll.seo_quality) / 2,
+            readability=(p.readability + ll.readability) / 2,
+            engagement=(p.engagement + ll.engagement) / 2,
         )
 
         overall = combined_dims.average()
@@ -759,7 +759,7 @@ class UnifiedQualityService:
                 avg = sum(section_lengths) / len(section_lengths)
                 # If all sections are within 20% of the same length, it's formulaic
                 if avg > _t["formulaic_min_avg"] and all(
-                    abs(l - avg) / avg < _t["formulaic_variance"] for l in section_lengths
+                    abs(length - avg) / avg < _t["formulaic_variance"] for length in section_lengths
                 ):
                     issues.append("Formulaic structure (all sections same length)")
                     penalty -= _t["formulaic_penalty"]

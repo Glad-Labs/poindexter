@@ -16,6 +16,6 @@ async def broadcast_progress(task_id: str, progress) -> None:
     logger.debug("WS stub: broadcast_progress %s", task_id)
 
 
-async def broadcast_workflow_progress(execution_id: str, progress) -> None:
+async def broadcast_workflow_progress(execution_id: str, _progress) -> None:
     """No-op: no WebSocket clients to receive workflow progress."""
     logger.debug("WS stub: broadcast_workflow_progress %s", execution_id)

@@ -10,7 +10,6 @@ Usage:
     result = await generate_video_for_post(
         post_id="abc123",
         title="Why Local LLMs Beat Cloud APIs",
-        image_urls=["https://cdn.example.com/img1.png", ...],
         podcast_path="/root/.poindexter/podcast/abc123.mp3",
     )
 """
@@ -235,7 +234,6 @@ async def generate_video_for_post(
     title: str,
     content: str = "",
     podcast_path: str | None = None,
-    image_urls: list[str] | None = None,
     force: bool = False,
     pre_generated_scenes: list[str] | None = None,
 ) -> VideoResult:
@@ -248,7 +246,6 @@ async def generate_video_for_post(
         title: Post title (used for image prompt generation).
         content: Post content excerpt (context for image prompts).
         podcast_path: Path to podcast MP3 file. If None, checks default location.
-        image_urls: Optional pre-existing image URLs to download. If None, generates new ones.
         force: Regenerate even if video exists.
 
     Returns:

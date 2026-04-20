@@ -169,22 +169,22 @@ def validate_required(strict: bool = False) -> list:
     - DATABASE_URL or DATABASE_HOST/PORT/NAME for PostgreSQL
     - At least one LLM provider (Ollama is local/free, or OpenAI/Anthropic API keys)
     - Optional: PEXELS_API_KEY for stock images, SERPER_API_KEY for web search
+
+    When ``strict`` is True, raises RuntimeError on missing vars so callers
+    can fail fast (e.g. at startup); the default non-strict mode just logs
+    a warning so tests and local dev can run without a full env.
     """
     # Core required: Just need database connection
     required_vars = [
         "DATABASE_URL",  # OR Database host/port/name
     ]
 
-    # Optional but recommended
-    optional_vars = [
-        "PEXELS_API_KEY",
-        "SERPER_API_KEY",
-    ]
-
     missing_vars = [var for var in required_vars if not getattr(config, var, None)]
 
     if missing_vars:
-        message = "WARNING: Missing optional environment variables: " + ", ".join(missing_vars)
+        message = "Missing required environment variables: " + ", ".join(missing_vars)
+        if strict:
+            raise RuntimeError(message)
         logger.warning(message)
         return missing_vars
 

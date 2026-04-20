@@ -297,11 +297,9 @@ Only return the JSON array, no other text."""
             ImageDetails object if successful, None otherwise
         """
         slug = post.slug or (post.title or post.topic).lower().replace(" ", "-")
-        title = post.title or post.topic
 
         try:
             query = metadata.get("query", f"blog image {index}")
-            alt_text = metadata.get("alt_text", f"Image for {title}")
 
             if not query or query.strip() == "":
                 logger.warning(f"⚠️  Image {index}: Empty query, skipping")

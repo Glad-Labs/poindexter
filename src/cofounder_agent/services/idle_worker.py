@@ -1195,7 +1195,7 @@ class IdleWorker:
                 for row in rows:
                     md_urls = re.findall(r"\]\((https?://[^\s\)]+)\)", row["content"] or "")
                     html_urls = re.findall(r'href="(https?://[^"]+)"', row["content"] or "")
-                    urls = set(u.rstrip(".,;:)") for u in md_urls + html_urls if site_domain not in u and "pexels" not in u and "cloudinary" not in u)
+                    urls = {u.rstrip(".,;:)") for u in md_urls + html_urls if site_domain not in u and "pexels" not in u and "cloudinary" not in u}
 
                     broken = set()
                     for url in list(urls)[:10]:
@@ -1413,7 +1413,7 @@ class IdleWorker:
             # Simple word-overlap duplicate detection
             duplicates = []
             titles = [(p["id"], p["title"].lower().split()) for p in posts]
-            for i, (id1, words1) in enumerate(titles):
+            for i, (_id1, words1) in enumerate(titles):
                 for id2, words2 in titles[i+1:]:
                     if len(words1) < 4 or len(words2) < 4:
                         continue

@@ -1016,7 +1016,7 @@ class ImageService:
             progress_service = get_progress_service()
             progress_service.create_progress(task_id, num_inference_steps)
 
-        def progress_callback(step: int, timestep: Any, latents: Any) -> None:
+        def progress_callback(step: int, _timestep: Any, _latents: Any) -> None:
             """Callback for each generation step."""
             if progress_service and task_id:
                 elapsed = time.time() - start_time

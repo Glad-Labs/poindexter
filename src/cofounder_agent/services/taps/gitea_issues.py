@@ -147,7 +147,7 @@ class GiteaIssuesTap:
             title = issue.get("title", "")
             body = (issue.get("body") or "")[:body_limit]
             issue_state = issue.get("state", "")
-            labels = ", ".join(l["name"] for l in issue.get("labels", []) or [])
+            labels = ", ".join(lbl["name"] for lbl in issue.get("labels", []) or [])
             text = (
                 f"Issue #{num}: {title}\n"
                 f"State: {issue_state}\n"
