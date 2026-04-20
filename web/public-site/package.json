@@ -16,6 +16,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@glad-labs/brand": "*",
     "@sentry/nextjs": "^10.43.0",
     "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^22.19.3",

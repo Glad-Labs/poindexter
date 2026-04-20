@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import * as Sentry from '@sentry/nextjs';
+import { Display, Eyebrow, Button } from '@glad-labs/brand';
 import { OrganizationSchema } from '../components/StructuredData';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 
@@ -85,22 +86,26 @@ export default async function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }}
       />
 
-      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-        {/* Animated Background Elements */}
-        <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" />
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
-        </div>
-
-        {/* Simplified Hero Section */}
+      <div className="gl-atmosphere min-h-screen">
+        {/* Hero — E3: eyebrow + uppercase display + amber accent word */}
         <section className="relative pt-20 pb-12 md:pt-32 md:pb-20 px-4 md:px-0">
-          <div className="container mx-auto max-w-5xl text-center">
-            <h1 className="text-4xl md:text-6xl font-bold mb-4 bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
-              Explore Our Latest Insights
-            </h1>
-            <p className="text-xl text-slate-300 max-w-2xl mx-auto">
-              Deep dives into AI, technology, and digital transformation
+          <div className="container mx-auto max-w-5xl">
+            <Eyebrow>GLAD LABS · AI / HARDWARE / GAMING</Eyebrow>
+            <Display xl>
+              Explore the <Display.Accent>frontier.</Display.Accent>
+            </Display>
+            <p className="gl-body gl-body--lg mt-4 max-w-2xl">
+              Deep dives into AI, hardware, and the edges where they meet.
+              Locally-published, human-reviewed, free to read.
             </p>
+            <div className="flex gap-3 mt-8">
+              <Button as={Link} href="/archive" variant="primary">
+                ▶ Browse the archive
+              </Button>
+              <Button as={Link} href="/about" variant="secondary">
+                About Glad Labs
+              </Button>
+            </div>
           </div>
         </section>
 

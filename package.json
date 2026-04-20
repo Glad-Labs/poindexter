@@ -6,6 +6,7 @@
   "license": "AGPL-3.0-or-later",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
+    "packages/brand",
     "web/public-site"
   ],
   "scripts": {

@@ -1,11 +1,13 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Sora:wght@400;600;700;800&display=swap');
+/* Glad Labs brand system (E3) — tokens + component styles.
+   See packages/brand/README.md for the system, patterns, and colorblind notes. */
+@import '@glad-labs/brand/tokens';
+@import '@glad-labs/brand/components/components.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  /* Premium typography system with modern accessibility */
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -16,26 +18,36 @@
   }
 
   body {
-    @apply font-sans text-slate-100 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950;
+    font-family: var(--gl-font-body);
+    color: var(--gl-text);
+    background: var(--gl-base);
     font-feature-settings: 'rlig' 1 'calt' 1;
     min-height: 100vh;
   }
 
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    @apply font-sora font-bold leading-tight tracking-tight;
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--gl-font-display);
+    font-weight: 700;
+    line-height: var(--gl-leading-snug);
+    letter-spacing: -0.015em;
   }
 
   h1 {
-    /* Gradient colors verified for WCAG 1.4.3 AA contrast on slate-950 background:
-       cyan-300 (#67e8f9 → ~9:1), blue-400 (#60a5fa → ~5.9:1), violet-400 (#a78bfa → ~6.1:1).
-       Upgraded from via-blue-500 (#3b82f6 → ~4.6:1 borderline) to via-blue-400 for reliability. */
-    @apply text-4xl md:text-6xl lg:text-7xl bg-gradient-to-r from-cyan-300 via-blue-400 to-violet-400 bg-clip-text text-transparent;
+    font-size: var(--gl-size-h1);
+    line-height: var(--gl-leading-tight);
+    letter-spacing: var(--gl-tracking-tight);
+    text-transform: uppercase;
+    color: var(--gl-text);
   }
+  h1 em, h1 .gl-accent { font-style: normal; color: var(--gl-amber); }
+
+  /* Top-nav link — mono, uppercase, cyan on hover. */
+  .nav-link {
+    color: var(--gl-text-muted);
+    transition: color 150ms ease;
+    text-decoration: none;
+  }
+  .nav-link:hover { color: var(--gl-cyan); }
 
   h2 {
     @apply text-3xl md:text-4xl lg:text-5xl;
@@ -68,12 +80,17 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-gradient-to-b from-cyan-500 to-blue-600 rounded-full hover:from-cyan-400 hover:to-blue-500 transition-colors;
+    background: var(--gl-cyan);
+    border-radius: 0;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--gl-amber);
   }
 
-  /* Selection styling */
+  /* Selection — cyan fill, dark foreground so text stays legible */
   ::selection {
-    @apply bg-cyan-500/30 text-cyan-100;
+    background: var(--gl-cyan);
+    color: var(--gl-on-cyan);
   }
 }
 

@@ -60,7 +60,14 @@ export default function TopNavigation() {
       >
         Skip to main content
       </a>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 border-b border-slate-800/50 backdrop-blur-xl">
+      <header
+        className="fixed top-0 left-0 right-0 z-50"
+        style={{
+          background: 'rgba(7, 10, 15, 0.8)',
+          borderBottom: '1px solid var(--gl-hairline)',
+          backdropFilter: 'blur(12px)',
+        }}
+      >
         <nav
           aria-label="Main navigation"
           className="container mx-auto px-4 md:px-6 py-4 md:py-5 flex items-center justify-between"
@@ -68,32 +75,32 @@ export default function TopNavigation() {
           <Link
             href="/"
             aria-label={`${SITE_NAME} — Home`}
-            className="text-2xl font-bold text-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-950 rounded"
+            className="gl-focus-ring"
+            style={{
+              fontFamily: 'var(--gl-font-display)',
+              fontWeight: 700,
+              fontSize: '1.25rem',
+              letterSpacing: '0.05em',
+              color: 'var(--gl-cyan)',
+              textTransform: 'uppercase',
+            }}
           >
             GL
           </Link>
-          <div className="flex gap-8 items-center">
-            <Link
-              href="/archive/1"
-              className="text-slate-300 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-950 rounded px-1"
-            >
-              Articles
-            </Link>
-            <Link
-              href="/about"
-              className="text-slate-300 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-950 rounded px-1"
-            >
-              About
-            </Link>
+          <div className="flex gap-8 items-center gl-mono gl-mono--upper" style={{ fontSize: 'var(--gl-size-eyebrow)' }}>
+            <Link href="/archive/1" className="gl-focus-ring nav-link">Articles</Link>
+            <Link href="/about" className="gl-focus-ring nav-link">About</Link>
             <Link
               href="/product"
-              className="text-cyan-400 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-950 rounded px-1 font-medium"
+              className="gl-focus-ring nav-link"
+              style={{ color: 'var(--gl-amber)' }}
             >
               Premium
             </Link>
             <Link
               href="/claude-templates"
-              className="text-violet-400 hover:text-violet-300 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-slate-950 rounded px-1 font-medium"
+              className="gl-focus-ring nav-link"
+              style={{ color: 'var(--gl-mint)' }}
             >
               Templates
             </Link>
@@ -107,24 +114,32 @@ export default function TopNavigation() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Search articles..."
+                  placeholder="Search..."
                   aria-label="Search articles"
-                  className="w-40 md:w-56 px-3 py-1.5 bg-slate-800 border border-slate-700 text-slate-200 placeholder-slate-500 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-cyan-400"
+                  className="gl-focus-ring"
+                  style={{
+                    width: '14rem',
+                    padding: '0.45rem 0.75rem',
+                    background: 'var(--gl-surface)',
+                    border: '1px solid var(--gl-cyan-border)',
+                    borderRadius: 0,
+                    color: 'var(--gl-text)',
+                    fontFamily: 'var(--gl-font-mono)',
+                    fontSize: '0.8125rem',
+                  }}
                 />
               </form>
             ) : (
               <button
                 onClick={() => setSearchOpen(true)}
                 aria-label="Open search"
-                className="text-slate-400 hover:text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-950 rounded p-1"
+                className="gl-focus-ring"
+                style={{ color: 'var(--gl-text-muted)', background: 'transparent', border: 0, padding: '0.25rem', cursor: 'pointer' }}
               >
                 <SearchIcon />
               </button>
             )}
-            <Link
-              href="/archive/1"
-              className="px-6 py-2.5 bg-cyan-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-slate-950"
-            >
+            <Link href="/archive/1" className="gl-btn gl-btn--primary gl-focus-ring">
               Explore
             </Link>
           </div>
