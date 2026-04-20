@@ -19,6 +19,15 @@ Usage:
 Startup:
     Called from main.py lifespan after DB pool is ready:
         await site_config.load(pool)
+
+Testing:
+    Tests should construct their own ``SiteConfig(initial_config=...)``
+    instead of mutating the shared singleton. This avoids test pollution
+    between cases that seed different values, and unblocks #242 one
+    test file at a time without touching production callers.
+
+        cfg = SiteConfig(initial_config={"site_url": "https://test"})
+        assert cfg.get("site_url") == "https://test"
 """
 
 import os
@@ -32,12 +41,31 @@ class SiteConfig:
     """Database-backed configuration with env var fallback.
 
     Priority: DB (app_settings) > env var > hardcoded default
+
+    Can be constructed stand-alone for per-test isolation
+    (``SiteConfig(initial_config={...})``) or wired up the
+    load-from-pool way in the app lifespan.
     """
 
-    def __init__(self):
-        self._config: dict[str, str] = {}
-        self._loaded = False
-        self._pool = None  # Stored after load() so get_secret() can DB-query
+    def __init__(
+        self,
+        *,
+        initial_config: dict[str, str] | None = None,
+        pool=None,
+    ):
+        """Build a SiteConfig instance.
+
+        Args:
+            initial_config: Pre-populated setting values. Primary use is
+                tests that want deterministic values without touching
+                the module singleton.
+            pool: Optional asyncpg pool. If provided, it's stored so
+                ``get_secret()`` can query on demand. Call ``load()``
+                separately to populate ``_config`` from app_settings.
+        """
+        self._config: dict[str, str] = dict(initial_config or {})
+        self._loaded = bool(initial_config)
+        self._pool = pool
 
     async def load(self, pool) -> int:
         """Load all non-secret settings from app_settings.

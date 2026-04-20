@@ -144,3 +144,49 @@ class TestAll:
         await config.load(pool)
         all_config = config.all()
         assert all_config == {"a": "1", "b": "2"}
+
+
+class TestInitialConfig:
+    """``SiteConfig(initial_config={...})`` unblocks per-test isolation —
+    seeds values without having to touch the module singleton or mock
+    a pool. Gitea #242 foundation."""
+
+    def test_initial_config_populates_values(self):
+        cfg = SiteConfig(initial_config={"site_url": "https://test", "site_name": "Test"})
+        assert cfg.get("site_url") == "https://test"
+        assert cfg.get("site_name") == "Test"
+
+    def test_initial_config_marks_loaded(self):
+        """When we hand over a pre-populated dict, the instance is
+        effectively loaded — callers that gate on ``is_loaded`` should
+        see True so they don't short-circuit to env fallback."""
+        cfg = SiteConfig(initial_config={"k": "v"})
+        assert cfg.is_loaded is True
+
+    def test_empty_initial_config_leaves_unloaded(self):
+        cfg = SiteConfig(initial_config={})
+        assert cfg.is_loaded is False
+
+    def test_default_constructor_still_works(self):
+        """Backwards compat: ``SiteConfig()`` with no args still starts
+        empty and unloaded, matching pre-#242 behavior."""
+        cfg = SiteConfig()
+        assert cfg._config == {}
+        assert cfg.is_loaded is False
+
+    def test_initial_config_isolates_between_instances(self):
+        """The fundamental Gitea #242 win: two independent instances don't
+        see each other's state, so tests can't pollute each other."""
+        a = SiteConfig(initial_config={"shared": "A"})
+        b = SiteConfig(initial_config={"shared": "B"})
+        assert a.get("shared") == "A"
+        assert b.get("shared") == "B"
+
+    def test_pool_kwarg_stored_without_load(self):
+        """Passing a pool to the constructor doesn't auto-load (load is
+        async), but it IS retained so get_secret() can use it later."""
+        pool = AsyncMock()
+        cfg = SiteConfig(pool=pool)
+        assert cfg._pool is pool
+        # But _config stays empty — load() hasn't run.
+        assert cfg._config == {}
