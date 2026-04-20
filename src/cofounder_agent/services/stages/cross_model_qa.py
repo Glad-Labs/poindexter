@@ -50,7 +50,6 @@ never return that.
 from __future__ import annotations
 
 import logging
-from contextlib import suppress
 from typing import Any
 
 from plugins.stage import StageResult
@@ -433,17 +432,28 @@ async def _rewrite_draft(
     <think> tags), retry with ``qa_fallback_writer_model``. If the
     fallback is also too short, give up.
     """
+    from plugins.registry import get_llm_providers
     from services.audit_log import audit_log_bg
-    from services.ollama_client import OllamaClient
     from services.site_config import site_config
 
     prompt = QA_AGGREGATE_REWRITE_PROMPT.format(
         title=title, issues_to_fix=issues_to_fix, content=content_text,
     )
 
-    client = OllamaClient(
-        timeout=site_config.get_int("content_router_qa_rewrite_timeout_seconds", 240)
+    # v2.3: Provider Protocol instead of concrete OllamaClient. Per-call
+    # timeout rides on the timeout_s kwarg added in v2.1.
+    timeout_s = site_config.get_int(
+        "content_router_qa_rewrite_timeout_seconds", 240,
     )
+    providers = {p.name: p for p in get_llm_providers()}
+    provider = providers.get("ollama_native")
+    if provider is None:
+        logger.warning(
+            "[QA_REWRITE] Task %s: ollama_native provider not registered; skipping",
+            task_id[:8],
+        )
+        return None
+
     try:
         primary = (
             (await settings_service.get("pipeline_writer_model") if settings_service else None)
@@ -452,44 +462,46 @@ async def _rewrite_draft(
         primary = primary.removeprefix("ollama/")
         max_tokens = site_config.get_int("content_router_qa_rewrite_max_tokens", 8000)
 
-        try:
-            result = await client.generate(
-                prompt=prompt, model=primary,
-                temperature=0.4, max_tokens=max_tokens,
-            )
-            revised = (result.get("text") or "").strip()
+        result = await provider.complete(
+            messages=[{"role": "user", "content": prompt}],
+            model=primary,
+            temperature=0.4,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+        revised = (result.text or "").strip()
 
-            min_chars = int(0.5 * len(content_text))
-            if len(revised) < min_chars:
-                logger.warning(
-                    "[QA_REWRITE] Task %s: primary writer %s returned %d chars — likely "
-                    "thinking-mode eating the token budget. Falling back to gemma3:27b.",
-                    task_id[:8], primary, len(revised),
-                )
-                audit_log_bg(
-                    "writer_fallback", "content_router",
-                    {
-                        "configured_writer": primary,
-                        "actual_writer": "gemma3:27b",
-                        "reason": "primary_returned_empty_on_rewrite",
-                        "stage": "qa_rewrite",
-                        "attempt": attempt,
-                        "primary_chars": len(revised),
-                        "expected_min_chars": min_chars,
-                    },
-                    task_id=task_id, severity="warning",
-                )
-                fallback_model = site_config.get(
-                    "qa_fallback_writer_model", "gemma3:27b",
-                )
-                fb_result = await client.generate(
-                    prompt=prompt, model=fallback_model,
-                    temperature=0.4, max_tokens=max_tokens,
-                )
-                revised = (fb_result.get("text") or "").strip()
-        finally:
-            with suppress(Exception):
-                await client.close()
+        min_chars = int(0.5 * len(content_text))
+        if len(revised) < min_chars:
+            logger.warning(
+                "[QA_REWRITE] Task %s: primary writer %s returned %d chars — likely "
+                "thinking-mode eating the token budget. Falling back to gemma3:27b.",
+                task_id[:8], primary, len(revised),
+            )
+            audit_log_bg(
+                "writer_fallback", "content_router",
+                {
+                    "configured_writer": primary,
+                    "actual_writer": "gemma3:27b",
+                    "reason": "primary_returned_empty_on_rewrite",
+                    "stage": "qa_rewrite",
+                    "attempt": attempt,
+                    "primary_chars": len(revised),
+                    "expected_min_chars": min_chars,
+                },
+                task_id=task_id, severity="warning",
+            )
+            fallback_model = site_config.get(
+                "qa_fallback_writer_model", "gemma3:27b",
+            )
+            fb_result = await provider.complete(
+                messages=[{"role": "user", "content": prompt}],
+                model=fallback_model,
+                temperature=0.4,
+                max_tokens=max_tokens,
+                timeout_s=timeout_s,
+            )
+            revised = (fb_result.text or "").strip()
     except Exception as e:
         logger.warning(
             "[QA_REWRITE] Task %s: rewrite failed (non-fatal): %s",
