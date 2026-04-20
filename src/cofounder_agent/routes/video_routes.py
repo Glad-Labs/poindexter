@@ -9,6 +9,7 @@ Endpoints:
 """
 
 from datetime import datetime, timezone
+from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,17 +18,16 @@ from fastapi.responses import FileResponse, Response
 from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 from services.video_service import VIDEO_DIR
+from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/video", tags=["video"])
 
-from services.site_config import site_config
-
 _R2_FALLBACK = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
 
 
-def _r2_url() -> str:
+def _r2_url(site_config: Any) -> str:
     return site_config.get("r2_public_url", _R2_FALLBACK)
 
 
@@ -36,7 +36,9 @@ def _rfc2822(dt: datetime) -> str:
 
 
 @router.get("/feed.xml", response_class=Response)
-async def video_feed():
+async def video_feed(
+    site_config: Any = Depends(get_site_config_dependency),
+):
     """Video RSS feed — lists all generated video episodes."""
     from utils.route_utils import get_services
 
@@ -119,7 +121,7 @@ async def video_feed():
             SubElement(item, "pubDate").text = _rfc2822(pub_date)
 
         enclosure = SubElement(item, "enclosure")
-        enclosure.set("url", f"{_r2_url()}/video/{pid}.mp4")
+        enclosure.set("url", f"{_r2_url(site_config)}/video/{pid}.mp4")
         enclosure.set("length", str(disk_info.get("file_size_bytes", 0)))
         enclosure.set("type", "video/mp4")
 
