@@ -294,7 +294,7 @@ class UnifiedOrchestrator:
                 "request_id": request_id,
                 "status": "error",
                 "error": str(e),
-                "message": "An error occurred processing your request: {}".format(str(e)),
+                "message": f"An error occurred processing your request: {str(e)}",
             }
 
     # ========================================================================
@@ -569,10 +569,7 @@ class UnifiedOrchestrator:
             logger.info("   - Quality Preference: %s", quality_preference)
 
             # Generate task ID
-            task_id = "task_{}_{}".format(
-                int(datetime.now(timezone.utc).timestamp()),
-                uuid.uuid4().hex[:6],
-            )
+            task_id = f"task_{int(datetime.now(timezone.utc).timestamp())}_{uuid.uuid4().hex[:6]}"
 
             logger.info("[%s] Starting 5-stage pipeline for: %s", request.request_id, topic)
 
@@ -684,7 +681,7 @@ class UnifiedOrchestrator:
                 request_type=request.request_type,
                 status=ExecutionStatus.FAILED,
                 output=str(e),
-                feedback="Content creation failed: {}".format(str(e)),
+                feedback=f"Content creation failed: {str(e)}",
             )
 
     # --------------------------------------------------------------------
@@ -953,7 +950,7 @@ class UnifiedOrchestrator:
                         compliance.violation_message,
                     )
                     approval_bool = False
-                    feedback += " [CONSTRAINT: {}]".format(compliance.violation_message)
+                    feedback += f" [CONSTRAINT: {compliance.violation_message}]"
 
             if approval_bool:
                 logger.info(
@@ -1090,7 +1087,7 @@ class UnifiedOrchestrator:
                 "violation_message": overall_compliance.violation_message,
             },
             "message": "✅ Content ready for human review. Human approval required before publishing.",
-            "next_action": "POST /api/content/tasks/{}/approve with human decision".format(task_id),
+            "next_action": f"POST /api/content/tasks/{task_id}/approve with human decision",
         }
 
         logger.info("[%s] Pipeline complete. Awaiting human approval.", request.request_id)
@@ -1120,8 +1117,8 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output="Executed {} subtask for: {}".format(subtask_type, topic),
-            feedback="Subtask '{}' queued for execution".format(subtask_type),
+            output=f"Executed {subtask_type} subtask for: {topic}",
+            feedback=f"Subtask '{subtask_type}' queued for execution",
         )
 
     async def _handle_financial_analysis(self, request: Request) -> ExecutionResult:
@@ -1221,7 +1218,7 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output="Retrieved information for: {}".format(query),
+            output=f"Retrieved information for: {query}",
             feedback="Query executed",
         )
 
@@ -1235,7 +1232,7 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output="Decision support for: {}".format(question),
+            output=f"Decision support for: {question}",
             feedback="Decision analysis provided",
         )
 
