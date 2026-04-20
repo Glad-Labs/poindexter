@@ -7,7 +7,6 @@ Covers:
 - _initialize_database(): success, failure (raises SystemExit)
 - _run_migrations(): success (ok=True), success (ok=False), Exception, content store failure
 - _setup_redis_cache(): enabled, disabled, Exception
-- _initialize_model_consolidation(): success, Exception (non-fatal)
 - _initialize_task_executor(): success, Exception (non-fatal)
 - _verify_connections(): healthy, unhealthy status, Exception
 - _initialize_agent_registry(): dev mode skip, success, Exception
@@ -340,34 +339,6 @@ class TestSetupRedisCache:
             _run(mgr._setup_redis_cache())  # Must not raise
 
         assert mgr.redis_cache is None
-
-
-# ---------------------------------------------------------------------------
-# _initialize_model_consolidation
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestInitializeModelConsolidation:
-    def test_success_calls_initialize(self):
-        mgr = _make_manager()
-        mock_init = MagicMock()
-        mock_module = MagicMock(initialize_model_consolidation_service=mock_init)
-
-        with patch.dict("sys.modules", {"services.model_consolidation_service": mock_module}):
-            _run(mgr._initialize_model_consolidation())
-
-        mock_init.assert_called_once()
-
-    def test_exception_does_not_raise(self):
-        mgr = _make_manager()
-        mock_init = MagicMock(side_effect=Exception("model init failed"))
-        mock_module = MagicMock(initialize_model_consolidation_service=mock_init)
-
-        with patch.dict("sys.modules", {"services.model_consolidation_service": mock_module}):
-            _run(mgr._initialize_model_consolidation())  # Non-fatal, must not raise
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +752,6 @@ class TestInitializeAllServices:
         mgr._initialize_database = AsyncMock()
         mgr._run_migrations = AsyncMock()
         mgr._setup_redis_cache = AsyncMock()
-        mgr._initialize_model_consolidation = AsyncMock()
         mgr._initialize_task_executor = AsyncMock()
         mgr._verify_connections = AsyncMock()
         mgr._initialize_agent_registry = AsyncMock()
@@ -857,9 +827,6 @@ class TestInitializeAllServices:
         mgr._initialize_database = AsyncMock(side_effect=lambda: call_order.append("db"))
         mgr._run_migrations = AsyncMock(side_effect=lambda: call_order.append("migrations"))
         mgr._setup_redis_cache = AsyncMock(side_effect=lambda: call_order.append("redis"))
-        mgr._initialize_model_consolidation = AsyncMock(
-            side_effect=lambda: call_order.append("model")
-        )
         mgr._initialize_task_executor = AsyncMock(side_effect=lambda: call_order.append("executor"))
         mgr._verify_connections = AsyncMock(side_effect=lambda: call_order.append("verify"))
         mgr._initialize_agent_registry = AsyncMock(side_effect=lambda: call_order.append("agents"))
@@ -878,7 +845,6 @@ class TestInitializeAllServices:
             "db",
             "migrations",
             "redis",
-            "model",
             "executor",
             "verify",
             "agents",
