@@ -14,7 +14,7 @@ import json
 import logging
 import pickle
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -333,7 +333,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         """Store a new memory"""
 
         # Generate unique ID
-        memory_id = hashlib.md5(f"{content}{datetime.now().isoformat()}".encode()).hexdigest()
+        memory_id = hashlib.md5(f"{content}{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()
 
         # Generate embedding if model is available
         embedding = None
@@ -351,8 +351,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             memory_type=memory_type,
             importance=importance,
             confidence=confidence,
-            created_at=datetime.now(),
-            last_accessed=datetime.now(),
+            created_at=datetime.now(timezone.utc),
+            last_accessed=datetime.now(timezone.utc),
             tags=tags or [],
             metadata=metadata or {},
             embedding=embedding,
@@ -483,7 +483,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
 
                 if relevance_score >= min_relevance:
                     # Update access information
-                    memory.last_accessed = datetime.now()
+                    memory.last_accessed = datetime.now(timezone.utc)
                     memory.access_count += 1
 
                     relevant_memories.append((memory, relevance_score))
@@ -561,7 +561,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                     preference_key,
                     json.dumps(preference_value),
                     confidence,
-                    datetime.now(),
+                    datetime.now(timezone.utc),
                     source,
                 )
 
@@ -584,7 +584,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         conversation_memory = {
             "role": role,
             "content": content,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "context": context or {},
         }
 
@@ -637,7 +637,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                         frequency=len(common_words),
                         confidence=0.8,
                         examples=[msg["content"][:100] for msg in user_messages[-3:]],
-                        discovered_at=datetime.now(),
+                        discovered_at=datetime.now(timezone.utc),
                     )
                     patterns.append(pattern)
 
@@ -652,7 +652,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                         frequency=len(questions),
                         confidence=0.7,
                         examples=[q["content"] for q in questions[-3:]],
-                        discovered_at=datetime.now(),
+                        discovered_at=datetime.now(timezone.utc),
                     )
                     patterns.append(pattern)
 
@@ -718,7 +718,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             cluster = self.knowledge_clusters[cluster_key]
             if memory.id not in cluster.memories:
                 cluster.memories.append(memory.id)
-            cluster.last_updated = datetime.now()
+            cluster.last_updated = datetime.now(timezone.utc)
             cluster.importance_score = self._calculate_cluster_importance(cluster)
         else:
             # Create new cluster with UUID
@@ -729,7 +729,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 description=f"Knowledge cluster for {memory.memory_type.value}",
                 memories=[memory.id],
                 confidence=memory.confidence,
-                last_updated=datetime.now(),
+                last_updated=datetime.now(timezone.utc),
                 importance_score=memory.importance.value,
                 topics=memory.tags if memory.tags else [],
             )
@@ -742,7 +742,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
         """Calculate importance score for a knowledge cluster"""
         # Simple importance calculation based on memory count and recency
         base_score = len(cluster.memories) * 0.1
-        recency_bonus = 1.0 if (datetime.now() - cluster.last_updated).days < 7 else 0.5
+        recency_bonus = 1.0 if (datetime.now(timezone.utc) - cluster.last_updated).days < 7 else 0.5
         return min(5.0, base_score + recency_bonus)
 
     async def _persist_knowledge_cluster(self, cluster: KnowledgeCluster) -> None:
@@ -800,13 +800,13 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
             "conversation_context": conversation_context,
             "knowledge_clusters": [asdict(cluster) for cluster in relevant_clusters],
             "context_type": context_type,
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def forget_outdated_memories(self, days_threshold: int = 90) -> None:
         """Forget or archive old, low-importance memories from PostgreSQL"""
         try:
-            cutoff_date = datetime.now() - timedelta(days=days_threshold)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_threshold)
 
             async with self.db_pool.acquire() as conn:
                 # Find outdated, low-importance memories
@@ -872,7 +872,7 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
                 "important_memories_count": len(self.important_memories),
                 "conversation_turns": len(self.conversation_context),
                 "embedding_model_active": self.embedding_model is not None,
-                "last_updated": datetime.now().isoformat(),
+                "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
             self.logger.error("Error getting memory summary: %s", e, exc_info=True)

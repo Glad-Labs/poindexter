@@ -25,7 +25,7 @@ Tests cover:
 - get_progress_client helper (not memory_system, skip)
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -78,8 +78,8 @@ def make_memory_row(
         "memory_type": memory_type,
         "importance": importance,
         "confidence": confidence,
-        "created_at": datetime.now(),
-        "last_accessed": datetime.now(),
+        "created_at": datetime.now(timezone.utc),
+        "last_accessed": datetime.now(timezone.utc),
         "access_count": 0,
         "tags": tags,
         "related_memories": related_memories,
@@ -105,7 +105,7 @@ def make_cluster_row(
         "description": description,
         "memories": memories,
         "confidence": confidence,
-        "last_updated": datetime.now(),
+        "last_updated": datetime.now(timezone.utc),
         "importance_score": 2.0,
         "topics": topics,
     }[key]
@@ -156,7 +156,7 @@ class TestEnums:
 
 class TestMemoryDataclass:
     def test_required_fields(self):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         m = Memory(
             id="mem-1",
             content="hello world",
@@ -173,7 +173,7 @@ class TestMemoryDataclass:
         assert m.confidence == 0.9
 
     def test_defaults(self):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         m = Memory(
             id="mem-1",
             content="x",
@@ -197,7 +197,7 @@ class TestMemoryDataclass:
 
 class TestKnowledgeClusterDataclass:
     def test_creation(self):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         kc = KnowledgeCluster(
             id="kc-1",
             name="Tech",
@@ -220,7 +220,7 @@ class TestKnowledgeClusterDataclass:
 
 class TestLearningPatternDataclass:
     def test_creation(self):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         lp = LearningPattern(
             pattern_id="pat-1",
             pattern_type="preference",
@@ -505,7 +505,7 @@ class TestRecallMemories:
         conn.execute = AsyncMock(return_value=None)
 
         # Pre-populate cache
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ms.recent_memories = [
             Memory(
                 id="m1",
@@ -527,7 +527,7 @@ class TestRecallMemories:
         ms, conn = system
         conn.execute = AsyncMock(return_value=None)
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ms.recent_memories = [
             Memory(
                 id="m1",
@@ -559,7 +559,7 @@ class TestRecallMemories:
         ms, conn = system
         conn.execute = AsyncMock(return_value=None)
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ms.recent_memories = [
             Memory(
                 id="m1",
@@ -581,7 +581,7 @@ class TestRecallMemories:
         ms, conn = system
         conn.execute = AsyncMock(return_value=None)
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ms.recent_memories = [
             Memory(
                 id=f"m{i}",
@@ -604,7 +604,7 @@ class TestRecallMemories:
         # Simulate a DB error on update
         conn.execute = AsyncMock(side_effect=Exception("DB error"))
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ms.recent_memories = [
             Memory(
                 id="m1",
@@ -899,7 +899,7 @@ class TestGetContextualKnowledge:
         ms, conn = system
         conn.execute = AsyncMock(return_value=None)
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ms.knowledge_clusters["ai_cluster"] = KnowledgeCluster(
             id="kc-1",
             name="AI Knowledge",
@@ -919,7 +919,7 @@ class TestGetContextualKnowledge:
         ms, conn = system
         conn.execute = AsyncMock(return_value=None)
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ms.knowledge_clusters["unrelated_cluster"] = KnowledgeCluster(
             id="kc-2",
             name="Finance",
@@ -949,7 +949,7 @@ class TestCalculateClusterImportance:
             description="Test",
             memories=["m1", "m2", "m3"],
             confidence=0.9,
-            last_updated=datetime.now(),
+            last_updated=datetime.now(timezone.utc),
             importance_score=0.0,
         )
         score = ms._calculate_cluster_importance(cluster)
@@ -964,7 +964,7 @@ class TestCalculateClusterImportance:
             description="Test",
             memories=["m1"],
             confidence=0.9,
-            last_updated=datetime.now() - timedelta(days=10),
+            last_updated=datetime.now(timezone.utc) - timedelta(days=10),
             importance_score=0.0,
         )
         score = ms._calculate_cluster_importance(cluster)
@@ -979,7 +979,7 @@ class TestCalculateClusterImportance:
             description="Test",
             memories=[f"m{i}" for i in range(100)],
             confidence=0.9,
-            last_updated=datetime.now(),
+            last_updated=datetime.now(timezone.utc),
             importance_score=0.0,
         )
         score = ms._calculate_cluster_importance(cluster)
@@ -999,7 +999,7 @@ class TestForgetOutdatedMemories:
         conn.fetch = AsyncMock(return_value=[{"id": old_id}])
         conn.execute = AsyncMock(return_value="DELETE 1")
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ms.recent_memories = [
             Memory(
                 id=old_id,
