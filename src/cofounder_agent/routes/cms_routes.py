@@ -254,7 +254,7 @@ async def list_posts(
                 "limit": limit,
             }
     except Exception as e:
-        raise await handle_route_error(e, "list_posts", logger)
+        raise await handle_route_error(e, "list_posts", logger) from e
 
 
 @router.get("/api/posts/preview/{preview_token}")
@@ -342,7 +342,7 @@ async def preview_post(
         raise
     except Exception as e:
         logger.error("Preview fetch error: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch preview")
+        raise HTTPException(status_code=500, detail="Failed to fetch preview") from e
 
 
 @router.get("/preview/{preview_token}", response_class=Response)
@@ -519,7 +519,7 @@ async def search_posts(
                 "limit": limit,
             }
     except Exception as e:
-        raise await handle_route_error(e, "search_posts", logger)
+        raise await handle_route_error(e, "search_posts", logger) from e
 
 
 @router.get("/api/posts/{slug}")
@@ -613,7 +613,7 @@ async def get_post_by_slug(
     except HTTPException:
         raise
     except Exception as e:
-        raise await handle_route_error(e, "get_post_by_slug", logger)
+        raise await handle_route_error(e, "get_post_by_slug", logger) from e
 
 
 @router.patch("/api/posts/{post_id}")
@@ -715,7 +715,7 @@ async def update_post(
     except HTTPException:
         raise
     except Exception as e:
-        raise await handle_route_error(e, "update_post", logger)
+        raise await handle_route_error(e, "update_post", logger) from e
 
 
 @router.delete("/api/posts/{post_id}", status_code=204)
@@ -733,7 +733,7 @@ async def delete_post(
     except HTTPException:
         raise
     except Exception as e:
-        raise await handle_route_error(e, "delete_post", logger)
+        raise await handle_route_error(e, "delete_post", logger) from e
 
 
 # ============================================================================
@@ -772,7 +772,7 @@ async def list_categories(
             categories = all_categories[offset : offset + limit]
             return {"categories": categories, "total": total, "offset": offset, "limit": limit}
     except Exception as e:
-        raise await handle_route_error(e, "list_categories", logger)
+        raise await handle_route_error(e, "list_categories", logger) from e
 
 
 @router.get("/api/categories/{slug}")
@@ -810,7 +810,7 @@ async def get_category_by_slug(request: Request, slug: str) -> dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
-        raise await handle_route_error(e, "get_category_by_slug", logger)
+        raise await handle_route_error(e, "get_category_by_slug", logger) from e
 
 
 # ============================================================================
@@ -849,7 +849,7 @@ async def list_tags(
             tags = all_tags[offset : offset + limit]
             return {"tags": tags, "total": total, "offset": offset, "limit": limit}
     except Exception as e:
-        raise await handle_route_error(e, "list_tags", logger)
+        raise await handle_route_error(e, "list_tags", logger) from e
 
 
 # ============================================================================
@@ -961,4 +961,4 @@ async def rebuild_static_export(db_service=Depends(get_database_dependency)):
         return JSONResponse(content=result, status_code=status_code)
     except Exception as e:
         logger.error("[STATIC_EXPORT] Rebuild failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

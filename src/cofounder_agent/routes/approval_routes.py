@@ -156,7 +156,7 @@ async def reject_task(
         raise HTTPException(
             status_code=500,
             detail="Failed to reject task",
-        )
+        ) from e
 
 
 @router.get(
@@ -248,4 +248,4 @@ async def get_pending_approvals(
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch pending approvals",
-        )
+        ) from e

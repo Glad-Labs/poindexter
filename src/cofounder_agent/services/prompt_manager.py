@@ -221,7 +221,7 @@ class UnifiedPromptManager:
             raise KeyError(
                 f"Prompt '{key}' missing required variable: {missing_var}. "
                 f"Please provide: {missing_var}=..."
-            )
+            ) from e
 
     def get_metadata(self, key: str) -> PromptMetadata:
         """Get metadata for a prompt"""
