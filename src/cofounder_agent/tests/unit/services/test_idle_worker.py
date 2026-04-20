@@ -220,33 +220,6 @@ class TestIdleWorkerInit:
 
 
 # ===========================================================================
-# _refresh_stale_embeddings
-# ===========================================================================
-
-
-class TestRefreshStaleEmbeddings:
-    @pytest.mark.asyncio
-    async def test_no_local_db_url_returns_note(self):
-        worker = IdleWorker(AsyncMock())
-        with patch("services.idle_worker.site_config") as mock_sc:
-            mock_sc.get.return_value = None
-            # The function does its own import-from inside, so need to ensure
-            # site_config.get returns None
-            result = await worker._refresh_stale_embeddings()
-        assert "note" in result
-
-    @pytest.mark.asyncio
-    async def test_with_local_db_url_returns_deferred(self):
-        worker = IdleWorker(AsyncMock())
-        # Patch the source module — function does a local import
-        with patch("services.site_config.site_config") as mock_sc:
-            mock_sc.get.return_value = "postgresql://local"
-            result = await worker._refresh_stale_embeddings()
-        assert "note" in result
-        assert "deferred" in result["note"]
-
-
-# ===========================================================================
 # _discover_and_queue_topics
 # ===========================================================================
 

@@ -122,13 +122,6 @@ class IdleWorker:
                 return results
             return {"skipped": True, "reason": f"{pending['c']} active tasks"}
 
-        # Stale embedding refresh — not the same as auto_embed_posts (which
-        # is covered by services/jobs/auto_embed_posts). This one detects
-        # rows whose embedding is old and refreshes them.
-        if self._is_due("embedding_refresh", 240):
-            results["embedding_refresh"] = await self._refresh_stale_embeddings()
-            await self._persist_mark_run("embedding_refresh")
-
         # Regenerate stock photo images with SDXL (every 6 hours, 5 per cycle).
         # GPU-heavy, no Job counterpart.
         if self._is_due("image_regen", 360):
@@ -210,24 +203,6 @@ class IdleWorker:
         except Exception as e:
             logger.exception("[SCHEDULED] Error checking scheduled posts: %s", e)
             return {"published": 0, "error": str(e)}
-
-    async def _refresh_stale_embeddings(self) -> dict:
-        """Check if any published posts need re-embedding."""
-        try:
-            # This would typically call the embedding service
-            # For now, just count posts without embeddings
-            try:
-                from services.site_config import site_config
-                local_db_url = site_config.get("local_database_url")
-                if not local_db_url:
-                    return {"note": "no local DB configured for embeddings"}
-            except Exception:
-                return {"note": "site_config not available"}
-
-            return {"note": "embedding refresh deferred to auto-embed cron"}
-
-        except Exception as e:
-            return {"error": str(e)}
 
     async def _should_trigger_discovery(self) -> tuple[bool, str]:
         """Evaluate whether topic discovery should fire now (issue #229).
