@@ -275,6 +275,8 @@ class TestScrapeHackerNews:
 
         def _mock_response(url):
             resp = MagicMock()
+            resp.status_code = 200
+            resp.raise_for_status = MagicMock()
             if "topstories" in url:
                 resp.json.return_value = [1, 2]
             elif "/item/1" in url:
@@ -283,7 +285,7 @@ class TestScrapeHackerNews:
                 resp.json.return_value = {"id": 2, "title": "Low Score Post", "url": "", "score": 10}
             return resp
 
-        with patch("services.topic_discovery.httpx.AsyncClient") as mock_client_cls:
+        with patch("services.topic_sources.hackernews.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(side_effect=lambda url, **_: _mock_response(url))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -321,9 +323,11 @@ class TestScrapeDevTo:
     async def test_returns_topics_from_devto(self):
         d = TopicDiscovery(AsyncMock())
 
-        with patch("services.topic_discovery.httpx.AsyncClient") as mock_client_cls:
+        with patch("services.topic_sources.devto.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             resp = MagicMock()
+            resp.status_code = 200
+            resp.raise_for_status = MagicMock()
             resp.json.return_value = [
                 {"title": "Building Docker Containers for Production", "url": "https://dev.to/test", "positive_reactions_count": 100},
                 {"title": "Low engagement article", "url": "https://dev.to/low", "positive_reactions_count": 5},
