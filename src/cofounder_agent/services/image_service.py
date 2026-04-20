@@ -1110,8 +1110,8 @@ class ImageService:
     async def optimize_image_for_web(
         self,
         image_url: str,
-        max_width: int = 1200,
-        max_height: int = 630,
+        max_width: int = 1200,  # noqa: ARG002 — placeholder, honored once impl lands
+        max_height: int = 630,  # noqa: ARG002 — same
     ) -> dict[str, Any] | None:
         """
         Optimize image for web delivery.

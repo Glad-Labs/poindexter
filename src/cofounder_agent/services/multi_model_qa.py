@@ -1236,8 +1236,8 @@ class MultiModelQA:
 
     async def _web_fact_check(
         self,
-        title: str,
-        topic: str,
+        title: str,  # noqa: ARG002 — reserved for future title-level grounding
+        topic: str,  # noqa: ARG002 — reserved for future topic-level grounding
         content: str,
         existing_reviews: list[ReviewerResult],
     ) -> ReviewerResult | None:
