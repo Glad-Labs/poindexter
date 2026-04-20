@@ -209,6 +209,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.audit_published_quality", "AuditPublishedQualityJob"),
         ("jobs", "services.jobs.fix_broken_internal_links", "FixBrokenInternalLinksJob"),
         ("jobs", "services.jobs.fix_broken_external_links", "FixBrokenExternalLinksJob"),
+        ("jobs", "services.jobs.fix_uncategorized_posts", "FixUncategorizedPostsJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
