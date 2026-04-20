@@ -27,7 +27,7 @@ from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.json_encoder import convert_decimals, safe_json_dumps
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -539,6 +539,7 @@ async def go_live(
     post_id: str,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep = Depends(get_site_config_dependency),
 ):
     """Promote a draft post to published status. Triggers RSS, social, revalidation."""
     pool = getattr(db_service, "cloud_pool", None) or db_service.pool
@@ -591,9 +592,8 @@ async def go_live(
     # Queue social/podcast/video (they check for existing files)
     if _should_run_post_publish_hooks():
         try:
-            from services.site_config import site_config as _sc
             from services.task_executor import _notify_openclaw
-            _site_url = _sc.require("site_url")
+            _site_url = site_config_dep.require("site_url")
             await _notify_openclaw(
                 f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}",
                 critical=True,
@@ -717,6 +717,7 @@ async def generate_task_image(
     request: GenerateImageRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep = Depends(get_site_config_dependency),
 ) -> dict[str, str]:
     """
     Generate or fetch an image for a task using Pexels or SDXL.
@@ -762,8 +763,7 @@ async def generate_task_image(
             try:
                 import aiohttp
 
-                from services.site_config import site_config as _sc
-                pexels_key = _sc.get("pexels_api_key")
+                pexels_key = site_config_dep.get("pexels_api_key")
                 if not pexels_key:
                     raise HTTPException(status_code=400, detail="Pexels API key not configured")
 
@@ -780,8 +780,9 @@ async def generate_task_image(
                 else:
                     logger.info("   - No current image")
 
-                from services.site_config import site_config as _sc_pex
-                _pex_base = _sc_pex.get("pexels_api_base", "https://api.pexels.com/v1").rstrip("/")
+                _pex_base = site_config_dep.get(
+                    "pexels_api_base", "https://api.pexels.com/v1",
+                ).rstrip("/")
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
                         f"{_pex_base}/search",
