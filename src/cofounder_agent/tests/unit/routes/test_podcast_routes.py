@@ -18,6 +18,7 @@ from routes.podcast_routes import (
     _rfc2822,
     router,
 )
+from services.site_config import site_config as _test_site_config
 
 # ---------------------------------------------------------------------------
 # Test app
@@ -80,7 +81,7 @@ class TestRfc2822:
 
 class TestBuildRssXml:
     def test_empty_episodes(self):
-        xml = _build_rss_xml([])
+        xml = _build_rss_xml([], _test_site_config)
         assert '<?xml version="1.0"' in xml
         assert "<channel>" in xml
         assert "<title>Test Podcast</title>" in xml
@@ -96,7 +97,7 @@ class TestBuildRssXml:
             "file_size_bytes": 5000000,
             "duration_seconds": 300,
         }]
-        xml = _build_rss_xml(episodes)
+        xml = _build_rss_xml(episodes, _test_site_config)
         assert "<item>" in xml
         assert "<title>Test Episode</title>" in xml
         assert "test-site.example.com-podcast-123" in xml
@@ -113,7 +114,7 @@ class TestBuildRssXml:
             "file_size_bytes": 1000,
             "duration_seconds": 0,
         }]
-        xml = _build_rss_xml(episodes)
+        xml = _build_rss_xml(episodes, _test_site_config)
         assert "<item>" in xml
         # No pubDate if published_at is None
         assert "pubDate" not in xml
@@ -128,7 +129,7 @@ class TestBuildRssXml:
             "file_size_bytes": 1000,
             "duration_seconds": 0,
         }]
-        xml = _build_rss_xml(episodes)
+        xml = _build_rss_xml(episodes, _test_site_config)
         assert "pubDate" in xml
 
     def test_multiple_episodes(self):
@@ -144,7 +145,7 @@ class TestBuildRssXml:
             }
             for i in range(3)
         ]
-        xml = _build_rss_xml(episodes)
+        xml = _build_rss_xml(episodes, _test_site_config)
         assert xml.count("<item>") == 3
 
 
