@@ -21,6 +21,7 @@ from routes.alertmanager_webhook_routes import (
     _format_alert_message,
     _should_page_operator,
     router,
+    verify_alertmanager_token,
 )
 from utils.route_utils import get_database_dependency
 
@@ -72,6 +73,12 @@ def _build_app(pool: _FakePool) -> FastAPI:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_database_dependency] = lambda: _FakeDb(pool)
+    # Phase-D4 auth hardening (commit 05f828ea) gated the webhook on a
+    # Bearer token from app_settings. These tests don't care about auth
+    # — they exercise the persistence + notify + remediation paths —
+    # so we override the dependency to a no-op. Tests that DO care
+    # about auth live in test_alertmanager_webhook_auth.py.
+    app.dependency_overrides[verify_alertmanager_token] = lambda: None
     return app
 
 
