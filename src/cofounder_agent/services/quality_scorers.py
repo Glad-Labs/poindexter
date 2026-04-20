@@ -10,7 +10,7 @@ All functions that previously accessed self._qa_cfg() now accept a
 """
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from services.logger_config import get_logger
 

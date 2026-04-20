@@ -17,7 +17,6 @@ All configuration is DB-first via app_settings keys:
 """
 
 import asyncio
-from typing import List, Optional
 
 from services.logger_config import get_logger
 from services.site_config import site_config

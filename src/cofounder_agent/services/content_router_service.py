@@ -1,17 +1,12 @@
 """Unified Content Router Service — centralized blog post generation pipeline."""
 
-import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 
-from .ai_content_generator import get_content_generator
 from .audit_log import audit_log_bg
 from .database_service import DatabaseService
 from .image_service import get_image_service
-from .prompt_manager import get_prompt_manager
-from .quality_service import EvaluationMethod, UnifiedQualityService
-from .seo_content_generator import get_seo_content_generator
 from .webhook_delivery_service import emit_webhook_event
 
 logger = get_logger(__name__)

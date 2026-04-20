@@ -4,7 +4,6 @@ Newsletter & Email Campaign Routes
 Endpoints for managing email campaign subscriptions and newsletter signups.
 """
 
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr

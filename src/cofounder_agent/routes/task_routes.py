@@ -8,7 +8,7 @@ Uses asyncpg DatabaseService for async database access.
 import json
 import uuid as uuid_lib
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 

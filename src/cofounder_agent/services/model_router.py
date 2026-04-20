@@ -5,9 +5,8 @@ Ollama-only policy: all inference runs locally on RTX 5090 32GB VRAM.
 HuggingFace is the emergency fallback if Ollama is down.
 """
 
-import os
 from enum import Enum
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from services.logger_config import get_logger
 

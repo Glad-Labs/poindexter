@@ -32,7 +32,7 @@ Critical Floor = 50/100 — if clarity, readability, or relevance falls below th
 
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 from services.quality_models import (  # noqa: F401 — re-exported below

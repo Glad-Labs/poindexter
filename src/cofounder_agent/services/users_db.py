@@ -9,7 +9,7 @@ Handles all user-related database operations including:
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from asyncpg import Pool

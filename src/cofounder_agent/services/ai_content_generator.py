@@ -19,7 +19,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import httpx
 

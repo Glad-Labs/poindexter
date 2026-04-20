@@ -8,7 +8,7 @@ Stores metrics to database for historical analysis and bottleneck detection.
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware

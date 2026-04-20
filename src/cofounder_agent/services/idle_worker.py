@@ -933,7 +933,7 @@ class IdleWorker:
 
             import asyncpg
 
-            from services.podcast_service import PODCAST_DIR, PodcastService
+            from services.podcast_service import PodcastService
 
             cloud_url = os.getenv("DATABASE_URL", "")
             if not cloud_url:

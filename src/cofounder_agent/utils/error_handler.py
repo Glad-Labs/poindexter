@@ -19,7 +19,7 @@ Import guide:
 
 import logging  # still needed for Logger type references elsewhere in this module
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import HTTPException
 

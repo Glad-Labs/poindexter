@@ -16,9 +16,8 @@ Pull models: ollama pull qwen3:8b
 
 import asyncio
 import json
-import os
 from collections.abc import AsyncIterator
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 

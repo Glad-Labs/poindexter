@@ -17,7 +17,6 @@ Usage:
 """
 
 import asyncio
-from typing import Dict, List, Optional
 
 import httpx
 from bs4 import BeautifulSoup

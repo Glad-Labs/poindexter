@@ -7,7 +7,6 @@ Supports open-source models for blog post generation
 
 import asyncio
 from collections.abc import AsyncGenerator
-from typing import List, Optional
 
 import aiohttp
 

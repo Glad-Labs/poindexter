@@ -29,7 +29,6 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional
 
 # Try to import structlog for structured logging support
 try:

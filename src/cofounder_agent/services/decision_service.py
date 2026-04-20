@@ -40,7 +40,7 @@ Usage:
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 

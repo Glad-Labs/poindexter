@@ -11,12 +11,11 @@ Integrates all missing features from the original content agent:
 - Social media optimization (OG tags, Twitter cards)
 """
 
-import os
 import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 from utils.text_utils import extract_keywords_from_text

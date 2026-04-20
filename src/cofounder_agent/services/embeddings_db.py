@@ -8,8 +8,7 @@ Handles all embedding-related database operations using pgvector including:
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from typing import Any
 
 from asyncpg import Pool
 

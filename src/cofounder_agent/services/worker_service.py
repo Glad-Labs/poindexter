@@ -12,7 +12,7 @@ import os
 import platform
 import socket
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from services.logger_config import get_logger
 from services.site_config import site_config

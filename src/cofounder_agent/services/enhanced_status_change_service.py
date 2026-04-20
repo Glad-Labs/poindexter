@@ -1,7 +1,7 @@
 """Enhanced status change validation and logging service."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from services.logger_config import get_logger
 from services.tasks_db import TasksDatabase

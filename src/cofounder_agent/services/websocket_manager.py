@@ -10,7 +10,6 @@ is still importable for metrics_routes and other code that reads
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Optional
 
 from services.logger_config import get_logger
 

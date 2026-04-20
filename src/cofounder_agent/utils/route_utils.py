@@ -19,7 +19,7 @@ This eliminates the duplicate pattern of:
 Found in: content_routes, task_routes, subtask_routes, bulk_task_routes, settings_routes
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, Request
 

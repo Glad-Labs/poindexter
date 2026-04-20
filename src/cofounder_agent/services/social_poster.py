@@ -21,7 +21,6 @@ Usage from task_executor or any post-publish hook:
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import List, Optional
 
 import httpx
 

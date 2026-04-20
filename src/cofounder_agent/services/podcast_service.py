@@ -29,7 +29,6 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from services.logger_config import get_logger
 from services.site_config import site_config

@@ -23,7 +23,7 @@ Worker routes (local PC — everything):
 """
 
 import importlib
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import FastAPI
 

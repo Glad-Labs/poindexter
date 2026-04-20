@@ -15,7 +15,7 @@ Graceful failure: if either DB is unreachable, log and skip.
 
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import asyncpg
 

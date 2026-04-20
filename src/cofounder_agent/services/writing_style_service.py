@@ -6,7 +6,7 @@ Handles retrieval of active writing sample and formatting for inclusion in syste
 """
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from services.database_service import DatabaseService
 from services.logger_config import get_logger

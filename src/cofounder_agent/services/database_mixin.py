@@ -5,7 +5,7 @@ Shared utilities and conversion methods for all database modules.
 Provides common functionality like row-to-dict conversion and error handling.
 """
 
-from typing import Any, Dict
+from typing import Any
 from uuid import UUID
 
 from services.logger_config import get_logger

@@ -17,9 +17,7 @@ Usage:
     # context is a formatted string ready for the generation prompt
 """
 
-import os
 import re
-from typing import Dict, List, Optional
 
 from services.logger_config import get_logger
 

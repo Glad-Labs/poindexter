@@ -13,10 +13,8 @@ Usage:
     results = await validator.validate_urls(urls)
 """
 
-import os as _os
 import re
 import time
-from typing import Dict, List, Optional, Tuple
 
 import httpx
 
