@@ -158,7 +158,7 @@ class BlogPublisherAgent:
             }
 
         except Exception as e:
-            logger.error(f"[BlogPublisherAgent] Error: {str(e)}", exc_info=True)
+            logger.error(f"[BlogPublisherAgent] Error: {e!s}", exc_info=True)
             return {
                 "status": "failed",
                 "error": str(e),

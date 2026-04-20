@@ -50,7 +50,7 @@ def _import_bootstrap():
             if str(parent) not in sys.path:
                 sys.path.insert(0, str(parent))
             break
-    from brain import bootstrap  # noqa: PLC0415 — lazy on purpose
+    from brain import bootstrap
 
     return bootstrap
 
@@ -58,7 +58,7 @@ def _import_bootstrap():
 async def _test_db_connection(dsn: str) -> tuple[bool, str]:
     """Try to open a connection. Return (ok, reason)."""
     try:
-        import asyncpg  # noqa: PLC0415
+        import asyncpg
     except Exception as e:
         return False, f"asyncpg not installed: {e}"
 
@@ -76,7 +76,7 @@ async def _test_db_connection(dsn: str) -> tuple[bool, str]:
 async def _run_migrations(dsn: str) -> tuple[bool, str]:
     """Run pending migrations against the target DB."""
     try:
-        import asyncpg  # noqa: PLC0415
+        import asyncpg
     except Exception as e:
         return False, f"asyncpg not installed: {e}"
 
@@ -137,7 +137,7 @@ async def _check_http_endpoint(
     inside a container AND from the host.
     """
     try:
-        import httpx  # noqa: PLC0415
+        import httpx
     except Exception as e:
         return False, f"httpx not installed: {e}"
 
@@ -170,7 +170,7 @@ async def _check_http_endpoint(
 async def _setting_value(dsn: str, key: str) -> str:
     """Read one app_settings value. Returns '' on any error."""
     try:
-        import asyncpg  # noqa: PLC0415
+        import asyncpg
 
         conn = await asyncpg.connect(dsn, timeout=5)
         try:
@@ -187,7 +187,7 @@ async def _setting_value(dsn: str, key: str) -> str:
 async def _check_brain_heartbeat(dsn: str) -> tuple[bool, str]:
     """Verify the brain daemon has touched its queue recently (last 10 min)."""
     try:
-        import asyncpg  # noqa: PLC0415
+        import asyncpg
 
         conn = await asyncpg.connect(dsn, timeout=5)
         try:
@@ -223,7 +223,7 @@ async def _check_telegram(token: str, chat_id: str) -> tuple[bool, str]:
     if not token or not chat_id:
         return False, "bot_token or chat_id missing"
     try:
-        import httpx  # noqa: PLC0415
+        import httpx
 
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"https://api.telegram.org/bot{token}/getMe")
@@ -237,7 +237,7 @@ async def _check_telegram(token: str, chat_id: str) -> tuple[bool, str]:
 
 async def _seed_minimum_settings(dsn: str, values: dict[str, str]) -> int:
     """Upsert a small set of app_settings keys. Returns count written."""
-    import asyncpg  # noqa: PLC0415
+    import asyncpg
 
     conn = await asyncpg.connect(dsn, timeout=8)
     try:

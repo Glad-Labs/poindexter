@@ -110,7 +110,7 @@ class UrlValidationStage:
                 context_updates={"url_validation": summary},
                 metrics=summary,
             )
-        except Exception as e:  # noqa: BLE001 — legacy non-critical
+        except Exception as e:
             logger.warning("URL validation failed (non-critical): %s", e)
             return StageResult(
                 ok=False,

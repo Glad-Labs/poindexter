@@ -214,13 +214,13 @@ async def _plan_and_inject_placeholders(
     """
     try:
         from services.image_decision_agent import plan_images
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("[IMAGE_AGENT] Image Decision Agent FAILED to import: %s", e)
         return content_text, {"agent_error": str(e)}
 
     try:
         plan = await plan_images(content_text, topic, category, max_images=3)
-    except Exception as agent_err:  # noqa: BLE001 — legacy fail-loud
+    except Exception as agent_err:
         logger.error("[IMAGE_AGENT] Image Decision Agent FAILED: %s", agent_err)
         return content_text, {"agent_error": str(agent_err)}
 
@@ -330,7 +330,7 @@ async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
         sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
         ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
         model = site_config.get("inline_image_prompt_model", "llama3:latest")
-        inline_style = random.choice(INLINE_STYLES)  # noqa: S311 — non-crypto rotation
+        inline_style = random.choice(INLINE_STYLES)
         img_prompt_req = (
             f"Write a Stable Diffusion XL image prompt for a blog illustration about: {search_query}\n"
             f"Article topic: {topic}\n\n"
@@ -375,7 +375,7 @@ async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
 
         # Step 3: R2 upload, with local-path fallback.
         return await _upload_to_r2_with_fallback(tmp_path)
-    except Exception as err:  # noqa: BLE001 — legacy non-fatal
+    except Exception as err:
         logger.warning("  [IMAGE-%s] SDXL inline failed: %s", num, err)
         return None
 
@@ -460,7 +460,7 @@ async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
             img_url = r2_url
             with suppress(OSError):
                 os.remove(tmp_path)  # best-effort cleanup
-    except Exception:  # noqa: BLE001 — legacy: fall back silently
+    except Exception:
         logger.debug("[IMAGE] R2 upload failed for inline, using local path")
 
     # Rewrite local-dir paths to the worker's serve URL.
@@ -485,7 +485,7 @@ async def _try_pexels(
         if img and img.url:
             photographer = getattr(img, "photographer", "Pexels")
             return img.url, photographer
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Pexels search failed: %s", e)
     return None
 

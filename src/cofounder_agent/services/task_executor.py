@@ -74,7 +74,7 @@ async def _notify_openclaw(message: str, critical: bool = False) -> None:
     await _notify_discord(message)
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
-from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: E402,F401
+from .websocket_event_broadcaster import emit_notification, emit_task_progress
 
 logger = get_logger(__name__)
 

@@ -190,7 +190,7 @@ class GenerateContentStage:
                     slug = link_line.split("/posts/")[-1].strip().strip('"')
                     if slug:
                         real_slug_set.add(slug)
-        except Exception:  # noqa: BLE001 — best-effort, empty slug set is fine
+        except Exception:
             pass
         content_text = scrub_fabricated_links(content_text, known_slugs=real_slug_set)
 
@@ -225,7 +225,7 @@ class GenerateContentStage:
                     },
                     task_id=task_id,
                 )
-            except Exception as sr_err:  # noqa: BLE001 — self-review is best-effort
+            except Exception as sr_err:
                 logger.warning(
                     "[SELF_REVIEW] Self-review pass failed (non-fatal): %s", sr_err,
                 )
@@ -269,7 +269,7 @@ class GenerateContentStage:
                     "Cost logged: $%.4f (%s/%s)",
                     cost_log["cost_usd"], cost_log["provider"], cost_log["model"],
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("Cost logging failed (non-critical): %s", e)
 
         return StageResult(
@@ -302,7 +302,7 @@ class GenerateContentStage:
                     logger.info(
                         "Research context from task: %d chars", len(caller_context),
                     )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.debug("Failed to load task research_context: %s", e)
 
         # 2. ResearchService auto-built context.
@@ -317,7 +317,7 @@ class GenerateContentStage:
                     f"{research_context}\n\n{auto}" if research_context else auto
                 )
                 logger.info("Research context built: %d chars", len(research_context))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("Research context skipped: %s", e)
 
         # 3. RAG context via pgvector similarity search.
@@ -329,7 +329,7 @@ class GenerateContentStage:
                     f"{research_context}\n\n{rag}" if research_context else rag
                 )
                 logger.info("RAG context injected: %d chars", len(rag))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("RAG context skipped (non-fatal): %s", e)
 
         return research_context
@@ -346,7 +346,7 @@ class GenerateContentStage:
                     "ORDER BY created_at DESC LIMIT 20"
                 )
             return "\n".join(f"- {r['title']}" for r in rows if r["title"])
-        except Exception:  # noqa: BLE001
+        except Exception:
             return ""  # Non-critical — proceed without diversity check.
 
 
@@ -385,14 +385,14 @@ def _extract_caller_research(task_row: dict[str, Any]) -> str:
     if isinstance(task_meta, str):
         try:
             task_meta = _json.loads(task_meta)
-        except Exception:  # noqa: BLE001
+        except Exception:
             task_meta = {}
 
     metadata_jsonb = task_row.get("metadata") or {}
     if isinstance(metadata_jsonb, str):
         try:
             metadata_jsonb = _json.loads(metadata_jsonb)
-        except Exception:  # noqa: BLE001
+        except Exception:
             metadata_jsonb = {}
 
     return (
@@ -409,5 +409,5 @@ def _self_review_enabled() -> bool:
         from services.site_config import site_config
         raw = site_config.get("enable_writer_self_review", "true")
         return str(raw).lower() in ("true", "1", "yes")
-    except Exception:  # noqa: BLE001
+    except Exception:
         return True

@@ -16,7 +16,7 @@ from services.site_config import site_config
 site_config._config["site_url"] = "https://test.example.com"
 site_config._config["company_name"] = "Test Company"
 
-from services.newsletter_service import (  # noqa: E402
+from services.newsletter_service import (
     _build_html,
     _get_active_subscribers,
     send_post_newsletter,

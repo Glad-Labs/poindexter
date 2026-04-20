@@ -94,7 +94,7 @@ async def run_all(pool: Any) -> RunnerSummary:
             result = await source.extract(pool, source_config)
             if result:
                 topics = list(result)
-        except Exception as e:  # noqa: BLE001 — per-source isolation
+        except Exception as e:
             stats.error = str(e)[:200]
             logger.exception(
                 "TopicSource %s: extract failed: %s", stats.name, stats.error,

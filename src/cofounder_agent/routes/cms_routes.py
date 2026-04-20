@@ -585,7 +585,7 @@ async def get_post_by_slug(
             except Exception as tag_error:
                 # If tags table doesn't exist or query fails, just return empty tags
                 logger.warning(
-                    f"Could not fetch tags for post {post_id}: {str(tag_error)}", exc_info=True
+                    f"Could not fetch tags for post {post_id}: {tag_error!s}", exc_info=True
                 )
                 tags = []
 

@@ -65,7 +65,7 @@ except (ImportError, RuntimeError) as e:
 
 # Optional optimization packages
 try:
-    import xformers  # noqa: F401
+    import xformers
 
     XFORMERS_AVAILABLE = True
 except ImportError:

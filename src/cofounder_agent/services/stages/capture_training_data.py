@@ -101,7 +101,7 @@ class CaptureTrainingDataStage:
 
         try:
             await database_service.create_quality_evaluation(qa_payload)
-        except Exception as qe_err:  # noqa: BLE001
+        except Exception as qe_err:
             logger.warning(
                 "Quality evaluation insert failed (non-critical): %s", qe_err,
             )
@@ -128,7 +128,7 @@ class CaptureTrainingDataStage:
 
         try:
             await database_service.create_orchestrator_training_data(training_payload)
-        except Exception as td_err:  # noqa: BLE001
+        except Exception as td_err:
             logger.warning(
                 "Training data insert skipped (likely re-processed task): %s",
                 td_err,

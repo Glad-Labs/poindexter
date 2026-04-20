@@ -206,7 +206,7 @@ class SourceFeaturedImageStage:
                 )
             stages["3_featured_image_found"] = False
             logger.warning("No featured image found for '%s'", topic)
-        except Exception as e:  # noqa: BLE001 — non-fatal
+        except Exception as e:
             logger.error("Image search failed: %s", e, exc_info=True)
             stages["3_featured_image_found"] = False
 
@@ -255,7 +255,7 @@ async def _try_sdxl_featured(
             photographer="AI Generated (SDXL)",
             source=source,
         )
-    except Exception as e:  # noqa: BLE001 — legacy logged + fell through to pexels
+    except Exception as e:
         logger.info("SDXL generation skipped (%s), falling back to Pexels", e)
         return None
 
@@ -275,7 +275,7 @@ async def _build_sdxl_prompt(
     all_recent = set(recent) | set(mem_recent)
 
     available = [s for s in styles if s[0] not in all_recent] or styles
-    chosen_style, style_tags = random.choice(available)  # noqa: S311 — non-crypto rotation
+    chosen_style, style_tags = random.choice(available)
     style_tracker.record(chosen_style)
     on_style_picked(chosen_style)
 
@@ -314,7 +314,7 @@ async def _build_sdxl_prompt(
             "[IMAGE] Style: %s | SDXL prompt: %s", chosen_style, prompt_text[:80],
         )
         return prompt_text
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("[IMAGE] LLM prompt generation failed, using fallback: %s", e)
         return f"{chosen_style}, {style_tags}, no text, no faces"
 
@@ -327,7 +327,7 @@ def _load_styles_from_settings() -> list[tuple[str, str]]:
         return []
     try:
         parsed = json.loads(raw)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
     return [(s["scene"], s["tags"]) for s in parsed if "scene" in s and "tags" in s]
 
@@ -350,7 +350,7 @@ async def _load_recent_published_styles() -> list[str]:
             return [r["style"] for r in rows if r["style"]]
         finally:
             await conn.close()
-    except Exception:  # noqa: BLE001 — style dedup is best-effort
+    except Exception:
         return []
 
 
@@ -428,7 +428,7 @@ async def _upload_featured_to_r2(output_path: str, task_id: str | None) -> str:
                 os.remove(output_path)  # best-effort cleanup
             return r2_url
         logger.warning("R2 upload returned None, using local path")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("R2 upload failed (using local): %s", e)
 
     # Rewrite local-dir paths to the worker's serve URL.

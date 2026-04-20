@@ -61,7 +61,7 @@ def _load_telegram_config(
         return real_import(name, *args, **kwargs)
 
     with patch("builtins.__import__", side_effect=_fake_import):
-        exec(compile(source, str(_SRC), "exec"), mod.__dict__)  # noqa: S102
+        exec(compile(source, str(_SRC), "exec"), mod.__dict__)
 
     return mod
 

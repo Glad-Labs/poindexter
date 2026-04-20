@@ -350,7 +350,7 @@ class WritingStyleIntegrationService:
 
         except Exception as e:
             logger.error("[_verify_style_match] Error verifying style match: %s", e, exc_info=True)
-            return {"matched": False, "reason": f"Verification error: {str(e)}"}
+            return {"matched": False, "reason": f"Verification error: {e!s}"}
 
     @staticmethod
     def _compare_analyses(

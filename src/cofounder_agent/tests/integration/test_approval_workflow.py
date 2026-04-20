@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 
 # Import task_routes first to resolve the circular import between
 # task_routes <-> task_publishing_routes.
-import routes.task_routes  # noqa: F401
+import routes.task_routes
 from middleware.api_token_auth import verify_api_token
 from utils.route_utils import get_database_dependency
 

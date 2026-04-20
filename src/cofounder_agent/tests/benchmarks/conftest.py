@@ -39,7 +39,7 @@ def app():
     os.environ.setdefault("SECRET_KEY", "benchmark-secret-key")
 
     try:
-        from main import app as _app  # noqa: PLC0415
+        from main import app as _app
     except Exception as exc:
         pytest.skip(f"Cannot import app for benchmarks: {exc}")
 

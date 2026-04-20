@@ -141,7 +141,7 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
 
         except Exception as e:
             logger.error(
-                f"[TokenValidation] Error validating token: {type(e).__name__}: {str(e)}",
+                f"[TokenValidation] Error validating token: {type(e).__name__}: {e!s}",
                 exc_info=True,
             )
             return JSONResponse(

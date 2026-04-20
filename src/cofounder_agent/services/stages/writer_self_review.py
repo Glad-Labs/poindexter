@@ -79,7 +79,7 @@ class WriterSelfReviewStage:
             revised_text, stats = await _self_review_and_revise(
                 content_text, title, topic,
             )
-        except Exception as e:  # noqa: BLE001 — legacy swallowed all
+        except Exception as e:
             logger.warning("[SELF_REVIEW] Stage failed (non-fatal): %s", e)
             return StageResult(
                 ok=False,
@@ -97,7 +97,7 @@ class WriterSelfReviewStage:
                 stats,
                 task_id=task_id,
             )
-        except Exception as e:  # noqa: BLE001 — audit is best-effort
+        except Exception as e:
             logger.debug("audit_log_bg failed: %s", e)
 
         return StageResult(

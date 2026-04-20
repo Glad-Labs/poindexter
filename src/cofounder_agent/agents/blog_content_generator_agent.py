@@ -117,7 +117,7 @@ class BlogContentGeneratorAgent:
             }
 
         except Exception as e:
-            logger.error(f"[BlogContentGeneratorAgent] Error: {str(e)}", exc_info=True)
+            logger.error(f"[BlogContentGeneratorAgent] Error: {e!s}", exc_info=True)
             return {
                 "status": "failed",
                 "error": str(e),

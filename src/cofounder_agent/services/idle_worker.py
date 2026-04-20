@@ -1110,9 +1110,12 @@ class IdleWorker:
                 linked = re.findall(r"/posts/([a-z0-9-]+)", content)
                 for slug in set(linked):
                     if slug not in published:
+                        # Sidebar <li> must run before anchor-rewrite — otherwise
+                        # the <a href> inside is already stripped by the time the
+                        # <li> regex tries to match, leaving orphan <li> wrappers.
+                        new_content = re.sub(r"<li[^>]*>.*?/posts/" + re.escape(slug) + r"[^<]*</a></li>", "", new_content)
                         new_content = re.sub(r"\[([^\]]+)\]\(/posts/" + re.escape(slug) + r"\)", r"\1", new_content)
                         new_content = re.sub(r"<a[^>]*href=\"/posts/" + re.escape(slug) + r"\"[^>]*>([^<]*)</a>", r"\1", new_content)
-                        new_content = re.sub(r"<li[^>]*>.*?/posts/" + re.escape(slug) + r"[^<]*</a></li>", "", new_content)
                 if new_content != content:
                     await cloud.execute("UPDATE posts SET content = $1, updated_at = NOW() WHERE id = $2", new_content, row["id"])
                     fixed += 1
@@ -2064,7 +2067,7 @@ class IdleWorker:
 
         for table in tables:
             try:
-                rows = await self.pool.fetch(f"SELECT * FROM {table}")  # noqa: S608 — trusted table names
+                rows = await self.pool.fetch(f"SELECT * FROM {table}")
                 if not rows:
                     continue
                 records = [dict(r) for r in rows]

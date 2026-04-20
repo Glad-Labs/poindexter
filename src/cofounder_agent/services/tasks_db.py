@@ -1288,7 +1288,7 @@ class TasksDatabase(DatabaseServiceMixin):
 
     @log_query_performance(operation="claim_next_task", category="task_write")
     async def claim_next_task(
-        self, worker_id: str, task_categories: list = None
+        self, worker_id: str, task_categories: list | None = None
     ) -> dict[str, Any] | None:
         """Atomically claim the next pending task using FOR UPDATE SKIP LOCKED.
 
@@ -1344,7 +1344,7 @@ class TasksDatabase(DatabaseServiceMixin):
             return None
 
     async def release_task(
-        self, task_id: str, worker_id: str, error_message: str = None
+        self, task_id: str, worker_id: str, error_message: str | None = None
     ):
         """Release a claimed task back to pending (e.g., on worker failure)."""
         try:

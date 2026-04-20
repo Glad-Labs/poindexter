@@ -144,7 +144,7 @@ class StartupManager:
         except SystemExit:
             raise  # Re-raise SystemExit to stop startup
         except Exception as e:
-            self.startup_error = f"Critical startup failure: {str(e)}"
+            self.startup_error = f"Critical startup failure: {e!s}"
             logger.error(f" {self.startup_error}", exc_info=True)
             raise
 
@@ -205,7 +205,7 @@ class StartupManager:
                         exc_info=True,
                     )
         except Exception as e:
-            startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
+            startup_error = f"FATAL: PostgreSQL connection failed: {e!s}"
             logger.error(f"  {startup_error}", exc_info=True)
             logger.error("  [FATAL] PostgreSQL is REQUIRED - cannot continue", exc_info=True)
 
@@ -253,7 +253,7 @@ class StartupManager:
                 logger.warning("   [WARNING] Database migrations failed (proceeding anyway)")
         except Exception as e:
             logger.warning(
-                f"   [WARNING] Migration error: {str(e)} (proceeding anyway)", exc_info=True
+                f"   [WARNING] Migration error: {e!s} (proceeding anyway)", exc_info=True
             )
 
         # ContentTaskStore: no longer a singleton (Phase G1). Routes that
@@ -268,7 +268,7 @@ class StartupManager:
             await jwt_blocklist.cleanup()
             logger.info("   [OK] JWT blocklist service initialized")
         except Exception as e:
-            logger.warning(f"   [WARNING] JWT blocklist init failed: {str(e)}", exc_info=True)
+            logger.warning(f"   [WARNING] JWT blocklist init failed: {e!s}", exc_info=True)
 
     async def _setup_redis_cache(self) -> None:
         """Initialize Redis cache for query optimization"""
@@ -287,7 +287,7 @@ class StartupManager:
                 )
         except Exception as e:
             logger.warning(
-                f"   [WARNING] Redis cache error: {str(e)} (continuing without cache)",
+                f"   [WARNING] Redis cache error: {e!s} (continuing without cache)",
                 exc_info=True,
             )
 
@@ -302,7 +302,7 @@ class StartupManager:
                 "   Model consolidation service initialized (Ollama->HF->Google->Anthropic->OpenAI)"
             )
         except Exception as e:
-            error_msg = f"Model consolidation initialization failed: {str(e)}"
+            error_msg = f"Model consolidation initialization failed: {e!s}"
             logger.error(f"   {error_msg}", exc_info=True)
             # Don't fail startup - models are optional
 
@@ -349,7 +349,7 @@ class StartupManager:
                 "     ⏸️  Will be fully configured and started after UnifiedOrchestrator is injected in main.py"
             )
         except Exception as e:
-            error_msg = f"Task executor initialization failed: {str(e)}"
+            error_msg = f"Task executor initialization failed: {e!s}"
             logger.error(f"   {error_msg}", exc_info=True)
             # Don't fail startup - task processing is optional
             self.task_executor = None
@@ -506,7 +506,7 @@ class StartupManager:
                     if os.path.exists(output_path):
                         os.remove(output_path)
                 except OSError as e:
-                    logger.debug(f"  [DEBUG] Temp file cleanup failed (non-critical): {str(e)}")
+                    logger.debug(f"  [DEBUG] Temp file cleanup failed (non-critical): {e!s}")
 
         except Exception as e:
             import traceback

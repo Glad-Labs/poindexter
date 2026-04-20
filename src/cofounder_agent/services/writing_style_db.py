@@ -92,7 +92,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
 
         except Exception as e:
             logger.error(
-                f"[create_writing_sample] Failed to create sample for user_id={user_id}, title='{title}': {str(e)}",
+                f"[create_writing_sample] Failed to create sample for user_id={user_id}, title='{title}': {e!s}",
                 exc_info=True,
             )
             raise
@@ -121,7 +121,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return self._format_sample(row) if row else None
         except Exception as e:
             logger.error(
-                f"[get_writing_sample] Failed to get sample_id={sample_id}: {str(e)}",
+                f"[get_writing_sample] Failed to get sample_id={sample_id}: {e!s}",
                 exc_info=True,
             )
             raise
@@ -157,7 +157,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return [self._format_sample(row) for row in rows]
         except Exception as e:
             logger.error(
-                f"[get_user_writing_samples] Failed to get samples for user_id={user_id}: {str(e)}",
+                f"[get_user_writing_samples] Failed to get samples for user_id={user_id}: {e!s}",
                 exc_info=True,
             )
             raise
@@ -190,7 +190,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return self._format_sample(row) if row else None
         except Exception as e:
             logger.error(
-                f"[get_active_writing_sample] Failed to get active sample for user_id={user_id}: {str(e)}",
+                f"[get_active_writing_sample] Failed to get active sample for user_id={user_id}: {e!s}",
                 exc_info=True,
             )
             raise
@@ -237,7 +237,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
 
         except Exception as e:
             logger.error(
-                f"[set_active_writing_sample] Failed to set active sample_id={sample_id} for user_id={user_id}: {str(e)}",
+                f"[set_active_writing_sample] Failed to set active sample_id={sample_id} for user_id={user_id}: {e!s}",
                 exc_info=True,
             )
             raise
@@ -318,7 +318,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
 
         except Exception as e:
             logger.error(
-                f"[update_writing_sample] Failed to update sample_id={sample_id} for user_id={user_id}: {str(e)}",
+                f"[update_writing_sample] Failed to update sample_id={sample_id} for user_id={user_id}: {e!s}",
                 exc_info=True,
             )
             raise
@@ -356,7 +356,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
 
         except Exception as e:
             logger.error(
-                f"[delete_writing_sample] Failed to delete sample_id={sample_id} for user_id={user_id}: {str(e)}",
+                f"[delete_writing_sample] Failed to delete sample_id={sample_id} for user_id={user_id}: {e!s}",
                 exc_info=True,
             )
             raise

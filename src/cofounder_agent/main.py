@@ -159,7 +159,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             try:
                 from services.site_config import site_config
                 app.state.site_config = site_config
-            except Exception:  # noqa: BLE001
+            except Exception:
                 app.state.site_config = None
 
         # Load prompt templates from DB (overrides YAML files)
@@ -324,11 +324,11 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         yield  # Application runs here
 
     except Exception as e:
-        logger.error(f"Critical startup failure: {str(e)}", exc_info=True)
+        logger.error(f"Critical startup failure: {e!s}", exc_info=True)
         try:
-            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}", exc_info=True)
+            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {e!s}", exc_info=True)
         except UnicodeEncodeError:
-            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}", exc_info=True)
+            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {e!s}", exc_info=True)
         app.state.startup_error = str(e)
         app.state.startup_complete = True
         raise
@@ -374,7 +374,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
-from services.site_config import site_config as _site_cfg  # noqa: E402
+from services.site_config import site_config as _site_cfg
 
 _site_name = _site_cfg.get("site_name", "AI Content Pipeline")
 
@@ -834,7 +834,7 @@ async def process_command(
         )
     except Exception as e:  # pylint: disable=broad-except
         logger.error(
-            f"Error processing command: {str(e)} | command={command.command}", exc_info=True
+            f"Error processing command: {e!s} | command={command.command}", exc_info=True
         )
         raise HTTPException(status_code=500, detail="An internal error occurred") from e
 

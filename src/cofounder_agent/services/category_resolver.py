@@ -69,7 +69,7 @@ async def select_category_for_topic(
                 )
             if cat_id:
                 return cat_id
-        except Exception:  # noqa: BLE001 — fall through to keyword match
+        except Exception:
             pass
 
     # Priority 2: keyword matching.
@@ -87,6 +87,6 @@ async def select_category_for_topic(
             return await conn.fetchval(
                 "SELECT id FROM categories WHERE slug = $1", matched_category,
             )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Error selecting category: %s", e, exc_info=True)
         return None

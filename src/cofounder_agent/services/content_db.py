@@ -179,7 +179,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 return ModelConverter.to_post_response(row)
             except Exception as db_error:
                 logger.error("DATABASE ERROR while creating post: %s", db_error, exc_info=True)
-                raise DatabaseError(f"Failed to create post in database: {str(db_error)}") from db_error
+                raise DatabaseError(f"Failed to create post in database: {db_error!s}") from db_error
 
     @log_query_performance(
         operation="get_post_by_slug", category="content_retrieval", slow_threshold_ms=50

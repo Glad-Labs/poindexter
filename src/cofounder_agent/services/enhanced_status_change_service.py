@@ -126,7 +126,7 @@ class EnhancedStatusChangeService:
             return True, success_msg, []
 
         except Exception as e:
-            error = f"Error during status change: {str(e)}"
+            error = f"Error during status change: {e!s}"
             logger.error("[_validate_and_change_status] %s", error, exc_info=True)
             return False, error, ["internal_error"]
 

@@ -19,7 +19,7 @@ class NoopJob:
     schedule = "every 1 hour"
     idempotent = True
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:  # noqa: ARG002
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         return JobResult(
             ok=True,
             detail="noop job completed",

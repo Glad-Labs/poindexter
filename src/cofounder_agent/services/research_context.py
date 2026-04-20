@@ -63,7 +63,7 @@ async def build_rag_context(
                     if row:
                         slug = row.get("slug") or ""
                         excerpt = row.get("excerpt") or ""
-                except Exception:  # noqa: BLE001 — non-critical, metadata title is enough
+                except Exception:
                     pass
 
             excerpt_short = (excerpt[:120] + "...") if len(excerpt) > 120 else excerpt
@@ -75,6 +75,6 @@ async def build_rag_context(
 
         return "\n".join(lines)
 
-    except Exception as e:  # noqa: BLE001 — RAG context is best-effort
+    except Exception as e:
         logger.debug("RAG context build failed (non-fatal): %s", e)
         return None

@@ -152,7 +152,7 @@ async def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> b
         return False
 
 
-async def _log_send(pool, subscriber_id: int, subject: str, status: str, error: str = None) -> None:
+async def _log_send(pool, subscriber_id: int, subject: str, status: str, error: str | None = None) -> None:
     """Log send attempt to campaign_email_logs."""
     try:
         await pool.execute(

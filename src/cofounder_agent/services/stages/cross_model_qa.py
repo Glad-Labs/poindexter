@@ -120,7 +120,7 @@ def aggregate_issues_to_fix(qa_result: Any) -> tuple[str, bool]:
                 lines.append(f"[{issue.severity}] {issue.category}: {issue.description}")
                 if issue.severity == "critical":
                     has_blocking = True
-    except Exception:  # noqa: BLE001 — validation is optional
+    except Exception:
         pass
 
     # Reviewers — a non-approving reviewer blocks; borderline approvals
@@ -186,7 +186,7 @@ class CrossModelQAStage:
             try:
                 from services.container import get_service as _get_service
                 settings_service = _get_service("settings")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 settings_service = None
 
         qa = MultiModelQA(pool=pool, settings_service=settings_service)
@@ -347,7 +347,7 @@ class CrossModelQAStage:
                     "model": cost_log.get("model"),
                     "phase": "multi_model_qa",
                 }, task_id=task_id)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("QA cost logging failed (non-critical): %s", e)
 
         # Rejection short-circuit.
@@ -413,7 +413,7 @@ async def _resolve_max_rewrites(settings_service: Any, default: int) -> int:
         )
         if raw is not None:
             return int(raw)
-    except Exception:  # noqa: BLE001 — fall back to default on any error
+    except Exception:
         pass
     return default
 
@@ -490,7 +490,7 @@ async def _rewrite_draft(
         finally:
             with suppress(Exception):
                 await client.close()
-    except Exception as e:  # noqa: BLE001 — legacy swallowed errors
+    except Exception as e:
         logger.warning(
             "[QA_REWRITE] Task %s: rewrite failed (non-fatal): %s",
             task_id[:8], e,

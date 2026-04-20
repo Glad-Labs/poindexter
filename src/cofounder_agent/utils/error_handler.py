@@ -141,13 +141,13 @@ async def handle_route_error(
     # Log with appropriate level
     if status_code >= 500:
         log_instance.error(
-            f"[{operation}] {error_type}: {str(error)}",
+            f"[{operation}] {error_type}: {error!s}",
             exc_info=True,
             extra={"operation": operation, "error_type": error_type},
         )
     else:
         log_instance.warning(
-            f"[{operation}] {error_type}: {str(error)}",
+            f"[{operation}] {error_type}: {error!s}",
             extra={"operation": operation, "error_type": error_type},
         )
 
@@ -186,7 +186,7 @@ def handle_service_error(
     error_type = type(error).__name__
 
     log_instance.error(
-        f"[SERVICE:{operation}] {error_type}: {str(error)}",
+        f"[SERVICE:{operation}] {error_type}: {error!s}",
         exc_info=True,
         extra={"operation": operation, "service": "backend", "error_type": error_type},
     )
