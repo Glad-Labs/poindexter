@@ -65,7 +65,7 @@ class TestGPUScheduler:
 
     @pytest.mark.asyncio
     async def test_lock_released_on_exception(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="test error"):
             async with self.gpu.lock("ollama"):
                 raise ValueError("test error")
         assert not self.gpu.is_busy

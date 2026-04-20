@@ -410,7 +410,7 @@ class TestUpdateWorkflow:
         service.get_workflow = AsyncMock(return_value=existing)
 
         workflow = _make_workflow()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="owned by different user"):
             await service.update_workflow("wf-1", workflow, owner_id="user-123")
 
     @pytest.mark.asyncio
@@ -464,7 +464,7 @@ class TestDeleteWorkflow:
         service = _make_service()
         service.get_workflow = AsyncMock(return_value=existing)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="owned by different user"):
             await service.delete_workflow("wf-1", owner_id="user-123")
 
     @pytest.mark.asyncio

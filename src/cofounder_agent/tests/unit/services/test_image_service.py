@@ -416,7 +416,7 @@ class TestImageModelEnum:
         assert ImageModel("flux_schnell") is ImageModel.FLUX_SCHNELL
 
     def test_invalid_value_raises(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="nonexistent_model"):
             ImageModel("nonexistent_model")
 
 

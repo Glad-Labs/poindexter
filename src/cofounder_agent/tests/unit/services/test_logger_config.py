@@ -263,10 +263,8 @@ class TestSetLogLevelStructlogBranch:
         lc.set_log_level("WaRnInG")  # Should not raise
 
     def test_value_error_message_lists_valid_levels(self):
-        with pytest.raises(ValueError) as exc:
+        with pytest.raises(ValueError, match="BANANA|Invalid"):
             lc.set_log_level("BANANA")
-        msg = str(exc.value)
-        assert "BANANA" in msg or "Invalid" in msg
 
 
 # ---------------------------------------------------------------------------

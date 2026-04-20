@@ -89,9 +89,8 @@ class TestValidateTemplateName:
             TemplateExecutionService.validate_template_name("invalid_template")
 
     def test_error_message_includes_valid_list(self):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="blog_post"):
             TemplateExecutionService.validate_template_name("nope")
-        assert "blog_post" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +152,7 @@ class TestBuildWorkflowFromTemplate:
 
     def test_invalid_template_raises(self):
         svc = _service()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="nonexistent"):
             svc.build_workflow_from_template("nonexistent", owner_id="o")
 
     def test_phase_indices_are_sequential(self):
@@ -196,7 +195,7 @@ class TestExecuteTemplate:
     @pytest.mark.asyncio
     async def test_invalid_template_raises_value_error(self):
         svc = _service()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="bad_template"):
             await svc.execute_template(
                 template_name="bad_template",
                 task_input={},
