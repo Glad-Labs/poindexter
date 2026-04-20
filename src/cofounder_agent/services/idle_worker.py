@@ -52,51 +52,13 @@ class IdleWorker:
             logger.debug("[IDLE] Failed to persist schedule for %s: %s", task_name, e)
 
     async def _create_gitea_issue(self, title: str, body: str) -> bool:
-        """Create a deduplicated Gitea issue for tracking discovered problems."""
-        import base64
+        """Delegate to the shared dedup-aware utility.
 
-        import httpx
-
-        gitea_url = site_config.get("gitea_url", "http://localhost:3001")
-        gitea_user = site_config.get("gitea_user", "gladlabs")
-        gitea_pass = site_config.get("gitea_password", "")
-        gitea_repo = site_config.get("gitea_repo", "gladlabs/glad-labs-codebase")
-
-        if not gitea_pass:
-            logger.debug("[IDLE] No Gitea password configured — skipping issue creation")
-            return False
-
-        try:
-            auth = base64.b64encode(f"{gitea_user}:{gitea_pass}".encode()).decode()
-            headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
-            async with httpx.AsyncClient(timeout=10) as client:
-                # Dedup: check for existing open issues with same prefix
-                title_prefix = title.split(":")[0].strip() if ":" in title else title[:30]
-                search_resp = await client.get(
-                    f"{gitea_url}/api/v1/repos/{gitea_repo}/issues",
-                    headers=headers,
-                    params={"state": "open", "limit": 10},
-                )
-                if search_resp.status_code == 200:
-                    existing = search_resp.json()
-                    for issue in existing:
-                        existing_prefix = issue["title"].split(":")[0].strip() if ":" in issue["title"] else issue["title"][:30]
-                        if existing_prefix == title_prefix:
-                            logger.debug("[IDLE] Gitea issue already exists: #%d %s", issue["number"], title_prefix)
-                            return False
-
-                resp = await client.post(
-                    f"{gitea_url}/api/v1/repos/{gitea_repo}/issues",
-                    headers=headers,
-                    json={"title": title, "body": body},
-                )
-                if resp.status_code < 300:
-                    issue = resp.json()
-                    logger.info("[IDLE] Created Gitea issue #%d: %s", issue["number"], title[:50])
-                    return True
-        except Exception as e:
-            logger.debug("[IDLE] Gitea issue creation failed: %s", e)
-        return False
+        Historically this was inline here; extracted to utils.gitea_issues
+        so services/jobs/* can share the same dedup logic.
+        """
+        from utils.gitea_issues import create_gitea_issue
+        return await create_gitea_issue(title, body)
 
     def _is_due(self, task_name: str, interval_minutes: int) -> bool:
         """Check if a task is due. Uses 4x cooldown if task previously completed all work."""

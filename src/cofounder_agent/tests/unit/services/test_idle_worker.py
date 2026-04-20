@@ -318,70 +318,28 @@ class TestMarkCompleted:
 
 
 class TestCreateGiteaIssue:
-    @pytest.mark.asyncio
-    async def test_skips_when_no_password(self):
-        worker = IdleWorker(AsyncMock())
-        with patch("services.idle_worker.site_config", {"gitea_password": ""}):
-            result = await worker._create_gitea_issue("Test Issue", "Body")
-        assert result is False
+    """The actual Gitea logic now lives in utils.gitea_issues — full
+    coverage there. Here we only verify ``_create_gitea_issue`` delegates."""
 
     @pytest.mark.asyncio
-    async def test_creates_issue_successfully(self):
+    async def test_delegates_to_shared_utility(self):
         worker = IdleWorker(AsyncMock())
-
-        mock_client = AsyncMock()
-        # Search returns no existing issues
-        search_resp = MagicMock()
-        search_resp.status_code = 200
-        search_resp.json.return_value = []
-        # Create succeeds
-        create_resp = MagicMock()
-        create_resp.status_code = 201
-        create_resp.json.return_value = {"number": 42}
-
-        mock_client.get = AsyncMock(return_value=search_resp)
-        mock_client.post = AsyncMock(return_value=create_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        config = {"gitea_url": "http://gitea:3001", "gitea_user": "test", "gitea_password": "pass", "gitea_repo": "test/repo"}
-        with patch("services.idle_worker.site_config", config), \
-             patch("httpx.AsyncClient", return_value=mock_client):
-            result = await worker._create_gitea_issue("test: new issue", "Body here")
+        with patch(
+            "utils.gitea_issues.create_gitea_issue",
+            new=AsyncMock(return_value=True),
+        ) as mock_util:
+            result = await worker._create_gitea_issue("links: broken", "body")
         assert result is True
+        mock_util.assert_awaited_once_with("links: broken", "body")
 
     @pytest.mark.asyncio
-    async def test_deduplicates_by_title_prefix(self):
+    async def test_returns_false_when_utility_returns_false(self):
         worker = IdleWorker(AsyncMock())
-
-        mock_client = AsyncMock()
-        search_resp = MagicMock()
-        search_resp.status_code = 200
-        search_resp.json.return_value = [{"title": "seo: fix missing metadata", "number": 10}]
-
-        mock_client.get = AsyncMock(return_value=search_resp)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        config = {"gitea_url": "http://gitea:3001", "gitea_user": "test", "gitea_password": "pass", "gitea_repo": "test/repo"}
-        with patch("services.idle_worker.site_config", config), \
-             patch("httpx.AsyncClient", return_value=mock_client):
-            result = await worker._create_gitea_issue("seo: another seo issue", "Body")
-        assert result is False  # Deduped — same "seo" prefix
-
-    @pytest.mark.asyncio
-    async def test_handles_network_error(self):
-        worker = IdleWorker(AsyncMock())
-
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=Exception("Connection refused"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        config = {"gitea_url": "http://gitea:3001", "gitea_user": "test", "gitea_password": "pass", "gitea_repo": "test/repo"}
-        with patch("services.idle_worker.site_config", config), \
-             patch("httpx.AsyncClient", return_value=mock_client):
-            result = await worker._create_gitea_issue("test: issue", "Body")
+        with patch(
+            "utils.gitea_issues.create_gitea_issue",
+            new=AsyncMock(return_value=False),
+        ):
+            result = await worker._create_gitea_issue("links: broken", "body")
         assert result is False
 
 
