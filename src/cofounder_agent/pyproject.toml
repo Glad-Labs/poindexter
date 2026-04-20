@@ -266,6 +266,10 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+# pytest-asyncio >=0.24 warns when this isn't set explicitly. "function"
+# matches the existing per-test-function isolation we already get; making
+# it explicit silences the PytestDeprecationWarning.
+asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["../..", ".", "../"]
 addopts = [
     "-v",
