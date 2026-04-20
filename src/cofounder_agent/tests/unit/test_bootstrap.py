@@ -19,7 +19,8 @@ for _p in _HERE.parents:
             sys.path.insert(0, str(_p))
         break
 
-from brain import bootstrap
+# E402 — brain/ has to be put on sys.path before this import can resolve.
+from brain import bootstrap  # noqa: E402
 
 
 @pytest.fixture

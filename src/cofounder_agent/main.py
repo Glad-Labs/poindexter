@@ -374,7 +374,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
-from services.site_config import site_config as _site_cfg
+# Late import — site_config depends on services/database_service which
+# can't load until config is ready above, which in turn pulls env vars.
+from services.site_config import site_config as _site_cfg  # noqa: E402
 
 _site_name = _site_cfg.get("site_name", "AI Content Pipeline")
 

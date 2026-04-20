@@ -26,7 +26,6 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 import asyncio
 import importlib
 import time
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -76,8 +75,10 @@ except (ImportError, RuntimeError) as e:
 
 # Optional optimization packages. find_spec instead of try/import —
 # lets us probe availability without holding a reference to the module
-# we never call (ruff F401).
-from importlib.util import find_spec as _find_spec
+# we never call (ruff F401). E402 suppressed because this deliberately
+# lives below the try/except ImportError block that provisions the
+# diffusers fallback.
+from importlib.util import find_spec as _find_spec  # noqa: E402
 
 XFORMERS_AVAILABLE = _find_spec("xformers") is not None
 

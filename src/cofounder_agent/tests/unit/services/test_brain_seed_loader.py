@@ -14,7 +14,7 @@ Covers the idempotency guarantee from Gitea #236:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import asyncpg
 import pytest

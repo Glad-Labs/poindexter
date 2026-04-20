@@ -16,7 +16,9 @@ from services.site_config import site_config
 site_config._config["site_url"] = "https://test.example.com"
 site_config._config["company_name"] = "Test Company"
 
-from services.newsletter_service import (
+# E402 — newsletter_service reads site_config at import time, so the
+# seeding above must happen before this import.
+from services.newsletter_service import (  # noqa: E402
     _build_html,
     _get_active_subscribers,
     send_post_newsletter,
