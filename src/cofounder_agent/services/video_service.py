@@ -14,6 +14,7 @@ Usage:
     )
 """
 
+import asyncio
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,17 @@ from services.site_config import site_config
 logger = get_logger(__name__)
 
 VIDEO_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "video"
+
+
+def _write_bytes(path: str, content: bytes) -> None:
+    """Sync file-write helper suitable for ``asyncio.to_thread``.
+
+    Used throughout video generation to write SDXL frames / downloaded
+    MP4 chunks without blocking the event loop (ASYNC230). Binary
+    mode; caller supplies the full bytes payload.
+    """
+    with open(path, "wb") as f:
+        f.write(content)
 
 
 def _video_server_url() -> str:
@@ -133,8 +145,7 @@ async def _generate_images_for_video(
                 )
                 if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
                     img_path = str(output_dir / f"frame_{i:02d}.png")
-                    with open(img_path, "wb") as f:
-                        f.write(resp.content)
+                    await asyncio.to_thread(_write_bytes, img_path, resp.content)
                     image_paths.append(img_path)
                     logger.info("[VIDEO] Generated frame %d/%d (%d bytes)", i + 1, len(prompts), len(resp.content))
                 else:
@@ -181,8 +192,7 @@ async def _extract_images_from_content(content: str) -> list[str]:
                 if resp.status_code == 200 and len(resp.content) > 5000:
                     ext = ".jpg" if "jpeg" in resp.headers.get("content-type", "") else ".png"
                     img_path = str(output_dir / f"post_img_{i:02d}{ext}")
-                    with open(img_path, "wb") as f:
-                        f.write(resp.content)
+                    await asyncio.to_thread(_write_bytes, img_path, resp.content)
                     image_paths.append(img_path)
                     logger.info("[VIDEO] Downloaded post image %d: %s", i + 1, url[:80])
             except Exception as e:
@@ -216,8 +226,7 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
                 )
                 if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
                     img_path = str(output_dir / f"frame_{i:02d}.png")
-                    with open(img_path, "wb") as f:
-                        f.write(resp.content)
+                    await asyncio.to_thread(_write_bytes, img_path, resp.content)
                     image_paths.append(img_path)
                     logger.info("[VIDEO] Generated frame %d/%d (%d bytes)", i + 1, len(scenes), len(resp.content))
                 else:
@@ -322,8 +331,7 @@ async def generate_video_for_post(
             })
 
             if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("video/"):
-                with open(str(output_path), "wb") as f:
-                    f.write(resp.content)
+                await asyncio.to_thread(_write_bytes, str(output_path), resp.content)
 
                 duration = int(resp.headers.get("X-Duration-Seconds", "0"))
                 elapsed = resp.headers.get("X-Elapsed-Seconds", "?")
@@ -505,8 +513,7 @@ async def generate_short_video_for_post(
             })
 
             if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("video/"):
-                with open(str(output_path), "wb") as f:
-                    f.write(resp.content)
+                await asyncio.to_thread(_write_bytes, str(output_path), resp.content)
 
                 duration = int(resp.headers.get("X-Duration-Seconds", "0"))
                 size = output_path.stat().st_size

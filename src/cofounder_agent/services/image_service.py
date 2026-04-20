@@ -39,6 +39,17 @@ from services.logger_config import get_logger
 # uses `logger` from get_logger().
 _import_logger = get_logger(__name__)
 
+
+def _write_image_bytes(path: str, content: bytes) -> None:
+    """Sync helper for ``asyncio.to_thread`` — writes SDXL response to disk.
+
+    SDXL images are 1–5 MB on typical prompts; a blocking ``open()`` at
+    that size would stall the event loop for the duration of the write
+    under concurrent load (ASYNC230).
+    """
+    with open(path, "wb") as f:
+        f.write(content)
+
 try:
     import httpx
 
@@ -899,8 +910,10 @@ class ImageService:
                     timeout=60,
                 )
                 if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
-                    with open(output_path, "wb") as f:
-                        f.write(resp.content)
+                    # Offload blocking file-write to a worker thread —
+                    # SDXL responses can be 1–5 MB, enough to stall the
+                    # event loop under concurrent load (ASYNC230).
+                    await asyncio.to_thread(_write_image_bytes, output_path, resp.content)
                     elapsed = resp.headers.get("X-Elapsed-Seconds", "?")
                     logger.info("SDXL image generated via host server in %ss: %s", elapsed, output_path)
                     return True

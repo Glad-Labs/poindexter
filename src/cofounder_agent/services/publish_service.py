@@ -46,6 +46,14 @@ def _spawn_background(coro, name: str | None = None) -> asyncio.Task:
     return task
 
 
+def _write_text_file(path: str, content: str) -> None:
+    """Small sync file-write suitable for ``asyncio.to_thread``. Avoids
+    blocking the event loop on RSS feed regeneration in publish hot
+    paths (ASYNC230)."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
 class PublishResult:
     """Return value from publish_post_from_task."""
 
@@ -726,8 +734,11 @@ async def publish_post_from_task(
                 async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
                     _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
                     _feed_path = "/tmp/podcast-feed.xml"
-                    with open(_feed_path, "w") as _f:
-                        _f.write(_feed.text)
+                    # Blocking file I/O in async context — push to worker thread
+                    # so the event loop isn't stalled while we write the feed file.
+                    await asyncio.to_thread(
+                        _write_text_file, _feed_path, _feed.text,
+                    )
                     await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
                     logger.info("[R2] Podcast RSS feed regenerated on CDN")
             except Exception as _e:
@@ -742,8 +753,9 @@ async def publish_post_from_task(
                 async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
                     _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
                     _feed_path = "/tmp/video-feed.xml"
-                    with open(_feed_path, "w") as _f:
-                        _f.write(_feed.text)
+                    await asyncio.to_thread(
+                        _write_text_file, _feed_path, _feed.text,
+                    )
                     await upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
                     logger.info("[R2] Video RSS feed regenerated on CDN")
             except Exception as _e:
