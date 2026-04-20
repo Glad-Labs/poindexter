@@ -68,6 +68,8 @@ if [ ! -f .env.local ]; then
         _pg_pw=$(_gen_secret 16)
         _pgadmin_pw=$(_gen_secret 16)
         _woodpecker_secret=$(_gen_secret 24)
+        _glitchtip_db_pw=$(_gen_secret 16)
+        _glitchtip_secret=$(_gen_secret 32)
 
         # Write generated secrets into .env.local
         {
@@ -78,6 +80,8 @@ if [ ! -f .env.local ]; then
             echo "LOCAL_POSTGRES_PASSWORD=${_pg_pw}"
             echo "PGADMIN_PASSWORD=${_pgadmin_pw}"
             echo "WOODPECKER_SECRET=${_woodpecker_secret}"
+            echo "GLITCHTIP_DB_PASSWORD=${_glitchtip_db_pw}"
+            echo "GLITCHTIP_SECRET_KEY=${_glitchtip_secret}"
         } >> .env.local
 
         ok ".env.local created with auto-generated secrets"

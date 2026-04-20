@@ -433,6 +433,10 @@ def _generate_secrets() -> dict[str, str]:
         "local_postgres_password": secrets.token_hex(32),
         "grafana_password": secrets.token_hex(32),
         "pgadmin_password": secrets.token_hex(32),
+        "woodpecker_secret": secrets.token_hex(24),
+        # LGTM+ observability stack
+        "glitchtip_db_password": secrets.token_hex(32),
+        "glitchtip_secret_key": secrets.token_hex(32),
     }
 
 
@@ -460,6 +464,7 @@ def _prompt_defaults() -> dict[str, str]:
     click.echo(f"  Postgres:   {secrets['local_postgres_password'][:12]}...")
     click.echo(f"  Grafana:    {secrets['grafana_password'][:12]}...")
     click.echo(f"  pgAdmin:    {secrets['pgadmin_password'][:12]}...")
+    click.echo(f"  GlitchTip:  {secrets['glitchtip_secret_key'][:12]}...")
     click.echo()
     click.echo(
         "Notification channels (Telegram, Discord) are set via the\n"

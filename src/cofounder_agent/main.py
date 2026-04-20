@@ -432,6 +432,14 @@ except Exception as e:
 # Initialize OpenTelemetry tracing
 setup_telemetry(app)
 
+# Initialize Pyroscope continuous profiling (opt-in via
+# app_settings.enable_pyroscope). LGTM+P stack, GH #75.
+try:
+    from services.profiling import setup_pyroscope
+    setup_pyroscope()
+except Exception as _e:
+    logger.debug(f"[PYROSCOPE] setup skipped: {_e}")
+
 # ===== EXCEPTION HANDLERS =====
 # Register all exception handlers (centralized in utils.exception_handlers)
 register_exception_handlers(app)

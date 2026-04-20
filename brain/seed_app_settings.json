@@ -490,6 +490,43 @@
       "value": "[\"verify_task\", \"generate_content\", \"writer_self_review\", \"quality_evaluation\", \"url_validation\", \"replace_inline_images\", \"source_featured_image\", \"cross_model_qa\", \"generate_seo_metadata\", \"generate_media_scripts\", \"capture_training_data\", \"finalize_task\"]",
       "category": "pipeline",
       "description": "Ordered list of Stage names the content pipeline runs. Operators can disable (drop from list), reorder, or insert third-party stages without a code deploy. Falls back to DEFAULT_STAGE_ORDER if missing."
+    },
+
+    {
+      "key": "enable_tracing",
+      "value": "true",
+      "category": "observability",
+      "description": "Enable OTel tracing. When true, services/telemetry.py wires the worker's FastAPI + LLMProvider-dispatch spans out to otel_exporter_otlp_endpoint."
+    },
+    {
+      "key": "otel_exporter_otlp_endpoint",
+      "value": "http://tempo:4318/v1/traces",
+      "category": "observability",
+      "description": "Where services/telemetry.py exports traces. Default points at the Tempo container in docker-compose.local.yml. Override with 'https://api.honeycomb.io/v1/traces' etc. for managed backends."
+    },
+    {
+      "key": "enable_pyroscope",
+      "value": "false",
+      "category": "observability",
+      "description": "Opt in to continuous profiling via the pyroscope-io Python agent. Agent config (server URL, app name, sample rate) is read at worker startup. Keep false on resource-constrained hosts."
+    },
+    {
+      "key": "pyroscope_server_url",
+      "value": "http://pyroscope:4040",
+      "category": "observability",
+      "description": "URL the Python agent ingests profiles to. Default points at the pyroscope container in docker-compose.local.yml."
+    },
+    {
+      "key": "sentry_dsn",
+      "value": "",
+      "category": "observability",
+      "description": "Sentry-compatible DSN. Leave empty to disable error tracking. Point at a GlitchTip DSN (format: http://<public_key>@glitchtip-web:8000/<project_id>) to route worker exceptions to the self-hosted GlitchTip container."
+    },
+    {
+      "key": "sentry_enabled",
+      "value": "true",
+      "category": "observability",
+      "description": "Master switch for services/sentry_integration.py. Takes sentry_dsn as input; sentry_dsn='' short-circuits this anyway."
     }
   ]
 }

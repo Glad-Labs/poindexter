@@ -1,0 +1,14 @@
+apiVersion: 1
+
+datasources:
+  - name: Pyroscope
+    type: grafana-pyroscope-datasource
+    uid: local-pyroscope
+    access: proxy
+    url: http://pyroscope:4040
+    isDefault: false
+    editable: true
+    jsonData:
+      # Cap auto-query scope so the "Profiles" Drilldown app doesn't
+      # hammer pyroscope for the full retention window on every panel.
+      keepCookies: []
