@@ -225,7 +225,9 @@ class TestBuildCurrent:
         assert "> 4.0" in out
         assert "> 5.0" in out
         assert "> 15.0" in out
-        assert "> 21600" in out
+        # EmbeddingsStale uses the seconds threshold as a Prometheus
+        # duration literal (``[21600s]``), not a bare comparison.
+        assert "[21600s]" in out
 
     async def test_db_overrides_propagate(self):
         pool = _FakePool([
