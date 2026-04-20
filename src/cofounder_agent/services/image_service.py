@@ -74,13 +74,12 @@ except (ImportError, RuntimeError) as e:
     StableDiffusionXLPipeline = None
     _import_logger.warning("Diffusers library not available: %s", e)
 
-# Optional optimization packages
-try:
-    import xformers
+# Optional optimization packages. find_spec instead of try/import —
+# lets us probe availability without holding a reference to the module
+# we never call (ruff F401).
+from importlib.util import find_spec as _find_spec
 
-    XFORMERS_AVAILABLE = True
-except ImportError:
-    XFORMERS_AVAILABLE = False
+XFORMERS_AVAILABLE = _find_spec("xformers") is not None
 
 logger = get_logger(__name__)
 
