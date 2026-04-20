@@ -152,12 +152,12 @@ class TestParameterizedQueryBuilderSelect:
 
     def test_select_invalid_table_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid table"):
             builder.select(["id"], "bad-table")
 
     def test_select_invalid_column_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             builder.select(["bad col"], "users")
 
     def test_select_with_sql_expression_column(self):
@@ -195,12 +195,12 @@ class TestParameterizedQueryBuilderInsert:
 
     def test_insert_invalid_table_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid table"):
             builder.insert("bad-table", {"col": "val"})
 
     def test_insert_invalid_column_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             builder.insert("users", {"bad col": "val"})
 
 
@@ -244,7 +244,7 @@ class TestParameterizedQueryBuilderUpdate:
 
     def test_update_invalid_table_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid table"):
             builder.update(
                 "bad-table",
                 {"col": "val"},
@@ -281,7 +281,7 @@ class TestParameterizedQueryBuilderDelete:
 
     def test_delete_invalid_table_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid table"):
             builder.delete("bad-table", [("id", SQLOperator.EQ, 1)])
 
 
@@ -456,7 +456,7 @@ class TestSelectAdvanced:
 
     def test_select_order_by_invalid_column_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             builder.select(["id"], "tasks", order_by=[("bad col", "ASC")])
 
 
@@ -480,7 +480,7 @@ class TestInsertAdvanced:
 
     def test_insert_returning_invalid_column_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             builder.insert("users", {"name": "x"}, return_columns=["bad-col"])
 
     def test_insert_with_none_value(self):
@@ -497,7 +497,7 @@ class TestInsertAdvanced:
 class TestUpdateAdvanced:
     def test_update_invalid_set_column_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             builder.update(
                 "users",
                 {"bad col": "val"},
@@ -506,7 +506,7 @@ class TestUpdateAdvanced:
 
     def test_update_invalid_where_column_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             builder.update(
                 "users",
                 {"name": "Bob"},
@@ -515,7 +515,7 @@ class TestUpdateAdvanced:
 
     def test_update_returning_invalid_column_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             builder.update(
                 "users",
                 {"name": "x"},
@@ -544,7 +544,7 @@ class TestUpdateAdvanced:
 class TestDeleteAdvanced:
     def test_delete_invalid_where_column_raises(self):
         builder = ParameterizedQueryBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid column"):
             builder.delete("users", [("bad col", SQLOperator.EQ, 1)])
 
     def test_delete_param_order(self):
