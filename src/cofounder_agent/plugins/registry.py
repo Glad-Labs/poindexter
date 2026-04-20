@@ -217,6 +217,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.sync_shared_context", "SyncSharedContextJob"),
         ("jobs", "services.jobs.auto_embed_posts", "AutoEmbedPostsJob"),
         ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
+        ("jobs", "services.jobs.sync_newsletter_subscribers", "SyncNewsletterSubscribersJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
