@@ -74,10 +74,7 @@ class ContentDatabase(DatabaseServiceMixin):
         if isinstance(seo_keywords, list):
             logger.warning("seo_keywords is list, converting to string: %s", seo_keywords)
             seo_keywords = ", ".join(str(kw) for kw in seo_keywords)  # Ensure each item is string
-        elif isinstance(seo_keywords, str):
-            # Already a string, no conversion needed (was causing character splitting)
-            seo_keywords = seo_keywords
-        else:
+        elif not isinstance(seo_keywords, str):
             # Convert other types to string
             seo_keywords = str(seo_keywords) if seo_keywords else ""
 

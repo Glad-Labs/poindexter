@@ -41,7 +41,7 @@ class BlogPublisherAgent:
         """
         logger.info("Initializing BlogPublisherAgent")
         self.database_service = database_service
-        self._db_initialized = False if database_service is None else True
+        self._db_initialized = database_service is not None
 
     async def _ensure_database_service(self):
         """Lazily initialize database service only when needed"""

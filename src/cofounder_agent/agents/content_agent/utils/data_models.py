@@ -42,7 +42,6 @@ class BlogPost(BaseModel):
     research_data: Any | None = None
     raw_content: str | None = None
     body_content_blocks: list[dict[str, Any]] | None = None
-    qa_feedback: list[str] = []
     # Image data
     images: list[ImageDetails] | None = []
     # Publishing data
