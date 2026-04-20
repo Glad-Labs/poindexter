@@ -158,7 +158,6 @@ class StartupManager:
 
         max_attempts = 5  # 1 + 2 + 4 + 8 + 16 = 31s max backoff
         backoff_s = 1.0
-        last_err: Exception | None = None
 
         try:
             from config import get_config
@@ -172,10 +171,8 @@ class StartupManager:
             for attempt in range(1, max_attempts + 1):
                 try:
                     await self.database_service.initialize()
-                    last_err = None
                     break
                 except Exception as e:
-                    last_err = e
                     if attempt == max_attempts:
                         raise
                     logger.warning(

@@ -158,8 +158,6 @@ async def process_content_generation_task(
 
         content_text = result.get("content", "")
         model_used = result.get("model_used", "")
-        metrics = result.get("generate_metrics", {})
-        title = result.get("title", "")
 
         audit_log_bg("generation_complete", "content_router", {
             "model": model_used, "word_count": len(content_text.split()) if content_text else 0,
@@ -234,7 +232,6 @@ async def process_content_generation_task(
         # via PluginConfig; and the stage itself short-circuits when
         # context["generate_featured_image"] is False.
         await _runner.run_all(result, order=["source_featured_image"])
-        featured_image = result.get("featured_image")
 
         try:
             await _gpu_sched.prepare_mode("ollama")
