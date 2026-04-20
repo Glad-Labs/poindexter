@@ -20,7 +20,7 @@ for _p in _HERE.parents:
             sys.path.insert(0, str(_p))
         break
 
-from brain import operator_notifier
+from brain import operator_notifier  # noqa: E402
 
 
 @pytest.fixture

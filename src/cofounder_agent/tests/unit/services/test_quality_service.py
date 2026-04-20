@@ -5,9 +5,18 @@ Tests the deterministic heuristic functions without any database or LLM calls.
 All tests are synchronous — the scoring helpers are pure functions.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
-from services.quality_service import QualityDimensions, UnifiedQualityService
+from services.quality_service import (
+    EvaluationMethod,
+    QualityAssessment,
+    QualityDimensions,
+    UnifiedQualityService,
+    get_content_quality_service,
+    get_quality_service,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -423,16 +432,6 @@ class TestQualityDimensionsAverage:
 # ---------------------------------------------------------------------------
 # evaluate() — public API orchestration
 # ---------------------------------------------------------------------------
-
-
-from unittest.mock import AsyncMock, MagicMock
-
-from services.quality_service import (
-    EvaluationMethod,
-    QualityAssessment,
-    get_content_quality_service,
-    get_quality_service,
-)
 
 
 class TestEvaluatePublicAPI:

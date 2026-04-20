@@ -15,9 +15,12 @@ GET /api/posts/{slug} is complete enough to render a fully-featured blog post.
 """
 
 from datetime import datetime, timezone
+from importlib.util import find_spec
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+HAS_MARKDOWN = find_spec("markdown") is not None
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -122,10 +125,6 @@ SAMPLE_CATEGORY_ROW = {
 # Unit tests: convert_markdown_to_html
 # ---------------------------------------------------------------------------
 
-
-from importlib.util import find_spec
-
-HAS_MARKDOWN = find_spec("markdown") is not None
 
 _skip_no_markdown = pytest.mark.skipif(
     not HAS_MARKDOWN, reason="python-markdown not installed in test env"
