@@ -275,17 +275,12 @@ class TestTransitionWithValidation:
             transition_with_validation(TaskStatus.PENDING, TaskStatus.PUBLISHED)
 
     def test_error_includes_current_and_target_status(self):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="cancelled.*pending"):
             transition_with_validation(TaskStatus.CANCELLED, TaskStatus.PENDING)
-        msg = str(exc_info.value)
-        assert "cancelled" in msg
-        assert "pending" in msg
 
     def test_error_includes_allowed_transitions(self):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="in_progress|Allowed"):
             transition_with_validation(TaskStatus.PENDING, TaskStatus.PUBLISHED)
-        msg = str(exc_info.value)
-        assert "in_progress" in msg or "Allowed" in msg
 
 
 # ---------------------------------------------------------------------------
