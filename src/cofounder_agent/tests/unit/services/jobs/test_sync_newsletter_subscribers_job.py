@@ -117,7 +117,7 @@ class TestRun:
             result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 0
-        assert "no DATABASE_URL" in result.detail
+        assert "no database_url" in result.detail
 
     @pytest.mark.asyncio
     async def test_no_new_rows_returns_ok_zero(self):

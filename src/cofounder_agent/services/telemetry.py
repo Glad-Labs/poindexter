@@ -79,11 +79,16 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         # Enable capturing LLM message content in traces
         os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
 
-        # Create a resource to identify the service
+        # Create a resource to identify the service.
+        # site_config.get falls back to the ENVIRONMENT env var when the
+        # DB row is absent, so this preserves the old default path while
+        # letting operators override per-deploy from app_settings.
         resource = Resource.create(
             attributes={
                 "service.name": service_name,
-                "deployment.environment": os.getenv("ENVIRONMENT", "development"),
+                "deployment.environment": site_config.get(
+                    "environment", "development",
+                ) or "development",
             }
         )
 

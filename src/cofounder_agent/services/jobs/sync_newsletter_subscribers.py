@@ -6,9 +6,10 @@ from the cloud ``newsletter_subscribers`` table into the local brain
 DB, so subscriber queries that power the newsletter service stay
 local + fast.
 
-Requires ``DATABASE_URL`` env var to locate the cloud DB (we don't
-DI it into the job because the cloud pool may not be the pool the
-scheduler has). Absent that, skips cleanly.
+Requires a ``database_url`` setting (DB row, or ``DATABASE_URL`` env
+fallback via site_config) to locate the cloud DB — we don't DI it
+into the job because the cloud pool may not be the pool the scheduler
+has. Absent that, skips cleanly.
 
 ## Config (``plugin.job.sync_newsletter_subscribers``)
 
@@ -18,7 +19,6 @@ scheduler has). Absent that, skips cleanly.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from plugins.job import JobResult
@@ -83,11 +83,12 @@ class SyncNewsletterSubscribersJob:
     idempotent = True  # Watermark + ON CONFLICT DO UPDATE
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        cloud_url = os.getenv("DATABASE_URL") or ""
+        from services.site_config import site_config
+        cloud_url = site_config.get("database_url", "") or ""
         if not cloud_url:
             return JobResult(
                 ok=True,
-                detail="no DATABASE_URL — skipping",
+                detail="no database_url configured — skipping",
                 changes_made=0,
             )
 

@@ -252,15 +252,14 @@ Output ONLY valid JSON (no markdown, no explanation):
 
         # Log the decision for future learning
         try:
-            # Need a pool — get it from site_config or pass it in
-            # For now, log via the decision service if a pool is available
+            # Need a pool — get it from site_config or pass it in.
+            # site_config.get already falls back to the DATABASE_URL env
+            # var (the only preserved bootstrap credential per DB-first
+            # config policy), so no manual os.getenv needed here.
             import asyncpg
 
             from services.decision_service import log_decision
             _dsn = site_config.get("database_url", "")
-            if not _dsn:
-                import os
-                _dsn = os.getenv("DATABASE_URL", "")
             if _dsn:
                 _conn = await asyncpg.connect(_dsn)
                 try:
