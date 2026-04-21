@@ -59,6 +59,80 @@ class MultiModelResult:
             lines.append(f"  Validator: {self.validation.critical_count} critical, {self.validation.warning_count} warnings")
         return "\n".join(lines)
 
+    def format_feedback_text(self, max_chars: int = 4000) -> str:
+        """Human-readable critique text for the approval UI (GH-86).
+
+        This is what lands in pipeline_versions.qa_feedback /
+        content_tasks.qa_feedback so approvers can see *why* the post
+        scored Q85 vs Q88 instead of just the number. Format is
+        one reviewer per line with score, pass/fail, and the full
+        feedback string from that reviewer. Capped at ``max_chars``
+        so we don't blow the DB column on runaway reviewer output.
+        """
+        header = (
+            f"Final score: {self.final_score:.0f}/100 "
+            f"({'APPROVED' if self.approved else 'REJECTED'})"
+        )
+        lines = [header]
+        for r in self.reviews:
+            status = "pass" if r.approved else "FAIL"
+            fb = (r.feedback or "").strip() or "(no feedback)"
+            lines.append(
+                f"- {r.reviewer} [{r.provider}] {r.score:.0f}/100 {status}: {fb}"
+            )
+        if self.validation and self.validation.issues:
+            for issue in self.validation.issues[:10]:
+                lines.append(
+                    f"- validator[{issue.severity}] {issue.category}: {issue.description}"
+                )
+        text = "\n".join(lines)
+        if len(text) > max_chars:
+            text = text[: max_chars - 20].rstrip() + "\n...(truncated)"
+        return text
+
+
+def format_qa_feedback_from_reviews(
+    qa_reviews: list[dict],
+    final_score: float | None = None,
+    approved: bool | None = None,
+    max_chars: int = 4000,
+) -> str:
+    """Format qa_reviews (list[dict]) into reviewer-facing text (GH-86).
+
+    Mirrors ``MultiModelResult.format_feedback_text`` for callers that
+    only hold the serialized review dicts (e.g. content_router_service
+    stores them on ``result["qa_reviews"]``).
+    """
+    if not qa_reviews:
+        return ""
+    lines: list[str] = []
+    if final_score is not None:
+        status_str = (
+            "APPROVED" if approved
+            else "REJECTED" if approved is False
+            else ""
+        )
+        suffix = f" ({status_str})" if status_str else ""
+        lines.append(f"Final score: {float(final_score):.0f}/100{suffix}")
+    for r in qa_reviews:
+        if not isinstance(r, dict):
+            continue
+        reviewer = r.get("reviewer", "unknown")
+        provider = r.get("provider", "?")
+        try:
+            score = float(r.get("score", 0))
+        except (TypeError, ValueError):
+            score = 0.0
+        status = "pass" if r.get("approved") else "FAIL"
+        fb = (r.get("feedback") or "").strip() or "(no feedback)"
+        lines.append(
+            f"- {reviewer} [{provider}] {score:.0f}/100 {status}: {fb}"
+        )
+    text = "\n".join(lines)
+    if len(text) > max_chars:
+        text = text[: max_chars - 20].rstrip() + "\n...(truncated)"
+    return text
+
 
 TOPIC_DELIVERY_PROMPT = """You are a strict editor checking whether an article
 delivers on its topic. A reader clicking this article expects what the topic

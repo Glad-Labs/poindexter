@@ -2218,6 +2218,81 @@ async def _stage_finalize_task(
     seo_description = _normalize_text(seo_description) if seo_description else seo_description
     content_text = _normalize_text(content_text)
 
+    # --------------------------------------------------------------
+    # Category persistence (GH-86): the base content_tasks.category
+    # column was NULL on 7/10 pending posts because callers pass
+    # category=None and result["category"] may not be populated by
+    # topic-proposal stages. Read any pre-existing category from the
+    # stored task_metadata as a final fallback before defaulting.
+    # --------------------------------------------------------------
+    _stored_category = None
+    try:
+        _existing = await database_service.get_task(task_id)
+        if _existing:
+            _stored_category = _existing.get("category")
+            if not _stored_category:
+                _meta = _existing.get("task_metadata") or {}
+                if isinstance(_meta, dict):
+                    _stored_category = _meta.get("category")
+    except Exception as _cat_err:
+        logger.debug("[FINALIZE] get_task for category fallback failed: %s", _cat_err)
+    final_category = (
+        result.get("category")
+        or category
+        or _stored_category
+        or "technology"
+    )
+    result["category"] = final_category
+
+    # --------------------------------------------------------------
+    # Excerpt generation (GH-86): without a real excerpt the front-end
+    # falls back to content[:N], which on our posts means the
+    # markdown "What You'll Learn" bullet list shows up in index
+    # cards and social previews. Generate a 1–2 sentence teaser from
+    # the first real prose paragraph.
+    # --------------------------------------------------------------
+    excerpt_text = ""
+    try:
+        from services.excerpt_generator import generate_excerpt
+        from services.site_config import site_config as _sc_excerpt
+        _target = _sc_excerpt.get_int("excerpt_target_length", 200)
+        _minlen = _sc_excerpt.get_int("excerpt_min_length", 140)
+        _maxlen = _sc_excerpt.get_int("excerpt_max_length", 240)
+        excerpt_text = generate_excerpt(
+            title=result.get("title") or seo_title or topic,
+            content=content_text,
+            target_length=_target,
+            min_length=_minlen,
+            max_length=_maxlen,
+        )
+    except Exception as _ex_err:
+        logger.warning("[FINALIZE] excerpt generation failed (non-fatal): %s", _ex_err)
+        excerpt_text = ""
+    # Safety net: if the generator returned nothing but we have a
+    # usable seo_description, fall back to that rather than leaving
+    # NULL — anything is better than an empty index card.
+    if not excerpt_text and seo_description:
+        excerpt_text = seo_description[:240].strip()
+    result["excerpt"] = excerpt_text
+
+    # --------------------------------------------------------------
+    # QA feedback text (GH-86): reviewers need the critique text, not
+    # just the score. Format the per-reviewer feedback that the QA
+    # stage already produced (result["qa_reviews"]) into a single
+    # readable block and persist it to content_tasks.qa_feedback.
+    # --------------------------------------------------------------
+    qa_feedback_text = ""
+    try:
+        from services.multi_model_qa import format_qa_feedback_from_reviews
+        qa_feedback_text = format_qa_feedback_from_reviews(
+            qa_reviews=result.get("qa_reviews") or [],
+            final_score=result.get("qa_final_score"),
+            approved=None,  # approval decision is on status, not reviews
+        )
+    except Exception as _qa_err:
+        logger.warning("[FINALIZE] qa_feedback formatting failed (non-fatal): %s", _qa_err)
+        qa_feedback_text = ""
+
     # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
     # quality_score: prefer the multi-model QA score (already promoted into
     # result["quality_score"] when QA ran). Fall back to the early pattern eval
@@ -2237,6 +2312,8 @@ async def _stage_finalize_task(
             # "Auto-cancelled: stuck in_progress > 90m" (#198 follow-up).
             "error_message": None,
             "quality_score": final_quality_score,
+            "qa_feedback": qa_feedback_text or None,
+            "excerpt": excerpt_text or None,
             "title": result.get("title") or seo_title or topic,
             "featured_image_url": result.get("featured_image_url"),
             "seo_title": seo_title,
@@ -2244,7 +2321,7 @@ async def _stage_finalize_task(
             "seo_keywords": ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or ""),
             "style": style,
             "tone": tone,
-            "category": result.get("category") or category,
+            "category": final_category,
             "target_audience": target_audience or "General",
             # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
             "task_metadata": {
@@ -2255,13 +2332,15 @@ async def _stage_finalize_task(
                 "featured_image_photographer": result.get("featured_image_photographer"),
                 "featured_image_source": result.get("featured_image_source"),
                 "content": content_text,
+                "excerpt": excerpt_text,
+                "qa_feedback": qa_feedback_text,
                 "seo_title": seo_title,
                 "seo_description": seo_description,
                 "seo_keywords": seo_keywords,
                 "topic": topic,
                 "style": style,
                 "tone": tone,
-                "category": result.get("category") or category,
+                "category": final_category,
                 "target_audience": target_audience or "General",
                 "post_id": result.get("post_id"),
                 "quality_score": final_quality_score,

@@ -1603,6 +1603,207 @@ class TestStageFinalizeTask:
         updates = db.update_task.await_args.kwargs["updates"]
         assert updates["target_audience"] == "General"
 
+    # ---------------------------------------------------------------
+    # GH-86: qa_feedback, excerpt, category persistence regressions
+    # ---------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_qa_feedback_persisted_to_base_column_gh86(self):
+        """qa_feedback text must reach content_tasks.qa_feedback (GH-86)."""
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        db.get_task = AsyncMock(return_value=None)
+        qr = _make_quality_result()
+        prose = (
+            "FastAPI offers automatic OpenAPI schema generation from type "
+            "hints. Dependency injection is built in, which simplifies "
+            "testing a lot compared to other frameworks."
+        )
+        result = {
+            "stages": {},
+            "qa_final_score": 88.0,
+            "qa_reviews": [
+                {
+                    "reviewer": "programmatic_validator",
+                    "score": 100.0,
+                    "approved": True,
+                    "feedback": "No issues found",
+                    "provider": "programmatic",
+                },
+                {
+                    "reviewer": "ollama_critic",
+                    "score": 88.0,
+                    "approved": True,
+                    "feedback": "Well-structured with good examples.",
+                    "provider": "ollama",
+                },
+            ],
+        }
+
+        await _stage_finalize_task(
+            db, "t1", "FastAPI Deep Dive", "s", "t", prose, qr,
+            "seo_title", "seo_desc", [], "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        # Top-level column — this is what approvers query
+        assert updates["qa_feedback"]
+        assert "ollama_critic" in updates["qa_feedback"]
+        assert "Well-structured" in updates["qa_feedback"]
+        assert "88/100" in updates["qa_feedback"]
+        # Also in task_metadata for JSONB consumers
+        assert updates["task_metadata"]["qa_feedback"]
+        assert "ollama_critic" in updates["task_metadata"]["qa_feedback"]
+
+    @pytest.mark.asyncio
+    async def test_qa_feedback_none_when_no_reviews(self):
+        """Empty qa_reviews means qa_feedback column is NULL, not empty string."""
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        db.get_task = AsyncMock(return_value=None)
+        qr = _make_quality_result()
+        result = {"stages": {}, "qa_reviews": []}
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content with enough words here please", qr,
+            "seo_title", "seo_desc", [], "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        # None, not empty string — preserves NULL semantics
+        assert updates["qa_feedback"] is None
+
+    @pytest.mark.asyncio
+    async def test_excerpt_generated_and_persisted_gh86(self):
+        """excerpt column must be populated from the writer stage (GH-86)."""
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        db.get_task = AsyncMock(return_value=None)
+        qr = _make_quality_result()
+        # Real failure-mode content from GH-86: opens with "What You'll Learn"
+        content = (
+            "## What You'll Learn\n\n"
+            "- How Deezer deploys ML\n"
+            "- Why this matters for creators\n\n"
+            "Deezer announced this week that it has begun tagging "
+            "AI-generated music in its catalog, moving ahead of Spotify "
+            "and Apple Music on the disclosure question.\n"
+        )
+        result = {"stages": {}}
+
+        await _stage_finalize_task(
+            db, "t1", "Deezer's AI Tagging", "s", "t", content, qr,
+            "seo_title", "seo_desc", [], "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        # Column populated with real prose, not the bullet list
+        assert updates["excerpt"]
+        assert "How Deezer deploys ML" not in updates["excerpt"]
+        assert "Deezer announced" in updates["excerpt"] or "disclosure" in updates["excerpt"]
+        # Also in task_metadata
+        assert updates["task_metadata"]["excerpt"] == updates["excerpt"]
+        # Excerpt must not be the title
+        assert updates["excerpt"].strip().lower() != "deezer's ai tagging"
+        # Reasonable length — GH-86 target
+        assert 50 <= len(updates["excerpt"]) <= 250
+
+    @pytest.mark.asyncio
+    async def test_excerpt_falls_back_to_seo_description_when_generator_empty(self):
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        db.get_task = AsyncMock(return_value=None)
+        qr = _make_quality_result()
+        # Content is only headers — generator returns fallback
+        result = {"stages": {}}
+
+        await _stage_finalize_task(
+            db, "t1", "Topic", "s", "t", "# Only A Header\n\n", qr,
+            "seo_title",
+            "A decent SEO description that can substitute for an excerpt.",
+            [], "tech", "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        # Either generator produced something usable OR SEO description was used
+        assert updates["excerpt"] is not None
+        assert updates["excerpt"] != ""
+
+    @pytest.mark.asyncio
+    async def test_category_falls_back_to_stored_task_metadata_gh86(self):
+        """When result+arg are None, read category from existing task_metadata (GH-86)."""
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        # Simulate a task whose base category is NULL but task_metadata has it
+        db.get_task = AsyncMock(return_value={
+            "task_id": "t1",
+            "category": None,
+            "task_metadata": {"category": "cybersecurity"},
+        })
+        qr = _make_quality_result()
+        result = {"stages": {}}  # No category in result
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content words here please", qr,
+            "seo_title", "seo_desc", [], None, "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        assert updates["category"] == "cybersecurity"
+        assert updates["task_metadata"]["category"] == "cybersecurity"
+
+    @pytest.mark.asyncio
+    async def test_category_defaults_to_technology_when_all_sources_missing(self):
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        db.get_task = AsyncMock(return_value=None)
+        qr = _make_quality_result()
+        result = {"stages": {}}
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content words here", qr,
+            "seo_title", "seo_desc", [], None, "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        # Never NULL — defaults to a sensible anchor category
+        assert updates["category"] == "technology"
+
+    @pytest.mark.asyncio
+    async def test_category_result_value_beats_stored_fallback(self):
+        """result['category'] from the pipeline wins over any stored fallback."""
+        from services.content_router_service import _stage_finalize_task
+
+        db = MagicMock()
+        db.update_task = AsyncMock()
+        db.get_task = AsyncMock(return_value={
+            "task_id": "t1",
+            "category": None,
+            "task_metadata": {"category": "cybersecurity"},
+        })
+        qr = _make_quality_result()
+        result = {"stages": {}, "category": "ai"}
+
+        await _stage_finalize_task(
+            db, "t1", "topic", "s", "t", "content words here", qr,
+            "seo_title", "seo_desc", [], None, "devs", result,
+        )
+
+        updates = db.update_task.await_args.kwargs["updates"]
+        assert updates["category"] == "ai"
+
 
 # ---------------------------------------------------------------------------
 # _stage_verify_task — error path (existing test file only covers happy path)
