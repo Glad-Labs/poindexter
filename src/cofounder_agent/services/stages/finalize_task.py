@@ -178,6 +178,53 @@ class FinalizeTaskStage:
             "task_metadata": task_metadata,
         }
 
+        # GH-90 AC #3: before writing the terminal ``awaiting_approval`` status
+        # use a status-guarded update to verify the row is still in a live
+        # state. If the sweeper (or a manual cancel) already flipped it to
+        # ``failed``/``cancelled``/``rejected`` the guard returns None and
+        # we abort — don't resurrect a cancelled task with generated
+        # content, don't emit downstream webhooks that would publish a
+        # ghost post. The stage result is logged as ``ok=False`` so the
+        # runner halts (halts_on_failure=True).
+        guard_result = None
+        if hasattr(database_service, "update_task_status_guarded"):
+            try:
+                guard_result = await database_service.update_task_status_guarded(
+                    task_id=task_id,
+                    new_status="awaiting_approval",
+                    allowed_from=("in_progress", "pending"),
+                )
+            except Exception as _guard_err:
+                logger.warning(
+                    "[GH-90] finalize_task status-guard raised — falling back "
+                    "to update_task: %s", _guard_err,
+                )
+                guard_result = "fallback"  # proceed with legacy update
+        else:
+            guard_result = "fallback"  # database_service doesn't expose the guard
+
+        if guard_result is None:
+            logger.error(
+                "[GH-90] finalize_task ABORTED: task %s is no longer in "
+                "in_progress/pending — sweeper or operator cancelled it "
+                "mid-stage. Content + image + QA results will NOT be "
+                "persisted to the approval queue.",
+                task_id,
+            )
+            return StageResult(
+                ok=False,
+                detail=(
+                    "aborted: task is no longer in pending/in_progress — "
+                    "race with stale-task sweeper (GH-90)"
+                ),
+                continue_workflow=False,
+                metrics={
+                    "final_quality_score": final_quality_score,
+                    "word_count": len(content_text.split()),
+                    "aborted_by_status_guard": True,
+                },
+            )
+
         await database_service.update_task(task_id=task_id, updates=updates)
 
         return StageResult(

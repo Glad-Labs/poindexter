@@ -1360,3 +1360,196 @@ class TestGetValidationFailures:
 
         assert captured["params"][0] == "t-1"
         assert captured["params"][1] == 25
+
+
+# ---------------------------------------------------------------------------
+# heartbeat_task (GH-90)
+# ---------------------------------------------------------------------------
+
+
+class TestHeartbeatTask:
+    """GH-90 AC #2: worker stamps updated_at during long stages."""
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_updates_live_task(self):
+        """A task in in_progress gets updated_at=NOW() and returns True."""
+        conn = MagicMock()
+        # UPDATE ... RETURNING task_id returns the row when alive
+        conn.fetchrow = AsyncMock(return_value={"task_id": "t-live"})
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.heartbeat_task("t-live")
+        assert result is True
+        # Verify the SQL included a status guard on pending/in_progress
+        # so a terminal row cannot be resurrected by a heartbeat.
+        call_args = conn.fetchrow.await_args
+        sql = call_args.args[0]
+        assert "UPDATE pipeline_tasks" in sql
+        assert "status IN ('pending', 'in_progress')" in sql
+        assert "updated_at = NOW()" in sql
+        assert call_args.args[1] == "t-live"
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_returns_false_on_terminal_row(self):
+        """A task that already flipped to failed/cancelled returns False —
+        signal to the caller to abort downstream work."""
+        conn = MagicMock()
+        # UPDATE guard fails → RETURNING yields no row → fetchrow is None.
+        conn.fetchrow = AsyncMock(return_value=None)
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.heartbeat_task("t-cancelled")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_swallows_db_errors(self):
+        """A DB outage during heartbeat MUST NOT kill the worker —
+        heartbeat is a best-effort freshness signal, not a correctness
+        requirement."""
+        pool = MagicMock()
+        pool.acquire = MagicMock(side_effect=RuntimeError("conn pool closed"))
+        db = TasksDatabase(pool=pool)
+        # Should not raise.
+        result = await db.heartbeat_task("t-whatever")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_returns_false_for_empty_task_id(self):
+        """Defensive: empty task_id short-circuits to False."""
+        db = _make_db()
+        assert await db.heartbeat_task("") is False
+
+
+# ---------------------------------------------------------------------------
+# update_task_status_guarded (GH-90)
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateTaskStatusGuarded:
+    """GH-90 AC #3: terminal writes refuse to overwrite a cancelled row."""
+
+    @pytest.mark.asyncio
+    async def test_guard_allows_transition_from_in_progress(self):
+        """in_progress → awaiting_approval is allowed — returns 'in_progress'."""
+        conn = MagicMock()
+        # First fetchval returns the current status ('in_progress').
+        # Second fetchval returns task_id on successful UPDATE.
+        conn.fetchval = AsyncMock(side_effect=["in_progress", "t-1"])
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        prev = await db.update_task_status_guarded(
+            "t-1", "awaiting_approval",
+            allowed_from=("in_progress", "pending"),
+        )
+        assert prev == "in_progress"
+        assert conn.fetchval.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_guard_blocks_transition_from_failed(self):
+        """failed → awaiting_approval is BLOCKED — returns None, no UPDATE
+        executed. This is the core GH-90 fix: the sweeper already flipped
+        the row to failed, and the worker's in-flight finalize must NOT
+        resurrect it with generated content."""
+        conn = MagicMock()
+        # Row is already in terminal state.
+        conn.fetchval = AsyncMock(return_value="failed")
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        prev = await db.update_task_status_guarded(
+            "t-ghost", "awaiting_approval",
+            allowed_from=("in_progress", "pending"),
+        )
+        assert prev is None
+        # Only ONE fetchval happened — the FOR UPDATE lock read.
+        # No UPDATE attempted, no second fetchval.
+        assert conn.fetchval.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_guard_returns_none_when_task_missing(self):
+        """A missing task_id (prev=None) returns None — no UPDATE."""
+        conn = MagicMock()
+        conn.fetchval = AsyncMock(return_value=None)
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        result = await db.update_task_status_guarded(
+            "t-nope", "awaiting_approval"
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_guard_rejects_non_whitelisted_fields(self):
+        """Ad-hoc field names are silently dropped (not SQL-interpolated).
+        Only whitelisted columns can be atomically updated."""
+        conn = MagicMock()
+        conn.fetchval = AsyncMock(side_effect=["in_progress", "t-1"])
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        prev = await db.update_task_status_guarded(
+            "t-1", "awaiting_approval",
+            arbitrary_field="injection attempt; DROP TABLE tasks;",
+        )
+        # Guard passes on the status check, but the arbitrary_field is not
+        # in the whitelist so it's silently dropped. No exception raised.
+        assert prev == "in_progress"

@@ -546,9 +546,25 @@ class TaskExecutor:
                         target_audience=task.get("target_audience", "General"),
                     )
 
-                result = await asyncio.wait_for(
-                    _run_content_pipeline(), timeout=TASK_TIMEOUT_SECONDS
+                # GH-90 AC #2: run a background heartbeat for the entire duration
+                # of the content-pipeline execution. The heartbeat stamps
+                # pipeline_tasks.updated_at = NOW() every N seconds so the
+                # stale-task sweeper can tell the worker is still alive during
+                # long writer / QA / image-gen stages (no single DB write
+                # otherwise happens for 60-180s at a time). The heartbeat task
+                # is always cancelled in the finally block.
+                heartbeat_task = asyncio.create_task(
+                    self._heartbeat_loop(task_id),
+                    name=f"heartbeat:{task_id}",
                 )
+                try:
+                    result = await asyncio.wait_for(
+                        _run_content_pipeline(), timeout=TASK_TIMEOUT_SECONDS
+                    )
+                finally:
+                    heartbeat_task.cancel()
+                    with suppress(asyncio.CancelledError, Exception):
+                        await heartbeat_task
                 # Content router sets status directly — mark as complete
                 result = result if isinstance(result, dict) else {}
                 result.setdefault("status", "awaiting_approval")
@@ -986,6 +1002,64 @@ class TaskExecutor:
         except Exception:
             pass
         return {}
+
+    async def _heartbeat_loop(self, task_id: str) -> None:
+        """Background heartbeat — stamp ``updated_at = NOW()`` periodically.
+
+        GH-90 AC #2: runs as a background asyncio.Task for the duration of
+        a single task's pipeline execution. Cadence is configurable via
+        ``worker_heartbeat_interval_seconds`` (default 30s). Stops
+        gracefully when cancelled or when the heartbeat UPDATE returns 0
+        rows (meaning the task has already transitioned to a terminal
+        state — sweeper flipped it, human cancelled it, etc.).
+
+        The loop never raises — a dead heartbeat must NOT bring down the
+        whole pipeline. Failures are swallowed and logged at debug.
+        """
+        if not task_id or not self.database_service:
+            return
+        # Default is intentionally generous (30s). Operators tune via the
+        # app_settings key; we re-read once per task to avoid mid-task
+        # churn on an in-flight heartbeat. Parsed as float so tests (and
+        # operators with sub-second needs) can use e.g. "0.5".
+        try:
+            interval_s = float(await self._get_setting(
+                "worker_heartbeat_interval_seconds", "30"
+            ))
+        except Exception:
+            interval_s = 30.0
+        if interval_s <= 0:
+            # Disabled — operator set interval to 0 or negative.
+            return
+        try:
+            while True:
+                await asyncio.sleep(interval_s)
+                try:
+                    still_alive = await self.database_service.heartbeat_task(task_id)
+                except Exception as e:
+                    logger.debug(
+                        "[heartbeat:%s] heartbeat error (non-fatal): %s",
+                        task_id, e,
+                    )
+                    continue
+                if not still_alive:
+                    # Row is already in a terminal state (failed, cancelled,
+                    # rejected, awaiting_approval, published). No point
+                    # continuing to heartbeat — the pipeline will finish
+                    # its current stage and then the status-guarded
+                    # terminal writes will refuse to overwrite the
+                    # terminal state.
+                    logger.warning(
+                        "[heartbeat:%s] task is no longer in pending/in_progress — "
+                        "heartbeat loop exiting; worker will detect cancellation "
+                        "at next status-guarded write (GH-90)",
+                        task_id,
+                    )
+                    return
+        except asyncio.CancelledError:
+            # Normal shutdown path — _process_single_task cancels us in
+            # its finally block.
+            raise
 
     async def _sweep_stale_tasks(self) -> None:
         """Reset tasks stuck in processing state back to pending."""

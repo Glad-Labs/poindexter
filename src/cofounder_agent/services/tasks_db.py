@@ -609,6 +609,162 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error("Failed to update task %s: %s", task_id, e, exc_info=True)
             return None
 
+    @log_query_performance(operation="heartbeat_task", category="task_write")
+    async def heartbeat_task(self, task_id: str) -> bool:
+        """Stamp ``pipeline_tasks.updated_at = NOW()`` without changing status.
+
+        GH-90 AC #2: the stale-task sweeper cancels any ``in_progress`` row
+        whose ``updated_at`` is older than ``stale_task_timeout_minutes``.
+        During long writer/QA/image stages the worker would otherwise sit
+        on a single row for hours without touching ``updated_at``, so the
+        sweeper couldn't tell the difference between "actively processing"
+        and "worker died mid-stage". This method is called on a timer by
+        :class:`TaskExecutor` to keep the row fresh.
+
+        The heartbeat explicitly does NOT change status — any row already
+        in a terminal state (``failed``, ``cancelled``, ``rejected``,
+        ``awaiting_approval``, ``published``) is left untouched. Returns
+        True if a row was updated, False if the task does not exist or is
+        already in a terminal state (signal to the caller that downstream
+        work should abort).
+
+        Args:
+            task_id: Task ID to heartbeat.
+
+        Returns:
+            True if updated_at was refreshed, False if the task is already
+            terminal or was not found.
+        """
+        if not task_id:
+            return False
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    UPDATE pipeline_tasks
+                       SET updated_at = NOW()
+                     WHERE task_id = $1
+                       AND status IN ('pending', 'in_progress')
+                 RETURNING task_id
+                    """,
+                    str(task_id),
+                )
+                return row is not None
+        except Exception as e:
+            # Heartbeat failure must NOT kill the worker. Log at debug so
+            # a transient DB blip doesn't spam WARN, but surface the
+            # reason for test assertions + debugging.
+            logger.debug("heartbeat_task(%s) failed: %s", task_id, e)
+            return False
+
+    @log_query_performance(operation="update_task_status_guarded", category="task_write")
+    async def update_task_status_guarded(
+        self,
+        task_id: str,
+        new_status: str,
+        allowed_from: tuple[str, ...] = ("in_progress", "pending"),
+        **fields: Any,
+    ) -> str | None:
+        """Update status only if the current status is one of ``allowed_from``.
+
+        GH-90 AC #3: before a terminal write (e.g. ``awaiting_approval``),
+        the worker must confirm the row hasn't been flipped out from
+        under it by the stale-task sweeper. This method wraps the UPDATE
+        in a ``WHERE status = ANY(...)`` guard and returns the previous
+        status via ``RETURNING``. A ``None`` return value means the
+        guard blocked the write — the caller must abort downstream work
+        (don't publish a post, don't charge for GPU, etc.).
+
+        Additional columns can be set via ``fields`` — they're applied
+        atomically with the status change. Only simple scalar values are
+        supported (int, str, None); pass complex payloads through
+        ``update_task`` instead.
+
+        Args:
+            task_id: Task ID.
+            new_status: Status to set if the guard passes.
+            allowed_from: Tuple of acceptable current statuses.
+            **fields: Additional scalar columns to update atomically.
+
+        Returns:
+            The previous status string if the update succeeded, else None
+            (row was cancelled, rejected, failed, or doesn't exist).
+        """
+        if not task_id:
+            return None
+
+        # Whitelist the column names we allow. Anything outside this set is
+        # rejected rather than silently interpolated — avoids SQL-injection
+        # surface if a caller ever shoves user input into **fields.
+        _ALLOWED = {
+            "error_message", "message", "percentage", "stage",
+            "completed_at", "started_at", "model_used", "quality_score",
+        }
+        extra_sets: list[str] = []
+        extra_vals: list[Any] = []
+        for k, v in fields.items():
+            if k not in _ALLOWED:
+                logger.warning(
+                    "update_task_status_guarded: ignoring non-whitelisted field %r",
+                    k,
+                )
+                continue
+            extra_sets.append(f"{k} = ${len(extra_vals) + 4}")
+            extra_vals.append(v)
+
+        extra_clause = (", " + ", ".join(extra_sets)) if extra_sets else ""
+        sql = f"""
+            UPDATE pipeline_tasks
+               SET status = $2,
+                   updated_at = NOW()
+                   {extra_clause}
+             WHERE task_id = $1
+               AND status = ANY($3::text[])
+         RETURNING (SELECT status FROM pipeline_tasks WHERE task_id = $1) AS prev_status
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                # Read prev_status first so we can return the value that
+                # existed BEFORE the update. If we read it from RETURNING
+                # we'd get the new value. Use a transaction to make the
+                # read + write atomic.
+                async with conn.transaction():
+                    prev = await conn.fetchval(
+                        "SELECT status FROM pipeline_tasks WHERE task_id = $1 FOR UPDATE",
+                        str(task_id),
+                    )
+                    if prev is None:
+                        return None
+                    if prev not in allowed_from:
+                        logger.warning(
+                            "[GH-90] Terminal-write blocked: task=%s current_status=%r "
+                            "not in allowed=%s — sweeper likely raced worker",
+                            task_id, prev, list(allowed_from),
+                        )
+                        return None
+                    params: list[Any] = [str(task_id), new_status, list(allowed_from), *extra_vals]
+                    updated = await conn.fetchval(
+                        """
+                        UPDATE pipeline_tasks
+                           SET status = $2,
+                               updated_at = NOW()
+                               """ + extra_clause + """
+                         WHERE task_id = $1
+                           AND status = ANY($3::text[])
+                     RETURNING task_id
+                        """,
+                        *params,
+                    )
+                    if updated is None:
+                        return None
+                    return prev
+        except Exception as e:
+            logger.error(
+                "update_task_status_guarded(%s → %s) failed: %s",
+                task_id, new_status, e, exc_info=True,
+            )
+            return None
+
     async def get_tasks_paginated(
         self,
         offset: int = 0,

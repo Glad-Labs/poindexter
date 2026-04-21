@@ -118,6 +118,19 @@ TASKS_CREATED = Counter(
     "Tasks created (lifetime counter — scrape-only, resets on restart)",
 )
 
+# GH-90: surface stale-sweeper cancellations so operators notice when the
+# race-mitigation kicks in a lot (suggests worker heartbeats are missing
+# or stale_task_timeout_minutes is tuned too aggressively). The brain
+# daemon writes one pipeline_events row per cancelled task; on each
+# scrape we re-read the cumulative event count into this Gauge so the
+# value is persistent across worker restarts (a raw prometheus Counter
+# would reset to 0 every time the worker process cycles).
+AUTO_CANCELLED_TOTAL = Gauge(
+    "poindexter_pipeline_auto_cancelled_total",
+    "Cumulative count of tasks auto-cancelled by the stale-task sweeper "
+    "(read from pipeline_events where event_type='task.auto_cancelled')",
+)
+
 DAILY_SPEND_USD = Gauge(
     "poindexter_daily_spend_usd",
     "Total LLM spend today in USD (rolling 24h from cost_logs)",
@@ -230,6 +243,20 @@ async def refresh_metrics(pool: Any, ollama_url: str) -> None:
         APPROVAL_QUEUE_LENGTH.set(int(queue_n or 0))
     except Exception as e:
         logger.debug("refresh_metrics: approval queue query failed: %s", e)
+
+    # GH-90: cumulative count of sweeper auto-cancels. Read from
+    # pipeline_events so the value survives worker restarts (a raw
+    # Counter would reset to 0 every deploy, making rate() useless on
+    # short windows).
+    try:
+        async with pool.acquire() as conn:
+            cancelled_n = await conn.fetchval(
+                "SELECT COUNT(*) FROM pipeline_events "
+                "WHERE event_type = 'task.auto_cancelled'"
+            )
+        AUTO_CANCELLED_TOTAL.set(int(cancelled_n or 0))
+    except Exception as e:
+        logger.debug("refresh_metrics: auto_cancelled count query failed: %s", e)
 
     # Spend.
     try:

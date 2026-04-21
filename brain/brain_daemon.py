@@ -596,27 +596,69 @@ async def process_queue(pool, max_items: int = 5):
         logger.error("[BRAIN] Queue processing failed: %s", e, exc_info=True)
 
 
+async def _bump_auto_cancelled_metric(pool, count: int) -> None:
+    """Record sweeper-auto-cancel events so Prometheus can track the rate.
+
+    GH-90 AC #4: expose ``pipeline_auto_cancelled_total`` as an operator
+    metric. The brain daemon is standalone (no prometheus_client import),
+    so it writes events to ``pipeline_events`` and the worker's
+    ``metrics_exporter`` counts them on scrape. This keeps the signal
+    persistent across process restarts — a scrape-only counter in
+    brain-daemon memory would reset to zero on every restart.
+    """
+    if count <= 0:
+        return
+    for _ in range(count):
+        await pool.execute(
+            """
+            INSERT INTO pipeline_events (event_type, payload)
+            VALUES ('task.auto_cancelled', '{"reason": "stale_task_sweeper"}'::jsonb)
+            """
+        )
+
+
 async def auto_remediate(pool):
     """Detect and fix pipeline problems automatically. Runs every cycle."""
     try:
         actions_taken = []
 
-        # 1. Auto-cancel tasks stuck in_progress beyond stale_task_timeout_minutes (default 90 min)
-        timeout_row = await pool.fetchrow(
-            "SELECT value FROM app_settings WHERE key = 'stale_task_timeout_minutes'"
-        )
-        stale_minutes = int(timeout_row["value"]) if timeout_row else 90
+        # 1. Auto-cancel tasks stuck in_progress beyond stale_task_timeout_minutes
+        #    (default 180m + brain_auto_cancel_grace_minutes extra safety).
+        #
+        #    GH-90: the sweeper MUST guard on updated_at < NOW() - interval, not
+        #    just started_at, or we race the worker. The worker heartbeats
+        #    updated_at every worker_heartbeat_interval_seconds during long
+        #    stages, so a fresh updated_at is proof the worker is actively
+        #    processing the row and the sweeper must back off.
+        stale_minutes = await _setting_int(pool, "stale_task_timeout_minutes", 180)
+        grace_minutes = await _setting_int(pool, "brain_auto_cancel_grace_minutes", 10)
+        cutoff_minutes = stale_minutes + grace_minutes
         stuck = await pool.fetch(f"""
             UPDATE pipeline_tasks SET status = 'failed',
                 error_message = 'Auto-cancelled: stuck in_progress > {stale_minutes}m',
                 updated_at = NOW()
             WHERE status = 'in_progress'
-              AND COALESCE(started_at, updated_at) < NOW() - INTERVAL '{stale_minutes} minutes'
+              AND updated_at < NOW() - INTERVAL '{cutoff_minutes} minutes'
+              AND COALESCE(started_at, updated_at) < NOW() - INTERVAL '{cutoff_minutes} minutes'
             RETURNING task_id, topic
         """)
         if stuck:
             topics = [r["topic"][:40] for r in stuck]
+            task_ids = [r["task_id"] for r in stuck]
             actions_taken.append(f"cancelled {len(stuck)} stuck task(s): {', '.join(topics)}")
+            # GH-90 AC #4: warn-level log with task_id + reason, one row per task,
+            # so operators can grep/alert on individual IDs instead of a single
+            # summary line. Also bump the Prometheus metric so the dashboard
+            # surfaces the rate of sweeper cancellations over time.
+            for _tid, _topic in zip(task_ids, topics):
+                logger.warning(
+                    "[BRAIN][auto-cancel] task_id=%s topic=%r reason='stuck in_progress > %dm'",
+                    _tid, _topic, stale_minutes,
+                )
+            try:
+                await _bump_auto_cancelled_metric(pool, len(stuck))
+            except Exception as _metric_err:
+                logger.debug("[BRAIN] auto_cancelled metric bump failed: %s", _metric_err)
 
         # 2. Auto-expire awaiting_approval tasks older than 7 days
         # #198: auto-reject stale approval window tunable via app_settings.

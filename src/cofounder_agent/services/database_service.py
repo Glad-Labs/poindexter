@@ -323,6 +323,22 @@ class DatabaseService:
             stale_threshold_minutes=timeout_minutes, max_retries=max_retries
         )
 
+    async def heartbeat_task(self, task_id: str) -> bool:
+        """Delegate to tasks module — stamp updated_at during long stages (GH-90)."""
+        return await self.tasks.heartbeat_task(task_id)
+
+    async def update_task_status_guarded(
+        self,
+        task_id: str,
+        new_status: str,
+        allowed_from: tuple = ("in_progress", "pending"),
+        **fields,
+    ):
+        """Delegate to tasks module — status-guarded terminal write (GH-90)."""
+        return await self.tasks.update_task_status_guarded(
+            task_id, new_status, allowed_from=allowed_from, **fields
+        )
+
     # CONTENT OPERATIONS
     async def create_post(self, post_data: dict) -> dict:
         """Delegate to content module."""
