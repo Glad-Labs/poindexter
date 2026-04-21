@@ -278,6 +278,7 @@ def _load_fact_overrides_sync() -> list[tuple[str, str, str]]:
 # Legacy alias — kept so nothing breaks if referenced externally
 KNOWN_WRONG_HARDWARE_PATTERNS: list[tuple[str, str]] = []
 
+
 # Filler phrases the writer falls back on when it has nothing specific to
 # say. Every post I audited on 2026-04-11 had at least one of these. They
 # add nothing and signal "AI-generated" to any attentive reader. Warning
@@ -360,17 +361,327 @@ def _check_patterns(
     return issues
 
 
-def validate_content(title: str, content: str, topic: str = "") -> ValidationResult:
+# ---------------------------------------------------------------------------
+# Hallucinated library / API reference detection (GH-83 part b)
+# ---------------------------------------------------------------------------
+#
+# Real cases caught manually on 2026-04-21:
+#   * `schedule_callback(event)` described as a "central asyncio function" —
+#     not a real asyncio API (real: loop.call_soon / call_later / call_at).
+#   * "explore CadQuery to see how asyncio is used" in an ai-ml post —
+#     CadQuery is a 3D CAD library, topically orthogonal to asyncio.
+#
+# Strategy (low false positives by design):
+#   1. Extract only identifiers that LOOK like library/API references:
+#      backtick-quoted (`foo.bar`, `baz(args)`) or dotted CamelCase calls.
+#   2. Compare against a known-good list: Python 3.12 stdlib + top-500
+#      PyPI packages + common Ollama models. All three live as data files
+#      under brain/hallucination-check/ — update in one place, no redeploy.
+#   3. For library names in the post that ARE recognized, optionally check
+#      topic coherence against brain/hallucination-check/library-topics.json.
+#
+# Files are loaded lazily + cached in-module; the caches are ephemeral
+# (no TTL) because the lists are static data, not DB state.
+from pathlib import Path as _Path
+
+# content_validator.py lives at src/cofounder_agent/services/ — repo root is
+# parents[3]. The data files sit under brain/hallucination-check at the root.
+_HC_DIR = _Path(__file__).resolve().parents[3] / "brain" / "hallucination-check"
+
+_stdlib_names_cache: set[str] | None = None
+_pypi_names_cache: set[str] | None = None
+_ollama_names_cache: set[str] | None = None
+_library_topics_cache: dict[str, list[str]] | None = None
+
+
+def _normalize_pkg(name: str) -> str:
+    """Normalize PyPI-style names: lowercase, dashes == underscores."""
+    return name.strip().lower().replace("_", "-")
+
+
+def _load_known_list(filename: str) -> set[str]:
+    """Load a simple newline-delimited list file from brain/hallucination-check.
+
+    Ignores blank lines and `#` comments. Normalizes each entry.
+    Returns an empty set if the file is missing — missing data should
+    degrade to "don't flag anything" rather than crash the pipeline.
+    """
+    path = _HC_DIR / filename
+    if not path.is_file():
+        logger.warning("[VALIDATOR] hallucination-check list missing: %s", path)
+        return set()
+    names: set[str] = set()
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                names.add(_normalize_pkg(line))
+    except Exception as exc:  # pragma: no cover — best-effort file read
+        logger.warning("[VALIDATOR] failed to load %s: %s", path, exc)
+    return names
+
+
+def _get_stdlib_names() -> set[str]:
+    global _stdlib_names_cache
+    if _stdlib_names_cache is None:
+        _stdlib_names_cache = _load_known_list("stdlib-python-312.txt")
+    return _stdlib_names_cache
+
+
+def _get_pypi_names() -> set[str]:
+    global _pypi_names_cache
+    if _pypi_names_cache is None:
+        _pypi_names_cache = _load_known_list("pypi-top-500.txt")
+    return _pypi_names_cache
+
+
+def _get_ollama_names() -> set[str]:
+    global _ollama_names_cache
+    if _ollama_names_cache is None:
+        _ollama_names_cache = _load_known_list("ollama-models.txt")
+    return _ollama_names_cache
+
+
+def _get_library_topics() -> dict[str, list[str]]:
+    """Load library -> expected-topics map. Empty dict on failure."""
+    global _library_topics_cache
+    if _library_topics_cache is not None:
+        return _library_topics_cache
+    import json
+    path = _HC_DIR / "library-topics.json"
+    result: dict[str, list[str]] = {}
+    if not path.is_file():
+        logger.warning("[VALIDATOR] library-topics.json missing: %s", path)
+        _library_topics_cache = result
+        return result
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        for k, v in data.items():
+            if k.startswith("_") or not isinstance(v, list):
+                continue
+            result[_normalize_pkg(k)] = [str(t).strip().lower() for t in v if str(t).strip()]
+    except Exception as exc:  # pragma: no cover
+        logger.warning("[VALIDATOR] failed to parse %s: %s", path, exc)
+    _library_topics_cache = result
+    return result
+
+
+# Reference-shaped identifiers. Only flag tokens that LOOK like an API call
+# or a library reference; bare prose capitalized words are out of scope.
+#   (a) Backtick-quoted identifier with a call or attribute access:
+#       `foo()`, `foo.bar`, `Foo.bar()`, `foo.bar.baz(args)`
+#   (b) Backtick-quoted module/library-looking bare token (no special chars):
+#       `asyncio`, `cadquery` — included because real cases use plain
+#       backticks around the lib name.
+#   (c) Un-backticked "Package.method(...)" in narrative prose — e.g.
+#       "explore CadQuery to see..." (bare capitalized product name
+#       followed by one of "module" / "library" / "package" / "framework").
+# Group 1 of each regex is the raw identifier (may be dotted).
+_HALLUCINATED_REF_PATTERNS = [
+    # Backtick-wrapped dotted call or attribute: `foo.bar`, `foo.bar()`
+    re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)(?:\(\s*[^`]*\))?`"),
+    # Backtick-wrapped bare function call: `schedule_callback(event)`
+    re.compile(r"`([A-Za-z_][A-Za-z0-9_]{2,})\(\s*[^`]*\)`"),
+    # Backtick-wrapped bare module name (lowercase, includes - or _): `asyncio`
+    re.compile(r"`([a-z][a-z0-9_\-]{2,})`"),
+    # Narrative prose: "explore CadQuery to see..." / "the Foo library..."
+    # Requires the word to be capitalized AND be followed by an English
+    # hint that it's a code artifact. This narrows false positives from
+    # prose proper nouns (which rarely carry those hints).
+    re.compile(
+        r"\b([A-Z][A-Za-z0-9]{2,}(?:\.[A-Za-z][A-Za-z0-9]*)?)\s+"
+        r"(?:library|package|module|framework|SDK|API)\b"
+    ),
+    re.compile(
+        r"(?:explor(?:e|ing|ed)|tr(?:y|ying|ied)|us(?:e|ing|ed)"
+        r"|consider(?:ing)?|adopt(?:ing|ed)?|install(?:ing|ed)?"
+        r"|import(?:ing|ed)?|leverag(?:e|ing|ed)|check(?:ing)?\s+out)"
+        r"\s+`?([A-Z][A-Za-z0-9]{2,})`?"
+    ),
+]
+
+# Identifiers we NEVER flag (pipeline internals, super-common Python builtins,
+# common variable names that happen to look dotted, HTTP verbs, test keywords).
+# Normalized to lowercase + dashes for matching against _normalize_pkg().
+_HALLUCINATION_WHITELIST = {
+    # Ambient project-local / generic names we don't want pattern-matching on
+    "glad-labs", "poindexter", "ollama",
+    # Python generic builtins and dunders that may show up in backticks
+    "true", "false", "none", "self", "cls", "args", "kwargs",
+    "print", "len", "range", "list", "dict", "set", "tuple", "str", "int",
+    "float", "bool", "bytes", "type", "object", "super", "all", "any",
+    "min", "max", "sum", "abs", "open", "map", "filter", "zip", "enumerate",
+    "sorted", "reversed", "iter", "next", "input", "hash", "id", "repr",
+    # HTTP verbs often shown in backticks in API writeups
+    "get", "post", "put", "delete", "patch", "head", "options",
+    # Test-framework keywords and common method stubs
+    "assert", "yield", "async", "await", "lambda", "return",
+    # Extremely common instance/variable names — "loop.call_soon" has root
+    # "loop", which is an asyncio event loop instance, not a library. The
+    # method name downstream (call_soon) is what matters; flagging "loop"
+    # as a library generates high-noise false positives on any asyncio post.
+    "loop", "app", "db", "client", "session", "config", "ctx", "context",
+    "response", "request", "req", "res", "conn", "connection", "cursor",
+    "user", "users", "data", "item", "items", "result", "results",
+    "obj", "value", "values", "key", "keys", "event", "events", "error",
+    "logger", "log", "logs", "state", "store", "router", "handler",
+    "service", "services", "manager", "factory", "builder", "engine",
+    "queue", "cache", "pool", "worker", "task", "tasks", "job", "jobs",
+    "message", "messages", "payload", "header", "headers", "body", "field",
+    "model", "models", "schema", "schemas", "view", "template",
+    # Python style shorthands often used in examples
+    "np", "pd", "plt", "tf", "torch",
+}
+
+
+def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
+    """Pull potential library/API references from the text.
+
+    Returns list of (matched_raw, normalized_root) tuples. The "root" is
+    the leading segment of a dotted name (e.g. 'asyncio.run' -> 'asyncio')
+    because that is what we compare against the stdlib / PyPI lists.
+
+    Deduplicated by the pair to avoid spamming issues for the same token.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[tuple[str, str]] = []
+    clean = _strip_html(text or "")
+    for pattern in _HALLUCINATED_REF_PATTERNS:
+        for m in pattern.finditer(clean):
+            raw = m.group(1)
+            if not raw:
+                continue
+            root = raw.split(".", 1)[0]
+            norm = _normalize_pkg(root)
+            if not norm or norm in _HALLUCINATION_WHITELIST:
+                continue
+            # Skip tokens that are just a single short letter (likely noise)
+            if len(norm) < 3:
+                continue
+            key = (raw, norm)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(key)
+    return out
+
+
+def _is_known_reference(norm_name: str) -> bool:
+    """True if `norm_name` matches stdlib, top-500 PyPI, or Ollama models."""
+    if norm_name in _get_stdlib_names():
+        return True
+    if norm_name in _get_pypi_names():
+        return True
+    if norm_name in _get_ollama_names():
+        return True
+    # Strip common Ollama suffixes (":7b", ":instruct", etc.) before final check
+    base = norm_name.split(":", 1)[0]
+    if base != norm_name and base in _get_ollama_names():
+        return True
+    return False
+
+
+def _detect_hallucinated_references(
+    title: str,
+    content: str,
+    topic: str,
+    tags: list[str] | None = None,
+) -> list[ValidationIssue]:
+    """Flag library/API references that don't match any known source list.
+
+    Also flags topic mismatches for libraries that ARE known (e.g. CadQuery
+    in an ai-ml post). Both are emitted as `hallucinated_reference` warnings;
+    the downstream severity-promotion step in validate_content() decides
+    whether to upgrade any of them to critical.
+    """
+    issues: list[ValidationIssue] = []
+    candidates = _extract_library_candidates(f"{title or ''}\n{content or ''}")
+    if not candidates:
+        return issues
+
+    lib_topics = _get_library_topics()
+    post_context_tokens: set[str] = set()
+    for tag in tags or []:
+        if tag:
+            post_context_tokens.add(str(tag).strip().lower())
+    # Fall back to topic + title words when tags aren't provided so we
+    # still have *some* signal for topic coherence.
+    for word in re.split(r"[\s,\-_/]+", (topic or "").lower()):
+        word = word.strip()
+        if word and len(word) > 2:
+            post_context_tokens.add(word)
+    for word in re.split(r"[\s,\-_/]+", (title or "").lower()):
+        word = word.strip()
+        if word and len(word) > 2:
+            post_context_tokens.add(word)
+
+    for raw, norm in candidates:
+        if not _is_known_reference(norm):
+            # Hallucinated reference — name doesn't match any known source.
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="hallucinated_reference",
+                description=(
+                    f"Likely hallucinated library/API reference: '{raw}'. "
+                    f"Not found in Python stdlib, top-500 PyPI packages, "
+                    f"or known Ollama models."
+                ),
+                matched_text=raw[:100],
+            ))
+            continue
+        # Known reference — check topic coherence when we have a mapping.
+        expected = lib_topics.get(norm)
+        if not expected or not post_context_tokens:
+            continue
+        # A mismatch when: the library's expected topics share NO token
+        # with the post's context (tags + topic + title words).
+        overlap = False
+        for topic_tag in expected:
+            topic_tokens = {t for t in re.split(r"[\s\-_]+", topic_tag.lower()) if t}
+            if topic_tokens & post_context_tokens or topic_tag in post_context_tokens:
+                overlap = True
+                break
+        if overlap:
+            continue
+        issues.append(ValidationIssue(
+            severity="warning",
+            category="hallucinated_reference",
+            description=(
+                f"Library '{raw}' is off-topic for this post "
+                f"(expected topics: {', '.join(expected)}). "
+                "Possible semantic-embedding drift during research."
+            ),
+            matched_text=raw[:100],
+        ))
+    return issues
+
+
+def validate_content(
+    title: str,
+    content: str,
+    topic: str = "",
+    tags: list[str] | None = None,
+) -> ValidationResult:
     """
     Validate content against hard quality rules.
 
     Returns ValidationResult with pass/fail and list of issues.
     Content fails if ANY critical issue is found.
+
+    tags (GH-83 part b): optional list of the post's topic tags. When
+    provided, the hallucinated-reference rule uses them to detect
+    topic-mismatched library mentions (e.g. recommending CadQuery from
+    an ai-ml post). Omitting tags keeps the rule working but with a
+    weaker fallback based on the topic/title text.
     """
     issues: list[ValidationIssue] = []
     title = title or ""
     content = content or ""
     topic = topic or ""
+    tags = list(tags) if tags else []
     full_text = f"{title}\n{content}"
 
     # 1. Check for fabricated people
@@ -423,6 +734,14 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
         full_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
         "Unlinked citation — possible hallucinated reference: '{matched}'"
     ))
+
+    # 5c. Hallucinated library/API reference detection (GH-83 part b).
+    # Catches `schedule_callback(event)`-style fake asyncio functions and
+    # topic-orthogonal library mentions ("explore CadQuery..." in ai-ml).
+    # Emitted as warnings; the per-rule threshold promotion below escalates
+    # to critical if the same category fires > N times (same plumbing as
+    # #91's unlinked_citation path).
+    issues.extend(_detect_hallucinated_references(title, content, topic, tags))
 
     # 6. Check for brand contradictions (promoting paid cloud APIs)
     issues.extend(_check_patterns(
