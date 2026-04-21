@@ -265,13 +265,13 @@ services:
       # when /api/memory/* is called from the worker (#198).
       OLLAMA_URL: "http://host.docker.internal:11434"
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
-      DEFAULT_OLLAMA_MODEL: ${DEFAULT_OLLAMA_MODEL:-auto}
-      # No Telegram tokens — OpenClaw owns Telegram/Discord connections
-      SITE_NAME: ${SITE_NAME:-Glad Labs}
-      SITE_DOMAIN: ${SITE_DOMAIN:-gladlabs.io}
-      SITE_URL: ${SITE_URL:-https://www.gladlabs.io}
+      # No Telegram tokens — OpenClaw owns Telegram/Discord connections.
+      # SITE_NAME / SITE_DOMAIN / SITE_URL / COMPANY_NAME / DEFAULT_OLLAMA_MODEL
+      # are DB-first settings in app_settings (site_name, site_domain, site_url,
+      # company_name, default_ollama_model). GH-93 audit 2026-04-21 confirmed
+      # no code reads these env vars; removed from the worker env to keep the
+      # "no env-var drift, app_settings is the single source" contract clean.
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8002}
-      COMPANY_NAME: ${COMPANY_NAME:-Glad Labs}
       HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
       API_TOKEN: ${API_TOKEN:?Run 'poindexter setup' — API_TOKEN is generated in bootstrap.toml}
       # Symmetric key for decrypting is_secret=true rows in app_settings.

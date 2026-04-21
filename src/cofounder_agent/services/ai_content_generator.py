@@ -622,7 +622,7 @@ class AIContentGenerator:
 
             # Model selection priority:
             # 1. UI-selected model (preferred_model from task request)
-            # 2. OllamaClient's configured model (from DEFAULT_OLLAMA_MODEL env var)
+            # 2. OllamaClient's configured model (from app_settings.default_ollama_model)
             # 3. Dynamic discovery from installed models (sorted by size)
             # No hardcoded model names — if nothing works, falls through to cloud providers.
             if preferred_model:
