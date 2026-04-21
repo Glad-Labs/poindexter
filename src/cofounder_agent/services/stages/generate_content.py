@@ -113,6 +113,8 @@ class GenerateContentStage:
         # built context, then RAG-from-pgvector.
         research_context = await self._collect_research_context(
             database_service, task_id, topic,
+            source_tags=context.get("tags") or [],
+            source_category=context.get("category") or "",
         )
 
         # Surface the research corpus on the context so the downstream
@@ -288,8 +290,15 @@ class GenerateContentStage:
         database_service: Any,
         task_id: str,
         topic: str,
+        source_tags: list[str] | None = None,
+        source_category: str | None = None,
     ) -> str:
-        """Layer caller-provided + ResearchService + RAG contexts into one blob."""
+        """Layer caller-provided + ResearchService + RAG contexts into one blob.
+
+        GH-88: ``source_tags`` / ``source_category`` are threaded through to
+        the RAG step so :mod:`services.research_context` can apply the
+        coherence filter and reject off-topic internal-link candidates.
+        """
         research_context = ""
 
         # 1. Anything the API caller attached to the task.
@@ -323,7 +332,15 @@ class GenerateContentStage:
         # 3. RAG context via pgvector similarity search.
         try:
             from services.research_context import build_rag_context
-            rag = await build_rag_context(database_service, topic)
+            # GH-88: pass source_tags + source_category so the coherence
+            # filter can reject off-topic candidates (e.g. CadQuery pinned
+            # as "related" on an asyncio or AI-engineering post).
+            rag = await build_rag_context(
+                database_service,
+                topic,
+                source_tags=source_tags or [],
+                source_category=source_category or "",
+            )
             if rag:
                 research_context = (
                     f"{research_context}\n\n{rag}" if research_context else rag

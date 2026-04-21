@@ -67,9 +67,18 @@ class GenerateSeoMetadataStage:
         raw_keywords = seo_assets.get("meta_keywords") or (tags or [])
         keywords = _normalize_keywords(raw_keywords)
 
-        # Title/description are size-capped to fit standard meta limits
-        # (60 / 160 chars). Legacy used slicing; preserve that.
-        seo_title = (seo_assets.get("seo_title") or topic)[:60]
+        # Title: derive from the canonical title with word-boundary truncation
+        # (GH-85). Legacy seo_title[:60] mid-word chop removed.
+        from utils.title_utils import derive_seo_title
+        canonical_title = (
+            context.get("canonical_title")
+            or context.get("title")
+            or seo_assets.get("seo_title")
+            or topic
+        )
+        seo_title = derive_seo_title(canonical_title, max_len=60)
+        # Description still uses legacy slice but at 160 chars this is
+        # less likely to mid-word-cut; tracked for later refinement.
         seo_description = (seo_assets.get("meta_description") or topic)[:160]
 
         stages = context.setdefault("stages", {})

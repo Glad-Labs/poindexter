@@ -279,13 +279,19 @@ async def _resolve_one_placeholder(
     used_image_ids: set[str],
 ) -> str:
     """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it."""
+    from services.alt_text import sanitize_alt_text
+    from services.site_config import site_config as _sc_alt
     search_query = desc.strip() if desc else topic
     alt_text = desc.strip() if desc else f"{topic} illustration"
-    # Strip the `||source:style||` suffix the Image Decision Agent embeds
-    # in placeholder bodies (#240). It's a planner hint, not prose.
-    alt_text = re.sub(r"\s*\|\|[^|]*\|\|\s*", "", alt_text)
-    alt_text = alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:150]
+    # Normalize structural artefacts of the placeholder format.
+    alt_text = alt_text.replace("[", "").replace("]", "").replace("\n", " ")
     alt_text = re.sub(r"^(?:IMAGE|FIGURE|Image|Figure)\s*[-:]\s*", "", alt_text).strip()
+    # GH-84: strip ``||provider:hint||`` pipeline tokens + enforce a
+    # DB-configurable budget with word-boundary truncation (no mid-word chop).
+    alt_text = sanitize_alt_text(
+        alt_text,
+        budget=_sc_alt.get_int("alt_text_budget", 120),
+    )
 
     # Strategy 1: SDXL.
     img_url = await _try_sdxl(num, search_query, topic)
