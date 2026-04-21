@@ -74,33 +74,49 @@ async def _upload_json(key: str, data: str, content_type: str = "application/jso
 
 
 async def _fetch_published_posts(pool, include_content: bool = False) -> list[dict]:
-    """Fetch all published posts, newest first."""
-    content_col = ", content" if include_content else ""
+    """Fetch all published posts, newest first. Includes tag slugs aggregated
+    from the post_tags junction so the static export can populate
+    posts.tags[] (drives frontend /tag/[slug] pages — gitea#267)."""
+    content_col = ", p.content" if include_content else ""
     async with pool.acquire() as conn:
         rows = await conn.fetch(f"""
-            SELECT id, title, slug, excerpt, featured_image_url, cover_image_url,
-                   author_id, category_id, status, seo_title, seo_description,
-                   seo_keywords, published_at, created_at, updated_at,
-                   distributed_at
+            SELECT p.id, p.title, p.slug, p.excerpt, p.featured_image_url, p.cover_image_url,
+                   p.author_id, p.category_id, p.status, p.seo_title, p.seo_description,
+                   p.seo_keywords, p.published_at, p.created_at, p.updated_at,
+                   p.distributed_at,
+                   COALESCE(
+                       ARRAY_AGG(t.slug ORDER BY t.slug) FILTER (WHERE t.slug IS NOT NULL),
+                       ARRAY[]::text[]
+                   ) AS tags
                    {content_col}
-            FROM posts
-            WHERE status = 'published'
-              AND (published_at IS NULL OR published_at <= NOW())
-            ORDER BY published_at DESC NULLS LAST
+            FROM posts p
+            LEFT JOIN post_tags pt ON pt.post_id = p.id
+            LEFT JOIN tags t ON t.id = pt.tag_id
+            WHERE p.status = 'published'
+              AND (p.published_at IS NULL OR p.published_at <= NOW())
+            GROUP BY p.id
+            ORDER BY p.published_at DESC NULLS LAST
         """)
     return [dict(r) for r in rows]
 
 
 async def _fetch_post_by_slug(pool, slug: str) -> dict | None:
-    """Fetch a single post by slug with full content."""
+    """Fetch a single post by slug with full content + tag slugs (gitea#267)."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT id, title, slug, content, excerpt, featured_image_url,
-                   cover_image_url, author_id, category_id, status,
-                   seo_title, seo_description, seo_keywords,
-                   published_at, created_at, updated_at
-            FROM posts
-            WHERE slug = $1 AND status = 'published'
+            SELECT p.id, p.title, p.slug, p.content, p.excerpt, p.featured_image_url,
+                   p.cover_image_url, p.author_id, p.category_id, p.status,
+                   p.seo_title, p.seo_description, p.seo_keywords,
+                   p.published_at, p.created_at, p.updated_at,
+                   COALESCE(
+                       ARRAY_AGG(t.slug ORDER BY t.slug) FILTER (WHERE t.slug IS NOT NULL),
+                       ARRAY[]::text[]
+                   ) AS tags
+            FROM posts p
+            LEFT JOIN post_tags pt ON pt.post_id = p.id
+            LEFT JOIN tags t ON t.id = pt.tag_id
+            WHERE p.slug = $1 AND p.status = 'published'
+            GROUP BY p.id
         """, slug)
     return dict(row) if row else None
 
@@ -136,6 +152,7 @@ def _post_summary(post: dict) -> dict:
         "seo_title": post.get("seo_title"),
         "seo_description": post.get("seo_description"),
         "seo_keywords": post.get("seo_keywords"),
+        "tags": list(post.get("tags") or []),
         "published_at": post["published_at"].isoformat() if post.get("published_at") else None,
         "created_at": post["created_at"].isoformat() if post.get("created_at") else None,
         "updated_at": post["updated_at"].isoformat() if post.get("updated_at") else None,

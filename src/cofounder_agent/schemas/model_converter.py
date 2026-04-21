@@ -181,6 +181,19 @@ class ModelConverter:
                 if "constraint_compliance" in data["task_metadata"]:
                     data["constraint_compliance"] = data["task_metadata"]["constraint_compliance"]
 
+        # Promote `tags` from metadata / task_metadata JSONB to top-level so
+        # executor + pipeline stages see submitted tags (gitea#270). Request
+        # routes store tags in `metadata` JSONB; auto-populate here. Prefer
+        # metadata over task_metadata (that's where task_routes writes).
+        if not data.get("tags"):
+            for container in ("metadata", "task_metadata"):
+                blob = data.get(container)
+                if isinstance(blob, dict):
+                    t = blob.get("tags")
+                    if isinstance(t, list) and t:
+                        data["tags"] = list(t)
+                        break
+
         # Extract publish fields from result dict to top level (#954)
         # The publish endpoint stores post_id, post_slug, published_url inside the result JSON.
         # Pull them up so UnifiedTaskResponse can expose them as top-level fields.
