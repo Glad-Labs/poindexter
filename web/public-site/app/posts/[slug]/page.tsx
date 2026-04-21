@@ -11,7 +11,6 @@ import {
 import { generateBlogPostingSchema } from '../../../lib/structured-data';
 import { GiscusWrapper } from '../../../components/GiscusWrapper';
 import AdUnit from '../../../components/AdUnit';
-import { ViewTracker } from '../../../components/ViewTracker';
 import sanitizeHtml from 'sanitize-html';
 import {
   buildMetaDescription,
@@ -450,9 +449,6 @@ export default async function PostPage({
             </div>
           </div>
         )}
-
-        {/* View tracking beacon */}
-        <ViewTracker slug={post.slug} />
 
         {/* AdSense — Bottom of article */}
         <div className="px-4 sm:px-6 lg:px-8 py-8">

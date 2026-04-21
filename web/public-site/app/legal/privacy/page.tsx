@@ -25,7 +25,7 @@ export default function PrivacyPolicy() {
     {
       question: 'How long do you keep my data?',
       answer:
-        'ViewTracker page views are kept indefinitely (no IP stored). Sentry error data: 90 days. Server logs: 90 days. If you consent to Google Analytics: 14 months. If you consent to AdSense: up to 30 months.',
+        'Sentry error data: 90 days. Server logs: 90 days. If you consent to Google Analytics: 14 months. If you consent to AdSense: up to 30 months.',
     },
     {
       question: 'What third parties have access to my data?',
@@ -93,9 +93,8 @@ export default function PrivacyPolicy() {
           fraud prevention, and legal compliance
         </li>
         <li>
-          <strong>Legitimate Interest (Article 6(1)(f)):</strong> First-party
-          analytics (ViewTracker), error monitoring (Sentry), and site
-          optimization
+          <strong>Legitimate Interest (Article 6(1)(f)):</strong> Error
+          monitoring (Sentry) and site optimization
         </li>
       </ul>
 
@@ -104,13 +103,6 @@ export default function PrivacyPolicy() {
 
       <h3>3.1 Always-Active Data Collection</h3>
       <ul>
-        <li>
-          <strong>ViewTracker (First-Party Analytics):</strong> Our own
-          lightweight analytics system records page path, post slug, referrer
-          URL, and user-agent string for each page view. No IP addresses are
-          stored. This data stays in our database and is never shared with
-          third parties. Legal basis: Legitimate Interest (Article 6(1)(f)).
-        </li>
         <li>
           <strong>Sentry (Error Monitoring):</strong> Sentry captures error
           data including IP addresses, browser information, and stack traces
@@ -242,11 +234,6 @@ export default function PrivacyPolicy() {
       <h2>9. Data Retention</h2>
       <p>We keep data only as long as necessary:</p>
       <ul>
-        <li>
-          <strong>ViewTracker Data:</strong> Page view analytics (path, slug,
-          referrer, user-agent) are retained indefinitely in aggregated form.
-          No IP addresses are stored.
-        </li>
         <li>
           <strong>Google Analytics Data:</strong> If consented, retained for up
           to 14 months by Google.

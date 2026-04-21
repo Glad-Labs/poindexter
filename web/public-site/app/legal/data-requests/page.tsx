@@ -49,7 +49,6 @@ const RIGHTS = [
 ] as const;
 
 const DATA_CATEGORIES = [
-  { value: 'analytics', label: 'First-party analytics (ViewTracker page views)' },
   { value: 'google-analytics', label: 'Google Analytics data (if consented)' },
   { value: 'advertising', label: 'Advertising data / Google AdSense (if consented)' },
   { value: 'errors', label: 'Error monitoring data (Sentry)' },
