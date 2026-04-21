@@ -184,7 +184,7 @@ class OllamaClient:
         4. First installed match from a quality-ranked preference list
         5. Largest non-embedding model by file size
 
-        Set PREFERRED_OLLAMA_MODEL in .env.local to pin your best model.
+        Set PREFERRED_OLLAMA_MODEL in the environment (or via app_settings) to pin your best model.
         """
         model = model or self.model
         if model != "auto":

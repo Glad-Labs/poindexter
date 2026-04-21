@@ -1,18 +1,24 @@
 """
 Configuration Management for Poindexter (the AI cofounder pipeline).
 
-This module provides centralized configuration loading and access for the entire application.
+DB connection is resolved via :mod:`brain.bootstrap` — the same priority
+chain used everywhere else in the codebase:
+
+  1. Explicit value passed by the caller
+  2. ``~/.poindexter/bootstrap.toml``
+  3. ``DATABASE_URL`` / ``LOCAL_DATABASE_URL`` / ``POINDEXTER_MEMORY_DSN`` env
+
+All other settings are read straight from the process environment — no
+``.env`` / ``.env.local`` ``dotenv`` loader, no hidden config files. Docker
+compose / systemd / shell ``export`` are the expected injection paths. The
+runtime settings that used to live in ``.env`` (prompt templates,
+thresholds, per-model routing, etc.) live in the ``app_settings`` DB table
+and are read via :mod:`services.site_config` after the pool is up.
 """
 
 import os
 import secrets
 from dataclasses import dataclass
-from typing import Optional
-
-from dotenv import load_dotenv
-
-# Track if environment has been loaded to avoid duplicate calls
-_ENV_LOADED = False
 
 
 @dataclass
@@ -42,58 +48,6 @@ class Config:
     # Application settings — version is read from APP_VERSION env var or pyproject.toml
     app_version: str = "0.0.0"
     secret_key: str = "your-secret-key-here"
-
-
-def load_env() -> None:
-    """Load environment variables from .env.local file (only once)."""
-    global _ENV_LOADED
-
-    # Skip if already loaded
-    if _ENV_LOADED:
-        return
-
-    # Load environment from the project root .env file.
-    # File location: src/cofounder_agent/config/__init__.py
-    # Go up 3 levels: config/ → cofounder_agent/ → src/ → project_root/
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-
-    # Priority: .env (canonical) > .env.local (legacy/override)
-    # override=False means already-set env vars win (e.g. from Docker)
-    loaded = False
-    for env_name in [".env", ".env.local"]:
-        env_path = os.path.join(project_root, env_name)
-        if os.path.exists(env_path):
-            load_dotenv(env_path, override=False)
-            try:
-                logger.info(f"[INFO] Loaded {env_name} from: {env_path}")
-            except UnicodeEncodeError:
-                logger.info(f"[INFO] Loaded {env_name} from: {env_path}")
-            loaded = True
-            break  # Use the first one found
-
-    if not loaded:
-        # Fallback: try current working directory
-        for env_name in [".env", ".env.local"]:
-            current_dir_env = os.path.join(os.getcwd(), env_name)
-            if os.path.exists(current_dir_env):
-                load_dotenv(current_dir_env, override=False)
-                try:
-                    logger.info(f"[INFO] Loaded {env_name} from: {current_dir_env}")
-                except UnicodeEncodeError:
-                    logger.info(f"[INFO] Loaded {env_name} from: {current_dir_env}")
-                loaded = True
-                break
-
-    if not loaded:
-        logger.warning(
-            f"[WARNING] No .env file found at {project_root} or {os.getcwd()}"
-            )
-
-    _ENV_LOADED = True
 
 
 _PLACEHOLDER_SECRET = "your-secret-key-here"
@@ -138,9 +92,12 @@ def _read_pyproject_version() -> str:
 
 
 def get_config() -> Config:
-    """Get application configuration."""
-    # Load environment variables if not already loaded
-    load_env()
+    """Get application configuration.
+
+    DB URL is resolved via brain.bootstrap (explicit arg > bootstrap.toml >
+    env vars); everything else reads straight from the process environment.
+    """
+    from brain.bootstrap import resolve_database_url
 
     environment = os.getenv("ENVIRONMENT", "development")
 
@@ -163,7 +120,7 @@ def get_config() -> Config:
         )
 
     return Config(
-        database_url=os.getenv("DATABASE_URL", ""),
+        database_url=resolve_database_url() or "",
         local_database_url=os.getenv("LOCAL_DATABASE_URL") or None,
         ollama_base_url=os.getenv("OLLAMA_BASE_URL"),
         environment=environment,
