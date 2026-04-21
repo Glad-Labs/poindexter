@@ -134,7 +134,14 @@ class DatabaseService:
                 "local",
             )
             from services.site_config import site_config
-            min_size = int(site_config.get("database_pool_min_size", "5" if is_dev else "20"))
+            # GH-92: keep ``min_size`` small in every environment. Pools that
+            # pre-warm 20 connections reserve them against ``max_connections``
+            # even when the worker is idle — a direct contributor to the
+            # TooManyConnectionsError stress test that motivated GH-92.
+            # ``max_size`` stays higher so bursts can grow the pool on demand.
+            # Reads from app_settings (no silent env-var drift); defaults
+            # preserve backward compat for max_size.
+            min_size = int(site_config.get("database_pool_min_size", "2" if is_dev else "5"))
             max_size = int(site_config.get("database_pool_max_size", "20" if is_dev else "50"))
 
             self.pool = await asyncpg.create_pool(
@@ -150,7 +157,9 @@ class DatabaseService:
 
             # Create local pool if LOCAL_DATABASE_URL is configured, otherwise reuse primary
             if self.local_database_url:
-                local_min = int(site_config.get("local_database_pool_min_size", "3" if is_dev else "5"))
+                # GH-92: local pool min stays at 2 — rarely-called paths
+                # (tasks, writing_style, embeddings) shouldn't hoard.
+                local_min = int(site_config.get("local_database_pool_min_size", "2" if is_dev else "2"))
                 local_max = int(site_config.get("local_database_pool_max_size", "10" if is_dev else "20"))
                 self.local_pool = await asyncpg.create_pool(
                     self.local_database_url,

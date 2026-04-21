@@ -229,7 +229,10 @@ async def diagnose_connection_issues() -> dict[str, Any]:
     _config = get_config()
     _is_dev = _config.environment.lower() in ("development", "dev", "local")
     from services.site_config import site_config
-    pool_min = site_config.get("database_pool_min_size", "5" if _is_dev else "20")
+    # GH-92: keep ``min_size`` small in every environment (pools that
+    # pre-warm 20 idle connections eat max_connections). Defaults must
+    # stay in sync with services/database_service.py.
+    pool_min = site_config.get("database_pool_min_size", "2" if _is_dev else "5")
     pool_max = site_config.get("database_pool_max_size", "20" if _is_dev else "50")
 
     try:

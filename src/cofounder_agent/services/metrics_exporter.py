@@ -16,6 +16,10 @@ Infrastructure:
 - ``poindexter_postgres_query_latency_seconds`` — histogram of ``SELECT 1``
   round-trip (Gitea #238 — recovers the latency nuance the deprecated
   ``db_ping`` probe measured)
+- ``pg_connections_used`` — gauge, total server-side backends from
+  ``pg_stat_activity`` (GH-92 — catches approaching ``max_connections``)
+- ``pg_connections_max`` — gauge, server-side ``max_connections`` from
+  ``current_setting()`` (GH-92 — denominator for utilization alerts)
 - ``poindexter_ollama_reachable`` — gauge, 1 if ``/api/tags`` returns 200
 - ``poindexter_ollama_model_count`` — gauge, number of models returned
   by ``/api/tags`` (Gitea #238 — catches "Ollama up but no models")
@@ -79,6 +83,21 @@ POSTGRES_QUERY_LATENCY = Histogram(
     "poindexter_postgres_query_latency_seconds",
     "Round-trip latency of a SELECT 1 liveness probe against the pool",
     buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 5.0, 10.0),
+)
+
+# GH-92: server-wide connection utilization. These are intentionally
+# *not* prefixed ``poindexter_`` because they describe the Postgres
+# server as a whole, not the worker. Grafana's standard postgres-exporter
+# dashboards use these names, which makes the alert rule reusable if we
+# ever swap in a full postgres-exporter sidecar.
+PG_CONNECTIONS_USED = Gauge(
+    "pg_connections_used",
+    "Server-side Postgres backends from pg_stat_activity (all databases, all apps)",
+)
+
+PG_CONNECTIONS_MAX = Gauge(
+    "pg_connections_max",
+    "Postgres max_connections server setting (denominator for utilization alerts)",
 )
 
 OLLAMA_REACHABLE = Gauge(
@@ -173,6 +192,21 @@ async def refresh_metrics(pool: Any, ollama_url: str) -> None:
     except Exception as e:
         logger.debug("refresh_metrics: postgres check failed: %s", e)
         POSTGRES_CONNECTED.set(0)
+
+    # GH-92: server-side connection utilization. pg_stat_activity counts
+    # every backend (ours + gitea + pgadmin + ad-hoc psql). max_connections
+    # comes from current_setting() so bumping the server config is
+    # reflected without a worker restart.
+    try:
+        async with pool.acquire() as conn:
+            used = await conn.fetchval("SELECT COUNT(*) FROM pg_stat_activity")
+            max_conn = await conn.fetchval(
+                "SELECT current_setting('max_connections')::int"
+            )
+        PG_CONNECTIONS_USED.set(int(used or 0))
+        PG_CONNECTIONS_MAX.set(int(max_conn or 0))
+    except Exception as e:
+        logger.debug("refresh_metrics: pg_connections query failed: %s", e)
 
     # Ollama reachability + model count (Gitea #238 — "up but no models"
     # passed the old gauge; OLLAMA_MODEL_COUNT catches that case).
