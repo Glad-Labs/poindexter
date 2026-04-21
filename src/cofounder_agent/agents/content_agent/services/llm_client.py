@@ -3,9 +3,10 @@ from pathlib import Path
 
 
 # ============================================================================
-# CRITICAL: Fix sys.path for namespace packages FIRST before any imports
-# This must happen before we even try to import google.generativeai
-# Poetry breaks namespace package resolution, so we manually fix it here
+# Fix sys.path for namespace packages before any imports — Poetry sometimes
+# breaks namespace resolution in dev shells. Historically this guarded the
+# google.generativeai import (now removed); kept in place because Windows
+# venvs still occasionally need it for aiofiles / httpx edge cases.
 # ============================================================================
 def _fix_sys_path_for_venv():
     """Fix sys.path to prioritize venv site-packages for namespace package resolution."""

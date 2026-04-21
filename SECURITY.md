@@ -49,8 +49,10 @@ The following are gitignored and must never appear in commits, public dashboards
 - `API_TOKEN` — API authentication
 - `LOCAL_POSTGRES_PASSWORD` — local Postgres password
 - `GRAFANA_PASSWORD`, `PGADMIN_PASSWORD` — admin UI passwords
-- `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY` — optional cloud LLM provider keys
 - `PEXELS_API_KEY` — optional stock-image search key
+- Community-plugin API keys (OpenAI-compat, Anthropic, etc.) if you install
+  paid-provider plugins. The core stack is Ollama-only — paid keys never
+  need to be set for a stock install.
 - Any cloud `DATABASE_URL` if you connect Poindexter to an external Postgres
 - `SENTRY_DSN` — error tracking endpoint (not strictly secret, but treat it as private)
 

@@ -35,7 +35,6 @@ def app():
     """
     # Set required env vars so the app can import without crashing
     os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-    os.environ.setdefault("ANTHROPIC_API_KEY", "benchmark-placeholder")
     os.environ.setdefault("SECRET_KEY", "benchmark-secret-key")
 
     try:
