@@ -35,12 +35,31 @@ class UnifiedTaskRequest(BaseModel):
     )
 
     # COMMON FIELDS - All task types
-    topic: str = Field(
-        ...,
+    # ``topic`` is optional when ``seed_url`` is provided — the route
+    # handler fetches the URL, extracts the title, and uses that as the
+    # topic. See GH-42. The field-level min_length check still enforces
+    # a non-trivial topic when the caller DOES send one directly.
+    topic: str | None = Field(
+        None,
         min_length=3,
         max_length=200,
-        description="Task topic/subject/query",
+        description=(
+            "Task topic/subject/query. Optional when ``seed_url`` is "
+            "provided — the handler extracts the topic from the URL's "
+            "title in that case."
+        ),
         examples=["AI Trends in Healthcare", "Q4 Revenue Analysis", "Competitor Pricing Strategy"],
+    )
+    seed_url: str | None = Field(
+        None,
+        max_length=2048,
+        description=(
+            "Optional URL to seed the topic from. When present, the "
+            "handler fetches the URL, extracts the title + opening "
+            "paragraph, and injects a 'Source article' attribution "
+            "block into the writer's research context (GH-42)."
+        ),
+        examples=["https://dev.to/someone/an-interesting-post"],
     )
 
     # CONTENT-SPECIFIC FIELDS (for blog_post, social_media, email, newsletter)
@@ -120,6 +139,23 @@ class UnifiedTaskRequest(BaseModel):
             if legacy and not canonical:
                 values["models_by_phase"] = legacy
         return values
+
+    @model_validator(mode="after")
+    def _require_topic_or_seed_url(self) -> "UnifiedTaskRequest":
+        """Either ``topic`` or ``seed_url`` must be present (GH-42).
+
+        The route handler resolves ``seed_url`` → topic on create, so a
+        request with only ``seed_url`` is valid at the schema layer.
+        Reject requests with NEITHER so callers can't queue an empty
+        task and have the handler silently fall back to autodiscovery.
+        """
+        topic_present = bool(self.topic and str(self.topic).strip())
+        seed_url_present = bool(self.seed_url and str(self.seed_url).strip())
+        if not topic_present and not seed_url_present:
+            raise ValueError(
+                "One of 'topic' or 'seed_url' is required"
+            )
+        return self
 
     enforce_constraints: bool | None = Field(
         True,
