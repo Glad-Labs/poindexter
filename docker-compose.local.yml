@@ -18,6 +18,21 @@ services:
       POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
     command:
       - "postgres"
+      # GH-92: max_connections raised from the 100 default to 300. Each
+      # connection is ~5-10 MB resident, so 300 × ~10 MB ≈ 1.5-3 GB worst
+      # case — well within the 64 GB host budget. Headroom reasoning:
+      #   worker primary pool  (max)        = 50
+      #   worker local pool    (max)        = 20
+      #   brain-daemon                       = 3
+      #   auto-embed                         = 4
+      #   memory client per tap (shared)     = ~5
+      #   gitea / pgadmin / psql ad-hoc      = ~10
+      #   ancillary (voice-bot, sdxl, etc.)  = ~10
+      #   --- steady state ~100, transient peaks to ~150 under stress.
+      # 300 gives 2× headroom for concurrent stress tests + future SaaS
+      # auth fan-out. Revisit if pgbouncer is added (deferred, GH-92).
+      - "-c"
+      - "max_connections=300"
       - "-c"
       - "shared_buffers=512MB"
       - "-c"

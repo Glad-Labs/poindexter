@@ -777,6 +777,28 @@ async def prometheus_metrics():
     except Exception:
         pass
 
+    # GH-92: server-wide Postgres connection utilization. The per-pool
+    # metrics above show what the *worker* is holding; pg_connections_*
+    # show what the whole cluster is holding (all apps + ad-hoc psql).
+    # The 80%-utilization Grafana alert fires against these.
+    try:
+        database_service = getattr(app.state, "database", None)
+        pool = getattr(database_service, "pool", None) if database_service else None
+        if pool is not None:
+            async with pool.acquire() as conn:
+                used = await conn.fetchval("SELECT COUNT(*) FROM pg_stat_activity")
+                max_conn = await conn.fetchval(
+                    "SELECT current_setting('max_connections')::int"
+                )
+            lines.append("# HELP pg_connections_used Total server-side Postgres backends from pg_stat_activity")
+            lines.append("# TYPE pg_connections_used gauge")
+            lines.append(f"pg_connections_used {int(used or 0)}")
+            lines.append("# HELP pg_connections_max Postgres max_connections server setting")
+            lines.append("# TYPE pg_connections_max gauge")
+            lines.append(f"pg_connections_max {int(max_conn or 0)}")
+    except Exception:
+        pass
+
     # Task executor metrics
     try:
         database_service = getattr(app.state, "database", None)

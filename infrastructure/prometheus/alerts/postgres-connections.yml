@@ -1,0 +1,64 @@
+# Postgres connection-pool saturation alerts (GH-92).
+#
+# Stress test on 2026-04-21 hit TooManyConnectionsError at ~100 concurrent
+# queries because the server's ``max_connections`` was left at the Postgres
+# default of 100. As of this commit the server runs with max_connections=300
+# (see docker-compose.local.yml postgres-local command), which gives 2×
+# headroom over steady-state + stress peaks.
+#
+# The alert below fires at 80% utilization so we know to act *before* the
+# pool starts rejecting. Source metrics ``pg_connections_used`` and
+# ``pg_connections_max`` are emitted by services/metrics_exporter.py
+# (canonical /metrics) and main.py /api/prometheus (legacy path).
+#
+# Grafana consumes this file via the Prometheus datasource — no separate
+# Grafana-native rule definition is needed. Prometheus loads the file from
+# the ./infrastructure/prometheus/alerts/ volume (see prometheus.yml
+# rule_files).
+
+groups:
+  - name: poindexter-postgres-connections
+    interval: 30s
+    rules:
+      - alert: PoindexterPostgresConnectionsHigh
+        expr: |
+          (pg_connections_used / pg_connections_max) >= 0.80
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Postgres connection utilization over 80%"
+          description: |
+            Postgres is using {{ $value | humanizePercentage }} of
+            ``max_connections``. The stress test that motivated GH-92
+            failed at 100% of the old 100-connection cap; firing at 80%
+            gives a 5-minute buffer to act before asyncpg starts raising
+            TooManyConnectionsError.
+
+            Quick checks:
+              - ``docker exec poindexter-postgres-local psql -U poindexter \
+                -d poindexter_brain -c "SELECT application_name, COUNT(*) \
+                FROM pg_stat_activity GROUP BY application_name ORDER BY 2 DESC;"``
+              - Grafana "Poindexter / Infrastructure" dashboard → DB pool panel
+              - ``docker logs poindexter-worker --tail 200 | grep -i pool``
+
+            Longer-term remedies (not this page's job):
+              - Bump ``max_connections`` further in docker-compose.local.yml
+              - Add pgbouncer in front of postgres-local (deferred, GH-92)
+              - Shrink per-service ``min_size`` (already tuned in GH-92)
+
+      - alert: PoindexterPostgresConnectionsCritical
+        expr: |
+          (pg_connections_used / pg_connections_max) >= 0.95
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Postgres connection utilization over 95% — imminent exhaustion"
+          description: |
+            Postgres is at {{ $value | humanizePercentage }} of
+            ``max_connections``. At this level new asyncpg acquires will
+            start failing within minutes. Shed load or restart offending
+            services immediately.

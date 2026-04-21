@@ -122,6 +122,77 @@ class TestDatabaseServiceLifecycle:
         MockWS.assert_called_once_with(mock_pool)
 
     @pytest.mark.asyncio
+    async def test_pool_sizes_read_from_app_settings(self):
+        """GH-92: database_pool_min_size / database_pool_max_size come from
+        app_settings via site_config — never hardcoded, never from raw env.
+        Set an app_settings value and prove asyncpg.create_pool receives it."""
+        svc = make_service()
+        mock_pool = AsyncMock()
+        created_kwargs: dict = {}
+
+        async def _capture_create_pool(*args, **kwargs):
+            created_kwargs.update(kwargs)
+            return mock_pool
+
+        # Build a SiteConfig-like stub that returns app_settings values.
+        fake_site_config = MagicMock()
+        fake_site_config.get = MagicMock(
+            side_effect=lambda key, default=None: {
+                "database_pool_min_size": "3",
+                "database_pool_max_size": "42",
+            }.get(key, default)
+        )
+
+        with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
+            "services.site_config.site_config", fake_site_config
+        ), patch("services.database_service.UsersDatabase"), patch(
+            "services.database_service.TasksDatabase"
+        ), patch("services.database_service.ContentDatabase"), patch(
+            "services.database_service.AdminDatabase"
+        ), patch("services.database_service.WritingStyleDatabase"):
+            await svc.initialize()
+
+        assert created_kwargs["min_size"] == 3
+        assert created_kwargs["max_size"] == 42
+        # Confirm both keys were consulted.
+        consulted = {call.args[0] for call in fake_site_config.get.call_args_list}
+        assert "database_pool_min_size" in consulted
+        assert "database_pool_max_size" in consulted
+
+    @pytest.mark.asyncio
+    async def test_pool_min_size_defaults_are_small(self):
+        """GH-92: in the absence of an app_settings override, default
+        ``min_size`` must stay ≤ 5 — oversized pools reserve connections
+        against ``max_connections`` even when the worker is idle, which
+        is the exact exhaustion pattern GH-92 fixed."""
+        svc = make_service()
+        mock_pool = AsyncMock()
+        created_kwargs: dict = {}
+
+        async def _capture_create_pool(*args, **kwargs):
+            created_kwargs.update(kwargs)
+            return mock_pool
+
+        # site_config.get with no app_settings value falls through to default.
+        fake_site_config = MagicMock()
+        fake_site_config.get = MagicMock(side_effect=lambda key, default=None: default)
+
+        with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
+            "services.site_config.site_config", fake_site_config
+        ), patch("services.database_service.UsersDatabase"), patch(
+            "services.database_service.TasksDatabase"
+        ), patch("services.database_service.ContentDatabase"), patch(
+            "services.database_service.AdminDatabase"
+        ), patch("services.database_service.WritingStyleDatabase"):
+            await svc.initialize()
+
+        # Dev default is 2; prod default is 5. Either way ≤ 5.
+        assert created_kwargs["min_size"] <= 5, (
+            f"min_size={created_kwargs['min_size']} is too large — GH-92 "
+            "requires pre-warmed connections stay small"
+        )
+
+    @pytest.mark.asyncio
     async def test_close_calls_pool_close(self):
         svc = make_service()
         mock_pool = AsyncMock()

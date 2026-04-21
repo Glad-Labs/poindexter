@@ -26,6 +26,8 @@ def _reset_gauges():
     for g in (
         mx.WORKER_UP,
         mx.POSTGRES_CONNECTED,
+        mx.PG_CONNECTIONS_USED,
+        mx.PG_CONNECTIONS_MAX,
         mx.OLLAMA_REACHABLE,
         mx.OLLAMA_MODEL_COUNT,
         mx.EMBEDDINGS_MISSING_POSTS,
@@ -58,7 +60,9 @@ class TestRefreshMetrics:
     async def test_worker_up_always_set(self):
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 0, 0], [[], []])
+        # fetchval queue: SELECT 1, pg_stat_activity, max_connections,
+        # embeddings-gap, approval-queue.
+        pool, _ = _make_pool([1, 50, 300, 0, 0], [[], []])
         with patch(
             "services.metrics_exporter.httpx.AsyncClient"
         ) as mock_http_cls:
@@ -84,7 +88,7 @@ class TestRefreshMetrics:
 
         before = _latency_count()
 
-        pool, _ = _make_pool([1, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 50, 300, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -116,7 +120,7 @@ class TestRefreshMetrics:
     async def test_ollama_model_count_set_from_api_tags(self):
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 50, 300, 0, 0], [[], []])
 
         fake_response = MagicMock()
         fake_response.status_code = 200
@@ -139,7 +143,7 @@ class TestRefreshMetrics:
         """"Ollama up but no models" — the scenario Gitea #238 flagged."""
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 50, 300, 0, 0], [[], []])
 
         fake_response = MagicMock()
         fake_response.status_code = 200
@@ -159,8 +163,9 @@ class TestRefreshMetrics:
     async def test_embeddings_missing_posts_reflects_gap(self):
         from services import metrics_exporter as mx
 
-        # fetchval queue: SELECT 1 → 1, embeddings-gap → 5, queue → 2.
-        pool, _ = _make_pool([1, 5, 2], [[], []])
+        # fetchval queue: SELECT 1 → 1, pg_stat_activity → 50,
+        # max_connections → 300, embeddings-gap → 5, queue → 2.
+        pool, _ = _make_pool([1, 50, 300, 5, 2], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -170,9 +175,13 @@ class TestRefreshMetrics:
     async def test_approval_queue_length_reflects_count(self):
         from services import metrics_exporter as mx
 
-        # fetchval queue: SELECT 1 → 1, embeddings-gap → 0, queue → 7,
-        # auto-cancelled → 0 (GH-90 added a 4th fetchval).
-        pool, _ = _make_pool([1, 0, 7, 0], [[], []])
+        # fetchval queue (post-rebase, GH-90 + GH-92 combined):
+        #   SELECT 1 → 1
+        #   pg_stat_activity → 50, max_connections → 300 (GH-92)
+        #   embeddings-gap → 0
+        #   queue → 7
+        #   auto-cancelled → 0 (GH-90)
+        pool, _ = _make_pool([1, 50, 300, 0, 7, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -187,14 +196,77 @@ class TestRefreshMetrics:
         restarts so short-window rate() queries stay useful."""
         from services import metrics_exporter as mx
 
-        # fetchval queue: SELECT 1 → 1, embeddings-gap → 0, queue → 0,
-        # auto-cancelled → 42.
-        pool, _ = _make_pool([1, 0, 0, 42], [[], []])
+        # fetchval queue (6 values post-rebase):
+        #   SELECT 1, pg_used, pg_max, embeddings-gap, queue, cancelled=42.
+        pool, _ = _make_pool([1, 0, 100, 0, 0, 42], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
         assert mx.AUTO_CANCELLED_TOTAL._value.get() == 42  # type: ignore[attr-defined]
+
+    async def test_pg_connections_used_and_max_emitted(self):
+        """GH-92: Prometheus scrape must surface server-side connection
+        utilization so the 80%-threshold alert can fire before the pool
+        exhausts ``max_connections``."""
+        from services import metrics_exporter as mx
+
+        # 6-value fetchval queue: SELECT 1, pg_used=127, pg_max=300,
+        # gap=0, queue=0, cancelled=0.
+        pool, _ = _make_pool([1, 127, 300, 0, 0, 0], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert mx.PG_CONNECTIONS_USED._value.get() == 127  # type: ignore[attr-defined]
+        assert mx.PG_CONNECTIONS_MAX._value.get() == 300  # type: ignore[attr-defined]
+
+    async def test_pg_connections_query_failure_leaves_gauges_untouched(self):
+        """If pg_stat_activity or current_setting() raise (unlikely but
+        possible on a permission-stripped role), /metrics must not 500 —
+        we just leave the gauge at its last-known value."""
+        from services import metrics_exporter as mx
+
+        pool = MagicMock()
+        conn = MagicMock()
+        # SELECT 1 → 1, pg_stat_activity raises (one block's try/except
+        # eats that + skips the max_conn fetchval), then gap/queue/cancelled.
+        conn.fetchval = AsyncMock(
+            side_effect=[1, RuntimeError("permission denied"), 0, 0, 0]
+        )
+        conn.fetch = AsyncMock(return_value=[])
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        pool.acquire = MagicMock(return_value=ctx)
+
+        # Pre-seed so we can prove the gauges weren't clobbered to 0.
+        mx.PG_CONNECTIONS_USED.set(42)
+        mx.PG_CONNECTIONS_MAX.set(100)
+
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            # Should NOT raise even when pg_stat_activity fails.
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        # Gauges stayed at their pre-set values — the try/except ate the error.
+        assert mx.PG_CONNECTIONS_USED._value.get() == 42  # type: ignore[attr-defined]
+        assert mx.PG_CONNECTIONS_MAX._value.get() == 100  # type: ignore[attr-defined]
+
+    async def test_pg_connections_metrics_appear_in_exposition(self):
+        """Smoke-check that the new gauges actually render in the
+        ``/metrics`` text body consumed by Prometheus."""
+        from services import metrics_exporter as mx
+
+        pool, _ = _make_pool([1, 88, 300, 0, 0, 0], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        body, _ = mx.render_exposition()
+        text = body.decode("utf-8")
+        assert "pg_connections_used" in text
+        assert "pg_connections_max" in text
 
 
 @pytest.mark.unit
