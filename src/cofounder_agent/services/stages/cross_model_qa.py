@@ -392,6 +392,19 @@ class CrossModelQAStage:
                 # 70 vs catastrophic 0).
                 "quality_score": float(qa_result.final_score),
             })
+            # Flip model_performance.human_approved=False for the learning
+            # signal — mirror what the operator-reject and auto-curate
+            # paths do, so QA rejections also contribute to model-selection
+            # feedback (gitea#271 Phase 3.A1).
+            try:
+                await database_service.mark_model_performance_outcome(
+                    task_id, human_approved=False,
+                )
+            except Exception as mp_err:
+                logger.debug(
+                    "[cross_model_qa] mark_model_performance_outcome failed: %s",
+                    mp_err,
+                )
 
             updates["status"] = "rejected"
             return StageResult(
