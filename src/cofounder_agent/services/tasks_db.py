@@ -598,6 +598,11 @@ class TasksDatabase(DatabaseServiceMixin):
             existing_meta = safe_json_load(
                 normalized_updates.get("task_metadata"), fallback={}
             )
+            # safe_json_load can return None for "null"/empty/non-dict input —
+            # fall back to an empty dict before merging rather than crashing
+            # with AttributeError on existing_meta.update().
+            if not isinstance(existing_meta, dict):
+                existing_meta = {}
             existing_meta.update(rerouted_to_metadata)
             normalized_updates["task_metadata"] = existing_meta
             logger.info(
