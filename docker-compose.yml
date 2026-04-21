@@ -105,10 +105,7 @@ services:
       DEVELOPMENT_MODE: ${DEVELOPMENT_MODE:-false}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:?REVALIDATE_SECRET must be set}
 
-      # LLM Providers (at least one required)
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # Local LLM only — paid-API providers live in community plugins, not the core stack.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
 
       # External services

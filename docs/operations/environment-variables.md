@@ -70,17 +70,10 @@ permissions, outside the repo). No `.env` file is needed.
 | `OPENCLAW_GATEWAY_URL`   | Discord + Telegram bridge via OpenClaw               |
 | `OPENCLAW_GATEWAY_TOKEN` | Bearer token for OpenClaw Tools Invoke API           |
 
-> **No cloud LLM keys by default.** Poindexter runs entirely on
-> local Ollama out of the box. If you want to add cloud fallback,
-> the model router reads keys from `app_settings` at runtime — do
-> NOT inject `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` /
-> `GOOGLE_API_KEY` as env vars. Set them via the settings API:
->
-> ```bash
-> curl -X PUT http://localhost:8002/api/settings/openai_api_key \
->   -H "Authorization: Bearer $API_TOKEN" \
->   -d '{"value": "sk-proj-..."}'
-> ```
+> **Local Ollama only in the core stack.** Paid-API providers (OpenAI,
+> Anthropic, Google) live in community plugins, never the core. If you
+> install one of those plugins, it reads its own keys from `app_settings`
+> at runtime via the settings API — not from env vars.
 
 ## `.env.local` template
 

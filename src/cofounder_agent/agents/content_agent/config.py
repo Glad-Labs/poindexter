@@ -1,7 +1,7 @@
 # ============================================================================
-# CRITICAL: Fix sys.path for namespace packages at module import time
-# Poetry sometimes breaks namespace package resolution (e.g., google.generativeai)
-# This MUST be done before any package imports
+# Fix sys.path for namespace packages at module import time — Poetry sometimes
+# breaks namespace resolution in dev shells. Kept minimal: no paid-API SDKs
+# rely on this anymore, but Ollama / Pexels / etc. still benefit on Windows.
 # ============================================================================
 import logging as _logging
 import sys

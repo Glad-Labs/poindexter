@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
 
 
 # ---------------------------------------------------------------------------
@@ -37,10 +36,6 @@ class TestLLMClientInit:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -55,10 +50,6 @@ class TestLLMClientInit:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -112,10 +103,6 @@ class TestGetCachePath:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -135,10 +122,6 @@ class TestGetCachePath:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -156,10 +139,6 @@ class TestGetCachePath:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -192,10 +171,6 @@ class TestGenerateJsonOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -224,10 +199,6 @@ class TestGenerateJsonOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -256,10 +227,6 @@ class TestGenerateJsonOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -286,10 +253,6 @@ class TestGenerateJsonOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -323,10 +286,6 @@ class TestGenerateJsonOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -360,10 +319,6 @@ class TestGenerateTextOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -397,10 +352,6 @@ class TestGenerateTextOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -426,10 +377,6 @@ class TestGenerateTextOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -455,10 +402,6 @@ class TestGenerateTextOllama:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -501,10 +444,6 @@ class TestGenerateSummary:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
@@ -536,10 +475,6 @@ class TestGenerateSummary:
             mock_cfg.BASE_DIR = str(tmp_path)
             mock_cfg.LOCAL_LLM_API_URL = "http://localhost:11434"
             mock_cfg.LOCAL_LLM_MODEL_NAME = "test-model"
-            mock_cfg.GEMINI_API_KEY = None
-            mock_cfg.GEMINI_MODEL = "gemini-2.0-flash"
-            mock_cfg.SUMMARIZER_MODEL = "gemini-2.0-flash"
-
             from agents.content_agent.services.llm_client import LLMClient
 
             client = LLMClient()
