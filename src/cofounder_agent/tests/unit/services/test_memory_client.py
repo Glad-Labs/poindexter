@@ -36,13 +36,23 @@ TEST_SOURCE_TABLE = "memory"
 TEST_PREFIX = "test-memory-client/"
 
 
+_CONFTEST_SENTINEL_DSN = "postgresql://test:test@localhost/test"
+
+
 def _test_dsn() -> str:
-    return (
+    dsn = (
         os.getenv("POINDEXTER_MEMORY_DSN")
         or os.getenv("LOCAL_DATABASE_URL")
         or os.getenv("DATABASE_URL")
         or ""
     )
+    # conftest seeds DATABASE_URL with a dummy sentinel so import-time
+    # reads don't crash. That sentinel is not a real DB — treat it as
+    # "no DSN available" so these integration tests skip instead of
+    # trying to authenticate with bogus creds.
+    if dsn == _CONFTEST_SENTINEL_DSN:
+        return ""
+    return dsn
 
 
 _LIVE_DB_AVAILABLE = bool(_test_dsn())
