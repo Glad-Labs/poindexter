@@ -30,6 +30,7 @@ def _reset_gauges():
         mx.OLLAMA_MODEL_COUNT,
         mx.EMBEDDINGS_MISSING_POSTS,
         mx.APPROVAL_QUEUE_LENGTH,
+        mx.AUTO_CANCELLED_TOTAL,
     ):
         g.set(0)
     yield
@@ -169,12 +170,31 @@ class TestRefreshMetrics:
     async def test_approval_queue_length_reflects_count(self):
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 0, 7], [[], []])
+        # fetchval queue: SELECT 1 → 1, embeddings-gap → 0, queue → 7,
+        # auto-cancelled → 0 (GH-90 added a 4th fetchval).
+        pool, _ = _make_pool([1, 0, 7, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
 
         assert mx.APPROVAL_QUEUE_LENGTH._value.get() == 7  # type: ignore[attr-defined]
+
+    async def test_auto_cancelled_total_reflects_event_count(self):
+        """GH-90 AC #4: sweeper cancellations are exposed as
+        ``poindexter_pipeline_auto_cancelled_total``. Value comes from
+        counting ``pipeline_events`` rows with
+        ``event_type='task.auto_cancelled'`` — persistent across worker
+        restarts so short-window rate() queries stay useful."""
+        from services import metrics_exporter as mx
+
+        # fetchval queue: SELECT 1 → 1, embeddings-gap → 0, queue → 0,
+        # auto-cancelled → 42.
+        pool, _ = _make_pool([1, 0, 0, 42], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert mx.AUTO_CANCELLED_TOTAL._value.get() == 42  # type: ignore[attr-defined]
 
 
 @pytest.mark.unit

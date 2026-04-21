@@ -314,6 +314,137 @@ class TestFinalizeTask:
         result = await FinalizeTaskStage().execute({}, {})
         assert result.ok is False
 
+    async def test_guard_aborts_when_row_already_cancelled(self):
+        """GH-90 AC #3: when the stale-task sweeper flipped the row to
+        'failed' mid-pipeline, finalize_task MUST refuse to write
+        'awaiting_approval'. The status-guarded update returns None;
+        finalize returns ok=False with continue_workflow=False so the
+        runner halts and no downstream publish/webhook fires."""
+
+        class _GuardDb:
+            def __init__(self):
+                self.update_task_calls: list[dict] = []
+                self.guarded_calls: list[tuple] = []
+
+            async def update_task(self, task_id, updates):
+                # MUST NOT be called when the guard blocks.
+                self.update_task_calls.append({"task_id": task_id, **updates})
+
+            async def update_task_status_guarded(
+                self, task_id, new_status, allowed_from=("in_progress", "pending"),
+                **fields,
+            ):
+                self.guarded_calls.append((task_id, new_status, allowed_from))
+                # Simulate the sweeper having flipped status → 'failed'.
+                return None
+
+        db = _GuardDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t-ghost", "topic": "T", "style": "s", "tone": "n",
+            "content": "body", "seo_title": "Title", "seo_description": "Desc",
+            "seo_keywords_list": ["a"], "category": "tech",
+            "target_audience": "devs", "title": "T",
+            "quality_result": _fake_quality_result(score=82),
+            "database_service": db,
+        }
+        with (
+            patch("services.text_utils.normalize_text", side_effect=lambda x: x),
+            patch(
+                "services.excerpt_generator.generate_excerpt",
+                return_value="excerpt",
+            ),
+        ):
+            result = await FinalizeTaskStage().execute(ctx, {})
+
+        # The guard was consulted with the expected arguments.
+        assert db.guarded_calls == [
+            ("t-ghost", "awaiting_approval", ("in_progress", "pending")),
+        ]
+        # The terminal write was aborted — no update_task happened.
+        assert db.update_task_calls == []
+        # Stage result explicitly halts the workflow.
+        assert result.ok is False
+        assert result.continue_workflow is False
+        assert "GH-90" in result.detail
+        assert result.metrics["aborted_by_status_guard"] is True
+
+    async def test_guard_allows_persist_when_still_in_progress(self):
+        """Happy path: guard returns 'in_progress' so finalize proceeds
+        and the awaiting_approval row is persisted via update_task."""
+
+        class _GuardDb:
+            def __init__(self):
+                self.update_task_calls: list[dict] = []
+                self.guarded_calls: list[tuple] = []
+
+            async def update_task(self, task_id, updates):
+                self.update_task_calls.append({"task_id": task_id, **updates})
+
+            async def update_task_status_guarded(
+                self, task_id, new_status, allowed_from=("in_progress", "pending"),
+                **fields,
+            ):
+                self.guarded_calls.append((task_id, new_status, allowed_from))
+                return "in_progress"  # still live
+
+        db = _GuardDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t-live", "topic": "T", "style": "s", "tone": "n",
+            "content": "body", "seo_title": "Title", "seo_description": "Desc",
+            "seo_keywords_list": ["a"], "category": "tech",
+            "target_audience": "devs", "title": "T",
+            "quality_result": _fake_quality_result(score=82),
+            "database_service": db,
+        }
+        with (
+            patch("services.text_utils.normalize_text", side_effect=lambda x: x),
+            patch(
+                "services.excerpt_generator.generate_excerpt",
+                return_value="excerpt",
+            ),
+        ):
+            result = await FinalizeTaskStage().execute(ctx, {})
+
+        assert result.ok is True
+        assert len(db.guarded_calls) == 1
+        # update_task ran exactly once, persisting awaiting_approval.
+        assert len(db.update_task_calls) == 1
+        assert db.update_task_calls[0]["status"] == "awaiting_approval"
+
+    async def test_guard_fallback_when_db_service_missing_method(self):
+        """Backwards compat: if database_service doesn't expose
+        update_task_status_guarded (older deployments that haven't
+        applied migration 0071), finalize_task falls back to the legacy
+        update_task path — no regression for operators mid-upgrade."""
+
+        class _LegacyDb:
+            def __init__(self):
+                self.update_task_calls: list[dict] = []
+
+            async def update_task(self, task_id, updates):
+                self.update_task_calls.append({"task_id": task_id, **updates})
+            # NO update_task_status_guarded — simulates a legacy deployment.
+
+        db = _LegacyDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t-legacy", "topic": "T", "style": "s", "tone": "n",
+            "content": "body", "seo_title": "T", "seo_description": "D",
+            "seo_keywords_list": [], "category": "c", "target_audience": "d",
+            "title": "T",
+            "quality_result": _fake_quality_result(score=80),
+            "database_service": db,
+        }
+        with (
+            patch("services.text_utils.normalize_text", side_effect=lambda x: x),
+            patch(
+                "services.excerpt_generator.generate_excerpt",
+                return_value="e",
+            ),
+        ):
+            result = await FinalizeTaskStage().execute(ctx, {})
+        assert result.ok is True
+        assert len(db.update_task_calls) == 1
+
 
 # ---------------------------------------------------------------------------
 # Wrapper stages — adapter contract only

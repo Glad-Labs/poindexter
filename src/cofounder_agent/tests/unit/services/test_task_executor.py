@@ -1300,3 +1300,114 @@ class TestAutoRetryFailedTasks:
         assert "last_retry_at" in meta
         # ISO-format timestamp
         assert "T" in meta["last_retry_at"]
+
+
+# ---------------------------------------------------------------------------
+# _heartbeat_loop (GH-90)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestHeartbeatLoop:
+    """GH-90 AC #2: worker heartbeats updated_at during long stages."""
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_loop_calls_db_on_interval(self):
+        """The loop calls database_service.heartbeat_task on a cadence read
+        from app_settings. We set the interval to a tiny value so the
+        test can observe multiple heartbeats in <1s."""
+        db = _make_db()
+        db.heartbeat_task = AsyncMock(return_value=True)
+        executor = _make_executor(db=db)
+
+        # Force a very short interval so the loop heartbeats quickly.
+        async def _short_interval(key, default=""):
+            if key == "worker_heartbeat_interval_seconds":
+                return "0.05"  # 50ms
+            return default
+        executor._get_setting = _short_interval
+
+        # Start the loop, let it fire ~4 heartbeats, then cancel.
+        loop_task = asyncio.create_task(executor._heartbeat_loop("t-live"))
+        await asyncio.sleep(0.25)
+        loop_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await loop_task
+
+        # At least 2 heartbeats should have fired (sleep+fire,sleep+fire).
+        assert db.heartbeat_task.await_count >= 2
+        # Every call was for the correct task_id.
+        for call in db.heartbeat_task.await_args_list:
+            assert call.args == ("t-live",)
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_loop_exits_when_task_terminal(self):
+        """If heartbeat_task returns False (row is already in a terminal
+        state) the loop must exit — no point continuing to heartbeat a
+        cancelled row, and the exit logs a warning that the worker is
+        about to detect the cancellation on its next guarded write."""
+        db = _make_db()
+        # First call succeeds (worker is alive), second returns False
+        # (sweeper already flipped the row to failed).
+        db.heartbeat_task = AsyncMock(side_effect=[True, False])
+        executor = _make_executor(db=db)
+
+        async def _short_interval(key, default=""):
+            if key == "worker_heartbeat_interval_seconds":
+                return "0.05"
+            return default
+        executor._get_setting = _short_interval
+
+        # Should exit cleanly (no cancel needed) on the False return.
+        await asyncio.wait_for(
+            executor._heartbeat_loop("t-cancelled"),
+            timeout=1.0,
+        )
+        assert db.heartbeat_task.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_loop_disabled_when_interval_zero(self):
+        """Interval of 0 (or negative) disables the heartbeat — useful
+        for operators running short pipelines who don't want any DB
+        chatter during stage execution."""
+        db = _make_db()
+        db.heartbeat_task = AsyncMock(return_value=True)
+        executor = _make_executor(db=db)
+
+        async def _zero_interval(key, default=""):
+            if key == "worker_heartbeat_interval_seconds":
+                return "0"
+            return default
+        executor._get_setting = _zero_interval
+
+        await asyncio.wait_for(
+            executor._heartbeat_loop("t-any"),
+            timeout=1.0,
+        )
+        # No heartbeats fired — loop returned immediately.
+        assert db.heartbeat_task.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_loop_swallows_db_errors(self):
+        """A transient DB error during a heartbeat MUST NOT kill the loop —
+        the next tick should continue trying."""
+        db = _make_db()
+        db.heartbeat_task = AsyncMock(side_effect=[
+            Exception("conn reset"), True, True,
+        ])
+        executor = _make_executor(db=db)
+
+        async def _short_interval(key, default=""):
+            if key == "worker_heartbeat_interval_seconds":
+                return "0.05"
+            return default
+        executor._get_setting = _short_interval
+
+        loop_task = asyncio.create_task(executor._heartbeat_loop("t-live"))
+        await asyncio.sleep(0.25)
+        loop_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await loop_task
+
+        # Loop kept running after the first exception.
+        assert db.heartbeat_task.await_count >= 2
