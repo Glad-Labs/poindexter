@@ -385,6 +385,12 @@ class CrossModelQAStage:
             await database_service.update_task(task_id, {
                 "status": "rejected",
                 "error_message": reason,
+                # Persist the QA score on pipeline_versions even when the
+                # verdict is "rejected" — otherwise Grafana's QA-score
+                # charts show nothing for rejected rows and operators lose
+                # visibility into *how close* the reject was (borderline
+                # 70 vs catastrophic 0).
+                "quality_score": float(qa_result.final_score),
             })
 
             updates["status"] = "rejected"
