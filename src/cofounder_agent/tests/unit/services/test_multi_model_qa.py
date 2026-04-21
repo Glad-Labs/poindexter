@@ -824,3 +824,144 @@ class TestGatePromptBranches:
         assert "First contradiction" in review.feedback
         assert "Second contradiction" in review.feedback
         assert ";" in review.feedback
+
+
+# ---------------------------------------------------------------------------
+# qa_feedback text formatting (GH-86)
+# ---------------------------------------------------------------------------
+
+
+class TestFormatFeedbackText:
+    """Critique text must reach the DB — not just the score (GH-86)."""
+
+    def test_multi_model_result_format_feedback_text_non_empty(self):
+        """MultiModelResult.format_feedback_text returns a non-empty block."""
+        result = MultiModelResult(
+            approved=True,
+            final_score=85.0,
+            reviews=[
+                ReviewerResult(
+                    reviewer="programmatic_validator",
+                    approved=True,
+                    score=100.0,
+                    feedback="No issues found",
+                    provider="programmatic",
+                ),
+                ReviewerResult(
+                    reviewer="ollama_critic",
+                    approved=True,
+                    score=85.0,
+                    feedback="Clear, well-structured, good examples.",
+                    provider="ollama",
+                ),
+            ],
+        )
+        text = result.format_feedback_text()
+        assert text
+        assert "85/100" in text
+        assert "APPROVED" in text
+        assert "programmatic_validator" in text
+        assert "ollama_critic" in text
+        assert "Clear, well-structured" in text
+
+    def test_format_qa_feedback_from_reviews_lists_each_reviewer(self):
+        """The dict-based formatter mirrors the dataclass variant."""
+        from services.multi_model_qa import format_qa_feedback_from_reviews
+
+        text = format_qa_feedback_from_reviews(
+            qa_reviews=[
+                {
+                    "reviewer": "programmatic_validator",
+                    "provider": "programmatic",
+                    "score": 100.0,
+                    "approved": True,
+                    "feedback": "No issues found",
+                },
+                {
+                    "reviewer": "ollama_critic",
+                    "provider": "ollama",
+                    "score": 88.0,
+                    "approved": True,
+                    "feedback": "Good coverage of async primitives.",
+                },
+            ],
+            final_score=91.0,
+            approved=True,
+        )
+        assert text
+        assert "91/100" in text
+        assert "APPROVED" in text
+        assert "programmatic_validator" in text
+        assert "ollama_critic" in text
+        assert "Good coverage of async primitives" in text
+
+    def test_format_qa_feedback_empty_when_no_reviews(self):
+        from services.multi_model_qa import format_qa_feedback_from_reviews
+        assert format_qa_feedback_from_reviews([]) == ""
+
+    def test_format_qa_feedback_truncates_at_max_chars(self):
+        """Runaway reviewer output must not blow the DB column."""
+        from services.multi_model_qa import format_qa_feedback_from_reviews
+
+        big_feedback = "x" * 5000
+        text = format_qa_feedback_from_reviews(
+            qa_reviews=[
+                {
+                    "reviewer": "ollama_critic",
+                    "provider": "ollama",
+                    "score": 80.0,
+                    "approved": True,
+                    "feedback": big_feedback,
+                }
+            ],
+            max_chars=1000,
+        )
+        assert len(text) <= 1000
+        assert "truncated" in text
+
+    def test_format_qa_feedback_handles_rejected_status(self):
+        from services.multi_model_qa import format_qa_feedback_from_reviews
+
+        text = format_qa_feedback_from_reviews(
+            qa_reviews=[
+                {
+                    "reviewer": "topic_delivery",
+                    "provider": "consistency_gate",
+                    "score": 25.0,
+                    "approved": False,
+                    "feedback": "The title promises 11 examples but only 3 are shown.",
+                }
+            ],
+            final_score=30.0,
+            approved=False,
+        )
+        assert "REJECTED" in text
+        assert "FAIL" in text
+        assert "only 3 are shown" in text
+
+    async def test_qa_review_writes_feedback_to_result(self, qa):
+        """After review(), we can build feedback text from the reviews list.
+
+        This is the end-to-end contract that content_router_service uses
+        to populate content_tasks.qa_feedback (GH-86).
+        """
+        from services.multi_model_qa import format_qa_feedback_from_reviews
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(score=82.0)):
+                result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # Simulate content_router_service serialization
+        qa_reviews = [
+            {"reviewer": r.reviewer, "score": r.score, "approved": r.approved,
+             "feedback": r.feedback, "provider": r.provider}
+            for r in result.reviews
+        ]
+        text = format_qa_feedback_from_reviews(
+            qa_reviews=qa_reviews,
+            final_score=result.final_score,
+            approved=result.approved,
+        )
+        assert text
+        assert text.strip() != ""
+        assert "ollama_critic" in text

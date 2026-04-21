@@ -241,3 +241,49 @@ class TestRunMigrationsMultipleMixed:
             result = _run(run_migrations(db))
 
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Migration 0068 — content_tasks UPDATE trigger fix (GH-86)
+# ---------------------------------------------------------------------------
+
+
+class TestMigration0068ContentTasksUpdateRedirect:
+    """The trigger function must now propagate qa_feedback AND category."""
+
+    def _load(self):
+        import importlib.util
+        from pathlib import Path
+        path = (
+            Path(__file__).resolve().parents[3]
+            / "services" / "migrations"
+            / "0068_fix_content_tasks_update_redirect_gh86.py"
+        )
+        spec = importlib.util.spec_from_file_location("m0068", path)
+        mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return mod
+
+    def test_sql_up_includes_category_in_pipeline_tasks(self):
+        mod = self._load()
+        assert "category = COALESCE(NEW.category" in mod.SQL_UP
+        assert "qa_feedback = COALESCE(NEW.qa_feedback" in mod.SQL_UP
+
+    def test_sql_up_keeps_existing_columns(self):
+        """The new trigger must not drop columns the prior one handled."""
+        mod = self._load()
+        for keeper in (
+            "title = COALESCE(NEW.title",
+            "content = COALESCE(NEW.content",
+            "excerpt = COALESCE(NEW.excerpt",
+            "seo_title = COALESCE(NEW.seo_title",
+            "quality_score = COALESCE(NEW.quality_score",
+            "stage = COALESCE(NEW.stage",
+        ):
+            assert keeper in mod.SQL_UP, f"missing: {keeper}"
+
+    def test_sql_down_reverts_new_columns(self):
+        mod = self._load()
+        # Rollback removes qa_feedback + category from UPDATE
+        assert "qa_feedback = COALESCE(NEW.qa_feedback" not in mod.SQL_DOWN
+        assert "category = COALESCE(NEW.category" not in mod.SQL_DOWN
