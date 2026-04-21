@@ -235,6 +235,28 @@ class FinalizeTaskStage:
 
         await database_service.update_task(task_id=task_id, updates=updates)
 
+        # Snapshot the finalized draft so the feedback loop has a clear
+        # terminal row per task (gitea#271 Phase 3.A2). The initial draft
+        # + any QA rewrite iterations precede this row, so the diff chain
+        # tells the full story.
+        try:
+            from services.content_revisions_logger import log_revision
+            await log_revision(
+                database_service.pool,
+                task_id=task_id,
+                content=content_text,
+                title=seo_title or topic,
+                change_type="finalized",
+                change_summary=(
+                    f"Final revision at quality score {final_quality_score} "
+                    f"({'passed' if context.get('quality_passing') else 'below threshold'})"
+                ),
+                model_used=context.get("model_used"),
+                quality_score=final_quality_score,
+            )
+        except Exception as rev_err:
+            logger.debug("[content_revisions] final snapshot failed: %s", rev_err)
+
         return StageResult(
             ok=True,
             detail="task finalized → awaiting_approval",

@@ -131,6 +131,14 @@ async def reject_task(
                 "[reject_task] pipeline_reviews write failed for %s: %s",
                 task_id, review_err,
             )
+        try:
+            await db_service.mark_model_performance_outcome(
+                task_id, human_approved=False,
+            )
+        except Exception as mp_err:
+            logger.debug(
+                "[reject_task] mark_model_performance_outcome failed: %s", mp_err,
+            )
 
         logger.info("Task %s rejected by %s: %s", task_id, operator['id'], request.reason)
 

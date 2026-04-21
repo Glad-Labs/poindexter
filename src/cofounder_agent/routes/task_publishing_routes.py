@@ -343,6 +343,18 @@ async def approve_task(
                 task_id, review_err,
             )
 
+        # Flip the outcome columns on every model_performance row for this
+        # task so the learning signal has the human verdict attached
+        # (gitea#271 Phase 3.A1).
+        try:
+            await db_service.mark_model_performance_outcome(
+                task_id, human_approved=approved,
+            )
+        except Exception as mp_err:
+            logger.debug(
+                "[approve_task] mark_model_performance_outcome failed: %s", mp_err,
+            )
+
         # NOTE: staging_mode is still present in app_settings but no longer
         # gates publish — approval now goes live immediately. The setting is
         # reserved for a future scheduling / release-time-optimization feature
@@ -398,6 +410,16 @@ async def approve_task(
                         logger.warning(
                             "[approve_task] pipeline_distributions write failed for %s: %s",
                             task_id, dist_err,
+                        )
+                    # Mark model_performance rows as published (gitea#271 Phase 3.A1).
+                    try:
+                        await db_service.mark_model_performance_outcome(
+                            task_id, post_published=True,
+                        )
+                    except Exception as mp_err:
+                        logger.debug(
+                            "[approve_task] mark_model_performance_outcome publish flip failed: %s",
+                            mp_err,
                         )
                 else:
                     logger.warning(

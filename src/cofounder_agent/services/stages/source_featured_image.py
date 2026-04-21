@@ -244,7 +244,7 @@ async def _try_sdxl_featured(
         sdxl_url = site_config.get(
             "sdxl_server_url", "http://host.docker.internal:9836",
         )
-        output_path = await _render_sdxl(sdxl_url, sdxl_prompt, negative)
+        output_path = await _render_sdxl(sdxl_url, sdxl_prompt, negative, task_id=task_id)
         if output_path is None:
             return None
 
@@ -360,11 +360,15 @@ async def _render_sdxl(
     sdxl_url: str,
     sdxl_prompt: str,
     negative_prompt: str,
+    task_id: str | None = None,
 ) -> str | None:
     """Call the SDXL server and return the local path of the generated image."""
     from services.gpu_scheduler import gpu
 
-    async with gpu.lock("sdxl", model="sdxl_lightning"):
+    async with gpu.lock(
+        "sdxl", model="sdxl_lightning",
+        task_id=task_id, phase="featured_image",
+    ):
         # 60s cap — Lightning is ~2s; headroom for cold load + upload.
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(60.0, connect=5.0)

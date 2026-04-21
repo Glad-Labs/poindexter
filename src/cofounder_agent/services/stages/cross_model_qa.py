@@ -253,6 +253,26 @@ class CrossModelQAStage:
 
             content_text = revised
             await database_service.update_task(task_id, {"content": content_text})
+            # Snapshot the rewrite so the feedback loop sees which QA issues
+            # the model actually addressed between revisions (gitea#271 Phase 3.A2).
+            try:
+                from services.content_revisions_logger import log_revision
+                from services.site_config import site_config as _sc_rev
+                await log_revision(
+                    database_service.pool,
+                    task_id=task_id,
+                    content=content_text,
+                    title=context.get("seo_title") or context.get("title") or topic,
+                    change_type="qa_rewrite",
+                    change_summary=(
+                        f"Rewrite attempt {rewrite_attempts + 1} addressing "
+                        f"{len(issues_to_fix)} QA issues"
+                    ),
+                    model_used=_sc_rev.get("qa_writer_model") or "writer",
+                    quality_score=None,
+                )
+            except Exception as rev_err:
+                logger.debug("[content_revisions] qa_rewrite snapshot failed: %s", rev_err)
             logger.info(
                 "[QA_REWRITE] Task %s: rewrite succeeded (%d chars), re-running QA",
                 task_id[:8], len(content_text),

@@ -63,6 +63,7 @@ _WORKER_ROUTES = [
     ("routes.pipeline_events_routes", "router", "pipeline_events_router", "pipeline events observability (/api/pipeline, /pipeline)"),
     ("routes.memory_dashboard_routes", "router", "memory_dashboard_router", "shared-memory observability (/api/memory/*, /memory)"),
     ("routes.alertmanager_webhook_routes", "router", "alertmanager_webhook_router", "Alertmanager webhook consumer (Phase D4)"),
+    ("routes.external_webhooks", "external_webhooks_router", "external_webhooks_router", "Lemon Squeezy + Resend webhook sinks (gitea#271 Phase 3.B)"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest

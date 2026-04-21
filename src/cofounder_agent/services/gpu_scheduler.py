@@ -24,6 +24,7 @@ Usage:
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import httpx
 
@@ -81,7 +82,13 @@ class GPUScheduler:
         self._total_gaming_paused_s: float = 0  # cumulative for metrics
 
     @asynccontextmanager
-    async def lock(self, owner: str, model: str | None = None):
+    async def lock(
+        self,
+        owner: str,
+        model: str | None = None,
+        task_id: str | None = None,
+        phase: str | None = None,
+    ):
         """Acquire exclusive GPU access.
 
         Waits for any gaming/external workload to finish before acquiring.
@@ -89,6 +96,12 @@ class GPUScheduler:
         Args:
             owner: "ollama" or "sdxl"
             model: model name (for logging/tracking)
+            task_id: optional pipeline task UUID — when set, a row is
+                written to ``gpu_task_sessions`` on release so the
+                feedback loop (gitea#271 Phase 3.A3) can attribute GPU
+                utilisation + electricity cost to the originating task.
+            phase: optional pipeline phase label (e.g. "generate_content",
+                "featured_image"). Defaults to ``owner`` when unset.
         """
         # Wait for gaming to stop before acquiring lock
         await self._wait_for_gaming_clear()
@@ -110,6 +123,7 @@ class GPUScheduler:
         self._current_owner = owner
         self._current_model = model
         self._acquired_at = time.monotonic()
+        session_start = datetime.now(timezone.utc)
 
         try:
             # Prepare GPU for the new owner
@@ -122,6 +136,103 @@ class GPUScheduler:
             self._current_owner = None
             self._current_model = None
             self._lock.release()
+            # gitea#271 Phase 3.A3 — record the session so model/phase
+            # compute economics are queryable per task. Best-effort; a
+            # write failure never breaks the GPU lock lifecycle.
+            if task_id:
+                try:
+                    await self._record_task_session(
+                        task_id=task_id,
+                        phase=phase or owner,
+                        model=model,
+                        started_at=session_start,
+                        duration_seconds=duration,
+                    )
+                except Exception as exc:
+                    logger.debug("gpu_task_sessions write failed", error=str(exc))
+
+    async def _record_task_session(
+        self,
+        *,
+        task_id: str,
+        phase: str,
+        model: str | None,
+        started_at: datetime,
+        duration_seconds: float,
+    ) -> None:
+        """Insert a row into gpu_task_sessions for gitea#271 Phase 3.A3.
+
+        Samples current GPU utilisation + power once at release time. A
+        future enhancement can take a rolling average over the window via
+        the nvidia-smi exporter's range queries; one sample is enough to
+        start populating the table with directional signal.
+        """
+        # Lazy DB connection — the scheduler shouldn't carry a pool
+        # reference; resolve via brain.bootstrap so it works the same in
+        # worker + test environments.
+        try:
+            from brain.bootstrap import resolve_database_url
+            import asyncpg
+        except Exception:
+            return
+        dsn = resolve_database_url()
+        if not dsn:
+            return
+
+        # Sample utilisation / power in parallel with the close path.
+        util_pct = await self._get_gpu_utilization()
+        power_w = await self._get_gpu_power_watts()
+        electricity_rate = _cfg_float(
+            "electricity_rate_kwh_usd", 0.12,
+        )
+        kwh = 0.0
+        cost_usd = 0.0
+        if power_w and duration_seconds > 0:
+            kwh = (power_w / 1000.0) * (duration_seconds / 3600.0)
+            cost_usd = kwh * electricity_rate
+
+        conn = None
+        try:
+            conn = await asyncpg.connect(dsn)
+            await conn.execute(
+                """
+                INSERT INTO gpu_task_sessions (
+                    task_id, phase, started_at, ended_at,
+                    duration_seconds, gpu_model, avg_utilization_pct,
+                    avg_power_watts, peak_power_watts, kwh_consumed,
+                    electricity_rate_kwh, electricity_cost_usd, model_name
+                )
+                VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $7, $8, $9, $10, $11)
+                """,
+                str(task_id),
+                phase,
+                started_at,
+                float(duration_seconds),
+                "RTX 5090",
+                float(util_pct) if util_pct is not None else None,
+                float(power_w) if power_w is not None else None,
+                float(kwh) if kwh else None,
+                float(electricity_rate),
+                float(cost_usd) if cost_usd else None,
+                model,
+            )
+        finally:
+            if conn is not None:
+                await conn.close()
+
+    async def _get_gpu_power_watts(self) -> float | None:
+        """Query nvidia-smi exporter for current GPU power draw (watts)."""
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
+                resp = await client.get(NVIDIA_EXPORTER_URL, timeout=5)
+                if resp.status_code != 200:
+                    return None
+                for line in resp.text.splitlines():
+                    if line.startswith("nvidia_gpu_power_usage_watts{"):
+                        return float(line.split("}")[1].strip())
+        except Exception:
+            return None
+        return None
 
     async def _get_gpu_utilization(self) -> float | None:
         """Query nvidia-smi exporter for current GPU utilization %."""

@@ -77,9 +77,19 @@ class AdminDatabase(DatabaseServiceMixin):
                 - duration_ms (int, optional): Execution time in milliseconds
                 - success (bool, optional): Whether call succeeded (default: True)
                 - error_message (str, optional): Error details if failed
+                - task_type (str, optional): Task type for the model_performance
+                  mirror write (default "blog_post")
+                - gpu_watts_avg (float, optional): Average GPU wattage during
+                  the call for the model_performance mirror
 
         Returns:
             Created cost_log record
+
+        Side effect (gitea#271 Phase 3.A1): mirror-writes a row into
+        model_performance with the subset of fields the feedback-loop
+        analytics need. The mirror is best-effort — a failure there never
+        blocks the cost_logs insert, so the primary accounting path is
+        unaffected.
         """
         try:
             sql = """
@@ -114,6 +124,66 @@ class AdminDatabase(DatabaseServiceMixin):
                     "Logged cost for %s: $%.6f (%s)",
                     cost_log['phase'], cost_log.get('cost_usd', 0), cost_log['model'],
                 )
+                # Mirror-writes (gitea#271 Phase 3.A1 + 3.A4). Never raise —
+                # these are additive observability.
+                try:
+                    await conn.execute(
+                        """
+                        INSERT INTO model_performance (
+                            model_name, task_type, task_id,
+                            quality_score, generation_time_ms,
+                            tokens_input, tokens_output, cost_usd,
+                            gpu_watts_avg, electricity_cost_usd
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        """,
+                        cost_log["model"],
+                        cost_log.get("task_type") or cost_log.get("phase") or "blog_post",
+                        str(cost_log["task_id"]) if cost_log.get("task_id") else None,
+                        cost_log.get("quality_score"),
+                        cost_log.get("duration_ms"),
+                        cost_log.get("input_tokens", 0),
+                        cost_log.get("output_tokens", 0),
+                        float(cost_log.get("cost_usd", 0.0)),
+                        cost_log.get("gpu_watts_avg"),
+                        # For Ollama the reported cost IS the electricity
+                        # cost — derived from GPU watts × duration upstream.
+                        float(cost_log.get("cost_usd", 0.0)) if cost_log.get("provider") == "ollama" else 0.0,
+                    )
+                except Exception as mp_err:
+                    logger.debug(
+                        "[log_cost] model_performance mirror write failed (non-fatal): %s",
+                        mp_err,
+                    )
+                # routing_outcomes — one row per routing decision so the
+                # ML gateway (GH#32) can learn (task_type, model) → outcome.
+                try:
+                    await conn.execute(
+                        """
+                        INSERT INTO routing_outcomes (
+                            task_id, task_type, task_category, worker_id,
+                            model_used, compute_tier, estimated_cost, actual_cost,
+                            quality_score, duration_ms, success
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                        """,
+                        str(cost_log["task_id"]) if cost_log.get("task_id") else None,
+                        cost_log.get("task_type") or cost_log.get("phase") or "blog_post",
+                        cost_log.get("task_category"),
+                        cost_log.get("worker_id"),
+                        cost_log["model"],
+                        cost_log.get("compute_tier") or cost_log.get("provider"),
+                        cost_log.get("estimated_cost_usd"),
+                        float(cost_log.get("cost_usd", 0.0)),
+                        cost_log.get("quality_score"),
+                        cost_log.get("duration_ms"),
+                        cost_log.get("success", True),
+                    )
+                except Exception as ro_err:
+                    logger.debug(
+                        "[log_cost] routing_outcomes mirror write failed (non-fatal): %s",
+                        ro_err,
+                    )
                 return ModelConverter.to_cost_log_response(row)
         except Exception as e:
             logger.error(
@@ -122,6 +192,40 @@ class AdminDatabase(DatabaseServiceMixin):
                 exc_info=True,
             )
             raise
+
+    async def mark_model_performance_outcome(
+        self,
+        task_id: str,
+        *,
+        human_approved: bool | None = None,
+        post_published: bool | None = None,
+    ) -> None:
+        """Flip the outcome columns on every model_performance row for a task.
+
+        Part of gitea#271 Phase 3.A1 — model_performance rows are written at
+        LLM-call time when the verdict is still unknown. Approval + publish
+        are downstream events, so each call site pokes them back here.
+        Best-effort: swallows errors since this is analytics, not accounting.
+        """
+        if human_approved is None and post_published is None:
+            return
+        sets: list[str] = []
+        params: list[Any] = [str(task_id)]
+        if human_approved is not None:
+            params.append(human_approved)
+            sets.append(f"human_approved = ${len(params)}")
+        if post_published is not None:
+            params.append(post_published)
+            sets.append(f"post_published = ${len(params)}")
+        sql = f"UPDATE model_performance SET {', '.join(sets)} WHERE task_id = $1"
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(sql, *params)
+        except Exception as e:
+            logger.debug(
+                "[mark_model_performance_outcome] Update failed for %s: %s",
+                task_id, e,
+            )
 
     @log_query_performance(operation="get_task_costs", category="cost_retrieval")
     async def get_task_costs(self, task_id: str) -> TaskCostBreakdownResponse:

@@ -124,7 +124,10 @@ class GenerateContentStage:
 
         # Generate content (GPU-locked to ollama mode).
         from services.gpu_scheduler import gpu
-        async with gpu.lock("ollama", model=preferred_model):
+        async with gpu.lock(
+            "ollama", model=preferred_model,
+            task_id=task_id, phase="generate_content",
+        ):
             content_text, model_used, metrics = await content_generator.generate_blog_post(
                 topic=topic,
                 style=style,
@@ -289,6 +292,24 @@ class GenerateContentStage:
                 )
             except Exception as e:
                 logger.warning("Cost logging failed (non-critical): %s", e)
+
+        # Snapshot the initial draft into content_revisions so the feedback
+        # loop can later diff this against the QA-revised + finalized
+        # versions (gitea#271 Phase 3.A2).
+        try:
+            from services.content_revisions_logger import log_revision
+            await log_revision(
+                database_service.pool,
+                task_id=task_id,
+                content=content_text,
+                title=title,
+                change_type="initial_draft",
+                change_summary="Writer first-pass output",
+                model_used=model_used,
+                quality_score=metrics.get("final_quality_score"),
+            )
+        except Exception as rev_err:
+            logger.debug("[content_revisions] initial snapshot failed: %s", rev_err)
 
         return StageResult(
             ok=True,

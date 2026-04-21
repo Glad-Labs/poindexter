@@ -629,6 +629,12 @@ class TaskExecutor:
                             reviewer="auto_curator",
                             feedback=f"Quality score {quality_score:.1f} below threshold {min_curation_score:.1f}",
                         )
+                    # Flip model_performance.human_approved=False for the
+                    # learning signal (gitea#271 Phase 3.A1).
+                    with suppress(Exception):
+                        await self.database_service.mark_model_performance_outcome(
+                            task_id, human_approved=False,
+                        )
                     # Webhook delivery is best-effort; don't mask the rejection
                     # with an emitter failure.
                     with suppress(Exception):
@@ -1373,6 +1379,11 @@ class TaskExecutor:
                     post_slug=result.post_slug,
                     external_url=result.published_url,
                     status="published",
+                )
+            # model_performance outcome (gitea#271 Phase 3.A1).
+            with suppress(Exception):
+                await self.database_service.mark_model_performance_outcome(
+                    task_id, human_approved=True, post_published=True,
                 )
         else:
             logger.error(
