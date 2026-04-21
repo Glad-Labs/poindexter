@@ -126,35 +126,39 @@ class AdminDatabase(DatabaseServiceMixin):
                 )
                 # Mirror-writes (gitea#271 Phase 3.A1 + 3.A4). Never raise —
                 # these are additive observability.
-                try:
-                    await conn.execute(
-                        """
-                        INSERT INTO model_performance (
-                            model_name, task_type, task_id,
-                            quality_score, generation_time_ms,
-                            tokens_input, tokens_output, cost_usd,
-                            gpu_watts_avg, electricity_cost_usd
+                # Skip entries from the 'system' pseudo-model (idle warmup,
+                # health probes). They have no associated task and pollute
+                # the learning-signal aggregates.
+                if cost_log.get("model") != "system":
+                    try:
+                        await conn.execute(
+                            """
+                            INSERT INTO model_performance (
+                                model_name, task_type, task_id,
+                                quality_score, generation_time_ms,
+                                tokens_input, tokens_output, cost_usd,
+                                gpu_watts_avg, electricity_cost_usd
+                            )
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            """,
+                            cost_log["model"],
+                            cost_log.get("task_type") or cost_log.get("phase") or "blog_post",
+                            str(cost_log["task_id"]) if cost_log.get("task_id") else None,
+                            cost_log.get("quality_score"),
+                            cost_log.get("duration_ms"),
+                            cost_log.get("input_tokens", 0),
+                            cost_log.get("output_tokens", 0),
+                            float(cost_log.get("cost_usd", 0.0)),
+                            cost_log.get("gpu_watts_avg"),
+                            # For Ollama the reported cost IS the electricity
+                            # cost — derived from GPU watts × duration upstream.
+                            float(cost_log.get("cost_usd", 0.0)) if cost_log.get("provider") == "ollama" else 0.0,
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                        """,
-                        cost_log["model"],
-                        cost_log.get("task_type") or cost_log.get("phase") or "blog_post",
-                        str(cost_log["task_id"]) if cost_log.get("task_id") else None,
-                        cost_log.get("quality_score"),
-                        cost_log.get("duration_ms"),
-                        cost_log.get("input_tokens", 0),
-                        cost_log.get("output_tokens", 0),
-                        float(cost_log.get("cost_usd", 0.0)),
-                        cost_log.get("gpu_watts_avg"),
-                        # For Ollama the reported cost IS the electricity
-                        # cost — derived from GPU watts × duration upstream.
-                        float(cost_log.get("cost_usd", 0.0)) if cost_log.get("provider") == "ollama" else 0.0,
-                    )
-                except Exception as mp_err:
-                    logger.debug(
-                        "[log_cost] model_performance mirror write failed (non-fatal): %s",
-                        mp_err,
-                    )
+                    except Exception as mp_err:
+                        logger.debug(
+                            "[log_cost] model_performance mirror write failed (non-fatal): %s",
+                            mp_err,
+                        )
                 # routing_outcomes — one row per routing decision so the
                 # ML gateway (GH#32) can learn (task_type, model) → outcome.
                 try:
