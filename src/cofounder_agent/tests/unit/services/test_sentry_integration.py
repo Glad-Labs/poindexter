@@ -26,7 +26,10 @@ class TestSentryIntegration:
         with patch.dict("os.environ", {"SENTRY_DSN": ""}, clear=False):
             result = SentryIntegration.initialize(app)
         assert result is False
-        assert SentryIntegration._initialized is True
+        # _initialized intentionally stays False on the no-DSN path so the
+        # lifespan re-init (after site_config loads) can retry once the DSN
+        # is actually configured. See sentry_integration.py:102-104.
+        assert SentryIntegration._initialized is False
         assert SentryIntegration._sentry_enabled is False
 
     def test_initialize_disabled_via_env(self):
