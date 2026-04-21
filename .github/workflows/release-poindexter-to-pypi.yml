@@ -1,0 +1,158 @@
+# Publish the `poindexter` CLI to PyPI.
+#
+# Trigger: pushing a tag of the form `poindexter-v*.*.*` (e.g.
+# `poindexter-v0.9.1`). Manual dispatch is also supported for testing
+# against TestPyPI.
+#
+# Publishing uses PyPI Trusted Publishing (OIDC) — there is NO API
+# token stored in GitHub Secrets. To wire this up on first use:
+#
+#   1. Create the project on pypi.org (either by uploading a wheel
+#      manually once, or by pre-registering via Trusted Publishers —
+#      the "pending publisher" flow supports new projects).
+#   2. Go to https://pypi.org/manage/account/publishing/ (or the
+#      project's Publishing tab once it exists) and add a Trusted
+#      Publisher with:
+#        - Owner:         Glad-Labs
+#        - Repository:    poindexter
+#        - Workflow:      release-poindexter-to-pypi.yml
+#        - Environment:   pypi
+#   3. Repeat for https://test.pypi.org/ and environment `testpypi`
+#      if you want to exercise the manual-dispatch path.
+#
+# No PYPI_API_TOKEN secret is used or required.
+#
+# Resolves Glad-Labs/poindexter#41.
+
+name: Release poindexter to PyPI
+
+on:
+  push:
+    tags:
+      # Tag schema is intentionally package-scoped so the umbrella repo
+      # can cut independent releases for other components later.
+      - "poindexter-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish (testpypi for a dry run, pypi for real)."
+        required: true
+        default: testpypi
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+permissions:
+  # Required for PyPI Trusted Publishing via OIDC.
+  id-token: write
+  # Needed so the action can read the tag/ref.
+  contents: read
+
+concurrency:
+  group: release-poindexter-pypi-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build wheel + sdist
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pkg.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+
+      - name: Build distributions
+        working-directory: src/cofounder_agent/poindexter
+        run: |
+          python -m build
+          ls -la dist/
+
+      - name: Validate distributions
+        working-directory: src/cofounder_agent/poindexter
+        run: |
+          python -m twine check dist/*
+
+      - name: Report package version
+        id: pkg
+        working-directory: src/cofounder_agent/poindexter
+        run: |
+          # Extract version from the built sdist filename:
+          #   poindexter-0.9.0.tar.gz -> 0.9.0
+          wheel_file=$(ls dist/poindexter-*.whl | head -n1)
+          version=$(basename "$wheel_file" | sed -E 's/^poindexter-([^-]+)-.*$/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Built poindexter $version"
+
+      - name: Upload dist as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: poindexter-dist
+          path: src/cofounder_agent/poindexter/dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/poindexter
+    permissions:
+      id-token: write
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: poindexter-dist
+          path: dist/
+
+      - name: Publish to TestPyPI (OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+          skip-existing: true
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    # Tag pushes always go to real PyPI. A workflow_dispatch with
+    # target=pypi also routes here.
+    if: >-
+      startsWith(github.ref, 'refs/tags/poindexter-v') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/poindexter
+    permissions:
+      id-token: write
+    steps:
+      - name: Download built distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: poindexter-dist
+          path: dist/
+
+      - name: Publish to PyPI (OIDC Trusted Publisher)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          # skip-existing guards against re-runs trying to upload an
+          # already-published version; intentional re-uploads should
+          # bump the version number first.
+          skip-existing: true
