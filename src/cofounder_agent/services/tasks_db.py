@@ -568,6 +568,44 @@ class TasksDatabase(DatabaseServiceMixin):
             if "published_at" not in normalized_updates and "published_at" in task_metadata:
                 normalized_updates["published_at"] = task_metadata.get("published_at")
 
+        # Defensive filter — content_tasks is a view whose column set is
+        # strictly narrower than the runtime context dict. Historically
+        # callers have passed context-only keys (`model_selection_log`,
+        # `models_used_by_phase`, `attempted_providers`, etc.) directly
+        # as top-level updates; those reach the SQL builder and Postgres
+        # raises "column X of relation content_tasks does not exist",
+        # halting the pipeline at finalize_task. Fold any non-column keys
+        # into task_metadata (JSONB) instead so the data survives without
+        # crashing the write.
+        _VIEW_COLUMNS = {
+            "id", "task_id", "task_type", "content_type", "title", "topic",
+            "status", "stage", "style", "tone", "target_length", "category",
+            "primary_keyword", "target_audience", "content", "excerpt",
+            "featured_image_url", "featured_image_data", "quality_score",
+            "qa_feedback", "seo_title", "seo_description", "seo_keywords",
+            "percentage", "message", "model_used", "error_message",
+            "models_used_by_phase", "metadata", "result", "task_metadata",
+            "site_id", "created_at", "updated_at", "started_at",
+            "completed_at", "approval_status", "approved_by",
+            "human_feedback", "post_id", "post_slug", "published_at",
+            "actual_cost", "cost_breakdown",
+        }
+        rerouted_to_metadata: dict[str, Any] = {}
+        for stray_key in list(normalized_updates.keys()):
+            if stray_key not in _VIEW_COLUMNS:
+                rerouted_to_metadata[stray_key] = normalized_updates.pop(stray_key)
+        if rerouted_to_metadata:
+            existing_meta = safe_json_load(
+                normalized_updates.get("task_metadata"), fallback={}
+            )
+            existing_meta.update(rerouted_to_metadata)
+            normalized_updates["task_metadata"] = existing_meta
+            logger.info(
+                "[update_task] rerouted %d non-column keys into task_metadata: %s",
+                len(rerouted_to_metadata),
+                sorted(rerouted_to_metadata.keys()),
+            )
+
         # Serialize values for PostgreSQL
         serialized_updates = {}
         for key, value in normalized_updates.items():
