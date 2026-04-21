@@ -740,7 +740,11 @@ async def _build_writing_style_context(
 
 
 async def _build_rag_context(
-    database_service: DatabaseService | None, topic: str
+    database_service: DatabaseService | None,
+    topic: str,
+    *,
+    source_tags: list[str] | None = None,
+    category: str | None = None,
 ) -> str | None:
     """Search pgvector for similar published posts. Returns None if unavailable.
 
@@ -748,6 +752,13 @@ async def _build_rag_context(
     calls to `poindexter.memory.MemoryClient.find_similar_posts` per Gitea #192
     slice 3. The MemoryClient helper hardcodes `source_table='posts'` so the
     singular/plural silent-zero-result bug can never recur here.
+
+    GH-88: candidates are now run through :class:`InternalLinkCoherenceFilter`
+    before being rendered into the writer prompt. The filter requires a
+    topic-tag overlap between source and target and caps how many inbound
+    recommendations any single target may accumulate. Without this, the
+    CadQuery post got pinned as "related" on every engineering-adjacent
+    topic because its embedding sat near "engineering fundamentals".
     """
     if not topic or not topic.strip():
         return None
@@ -756,31 +767,36 @@ async def _build_rag_context(
         from poindexter.memory import MemoryClient
 
         async with MemoryClient() as mem:
+            # Over-fetch so the coherence filter has room to drop off-topic
+            # matches without starving the writer prompt.
             similar_posts = await mem.find_similar_posts(
-                topic, limit=5, min_similarity=0.3
+                topic, limit=15, min_similarity=0.3
             )
 
         if not similar_posts:
             return None
 
-        # Look up post details (title, excerpt, slug) for each match
-        lines = [
-            "RELATED POSTS WE'VE PUBLISHED (reference for internal linking, avoid repeating same angles):"
-        ]
         pool = database_service.pool if database_service else None
-        for i, hit in enumerate(similar_posts, 1):
+
+        # Hydrate each candidate with slug + excerpt from posts.
+        from services.internal_link_coherence import (
+            InternalLinkCoherenceFilter,
+            LinkCandidate,
+        )
+
+        candidates: list[LinkCandidate] = []
+        # Preserve the per-hit data (similarity, excerpt) alongside the
+        # LinkCandidate so we can still render it after filtering.
+        extra: dict[str, dict[str, Any]] = {}
+        for hit in similar_posts:
             post_id = hit.source_id
             similarity = hit.similarity
             title = (hit.metadata or {}).get("title", "Untitled")
 
-            # Try to fetch slug and excerpt from the posts table.
-            # source_id for a post row is the post UUID (sometimes prefixed
-            # with "post/"), so try both shapes.
             slug = ""
             excerpt = ""
             if pool:
                 try:
-                    # Strip optional "post/" prefix that auto-embed.py adds.
                     lookup_id = post_id.removeprefix("post/")
                     row = await pool.fetchrow(
                         "SELECT slug, excerpt FROM posts WHERE id::text = $1 LIMIT 1",
@@ -792,10 +808,48 @@ async def _build_rag_context(
                 except Exception:
                     pass  # Non-critical — use metadata title only
 
+            key = slug or post_id
+            cand = LinkCandidate(
+                slug=slug,
+                title=title,
+                post_id=post_id.removeprefix("post/"),
+                similarity=similarity,
+            )
+            candidates.append(cand)
+            extra[key] = {
+                "similarity": similarity,
+                "excerpt": excerpt,
+                "post_id": post_id,
+            }
+
+        # Seed source tags with category (see research_service for the same
+        # logic) so content_tasks with only a `category` field still match
+        # targets sharing that category's slug.
+        effective_source_tags = list(source_tags or [])
+        if category:
+            effective_source_tags.append(category)
+
+        coherence = InternalLinkCoherenceFilter(pool=pool)
+        survivors = await coherence.filter_candidates(
+            source_tags=effective_source_tags, candidates=candidates
+        )
+        if not survivors:
+            return None
+
+        survivors = survivors[:5]
+
+        lines = [
+            "RELATED POSTS WE'VE PUBLISHED (reference for internal linking, avoid repeating same angles):"
+        ]
+        for i, cand in enumerate(survivors, 1):
+            key = cand.slug or cand.post_id or ""
+            info = extra.get(key, {})
+            similarity = cand.similarity or info.get("similarity", 0.0)
+            excerpt = info.get("excerpt", "") or ""
             excerpt_short = (excerpt[:120] + "...") if len(excerpt) > 120 else excerpt
-            url = f"/posts/{slug}" if slug else f"(post id: {post_id})"
+            url = f"/posts/{cand.slug}" if cand.slug else f"(post id: {info.get('post_id', '')})"
             lines.append(
-                f"{i}. [{title}] -- {excerpt_short} ({url}) [similarity: {similarity:.2f}]"
+                f"{i}. [{cand.title}] -- {excerpt_short} ({url}) [similarity: {similarity:.2f}]"
             )
 
         return "\n".join(lines)
@@ -1110,10 +1164,28 @@ async def _stage_generate_content(
     except Exception as e:
         logger.debug("Failed to load task research_context: %s", e)
 
+    # Resolve the source-post category once so both the ILIKE and the
+    # pgvector internal-link paths can use it to build a coherence-gated
+    # candidate set (GH-88).
+    _source_category: str | None = None
+    try:
+        if database_service and hasattr(database_service, "pool") and database_service.pool:
+            async with database_service.pool.acquire() as _conn:
+                _row = await _conn.fetchrow(
+                    "SELECT category FROM content_tasks WHERE task_id = $1",
+                    task_id,
+                )
+                if _row:
+                    _source_category = _row.get("category")
+    except Exception:
+        _source_category = None
+
     try:
         from services.research_service import ResearchService
         research_svc = ResearchService(pool=database_service.pool if database_service else None)
-        auto_context = await research_svc.build_context(topic)
+        auto_context = await research_svc.build_context(
+            topic, source_tags=tags or [], category=_source_category or "technology"
+        )
         if auto_context:
             research_context = f"{research_context}\n\n{auto_context}" if research_context else auto_context
             logger.info("Research context built: %d chars", len(research_context))
@@ -1122,7 +1194,12 @@ async def _stage_generate_content(
 
     # RAG: Embed the topic and find similar published posts via pgvector
     try:
-        rag_context = await _build_rag_context(database_service, topic)
+        rag_context = await _build_rag_context(
+            database_service,
+            topic,
+            source_tags=tags or [],
+            category=_source_category,
+        )
         if rag_context:
             research_context = f"{research_context}\n\n{rag_context}" if research_context else rag_context
             logger.info("RAG context injected: %d chars", len(rag_context))
