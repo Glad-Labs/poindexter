@@ -116,6 +116,22 @@ async def reject_task(
             },
         )
 
+        # Record the rejection on pipeline_reviews so `content_tasks` view's
+        # approval_status / approved_by columns resolve non-NULL.
+        try:
+            from services.pipeline_db import PipelineDB
+            await PipelineDB(db_service.pool).add_review(
+                task_id=task_id,
+                decision="rejected",
+                reviewer=operator["id"],
+                feedback=request.feedback,
+            )
+        except Exception as review_err:
+            logger.warning(
+                "[reject_task] pipeline_reviews write failed for %s: %s",
+                task_id, review_err,
+            )
+
         logger.info("Task %s rejected by %s: %s", task_id, operator['id'], request.reason)
 
         # Broadcast rejection status to connected WebSocket clients
