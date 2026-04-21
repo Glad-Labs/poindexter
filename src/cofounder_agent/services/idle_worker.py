@@ -180,6 +180,7 @@ class IdleWorker:
         """Evaluate whether topic discovery should fire now (issue #229).
 
         Returns (should_fire, reason).  Signals considered:
+        - Throttle gate: approval queue full → suppress (GH-89 AC#3)
         - Manual trigger: app_settings.topic_discovery_manual_trigger = true
         - Queue low: pending_tasks < queue_low_threshold (default 2)
         - Stale content: last published > stale_hours (default 6)
@@ -190,6 +191,22 @@ class IdleWorker:
         """
         if not self.pool:
             return False, "no_pool"
+
+        # 0. Throttle gate — if the approval queue is at or above
+        # ``max_approval_queue``, suppress discovery. Without this,
+        # auto-generated topics pile up behind the throttle wall and the
+        # operator has to shovel out a mountain of stale pending work
+        # before the pipeline can move. Runs BEFORE cooldown/manual
+        # checks so even a manual_trigger can't stuff more topics
+        # into a full queue. See GH-89.
+        try:
+            from services.pipeline_throttle import is_queue_full
+
+            full, queue_size, queue_limit = await is_queue_full(self.pool)
+            if full:
+                return False, f"queue_full({queue_size}>={queue_limit})"
+        except Exception as e:
+            logger.debug("[IDLE] Throttle-gate check failed: %s", e)
 
         # 1. Cooldown check
         try:

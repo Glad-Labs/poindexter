@@ -268,6 +268,75 @@ class TestDiscoverAndQueueTopics:
 
 
 # ===========================================================================
+# _should_trigger_discovery — throttle gate (GH-89 AC#3)
+# ===========================================================================
+
+
+class TestShouldTriggerDiscoveryThrottleGate:
+    """When the approval queue is full, topic discovery must
+    early-return False. Otherwise auto-generated topics pile up behind
+    the throttle wall and clutter pending indefinitely."""
+
+    @pytest.mark.asyncio
+    async def test_early_returns_when_queue_full(self):
+        pool = _make_pool(pending_count=0)
+        worker = IdleWorker(pool)
+        # Patch the shared throttle check to report a full queue
+        with patch(
+            "services.pipeline_throttle.is_queue_full",
+            new=AsyncMock(return_value=(True, 10, 3)),
+        ):
+            should_fire, reason = await worker._should_trigger_discovery()
+        assert should_fire is False
+        assert "queue_full" in reason
+
+    @pytest.mark.asyncio
+    async def test_continues_to_cooldown_when_queue_not_full(self):
+        """Not-full queue does NOT short-circuit — we proceed to the
+        normal cooldown/manual/signal ladder."""
+        pool = _make_pool(pending_count=0)
+        worker = IdleWorker(pool)
+
+        # Suppress everything past the gate via a huge cooldown so
+        # _should_trigger_discovery returns "cooldown" — proving we
+        # got past the throttle gate (not "queue_full").
+        async def _settings(key, default=""):
+            if key == "topic_discovery_min_cooldown_seconds":
+                return "99999999999"  # ~3000 years
+            if key == "idle_last_run_topic_discovery":
+                return str(time.time())  # just ran = definitely in cooldown
+            return default
+
+        worker._get_setting = _settings
+        with patch(
+            "services.pipeline_throttle.is_queue_full",
+            new=AsyncMock(return_value=(False, 1, 3)),
+        ):
+            should_fire, reason = await worker._should_trigger_discovery()
+        assert should_fire is False
+        # Suppressed by cooldown, NOT by queue_full — the gate let us through
+        assert "queue_full" not in reason
+        assert reason == "cooldown"
+
+    @pytest.mark.asyncio
+    async def test_throttle_check_exception_does_not_kill_discovery(self):
+        """A failing throttle check must NOT poison the decision — the
+        rest of the signal ladder still runs."""
+        pool = _make_pool(pending_count=0)
+        worker = IdleWorker(pool)
+        worker._get_setting = AsyncMock(return_value="0")  # cooldown 0 = due
+        # Block the rest of the ladder so we can assert we got past the gate
+        pool.fetchval = AsyncMock(return_value=0)  # pending=0 triggers queue_low
+        with patch(
+            "services.pipeline_throttle.is_queue_full",
+            new=AsyncMock(side_effect=RuntimeError("throttle module exploded")),
+        ):
+            should_fire, reason = await worker._should_trigger_discovery()
+        # We got past the gate — reason is not "queue_full"
+        assert "queue_full" not in reason
+
+
+# ===========================================================================
 # _sync_shared_context + _auto_embed_posts (subprocess wrappers)
 # ===========================================================================
 
