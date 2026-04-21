@@ -222,7 +222,7 @@ One pane of glass (Grafana). No new vendor UIs.
 | Resend                                                                                        | 💰 Kept (free tier 3K/mo)                                | Email                                        |
 | Google Analytics                                                                              | ⚠️ Consider Plausible / Matomo for pure-OSS theme        | Only remaining non-OSS piece                 |
 
-Removed in prior sessions: Anthropic, OpenAI, Google Gemini, Sentry, Railway, Woodpecker, dlvr.it.
+Removed in prior sessions: Anthropic, OpenAI, Google Gemini, Railway, Woodpecker. dlvr.it is partial — retired for Bluesky and Mastodon (direct adapters now), retained for X/Twitter cross-posting. Sentry is NOT removed — it's still active in the public-site and worker as the error-tracking layer.
 
 ## Known gaps (tracked, not blocking)
 
