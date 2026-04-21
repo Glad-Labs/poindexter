@@ -14,6 +14,7 @@ Handles all startup and shutdown operations for Poindexter (the AI cofounder pip
 - Graceful shutdown
 """
 
+import asyncio
 import os
 from typing import Any
 
@@ -115,6 +116,23 @@ class StartupManager:
 
             # Step 13: Initialize template execution service
             await self._initialize_template_execution_service()
+
+            # Step 13b: Start retention janitor (gitea#271 Phase 4.1) —
+            # periodically prunes unbounded high-churn tables. Runs in the
+            # background; retention windows configurable per table via
+            # app_settings.retention_days__<table>.
+            try:
+                from services.retention_janitor import run_forever as _retention_loop
+                if self.database_service and self.database_service.pool:
+                    asyncio.create_task(
+                        _retention_loop(self.database_service.pool),
+                        name="retention_janitor",
+                    )
+                    logger.info("[retention_janitor] Started background loop")
+            except Exception as rj_err:
+                logger.warning(
+                    "[retention_janitor] Failed to start: %s", rj_err,
+                )
 
             # Step 14: Warmup SDXL models (async, non-blocking)
             # Only if GPU is available - this prevents timeout issues when users first request SDXL
