@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import * as Sentry from '@sentry/nextjs';
-import { Display, Eyebrow, Button } from '@glad-labs/brand';
+import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { OrganizationSchema } from '../components/StructuredData';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 
@@ -113,52 +113,38 @@ export default async function HomePage() {
         {error ? (
           <section className="py-12 px-4 sm:px-6 lg:px-8">
             <div className="container mx-auto max-w-6xl">
-              <div className="h-96 bg-slate-800/50 rounded-xl flex flex-col items-center justify-center border border-amber-500/30">
-                <svg
-                  className="w-12 h-12 text-amber-400 mb-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-                  />
-                </svg>
-                <p className="text-amber-300 font-medium text-lg mb-2">
-                  Unable to load articles right now
-                </p>
-                <p className="text-slate-400 text-sm">
+              <Card accent="amber" className="text-center py-12">
+                <Card.Meta>SERVICE UNAVAILABLE</Card.Meta>
+                <h2 className="gl-h2 mt-2">
+                  Unable to load articles right now.
+                </h2>
+                <p className="gl-body mt-3 max-w-md mx-auto">
                   Our content service is temporarily unavailable. Please try
                   again shortly.
                 </p>
-              </div>
+              </Card>
             </div>
           </section>
         ) : posts.length === 0 ? (
           <section className="py-12 px-4 sm:px-6 lg:px-8">
             <div className="container mx-auto max-w-6xl">
-              <div className="h-96 bg-slate-800 rounded-xl flex flex-col items-center justify-center border border-slate-700">
-                <p className="text-slate-400 text-lg mb-2">
-                  No posts available yet.
+              <Card accent="amber" className="text-center py-12">
+                <Card.Meta>NO ARTICLES YET</Card.Meta>
+                <h2 className="gl-h2 mt-2">Nothing published yet.</h2>
+                <p className="gl-body mt-3 max-w-md mx-auto">
+                  New articles are on the way — check back soon.
                 </p>
-                <p className="text-slate-500 text-sm">
-                  New articles are on the way — check back soon!
-                </p>
-              </div>
+              </Card>
             </div>
           </section>
         ) : (
           <section className="py-12 px-4 sm:px-6 lg:px-8">
             <div className="container mx-auto max-w-6xl">
-              {/* Main Featured Post Card */}
-              <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 rounded-2xl overflow-hidden border border-cyan-500/20 hover:border-cyan-400/40 transition-colors">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8">
+              {/* Featured Post */}
+              <Card className="overflow-hidden p-0">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
                   {/* Featured Image */}
-                  <div className="relative aspect-video lg:aspect-auto h-full min-h-96 bg-slate-700 rounded-xl overflow-hidden">
+                  <div className="relative aspect-video lg:aspect-auto h-full min-h-96 bg-slate-800 overflow-hidden">
                     {currentPost?.featured_image_url ? (
                       <Image
                         src={currentPost.featured_image_url}
@@ -169,33 +155,32 @@ export default async function HomePage() {
                         priority
                       />
                     ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-cyan-500/20 to-violet-500/20 flex items-center justify-center">
-                        <span className="text-slate-400">
-                          No image available
-                        </span>
+                      <div className="w-full h-full flex items-center justify-center gl-mono gl-mono--upper opacity-50">
+                        No image available
                       </div>
                     )}
                   </div>
 
                   {/* Post Content */}
-                  <div className="flex flex-col justify-between">
-                    {/* Category & Meta */}
+                  <div className="flex flex-col justify-between p-8">
                     <div>
+                      <Card.Meta>FEATURED · LATEST</Card.Meta>
                       {currentPost?.category && (
-                        <div className="inline-block mb-4">
-                          <span className="px-3 py-1 bg-cyan-500/20 text-cyan-300 rounded-full text-sm font-medium border border-cyan-500/30">
+                        <div className="mt-2">
+                          <Card.Tag>
                             {currentPost.category.name || 'Featured'}
-                          </span>
+                          </Card.Tag>
                         </div>
                       )}
 
-                      {/* Title */}
-                      <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 leading-tight">
+                      <h2
+                        className="gl-h2 mt-4"
+                        style={{ fontSize: 'clamp(1.75rem, 3vw, 2.25rem)' }}
+                      >
                         {currentPost?.title}
                       </h2>
 
-                      {/* Excerpt */}
-                      <p className="text-lg text-slate-300 mb-6 leading-relaxed">
+                      <p className="gl-body gl-body--lg mt-4">
                         {currentPost?.excerpt ||
                           (currentPost?.content
                             ? currentPost.content.substring(0, 200) + '...'
@@ -203,9 +188,11 @@ export default async function HomePage() {
                       </p>
                     </div>
 
-                    {/* Meta Information & CTA */}
-                    <div className="flex items-center justify-between pt-6 border-t border-slate-700/50">
-                      <div className="text-sm text-slate-400">
+                    <div
+                      className="flex items-center justify-between pt-6 mt-6"
+                      style={{ borderTop: '1px solid var(--gl-hairline)' }}
+                    >
+                      <div className="gl-mono gl-mono--upper opacity-70 text-xs">
                         {currentPost?.published_at && (
                           <time dateTime={currentPost.published_at}>
                             {new Date(
@@ -219,72 +206,89 @@ export default async function HomePage() {
                         )}
                       </div>
 
-                      <Link
+                      <Button
+                        as={Link}
                         href={`/posts/${currentPost?.slug}`}
-                        className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-cyan-500/50 transition-all"
+                        variant="primary"
                       >
-                        Read Article
-                        <span className="text-xl">→</span>
-                      </Link>
+                        Read article →
+                      </Button>
                     </div>
                   </div>
                 </div>
-              </div>
+              </Card>
 
               {/* Recent Posts Grid */}
               {posts.length > 1 && (
-                <div className="mt-12">
-                  <h2 className="text-2xl font-bold text-white mb-6">
-                    Recent Posts
-                  </h2>
+                <div className="mt-16">
+                  <Eyebrow>GLAD LABS · RECENT</Eyebrow>
+                  <h2 className="gl-h2 mt-1 mb-6">Recent posts.</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {posts.slice(1, 7).map((post) => (
-                      <Link
+                      <Card
                         key={post.id || post.slug}
-                        href={`/posts/${post.slug}`}
-                        className="group bg-slate-800/50 rounded-lg overflow-hidden border border-slate-700 hover:border-cyan-500/50 transition-all hover:shadow-lg hover:shadow-cyan-500/10"
+                        className="group flex flex-col h-full overflow-hidden p-0"
                       >
-                        {/* Post Image */}
                         {post.featured_image_url && (
-                          <div className="relative aspect-video overflow-hidden bg-slate-700">
+                          <div className="relative aspect-video overflow-hidden bg-slate-800">
                             <Image
                               src={post.featured_image_url}
                               alt={post.title}
                               fill
                               sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                              className="object-cover group-hover:scale-105 transition-transform"
+                              className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                             />
                           </div>
                         )}
 
-                        {/* Post Info */}
-                        <div className="p-6">
-                          <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-cyan-400 transition-colors line-clamp-2">
-                            {post.title}
-                          </h3>
-                          <p className="text-sm text-slate-300 line-clamp-2">
-                            {post.excerpt ||
-                              (post.content
-                                ? post.content.substring(0, 100) + '...'
-                                : '')}
-                          </p>
-                          {post.published_at && (
-                            <time
-                              dateTime={post.published_at}
-                              className="text-xs text-slate-400 mt-3 block"
+                        <div className="flex flex-col justify-between flex-1 p-6">
+                          <div>
+                            {post.published_at ? (
+                              <Card.Meta>
+                                <time dateTime={post.published_at}>
+                                  {new Date(
+                                    post.published_at
+                                  ).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                                </time>
+                              </Card.Meta>
+                            ) : null}
+                            <Card.Title>
+                              <Link
+                                href={`/posts/${post.slug}`}
+                                className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                              >
+                                {post.title}
+                              </Link>
+                            </Card.Title>
+                            {(post.excerpt || post.content) && (
+                              <Card.Body className="line-clamp-3 mt-2">
+                                {post.excerpt ||
+                                  (post.content
+                                    ? post.content.substring(0, 100) + '...'
+                                    : '')}
+                              </Card.Body>
+                            )}
+                          </div>
+                          <div
+                            className="pt-4 mt-4"
+                            style={{ borderTop: '1px solid var(--gl-hairline)' }}
+                          >
+                            <Link
+                              href={`/posts/${post.slug}`}
+                              className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
+                              aria-hidden="true"
+                              tabIndex={-1}
                             >
-                              {new Date(post.published_at).toLocaleDateString(
-                                'en-US',
-                                {
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                }
-                              )}
-                            </time>
-                          )}
+                              Read article
+                              <span aria-hidden>→</span>
+                            </Link>
+                          </div>
                         </div>
-                      </Link>
+                      </Card>
                     ))}
                   </div>
                 </div>
@@ -295,20 +299,20 @@ export default async function HomePage() {
 
         {/* Browse All Articles CTA */}
         <section className="py-16 px-4 sm:px-6 lg:px-8">
-          <div className="container mx-auto max-w-6xl text-center">
-            <h2 className="text-3xl font-bold text-white mb-4">
-              Browse All Articles
+          <div className="container mx-auto max-w-5xl text-center">
+            <Eyebrow>GLAD LABS · ARCHIVE</Eyebrow>
+            <h2 className="gl-h2 mt-1">
+              Every article we&apos;ve published.
             </h2>
-            <p className="text-lg text-slate-300 mb-8">
-              Explore our complete collection of insights and analyses
+            <p className="gl-body gl-body--lg mt-4 max-w-2xl mx-auto">
+              Explore our complete collection of insights and analyses across
+              AI, hardware, and gaming.
             </p>
-            <Link
-              href="/archive/1"
-              className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-cyan-500/50 transition-all text-lg"
-            >
-              View All Articles
-              <span className="text-2xl">→</span>
-            </Link>
+            <div className="mt-8 flex justify-center">
+              <Button as={Link} href="/archive/1" variant="primary">
+                View all articles →
+              </Button>
+            </div>
           </div>
         </section>
       </div>

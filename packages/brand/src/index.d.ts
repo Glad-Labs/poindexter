@@ -2,7 +2,15 @@
 // The implementation is plain JSX; these ambient types keep TS consumers
 // (Next.js build-time typecheck on .tsx pages) from erroring on imports.
 
-import type { ElementType, FC, HTMLAttributes, ReactNode } from 'react';
+import type {
+  ElementType,
+  FC,
+  ForwardRefExoticComponent,
+  HTMLAttributes,
+  ReactNode,
+  Ref,
+  RefAttributes,
+} from 'react';
 
 export interface EyebrowProps extends HTMLAttributes<HTMLSpanElement> {
   children: ReactNode;
@@ -31,7 +39,9 @@ export interface ButtonProps extends HTMLAttributes<HTMLElement> {
   children: ReactNode;
   className?: string;
 }
-export const Button: FC<ButtonProps>;
+export const Button: ForwardRefExoticComponent<
+  ButtonProps & RefAttributes<HTMLElement>
+>;
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   accent?: 'cyan' | 'amber' | 'mint';
