@@ -196,22 +196,35 @@ class TaskExecutor:
                 logger.debug("[TASK_EXEC_LOOP] Polling for pending tasks...")
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
 
-                # Throttle: don't process new tasks if approval queue is too full
-                if pending_tasks:
-                    try:
-                        _max_queue = int(await self._get_setting("max_approval_queue", "3"))
-                        _queue_row = await self.database_service.pool.fetchrow(
-                            "SELECT COUNT(*) as c FROM content_tasks WHERE status = 'awaiting_approval'"
+                # Throttle: don't process new tasks if approval queue is too full.
+                # The throttle state is shared (services.pipeline_throttle) so that
+                # the idle worker's discovery gate, the API create-task handler,
+                # and the /api/prometheus endpoint all see the same truth and can
+                # emit a structured "we are throttled" signal — see GH-89.
+                try:
+                    from services.pipeline_throttle import is_queue_full
+
+                    _full, _queue_size, _queue_limit = await is_queue_full(
+                        self.database_service.pool
+                    )
+                    if _full and pending_tasks:
+                        # WARN (not INFO) so this shows up in the default log
+                        # filter and in any Discord ops alert that tails warn+.
+                        # Previously buried at INFO under Sentry DEBUG noise —
+                        # see GH-89 observation (b).
+                        logger.warning(
+                            "[THROTTLE] Approval queue full (%d/%d) — skipping generation. "
+                            "Free a slot via /approve-post or raise max_approval_queue in "
+                            "app_settings to resume.",
+                            _queue_size, _queue_limit,
                         )
-                        _queue_size = _queue_row["c"] if _queue_row else 0
-                        if _queue_size >= _max_queue:
-                            logger.info(
-                                "[THROTTLE] Approval queue full (%d/%d) — skipping generation",
-                                _queue_size, _max_queue,
-                            )
-                            pending_tasks = []  # Skip processing
-                    except Exception:
-                        pass  # On error, proceed normally
+                        pending_tasks = []  # Skip processing this cycle
+                except Exception:
+                    # Throttle-check failure must never poison the main loop.
+                    # Falling through = proceed with whatever get_pending_tasks
+                    # returned (safest option: pipeline keeps working even if
+                    # the throttle gauge is temporarily wrong).
+                    logger.debug("[THROTTLE] Throttle check failed", exc_info=True)
 
                 if pending_tasks:
                     logger.info("[TASK_EXEC_LOOP] Found %s pending task(s)", len(pending_tasks))
@@ -993,8 +1006,78 @@ class TaskExecutor:
         except Exception:
             logger.warning("[_sweep_stale_tasks] Failed to sweep stale tasks", exc_info=True)
 
+        # Auto-cancel tasks that have been stuck in 'pending' for too long.
+        # This is the stale-pending sweeper (GH-89 AC#4) — without it, a
+        # throttle event that outlives the operator's attention leaves
+        # tasks queued forever, so the pipeline's "active backlog" grows
+        # without bound.
+        await self._sweep_stale_pending_tasks()
+
         # Also auto-retry recently failed/rejected tasks with adjusted params
         await self._auto_retry_failed_tasks()
+
+    async def _sweep_stale_pending_tasks(self) -> None:
+        """Auto-cancel tasks that have been stuck in 'pending' for too long.
+
+        Configurable via ``app_settings.stale_pending_timeout_hours``
+        (default 24). Fires at warn level so operators can tell the
+        difference between "a task is running slowly" (normal) and "the
+        pipeline was throttled for a day and we're reaping the backlog"
+        (GH-89 symptom).
+
+        Tasks are moved to ``status = 'cancelled'`` with a structured
+        result payload rather than deleted — the history stays so the
+        operator can see what was auto-reaped.
+        """
+        if not self.database_service or not self.database_service.pool:
+            return
+        try:
+            hours = int(await self._get_setting(
+                "stale_pending_timeout_hours", "24"
+            ))
+            if hours <= 0:
+                # 0 or negative disables the sweeper.
+                return
+
+            # One-shot UPDATE…RETURNING so we don't race with the executor
+            # picking up a task between SELECT and UPDATE.
+            rows = await self.database_service.pool.fetch(
+                f"""
+                UPDATE content_tasks
+                SET status = 'cancelled',
+                    error_message = 'Auto-cancelled: stuck in pending for >' || $1 || ' hours '
+                                  || '(stale_pending_timeout_hours). Likely throttled because '
+                                  || 'awaiting_approval queue was full. See GH-89.',
+                    result = COALESCE(result, '{{}}'::jsonb) || jsonb_build_object(
+                        'reason', 'stale_pending_auto_cancel',
+                        'stale_pending_timeout_hours', $1::int,
+                        'cancelled_at', NOW()::text
+                    ),
+                    updated_at = NOW()
+                WHERE status = 'pending'
+                  AND created_at < NOW() - make_interval(hours => $1::int)
+                RETURNING task_id, topic, created_at
+                """,
+                hours,
+            )
+
+            if rows:
+                logger.warning(
+                    "[STALE_PENDING_SWEEP] Auto-cancelled %d tasks stuck in pending "
+                    "for >%dh. Check for a prolonged throttle event or a dead worker.",
+                    len(rows), hours,
+                )
+                for r in rows[:5]:
+                    topic = (r.get("topic") or "")[:60]
+                    logger.warning(
+                        "[STALE_PENDING_SWEEP]   - %s: %s (created %s)",
+                        str(r["task_id"])[:8], topic, r["created_at"],
+                    )
+        except Exception:
+            logger.warning(
+                "[STALE_PENDING_SWEEP] Failed to sweep stale pending tasks",
+                exc_info=True,
+            )
 
     async def _auto_retry_failed_tasks(self) -> None:
         """Retry recent failed tasks with adjusted parameters.

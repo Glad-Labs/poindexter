@@ -794,6 +794,32 @@ async def prometheus_metrics():
     except Exception:
         pass
 
+    # Pipeline throttle metrics (GH-89 AC#2).
+    # - pipeline_throttle_active : 1 when the approval queue is at/above
+    #   max_approval_queue, 0 otherwise. Panel this in Grafana and alert
+    #   on `pipeline_throttle_active == 1 for > 15m` to catch silent stalls.
+    # - pipeline_throttle_seconds_total : cumulative seconds spent throttled
+    #   since worker boot. rate() this in Grafana to see "how much of the
+    #   last hour was wasted behind the approval wall".
+    try:
+        from services.pipeline_throttle import get_state as _throttle_state
+
+        _ts = _throttle_state()
+        lines.append("# HELP poindexter_pipeline_throttle_active Approval queue is full and pipeline is not advancing (1=throttled)")
+        lines.append("# TYPE poindexter_pipeline_throttle_active gauge")
+        lines.append(f"poindexter_pipeline_throttle_active {1 if _ts['active'] else 0}")
+        lines.append("# HELP poindexter_pipeline_throttle_seconds_total Cumulative seconds the pipeline spent throttled by the approval queue")
+        lines.append("# TYPE poindexter_pipeline_throttle_seconds_total counter")
+        lines.append(f"poindexter_pipeline_throttle_seconds_total {_ts['total_seconds']:.3f}")
+        lines.append("# HELP poindexter_pipeline_throttle_queue_size Current awaiting_approval queue size as last observed by the throttle check")
+        lines.append("# TYPE poindexter_pipeline_throttle_queue_size gauge")
+        lines.append(f"poindexter_pipeline_throttle_queue_size {_ts['queue_size']}")
+        lines.append("# HELP poindexter_pipeline_throttle_queue_limit Configured max_approval_queue as last observed by the throttle check")
+        lines.append("# TYPE poindexter_pipeline_throttle_queue_limit gauge")
+        lines.append(f"poindexter_pipeline_throttle_queue_limit {_ts['queue_limit']}")
+    except Exception:
+        pass
+
     return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
 

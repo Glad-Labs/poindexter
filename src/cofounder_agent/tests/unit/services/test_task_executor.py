@@ -238,6 +238,174 @@ class TestSweepStaleTasks:
 
 
 # ---------------------------------------------------------------------------
+# _sweep_stale_pending_tasks — GH-89 AC#4 stale-pending auto-cancel
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSweepStalePendingTasks:
+    """Tasks stuck in 'pending' for > stale_pending_timeout_hours must be
+    auto-cancelled with a clear reason payload. Fires at warn level so
+    operators can distinguish a slow pipeline from a prolonged throttle."""
+
+    @pytest.mark.asyncio
+    async def test_runs_update_against_pool(self):
+        db = _make_db()
+        db.pool = MagicMock()
+        db.pool.fetch = AsyncMock(return_value=[])
+        executor = _make_executor(db=db)
+
+        async def _fake_get_setting(key, default=""):
+            return "24" if key == "stale_pending_timeout_hours" else default
+
+        executor._get_setting = _fake_get_setting
+        await executor._sweep_stale_pending_tasks()
+        db.pool.fetch.assert_awaited_once()
+        # First positional arg is SQL, must reference content_tasks and pending
+        sql_arg = db.pool.fetch.call_args[0][0]
+        assert "content_tasks" in sql_arg
+        assert "pending" in sql_arg
+        # Must also set status to cancelled so downstream auto-retry ignores it
+        assert "cancelled" in sql_arg
+
+    @pytest.mark.asyncio
+    async def test_warns_when_tasks_reaped(self):
+        db = _make_db()
+        db.pool = MagicMock()
+        stale_rows = [
+            {"task_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "topic": "Old one", "created_at": "2025-01-01"},
+            {"task_id": "11111111-2222-3333-4444-555555555555", "topic": "Older one", "created_at": "2024-12-25"},
+        ]
+        db.pool.fetch = AsyncMock(return_value=stale_rows)
+        executor = _make_executor(db=db)
+        executor._get_setting = AsyncMock(return_value="24")
+
+        with patch("services.task_executor.logger") as mock_logger:
+            await executor._sweep_stale_pending_tasks()
+
+        # Verify a warn-level log fired mentioning both the sweep and a count
+        warn_calls = [str(c) for c in mock_logger.warning.call_args_list]
+        assert any("STALE_PENDING_SWEEP" in c for c in warn_calls)
+        assert any("2" in c for c in warn_calls)  # 2 tasks reaped
+
+    @pytest.mark.asyncio
+    async def test_swallows_db_errors(self):
+        db = _make_db()
+        db.pool = MagicMock()
+        db.pool.fetch = AsyncMock(side_effect=Exception("db lost"))
+        executor = _make_executor(db=db)
+        executor._get_setting = AsyncMock(return_value="24")
+        # Must not raise
+        await executor._sweep_stale_pending_tasks()
+
+    @pytest.mark.asyncio
+    async def test_disabled_when_timeout_zero(self):
+        """stale_pending_timeout_hours=0 disables the sweeper."""
+        db = _make_db()
+        db.pool = MagicMock()
+        db.pool.fetch = AsyncMock(return_value=[])
+        executor = _make_executor(db=db)
+        executor._get_setting = AsyncMock(return_value="0")
+        await executor._sweep_stale_pending_tasks()
+        db.pool.fetch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_pool_is_noop(self):
+        db = _make_db()
+        db.pool = None
+        executor = _make_executor(db=db)
+        # Must not raise, must not fetch.
+        await executor._sweep_stale_pending_tasks()
+
+
+# ---------------------------------------------------------------------------
+# Throttle metric toggling (GH-89 AC#2) — exercised via _process_loop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestThrottleMetricToggle:
+    """When the executor polls and finds the approval queue full, the
+    shared throttle gauge must flip to 1. When the queue drains, it
+    must flip back to 0. Exercised through the real _process_loop so
+    we cover the actual wiring, not just the throttle module."""
+
+    @pytest.mark.asyncio
+    async def test_gauge_active_when_queue_full_during_poll(self):
+        from services import pipeline_throttle
+
+        pipeline_throttle.reset_for_tests()
+
+        task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
+        db = _make_db()
+        # First poll: one pending task ready. Throttle check returns True.
+        db.get_pending_tasks = AsyncMock(side_effect=[[task_a], asyncio.CancelledError()])
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(return_value={"c": 10})
+
+        executor = _make_executor(db=db, poll_interval=0)
+        executor.running = True
+
+        # Force max_approval_queue=3 via patched site_config
+        mock_cfg = MagicMock()
+        mock_cfg.get_int = MagicMock(
+            side_effect=lambda k, default=0: 3 if k == "max_approval_queue" else default
+        )
+
+        with (
+            patch("services.site_config.site_config", mock_cfg),
+            patch.object(executor, "_process_single_task", new_callable=AsyncMock) as mock_single,
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            await executor._process_loop()
+
+        # Gauge is active, task was NOT dispatched (throttled)
+        state = pipeline_throttle.get_state()
+        assert state["active"] is True
+        assert state["queue_size"] == 10
+        assert state["queue_limit"] == 3
+        mock_single.assert_not_awaited()
+
+        pipeline_throttle.reset_for_tests()
+
+    @pytest.mark.asyncio
+    async def test_gauge_not_active_when_queue_has_room(self):
+        from services import pipeline_throttle
+
+        pipeline_throttle.reset_for_tests()
+
+        task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
+        db = _make_db()
+        db.get_pending_tasks = AsyncMock(side_effect=[[task_a], asyncio.CancelledError()])
+        db.pool = MagicMock()
+        db.pool.fetchrow = AsyncMock(return_value={"c": 1})  # under limit
+
+        executor = _make_executor(db=db, poll_interval=0)
+        executor.running = True
+
+        mock_cfg = MagicMock()
+        mock_cfg.get_int = MagicMock(
+            side_effect=lambda k, default=0: 3 if k == "max_approval_queue" else default
+        )
+
+        with (
+            patch("services.site_config.site_config", mock_cfg),
+            patch.object(executor, "_process_single_task", new_callable=AsyncMock) as mock_single,
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            await executor._process_loop()
+
+        state = pipeline_throttle.get_state()
+        assert state["active"] is False
+        # Task WAS dispatched because queue wasn't full
+        mock_single.assert_awaited()
+
+        pipeline_throttle.reset_for_tests()
+
+
+# ---------------------------------------------------------------------------
 # _process_loop behavior
 # ---------------------------------------------------------------------------
 

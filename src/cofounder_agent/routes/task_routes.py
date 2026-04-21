@@ -262,11 +262,41 @@ async def _handle_blog_post_creation(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    # Check approval-queue throttle BEFORE insert so the response body
+    # can tell the caller whether this task is going to sit behind a
+    # wall of unreviewed work. The task is still queued (201) — we do
+    # not reject it — but the caller sees ``queue_full: true`` plus
+    # ``queue_position`` so MCP / dashboards can surface "this won't
+    # run until you approve something" instead of silently stalling.
+    # See GH-89 AC#1. Chose 201+flag over 429 because the caller
+    # explicitly asked for this topic; refusing outright would drop
+    # the request on the floor, and the whole point of the approval
+    # queue is an asynchronous hand-off.
+    queue_full = False
+    queue_position = 0
+    queue_limit = 0
+    try:
+        from services.pipeline_throttle import is_queue_full
+
+        queue_full, queue_position, queue_limit = await is_queue_full(
+            db_service.pool if db_service else None
+        )
+    except Exception as e:
+        logger.debug("[create_task] Throttle state check failed: %s", e)
+
+    if queue_full:
+        logger.warning(
+            "[create_task] Approval queue full (%d/%d) — task %s accepted but will "
+            "block until a slot opens. Free one via /approve-post or raise "
+            "max_approval_queue.",
+            queue_position, queue_limit, task_id[:8],
+        )
+
     # Store in database as pending — task executor will pick it up
     returned_task_id = await db_service.add_task(task_data)
     logger.info("Blog task created: %s", returned_task_id)
 
-    return {
+    response: dict[str, Any] = {
         "id": returned_task_id,
         "task_id": returned_task_id,
         "task_type": "blog_post",
@@ -275,6 +305,19 @@ async def _handle_blog_post_creation(
         "created_at": task_data["created_at"],
         "message": "Blog post task created and queued",
     }
+    if queue_full:
+        response["queue_full"] = True
+        # queue_position = current awaiting_approval count. The new task
+        # sits behind roughly ``(queue_position - queue_limit + 1)`` human
+        # approvals before the executor will pick it up.
+        response["queue_position"] = queue_position
+        response["queue_limit"] = queue_limit
+        response["message"] = (
+            f"Blog post task created but pipeline is throttled: "
+            f"{queue_position} tasks awaiting approval (limit {queue_limit}). "
+            f"Task stays pending until approvals free a slot."
+        )
+    return response
 
 
 async def _handle_social_media_creation(

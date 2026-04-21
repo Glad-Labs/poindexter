@@ -369,6 +369,103 @@ class TestCreateTask:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/tasks queue-full signalling (GH-89 AC#1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateTaskQueueFull:
+    """Blog-post creation must surface ``queue_full`` + ``queue_position``
+    in the 201 body when the approval queue is at/above
+    ``max_approval_queue``. Choosing 201+flag over 429 is intentional:
+    the task IS queued (pending) — the signal tells the caller it will
+    sit behind unreviewed work until slots free up."""
+
+    def _build(self, queue_size: int, queue_limit: int):
+        from unittest.mock import patch
+
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="queued-task-id")
+        # create_task queries throttle via services.pipeline_throttle.is_queue_full
+        throttle_patch = patch(
+            "services.pipeline_throttle.is_queue_full",
+            AsyncMock(
+                return_value=(queue_size >= queue_limit, queue_size, queue_limit)
+            ),
+        )
+        return mock_db, throttle_patch
+
+    def test_queue_full_returns_201_with_flag(self):
+        mock_db, throttle_patch = self._build(queue_size=5, queue_limit=3)
+        with throttle_patch:
+            client = TestClient(_build_app(mock_db))
+            resp = client.post(
+                "/api/tasks",
+                json={"topic": "Approval Queue Stress Test", "task_type": "blog_post"},
+            )
+        # The task IS accepted — we want 201, not 429, because the whole point
+        # of the approval queue is an async hand-off.
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["queue_full"] is True
+        assert body["queue_position"] == 5
+        assert body["queue_limit"] == 3
+        assert body["status"] == "pending"
+        # Task was still saved — the caller sees the throttle signal but
+        # the task does not silently disappear.
+        assert mock_db.add_task.called
+
+    def test_queue_full_message_explains_throttle(self):
+        mock_db, throttle_patch = self._build(queue_size=3, queue_limit=3)
+        with throttle_patch:
+            client = TestClient(_build_app(mock_db))
+            resp = client.post(
+                "/api/tasks",
+                json={"topic": "Another Blog Topic", "task_type": "blog_post"},
+            )
+        body = resp.json()
+        assert body["queue_full"] is True
+        assert "awaiting approval" in body["message"].lower()
+        assert "3" in body["message"]  # queue_position or queue_limit
+
+    def test_queue_not_full_omits_flag(self):
+        mock_db, throttle_patch = self._build(queue_size=1, queue_limit=3)
+        with throttle_patch:
+            client = TestClient(_build_app(mock_db))
+            resp = client.post(
+                "/api/tasks",
+                json={"topic": "Plenty Of Headroom", "task_type": "blog_post"},
+            )
+        assert resp.status_code == 201
+        body = resp.json()
+        # Under the limit: no queue_full key leaks into the response.
+        assert "queue_full" not in body
+        assert "queue_position" not in body
+        assert body["status"] == "pending"
+
+    def test_throttle_check_failure_does_not_break_creation(self):
+        """If the throttle check itself throws, task creation must still
+        succeed — the pipeline degrades gracefully rather than 500-ing."""
+        from unittest.mock import patch
+
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="resilient-task-id")
+        with patch(
+            "services.pipeline_throttle.is_queue_full",
+            AsyncMock(side_effect=RuntimeError("db meltdown")),
+        ):
+            client = TestClient(_build_app(mock_db))
+            resp = client.post(
+                "/api/tasks",
+                json={"topic": "Degrade Gracefully", "task_type": "blog_post"},
+            )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert "queue_full" not in body
+        assert body["status"] == "pending"
+
+
+# ---------------------------------------------------------------------------
 # Helper — _check_task_ownership
 # ---------------------------------------------------------------------------
 
