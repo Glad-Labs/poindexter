@@ -30,9 +30,6 @@ _fix_sys_path()
 del _fix_sys_path, _PathType
 
 import os
-from pathlib import Path  # pylint: disable=reimported  # intentional: _PathType was deleted above
-
-from dotenv import load_dotenv
 
 from services.logger_config import get_logger
 
@@ -50,50 +47,46 @@ class Config:
     """
     Central configuration class for the content agent.
 
-    This class loads settings from a .env file and provides them as attributes.
-    It acts as a single source of truth for all configurable parameters,
-    from API keys and project IDs to file paths and model names.
+    DB connection resolution is delegated to :mod:`brain.bootstrap`, which
+    checks (in priority order):
+
+      1. An explicit value passed by the caller
+      2. ``~/.poindexter/bootstrap.toml`` (the Jellyfin/Plex-style user config
+         file written by ``poindexter setup``)
+      3. ``DATABASE_URL`` / ``LOCAL_DATABASE_URL`` / ``POINDEXTER_MEMORY_DSN``
+         environment variables
+
+    This replaces the legacy ``.env`` / ``.env.local`` ``dotenv`` loader.
+    Every other setting below comes from the process environment only —
+    Docker / systemd / shell export — so the config path for operators is
+    "edit ``~/.poindexter/bootstrap.toml`` or export env vars," never a
+    hidden ``.env`` file.
+
+    Runtime settings (prompt templates, thresholds, model routing, etc.)
+    live in the ``app_settings`` DB table and are read via
+    ``services.site_config``. This class only holds bootstrap values that
+    have to exist *before* the DB is reachable.
     """
 
     def __init__(self):
-        # Load environment variables from a .env file into the environment.
-        # This allows for secure and flexible configuration without hardcoding secrets.
-
-        # Find project root by looking for a known marker file.
-        # In Docker (WORKDIR /app), config.py is at /app/agents/content_agent/config.py (3 parents).
-        # Locally, it's at glad-labs-website/src/cofounder_agent/agents/content_agent/config.py (4 parents).
-        config_path = Path(__file__).resolve()
-        project_root = None
-        for parent in config_path.parents:
-            if (parent / "pyproject.toml").exists() or (parent / "main.py").exists():
-                project_root = parent
-                break
-        if project_root is None:
-            # Fallback: use the working directory
-            project_root = Path.cwd()
-
-        # Try .env.local first (development/local), then .env (committed version)
-        dotenv_local_path = project_root / ".env.local"
-        dotenv_path = project_root / ".env"
-
-        if os.getenv("DISABLE_DOTENV") != "1":
-            if dotenv_local_path.exists():
-                load_dotenv(dotenv_path=dotenv_local_path, override=True)
-            elif dotenv_path.exists():
-                load_dotenv(dotenv_path=dotenv_path, override=True)
+        from brain.bootstrap import resolve_database_url
 
         # --- Core Application Paths ---
         self.BASE_DIR = BASE_DIR
-        self.CREDENTIALS_PATH = os.path.join(self.BASE_DIR, "credentials.json")
         self.PROMPTS_PATH = os.path.join(self.BASE_DIR, "prompts.json")
 
         # --- PostgreSQL Database for CMS ---
-        self.DATABASE_URL = os.getenv("DATABASE_URL")
+        # bootstrap.toml > DATABASE_URL env > LOCAL_DATABASE_URL > POINDEXTER_MEMORY_DSN
+        self.DATABASE_URL = resolve_database_url()
         if not self.DATABASE_URL:
             raise ValueError(
-                "DATABASE_URL environment variable is required. "
+                "DATABASE_URL is required. Set it in ~/.poindexter/bootstrap.toml "
+                "(run `poindexter setup`) or export DATABASE_URL in the environment. "
                 "This project uses PostgreSQL only — SQLite is not supported."
             )
+        # Component-wise DB vars are secondary — only consumed by
+        # startup_manager for diagnostic output. Defaults match the docker
+        # stack; override via env if you're pointing at a different host.
         self.DATABASE_HOST = os.getenv("DATABASE_HOST", "localhost")
         self.DATABASE_PORT = os.getenv("DATABASE_PORT", "5432")
         self.DATABASE_NAME = os.getenv("DATABASE_NAME", "glad_labs")
@@ -108,33 +101,14 @@ class Config:
         self.IMAGE_STORAGE_PATH = os.path.join(self.BASE_DIR, "content-agent", "generated_images")
         self.DEFAULT_IMAGE_PLACEHOLDERS = 3  # Default number of images to generate for a post
 
-        # --- Language Model Provider --
-        # Determines the LLM provider to use. Defaults to Ollama (free, local).
-        # Options: 'ollama' (free, local), 'openai', 'anthropic', 'gemini'
+        # --- Language Model Provider ---
+        # Only 'ollama' / 'local' are accepted — paid-API providers (OpenAI,
+        # Anthropic, Gemini) were removed in v2.8 per the no-paid-APIs policy.
+        # LLMClient enforces this at runtime; this default just avoids a
+        # KeyError if the env var is unset.
         self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 
-        # --- Model Selection per Task Type --
-        # Allows configuration of which model to use for different task stages
-        self.MODEL_FOR_RESEARCH = os.getenv("MODEL_FOR_RESEARCH", "auto")
-        self.MODEL_FOR_CREATIVE = os.getenv("MODEL_FOR_CREATIVE", "auto")
-        self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "auto")
-        self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "auto")
-        self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "auto")
-
-        # --- API Keys for LLM Providers ---
-        # These are read from environment variables and used by the LLM client
-        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-        self.ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-        self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # For Google Gemini
-        self.GEMINI_API_KEY = self.GOOGLE_API_KEY  # Alias for backward compatibility
-        self.HUGGINGFACE_API_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
-
-        # --- Gemini-specific configuration ---
-        self.GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-        self.SUMMARIZER_MODEL = os.getenv("SUMMARIZER_MODEL", "gemini-2.0-flash")
-
-        # --- Local LLM (Ollama) Configuration --
-        # For running a local quality assurance model if available.
+        # --- Local LLM (Ollama) Configuration ---
         # #198: no hardcoded localhost default. An empty string means
         # "Ollama not configured" and callers must handle that explicitly.
         self.LOCAL_LLM_API_URL = os.getenv("LOCAL_LLM_API_URL", "")
@@ -146,10 +120,6 @@ class Config:
         self.PROMPTS_LOG_FILE = os.path.join(self.LOG_DIR, "prompts.log")
         self.MAX_LOG_SIZE_MB = int(os.getenv("MAX_LOG_SIZE_MB", "5"))
         self.MAX_LOG_BACKUP_COUNT = int(os.getenv("MAX_LOG_BACKUP_COUNT", "3"))
-
-        # --- Google Cloud Pub/Sub Configuration ---
-        self.PUBSUB_TOPIC = os.getenv("PUBSUB_TOPIC", "agent-commands")
-        self.PUBSUB_SUBSCRIPTION = os.getenv("PUBSUB_SUBSCRIPTION", "content-agent-subscription")
 
 
 # --- Singleton Instance ---
@@ -165,18 +135,21 @@ def validate_required(strict: bool = False) -> list:
     """
     Validate required environment variables for the content agent.
 
-    The agent can now work with minimal configuration:
-    - DATABASE_URL or DATABASE_HOST/PORT/NAME for PostgreSQL
-    - At least one LLM provider (Ollama is local/free, or OpenAI/Anthropic API keys)
-    - Optional: PEXELS_API_KEY for stock images, SERPER_API_KEY for web search
+    The agent needs very little to start:
+
+    - ``DATABASE_URL`` (via ``brain.bootstrap`` — bootstrap.toml or env var)
+    - Ollama running locally (``LOCAL_LLM_API_URL`` resolved via
+      ``services.site_config`` at runtime, so not checked here)
+
+    Optional: ``PEXELS_API_KEY`` for stock photos, ``SERPER_API_KEY`` for
+    web search. Missing those disables those features gracefully.
 
     When ``strict`` is True, raises RuntimeError on missing vars so callers
     can fail fast (e.g. at startup); the default non-strict mode just logs
     a warning so tests and local dev can run without a full env.
     """
-    # Core required: Just need database connection
     required_vars = [
-        "DATABASE_URL",  # OR Database host/port/name
+        "DATABASE_URL",
     ]
 
     missing_vars = [var for var in required_vars if not getattr(config, var, None)]

@@ -1,15 +1,31 @@
 """
 Unit tests for agents/content_agent/config.py
 
-Tests for Config class and validate_required helper.
-The module creates a singleton at import time, so we mock DATABASE_URL
-via environment and DISABLE_DOTENV=1 to avoid loading .env.local.
+Config resolves DATABASE_URL via brain.bootstrap.resolve_database_url()
+(bootstrap.toml + env var priority chain). These tests patch the
+environment directly since resolve_database_url() consults
+DATABASE_URL / LOCAL_DATABASE_URL / POINDEXTER_MEMORY_DSN when
+bootstrap.toml is absent, which matches the default test environment.
 """
 
 import os
 from unittest.mock import patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _ignore_bootstrap_toml():
+    """Stub out ~/.poindexter/bootstrap.toml so every test reads env only.
+
+    resolve_database_url() consults bootstrap.toml BEFORE env vars. On a
+    developer machine that file holds a real DSN, which would mask the
+    per-test env setup and produce "Config returned my local DB, not the
+    test DB" failures. Forcing an empty dict here makes resolve_database_url
+    fall through to the patched env every time.
+    """
+    with patch("brain.bootstrap._read_bootstrap_toml", return_value={}):
+        yield
 
 # ---------------------------------------------------------------------------
 # Config class tests
@@ -20,7 +36,7 @@ class TestConfig:
     def test_database_url_stored(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
         ):
             # Re-import to get a fresh Config with our env vars
             from agents.content_agent.config import Config
@@ -29,9 +45,17 @@ class TestConfig:
         assert cfg.DATABASE_URL == "postgresql://user:pass@localhost/test"
 
     def test_raises_when_no_database_url(self):
-        env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
-        env["DISABLE_DOTENV"] = "1"
-        with patch.dict("os.environ", env, clear=True):
+        # Strip every env var that brain.bootstrap would fall back to, and
+        # ensure there's no ~/.poindexter/bootstrap.toml leaking in from
+        # a developer machine by patching bootstrap_file_exists to False.
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in {"DATABASE_URL", "LOCAL_DATABASE_URL", "POINDEXTER_MEMORY_DSN"}
+        }
+        with patch.dict("os.environ", env, clear=True), patch(
+            "brain.bootstrap._read_bootstrap_toml", return_value={}
+        ):
             from agents.content_agent.config import Config
 
             with pytest.raises(ValueError, match="DATABASE_URL"):
@@ -40,7 +64,7 @@ class TestConfig:
     def test_default_llm_provider(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
             clear=False,
         ):
             from agents.content_agent.config import Config
@@ -48,25 +72,26 @@ class TestConfig:
             cfg = Config()
         assert cfg.LLM_PROVIDER == "ollama"
 
-    def test_custom_llm_provider(self):
+    def test_local_llm_provider_accepted(self):
+        # 'local' is the only non-ollama value LLMClient accepts. Paid-API
+        # values like 'anthropic' / 'openai' / 'gemini' were removed in v2.8.
         with patch.dict(
             "os.environ",
             {
                 "DATABASE_URL": "postgresql://user:pass@localhost/test",
-                "DISABLE_DOTENV": "1",
-                "LLM_PROVIDER": "anthropic",
+                "LLM_PROVIDER": "local",
             },
             clear=False,
         ):
             from agents.content_agent.config import Config
 
             cfg = Config()
-        assert cfg.LLM_PROVIDER == "anthropic"
+        assert cfg.LLM_PROVIDER == "local"
 
     def test_database_host_default(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
             clear=False,
         ):
             from agents.content_agent.config import Config
@@ -77,7 +102,7 @@ class TestConfig:
     def test_database_port_default(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
             clear=False,
         ):
             from agents.content_agent.config import Config
@@ -88,7 +113,7 @@ class TestConfig:
     def test_default_image_placeholders(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
             clear=False,
         ):
             from agents.content_agent.config import Config
@@ -96,21 +121,10 @@ class TestConfig:
             cfg = Config()
         assert cfg.DEFAULT_IMAGE_PLACEHOLDERS == 3
 
-    def test_model_defaults_for_research(self):
-        with patch.dict(
-            "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
-            clear=False,
-        ):
-            from agents.content_agent.config import Config
-
-            cfg = Config()
-        assert cfg.MODEL_FOR_RESEARCH == "auto"
-
     def test_base_dir_is_string(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
             clear=False,
         ):
             from agents.content_agent.config import Config
@@ -119,43 +133,16 @@ class TestConfig:
         assert isinstance(cfg.BASE_DIR, str)
         assert len(cfg.BASE_DIR) > 0
 
-    def test_gemini_api_key_alias(self):
-        with patch.dict(
-            "os.environ",
-            {
-                "DATABASE_URL": "postgresql://user:pass@localhost/test",
-                "DISABLE_DOTENV": "1",
-                "GOOGLE_API_KEY": "test-google-key",
-            },
-            clear=False,
-        ):
-            from agents.content_agent.config import Config
-
-            cfg = Config()
-        assert cfg.GEMINI_API_KEY == "test-google-key"
-        assert cfg.GOOGLE_API_KEY == "test-google-key"
-
     def test_max_log_size_mb_int(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
             clear=False,
         ):
             from agents.content_agent.config import Config
 
             cfg = Config()
         assert isinstance(cfg.MAX_LOG_SIZE_MB, int)
-
-    def test_pubsub_topic_default(self):
-        with patch.dict(
-            "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
-            clear=False,
-        ):
-            from agents.content_agent.config import Config
-
-            cfg = Config()
-        assert cfg.PUBSUB_TOPIC == "agent-commands"
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +154,7 @@ class TestValidateRequired:
     def test_returns_empty_when_database_url_set(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
             clear=False,
         ):
             # Temporarily replace global config with our fresh one
@@ -186,7 +173,7 @@ class TestValidateRequired:
     def test_returns_list_type(self):
         with patch.dict(
             "os.environ",
-            {"DATABASE_URL": "postgresql://user:pass@localhost/test", "DISABLE_DOTENV": "1"},
+            {"DATABASE_URL": "postgresql://user:pass@localhost/test"},
             clear=False,
         ):
             import agents.content_agent.config as config_module
