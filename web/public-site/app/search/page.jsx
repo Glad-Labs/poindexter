@@ -50,12 +50,19 @@ function SearchContent() {
       const seoTitle = (post.seo_title || '').toLowerCase();
       const seoDesc = (post.seo_description || '').toLowerCase();
       const keywords = (post.seo_keywords || '').toLowerCase();
+      // Include tags[] so searching a tag slug ("local-inference") matches
+      // posts tagged with that slug even when the title/excerpt don't
+      // mention it (gitea#267 follow-up).
+      const tags = Array.isArray(post.tags)
+        ? post.tags.join(' ').toLowerCase()
+        : '';
       return (
         title.includes(q) ||
         excerpt.includes(q) ||
         seoTitle.includes(q) ||
         seoDesc.includes(q) ||
-        keywords.includes(q)
+        keywords.includes(q) ||
+        tags.includes(q)
       );
     });
 
