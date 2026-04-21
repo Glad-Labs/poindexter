@@ -6,6 +6,12 @@ from typing import Any, Dict, List, Optional
 from services.logger_config import get_logger
 
 from .ai_content_generator import get_content_generator
+from .alt_text import (
+    assert_alt_text_clean,
+    iter_img_alts,
+    sanitize_alt_text,
+    strip_tokens_from_img_tags,
+)
 from .audit_log import audit_log_bg
 from .database_service import DatabaseService
 from .image_service import get_image_service
@@ -1523,12 +1529,27 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     )
     used_image_ids = set()  # Avoid duplicate images
 
+    # Alt-text budget is configurable per-site (GH-84). 120 chars covers
+    # ~95% of well-formed descriptive alts without being so tight that
+    # complete sentences don't fit.
+    from services.site_config import site_config as _sc_alt
+    _alt_budget = _sc_alt.get_int("alt_text_budget", 120)
+
     for num, desc in image_placeholders:
-        search_query = desc.strip() if desc else topic
-        alt_text = desc.strip() if desc else f"{topic} illustration"
-        alt_text = alt_text.replace("[", "").replace("]", "").replace("\n", " ")[:150]
-        # Clean common LLM artifacts from alt text
-        alt_text = _re.sub(r'^(?:IMAGE|FIGURE|Image|Figure)\s*[-:]\s*', '', alt_text).strip()
+        # ``desc`` still contains the ``||provider:hint||`` stage marker —
+        # strip it before deriving the search query AND the alt text
+        # (GH-84: the token was leaking all the way to the DOM).
+        raw_desc = (desc or "").strip()
+        # search_query feeds SDXL prompt generation and Pexels search —
+        # the ``||provider:hint||`` marker is pipeline-internal and would
+        # only confuse either path, so strip it here too.
+        from services.alt_text import strip_pipeline_tokens as _strip_tokens
+        search_query = _strip_tokens(raw_desc) if raw_desc else topic
+        alt_text = sanitize_alt_text(
+            raw_desc or f"{topic} illustration",
+            budget=_alt_budget,
+            topic=topic,
+        )
         image_replaced = False
 
         # Strategy 1: SDXL generation (unique, on-topic images)
@@ -1696,6 +1717,22 @@ async def _stage_replace_inline_images(database_service, task_id, topic, content
     )
     # Strip photo attribution lines — "*Photo by X on Pexels*" etc.
     content_text = _re.sub(r'\n\s*\*?Photo by [^\n]+(?:Pexels|Unsplash|Pixabay)\*?\s*\n', '\n', content_text, flags=_re.IGNORECASE)
+    # GH-84: post image-pipeline scrub of every <img alt="..."> tag.
+    # Belt-and-braces pass catches any leaked ``||provider:hint||`` tokens
+    # that slipped past sanitize_alt_text() (e.g. via a code path we add
+    # later that forgets to call the helper).
+    content_text = strip_tokens_from_img_tags(content_text)
+    # Loud-fail assertion: a broken alt in the rendered DOM is worse than
+    # failing the task here. Ref GH-84 acceptance criterion #3.
+    for _alt in iter_img_alts(content_text):
+        try:
+            assert_alt_text_clean(_alt, _alt_budget)
+        except ValueError as _alt_err:
+            logger.error(
+                "[IMAGE] Alt-text assertion failed for task %s: %s",
+                (task_id[:8] if task_id else "?"), _alt_err,
+            )
+            raise
     # Normalize again after image placeholder substitution
     content_text = _normalize_text(content_text)
     # Update DB with image-populated content
