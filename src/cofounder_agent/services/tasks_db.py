@@ -756,15 +756,6 @@ class TasksDatabase(DatabaseServiceMixin):
             extra_vals.append(v)
 
         extra_clause = (", " + ", ".join(extra_sets)) if extra_sets else ""
-        sql = f"""
-            UPDATE pipeline_tasks
-               SET status = $2,
-                   updated_at = NOW()
-                   {extra_clause}
-             WHERE task_id = $1
-               AND status = ANY($3::text[])
-         RETURNING (SELECT status FROM pipeline_tasks WHERE task_id = $1) AS prev_status
-        """
         try:
             async with self.pool.acquire() as conn:
                 # Read prev_status first so we can return the value that
