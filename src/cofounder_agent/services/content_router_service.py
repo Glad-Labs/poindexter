@@ -1206,6 +1206,16 @@ async def _stage_generate_content(
     content_text = _normalize_text(content_text)
     title = _normalize_text(title)
 
+    # GH-85: Unify title / seo_title / body-H1 on one canonical source.
+    # ``title`` is the canonical output of ``_generate_canonical_title``.
+    # Propagate it into the body so the reader's H1 matches what OG/RSS see.
+    # ``title`` is also stripped of emoji here — body content keeps emoji,
+    # DB columns do not.
+    from utils.title_utils import propagate_canonical_title as _propagate_title
+    title, _canonical_seo_title, content_text = _propagate_title(title, content_text)
+    # Stash the derived seo_title so the SEO stage doesn't need to re-derive.
+    result["canonical_seo_title"] = _canonical_seo_title
+
     # Populate real slug cache for link validation, then scrub fabricated links
     try:
         _links_cache = getattr(content_generator, "_internal_links_cache", [])
@@ -2006,11 +2016,19 @@ async def _stage_generate_seo_metadata(topic, tags, content_text, content_genera
     else:
         seo_keywords = []
 
-    seo_title = seo_assets.get("seo_title", topic)
-    if seo_title:
-        seo_title = seo_title[:60]
+    # GH-85: seo_title must be derived from the canonical title (stashed on
+    # ``result['canonical_seo_title']`` by the writer stage) — NOT a blind
+    # ``[:60]`` on whatever ``seo_assets`` returned. The naive slice cut
+    # mid-word and drifted off the canonical title entirely.
+    from utils.title_utils import derive_seo_title as _derive_seo_title
+    canonical = result.get("canonical_seo_title")
+    if canonical:
+        seo_title = canonical
     else:
-        seo_title = topic[:60]
+        # Writer-stage propagation didn't run (e.g. error path). Still derive
+        # safely: never mid-word, never emoji.
+        raw = seo_assets.get("seo_title") or topic
+        seo_title = _derive_seo_title(raw)
 
     seo_description = seo_assets.get("meta_description", "")
     if seo_description:
