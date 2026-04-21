@@ -33,7 +33,7 @@ import hmac
 import json
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
@@ -84,7 +84,7 @@ _LS_EVENT_AMOUNT_KEYS = {
 async def lemon_squeezy_webhook(
     request: Request,
     x_signature: str | None = Header(default=None, alias="X-Signature"),
-    db_service: DatabaseService = get_database_dependency(),  # type: ignore[assignment]
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """Receive Lemon Squeezy webhooks and record a revenue_events row.
 
@@ -186,7 +186,7 @@ def _verify_resend_signature(body: bytes, provided_signature: str | None) -> boo
 async def resend_webhook(
     request: Request,
     svix_signature: str | None = Header(default=None, alias="Svix-Signature"),
-    db_service: DatabaseService = get_database_dependency(),  # type: ignore[assignment]
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """Receive Resend webhooks and record a subscriber_events row.
 
