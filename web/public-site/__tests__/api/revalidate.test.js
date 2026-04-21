@@ -18,6 +18,7 @@ import { POST } from '../../app/api/revalidate/route';
 // Mock next/cache before importing the handler
 jest.mock('next/cache', () => ({
   revalidatePath: jest.fn(),
+  revalidateTag: jest.fn(),
 }));
 
 jest.mock('@/lib/logger', () => ({

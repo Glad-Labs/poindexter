@@ -60,7 +60,7 @@ describe('NewsletterModal visibility', () => {
 
   test('renders modal content when isOpen is true', () => {
     render(<NewsletterModal {...DEFAULT_PROPS} />);
-    expect(screen.getByText('Stay Updated')).toBeInTheDocument();
+    expect(screen.getByText('Stay in the loop.')).toBeInTheDocument();
   });
 
   test('renders email input field', () => {
@@ -68,10 +68,10 @@ describe('NewsletterModal visibility', () => {
     expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
   });
 
-  test('renders Get Updates submit button', () => {
+  test('renders Get updates submit button', () => {
     render(<NewsletterModal {...DEFAULT_PROPS} />);
     expect(
-      screen.getByRole('button', { name: /Get Updates/i })
+      screen.getByRole('button', { name: /Get updates/i })
     ).toBeInTheDocument();
   });
 
@@ -185,7 +185,7 @@ describe('NewsletterModal submission success', () => {
       target: { value: 'test@example.com', name: 'email', type: 'email' },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
 
     await waitFor(() => {
@@ -203,12 +203,12 @@ describe('NewsletterModal submission success', () => {
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), {
       target: { value: 'user@test.com', name: 'email', type: 'email' },
     });
-    fireEvent.change(screen.getByPlaceholderText('John'), {
+    fireEvent.change(screen.getByPlaceholderText('Matt'), {
       target: { value: 'Alice', name: 'firstName', type: 'text' },
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
 
     await waitFor(() => {
@@ -241,7 +241,7 @@ describe('NewsletterModal submission success', () => {
       target: { value: 'a@b.com', name: 'email', type: 'email' },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
 
     // Advance the 2-second close timer
@@ -270,7 +270,7 @@ describe('NewsletterModal submission error', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
 
     await waitFor(() => {
@@ -293,7 +293,7 @@ describe('NewsletterModal submission error', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
 
     await waitFor(() => {
@@ -307,7 +307,7 @@ describe('NewsletterModal submission error', () => {
 // ---------------------------------------------------------------------------
 
 describe('NewsletterModal loading state', () => {
-  test('button text changes to Subscribing... during submission', async () => {
+  test('button text changes to Subscribing… during submission', async () => {
     let resolveFetch;
     mockFetch.mockImplementation(
       () =>
@@ -322,11 +322,11 @@ describe('NewsletterModal loading state', () => {
     });
 
     act(() => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Subscribing...')).toBeInTheDocument();
+      expect(screen.getByText('Subscribing…')).toBeInTheDocument();
     });
 
     // Resolve the promise to clean up
@@ -350,11 +350,11 @@ describe('NewsletterModal loading state', () => {
     });
 
     act(() => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
 
     await waitFor(() => {
-      const btn = screen.getByText('Subscribing...');
+      const btn = screen.getByText('Subscribing…');
       expect(btn).toBeDisabled();
     });
 
@@ -441,7 +441,7 @@ describe('NewsletterModal — a11y: status message live region (issue #779)', ()
       target: { value: 'ok@example.com', name: 'email', type: 'email' },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
     await waitFor(() => {
       expect(screen.getByRole('status')).toBeInTheDocument();
@@ -458,7 +458,7 @@ describe('NewsletterModal — a11y: status message live region (issue #779)', ()
       target: { value: 'ok2@example.com', name: 'email', type: 'email' },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
     await waitFor(() => {
       expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
@@ -475,7 +475,7 @@ describe('NewsletterModal — a11y: status message live region (issue #779)', ()
       target: { value: 'fail@example.com', name: 'email', type: 'email' },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument();
@@ -492,7 +492,7 @@ describe('NewsletterModal — a11y: status message live region (issue #779)', ()
       target: { value: 'fail2@example.com', name: 'email', type: 'email' },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Get Updates/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get updates/i }));
     });
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveAttribute(

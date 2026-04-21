@@ -21,8 +21,8 @@ describe('404 Not Found Page', () => {
 
   it('should display 404 error code', () => {
     render(<NotFoundPage />);
-    const code = screen.queryByText('404') || screen.queryByText(/not found/i);
-    expect(code).toBeInTheDocument();
+    const codes = screen.queryAllByText(/404/);
+    expect(codes.length).toBeGreaterThan(0);
   });
 
   it('should display error message', () => {

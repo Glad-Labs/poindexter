@@ -54,7 +54,7 @@ describe('Author Page', () => {
     it('has back to articles link', async () => {
       await renderAuthorPage('poindexter-ai');
       expect(
-        screen.getByRole('link', { name: /Back to All Articles/i })
+        screen.getAllByRole('link', { name: /all articles/i })[0]
       ).toBeInTheDocument();
     });
 

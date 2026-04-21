@@ -25,6 +25,7 @@ jest.mock('next/link', () => {
 const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
+  usePathname: () => '/',
 }));
 
 describe('TopNavigation', () => {

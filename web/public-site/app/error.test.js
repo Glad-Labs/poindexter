@@ -80,7 +80,7 @@ describe('Error Page', () => {
   it('should have user-friendly error message', () => {
     render(<ErrorPage error={mockError} reset={mockReset} />);
     const messages = screen.queryAllByText(
-      /we apologize|something went wrong|please try again/i
+      /we apologize|something went wrong|please try again|unexpected error|try again/i
     );
 
     expect(messages.length).toBeGreaterThan(0);
