@@ -69,9 +69,15 @@ const cspBackendOrigin = (() => {
 // consumer of posts/index.json fetches from here. Without it in connect-src
 // the browser blocks the fetch and /search silently returns zero results
 // (Gitea #262).
+//
+// Mirrors the same fallback used by client code when NEXT_PUBLIC_STATIC_URL
+// isn't set (see app/page.js, app/search/page.jsx, lib/posts.ts) — otherwise
+// a missing Vercel env var silently re-breaks /search because the fetch URL
+// and the CSP allow-list drift apart.
+const STATIC_URL_FALLBACK =
+  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 const cspStaticOrigin = (() => {
-  const raw = process.env.NEXT_PUBLIC_STATIC_URL;
-  if (!raw) return '';
+  const raw = process.env.NEXT_PUBLIC_STATIC_URL || STATIC_URL_FALLBACK;
   try {
     return new URL(raw).origin;
   } catch {
