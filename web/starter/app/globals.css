@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+/* Article prose defaults. Fork-users: swap this for @tailwindcss/typography
+   for a richer default if you'd like, or restyle inline as you customize. */
+article h1 {
+  @apply text-3xl font-semibold tracking-tight mt-6 mb-4;
+}
+article h2 {
+  @apply text-2xl font-semibold tracking-tight mt-8 mb-3;
+}
+article h3 {
+  @apply text-xl font-semibold mt-6 mb-2;
+}
+article p {
+  @apply my-4 leading-relaxed;
+}
+article ul,
+article ol {
+  @apply my-4 ml-6 list-disc;
+}
+article ol {
+  @apply list-decimal;
+}
+article a {
+  @apply text-brand-accent underline underline-offset-2 hover:no-underline;
+}
+article code {
+  @apply rounded bg-gray-100 px-1 py-0.5 text-sm font-mono;
+}
+article pre {
+  @apply rounded-md bg-gray-900 text-gray-100 p-4 overflow-x-auto my-6;
+}
+article pre code {
+  @apply bg-transparent text-inherit p-0;
+}
+article img {
+  @apply rounded-md my-6;
+}
+article blockquote {
+  @apply border-l-4 border-gray-300 pl-4 italic text-brand-muted my-6;
+}
