@@ -82,7 +82,10 @@ async def build_rag_context(
             })
 
         # GH-88: apply the coherence filter if we have source context + a DB.
-        if pool and (source_tags or source_category):
+        # source_category is accepted here for call-site symmetry with
+        # upstream code, but the filter itself is tag-driven — it is not
+        # forwarded to InternalLinkCoherenceFilter.
+        if pool and source_tags:
             try:
                 from services.internal_link_coherence import (
                     InternalLinkCoherenceFilter,
@@ -92,21 +95,22 @@ async def build_rag_context(
                     LinkCandidate(
                         slug=r["slug"],
                         title=r["title"],
-                        score=r["similarity"],
+                        similarity=r["similarity"],
                     )
                     for r in resolved
                     if r["slug"]
                 ]
-                filt = InternalLinkCoherenceFilter(
-                    pool=pool,
+                filt = InternalLinkCoherenceFilter(pool=pool)
+                kept = await filt.filter_candidates(
                     source_tags=list(source_tags or []),
-                    source_category=source_category or "",
+                    candidates=candidates,
                 )
-                kept = await filt.filter_candidates(candidates)
                 kept_slugs = {c.slug for c in kept}
                 resolved = [r for r in resolved if r["slug"] in kept_slugs]
-            except Exception as e:
-                logger.debug("Coherence filter skipped (non-fatal): %s", e)
+            except Exception:
+                # Escalated from DEBUG — this path was silently failing on
+                # every call due to signature mismatches; keep it loud.
+                logger.exception("Internal-link coherence filter failed")
 
         # Trim to 5 after filtering (was the legacy cap).
         resolved = resolved[:5]
