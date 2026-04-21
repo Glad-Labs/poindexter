@@ -490,6 +490,34 @@ class MultiModelQA:
         else:
             final_score = validator_review.score
 
+        # GH-91: apply a direct penalty to the final QA score per validator
+        # warning. Previously warnings only dragged the validator's own
+        # sub-score (weight 0.4), which meant 9 `unlinked_citation`
+        # warnings shaved ~11 pts off the weighted average — not enough
+        # to cross the Q70 threshold when the critic scored 85. By
+        # penalizing the final score directly, 9 warnings now cost
+        # ~27 pts at the default 3/warning rate, dropping a Q85 post
+        # into Q58 reject territory. Configurable per-site via
+        # `content_validator_warning_qa_penalty` (default 3).
+        warning_count = validation.warning_count if validation else 0
+        if warning_count > 0:
+            per_warning_penalty = 3
+            if self.settings:
+                with suppress(ValueError, TypeError):
+                    _raw = await self.settings.get(
+                        "content_validator_warning_qa_penalty"
+                    )
+                    if _raw is not None:
+                        per_warning_penalty = int(_raw)
+            if per_warning_penalty > 0:
+                total_penalty = warning_count * per_warning_penalty
+                final_score = max(0.0, final_score - total_penalty)
+                logger.info(
+                    "[MULTI_QA] Applied warning penalty: %d warnings × %d pts = -%d "
+                    "(final_score now %.1f)",
+                    warning_count, per_warning_penalty, total_penalty, final_score,
+                )
+
         # Hard-gate pass check — the consistency gate is treated as advisory
         # unless its own score is unambiguously low (< 50). The topic-delivery
         # gate stays binary because title/body mismatch is usually clear-cut.

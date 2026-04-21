@@ -824,3 +824,121 @@ class TestGatePromptBranches:
         assert "First contradiction" in review.feedback
         assert "Second contradiction" in review.feedback
         assert ";" in review.feedback
+
+
+# ---------------------------------------------------------------------------
+# GH-91: validator warning count → QA score penalty
+# ---------------------------------------------------------------------------
+
+
+def _validation_with_warnings(warning_count: int) -> ValidationResult:
+    """Build a passing ValidationResult with ``warning_count`` warnings."""
+    issues = [
+        ValidationIssue(
+            severity="warning",
+            category="unlinked_citation",
+            description=f"Unlinked citation #{i}",
+            matched_text=f"as noted in source {i}",
+        )
+        for i in range(warning_count)
+    ]
+    # score_penalty follows the 3-per-warning rule inside content_validator
+    return ValidationResult(
+        passed=True, issues=issues, score_penalty=3 * warning_count,
+    )
+
+
+class TestWarningQAPenalty:
+    """The GH-91 fix: validator warnings now subtract from the final QA
+    score so a post with many unsourced citations falls below the Q70
+    threshold even when the critic scores it high."""
+
+    async def test_nine_warnings_drops_critic_85_below_threshold(self):
+        """A Q85-level post with 9 warnings should reject at the default
+        penalty of 3 pts/warning (27 pt drop → ~58 → below Q70)."""
+        settings = _settings_service(
+            qa_validator_weight=0.4,
+            qa_critic_weight=0.6,
+            qa_gate_weight=0.3,
+            qa_final_score_threshold=70,
+            content_validator_warning_qa_penalty=3,
+        )
+        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+            qa = MultiModelQA(pool=None, settings_service=settings)
+
+        async def _skip_gate(*_a, **_k):
+            return None
+        qa._check_topic_delivery = _skip_gate
+        qa._check_internal_consistency = _skip_gate
+
+        validation = _validation_with_warnings(9)
+        with patch("services.multi_model_qa.validate_content", return_value=validation), \
+             patch(
+                 "services.ollama_client.OllamaClient",
+                 return_value=_mock_ollama_client(approved=True, score=85.0),
+             ):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # 9 warnings * 3 pts = 27 pt penalty applied to final score.
+        # Base weighted score is roughly (73*0.4 + 85*0.6)/1.0 ≈ 80.2
+        # After -27 penalty it should land in the 50s.
+        assert result.final_score < 70, (
+            f"expected penalty to drop score below 70, got {result.final_score}"
+        )
+        assert result.approved is False
+
+    async def test_zero_warnings_no_penalty(self):
+        settings = _settings_service(
+            qa_validator_weight=0.4,
+            qa_critic_weight=0.6,
+            qa_gate_weight=0.3,
+            qa_final_score_threshold=70,
+            content_validator_warning_qa_penalty=3,
+        )
+        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+            qa = MultiModelQA(pool=None, settings_service=settings)
+
+        async def _skip_gate(*_a, **_k):
+            return None
+        qa._check_topic_delivery = _skip_gate
+        qa._check_internal_consistency = _skip_gate
+
+        with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()), \
+             patch(
+                 "services.ollama_client.OllamaClient",
+                 return_value=_mock_ollama_client(approved=True, score=85.0),
+             ):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # No warnings → no penalty → post passes.
+        assert result.approved is True
+        assert result.final_score >= 70
+
+    async def test_penalty_configurable(self):
+        """A site with a steeper 5 pts/warning penalty should reject
+        sooner than the default 3."""
+        settings = _settings_service(
+            qa_validator_weight=0.4,
+            qa_critic_weight=0.6,
+            qa_gate_weight=0.3,
+            qa_final_score_threshold=70,
+            content_validator_warning_qa_penalty=5,
+        )
+        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+            qa = MultiModelQA(pool=None, settings_service=settings)
+
+        async def _skip_gate(*_a, **_k):
+            return None
+        qa._check_topic_delivery = _skip_gate
+        qa._check_internal_consistency = _skip_gate
+
+        # Only 4 warnings but 5 pt penalty = 20 pt drop. Base ~80 → ~60.
+        validation = _validation_with_warnings(4)
+        with patch("services.multi_model_qa.validate_content", return_value=validation), \
+             patch(
+                 "services.ollama_client.OllamaClient",
+                 return_value=_mock_ollama_client(approved=True, score=85.0),
+             ):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result.final_score < 70

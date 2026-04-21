@@ -243,6 +243,18 @@
       "category": "quality",
       "description": "Weight for LLM critic"
     },
+    {
+      "key": "content_validator_warning_reject_threshold",
+      "value": "3",
+      "category": "quality",
+      "description": "Promote validator warnings to critical when any single rule exceeds this count (GH-91)"
+    },
+    {
+      "key": "content_validator_warning_qa_penalty",
+      "value": "3",
+      "category": "quality",
+      "description": "Points subtracted from final QA score per validator warning (GH-91)"
+    },
 
     {
       "key": "auto_publish_threshold",

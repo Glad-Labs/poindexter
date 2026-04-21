@@ -182,6 +182,8 @@ INSERT INTO app_settings (key, value, category, description, is_secret) VALUES
 ('qa_critical_dimension_floor', '50', 'quality', 'Minimum score on any single dimension', false),
 ('qa_validator_weight', '0.4', 'quality', 'Weight for programmatic validator', false),
 ('qa_critic_weight', '0.6', 'quality', 'Weight for LLM critic', false),
+('content_validator_warning_reject_threshold', '3', 'quality', 'Promote validator warnings to critical when any single rule exceeds this count (GH-91)', false),
+('content_validator_warning_qa_penalty', '3', 'quality', 'Points subtracted from final QA score per validator warning (GH-91)', false),
 
 -- Model selections — defaults match what Ollama models are auto-pulled
 -- below. Override these in app_settings (or via the API) once you've

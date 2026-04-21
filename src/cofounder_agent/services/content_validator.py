@@ -24,6 +24,51 @@ from services.site_config import site_config as _sc
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Prometheus counter — per-rule warning emission (GH-91)
+# ---------------------------------------------------------------------------
+#
+# Matt, 2026-04-20: the validator was already emitting warnings but nothing
+# downstream counted them. Without aggregate visibility in Grafana,
+# patterns like "unlinked_citation spiking across the week" go unnoticed
+# until a reader points at an embarrassing post. This counter fixes that.
+#
+# Wrapped in a try/except so tests that stub out prometheus_client (or
+# envs that never pulled the package) don't explode. If the dependency
+# is missing we fall back to a no-op shim — nothing else in the module
+# depends on the counter actually recording.
+
+try:
+    from prometheus_client import Counter as _Counter  # type: ignore[import-not-found]
+
+    CONTENT_VALIDATOR_WARNINGS_TOTAL = _Counter(
+        "content_validator_warnings_total",
+        "Total warnings emitted by content_validator, labeled by rule category",
+        ["rule"],
+    )
+except Exception:  # pragma: no cover — exercised only when prometheus_client is absent
+    class _NoopCounter:
+        def labels(self, **_kwargs):  # noqa: D401 — trivial shim
+            return self
+
+        def inc(self, _amount: float = 1.0) -> None:
+            return None
+
+    CONTENT_VALIDATOR_WARNINGS_TOTAL = _NoopCounter()  # type: ignore[assignment]
+
+
+# Keywords that, when present in an unlinked-citation match, promote the
+# warning to critical (Matt's call: "named source without a URL" is the
+# hallucinated-attribution pattern, worse than a generic weasel).
+_NAMED_SOURCE_KEYWORDS = (
+    "medium",
+    "article",
+    "blog post",
+    "documentation",
+    "paper",
+    "study",
+)
+
 # ============================================================================
 # COMPANY FACTS — ground truth for fact-checking (configurable)
 # Override via environment variables for your own brand
@@ -577,6 +622,96 @@ def validate_content(title: str, content: str, topic: str = "") -> ValidationRes
                     matched_text=title[:60],
                 ))
                 break
+
+    # ------------------------------------------------------------------
+    # Severity promotion (GH-91)
+    # ------------------------------------------------------------------
+    # Two-stage promotion wired in 2026-04-20 so validator warnings
+    # stop being silent. Before this, a post with 9 `unlinked_citation`
+    # warnings reached QA with 0 critical and still passed Q80. Now:
+    #
+    #   (a) Per-rule threshold: if any single warning category exceeds
+    #       `content_validator_warning_reject_threshold` (default 3),
+    #       promote every warning in that category to critical. This
+    #       catches "writer hallucinated 9 Medium articles" patterns
+    #       that were not surfacing as rejects.
+    #
+    #   (b) Named-source-without-URL: specifically for
+    #       `unlinked_citation`, if the matched text names a source
+    #       type ("Medium", "article", "blog post", "documentation",
+    #       "paper", "study") and has no URL within ~100 chars of the
+    #       match, upgrade to critical individually. This is the
+    #       hallucinated-attribution pattern — worse than a generic
+    #       weasel because the writer literally named a source it
+    #       failed to cite.
+    #
+    # Both promotions preserve the original `category` so downstream
+    # rewrite prompts still see *which* rule fired, and Prometheus
+    # counts are taken from the original warnings (not post-promotion)
+    # so Grafana panels keep showing the raw warning volume.
+    warning_counts_by_category: dict[str, int] = {}
+    for _i in issues:
+        if _i.severity == "warning":
+            warning_counts_by_category[_i.category] = (
+                warning_counts_by_category.get(_i.category, 0) + 1
+            )
+
+    # Emit Prometheus counter BEFORE promotion so Grafana sees the raw
+    # warning volume regardless of whether this post was auto-rejected.
+    for _cat, _count in warning_counts_by_category.items():
+        try:
+            CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(rule=_cat).inc(_count)
+        except Exception as _exc:  # pragma: no cover — best-effort metric
+            logger.debug("[VALIDATOR] prometheus counter emit failed: %s", _exc)
+
+    # (b) Named-source-without-URL promotion. Runs per-issue so we can
+    # look at each match in isolation; a post with one fabricated
+    # "as noted in this Medium article" should reject even if the
+    # category count is only 1.
+    _clean_full_text = _strip_html(full_text)
+    for _i in issues:
+        if _i.severity != "warning" or _i.category != "unlinked_citation":
+            continue
+        _match_lower = _i.matched_text.lower()
+        if not any(kw in _match_lower for kw in _NAMED_SOURCE_KEYWORDS):
+            continue
+        # Look for a URL within ~100 chars after the match; if missing,
+        # treat as a hallucinated attribution and promote to critical.
+        _idx = _clean_full_text.find(_i.matched_text)
+        _context_window = ""
+        if _idx != -1:
+            _context_window = _clean_full_text[
+                max(0, _idx - 20): _idx + len(_i.matched_text) + 100
+            ]
+        else:
+            _context_window = _i.matched_text
+        _has_url = bool(re.search(r"https?://\S+", _context_window))
+        if not _has_url:
+            _i.severity = "critical"
+            _i.description = (
+                "Named source without accompanying URL (hallucinated attribution): "
+                f"{_i.matched_text!r}"
+            )
+
+    # (a) Per-rule threshold promotion. Read the threshold from
+    # site_config (DB-first) with a hardcoded floor of 3 so the guard
+    # still fires on a cold-boot environment with no settings loaded.
+    _warning_threshold = _sc.get_int(
+        "content_validator_warning_reject_threshold", 3,
+    )
+    if _warning_threshold > 0:
+        for _i in issues:
+            if (
+                _i.severity == "warning"
+                and warning_counts_by_category.get(_i.category, 0) > _warning_threshold
+            ):
+                _i.severity = "critical"
+                _i.description = (
+                    f"{_i.description} "
+                    f"(promoted: {warning_counts_by_category[_i.category]} "
+                    f"{_i.category} warnings exceeds reject threshold of "
+                    f"{_warning_threshold})"
+                )
 
     # Calculate score penalty
     score_penalty = sum(10 for i in issues if i.severity == "critical")
