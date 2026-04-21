@@ -614,7 +614,7 @@ class TaskExecutor:
                 min_curation_score = float(await self._get_setting("min_curation_score", "70"))
                 if 0 < quality_score < min_curation_score:
                     logger.info(
-                        "[CURATE] Auto-rejecting low-quality post: %s (score %.0f < %.0f)",
+                        "[CURATE] Auto-rejecting low-quality post: %s (score %.1f < %.1f)",
                         topic[:40], quality_score, min_curation_score,
                     )
                     await self.database_service.update_task(task_id, {"status": "rejected"})
