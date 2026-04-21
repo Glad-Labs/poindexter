@@ -172,13 +172,25 @@ class ResearchService:
         self.pool = pool
         self.settings = settings_service
 
-    async def build_context(self, topic: str, category: str = "technology") -> str:
+    async def build_context(
+        self,
+        topic: str,
+        category: str = "technology",
+        source_tags: list[str] | None = None,
+    ) -> str:
         """Build research context string for the generation prompt.
 
         Returns a formatted string with:
         - Relevant documentation links
         - Existing published posts for internal linking
         - Web search results (if Serper key available)
+
+        ``source_tags`` are the tag names/slugs attached to the post being
+        written. They drive the tag-coherence gate in the internal-link
+        recommender (GH-88) — without them the recommender falls back to
+        a keyword overlap between the topic string and candidate titles,
+        which lets off-topic posts like a CadQuery tutorial bleed into
+        asyncio/AI content.
         """
         sections = []
 
@@ -191,7 +203,9 @@ class ResearchService:
             sections.append("\n".join(ref_lines))
 
         # 2. Find existing published posts for internal linking
-        internal = await self._find_internal_links(topic)
+        internal = await self._find_internal_links(
+            topic, source_tags=source_tags, category=category
+        )
         if internal:
             int_lines = ["EXISTING POSTS ON OUR SITE (link to these where relevant):"]
             for post in internal:
@@ -247,8 +261,21 @@ class ResearchService:
 
         return matched[:8]  # Cap at 8 references
 
-    async def _find_internal_links(self, topic: str) -> list[dict[str, str]]:
-        """Find existing published posts related to the topic."""
+    async def _find_internal_links(
+        self,
+        topic: str,
+        *,
+        source_tags: list[str] | None = None,
+        category: str | None = None,
+    ) -> list[dict[str, str]]:
+        """Find existing published posts related to the topic.
+
+        After candidate collection, the topic-coherence gate (GH-88) is
+        applied via :class:`InternalLinkCoherenceFilter`. Candidates that
+        don't share a tag with the source post (or that have already been
+        the "related" pick on too many other posts) are dropped before
+        reaching the writer prompt.
+        """
         if not self.pool:
             return []
         try:
@@ -259,18 +286,45 @@ class ResearchService:
 
             # Use the first few significant words for search (ILIKE against
             # each word — an earlier version built a tsquery string here,
-            # which this query never used).
+            # which this query never used). We pull the post ID too so the
+            # coherence filter can look up tag slugs without another round
+            # trip via slug.
             rows = await self.pool.fetch("""
-                SELECT title, slug FROM posts
+                SELECT id, title, slug FROM posts
                 WHERE status = 'published'
                 AND (
                     title ILIKE ANY($1)
                     OR slug ILIKE ANY($1)
                 )
-                LIMIT 5
+                LIMIT 10
             """, [f"%{w}%" for w in topic_words[:3]])
 
-            return [{"title": r["title"], "slug": r["slug"]} for r in rows]
+            from services.internal_link_coherence import (
+                InternalLinkCoherenceFilter,
+                LinkCandidate,
+            )
+
+            candidates = [
+                LinkCandidate(
+                    slug=r["slug"],
+                    title=r["title"],
+                    post_id=str(r["id"]) if r.get("id") is not None else None,
+                )
+                for r in rows
+            ]
+
+            # Seed with category so a task tagged only with "technology"
+            # can still find overlap with targets tagged "technology".
+            effective_source_tags = list(source_tags or [])
+            if category:
+                effective_source_tags.append(category)
+
+            coherence = InternalLinkCoherenceFilter(pool=self.pool)
+            survivors = await coherence.filter_candidates(
+                source_tags=effective_source_tags, candidates=candidates
+            )
+
+            return [{"title": c.title, "slug": c.slug} for c in survivors[:5]]
         except Exception as e:
             logger.debug("[RESEARCH] Internal link search failed: %s", e)
             return []

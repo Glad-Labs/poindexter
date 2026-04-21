@@ -85,14 +85,50 @@ class TestFindReferences:
 class TestFindInternalLinks:
     @pytest.mark.asyncio
     async def test_returns_matching_posts(self, service, mock_pool):
-        mock_pool.fetch.return_value = [
-            {"title": "Getting Started with Docker", "slug": "getting-started-docker"},
-            {"title": "Docker Compose Guide", "slug": "docker-compose-guide"},
-        ]
-        results = await service._find_internal_links("Docker deployment tips")
+        # First fetch: the posts lookup. Subsequent fetches: tag lookups
+        # done by the coherence gate (GH-88). Each target post needs at
+        # least one tag that overlaps with source_tags or the filter will
+        # drop it.
+        mock_pool.fetch = AsyncMock(
+            side_effect=[
+                [  # posts lookup
+                    {"id": "11111111-1111-1111-1111-111111111111", "title": "Getting Started with Docker", "slug": "getting-started-docker"},
+                    {"id": "22222222-2222-2222-2222-222222222222", "title": "Docker Compose Guide", "slug": "docker-compose-guide"},
+                ],
+                [  # tag lookup for first candidate
+                    {"slug": "docker"},
+                ],
+                [],  # inbound-count lookup for first candidate (no inbound hits)
+                [  # tag lookup for second candidate
+                    {"slug": "docker"},
+                ],
+                [],  # inbound-count lookup for second candidate
+            ]
+        )
+        results = await service._find_internal_links(
+            "Docker deployment tips", source_tags=["Docker"]
+        )
         assert len(results) == 2
         assert results[0]["title"] == "Getting Started with Docker"
         assert results[0]["slug"] == "getting-started-docker"
+
+    @pytest.mark.asyncio
+    async def test_coherence_gate_rejects_off_topic_candidates(self, service, mock_pool):
+        """GH-88: without shared tags, candidates are filtered out."""
+        mock_pool.fetch = AsyncMock(
+            side_effect=[
+                [  # posts lookup — candidate hit by keyword but off-topic
+                    {"id": "11111111-1111-1111-1111-111111111111", "title": "CadQuery Deep Dive", "slug": "cadquery-deep-dive"},
+                ],
+                [  # tag lookup for candidate — only 3d-modeling
+                    {"slug": "3d-modeling"},
+                ],
+            ]
+        )
+        results = await service._find_internal_links(
+            "Docker deployment tips", source_tags=["Docker", "DevOps"]
+        )
+        assert results == [], "Off-topic candidate must be rejected"
 
     @pytest.mark.asyncio
     async def test_returns_empty_without_pool(self, service_no_pool):
@@ -171,11 +207,21 @@ class TestBuildContext:
 
     @pytest.mark.asyncio
     async def test_includes_internal_links(self, service, mock_pool):
-        mock_pool.fetch.return_value = [
-            {"title": "FastAPI Intro", "slug": "fastapi-intro"},
-        ]
+        mock_pool.fetch = AsyncMock(
+            side_effect=[
+                [  # posts lookup
+                    {"id": "33333333-3333-3333-3333-333333333333", "title": "FastAPI Intro", "slug": "fastapi-intro"},
+                ],
+                [  # tag lookup for candidate — shares 'fastapi' with source
+                    {"slug": "fastapi"},
+                ],
+                [],  # inbound-count lookup
+            ]
+        )
         with patch.object(service, "_web_search", new_callable=AsyncMock, return_value=[]):
-            context = await service.build_context("FastAPI tutorial")
+            context = await service.build_context(
+                "FastAPI tutorial", source_tags=["FastAPI"]
+            )
         assert "EXISTING POSTS ON OUR SITE" in context
         assert "/posts/fastapi-intro" in context
 
