@@ -50,7 +50,7 @@ import { withSentryConfig } from '@sentry/nextjs';
   }
 })();
 
-// Derive a safe origin for the CSP connect-src directive from env vars.
+// Derive safe origins for the CSP connect-src directive from env vars.
 // Uses URL().origin to strip paths and reject semicolons that could inject CSP directives.
 const cspBackendOrigin = (() => {
   const raw =
@@ -63,6 +63,20 @@ const cspBackendOrigin = (() => {
     }
   }
   return process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : '';
+})();
+
+// Static JSON/image CDN (R2) — the search page and any other client-side
+// consumer of posts/index.json fetches from here. Without it in connect-src
+// the browser blocks the fetch and /search silently returns zero results
+// (Gitea #262).
+const cspStaticOrigin = (() => {
+  const raw = process.env.NEXT_PUBLIC_STATIC_URL;
+  if (!raw) return '';
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return '';
+  }
 })();
 
 const nextConfig = {
@@ -174,11 +188,11 @@ const nextConfig = {
             value:
               [
                 "default-src 'self'",
-                `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''} https://www.googletagmanager.com https://pagead2.googlesyndication.com https://giscus.app https://va.vercel-scripts.com`,
+                `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''} https://www.googletagmanager.com https://pagead2.googlesyndication.com https://giscus.app https://va.vercel-scripts.com https://static.cloudflareinsights.com https://lmsqueezy.com`,
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''} https://www.google-analytics.com https://va.vercel-scripts.com https://vitals.vercel-insights.com`,
+                `connect-src 'self'${cspBackendOrigin ? ' ' + cspBackendOrigin : ''}${cspStaticOrigin ? ' ' + cspStaticOrigin : ''} https://www.google-analytics.com https://va.vercel-scripts.com https://vitals.vercel-insights.com`,
                 "frame-src 'self' https://pagead2.googlesyndication.com https://giscus.app",
               ].join('; ') + ';',
           },
