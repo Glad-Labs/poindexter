@@ -1,99 +1,96 @@
 """Bluesky adapter — posts to Bluesky via the AT Protocol.
 
-Free, no rate limit BS. Requires:
-    app_settings:
-        bluesky_handle    — e.g. "gladlabs.bsky.social"
-        bluesky_app_password — app password from bsky.app/settings/app-passwords
+Bluesky is free, open, and has no paid API tier. We use the ``atproto``
+Python SDK (MIT-licensed) rather than hand-rolling HTTP calls so rich-text
+facets, session refresh, and error handling come "for free".
 
-Usage:
-    from services.social_adapters.bluesky import post_to_bluesky
-    result = await post_to_bluesky("Check out this post!", "https://gladlabs.io/posts/my-post")
+Credentials live in ``app_settings`` (DB-first config, GH-93):
+
+    ``bluesky_identifier``    — handle or DID, e.g. ``gladlabs.bsky.social``.
+                                ``is_secret=true`` — stored encrypted via pgcrypto.
+    ``bluesky_app_password``  — app password from bsky.app/settings/app-passwords.
+                                ``is_secret=true`` — NEVER the account password.
+
+Rotation: generate a new app password on bsky.app, update the row via
+``mcp__poindexter__set_setting`` or ``site_config.set_secret``, and the
+next post picks it up (no restart required — secrets aren't cached).
+
+GH-36: replaces dlvr.it RSS bridge with direct AT Protocol posting.
 """
 
-import re
-from datetime import datetime, timezone
+from __future__ import annotations
 
-import httpx
+from typing import Any
 
 from services.logger_config import get_logger
 from services.site_config import site_config
 
 logger = get_logger(__name__)
 
-ATP_BASE = "https://bsky.social/xrpc"
+# Bluesky post text limit (graphemes, but conservatively measured as chars).
+_MAX_POST_CHARS = 300
 
 
-async def _create_session(handle: str, password: str) -> dict | None:
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(
-            f"{ATP_BASE}/com.atproto.server.createSession",
-            json={"identifier": handle, "password": password},
-        )
-        if resp.status_code == 200:
-            return resp.json()
-        logger.warning("[BLUESKY] Auth failed: %s %s", resp.status_code, resp.text[:200])
-        return None
+def _truncate(text: str, limit: int = _MAX_POST_CHARS) -> str:
+    """Hard-truncate with an ellipsis when over ``limit`` characters."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
 
 
-def _parse_facets(text: str) -> list[dict]:
-    """Extract URL and mention facets for rich text."""
-    facets = []
-    for m in re.finditer(r"https?://\S+", text):
-        facets.append({
-            "index": {
-                "byteStart": len(text[:m.start()].encode("utf-8")),
-                "byteEnd": len(text[:m.end()].encode("utf-8")),
-            },
-            "features": [{"$type": "app.bsky.richtext.facet#link", "uri": m.group()}],
-        })
-    return facets
+async def post_to_bluesky(text: str, url: str, **kwargs: Any) -> dict:
+    """Post a status to Bluesky.
 
+    Returns::
 
-async def post_to_bluesky(text: str, url: str, **kwargs) -> dict:
-    """Post to Bluesky. Returns {"success": bool, "post_id": str | None, "error": str | None}."""
-    handle = site_config.get("bluesky_handle", "")
+        {"success": bool, "post_id": str | None, "error": str | None}
+
+    On missing credentials the call short-circuits with a clear
+    "not configured" message — callers (social_poster) treat this as a
+    soft skip, not a crash.
+    """
+    identifier = await site_config.get_secret("bluesky_identifier", "")
     password = await site_config.get_secret("bluesky_app_password", "")
 
-    if not handle or not password:
-        return {"success": False, "post_id": None, "error": "bluesky_handle or bluesky_app_password not configured"}
+    if not identifier or not password:
+        msg = "bluesky_identifier or bluesky_app_password not configured"
+        logger.info("[BLUESKY] Skipped — %s", msg)
+        return {"success": False, "post_id": None, "error": msg}
 
+    # Lazy import so pytest collection doesn't require atproto to be
+    # installed in every environment. The library is declared in
+    # pyproject.toml; production installs pick it up via poetry/pip.
     try:
-        session = await _create_session(handle, password)
-        if not session:
-            return {"success": False, "post_id": None, "error": "Bluesky auth failed"}
-
-        post_text = text if url in text else f"{text}\n\n{url}"
-        if len(post_text) > 300:
-            post_text = post_text[:297] + "..."
-
-        record = {
-            "$type": "app.bsky.feed.post",
-            "text": post_text,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
-            "facets": _parse_facets(post_text),
+        from atproto import Client  # type: ignore[import-not-found]
+    except ImportError as e:
+        logger.error(
+            "[BLUESKY] atproto package is not installed; install with "
+            "`pip install atproto` or `poetry install`. Error: %s", e
+        )
+        return {
+            "success": False,
+            "post_id": None,
+            "error": f"atproto package not installed: {e}",
         }
 
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                f"{ATP_BASE}/com.atproto.repo.createRecord",
-                headers={"Authorization": f"Bearer {session['accessJwt']}"},
-                json={
-                    "repo": session["did"],
-                    "collection": "app.bsky.feed.post",
-                    "record": record,
-                },
-            )
+    post_text = text if url in text else f"{text}\n\n{url}"
+    post_text = _truncate(post_text)
 
-            if resp.status_code == 200:
-                data = resp.json()
-                post_id = data.get("uri", "")
-                logger.info("[BLUESKY] Posted: %s", post_id)
-                return {"success": True, "post_id": post_id, "error": None}
-            else:
-                err = resp.text[:200]
-                logger.warning("[BLUESKY] Post failed: %s %s", resp.status_code, err)
-                return {"success": False, "post_id": None, "error": err}
+    try:
+        client = Client()
+        # atproto's Client is sync — run in a thread so we don't block
+        # the event loop during login/post.
+        import asyncio
 
-    except Exception as e:
-        logger.exception("[BLUESKY] Error: %s", e)
+        def _login_and_post() -> Any:
+            client.login(identifier, password)
+            return client.send_post(text=post_text)
+
+        response = await asyncio.to_thread(_login_and_post)
+        post_uri = getattr(response, "uri", "") or ""
+        logger.info("[BLUESKY] Posted: %s", post_uri)
+        return {"success": True, "post_id": post_uri, "error": None}
+
+    except Exception as e:  # noqa: BLE001 — adapter boundary; caller logs/metrics
+        logger.exception("[BLUESKY] Post failed: %s", e)
         return {"success": False, "post_id": None, "error": str(e)}

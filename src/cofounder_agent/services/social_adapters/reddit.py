@@ -1,107 +1,40 @@
-"""Reddit adapter — posts to subreddits via the Reddit API.
+"""Reddit adapter — STUB.
 
-Free (OAuth, rate-limited to 60 req/min). Requires:
-    app_settings:
-        reddit_client_id       — from reddit.com/prefs/apps (script type)
-        reddit_client_secret   — from the same app
-        reddit_username        — your Reddit account
-        reddit_password        — your Reddit account password
-        reddit_subreddits      — comma-separated target subs (e.g. "programming,Python")
+Reddit's API requires a registered "script" or "web" application, OAuth
+credentials (client_id + client_secret + username + password, or OAuth
+refresh token), and subreddit-specific posting rules that differ per
+community. None of that is wired up yet (see GH-40), so this adapter
+is intentionally a stub — calling it raises ``NotImplementedError``
+rather than posting garbage or silently no-op'ing.
 
-Usage:
-    from services.social_adapters.reddit import post_to_reddit
-    result = await post_to_reddit(
-        title="How Indie Hackers Actually Make Money in 2026",
-        url="https://gladlabs.io/posts/how-indie-hackers-make-money",
-    )
+When we're ready to wire this up (GH-40):
+
+1. Create a script-type app at https://www.reddit.com/prefs/apps.
+2. Seed ``reddit_client_id``, ``reddit_client_secret``, ``reddit_username``,
+   ``reddit_password`` (all is_secret=true) + ``reddit_subreddits`` into
+   ``app_settings``.
+3. Replace this stub with a real implementation (PRAW or asyncpraw are
+   both fine; keep it free).
+
+GH-36 retired dlvr.it as the cross-poster. Reddit stays off until GH-40
+unblocks it.
 """
 
-import httpx
+from __future__ import annotations
+
+from typing import Any, NoReturn
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
-REDDIT_TOKEN_URL = "https://www.reddit.com/api/v1/access_token"
-REDDIT_API = "https://oauth.reddit.com"
-USER_AGENT = "poindexter:v0.2.0 (by /u/{username})"
 
-
-async def _get_access_token() -> tuple[str | None, str]:
-    """Get OAuth token via password grant. Returns (token, username)."""
-    client_id = await site_config.get_secret("reddit_client_id", "")
-    client_secret = await site_config.get_secret("reddit_client_secret", "")
-    username = await site_config.get_secret("reddit_username", "")
-    password = await site_config.get_secret("reddit_password", "")
-
-    if not all([client_id, client_secret, username, password]):
-        return None, ""
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(
-            REDDIT_TOKEN_URL,
-            auth=(client_id, client_secret),
-            data={
-                "grant_type": "password",
-                "username": username,
-                "password": password,
-            },
-            headers={"User-Agent": USER_AGENT.format(username=username)},
-        )
-        if resp.status_code == 200:
-            return resp.json().get("access_token"), username
-        logger.warning("[REDDIT] Auth failed: %s", resp.text[:200])
-        return None, username
-
-
-async def post_to_reddit(title: str, url: str, **kwargs) -> dict:
-    """Post a link to configured subreddits. Returns {"success", "post_id", "error"}."""
-    subreddits_str = site_config.get("reddit_subreddits", "")
-    if not subreddits_str:
-        return {"success": False, "post_id": None, "error": "reddit_subreddits not configured"}
-
-    access_token, username = await _get_access_token()
-    if not access_token:
-        return {"success": False, "post_id": None, "error": "Reddit auth not configured or failed"}
-
-    subreddits = [s.strip() for s in subreddits_str.split(",") if s.strip()]
-    results = []
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        for sub in subreddits:
-            try:
-                resp = await client.post(
-                    f"{REDDIT_API}/api/submit",
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "User-Agent": USER_AGENT.format(username=username),
-                    },
-                    data={
-                        "sr": sub,
-                        "kind": "link",
-                        "title": title[:300],
-                        "url": url,
-                        "resubmit": "true",
-                    },
-                )
-                data = resp.json()
-                if resp.status_code == 200 and not data.get("json", {}).get("errors"):
-                    post_url = data.get("json", {}).get("data", {}).get("url", "")
-                    logger.info("[REDDIT] Posted to r/%s: %s", sub, post_url)
-                    results.append({"sub": sub, "success": True, "url": post_url})
-                else:
-                    errors = data.get("json", {}).get("errors", [])
-                    err_str = str(errors[:2]) if errors else resp.text[:100]
-                    logger.warning("[REDDIT] r/%s failed: %s", sub, err_str)
-                    results.append({"sub": sub, "success": False, "error": err_str})
-            except Exception as e:
-                results.append({"sub": sub, "success": False, "error": str(e)})
-
-    any_success = any(r.get("success") for r in results)
-    return {
-        "success": any_success,
-        "post_id": None,
-        "results": results,
-        "error": None if any_success else "All subreddit posts failed",
-    }
+async def post_to_reddit(title: str, url: str, **kwargs: Any) -> NoReturn:
+    """Intentionally unimplemented — see module docstring / GH-40."""
+    logger.warning(
+        "[REDDIT] post_to_reddit called but Reddit OAuth is not set up. "
+        "See GH-40 for the setup checklist. Skipping."
+    )
+    raise NotImplementedError(
+        "Reddit adapter requires OAuth setup — see GH-40"
+    )

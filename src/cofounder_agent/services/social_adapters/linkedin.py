@@ -1,78 +1,40 @@
-"""LinkedIn adapter — posts to LinkedIn via the Community Management API.
+"""LinkedIn adapter — STUB.
 
-Free for org pages. Requires:
-    app_settings:
-        linkedin_access_token  — OAuth 2.0 token (from LinkedIn Developer Portal)
-        linkedin_org_id        — organization URN ID (numeric)
+LinkedIn's Marketing Developer Platform + Community Management API
+require a LinkedIn-approved Company Page, an OAuth 2.0 flow against the
+Developer Portal, and periodic token refresh. Matt hasn't set any of
+that up yet (see GH-40), so this adapter is intentionally a stub —
+calling it will raise ``NotImplementedError`` rather than silently
+no-op.
 
-Usage:
-    from services.social_adapters.linkedin import post_to_linkedin
-    result = await post_to_linkedin("Check out this post!", "https://gladlabs.io/posts/my-post")
+When we're ready to wire this up (GH-40):
 
-Note: LinkedIn OAuth tokens expire. You'll need to refresh periodically
-via the LinkedIn Developer Portal or implement token refresh.
+1. Create a LinkedIn app in https://www.linkedin.com/developers/
+2. Request the ``w_organization_social`` / ``rw_organization_admin`` scope.
+3. Run the 3-legged OAuth flow, capture the refresh token.
+4. Seed ``linkedin_access_token`` (is_secret=true), ``linkedin_refresh_token``
+   (is_secret=true), and ``linkedin_org_id`` into ``app_settings``.
+5. Replace this stub with a real implementation.
+
+GH-36 retired dlvr.it as the cross-poster. LinkedIn stays off until GH-40
+unblocks it.
 """
 
-import httpx
+from __future__ import annotations
+
+from typing import Any, NoReturn
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
-LINKEDIN_API = "https://api.linkedin.com/v2"
 
-
-async def post_to_linkedin(text: str, url: str, **kwargs) -> dict:
-    """Post to LinkedIn org page. Returns {"success": bool, "post_id": str | None, "error": str | None}."""
-    access_token = await site_config.get_secret("linkedin_access_token", "")
-    org_id = site_config.get("linkedin_org_id", "")
-
-    if not access_token or not org_id:
-        return {"success": False, "post_id": None, "error": "linkedin_access_token or linkedin_org_id not configured"}
-
-    try:
-        author = f"urn:li:organization:{org_id}"
-
-        post_body = {
-            "author": author,
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": text},
-                    "shareMediaCategory": "ARTICLE",
-                    "media": [
-                        {
-                            "status": "READY",
-                            "originalUrl": url,
-                        }
-                    ],
-                }
-            },
-            "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
-        }
-
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                f"{LINKEDIN_API}/ugcPosts",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "X-Restli-Protocol-Version": "2.0.0",
-                    "Content-Type": "application/json",
-                },
-                json=post_body,
-            )
-
-            if resp.status_code in (200, 201):
-                data = resp.json()
-                post_id = data.get("id", "")
-                logger.info("[LINKEDIN] Posted: %s", post_id)
-                return {"success": True, "post_id": post_id, "error": None}
-            else:
-                err = resp.text[:200]
-                logger.warning("[LINKEDIN] Post failed: %s %s", resp.status_code, err)
-                return {"success": False, "post_id": None, "error": err}
-
-    except Exception as e:
-        logger.exception("[LINKEDIN] Error: %s", e)
-        return {"success": False, "post_id": None, "error": str(e)}
+async def post_to_linkedin(text: str, url: str, **kwargs: Any) -> NoReturn:
+    """Intentionally unimplemented — see module docstring / GH-40."""
+    logger.warning(
+        "[LINKEDIN] post_to_linkedin called but LinkedIn OAuth is not set up. "
+        "See GH-40 for the setup checklist. Skipping."
+    )
+    raise NotImplementedError(
+        "LinkedIn adapter requires OAuth setup — see GH-40"
+    )

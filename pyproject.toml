@@ -35,6 +35,11 @@ mcp-server-fetch = "^2025.4.7"
 structlog = "^25.5.0"
 aiofiles = "^25.1.0"
 
+# Direct social-media APIs (GH-36 — retires dlvr.it). Both are MIT-licensed
+# and call the platform's free/public endpoints; no paid tier required.
+atproto = ">=0.0.55"          # Bluesky AT Protocol client
+"Mastodon.py" = ">=1.8.1"     # Mastodon API client (Fediverse)
+
 [tool.poetry.extras]
 ml = ["torch", "diffusers", "transformers", "accelerate"]
 

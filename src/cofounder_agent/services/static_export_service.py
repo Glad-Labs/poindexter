@@ -194,8 +194,10 @@ def _build_json_feed(posts: list[dict], site_url: str, site_title: str) -> dict:
     """Build a JSON Feed 1.1 compliant feed.
 
     Only includes posts with distributed_at set AND published after the
-    feed cutoff (2026-04-12).  This prevents dlvr.it from re-distributing
-    old/migrated posts.
+    feed cutoff (2026-04-12). Originally introduced to stop the legacy
+    dlvr.it RSS bridge from re-distributing old/migrated posts; kept in
+    place after GH-36 so any remaining RSS consumers (and our own direct
+    Bluesky / Mastodon adapters) don't see historical content as "new".
     """
     from datetime import datetime, timezone
     FEED_CUTOFF = datetime(2026, 4, 12, tzinfo=timezone.utc)

@@ -48,26 +48,28 @@
 | Auto-Publish         | WORKING (disabled) | Set to 0 (off). Can enable via `auto_publish_threshold` in app_settings.                                             |
 | Static JSON Export   | WORKING            | Pushes posts/index.json, individual posts, feed.json, categories, sitemap to R2.                                     |
 | R2/S3 Upload         | WORKING            | Cloudflare R2 configured. Works with any S3-compatible storage.                                                      |
-| RSS Feed             | WORKING            | Blog feed.xml + JSON Feed 1.1. Feed dedup via `distributed_at` column + cutoff date prevents dlvr.it spam.           |
+| RSS Feed             | WORKING            | Blog feed.xml + JSON Feed 1.1. Feed dedup via `distributed_at` column + cutoff date (legacy dlvr.it retired GH-36).  |
 | Podcast RSS          | WORKING            | Apple Podcasts-compatible RSS feed at /api/podcast/feed.xml.                                                         |
 | ISR Revalidation     | WORKING            | Triggers Next.js on-demand revalidation on publish. Pings search engines.                                            |
 | Dev.to Cross-Posting | PARTIAL            | Code complete and tested. API key not configured. Gracefully skips if missing. 1 hour to activate.                   |
 | Newsletter           | PARTIAL            | Resend API configured. Wired into publish flow. 2 test subscribers. Enabled today — untested in production.          |
-| X/Twitter Posting    | SCAFFOLD           | Generates post text (280 chars). Does NOT actually post — $100/mo API. Use dlvr.it RSS bridge or manual copy-paste.  |
-| LinkedIn Posting     | WORKING            | Adapter built (services/social_adapters/linkedin.py). Needs linkedin_access_token + linkedin_org_id in app_settings. |
-| Bluesky Posting      | WORKING            | Adapter built (services/social_adapters/bluesky.py). Free, AT Protocol. Needs bluesky_handle + bluesky_app_password. |
-| Mastodon Posting     | WORKING            | Adapter built (services/social_adapters/mastodon.py). Free, any Fediverse instance.                                  |
-| Reddit Posting       | WORKING            | Adapter built (services/social_adapters/reddit.py). Free, OAuth. Posts to configured subreddits.                     |
-| YouTube Upload       | WORKING            | Adapter built (services/social_adapters/youtube.py). Wired into publish flow. Needs YouTube OAuth credentials.       |
+| X/Twitter Posting    | SCAFFOLD           | Generates post text (280 chars). Does NOT actually post — X charges $100/mo for the API. Manual copy-paste for now.  |
+| LinkedIn Posting     | STUB               | Stub raises NotImplementedError — LinkedIn OAuth not set up yet (GH-40). Safe to enable once OAuth flow is wired.    |
+| Bluesky Posting      | WORKING            | Direct AT Protocol via `atproto` lib (GH-36). Seeds `bluesky_identifier` + `bluesky_app_password` (both secrets).    |
+| Mastodon Posting     | WORKING            | Direct Fediverse via `Mastodon.py` (GH-36). Seeds `mastodon_instance_url` + `mastodon_access_token` (secret).        |
+| Reddit Posting       | STUB               | Stub raises NotImplementedError — Reddit OAuth + per-sub rules not set up yet (GH-40).                               |
+| YouTube Upload       | STUB               | Stub raises NotImplementedError — YouTube Data API OAuth not set up yet (GH-40).                                     |
 | Video Generation     | WORKING            | Ken Burns slideshow MP4s from SDXL images + podcast audio. Host video-server on :9837. Auto-uploads to R2 + YouTube. |
 
 ### What Distribution Actually Looks Like Today
 
 1. Post publishes → static JSON pushed to R2 → your Next.js frontend updates
 2. Podcast MP3 generated → served via RSS feed
-3. Social post text generated → sent to Telegram/Discord notification → you manually post to X/LinkedIn
-4. Newsletter → sends to subscribers via Resend (just enabled, needs production testing)
-5. Dev.to → skipped (no API key)
+3. Social post text generated → sent to Telegram/Discord notification for approval
+4. Direct social APIs fire (GH-36): Bluesky + Mastodon via `atproto` / `Mastodon.py` (if keys seeded)
+5. LinkedIn / Reddit / YouTube → stub adapters (GH-40 for OAuth); manual copy-paste for now
+6. Newsletter → sends to subscribers via Resend (just enabled, needs production testing)
+7. Dev.to → skipped (no API key)
 
 ---
 

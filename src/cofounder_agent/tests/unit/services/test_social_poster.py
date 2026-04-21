@@ -420,3 +420,187 @@ class TestCharacterLimitsAndHashtags:
         result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama)
         assert len(result) <= TWITTER_CHAR_LIMIT
         assert result.endswith("...")
+
+
+# ---------------------------------------------------------------------------
+# Adapter distribution — graceful degradation (GH-36)
+# ---------------------------------------------------------------------------
+
+
+class TestSafeCallAdapter:
+    """Verify ``_safe_call_adapter`` never crashes the distribution loop."""
+
+    @pytest.mark.asyncio
+    async def test_success_dict_passes_through(self):
+        from services.social_poster import _safe_call_adapter
+
+        async def _ok():
+            return {"success": True, "post_id": "p1", "error": None}
+
+        result = await _safe_call_adapter("bluesky", _ok)
+        assert result["success"] is True
+        assert result["post_id"] == "p1"
+
+    @pytest.mark.asyncio
+    async def test_failure_dict_passes_through(self):
+        """Graceful 'not configured' returns: adapter returns {success: False}."""
+        from services.social_poster import _safe_call_adapter
+
+        async def _soft_fail():
+            return {"success": False, "post_id": None, "error": "not configured"}
+
+        result = await _safe_call_adapter("bluesky", _soft_fail)
+        assert result["success"] is False
+        assert "not configured" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_exception_becomes_error_dict(self):
+        from services.social_poster import _safe_call_adapter
+
+        async def _boom():
+            raise RuntimeError("something blew up")
+
+        result = await _safe_call_adapter("bluesky", _boom)
+        assert result["success"] is False
+        assert result["post_id"] is None
+        assert "something blew up" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_notimplementederror_becomes_skipped(self):
+        """Stub adapters (GH-40) raise NotImplementedError — must be skipped."""
+        from services.social_poster import _safe_call_adapter
+
+        async def _stub():
+            raise NotImplementedError("LinkedIn requires OAuth setup — see GH-40")
+
+        result = await _safe_call_adapter("linkedin", _stub)
+        assert result["success"] is False
+        assert "stub" in result["error"]
+        assert "GH-40" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_non_dict_result_treated_as_failure(self):
+        from services.social_poster import _safe_call_adapter
+
+        async def _bad_return():
+            return "unexpected string"  # not a dict — adapter contract violated
+
+        result = await _safe_call_adapter("bluesky", _bad_return)
+        assert result["success"] is False
+        assert "non-dict" in result["error"]
+
+
+class TestDistributeToAdapters:
+    """Verify ``_distribute_to_adapters`` routes correctly + is crash-safe."""
+
+    @pytest.mark.asyncio
+    async def test_empty_enabled_returns_empty(self):
+        from services.social_poster import _distribute_to_adapters
+
+        posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
+        result = await _distribute_to_adapters(posts, set())
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_no_posts_returns_empty(self):
+        from services.social_poster import _distribute_to_adapters
+
+        result = await _distribute_to_adapters([], {"bluesky", "mastodon"})
+        assert result == {}
+
+    @pytest.mark.asyncio
+    @patch("services.social_adapters.bluesky.post_to_bluesky", new_callable=AsyncMock)
+    @patch("services.social_adapters.mastodon.post_to_mastodon", new_callable=AsyncMock)
+    async def test_routes_to_enabled_platforms(self, mock_masto, mock_bsky):
+        from services.social_poster import _distribute_to_adapters
+
+        mock_bsky.return_value = {"success": True, "post_id": "bsky1", "error": None}
+        mock_masto.return_value = {"success": True, "post_id": "masto1", "error": None}
+
+        posts = [SocialPost(platform="twitter", text="hello", post_url="https://x.com/1")]
+        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"})
+
+        assert result["bluesky"]["success"] is True
+        assert result["mastodon"]["success"] is True
+        mock_bsky.assert_awaited_once()
+        mock_masto.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch("services.social_adapters.bluesky.post_to_bluesky", new_callable=AsyncMock)
+    @patch("services.social_adapters.mastodon.post_to_mastodon", new_callable=AsyncMock)
+    async def test_one_adapter_crash_does_not_kill_others(self, mock_masto, mock_bsky):
+        """GH-36 AC#5: graceful degradation — a crashing adapter
+        must not take down the remaining ones."""
+        from services.social_poster import _distribute_to_adapters
+
+        mock_bsky.side_effect = Exception("Bluesky is down")
+        mock_masto.return_value = {"success": True, "post_id": "masto1", "error": None}
+
+        posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
+        result = await _distribute_to_adapters(posts, {"bluesky", "mastodon"})
+
+        # Bluesky failed gracefully, Mastodon succeeded — the loop
+        # didn't bail on the first exception.
+        assert result["bluesky"]["success"] is False
+        assert "Bluesky is down" in result["bluesky"]["error"]
+        assert result["mastodon"]["success"] is True
+
+    @pytest.mark.asyncio
+    @patch("services.social_adapters.linkedin.post_to_linkedin", new_callable=AsyncMock)
+    @patch("services.social_adapters.bluesky.post_to_bluesky", new_callable=AsyncMock)
+    async def test_linkedin_stub_does_not_kill_bluesky(self, mock_bsky, mock_linkedin):
+        """Even with LinkedIn flagged enabled (by mistake), the stub
+        raising NotImplementedError must not break the other platforms."""
+        from services.social_poster import _distribute_to_adapters
+
+        mock_bsky.return_value = {"success": True, "post_id": "b1", "error": None}
+        mock_linkedin.side_effect = NotImplementedError(
+            "LinkedIn adapter requires OAuth setup — see GH-40"
+        )
+
+        posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
+        result = await _distribute_to_adapters(
+            posts, {"bluesky", "linkedin"}
+        )
+
+        assert result["bluesky"]["success"] is True
+        assert result["linkedin"]["success"] is False
+        assert "stub" in result["linkedin"]["error"]
+
+    @pytest.mark.asyncio
+    @patch("services.social_adapters.bluesky.post_to_bluesky", new_callable=AsyncMock)
+    async def test_missing_credentials_logs_clean_skip(self, mock_bsky, caplog):
+        """GH-36 AC#7: missing credentials short-circuits with a clear log."""
+        import logging
+
+        from services.social_poster import _distribute_to_adapters
+
+        mock_bsky.return_value = {
+            "success": False,
+            "post_id": None,
+            "error": "bluesky_identifier or bluesky_app_password not configured",
+        }
+
+        posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
+        with caplog.at_level(logging.WARNING, logger="services.social_poster"):
+            result = await _distribute_to_adapters(posts, {"bluesky"})
+
+        assert result["bluesky"]["success"] is False
+        assert "not configured" in result["bluesky"]["error"]
+
+
+class TestBumpMetricNeverRaises:
+    """The metrics shim is best-effort — even a broken Prometheus shouldn't
+    take down social posting."""
+
+    def test_no_labels_does_not_raise(self):
+        from services.social_poster import _bump_metric
+
+        # Should not raise even though we pass an unknown metric name.
+        _bump_metric("definitely_unknown_metric")
+
+    def test_known_metric_no_raise(self):
+        from services.social_poster import _bump_metric
+
+        _bump_metric("social_adapter_posts_total", platform="bluesky", outcome="success")
+        _bump_metric("social_adapter_errors_total", platform="bluesky")
