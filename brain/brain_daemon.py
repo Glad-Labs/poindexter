@@ -39,6 +39,12 @@ from health_probes import run_health_probes
 from seed_loader import seed_app_settings
 
 try:
+    # Flat import when brain/ is on sys.path (container runtime).
+    from alert_sync import sync_alert_rules
+except ImportError:  # pragma: no cover — package-qualified import for tests
+    from brain.alert_sync import sync_alert_rules
+
+try:
     from business_probes import run_business_probes
     _HAS_BUSINESS_PROBES = True
 except ImportError:
@@ -156,6 +162,11 @@ EXTERNAL_SERVICES = {
 _prev_external_status = {}
 
 CYCLE_SECONDS = 300  # 5 minutes between full cycles
+
+# GH-28: Grafana alert sync cadence counter. Incremented each run_cycle;
+# sync_alert_rules fires when the counter hits grafana_alert_sync_interval_cycles
+# (default 3 = every 15 min). Reset to 0 after each sync.
+_alert_sync_cycle_counter = 0
 
 
 def check_http(url: str, timeout: int = 10) -> tuple:
@@ -947,6 +958,30 @@ async def log_electricity_cost(pool):
         logger.debug("[BRAIN] Electricity cost logging failed: %s", e)
 
 
+async def _maybe_sync_grafana_alerts(pool) -> None:
+    """GH-28: Push DB alert_rules to Grafana every N cycles.
+
+    N = grafana_alert_sync_interval_cycles (default 3 = 15 min). Cadence
+    is tracked via ``_alert_sync_cycle_counter`` so a slow Grafana never
+    stalls the main brain cycle — the worst-case outcome is one WARNING
+    log per sync attempt.
+
+    Swallows all exceptions: the sync loop must never crash the brain.
+    """
+    global _alert_sync_cycle_counter
+    interval = await _setting_int(pool, "grafana_alert_sync_interval_cycles", 3)
+    if interval <= 0:
+        return
+    _alert_sync_cycle_counter += 1
+    if _alert_sync_cycle_counter < interval:
+        return
+    _alert_sync_cycle_counter = 0
+    try:
+        await sync_alert_rules(pool)
+    except Exception as e:
+        logger.warning("[BRAIN] Grafana alert sync failed: %s", e, exc_info=True)
+
+
 async def run_cycle(pool):
     """One full brain cycle: monitor → process → maintain → update."""
     logger.info("[BRAIN] === Cycle start ===")
@@ -959,6 +994,7 @@ async def run_cycle(pool):
     await update_system_metrics(pool)
     await log_electricity_cost(pool)
     await generate_daily_digest(pool)
+    await _maybe_sync_grafana_alerts(pool)
 
     # Health probes — exercise services with real inputs (each on its own schedule)
     probe_results = await run_health_probes(pool, notify_fn=notify)
