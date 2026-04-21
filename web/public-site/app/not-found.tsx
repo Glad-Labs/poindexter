@@ -43,7 +43,7 @@ export default function NotFound() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex flex-col">
       {/* Main Content */}
-      <div className="flex-1 container mx-auto px-4 md:px-6 py-12 md:py-24 flex flex-col justify-center">
+      <div className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-24 flex flex-col justify-center">
         <div className="max-w-2xl mx-auto text-center">
           {/* Large 404 */}
           <div className="mb-8">

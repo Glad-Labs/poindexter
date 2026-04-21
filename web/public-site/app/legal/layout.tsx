@@ -24,7 +24,7 @@ export default function LegalLayout({
       </header>
 
       {/* Main Content */}
-      <div className="container mx-auto px-4 md:px-6 max-w-2xl py-12">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-2xl py-12">
         {children}
       </div>
 

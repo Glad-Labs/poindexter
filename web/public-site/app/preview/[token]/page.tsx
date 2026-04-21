@@ -94,7 +94,7 @@ export default async function PreviewPage({
         </span>
       </div>
 
-      <main className="container mx-auto px-4 md:px-6 pt-20 pb-16 max-w-4xl">
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16 max-w-4xl">
         {/* Featured Image */}
         {(post.featured_image_url || post.cover_image_url) && (
           <div className="relative w-full aspect-video mb-8 rounded-xl overflow-hidden">
