@@ -6,9 +6,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 
-const STATIC_URL =
-  process.env.NEXT_PUBLIC_STATIC_URL ||
-  'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
+// Fetch through /api/posts — server-side proxies R2 same-origin, avoids
+// CORS/CSP gaps from hitting the R2 bucket directly from the browser
+// (Gitea #262). Limit high enough to cover every published post.
+const SEARCH_INDEX_URL = '/api/posts?limit=10000';
 
 function SearchContent() {
   const searchParams = useSearchParams();
@@ -22,10 +23,10 @@ function SearchContent() {
     const loadPosts = async () => {
       if (allPosts.length > 0) return;
       try {
-        const resp = await fetch(`${STATIC_URL}/posts/index.json`);
+        const resp = await fetch(SEARCH_INDEX_URL);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
-        setAllPosts(data.posts || data);
+        setAllPosts(data.items || data.posts || data);
       } catch (err) {
         setError('Failed to load articles.');
       }
