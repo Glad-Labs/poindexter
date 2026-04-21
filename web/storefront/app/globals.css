@@ -1,0 +1,368 @@
+/* gladlabs.ai storefront — global styles.
+   Everything visual comes from @glad-labs/brand (E3). This file adds a handful
+   of storefront-only layout utilities on top. Do not redefine tokens here. */
+
+@import '@glad-labs/brand/tokens';
+@import '@glad-labs/brand/components/components.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--gl-base);
+  color: var(--gl-text);
+  font-family: var(--gl-font-body);
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img,
+svg {
+  max-width: 100%;
+  display: block;
+}
+
+/* ─── Storefront container ─────────────────────────────────────── */
+.sf-container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 3vw, 2.5rem);
+}
+
+/* ─── Top nav — same grammar as gladlabs.io but storefront routes ─── */
+.sf-nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(7, 10, 15, 0.82);
+  border-bottom: 1px solid var(--gl-hairline);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.sf-nav__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem clamp(1.25rem, 3vw, 2.5rem);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.sf-nav__brand {
+  font-family: var(--gl-font-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gl-cyan);
+  font-size: 0.9rem;
+}
+.sf-nav__brand .sf-nav__brand-dot {
+  color: var(--gl-amber);
+}
+.sf-nav__links {
+  display: flex;
+  gap: 2.25rem;
+  align-items: center;
+  font-family: var(--gl-font-mono);
+  font-size: var(--gl-size-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.sf-nav__link {
+  color: var(--gl-text-muted);
+  transition: color 150ms ease;
+}
+.sf-nav__link:hover {
+  color: var(--gl-cyan);
+}
+.sf-nav__link--active {
+  color: var(--gl-text);
+}
+
+/* ─── Page-level frame ─────────────────────────────────────── */
+.sf-page {
+  position: relative;
+  min-height: calc(100vh - 64px);
+  padding-block: clamp(4rem, 10vh, 8rem) clamp(3rem, 8vh, 6rem);
+}
+
+/* ─── Terminal-style checklist — cyan ▶ markers, no bullets ─── */
+.sf-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+  font-family: var(--gl-font-mono);
+  font-size: var(--gl-size-body-sm);
+  color: var(--gl-text);
+}
+.sf-checklist li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.9rem;
+  align-items: baseline;
+}
+.sf-checklist li::before {
+  content: '▶';
+  color: var(--gl-cyan);
+  font-size: 0.7rem;
+  padding-top: 0.1rem;
+}
+.sf-checklist strong {
+  color: var(--gl-amber);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ─── 3-up benefit cards (landing) ─────────────────────────── */
+.sf-cards {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  margin-top: 3rem;
+}
+.sf-card {
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-cyan-border);
+  border-left: 3px solid var(--gl-cyan);
+  padding: 1.75rem 1.6rem;
+  position: relative;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+.sf-card:hover {
+  border-color: var(--gl-cyan);
+  transform: translateY(-2px);
+}
+.sf-card__num {
+  font-family: var(--gl-font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.25em;
+  color: var(--gl-text-dim);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+.sf-card__title {
+  font-family: var(--gl-font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  color: var(--gl-text);
+  margin: 0 0 0.6rem;
+}
+.sf-card__body {
+  font-size: var(--gl-size-body-sm);
+  color: var(--gl-text-muted);
+  line-height: 1.6;
+}
+
+/* ─── Pricing block (guide page) ─────────────────────────── */
+.sf-pricing {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2rem;
+  padding: 2rem 2.25rem;
+  background: var(--gl-surface);
+  border: 1px solid var(--gl-cyan-border);
+  border-left: 3px solid var(--gl-amber);
+  align-items: center;
+}
+.sf-pricing__label {
+  font-family: var(--gl-font-mono);
+  font-size: var(--gl-size-eyebrow);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gl-text-muted);
+  margin-bottom: 0.35rem;
+}
+.sf-pricing__amount {
+  font-family: var(--gl-font-display);
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--gl-text);
+}
+.sf-pricing__amount .sf-pricing__cents {
+  color: var(--gl-amber);
+}
+.sf-pricing__tagline {
+  font-family: var(--gl-font-mono);
+  font-size: 0.75rem;
+  color: var(--gl-text-muted);
+  margin-top: 0.6rem;
+}
+
+/* ─── Large display variant for hero ─────────────────────────── */
+.sf-hero {
+  display: grid;
+  gap: clamp(2rem, 4vh, 3rem);
+  max-width: 880px;
+}
+.sf-hero__meta {
+  font-family: var(--gl-font-mono);
+  color: var(--gl-text-dim);
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+.sf-hero__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.sf-hero__meta .dot {
+  width: 4px;
+  height: 4px;
+  background: var(--gl-cyan);
+  border-radius: 50%;
+}
+.sf-hero__ctas {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+/* ─── Feature grid (about page) ─────────────────────────── */
+.sf-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 1.25rem;
+  margin-top: 2.5rem;
+}
+.sf-fact {
+  padding: 1.5rem 1.4rem;
+  border-top: 1px solid var(--gl-hairline);
+}
+.sf-fact__label {
+  font-family: var(--gl-font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.25em;
+  color: var(--gl-text-muted);
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+.sf-fact__value {
+  font-family: var(--gl-font-display);
+  font-weight: 700;
+  font-size: 2rem;
+  color: var(--gl-text);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.sf-fact__value em {
+  font-style: normal;
+  color: var(--gl-cyan);
+}
+.sf-fact__body {
+  margin-top: 0.7rem;
+  color: var(--gl-text-muted);
+  font-size: var(--gl-size-body-sm);
+  line-height: 1.55;
+}
+
+/* ─── Footer — terminal stamp ─────────────────────────── */
+.sf-footer {
+  border-top: 1px solid var(--gl-hairline);
+  margin-top: 6rem;
+  padding: 2rem 0;
+  font-family: var(--gl-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gl-text-dim);
+}
+.sf-footer__inner {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.sf-footer__legal {
+  display: flex;
+  gap: 1.5rem;
+}
+.sf-footer a {
+  color: var(--gl-text-muted);
+  transition: color 150ms ease;
+}
+.sf-footer a:hover {
+  color: var(--gl-cyan);
+}
+
+/* ─── Accent — subtle left-side HUD rail for hero sections ─── */
+.sf-rail {
+  position: relative;
+}
+.sf-rail::before {
+  content: '';
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  left: -1.5rem;
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--gl-cyan) 20%,
+    var(--gl-cyan) 80%,
+    transparent 100%
+  );
+  opacity: 0.5;
+}
+@media (max-width: 720px) {
+  .sf-rail::before {
+    display: none;
+  }
+}
+
+/* ─── Page-reveal animation ─────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .sf-reveal {
+    animation: sf-reveal 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .sf-reveal--1 {
+    animation-delay: 0.05s;
+  }
+  .sf-reveal--2 {
+    animation-delay: 0.15s;
+  }
+  .sf-reveal--3 {
+    animation-delay: 0.28s;
+  }
+  .sf-reveal--4 {
+    animation-delay: 0.42s;
+  }
+}
+@keyframes sf-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

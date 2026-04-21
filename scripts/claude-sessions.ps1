@@ -30,10 +30,14 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-$RepoDir = "C:\Users\mattm\glad-labs-website"
-$LogDir = "$env:USERPROFILE\.poindexter\logs\claude-sessions"
-$Claude = "$env:USERPROFILE\.local\bin\claude.exe"
+# Launch from $StartDir so all sessions share the C--users-mattm memory bank.
+# Prompts below tell Claude to cd into $WorkDir (the repo) for its actual work.
+$StartDir = "C:\Users\mattm"
+$WorkDir  = "C:\Users\mattm\glad-labs-website"
+$LogDir   = "$env:USERPROFILE\.poindexter\logs\claude-sessions"
+$Claude   = "$env:USERPROFILE\.local\bin\claude.exe"
 $TaskPrefix = "Claude Session"
+$RepoPreamble = "Your working directory on launch is C:\Users\mattm. Before running ANY shell commands, cd into C:\Users\mattm\glad-labs-website — that is where the repo lives. All relative paths below are relative to the repo root. "
 
 # Session definitions: name, prompt, schedule, max duration
 $Sessions = @{
@@ -94,7 +98,7 @@ function Run-Session {
 
     $date = Get-Date -Format "yyyy-MM-dd-HHmm"
     $logFile = "$LogDir\$Name-$date.log"
-    $prompt = $session.Prompt -replace '\{date\}', (Get-Date -Format "yyyy-MM-dd") -replace '\{number\}', 'N'
+    $prompt = $RepoPreamble + ($session.Prompt -replace '\{date\}', (Get-Date -Format "yyyy-MM-dd") -replace '\{number\}', 'N')
 
     Write-Host "[$date] Starting Claude session: $Name"
     Write-Host "Log: $logFile"
@@ -109,7 +113,7 @@ function Run-Session {
     try {
         $proc = Start-Process -FilePath $Claude `
             -ArgumentList "-p", "`"$prompt`"", "--output-format", "text", "--dangerously-skip-permissions" `
-            -WorkingDirectory $RepoDir `
+            -WorkingDirectory $StartDir `
             -RedirectStandardOutput $logFile `
             -RedirectStandardError "$logFile.err" `
             -NoNewWindow -PassThru
@@ -126,7 +130,7 @@ function Run-Session {
 }
 
 function Install-Sessions {
-    $wrapper = "$RepoDir\scripts\run-claude-session.cmd"
+    $wrapper = "$WorkDir\scripts\run-claude-session.cmd"
 
     foreach ($name in $Sessions.Keys) {
         $s = $Sessions[$name]

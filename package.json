@@ -7,7 +7,8 @@
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
     "packages/brand",
-    "web/public-site"
+    "web/public-site",
+    "web/storefront"
   ],
   "scripts": {
     "//": "=== CORE WORKFLOWS ===",
