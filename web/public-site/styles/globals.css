@@ -36,9 +36,10 @@
     font-size: var(--gl-size-h1);
     line-height: var(--gl-leading-tight);
     letter-spacing: var(--gl-tracking-tight);
-    text-transform: uppercase;
     color: var(--gl-text);
   }
+  /* Uppercase is applied only via <Display> / .gl-display, never by default
+     — article h1s and legal-page h1s need to stay mixed-case for readability. */
   h1 em, h1 .gl-accent { font-style: normal; color: var(--gl-amber); }
 
   /* Top-nav link — mono, uppercase, cyan on hover. */
