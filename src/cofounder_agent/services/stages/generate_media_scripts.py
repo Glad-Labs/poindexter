@@ -81,7 +81,7 @@ class GenerateMediaScriptsStage:
 
         try:
             # Call 1: Podcast script (reuses podcast_service's proven approach).
-            async with gpu.lock("ollama", model=model):
+            async with gpu.lock("ollama", model=model, task_id=context.get("task_id"), phase="media_scripts"):
                 podcast_script = await _build_script_with_llm(title, content_text)
 
             if podcast_script and len(podcast_script) > 200:
@@ -98,7 +98,7 @@ class GenerateMediaScriptsStage:
                 title, clean_content, site_config.get("site_name", "our site"),
             )
 
-            async with gpu.lock("ollama", model=model):
+            async with gpu.lock("ollama", model=model, task_id=context.get("task_id"), phase="media_scripts"):
                 async with httpx.AsyncClient(
                     timeout=httpx.Timeout(120.0, connect=5.0)
                 ) as client:

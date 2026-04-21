@@ -414,6 +414,20 @@ class DatabaseService:
         """Delegate to admin module."""
         return await self.admin.log_cost(cost_log)
 
+    async def mark_model_performance_outcome(
+        self,
+        task_id: str,
+        *,
+        human_approved: bool | None = None,
+        post_published: bool | None = None,
+    ) -> None:
+        """Delegate to admin module — part of gitea#271 Phase 3.A1."""
+        await self.admin.mark_model_performance_outcome(
+            task_id,
+            human_approved=human_approved,
+            post_published=post_published,
+        )
+
     async def get_task_costs(self, task_id: str) -> dict:
         """Delegate to admin module."""
         return await self.admin.get_task_costs(task_id)
