@@ -20,3 +20,18 @@ repos:
         exclude: '\.(svg|json)$'
       - id: trailing-whitespace
         exclude: '\.md$'
+
+  # Warn (don't block) when the repo isn't configured to sign commits.
+  # See docs/operations/commit-signing.md + scripts/setup-git-signing.sh.
+  - repo: local
+    hooks:
+      - id: warn-unsigned-commits
+        name: warn if commit.gpgsign is off
+        entry: scripts/check-commit-signing.sh
+        language: script
+        stages: [pre-commit]
+        always_run: true
+        pass_filenames: false
+        # Must not fail the commit — emit warning only. The script always
+        # exits 0; this flag is belt-and-suspenders.
+        verbose: true
