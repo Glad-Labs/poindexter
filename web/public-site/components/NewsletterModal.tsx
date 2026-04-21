@@ -2,7 +2,9 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { useState, useRef, useEffect, ChangeEvent, FormEvent } from 'react';
+import { Button, Eyebrow } from '@glad-labs/brand';
 import { SITE_NAME } from '@/lib/site.config';
+
 // Subscribe via local Vercel serverless function (no backend dependency)
 async function subscribeToNewsletter(data: Record<string, unknown>) {
   const response = await fetch('/api/newsletter/subscribe', {
@@ -16,12 +18,6 @@ async function subscribeToNewsletter(data: Record<string, unknown>) {
   }
   return response.json();
 }
-
-/**
- * Newsletter Signup Modal
- * Modal form for email campaign subscriptions
- * Triggered by "Get Updates" button in footer
- */
 
 interface NewsletterModalProps {
   isOpen: boolean;
@@ -42,6 +38,19 @@ interface Message {
   text: string;
 }
 
+const INPUT_CLASS =
+  'gl-focus-ring w-full px-3 py-2 gl-body gl-body--sm gl-body--primary outline-none transition-colors';
+
+const INPUT_STYLE: React.CSSProperties = {
+  background: 'var(--gl-surface)',
+  border: '1px solid var(--gl-hairline)',
+  borderRadius: 0,
+  fontFamily: 'var(--gl-font-mono)',
+  fontSize: '0.8125rem',
+};
+
+const LABEL_CLASS = 'gl-mono gl-mono--upper block mb-1.5';
+
 const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
   const [formData, setFormData] = useState<FormData>({
     email: '',
@@ -57,7 +66,6 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // Cleanup timeout on unmount or when modal closes
   useEffect(() => {
     return () => {
       if (timeoutRef.current) {
@@ -158,10 +166,9 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
 
       setMessage({
         type: 'success',
-        text: '✅ Successfully subscribed! Check your email for updates.',
+        text: 'Successfully subscribed. Check your inbox.',
       });
 
-      // Reset form after 2 seconds and close
       timeoutRef.current = setTimeout(() => {
         setFormData({
           email: '',
@@ -191,32 +198,61 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
     <>
       {/* Overlay */}
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+        className="fixed inset-0 z-40"
         onClick={onClose}
         aria-hidden="true"
+        style={{
+          background: 'rgba(4, 6, 9, 0.72)',
+          backdropFilter: 'blur(6px)',
+        }}
       />
 
-      {/* Modal */}
+      {/* Modal — zero-radius E3 surface with cyan left tick */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="newsletter-dialog-title"
-          className="bg-slate-900 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-md max-h-96 overflow-y-auto"
+          className="gl-tick-left w-full max-w-lg max-h-[85vh] overflow-y-auto"
+          style={{
+            background: 'var(--gl-surface)',
+            border: '1px solid var(--gl-hairline-strong)',
+            borderRadius: 0,
+          }}
         >
           {/* Header */}
-          <div className="sticky top-0 bg-gradient-to-r from-slate-900 to-slate-800 px-6 py-4 border-b border-slate-700 flex justify-between items-center">
-            <h2
-              id="newsletter-dialog-title"
-              className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent"
-            >
-              Stay Updated
-            </h2>
+          <div
+            className="sticky top-0 flex justify-between items-start px-6 py-5"
+            style={{
+              background: 'var(--gl-surface)',
+              borderBottom: '1px solid var(--gl-hairline)',
+            }}
+          >
+            <div>
+              <Eyebrow>GLAD LABS · NEWSLETTER</Eyebrow>
+              <h2
+                id="newsletter-dialog-title"
+                className="gl-h2 mt-1"
+                style={{ fontSize: '1.5rem' }}
+              >
+                Stay in the loop.
+              </h2>
+            </div>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-200 text-2xl leading-none transition-colors"
               aria-label="Close modal"
+              className="gl-focus-ring gl-mono transition-colors hover:text-[color:var(--gl-cyan)]"
+              style={{
+                color: 'var(--gl-text-muted)',
+                background: 'transparent',
+                border: 0,
+                fontSize: '1.25rem',
+                lineHeight: 1,
+                padding: '0.25rem 0.5rem',
+                cursor: 'pointer',
+              }}
+              type="button"
             >
               ✕
             </button>
@@ -224,32 +260,41 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
 
           {/* Content */}
           <div className="p-6">
-            <p className="text-slate-300 text-sm mb-6">
-              Get the latest AI insights, technology trends, and automation
-              strategies delivered to your inbox.
+            <p className="gl-body gl-body--sm mb-6">
+              Updates when something new ships — AI, hardware, and the edges
+              where they meet. No noise.
             </p>
 
             {message.text && (
               <div
                 role={message.type === 'error' ? 'alert' : 'status'}
                 aria-live={message.type === 'error' ? 'assertive' : 'polite'}
-                className={`mb-4 p-3 rounded-lg text-sm ${
-                  message.type === 'success'
-                    ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-                    : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                }`}
+                className="gl-mono gl-mono--upper mb-5 px-3 py-2.5 flex items-start gap-2"
+                style={{
+                  background: 'var(--gl-surface)',
+                  borderLeft: `3px solid ${
+                    message.type === 'success'
+                      ? 'var(--gl-mint)'
+                      : 'var(--gl-amber)'
+                  }`,
+                  color:
+                    message.type === 'success'
+                      ? 'var(--gl-mint)'
+                      : 'var(--gl-amber)',
+                  fontSize: '0.75rem',
+                }}
               >
-                {message.text}
+                <span aria-hidden>
+                  {message.type === 'success' ? '✓' : '⚠'}
+                </span>
+                <span>{message.text}</span>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
               {/* Email */}
               <div>
-                <label
-                  htmlFor="newsletter-email"
-                  className="block text-sm font-medium text-slate-300 mb-1"
-                >
+                <label htmlFor="newsletter-email" className={LABEL_CLASS}>
                   Email *
                 </label>
                 <input
@@ -259,7 +304,8 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                   value={formData.email}
                   onChange={handleInputChange}
                   placeholder="you@example.com"
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                  className={INPUT_CLASS}
+                  style={INPUT_STYLE}
                   required
                 />
               </div>
@@ -269,7 +315,7 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                 <div>
                   <label
                     htmlFor="newsletter-first-name"
-                    className="block text-sm font-medium text-slate-300 mb-1"
+                    className={LABEL_CLASS}
                   >
                     First Name
                   </label>
@@ -279,15 +325,13 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                     name="firstName"
                     value={formData.firstName}
                     onChange={handleInputChange}
-                    placeholder="John"
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                    placeholder="Matt"
+                    className={INPUT_CLASS}
+                    style={INPUT_STYLE}
                   />
                 </div>
                 <div>
-                  <label
-                    htmlFor="newsletter-last-name"
-                    className="block text-sm font-medium text-slate-300 mb-1"
-                  >
+                  <label htmlFor="newsletter-last-name" className={LABEL_CLASS}>
                     Last Name
                   </label>
                   <input
@@ -296,18 +340,16 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                     name="lastName"
                     value={formData.lastName}
                     onChange={handleInputChange}
-                    placeholder="Doe"
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                    placeholder="Gladding"
+                    className={INPUT_CLASS}
+                    style={INPUT_STYLE}
                   />
                 </div>
               </div>
 
               {/* Company */}
               <div>
-                <label
-                  htmlFor="newsletter-company"
-                  className="block text-sm font-medium text-slate-300 mb-1"
-                >
+                <label htmlFor="newsletter-company" className={LABEL_CLASS}>
                   Company
                 </label>
                 <input
@@ -316,31 +358,47 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                   name="company"
                   value={formData.company}
                   onChange={handleInputChange}
-                  placeholder="Acme Corp"
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                  placeholder="Glad Labs"
+                  className={INPUT_CLASS}
+                  style={INPUT_STYLE}
                 />
               </div>
 
               {/* Interest Categories */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Interests (select any)
-                </label>
+                <span className={LABEL_CLASS}>Interests</span>
                 <div className="grid grid-cols-2 gap-2">
-                  {interestOptions.map((category) => (
-                    <label
-                      key={category}
-                      className="flex items-center gap-2 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={formData.interestCategories.includes(category)}
-                        onChange={() => handleCategoryToggle(category)}
-                        className="w-4 h-4 bg-slate-800 border border-slate-600 rounded cursor-pointer accent-cyan-500"
-                      />
-                      <span className="text-sm text-slate-300">{category}</span>
-                    </label>
-                  ))}
+                  {interestOptions.map((category) => {
+                    const checked =
+                      formData.interestCategories.includes(category);
+                    return (
+                      <label
+                        key={category}
+                        className="gl-focus-ring flex items-center gap-2 cursor-pointer px-2 py-1.5 transition-colors"
+                        style={{
+                          border: `1px solid ${
+                            checked
+                              ? 'var(--gl-cyan-border)'
+                              : 'var(--gl-hairline)'
+                          }`,
+                          background: checked
+                            ? 'var(--gl-cyan-bg)'
+                            : 'transparent',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => handleCategoryToggle(category)}
+                          className="w-4 h-4 cursor-pointer accent-[color:var(--gl-cyan)]"
+                          style={{ accentColor: 'var(--gl-cyan)' }}
+                        />
+                        <span className="gl-mono gl-mono--upper text-xs">
+                          {category}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -351,27 +409,31 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
                   name="marketingConsent"
                   checked={formData.marketingConsent}
                   onChange={handleInputChange}
-                  className="w-4 h-4 bg-slate-800 border border-slate-600 rounded mt-1 cursor-pointer accent-cyan-500"
+                  className="w-4 h-4 mt-0.5 cursor-pointer"
+                  style={{ accentColor: 'var(--gl-cyan)' }}
                 />
-                <span className="text-xs text-slate-400">
-                  I agree to receive marketing emails and campaign updates from
-                  {SITE_NAME}
+                <span className="gl-body gl-body--sm opacity-80">
+                  I agree to receive marketing emails and campaign updates from{' '}
+                  {SITE_NAME}.
                 </span>
               </label>
 
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full mt-6 px-4 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-lg hover:shadow-lg hover:shadow-cyan-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? 'Subscribing...' : 'Get Updates'}
-              </button>
+              {/* Submit */}
+              <div className="pt-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={isLoading}
+                  className="w-full"
+                >
+                  {isLoading ? 'Subscribing…' : 'Get updates →'}
+                </Button>
+              </div>
 
-              <p className="text-xs text-slate-500 text-center mt-3">
-                We respect your privacy. Unsubscribe at any time.
+              <p className="gl-mono gl-mono--upper text-center opacity-50 mt-3" style={{ fontSize: '0.6875rem' }}>
+                We respect your privacy · Unsubscribe any time
               </p>
-              <p className="text-xs text-slate-500 text-center mt-1">
+              <p className="gl-body gl-body--sm text-center opacity-60 mt-1" style={{ fontSize: '0.6875rem' }}>
                 Your IP address and user-agent are collected with your
                 subscription for security and fraud prevention purposes.
               </p>
