@@ -88,7 +88,7 @@ export default async function HomePage() {
 
       <div className="gl-atmosphere min-h-screen">
         {/* Hero — E3: eyebrow + uppercase display + amber accent word */}
-        <section className="relative pt-20 pb-12 md:pt-32 md:pb-20 px-4 md:px-0">
+        <section className="relative pt-20 pb-12 md:pt-32 md:pb-20 px-4 md:px-6 lg:px-8">
           <div className="container mx-auto max-w-5xl">
             <Eyebrow>GLAD LABS · AI / HARDWARE / GAMING</Eyebrow>
             <Display xl>
@@ -111,7 +111,7 @@ export default async function HomePage() {
 
         {/* #946: Distinct states for API outage vs empty content */}
         {error ? (
-          <section className="py-12 px-4 md:px-0">
+          <section className="py-12 px-4 md:px-6 lg:px-8">
             <div className="container mx-auto max-w-6xl">
               <div className="h-96 bg-slate-800/50 rounded-xl flex flex-col items-center justify-center border border-amber-500/30">
                 <svg
@@ -139,7 +139,7 @@ export default async function HomePage() {
             </div>
           </section>
         ) : posts.length === 0 ? (
-          <section className="py-12 px-4 md:px-0">
+          <section className="py-12 px-4 md:px-6 lg:px-8">
             <div className="container mx-auto max-w-6xl">
               <div className="h-96 bg-slate-800 rounded-xl flex flex-col items-center justify-center border border-slate-700">
                 <p className="text-slate-400 text-lg mb-2">
@@ -152,7 +152,7 @@ export default async function HomePage() {
             </div>
           </section>
         ) : (
-          <section className="py-12 px-4 md:px-0">
+          <section className="py-12 px-4 md:px-6 lg:px-8">
             <div className="container mx-auto max-w-6xl">
               {/* Main Featured Post Card */}
               <div className="bg-gradient-to-b from-slate-800/50 to-slate-900/50 rounded-2xl overflow-hidden border border-cyan-500/20 hover:border-cyan-400/40 transition-colors">
@@ -294,7 +294,7 @@ export default async function HomePage() {
         )}
 
         {/* Browse All Articles CTA */}
-        <section className="py-16 px-4 md:px-0">
+        <section className="py-16 px-4 md:px-6 lg:px-8">
           <div className="container mx-auto max-w-6xl text-center">
             <h2 className="text-3xl font-bold text-white mb-4">
               Browse All Articles
