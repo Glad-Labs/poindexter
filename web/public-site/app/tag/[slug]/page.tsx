@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
-import logger from '@/lib/logger';
 import Link from 'next/link';
+import Image from 'next/image';
+import logger from '@/lib/logger';
+import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 
 import { getAllPublishedPosts } from '@/lib/posts';
 import { SITE_NAME } from '@/lib/site.config';
@@ -24,7 +26,6 @@ const STATIC_URL =
 
 async function getTagPosts(tag: string): Promise<Post[]> {
   try {
-    // Fetch the full post index and filter by tag
     const allPosts = await getAllPublishedPosts();
     return allPosts.filter(
       (p) =>
@@ -80,110 +81,122 @@ export default async function TagPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  // Decode the tag from URL-safe format
   const tag = decodeURIComponent(slug);
   const posts = await getTagPosts(tag);
 
-  if (posts.length === 0) {
-    // Could show 404, but instead show empty state for better UX
-    // notFound();
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
-      {/* Tag Header */}
-      <div className="pt-20 pb-12">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            <div className="inline-block px-3 py-1 rounded-full bg-blue-400/10 border border-blue-400/30 text-blue-400 text-sm font-medium mb-4">
-              Tag
-            </div>
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
-              #{tag}
-            </h1>
-            <div className="flex items-center gap-4">
-              <span className="text-slate-400 text-sm">
-                {posts.length} article{posts.length !== 1 ? 's' : ''}
-              </span>
-              <Link
-                href="/archive/1"
-                className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
-              >
-                ← Back to All Articles
-              </Link>
-            </div>
+    <div className="gl-atmosphere min-h-screen">
+      {/* Header — E3 eyebrow + display + body */}
+      <section className="relative pt-20 pb-12 md:pt-32 md:pb-16 px-4 sm:px-6 lg:px-8">
+        <div className="container mx-auto max-w-5xl">
+          <Eyebrow>GLAD LABS · TAG</Eyebrow>
+          <Display xl>
+            #<Display.Accent>{tag}</Display.Accent>
+          </Display>
+          <p className="gl-body gl-body--lg mt-4 max-w-2xl">
+            {posts.length} article{posts.length !== 1 ? 's' : ''} tagged{' '}
+            <span className="gl-mono gl-mono--accent gl-mono--upper">
+              {tag}
+            </span>
+            .
+          </p>
+          <div className="mt-6">
+            <Button as={Link} href="/archive/1" variant="ghost">
+              ← All articles
+            </Button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Posts Grid */}
-      <div className="px-4 sm:px-6 lg:px-8 pb-20">
-        <div className="max-w-4xl mx-auto">
+      {/* Content */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-20">
+        <div className="container mx-auto max-w-6xl">
           {posts.length === 0 ? (
-            <div className="bg-slate-800/30 border border-slate-700 rounded-lg p-8 text-center">
-              <p className="text-slate-400 text-sm mb-4">
-                No articles found with this tag yet.
+            <Card accent="amber" className="text-center py-12">
+              <Card.Meta>NO ARTICLES FOUND</Card.Meta>
+              <h2 className="gl-h2 mt-2">Nothing tagged #{tag} yet.</h2>
+              <p className="gl-body mt-3 max-w-md mx-auto">
+                New articles land here as the pipeline ships them. Check back
+                soon.
               </p>
-              <Link
-                href="/archive/1"
-                className="inline-block text-sm text-cyan-400 hover:text-cyan-300 transition-colors"
-              >
-                Browse all articles
-              </Link>
-            </div>
+              <div className="mt-6 flex justify-center">
+                <Button as={Link} href="/archive/1" variant="secondary">
+                  Browse all articles
+                </Button>
+              </div>
+            </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {posts.map((post) => {
                 const imageUrl =
                   post.cover_image_url || post.featured_image_url;
                 const publishDate = post.published_at || post.created_at;
-                const formattedDate = new Date(publishDate).toLocaleDateString(
-                  'en-US',
-                  {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  }
-                );
-
                 return (
-                  <Link
+                  <Card
                     key={post.id}
-                    href={`/posts/${post.slug}`}
-                    className="group rounded-lg border border-slate-700 hover:border-cyan-400/50 transition-all duration-300 overflow-hidden hover:shadow-lg hover:shadow-cyan-400/10"
+                    className="group flex flex-col h-full overflow-hidden p-0"
                   >
                     {imageUrl && (
-                      <div className="relative w-full h-40 bg-slate-700">
-                        <img
+                      <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
+                        <Image
                           src={imageUrl}
                           alt={post.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          fill
+                          className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                         />
                       </div>
                     )}
-                    <div className="p-4">
-                      <h3 className="text-lg font-semibold text-cyan-400 group-hover:text-cyan-300 transition-colors line-clamp-2 mb-2">
-                        {post.title}
-                      </h3>
-                      {post.excerpt && (
-                        <p className="text-sm text-slate-400 line-clamp-2 mb-3">
-                          {post.excerpt}
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span>{formattedDate}</span>
-                        {post.view_count > 0 && (
-                          <span>{post.view_count.toLocaleString()} views</span>
-                        )}
+                    <div className="flex flex-col justify-between flex-1 p-6">
+                      <div>
+                        <Card.Meta>
+                          <time dateTime={publishDate}>
+                            {new Date(publishDate).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </time>
+                          {post.view_count > 0 ? (
+                            <>
+                              <span aria-hidden> · </span>
+                              <span>{post.view_count} views</span>
+                            </>
+                          ) : null}
+                        </Card.Meta>
+                        <Card.Title>
+                          <Link
+                            href={`/posts/${post.slug}`}
+                            className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                          >
+                            {post.title}
+                          </Link>
+                        </Card.Title>
+                        {post.excerpt ? (
+                          <Card.Body className="line-clamp-3 mt-2">
+                            {post.excerpt}
+                          </Card.Body>
+                        ) : null}
+                      </div>
+                      <div className="pt-4 mt-4 border-t border-[color:var(--gl-hairline)]">
+                        <Link
+                          href={`/posts/${post.slug}`}
+                          className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        >
+                          Read article
+                          <span aria-hidden>→</span>
+                        </Link>
                       </div>
                     </div>
-                  </Link>
+                  </Card>
                 );
               })}
             </div>
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

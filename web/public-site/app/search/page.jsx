@@ -3,7 +3,8 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import PostCard from '../../components/PostCard';
+import Image from 'next/image';
+import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 
 const STATIC_URL =
   process.env.NEXT_PUBLIC_STATIC_URL ||
@@ -65,81 +66,132 @@ function SearchContent() {
   }, [query, allPosts]);
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div
-        className="fixed inset-0 opacity-[0.03] pointer-events-none"
-        style={{
-          backgroundImage:
-            'linear-gradient(0deg, transparent 24%, rgba(0, 217, 255, 0.1) 25%, rgba(0, 217, 255, 0.1) 26%, transparent 27%, transparent 74%, rgba(0, 217, 255, 0.1) 75%, rgba(0, 217, 255, 0.1) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(0, 217, 255, 0.1) 25%, rgba(0, 217, 255, 0.1) 26%, transparent 27%, transparent 74%, rgba(0, 217, 255, 0.1) 75%, rgba(0, 217, 255, 0.1) 76%, transparent 77%, transparent)',
-          backgroundSize: '50px 50px',
-        }}
-      />
-
-      <div className="relative z-10">
-        <div className="border-b border-cyan-900/30 bg-slate-900/50 backdrop-blur-sm">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <Link
-              href="/"
-              className="text-cyan-400 hover:text-cyan-300 mb-4 inline-block"
-            >
-              &larr; Back to Home
-            </Link>
-            <h1 className="text-4xl font-bold text-white">Search Results</h1>
-            {query && (
-              <p className="text-slate-300 mt-2">
-                Found {results.length} article{results.length !== 1 ? 's' : ''}{' '}
-                for{' '}
-                <span className="text-cyan-400 font-semibold">
-                  &ldquo;{query}&rdquo;
-                </span>
-              </p>
-            )}
+    <main className="gl-atmosphere min-h-screen">
+      {/* Header */}
+      <section className="relative pt-20 pb-12 md:pt-32 md:pb-16 px-4 sm:px-6 lg:px-8">
+        <div className="container mx-auto max-w-5xl">
+          <Eyebrow>GLAD LABS · SEARCH</Eyebrow>
+          <Display xl>
+            Search <Display.Accent>results.</Display.Accent>
+          </Display>
+          {query ? (
+            <p className="gl-body gl-body--lg mt-4 max-w-2xl">
+              Found {results.length} article
+              {results.length !== 1 ? 's' : ''} matching{' '}
+              <span className="gl-mono gl-mono--accent gl-mono--upper">
+                {query}
+              </span>
+              .
+            </p>
+          ) : (
+            <p className="gl-body gl-body--lg mt-4 max-w-2xl">
+              Enter a search query to find articles.
+            </p>
+          )}
+          <div className="mt-6">
+            <Button as={Link} href="/" variant="ghost">
+              ← Back to home
+            </Button>
           </div>
         </div>
+      </section>
 
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+      {/* Results */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-20">
+        <div className="container mx-auto max-w-6xl">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-center">
-                <div className="inline-block animate-spin text-4xl text-cyan-400 mb-4">
-                  &#x27F3;
-                </div>
-                <p className="text-slate-300">Searching articles...</p>
-              </div>
-            </div>
+            <Card accent="cyan" className="text-center py-12">
+              <Card.Meta>SEARCHING</Card.Meta>
+              <p className="gl-body mt-3">Searching articles...</p>
+            </Card>
           ) : error ? (
-            <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-6 text-center">
-              <p className="text-red-300">{error}</p>
-              <div className="mt-6">
-                <Link
-                  href="/"
-                  className="inline-block px-6 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
-                >
-                  Browse All Articles
-                </Link>
+            <Card accent="amber" className="text-center py-12">
+              <Card.Meta>NO MATCHES</Card.Meta>
+              <h2 className="gl-h2 mt-2">{error}</h2>
+              <div className="mt-6 flex justify-center">
+                <Button as={Link} href="/archive/1" variant="secondary">
+                  Browse all articles
+                </Button>
               </div>
-            </div>
+            </Card>
           ) : results.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {results.map((post) => (
-                <PostCard key={post.id || post.slug} post={post} />
+                <Card
+                  key={post.id || post.slug}
+                  className="group flex flex-col h-full overflow-hidden p-0"
+                >
+                  {post.cover_image_url && (
+                    <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
+                      <Image
+                        src={post.cover_image_url}
+                        alt={post.title}
+                        fill
+                        className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-col justify-between flex-1 p-6">
+                    <div>
+                      {post.published_at ? (
+                        <Card.Meta>
+                          <time dateTime={post.published_at}>
+                            {new Date(post.published_at).toLocaleDateString(
+                              'en-US',
+                              {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                              }
+                            )}
+                          </time>
+                        </Card.Meta>
+                      ) : null}
+                      <Card.Title>
+                        <Link
+                          href={`/posts/${post.slug}`}
+                          className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                        >
+                          {post.title}
+                        </Link>
+                      </Card.Title>
+                      {post.excerpt ? (
+                        <Card.Body className="line-clamp-3 mt-2">
+                          {post.excerpt}
+                        </Card.Body>
+                      ) : null}
+                    </div>
+                    <div className="pt-4 mt-4 border-t border-[color:var(--gl-hairline)]">
+                      <Link
+                        href={`/posts/${post.slug}`}
+                        className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
+                        aria-hidden="true"
+                        tabIndex={-1}
+                      >
+                        Read article
+                        <span aria-hidden>→</span>
+                      </Link>
+                    </div>
+                  </div>
+                </Card>
               ))}
             </div>
           ) : !query ? (
-            <div className="rounded-lg bg-slate-800 border border-cyan-500/30 p-8 text-center">
-              <p className="text-slate-300 mb-4">
-                Enter a search query to find articles
+            <Card accent="cyan" className="text-center py-12">
+              <Card.Meta>EMPTY QUERY</Card.Meta>
+              <p className="gl-body mt-3 max-w-md mx-auto">
+                Enter a search query to find articles.
               </p>
-              <Link
-                href="/"
-                className="inline-block px-6 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg transition-colors"
-              >
-                Browse All Articles
-              </Link>
-            </div>
+              <div className="mt-6 flex justify-center">
+                <Button as={Link} href="/archive/1" variant="secondary">
+                  Browse all articles
+                </Button>
+              </div>
+            </Card>
           ) : null}
         </div>
-      </div>
+      </section>
     </main>
   );
 }
@@ -148,8 +200,8 @@ export default function SearchPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-          <p className="text-slate-300">Loading search...</p>
+        <div className="gl-atmosphere min-h-screen flex items-center justify-center">
+          <p className="gl-body">Loading search...</p>
         </div>
       }
     >

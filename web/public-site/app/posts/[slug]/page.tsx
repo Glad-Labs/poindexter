@@ -3,6 +3,7 @@ import { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Button, Card, Eyebrow } from '@glad-labs/brand';
 import {
   BlogPostingSchema,
   BreadcrumbSchema,
@@ -40,16 +41,14 @@ export async function generateStaticParams(): Promise<{ slug: string }[]> {
   }
 }
 
-// Fetch post data.
-// Wrapped with React.cache() so that generateMetadata and PostPage share a
-// single fetch result within the same server-side render request (issue #521).
+// Wrapped with React.cache() so generateMetadata + PostPage share one fetch
+// per request (issue #521).
 const getPost = cache(async function getPost(
   slug: string
 ): Promise<Post | null> {
   return getPostBySlug(slug);
 });
 
-// Generate metadata for the post
 export async function generateMetadata({
   params,
 }: {
@@ -123,14 +122,12 @@ export default async function PostPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-
   const post = await getPost(slug);
 
   if (!post) {
     notFound();
   }
 
-  // Fetch related posts from the same category
   const relatedPosts: Post[] = post.category_id
     ? await getRelatedPosts(post.category_id, post.id, 3)
     : [];
@@ -148,7 +145,6 @@ export default async function PostPage({
   const wordCount = post.content.split(/\s+/).length;
   const readingTime = Math.max(1, Math.round(wordCount / 238));
 
-  // Decode HTML entities in text (e.g., &rsquo; → ', &mdash; → —)
   function decodeEntities(str: string): string {
     return str
       .replace(/&rsquo;/g, "'")
@@ -168,10 +164,7 @@ export default async function PostPage({
       );
   }
 
-  // Extract headings for table of contents
-  const headingRegex = /<h([23])[^>]*(?:id="([^"]*)")?[^>]*>(.*?)<\/h\1>/gi;
   const tocEntries: { level: number; text: string; id: string }[] = [];
-  let match;
   const contentWithIds = post.content.replace(
     /<h([23])([^>]*)>(.*?)<\/h\1>/gi,
     (_m: string, level: string, attrs: string, text: string) => {
@@ -188,7 +181,6 @@ export default async function PostPage({
   const shareUrl = `${SITE_URL}/posts/${post.slug}`;
   const shareTitle = encodeURIComponent(post.title);
 
-  const canonicalUrl = generateCanonicalURL(post.slug, SITE_URL);
   const structuredData = generateBlogPostingSchema(
     {
       ...post,
@@ -200,7 +192,7 @@ export default async function PostPage({
 
   return (
     <>
-      {/* Schema Markup Components */}
+      {/* Schema */}
       <BlogPostingSchema
         headline={post.seo_title || post.title}
         description={post.seo_description || post.excerpt || ''}
@@ -210,7 +202,6 @@ export default async function PostPage({
       />
       <BreadcrumbSchema items={breadcrumbs} />
 
-      {/* JSON-LD Structured Data */}
       {structuredData && (
         <script
           type="application/ld+json"
@@ -220,13 +211,13 @@ export default async function PostPage({
         />
       )}
 
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
-        {/* Header with Featured Image */}
-        <div className="pt-20 pb-12">
+      <div className="gl-atmosphere min-h-screen">
+        {/* Hero with featured image */}
+        <div className="pt-20 pb-8">
           {imageUrl && (
-            <div className="relative w-full h-96 md:h-[500px] overflow-hidden">
-              {/* Decorative featured image — alt="" prevents screen reader re-announcement
-                  of the title already in the <h1> immediately below (WCAG 1.1.1). */}
+            <div className="relative w-full h-80 md:h-[460px] overflow-hidden">
+              {/* alt="" prevents screen reader re-announcement of the title
+                  already in the <h1> below (WCAG 1.1.1). */}
               <Image
                 src={imageUrl}
                 alt=""
@@ -235,21 +226,25 @@ export default async function PostPage({
                 className="object-cover"
                 sizes="100vw"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/50 to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-[#08090a] via-[#08090a]/70 to-transparent"></div>
             </div>
           )}
 
-          {/* Title Section */}
+          {/* Title block — overlaps image when present */}
           <div
-            className={`px-4 sm:px-6 lg:px-8 ${imageUrl ? '-mt-24 relative z-10' : 'pt-12'}`}
+            className={`px-4 sm:px-6 lg:px-8 ${imageUrl ? '-mt-24 relative z-10' : 'pt-8'}`}
           >
-            <div className="max-w-4xl mx-auto">
-              <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
+            <div className="container mx-auto max-w-4xl">
+              <Eyebrow>GLAD LABS · ARTICLE</Eyebrow>
+              <h1
+                className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-3xl sm:text-4xl md:text-5xl leading-[1.05] tracking-[-0.02em]"
+                style={{ letterSpacing: '-0.02em' }}
+              >
                 {post.title}
               </h1>
 
-              {/* Meta Information */}
-              <div className="flex flex-wrap items-center gap-4 text-slate-300 mb-8">
+              {/* Meta row */}
+              <div className="gl-mono gl-mono--upper mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 <time dateTime={post.published_at || post.created_at}>
                   {new Date(publishDate).toLocaleDateString('en-US', {
                     year: 'numeric',
@@ -257,11 +252,11 @@ export default async function PostPage({
                     day: 'numeric',
                   })}
                 </time>
-                <span>•</span>
+                <span aria-hidden>·</span>
                 <span>{readingTime} min read</span>
                 {post.view_count > 0 && (
                   <>
-                    <span>•</span>
+                    <span aria-hidden>·</span>
                     <span>{post.view_count} views</span>
                   </>
                 )}
@@ -269,7 +264,7 @@ export default async function PostPage({
 
               {/* Excerpt — strip stale markdown artifacts from older posts */}
               {post.excerpt && (
-                <p className="text-xl text-slate-300 mb-8 leading-relaxed">
+                <p className="gl-body gl-body--lg gl-body--primary mt-6">
                   {post.excerpt
                     .replace(/^\s*[*\-#]+\s*/gm, '')
                     .replace(/\*\*/g, '')
@@ -281,84 +276,88 @@ export default async function PostPage({
           </div>
         </div>
 
-        {/* Article Content */}
-        <div className="px-4 sm:px-6 lg:px-8 pb-20">
-          <div className="max-w-4xl mx-auto">
+        {/* Article body */}
+        <div className="px-4 sm:px-6 lg:px-8 pb-16">
+          <div className="container mx-auto max-w-4xl">
             {/* Table of Contents */}
             {tocEntries.length >= 3 && (
-              <nav
-                className="mb-10 p-6 bg-slate-800/50 rounded-xl border border-slate-700"
-                aria-label="Table of contents"
-              >
-                <h2 className="text-lg font-semibold text-white mb-3">
-                  In this article
-                </h2>
-                <ul className="space-y-2">
-                  {tocEntries.map((entry) => (
-                    <li
-                      key={entry.id}
-                      className={entry.level === 3 ? 'ml-4' : ''}
-                    >
-                      <a
-                        href={`#${entry.id}`}
-                        className="text-cyan-400 hover:text-cyan-300 transition-colors text-sm"
+              <nav className="mb-10" aria-label="Table of contents">
+                <Card>
+                  <Card.Meta>IN THIS ARTICLE</Card.Meta>
+                  <ul className="mt-3 space-y-2 list-none">
+                    {tocEntries.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className={entry.level === 3 ? 'ml-4' : ''}
                       >
-                        {entry.text}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
+                        <a
+                          href={`#${entry.id}`}
+                          className="gl-body gl-body--sm text-[color:var(--gl-cyan)] hover:underline"
+                        >
+                          {entry.text}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
               </nav>
             )}
 
-            {/* Social Share Buttons */}
-            <div className="flex items-center gap-3 mb-8">
-              <span className="text-sm text-slate-400">Share:</span>
-              <a
+            {/* Social Share */}
+            <div className="flex items-center gap-3 mb-8 flex-wrap">
+              <span className="gl-mono gl-mono--upper text-xs opacity-70">
+                Share:
+              </span>
+              <Button
+                as="a"
                 href={`https://twitter.com/intent/tweet?text=${shareTitle}&url=${encodeURIComponent(shareUrl)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-sm transition-colors border border-slate-700"
+                variant="ghost"
                 aria-label="Share on X/Twitter"
               >
                 X / Twitter
-              </a>
-              <a
+              </Button>
+              <Button
+                as="a"
                 href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-sm transition-colors border border-slate-700"
+                variant="ghost"
                 aria-label="Share on LinkedIn"
               >
                 LinkedIn
-              </a>
-              <a
+              </Button>
+              <Button
+                as="a"
                 href={`https://news.ycombinator.com/submitlink?u=${encodeURIComponent(shareUrl)}&t=${shareTitle}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-sm transition-colors border border-slate-700"
+                variant="ghost"
                 aria-label="Share on Hacker News"
               >
                 HN
-              </a>
+              </Button>
             </div>
 
             <article
               className="prose prose-invert max-w-none
+                       prose-headings:font-[family-name:var(--gl-font-display)]
                        prose-headings:font-bold
                        prose-h1:text-4xl prose-h1:text-white prose-h1:mt-8 prose-h1:mb-4
-                       prose-h2:text-3xl prose-h2:text-cyan-400 prose-h2:mt-8 prose-h2:mb-4
-                       prose-h3:text-2xl prose-h3:text-blue-400 prose-h3:mt-6 prose-h3:mb-3
-                       prose-p:text-slate-300 prose-p:leading-relaxed prose-p:mb-6
+                       prose-h2:text-3xl prose-h2:text-white prose-h2:mt-10 prose-h2:mb-4
+                       prose-h2:tracking-tight
+                       prose-h3:text-2xl prose-h3:text-white prose-h3:mt-6 prose-h3:mb-3
+                       prose-p:text-[color:var(--gl-text-muted)] prose-p:leading-relaxed prose-p:mb-6
                        prose-strong:text-white prose-strong:font-semibold
-                       prose-a:text-cyan-400 prose-a:hover:text-cyan-300 prose-a:underline
-                       prose-code:text-cyan-300 prose-code:bg-slate-800 prose-code:px-2 prose-code:py-1 prose-code:rounded
-                       prose-pre:bg-slate-800 prose-pre:border prose-pre:border-slate-700
-                       prose-blockquote:border-l-4 prose-blockquote:border-cyan-400 prose-blockquote:pl-4 prose-blockquote:text-slate-400 prose-blockquote:not-italic
-                       prose-ul:text-slate-300 prose-ol:text-slate-300
-                       prose-li:text-slate-300 prose-li:marker:text-cyan-400
-                       prose-img:rounded-lg prose-img:my-6 prose-img:h-auto prose-img:aspect-auto prose-img:w-full
-                       prose-hr:border-slate-700"
+                       prose-a:text-[color:var(--gl-cyan)] prose-a:hover:text-[color:var(--gl-cyan)] prose-a:underline
+                       prose-code:text-[color:var(--gl-cyan)] prose-code:bg-[color:var(--gl-hairline)] prose-code:px-2 prose-code:py-1 prose-code:rounded-none
+                       prose-pre:bg-[color:var(--gl-hairline)] prose-pre:border prose-pre:border-[color:var(--gl-hairline-strong)] prose-pre:rounded-none
+                       prose-blockquote:border-l-4 prose-blockquote:border-[color:var(--gl-cyan)] prose-blockquote:pl-4 prose-blockquote:text-[color:var(--gl-text-muted)] prose-blockquote:not-italic
+                       prose-ul:text-[color:var(--gl-text-muted)] prose-ol:text-[color:var(--gl-text-muted)]
+                       prose-li:text-[color:var(--gl-text-muted)] prose-li:marker:text-[color:var(--gl-cyan)]
+                       prose-img:rounded-none prose-img:my-6 prose-img:h-auto prose-img:aspect-auto prose-img:w-full
+                       prose-hr:border-[color:var(--gl-hairline-strong)]"
             >
               <div
                 dangerouslySetInnerHTML={{
@@ -391,38 +390,22 @@ export default async function PostPage({
             </article>
 
             {/* AI Disclosure — EU AI Act Article 50 compliance */}
-            <div className="mt-10 p-4 rounded-lg bg-slate-800/50 border border-slate-700/50 text-xs text-slate-500 flex items-center gap-2">
-              <svg className="w-4 h-4 shrink-0 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" />
-              </svg>
-              <span>
-                This article was generated with AI assistance and reviewed by a human editor.
-                Published by <a href="https://www.gladlabs.io/about" className="text-slate-400 hover:text-cyan-400 underline">Glad Labs</a>.
-              </span>
+            <div className="mt-10 border-l-2 border-[color:var(--gl-hairline-strong)] pl-4 py-2 gl-mono gl-mono--upper text-xs opacity-70">
+              Generated with AI assistance · Reviewed by a human editor ·
+              Published by{' '}
+              <a
+                href="https://www.gladlabs.io/about"
+                className="text-[color:var(--gl-cyan)] hover:underline"
+              >
+                Glad Labs
+              </a>
             </div>
 
-            {/* Bottom Navigation */}
-            <div className="mt-8 pt-8 border-t border-slate-700">
-              <Link
-                href="/archive/1"
-                className="inline-flex items-center gap-2 text-cyan-400 hover:text-cyan-300 font-semibold transition-colors"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 19l-7-7 7-7"
-                  />
-                </svg>
-                Back to Archive
-              </Link>
+            {/* Back Navigation */}
+            <div className="mt-8 pt-8 border-t border-[color:var(--gl-hairline)]">
+              <Button as={Link} href="/archive/1" variant="ghost">
+                ← Back to archive
+              </Button>
             </div>
           </div>
         </div>
@@ -430,36 +413,38 @@ export default async function PostPage({
         {/* Related Posts */}
         {relatedPosts.length > 0 && (
           <div className="px-4 sm:px-6 lg:px-8 pb-12">
-            <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl font-bold text-white mb-6">
-                More from {SITE_NAME}
-              </h2>
+            <div className="container mx-auto max-w-5xl">
+              <h2 className="gl-h2 mb-6">More from {SITE_NAME}</h2>
               <div className="grid gap-6 md:grid-cols-3">
                 {relatedPosts.map((rp) => (
-                  <Link
+                  <Card
                     key={rp.slug}
-                    href={`/posts/${rp.slug}`}
-                    className="group block bg-slate-800/50 rounded-xl overflow-hidden border border-slate-700 hover:border-cyan-500/50 transition-all"
+                    className="group flex flex-col h-full overflow-hidden p-0"
                   >
                     {(rp.featured_image_url || rp.cover_image_url) && (
-                      <div className="relative h-36 overflow-hidden">
+                      <div className="relative h-36 overflow-hidden bg-slate-800">
                         <Image
                           src={
                             rp.featured_image_url || rp.cover_image_url || ''
                           }
                           alt=""
                           fill
-                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                           sizes="(max-width: 768px) 100vw, 33vw"
                         />
                       </div>
                     )}
                     <div className="p-4">
-                      <h3 className="text-sm font-semibold text-white group-hover:text-cyan-400 transition-colors line-clamp-2">
-                        {rp.title}
-                      </h3>
+                      <Card.Title>
+                        <Link
+                          href={`/posts/${rp.slug}`}
+                          className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                        >
+                          {rp.title}
+                        </Link>
+                      </Card.Title>
                     </div>
-                  </Link>
+                  </Card>
                 ))}
               </div>
             </div>
@@ -471,14 +456,14 @@ export default async function PostPage({
 
         {/* AdSense — Bottom of article */}
         <div className="px-4 sm:px-6 lg:px-8 py-8">
-          <div className="max-w-4xl mx-auto">
+          <div className="container mx-auto max-w-4xl">
             <AdUnit slot="" format="auto" className="my-4" />
           </div>
         </div>
 
-        {/* Comments Section */}
-        <div className="px-4 sm:px-6 lg:px-8 pb-20 bg-slate-800/30">
-          <div className="max-w-4xl mx-auto">
+        {/* Comments */}
+        <div className="px-4 sm:px-6 lg:px-8 pb-20">
+          <div className="container mx-auto max-w-4xl">
             <GiscusWrapper postSlug={post.slug} postTitle={post.title} />
           </div>
         </div>

@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
+import { SITE_URL } from '@/lib/site.config';
 
 export const metadata = {
   title: 'Claude Code Template Pack — 3,160 Commits of Lessons | Glad Labs',
@@ -42,171 +43,150 @@ const TEMPLATES = [
   },
 ];
 
-const BONUS = [
-  {
-    name: 'Persistent Memory System',
-    desc: 'Full guide to Claude Code\'s memory architecture — user profiles, feedback loops, project state, session handoffs. The secret weapon.',
-  },
-  {
-    name: 'How I Use Claude Code',
-    desc: 'Matt\'s actual workflow across 3,160 commits — autonomous overnight sessions, phone-based approval, cron jobs, Telegram integration.',
-  },
-];
-
 const CHECKOUT_URL =
   'https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52';
 
 export default function ClaudeTemplatesPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute top-1/2 -left-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
-      </div>
-
+    <div className="gl-atmosphere min-h-screen">
       {/* Hero */}
-      <section className="relative pt-24 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto text-center">
-          <p className="text-sm font-mono text-violet-400 mb-4 tracking-widest uppercase">
-            Claude Code Template Pack
-          </p>
-          <h1 className="text-4xl md:text-6xl font-bold text-white mb-6 leading-tight">
-            3,160 commits with Claude Code.
-            <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">
-              This is what I learned.
-            </span>
-          </h1>
-          <p className="text-lg text-slate-300 max-w-2xl mx-auto mb-8">
+      <section className="relative pt-20 pb-12 md:pt-32 md:pb-16 px-4 sm:px-6 lg:px-8">
+        <div className="container mx-auto max-w-4xl text-center">
+          <Eyebrow>GLAD LABS · TEMPLATE PACK</Eyebrow>
+          <Display xl>
+            3,160 commits with Claude Code.{' '}
+            <Display.Accent>This is what I learned.</Display.Accent>
+          </Display>
+          <p className="gl-body gl-body--lg mt-6 max-w-2xl mx-auto">
             Production-tested CLAUDE.md templates that turn Claude Code from a
             chatbot into a disciplined engineering partner. Five roles, one
             memory system, zero guesswork.
           </p>
-          <a
-            href={CHECKOUT_URL}
-            className="inline-block px-8 py-4 bg-gradient-to-r from-violet-600 to-cyan-600 text-white font-bold rounded-xl text-lg hover:from-violet-500 hover:to-cyan-500 transition-all shadow-lg shadow-violet-500/25"
-          >
-            Get the Template Pack — $29
-          </a>
-          <p className="text-sm text-slate-500 mt-3">
-            One-time purchase. Instant download. No subscription.
+          <div className="mt-8 flex justify-center">
+            <Button as="a" href={CHECKOUT_URL} variant="primary">
+              Get the template pack — $29
+            </Button>
+          </div>
+          <p className="gl-mono gl-mono--upper text-xs mt-4 opacity-60">
+            One-time purchase · Instant download · No subscription
           </p>
         </div>
       </section>
 
       {/* The Problem */}
-      <section className="relative py-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="text-2xl font-bold text-white mb-6 text-center">
+      <section className="px-4 sm:px-6 lg:px-8 py-12">
+        <div className="container mx-auto max-w-4xl">
+          <h2 className="gl-h2 text-center mb-8">
             Without a CLAUDE.md, every session starts from zero
           </h2>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-5">
-              <h3 className="text-red-400 font-semibold mb-2">Without templates</h3>
-              <ul className="text-sm text-slate-400 space-y-2">
+            <Card accent="amber">
+              <Card.Meta>WITHOUT TEMPLATES</Card.Meta>
+              <ul className="gl-body gl-body--sm mt-3 space-y-2 list-none">
                 <li>Claude forgets your conventions between sessions</li>
                 <li>Scope creep — it builds things you didn&apos;t ask for</li>
                 <li>Wrong abstractions, wrong patterns, wrong tone</li>
                 <li>You re-explain the same rules every conversation</li>
                 <li>No memory of past decisions or mistakes</li>
               </ul>
-            </div>
-            <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-5">
-              <h3 className="text-green-400 font-semibold mb-2">With templates</h3>
-              <ul className="text-sm text-slate-400 space-y-2">
+            </Card>
+            <Card accent="mint">
+              <Card.Meta>WITH TEMPLATES</Card.Meta>
+              <ul className="gl-body gl-body--sm mt-3 space-y-2 list-none">
                 <li>Session #100 is as productive as session #1</li>
                 <li>Milestones enforced — stays in lane automatically</li>
                 <li>Your code style, your rules, every time</li>
                 <li>Persistent memory across sessions</li>
                 <li>Runs autonomously overnight with cron jobs</li>
               </ul>
-            </div>
+            </Card>
           </div>
         </div>
       </section>
 
       {/* Templates */}
-      <section className="relative py-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold text-white mb-8 text-center">
-            5 Role-Specific Templates
+      <section className="px-4 sm:px-6 lg:px-8 py-12">
+        <div className="container mx-auto max-w-5xl">
+          <h2 className="gl-h2 text-center mb-8">
+            5 role-specific templates
           </h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {TEMPLATES.map((t) => (
-              <div
-                key={t.name}
-                className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 hover:border-violet-500/50 transition-colors"
-              >
+              <Card key={t.name}>
                 <div className="text-3xl mb-3">{t.icon}</div>
-                <h3 className="text-white font-semibold mb-2">{t.name}</h3>
-                <p className="text-sm text-slate-400">{t.desc}</p>
-              </div>
+                <Card.Title>{t.name}</Card.Title>
+                <Card.Body className="mt-2">{t.desc}</Card.Body>
+              </Card>
             ))}
-            <div className="bg-gradient-to-br from-violet-500/10 to-cyan-500/10 border border-violet-500/30 rounded-xl p-5">
+            <Card accent="amber">
               <div className="text-3xl mb-3">🎁</div>
-              <h3 className="text-white font-semibold mb-2">Bonus: Memory System</h3>
-              <p className="text-sm text-slate-400">
-                The full persistent memory architecture — user profiles, feedback
-                loops, project state, session handoffs. This alone is worth the price.
-              </p>
-            </div>
+              <Card.Title>Bonus: memory system</Card.Title>
+              <Card.Body className="mt-2">
+                The full persistent memory architecture — user profiles,
+                feedback loops, project state, session handoffs. This alone is
+                worth the price.
+              </Card.Body>
+            </Card>
           </div>
         </div>
       </section>
 
       {/* Credibility */}
-      <section className="relative py-16 px-4 sm:px-6 lg:px-8 bg-slate-800/30">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-2xl font-bold text-white mb-6">
+      <section className="px-4 sm:px-6 lg:px-8 py-12">
+        <div className="container mx-auto max-w-3xl text-center">
+          <h2 className="gl-h2 mb-6">
             Built from a real production system
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
               { value: '3,160', label: 'commits' },
               { value: '5,097', label: 'tests passing' },
               { value: '256', label: 'DB-backed settings' },
               { value: '40+', label: 'published posts' },
             ].map((s) => (
-              <div key={s.label}>
-                <div className="text-2xl font-bold text-cyan-400">{s.value}</div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider">{s.label}</div>
-              </div>
+              <Card key={s.label} className="text-center">
+                <div className="gl-display text-3xl md:text-4xl">
+                  <span className="gl-accent">{s.value}</span>
+                </div>
+                <Card.Meta className="mt-2">{s.label}</Card.Meta>
+              </Card>
             ))}
           </div>
-          <p className="text-slate-300 max-w-xl mx-auto">
+          <p className="gl-body gl-body--lg max-w-xl mx-auto">
             These templates are extracted from{' '}
             <a
               href="https://github.com/Glad-Labs/poindexter"
-              className="text-cyan-400 hover:text-cyan-300 underline"
+              className="text-[color:var(--gl-cyan)] hover:underline"
             >
               Poindexter
             </a>
             , an open-source AI content pipeline that runs 24/7 on a single
             machine. The CLAUDE.md that powers it has been refined across 6
-            months of daily use with Claude Code as the sole engineering partner.
+            months of daily use with Claude Code as the sole engineering
+            partner.
           </p>
         </div>
       </section>
 
       {/* CTA */}
-      <section className="relative py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">
-            Stop re-explaining yourself to Claude
-          </h2>
-          <p className="text-slate-300 mb-8">
+      <section className="px-4 sm:px-6 lg:px-8 pb-20 pt-12">
+        <div className="container mx-auto max-w-2xl text-center">
+          <h2 className="gl-h2">Stop re-explaining yourself to Claude</h2>
+          <p className="gl-body gl-body--lg mt-4 mb-8">
             One file. Every session. Your rules, your style, your workflow —
             permanently encoded.
           </p>
-          <a
-            href={CHECKOUT_URL}
-            className="inline-block px-8 py-4 bg-gradient-to-r from-violet-600 to-cyan-600 text-white font-bold rounded-xl text-lg hover:from-violet-500 hover:to-cyan-500 transition-all shadow-lg shadow-violet-500/25"
-          >
-            Get the Template Pack — $29
-          </a>
-          <p className="text-sm text-slate-500 mt-4">
+          <div className="flex justify-center">
+            <Button as="a" href={CHECKOUT_URL} variant="primary">
+              Get the template pack — $29
+            </Button>
+          </div>
+          <p className="gl-body gl-body--sm mt-6 opacity-70">
             Built by{' '}
-            <Link href="/about" className="text-slate-400 hover:text-cyan-400 underline">
+            <Link
+              href="/about"
+              className="text-[color:var(--gl-cyan)] hover:underline"
+            >
               Matt Gladding
             </Link>{' '}
             at Glad Labs. Questions? hello@gladlabs.io

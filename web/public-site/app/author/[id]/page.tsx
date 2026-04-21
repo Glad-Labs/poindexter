@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { SITE_NAME } from '@/lib/site.config';
 
 const authorProfiles: Record<string, { name: string; bio: string }> = {
@@ -42,50 +42,44 @@ export default async function AuthorPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-
-  // Get author profile or use default
   const author = authorProfiles[id] || authorProfiles.default;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+    <div className="gl-atmosphere min-h-screen">
       {/* Author Header */}
-      <div className="pt-20 pb-12">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
-              {author.name}
-            </h1>
-            <p className="text-xl text-slate-300 mb-8 leading-relaxed max-w-2xl">
-              {author.bio}
-            </p>
-
-            {/* Navigation */}
-            <div className="flex gap-4">
-              <Link
-                href="/archive/1"
-                className="px-4 py-2 rounded-lg bg-cyan-400/10 border border-cyan-400/30 text-cyan-400 hover:bg-cyan-400/20 transition-colors"
-              >
-                Back to All Articles
-              </Link>
-            </div>
+      <section className="relative pt-20 pb-12 md:pt-32 md:pb-16 px-4 sm:px-6 lg:px-8">
+        <div className="container mx-auto max-w-5xl">
+          <Eyebrow>GLAD LABS · AUTHOR</Eyebrow>
+          <Display xl>
+            <Display.Accent>{author.name}.</Display.Accent>
+          </Display>
+          <p className="gl-body gl-body--lg mt-4 max-w-2xl">{author.bio}</p>
+          <div className="mt-6">
+            <Button as={Link} href="/archive/1" variant="ghost">
+              ← All articles
+            </Button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Articles Section */}
-      <div className="px-4 sm:px-6 lg:px-8 pb-20">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-white mb-8">
-            Articles by {author.name}
-          </h2>
-          <div className="bg-slate-800/30 border border-slate-700 rounded-lg p-8 text-center">
-            <p className="text-slate-400 text-sm">
+      {/* Articles Section — placeholder until author-indexed posts land */}
+      <section className="px-4 sm:px-6 lg:px-8 pb-20">
+        <div className="container mx-auto max-w-5xl">
+          <h2 className="gl-h2 mb-6">Articles by {author.name}</h2>
+          <Card accent="cyan" className="text-center py-10">
+            <Card.Meta>COMING SOON</Card.Meta>
+            <p className="gl-body mt-3 max-w-md mx-auto">
               Articles from this author coming soon. Check back to see their
               latest work!
             </p>
-          </div>
+            <div className="mt-6 flex justify-center">
+              <Button as={Link} href="/archive/1" variant="secondary">
+                Browse all articles
+              </Button>
+            </div>
+          </Card>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
