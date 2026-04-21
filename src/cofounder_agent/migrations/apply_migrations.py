@@ -16,34 +16,28 @@ that may not have the base schema. It will be removed in a future cleanup pass.
 
 import glob
 import logging
-import os
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
 import psycopg2
-from dotenv import load_dotenv
+
+from brain.bootstrap import resolve_database_url
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Load .env.local from project root
-env_path = Path(__file__).parent.parent.parent.parent / ".env.local"
-if env_path.exists():
-    load_dotenv(env_path)
-    logger.info(f"📄 Loaded environment from: {env_path}")
-else:
-    logger.warning(f"⚠️  .env.local not found at {env_path}")
-    logger.info("   Checking for environment variables instead...")
-
 
 def get_database_url():
-    """Get DATABASE_URL from environment"""
-    db_url = os.getenv("DATABASE_URL")
+    """Resolve DATABASE_URL via brain.bootstrap (bootstrap.toml + env chain)."""
+    db_url = resolve_database_url()
     if not db_url:
-        logger.error("❌ DATABASE_URL environment variable not set")
-        logger.error("Please set DATABASE_URL in .env.local or as an environment variable")
+        logger.error("❌ No database URL configured.")
+        logger.error(
+            "   Run `poindexter setup` to create ~/.poindexter/bootstrap.toml, "
+            "or export DATABASE_URL in the environment."
+        )
         sys.exit(1)
     return db_url
 
