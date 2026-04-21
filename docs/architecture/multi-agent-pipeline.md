@@ -2,7 +2,18 @@
 
 **Last Updated:** March 10, 2026
 **Version:** 0.1.0
-**Status:** ✅ Production Ready | Multi-Agent Orchestration | Self-Critiquing Pipeline Active
+**Status:** DEPRECATED — pre-Phase-E snapshot. Kept only for historical
+reference.
+
+> **Read this first.** The shape described below (6 named agents,
+> files under `src/cofounder_agent/agents/content_agent/`, Financial /
+> Market / Compliance specialized agents) does not match the code
+> shipped today. The Phase E refactor replaced the agent model with a
+> 12-stage `Stage` plugin chain. The current pipeline is documented in
+> [content-pipeline.md](./content-pipeline.md). Footer links in this
+> file to `System-Design.md`, `../01-Getting-Started/`, and
+> `../00-README.md` point at files that have never existed in this
+> repo.
 
 ---
 

@@ -25,9 +25,14 @@ of the reading below.
 
 ## Architecture
 
-- **[Multi-agent pipeline](architecture/multi-agent-pipeline.md)** —
-  how the content pipeline orchestrates models, the self-critiquing
-  loop, and cross-model QA review.
+- **[Content pipeline](architecture/content-pipeline.md)** — the
+  12-stage `Stage` plugin chain, how `StageRunner` orders and
+  times them, and how cross-model QA short-circuits the pipeline
+  when content is rejected.
+- **[Plugin architecture](architecture/plugin-architecture.md)** —
+  the six plugin Protocols (Tap, Probe, Job, Stage, Pack,
+  LLMProvider) and the phased refactor that's consolidating
+  the codebase around them.
 - **[Database schema](architecture/database-schema.md)** — every
   table, the modular database service layer, and the migration
   system.
