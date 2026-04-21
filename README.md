@@ -61,18 +61,36 @@ The pipeline runs automatically. Check progress at `http://localhost:3000` (Graf
 
 ### Minimum Models (auto-pulled by bootstrap)
 
-| Model              | Size  | Role                                        |
-| ------------------ | ----- | ------------------------------------------- |
-| `qwen3:8b`         | 5GB   | Fast tasks: SEO, image decisions, summaries |
-| `gemma3:27b`       | 16GB  | QA reviews, fallback critic                 |
-| `nomic-embed-text` | 274MB | Embeddings for semantic search              |
+| Model              | Size  | Role                                                         |
+| ------------------ | ----- | ------------------------------------------------------------ |
+| `qwen3:8b`         | 5GB   | Fast tasks — SEO, image decisions, summaries, routing        |
+| `gemma3:27b`       | 16GB  | QA critic (runs alongside the writer for adversarial review) |
+| `nomic-embed-text` | 274MB | Embeddings for semantic search + memory retrieval            |
 
-For better writing quality, also pull a larger writer model:
+**With just these three, the pipeline runs end-to-end on any Ollama-capable
+GPU.** The writer falls back to `gemma3:27b` when no larger model is
+available — output quality drops but nothing breaks.
+
+### Writer model (configurable via `app_settings`)
+
+The writer is the one model that benefits most from upgrading. Set
+`pipeline_writer_model` in the DB (or via `poindexter settings set`) to
+any Ollama model you have pulled. Glad Labs prod runs a custom RTX 5090
+tune (`glm-4.7-5090`, 19GB) that isn't on the public registry, but any
+of these publicly available models work well and trade off size vs
+quality:
 
 ```bash
-ollama pull qwen3:30b      # 18GB — good balance of speed and quality
-ollama pull glm-4.7:9b     # 6GB — lighter alternative
+ollama pull qwen3:30b          # 18GB — best speed/quality balance publicly available
+ollama pull qwen3.5:35b        # 23GB — stronger prose, slower
+ollama pull llama3.3:70b       # 42GB — highest quality, needs 48GB+ VRAM or CPU offload
+ollama pull glm-4.7:9b         # 6GB — lighter fallback, good for <16GB VRAM
 ```
+
+Every model routing decision (writer / critic / research / summarizer /
+embedder) lives in `app_settings` and can be swapped at runtime without a
+restart. See `docs/architecture/content-pipeline.md` for the full routing
+table.
 
 ## Project Status
 
