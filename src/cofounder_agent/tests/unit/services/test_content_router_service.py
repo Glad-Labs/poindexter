@@ -1283,9 +1283,13 @@ class TestStageGenerateSeoMetadata:
         assert result["seo_title"] == "Why Docker Wins"
 
     @pytest.mark.asyncio
-    async def test_title_truncated_to_60_chars(self):
+    async def test_title_capped_at_60_chars_no_canonical(self):
+        """Without a canonical_seo_title on ``result``, seo_title is derived
+        from seo_assets via word-boundary truncation (GH-85)."""
         from services.content_router_service import _stage_generate_seo_metadata
 
+        # Single "word" with no whitespace falls back to a raw slice but
+        # never exceeds 60 chars.
         long_title = "x" * 200
         seo = self._make_seo_generator({
             "seo_title": long_title,
@@ -1299,7 +1303,58 @@ class TestStageGenerateSeoMetadata:
                 "topic", [], "text", MagicMock(), result,
             )
 
-        assert len(title) == 60
+        assert len(title) <= 60
+
+    @pytest.mark.asyncio
+    async def test_canonical_seo_title_used_verbatim(self):
+        """If writer stage stashed ``canonical_seo_title``, SEO stage must
+        use it verbatim instead of re-deriving (GH-85)."""
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        seo = self._make_seo_generator({
+            "seo_title": "Some other title the SEO generator made up",
+            "meta_description": "desc",
+            "meta_keywords": [],
+        })
+        result = {
+            "stages": {},
+            "canonical_seo_title": "Python asyncio event loop internals",
+        }
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            title, _, _ = await _stage_generate_seo_metadata(
+                "topic", [], "text", MagicMock(), result,
+            )
+
+        assert title == "Python asyncio event loop internals"
+
+    @pytest.mark.asyncio
+    async def test_seo_title_never_mid_word(self):
+        """GH-85: seo_title must cut on word boundary, never mid-word."""
+        from services.content_router_service import _stage_generate_seo_metadata
+
+        seo = self._make_seo_generator({
+            "seo_title": "Everything You Need To Know About Custom AI Models Today",
+            "meta_description": "desc",
+            "meta_keywords": [],
+        })
+        result = {"stages": {}}
+
+        with patch("services.content_router_service.get_seo_content_generator", return_value=seo):
+            title, _, _ = await _stage_generate_seo_metadata(
+                "topic", [], "text", MagicMock(), result,
+            )
+
+        assert len(title) <= 60
+        # Must not end with a half-word like "Custom AI C"
+        assert not title.endswith(" C")
+        assert not title.endswith(" Mode")
+        # Every word must be a complete word from the source.
+        source_words = set(
+            "Everything You Need To Know About Custom AI Models Today".split()
+        )
+        for w in title.split():
+            assert w in source_words, f"mid-word fragment: {w!r}"
 
     @pytest.mark.asyncio
     async def test_description_truncated_to_160_chars(self):
@@ -1340,7 +1395,9 @@ class TestStageGenerateSeoMetadata:
                 result=result,
             )
 
-        assert title == "Kubernetes deployment patterns"[:60]
+        # GH-85: topic fallback is routed through derive_seo_title — fits in
+        # 60 chars so it passes through unchanged.
+        assert title == "Kubernetes deployment patterns"
 
     @pytest.mark.asyncio
     async def test_keywords_limited_to_ten(self):
