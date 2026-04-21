@@ -427,7 +427,13 @@ async def list_settings(category: str = "") -> str:
 # ============================================================================
 
 @mcp.tool()
-async def search_memory(query: str, top_k: int = 8, source_filter: str = "", min_similarity: float = 0.3) -> str:
+async def search_memory(
+    query: str,
+    top_k: int = 8,
+    source_filter: str = "",
+    min_similarity: float = 0.3,
+    include_summaries: bool = True,
+) -> str:
     """Search semantic memory (pgvector) using natural language.
 
     Searches across ALL embedded content: memory files, blog posts, Gitea issues, audit logs.
@@ -442,6 +448,9 @@ async def search_memory(query: str, top_k: int = 8, source_filter: str = "", min
         top_k: Number of results to return (default 8)
         source_filter: Optional filter by source_table (e.g. "memory", "post", "issue", "audit")
         min_similarity: Minimum cosine similarity threshold (default 0.3). Results below this are dropped.
+        include_summaries: If False, exclude collapsed-cluster summary rows from results
+            (GH-81). Defaults to True — summaries preserve semantic signal from
+            collapsed old embeddings and are usually what you want.
     """
     try:
         embedding = await _embed_text(query)
@@ -451,25 +460,28 @@ async def search_memory(query: str, top_k: int = 8, source_filter: str = "", min
 
         # Fetch more candidates than requested so we can filter by threshold
         fetch_limit = top_k * 3
+        summaries_clause = "" if include_summaries else " AND is_summary = FALSE"
 
         if source_filter:
             rows = await pool.fetch(
-                """
+                f"""
                 SELECT source_table, source_id, text_preview, metadata,
                        1 - (embedding <=> $1::vector) as similarity
                 FROM embeddings
-                WHERE source_table = $2
+                WHERE source_table = $2{summaries_clause}
                 ORDER BY embedding <=> $1::vector
                 LIMIT $3
                 """,
                 vector_str, source_filter, fetch_limit,
             )
         else:
+            where_sql = f"WHERE TRUE{summaries_clause}" if summaries_clause else ""
             rows = await pool.fetch(
-                """
+                f"""
                 SELECT source_table, source_id, text_preview, metadata,
                        1 - (embedding <=> $1::vector) as similarity
                 FROM embeddings
+                {where_sql}
                 ORDER BY embedding <=> $1::vector
                 LIMIT $2
                 """,
