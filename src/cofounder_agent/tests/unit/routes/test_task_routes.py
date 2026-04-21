@@ -27,7 +27,22 @@ from middleware.api_token_auth import verify_api_token, verify_api_token_optiona
 # Import helpers under test directly (pure functions, no I/O)
 from routes.task_routes import _normalize_seo_keywords_in_task, router
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
+from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Slowapi's Limiter is a module-level singleton; it would leak 429s
+    between unrelated tests once enough /api/tasks POSTs land in one run.
+    Reset the in-memory storage before every test so each test gets its
+    own clean budget."""
+    try:
+        limiter.reset()
+    except Exception:
+        # No-op limiter (slowapi not installed) has no .reset(); skip.
+        pass
+    yield
 
 # ---------------------------------------------------------------------------
 # App / client factory helpers
@@ -463,6 +478,229 @@ class TestCreateTaskQueueFull:
         body = resp.json()
         assert "queue_full" not in body
         assert body["status"] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/tasks seed_url flow (GH-42)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateTaskSeedURL:
+    """Verify POST /api/tasks handles the seed_url field end-to-end.
+
+    These tests monkeypatch :func:`services.seed_url_fetcher.fetch_seed_url`
+    so no real HTTP goes out. Each covers one acceptance criterion from
+    GH-42:
+
+      AC#6 matrix:
+        - URL with topic       → combined; caller's topic wins, URL still attributed
+        - URL only             → title extracted, becomes the topic
+        - URL 404              → 400 + clear reason
+        - URL login-wall       → 400 with reason="login_wall"
+        - URL very long HTML   → covered at the service level; here we
+                                 confirm the route still returns 201 when
+                                 the fetcher returns a truncated result
+    """
+
+    def _patch_fetch(self, monkeypatch, result=None, error=None):
+        """Patch fetch_seed_url in the module where it's imported at use time.
+
+        ``routes.task_routes._resolve_seed_url`` imports the symbol from
+        ``services.seed_url_fetcher`` at call time, so patching the
+        source module is sufficient.
+        """
+        from services import seed_url_fetcher as fetcher_mod
+
+        async def _fake_fetch(url, **kwargs):
+            if error is not None:
+                raise error
+            return result
+
+        monkeypatch.setattr(fetcher_mod, "fetch_seed_url", _fake_fetch)
+
+    def test_seed_url_only_extracts_title_as_topic(self, monkeypatch):
+        from services.seed_url_fetcher import SeedURLResult
+
+        self._patch_fetch(
+            monkeypatch,
+            result=SeedURLResult(
+                url="https://example.com/claude-ships",
+                title="How Claude Agents Ship Features",
+                excerpt="A case study.",
+                status_code=200,
+                content_length=1024,
+            ),
+        )
+
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="task-from-url-1")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={
+                "task_type": "blog_post",
+                "seed_url": "https://example.com/claude-ships",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        # Topic was promoted from the extracted title.
+        assert body["topic"] == "How Claude Agents Ship Features"
+
+        # The DB call carries the seed_url into metadata so the writer
+        # stage's _extract_caller_research helper can find it.
+        assert mock_db.add_task.called
+        task_data = mock_db.add_task.call_args[0][0]
+        metadata = task_data.get("metadata") or {}
+        assert metadata.get("seed_url") == "https://example.com/claude-ships"
+        assert "Source article:" in metadata.get("research_context", "")
+        assert "https://example.com/claude-ships" in metadata["research_context"]
+        assert "How Claude Agents Ship Features" in metadata["research_context"]
+
+    def test_seed_url_and_topic_combined_preserves_callers_topic(self, monkeypatch):
+        """When both fields are present, the caller's topic wins but the
+        URL is still attributed in the research context (AC#1)."""
+        from services.seed_url_fetcher import SeedURLResult
+
+        self._patch_fetch(
+            monkeypatch,
+            result=SeedURLResult(
+                url="https://example.com/news",
+                title="News Article Title The Fetcher Would Use",
+                excerpt="Opening paragraph.",
+                status_code=200,
+                content_length=500,
+            ),
+        )
+
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="task-combined-1")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={
+                "task_type": "blog_post",
+                "topic": "Rebut this article with counter-evidence",
+                "seed_url": "https://example.com/news",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        # Caller's topic is authoritative — the URL is pinned as a
+        # source, not as the primary angle.
+        assert body["topic"] == "Rebut this article with counter-evidence"
+
+        task_data = mock_db.add_task.call_args[0][0]
+        metadata = task_data["metadata"]
+        assert metadata["seed_url"] == "https://example.com/news"
+        assert "Source article:" in metadata["research_context"]
+        # The URL is in the attribution block even though the topic
+        # comes from the caller.
+        assert "https://example.com/news" in metadata["research_context"]
+
+    def test_seed_url_404_returns_400_with_clear_reason(self, monkeypatch):
+        from services.seed_url_fetcher import SeedURLError
+
+        self._patch_fetch(
+            monkeypatch,
+            error=SeedURLError(
+                "HTTP 404 from https://example.com/missing",
+                reason="http_error",
+            ),
+        )
+
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="should-not-be-called")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={
+                "task_type": "blog_post",
+                "seed_url": "https://example.com/missing",
+            },
+        )
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        # Detail is a dict so callers can key off the reason without
+        # fragile substring matching.
+        assert detail["reason"] == "http_error"
+        assert "missing" in detail["url"]
+        # Task is NOT created when the seed URL can't be fetched — we
+        # don't silently fall back to auto-discovery.
+        assert not mock_db.add_task.called
+
+    def test_seed_url_login_wall_returns_400_with_login_wall_reason(self, monkeypatch):
+        from services.seed_url_fetcher import SeedURLError
+
+        self._patch_fetch(
+            monkeypatch,
+            error=SeedURLError(
+                "Login wall detected at https://example.com/paid",
+                reason="login_wall",
+            ),
+        )
+
+        mock_db = make_mock_db()
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={
+                "task_type": "blog_post",
+                "seed_url": "https://example.com/paid",
+            },
+        )
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail["reason"] == "login_wall"
+
+    def test_missing_both_topic_and_seed_url_returns_422(self):
+        """Pydantic validator rejects requests with neither field."""
+        mock_db = make_mock_db()
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={"task_type": "blog_post"},
+        )
+        assert resp.status_code == 422
+        # One of the reported errors mentions topic or seed_url.
+        body_text = resp.text.lower()
+        assert "topic" in body_text or "seed_url" in body_text
+
+    def test_seed_url_truncated_response_still_succeeds(self, monkeypatch):
+        """The fetcher truncates oversize pages internally and returns a
+        valid SeedURLResult; the route should queue the task normally."""
+        from services.seed_url_fetcher import SeedURLResult
+
+        self._patch_fetch(
+            monkeypatch,
+            result=SeedURLResult(
+                url="https://example.com/huge",
+                title="Huge Page Title",
+                excerpt="Truncated but sufficient.",
+                status_code=200,
+                content_length=1_048_576,  # hit the cap exactly
+            ),
+        )
+
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="huge-task-1")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={
+                "task_type": "blog_post",
+                "seed_url": "https://example.com/huge",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["topic"] == "Huge Page Title"
 
 
 # ---------------------------------------------------------------------------

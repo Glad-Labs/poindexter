@@ -84,6 +84,112 @@ def _check_task_ownership(task: dict, current_user: Any) -> None:
         raise HTTPException(status_code=403, detail="Access denied")
 
 
+# ============================================================================
+# SEED URL RESOLUTION (GH-42)
+# ============================================================================
+# Matt often sees a link and wants to riff on that topic. Instead of
+# requiring him to extract the topic + submit via the API, we accept
+# ``seed_url`` directly, fetch it, and extract a topic from the page's
+# <title>/<h1>. Attribution is injected into the writer's research
+# context so the resulting post cites the source — see GH-42 AC#3 for
+# the Herrington-pattern reasoning behind the "Source article:" block.
+
+
+async def _resolve_seed_url(task_request: UnifiedTaskRequest) -> None:
+    """If ``seed_url`` is set, fetch it and populate topic + research context.
+
+    Mutates ``task_request`` in place:
+      - If ``topic`` is empty, sets it to the extracted page title.
+      - If ``topic`` is also present, keeps the caller's topic but still
+        stores the URL + title/excerpt in metadata so the writer can
+        attribute.
+      - Stores the seed URL, title, excerpt, and a pre-formatted
+        "Source article:" research_context block in
+        ``task_request.metadata`` so the downstream stage
+        :mod:`services.stages.generate_content` picks it up via
+        ``_extract_caller_research``.
+
+    On any fetch/parse failure, raises HTTPException 400 with a clear
+    reason — we do NOT create a task and fall back to autodiscovery,
+    because the caller explicitly asked for this URL.
+    """
+    seed_url = (task_request.seed_url or "").strip()
+    if not seed_url:
+        return
+
+    # Import late so tests that don't exercise seed_url don't pay the
+    # httpx import cost and so the module is easy to monkeypatch in
+    # route tests without the full http stack loaded.
+    from services.seed_url_fetcher import (
+        SeedURLError,
+        build_source_attribution,
+        fetch_seed_url,
+    )
+
+    try:
+        result = await fetch_seed_url(seed_url)
+    except SeedURLError as exc:
+        logger.info(
+            "[SEED_URL] Fetch rejected for %s (reason=%s): %s",
+            seed_url, exc.reason, exc,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "seed_url_fetch_failed",
+                "reason": exc.reason,
+                "message": str(exc),
+                "url": seed_url,
+            },
+        ) from exc
+    except Exception as exc:  # pragma: no cover — defensive catch-all
+        logger.error("[SEED_URL] Unexpected fetch crash for %s: %s", seed_url, exc, exc_info=True)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "seed_url_fetch_failed",
+                "reason": "network",
+                "message": f"Unexpected error fetching {seed_url}",
+                "url": seed_url,
+            },
+        ) from exc
+
+    # Promote the extracted title to ``topic`` only when the caller
+    # didn't provide one. If both are present, the caller's topic wins
+    # — they may want a specific angle ("rebut this post", "summarize
+    # for beginners") while still pinning the source URL.
+    if not task_request.topic or not str(task_request.topic).strip():
+        # ``topic`` has a max_length=200 Pydantic validator; titles
+        # sometimes exceed that, so we trim here to stay inside the
+        # schema bound while preserving as much context as possible.
+        task_request.topic = result.title[:200]
+
+    # Build the research-context block with the "Source article:"
+    # attribution header. The writer's _extract_caller_research helper
+    # reads research_context from metadata JSONB — that's how we get it
+    # in front of the LLM without adding new pipeline wiring.
+    attribution = build_source_attribution(result)
+
+    merged_metadata = dict(task_request.metadata or {})
+    # If the caller ALREADY supplied research_context, prepend ours so
+    # attribution wins but their additional context is preserved.
+    existing_research = merged_metadata.get("research_context", "")
+    if existing_research:
+        merged_metadata["research_context"] = f"{attribution}\n\n{existing_research}"
+    else:
+        merged_metadata["research_context"] = attribution
+
+    # Persist seed URL + extracted pieces as first-class metadata keys
+    # so the Oversight Hub / MCP can display them without re-parsing
+    # the research_context string.
+    merged_metadata["seed_url"] = result.url
+    merged_metadata["seed_url_title"] = result.title
+    merged_metadata["seed_url_excerpt"] = result.excerpt
+    merged_metadata["discovered_by"] = merged_metadata.get("discovered_by") or "seed_url"
+
+    task_request.metadata = merged_metadata
+
+
 # Configure router with prefix and tags
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -168,7 +274,16 @@ async def create_task(
     See UnifiedTaskRequest schema for all parameters.
     """
     try:
-        # Validate required fields
+        # GH-42: if the caller only sent ``seed_url`` (no topic), fetch
+        # the URL and extract a topic from its <title>/<h1>. Mutates the
+        # request in-place so downstream handlers see a resolved topic.
+        # Failures bubble up as HTTPException 400 with a clear reason —
+        # we deliberately do NOT fall back to autodiscovery, because the
+        # caller asked for THIS specific URL.
+        await _resolve_seed_url(task_request)
+
+        # Validate required fields (belt-and-suspenders — Pydantic also
+        # enforces this, but the check keeps the 422 message specific).
         if not task_request.topic or not str(task_request.topic).strip():
             raise HTTPException(
                 status_code=422,
