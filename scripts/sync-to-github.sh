@@ -28,6 +28,7 @@ git checkout -b "$TEMP_BRANCH" 2>/dev/null
 
 # === Premium product surfaces and private branding ===
 git rm -r --cached --quiet web/public-site/ 2>/dev/null || true              # branded Next.js site
+git rm -r --cached --quiet web/storefront/ 2>/dev/null || true               # gladlabs.ai storefront (Lemon Squeezy checkout + copy)
 git rm -r --cached --quiet docs/ 2>/dev/null || true                         # internal docs
 git rm -r --cached --quiet marketing/ 2>/dev/null || true                    # marketing materials
 git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || true  # private writing style training data
