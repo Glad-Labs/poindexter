@@ -22,8 +22,17 @@ logger = logging.getLogger(__name__)
 async def build_rag_context(
     database_service: Any | None,
     topic: str,
+    source_tags: list[str] | None = None,
+    source_category: str | None = None,
 ) -> str | None:
-    """Search pgvector for similar published posts. Returns None if unavailable."""
+    """Search pgvector for similar published posts. Returns None if unavailable.
+
+    GH-88: when ``source_tags``/``source_category`` are provided, the
+    candidates go through :class:`InternalLinkCoherenceFilter` before
+    being rendered — rejects off-topic suggestions (e.g. CadQuery pinned
+    as "related" to an asyncio post) and caps how many times any single
+    target can be recommended across the corpus.
+    """
     if not topic or not topic.strip():
         return None
 
@@ -31,26 +40,25 @@ async def build_rag_context(
         from poindexter.memory import MemoryClient
 
         async with MemoryClient() as mem:
+            # Over-fetch so the coherence filter has room to drop off-topic
+            # candidates and still return enough relevant ones.
+            fetch_limit = 15 if source_tags or source_category else 5
             similar_posts = await mem.find_similar_posts(
-                topic, limit=5, min_similarity=0.3,
+                topic, limit=fetch_limit, min_similarity=0.3,
             )
 
         if not similar_posts:
             return None
 
-        lines: list[str] = [
-            "RELATED POSTS WE'VE PUBLISHED "
-            "(reference for internal linking, avoid repeating same angles):",
-        ]
         pool = getattr(database_service, "pool", None) if database_service else None
-        for i, hit in enumerate(similar_posts, 1):
+
+        # Resolve slug + excerpt for every hit up front; we need slug for
+        # the coherence filter's target-tag lookup anyway.
+        resolved: list[dict[str, Any]] = []
+        for hit in similar_posts:
             post_id = hit.source_id
             similarity = hit.similarity
             title = (hit.metadata or {}).get("title", "Untitled")
-
-            # Try to fetch slug + excerpt from the posts table.
-            # source_id is either the post UUID or "post/<uuid>" depending on
-            # when the embedding was written; try both shapes.
             slug = ""
             excerpt = ""
             if pool:
@@ -65,12 +73,60 @@ async def build_rag_context(
                         excerpt = row.get("excerpt") or ""
                 except Exception:
                     pass
+            resolved.append({
+                "post_id": post_id,
+                "similarity": similarity,
+                "title": title,
+                "slug": slug,
+                "excerpt": excerpt,
+            })
 
-            excerpt_short = (excerpt[:120] + "...") if len(excerpt) > 120 else excerpt
-            url = f"/posts/{slug}" if slug else f"(post id: {post_id})"
+        # GH-88: apply the coherence filter if we have source context + a DB.
+        if pool and (source_tags or source_category):
+            try:
+                from services.internal_link_coherence import (
+                    InternalLinkCoherenceFilter,
+                    LinkCandidate,
+                )
+                candidates = [
+                    LinkCandidate(
+                        slug=r["slug"],
+                        title=r["title"],
+                        score=r["similarity"],
+                    )
+                    for r in resolved
+                    if r["slug"]
+                ]
+                filt = InternalLinkCoherenceFilter(
+                    pool=pool,
+                    source_tags=list(source_tags or []),
+                    source_category=source_category or "",
+                )
+                kept = await filt.filter_candidates(candidates)
+                kept_slugs = {c.slug for c in kept}
+                resolved = [r for r in resolved if r["slug"] in kept_slugs]
+            except Exception as e:
+                logger.debug("Coherence filter skipped (non-fatal): %s", e)
+
+        # Trim to 5 after filtering (was the legacy cap).
+        resolved = resolved[:5]
+        if not resolved:
+            return None
+
+        lines: list[str] = [
+            "RELATED POSTS WE'VE PUBLISHED "
+            "(reference for internal linking, avoid repeating same angles):",
+        ]
+        for i, r in enumerate(resolved, 1):
+            excerpt_short = (
+                (r["excerpt"][:120] + "...")
+                if len(r["excerpt"]) > 120
+                else r["excerpt"]
+            )
+            url = f"/posts/{r['slug']}" if r["slug"] else f"(post id: {r['post_id']})"
             lines.append(
-                f"{i}. [{title}] -- {excerpt_short} ({url}) "
-                f"[similarity: {similarity:.2f}]"
+                f"{i}. [{r['title']}] -- {excerpt_short} ({url}) "
+                f"[similarity: {r['similarity']:.2f}]"
             )
 
         return "\n".join(lines)

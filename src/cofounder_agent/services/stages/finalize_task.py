@@ -83,6 +83,27 @@ class FinalizeTaskStage:
             seo_description = _normalize_text(seo_description)
         content_text = _normalize_text(content_text)
 
+        # GH-86: derive an excerpt from the finalized content. Frontend was
+        # falling back to content[:N] which rendered the opening "What
+        # You'll Learn" bullet list as the social-card snippet.
+        from services.excerpt_generator import generate_excerpt
+        excerpt_text = generate_excerpt(content_text)
+
+        # GH-86: format the multi-model QA reviewers' feedback into human-readable
+        # text so approvers can see *why* a post scored Q85 vs Q88. Looks at both
+        # the quality_result (MultiModelResult) and any serialized qa_reviews list.
+        from services.multi_model_qa import format_qa_feedback_from_reviews
+        qa_reviews = context.get("qa_reviews") or []
+        qa_feedback_text = ""
+        if quality_result is not None and hasattr(quality_result, "format_feedback_text"):
+            qa_feedback_text = quality_result.format_feedback_text()
+        elif qa_reviews:
+            qa_feedback_text = format_qa_feedback_from_reviews(
+                qa_reviews,
+                final_score=context.get("qa_final_score"),
+                approved=context.get("qa_approved"),
+            )
+
         # Quality score: prefer the multi-model QA score if set; fall
         # back to the early pattern-eval when QA ran nothing (or timed out).
         qa_score_from_context = context.get("quality_score")
@@ -151,6 +172,9 @@ class FinalizeTaskStage:
             "tone": tone,
             "category": category,
             "target_audience": target_audience or "General",
+            # GH-86: persist excerpt + qa_feedback on the base row.
+            "excerpt": excerpt_text,
+            "qa_feedback": qa_feedback_text,
             "task_metadata": task_metadata,
         }
 
