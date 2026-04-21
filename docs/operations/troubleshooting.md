@@ -28,7 +28,7 @@ Entries are ordered by frequency of occurrence, not severity.
 
 **Debugging anti-pattern.** Do NOT go poking at Vercel settings, env vars, build commands, or the `next.config.js` first. The Vercel deploy step almost certainly never ran.
 
-**Related.** `docs/operations/CI-Deploy-Chain.md` has the full chain diagram.
+**Related.** [docs/operations/ci-deploy-chain.md](./ci-deploy-chain.md) has the full chain diagram.
 
 ---
 
