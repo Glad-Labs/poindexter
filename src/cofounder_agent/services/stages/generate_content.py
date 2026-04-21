@@ -167,7 +167,17 @@ class GenerateContentStage:
             )
             if title_v2:
                 originality_v2 = await _check_title_originality(title_v2)
-                if originality_v2["max_similarity"] < originality["max_similarity"]:
+                # GH-87: prefer the regenerated title if it drops below
+                # either the internal-corpus similarity threshold OR the
+                # external-duplicate flag. Previously we only looked at
+                # max_similarity, which ignored verbatim external matches.
+                v1_ext_dup = bool(originality.get("external_verbatim_match"))
+                v2_ext_dup = bool(originality_v2.get("external_verbatim_match"))
+                more_original = (
+                    originality_v2["max_similarity"] < originality["max_similarity"]
+                    or (v1_ext_dup and not v2_ext_dup)
+                )
+                if more_original:
                     logger.info(
                         "[TITLE] Regenerated title is more original (%.0f%% → %.0f%%): %s",
                         originality["max_similarity"] * 100,
@@ -175,8 +185,14 @@ class GenerateContentStage:
                         title_v2,
                     )
                     title = title_v2
+                    originality = originality_v2
                 else:
                     logger.info("[TITLE] Keeping original title — regeneration wasn't more unique")
+
+        # GH-87: persist the originality report so (a) the QA stage can
+        # apply the configured penalty to its final score, and (b) the
+        # approver UI can surface external near-matches as a warning.
+        context["title_originality"] = originality
 
         # Normalize smart quotes / special chars.
         content_text = normalize_text(content_text)
