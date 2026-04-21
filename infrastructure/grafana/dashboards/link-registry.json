@@ -100,7 +100,7 @@
       "id": 4,
       "options": {
         "code": { "language": "plaintext", "showLineNumbers": false },
-        "content": "| Service | URL | Purpose |\n|---|---|---|\n| Public Site | [gladlabs.io](https://www.gladlabs.io) | Production Next.js frontend |\n| Vercel Dashboard | [vercel.com/dashboard](https://vercel.com/dashboard) | Deployments, env vars, logs |\n| RSS Feed | [gladlabs.io/feed.xml](https://www.gladlabs.io/feed.xml) | JSON Feed 1.1 + feed.xml. Direct Bluesky + Mastodon adapters (GH-36); X/Twitter is manual copy-paste (API is $100/mo). |\n| Static CDN | [R2 bucket](https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static/manifest.json) | Static JSON export manifest |",
+        "content": "| Service | URL | Purpose |\n|---|---|---|\n| Public Site | [gladlabs.io](https://www.gladlabs.io) | Production Next.js frontend |\n| Vercel Dashboard | [vercel.com/dashboard](https://vercel.com/dashboard) | Deployments, env vars, logs |\n| RSS Feed | [gladlabs.io/feed.xml](https://www.gladlabs.io/feed.xml) | JSON Feed 1.1 + feed.xml. Direct Bluesky + Mastodon adapters (GH-36); dlvr.it's RSS bridge handles X/Twitter (X API is $100/mo). |\n| Static CDN | [R2 bucket](https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static/manifest.json) | Static JSON export manifest |",
         "mode": "markdown"
       },
       "type": "text",
