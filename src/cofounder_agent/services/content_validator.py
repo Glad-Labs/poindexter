@@ -384,9 +384,34 @@ def _check_patterns(
 # (no TTL) because the lists are static data, not DB state.
 from pathlib import Path as _Path
 
-# content_validator.py lives at src/cofounder_agent/services/ — repo root is
-# parents[3]. The data files sit under brain/hallucination-check at the root.
-_HC_DIR = _Path(__file__).resolve().parents[3] / "brain" / "hallucination-check"
+
+def _find_hc_dir() -> _Path:
+    """Locate ``brain/hallucination-check/`` regardless of host vs container layout.
+
+    On the host the directory lives at ``<repo-root>/brain/hallucination-check``.
+    In the worker container ``brain/`` is bind-mounted at
+    ``/opt/poindexter/brain`` (see docker-compose.local.yml), not as a
+    descendant of this file's path — so ``parents[3]`` from /app/services
+    overshoots the filesystem root and raises IndexError.
+
+    Walk every ancestor of ``__file__`` looking for the directory, then
+    fall back to the container mount path. If neither exists the lazy
+    file loaders below will surface a clearer error at first use.
+    """
+    here = _Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "brain" / "hallucination-check"
+        if candidate.is_dir():
+            return candidate
+    container_hc = _Path("/opt/poindexter/brain/hallucination-check")
+    if container_hc.is_dir():
+        return container_hc
+    # Best-effort guess for diagnostic output; file reads will fail
+    # explicitly if the directory really is missing.
+    return here.parent.parent.parent.parent / "brain" / "hallucination-check"
+
+
+_HC_DIR = _find_hc_dir()
 
 _stdlib_names_cache: set[str] | None = None
 _pypi_names_cache: set[str] | None = None
