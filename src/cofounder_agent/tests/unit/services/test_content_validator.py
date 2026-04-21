@@ -840,3 +840,241 @@ class TestPrometheusCounterEmission:
         after_unlinked = self._read_counter(rule_unlinked)
         assert after_filler > before_filler
         assert after_unlinked == before_unlinked
+
+
+class TestHallucinatedReferenceDetection:
+    """GH-83 part b — catch hallucinated library/API references + topic
+    mismatches. Built on top of #91's validator-warning plumbing; the
+    ``hallucinated_reference`` category uses the same per-rule threshold
+    promotion and QA-score penalty as ``unlinked_citation``.
+
+    Real cases from the production log that motivated this rule:
+      * ``schedule_callback(event)`` described as a central asyncio
+        function — asyncio has no such thing (actual API: ``loop.call_soon``,
+        ``loop.call_later``, etc.).
+      * ``CadQuery`` recommended from an ai-ml asyncio post — CadQuery is
+        a 3D CAD library, topically orthogonal to asyncio.
+    """
+
+    def _hallucinated_issues(self, result):
+        return [i for i in result.issues if i.category == "hallucinated_reference"]
+
+    def test_real_asyncio_api_not_flagged(self):
+        """``asyncio.run`` / ``loop.call_soon()`` are real — no flags."""
+        content = (
+            "Use `asyncio.run()` to start the event loop. "
+            "Within the loop, `loop.call_soon(callback)` schedules work "
+            "and `loop.call_later(0.1, callback)` defers it. "
+            "`asyncio.create_task(coro)` wraps a coroutine in a Task."
+        )
+        result = validate_content(
+            "How asyncio Works",
+            content,
+            topic="asyncio",
+            tags=["ai-ml", "backend"],
+        )
+        hallucinated = self._hallucinated_issues(result)
+        assert not hallucinated, (
+            f"real asyncio APIs should not be flagged, got: {[h.matched_text for h in hallucinated]}"
+        )
+
+    def test_schedule_callback_flagged_as_hallucinated(self):
+        """Fabricated asyncio function should fire hallucinated_reference."""
+        content = (
+            "The `schedule_callback(event)` is a central function "
+            "responsible for adding tasks to the loop's processing queue."
+        )
+        result = validate_content(
+            "How asyncio Works",
+            content,
+            topic="asyncio",
+            tags=["ai-ml"],
+        )
+        hallucinated = self._hallucinated_issues(result)
+        assert any(
+            "schedule_callback" in h.matched_text for h in hallucinated
+        ), f"expected schedule_callback to be flagged, got: {[h.matched_text for h in hallucinated]}"
+
+    def test_cadquery_in_ai_ml_post_flagged_as_topic_mismatch(self):
+        """Real library but off-topic — flagged with topic-mismatch wording."""
+        content = (
+            "Consider exploring CadQuery to see how asyncio is used "
+            "in a more complex application."
+        )
+        result = validate_content(
+            "Asyncio Deep Dive",
+            content,
+            topic="asyncio",
+            tags=["ai-ml"],
+        )
+        hallucinated = self._hallucinated_issues(result)
+        cadquery_hits = [
+            h for h in hallucinated if "cadquery" in h.matched_text.lower()
+        ]
+        assert cadquery_hits, (
+            f"expected CadQuery topic mismatch, got: "
+            f"{[h.matched_text for h in hallucinated]}"
+        )
+        # Topic mismatch path uses specific wording ("off-topic" /
+        # "expected topics"); hallucinated-unknown path says "not found".
+        # CadQuery is in the top-500 supplement so this must be the
+        # mismatch branch.
+        assert any(
+            "off-topic" in h.description.lower()
+            or "expected topics" in h.description.lower()
+            for h in cadquery_hits
+        ), f"expected topic-mismatch description, got: {[h.description for h in cadquery_hits]}"
+
+    def test_bare_prose_capitalized_words_not_flagged(self):
+        """Capitalized proper nouns in prose should not trip the detector."""
+        content = (
+            "London is a city in England. Matt teaches Python, JavaScript, "
+            "and TypeScript to students. Tuesday is the best day for reviews. "
+            "Apple sells computers. Netflix streams movies. "
+            "The Ferrari team won the race in Monaco. "
+        )
+        result = validate_content(
+            "Prose Test",
+            content,
+            topic="general",
+            tags=["business"],
+        )
+        hallucinated = self._hallucinated_issues(result)
+        assert not hallucinated, (
+            f"bare prose should not be flagged as hallucinated, got: "
+            f"{[h.matched_text for h in hallucinated]}"
+        )
+
+    def test_instance_variables_not_flagged(self):
+        """Dotted names rooted at common vars (loop, app, db) must be ignored."""
+        content = (
+            "Set up `app.state.db = conn`. Later, `client.session.get(...)` "
+            "fetches data. The `response.headers` dict has keys. "
+            "Inside `loop.create_task(coro)` the task gets scheduled."
+        )
+        result = validate_content(
+            "Common variable patterns",
+            content,
+            topic="asyncio",
+            tags=["backend"],
+        )
+        # None of those dotted expressions should fire hallucinated_reference
+        # because the roots (app, client, response, loop) are whitelisted.
+        hallucinated = self._hallucinated_issues(result)
+        assert not hallucinated, (
+            f"instance-variable dotted access should not be flagged, got: "
+            f"{[h.matched_text for h in hallucinated]}"
+        )
+
+    def test_known_pypi_package_backtick_passes(self):
+        """A plain ``fastapi`` / ``django`` reference should be fine."""
+        content = (
+            "We use `fastapi` with `uvicorn` behind the scenes. "
+            "`django` works too. `pytest` runs the suite."
+        )
+        result = validate_content(
+            "Web Stack",
+            content,
+            topic="web-dev",
+            tags=["web-dev", "backend"],
+        )
+        hallucinated = self._hallucinated_issues(result)
+        assert not hallucinated, (
+            f"top-500 PyPI packages should pass, got: "
+            f"{[h.matched_text for h in hallucinated]}"
+        )
+
+    def test_ollama_model_names_not_flagged(self):
+        """Common Ollama model names are a real source list — must pass."""
+        content = (
+            "We run `llama3` locally alongside `gemma3` and `qwen2.5`. "
+            "For coding tasks, `qwen2.5-coder` outperforms `codellama`."
+        )
+        result = validate_content(
+            "Local Models",
+            content,
+            topic="ollama",
+            tags=["ai-ml"],
+        )
+        hallucinated = self._hallucinated_issues(result)
+        assert not hallucinated, (
+            f"Ollama model names should pass, got: "
+            f"{[h.matched_text for h in hallucinated]}"
+        )
+
+    def test_hallucinated_reference_promotes_after_threshold(self):
+        """Many hallucinated_reference warnings should promote to critical.
+
+        Uses the same threshold (``content_validator_warning_reject_threshold``
+        default 3) wired for ``unlinked_citation`` in #91.
+        """
+        content = (
+            "The post name-drops `fakelib_one(event)`, then suggests "
+            "`fakelib_two.method(arg)`, then adds `fakelib_three.do(x)`, "
+            "and also relies on `fakelib_four.process(buf)` for the "
+            "final step of the process."
+        )
+        result = validate_content(
+            "Fake References",
+            content,
+            topic="python",
+            tags=["backend"],
+        )
+        hallucinated = self._hallucinated_issues(result)
+        # 4+ matches should exceed the default threshold of 3 and promote.
+        assert len(hallucinated) >= 4, (
+            f"expected 4+ hallucinated matches, got {len(hallucinated)}: "
+            f"{[h.matched_text for h in hallucinated]}"
+        )
+        assert all(h.severity == "critical" for h in hallucinated), (
+            f"expected all hallucinated warnings to promote to critical, "
+            f"got severities {[h.severity for h in hallucinated]}"
+        )
+        assert result.passed is False
+
+    def test_tags_parameter_is_optional(self):
+        """Calling validate_content without tags must still work."""
+        content = "The `schedule_callback(event)` is not a real function."
+        # Positional form — no regression in legacy callers.
+        result = validate_content("Asyncio", content, "asyncio")
+        hallucinated = self._hallucinated_issues(result)
+        assert hallucinated, (
+            "schedule_callback should still be flagged without tags"
+        )
+
+    def test_topic_coherence_uses_title_fallback_when_no_tags(self):
+        """Without tags, the title/topic text should drive topic coherence."""
+        content = "Consider exploring CadQuery alongside your workflow."
+        # Title text hints ai-ml. No tags provided. CadQuery should still
+        # be flagged as off-topic because the title/topic tokens ("ai-ml",
+        # "asyncio") share no overlap with ["cad", "3d-modeling"].
+        result = validate_content(
+            "Ai-ml Asyncio Deep Dive",
+            content,
+            topic="asyncio",
+        )
+        hallucinated = self._hallucinated_issues(result)
+        assert any(
+            "cadquery" in h.matched_text.lower() for h in hallucinated
+        ), f"expected CadQuery flagged without tags, got: {[h.matched_text for h in hallucinated]}"
+
+    def test_stdlib_and_pypi_lists_actually_loaded(self):
+        """Guard against the data files going missing in deployment."""
+        from services.content_validator import (
+            _get_ollama_names,
+            _get_pypi_names,
+            _get_stdlib_names,
+        )
+        stdlib = _get_stdlib_names()
+        pypi = _get_pypi_names()
+        ollama = _get_ollama_names()
+        # Sanity anchors: asyncio is stdlib, fastapi is top-500, llama3 is ollama.
+        assert "asyncio" in stdlib
+        assert "os" in stdlib
+        assert "fastapi" in pypi
+        assert "requests" in pypi
+        assert "numpy" in pypi
+        assert "llama3" in ollama or "llama" in ollama
+        # Loose sanity — we expect 100+ stdlib and 400+ PyPI entries.
+        assert len(stdlib) > 100, f"stdlib list unexpectedly small: {len(stdlib)}"
+        assert len(pypi) > 400, f"pypi list unexpectedly small: {len(pypi)}"
