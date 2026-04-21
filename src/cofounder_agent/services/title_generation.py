@@ -162,17 +162,38 @@ async def check_title_originality(title: str) -> dict:
             "is_original": bool,
             "similar_titles": list[str],
             "max_similarity": float,  # 0.0..1.0
+            # GH-87 additions:
+            "external_verbatim_match": bool,
+            "external_near_match": bool,
+            "external_penalty": int,     # points to subtract from QA score
+            "external_matches": list[dict],  # [{"title": str, "url": str}, ...]
+            "external_fail_open": bool,  # true if the external check couldn't run
         }
 
     Threshold defaults to 0.6 and comes from
     ``qa_title_similarity_threshold``. Set
     ``qa_title_originality_enabled=false`` to bypass the check (returns
     "is_original": True with empty similar_titles).
+
+    GH-87: also runs :func:`services.title_originality_external.check_external_title_duplicates`
+    which hits the DuckDuckGo HTML endpoint directly for the exact quoted
+    title. Verbatim matches surface as ``external_verbatim_match=True``
+    with a non-zero ``external_penalty`` the QA stage can subtract from
+    the final score; near-matches set ``external_near_match=True`` so
+    the approver sees a warning without the post being rejected. The
+    external check fails OPEN — if DDG is rate-limiting us or the
+    network is down, ``external_fail_open=True`` and the pipeline
+    continues as if nothing matched.
     """
     result: dict = {
         "is_original": True,
         "similar_titles": [],
         "max_similarity": 0.0,
+        "external_verbatim_match": False,
+        "external_near_match": False,
+        "external_penalty": 0,
+        "external_matches": [],
+        "external_fail_open": False,
     }
 
     try:
@@ -221,5 +242,32 @@ async def check_title_originality(title: str) -> dict:
 
     except Exception as e:
         logger.warning("[TITLE] Originality check skipped (non-fatal): %s", e)
+
+    # GH-87: external-article duplicate check. Isolated from the block
+    # above so a WebResearcher failure doesn't short-circuit the DDG HTML
+    # path (and vice versa).
+    try:
+        from services.title_originality_external import (
+            check_external_title_duplicates,
+        )
+        ext = await check_external_title_duplicates(title)
+        result["external_verbatim_match"] = ext.verbatim_match
+        result["external_near_match"] = ext.near_match
+        result["external_penalty"] = ext.penalty
+        result["external_matches"] = ext.matches
+        result["external_fail_open"] = ext.fail_open
+        # Verbatim external match should flip ``is_original`` so the
+        # regenerate-title path in the generate_content stage kicks in
+        # the same way it does for our-own-corpus duplicates.
+        if ext.verbatim_match:
+            result["is_original"] = False
+            if ext.matches:
+                # Surface the external title so the avoid-list in the
+                # regeneration prompt includes it.
+                result["similar_titles"].extend(
+                    m.get("title", "") for m in ext.matches if m.get("title")
+                )
+    except Exception as e:
+        logger.warning("[TITLE] External originality check skipped (non-fatal): %s", e)
 
     return result
