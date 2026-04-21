@@ -312,9 +312,114 @@ async def generate_and_distribute_social_posts(
     return posts
 
 
+async def _safe_call_adapter(platform: str, coro_factory) -> dict:
+    """Run one adapter call and never let it crash the distribution loop.
+
+    Adapters promise a ``{"success", "post_id", "error"}`` dict on the
+    happy path AND on graceful-skip paths. But a bug, a missing
+    dependency, or a stubbed adapter (LinkedIn/Reddit/YouTube — see
+    GH-40) can raise instead. This wrapper turns any exception —
+    including ``NotImplementedError`` from the stubs — into a
+    well-formed failure dict so the rest of the social posting
+    continues.
+
+    Metric: increments ``social_adapter_errors_total{platform=...}``
+    when the adapter raises. ``social_adapter_posts_total`` is bumped
+    with ``outcome={success,failure,error}`` so dashboards can tell
+    "platform refused us" from "we crashed".
+
+    GH-36.
+    """
+    try:
+        result = await coro_factory()
+        # Adapters that return a dict with success=False are a graceful
+        # skip (missing creds, platform rejected the post) — not a
+        # crash. Distinguish in metrics.
+        if isinstance(result, dict):
+            outcome = "success" if result.get("success") else "failure"
+        else:
+            outcome = "failure"
+            result = {"success": False, "post_id": None, "error": "adapter returned non-dict"}
+        _bump_metric("social_adapter_posts_total", platform=platform, outcome=outcome)
+        return result
+    except NotImplementedError as e:
+        # Known-stub path (GH-40). Log INFO and keep going — the other
+        # platforms shouldn't pay for LinkedIn/Reddit/YouTube being off.
+        logger.info("[social_poster] %s adapter is a stub: %s", platform, e)
+        _bump_metric("social_adapter_posts_total", platform=platform, outcome="skipped")
+        return {"success": False, "post_id": None, "error": f"stub: {e}"}
+    except Exception as e:  # noqa: BLE001 — adapter boundary, never crash the loop
+        logger.exception("[social_poster] %s adapter crashed: %s", platform, e)
+        _bump_metric("social_adapter_errors_total", platform=platform)
+        _bump_metric("social_adapter_posts_total", platform=platform, outcome="error")
+        return {"success": False, "post_id": None, "error": str(e)}
+
+
+def _bump_metric(name: str, **labels: str) -> None:
+    """Fire-and-forget Prometheus counter increment. Never raises.
+
+    Uses ``prometheus_client`` registry directly so the metric is picked
+    up by ``metrics_exporter`` on the next ``/metrics`` scrape. Metrics
+    are strictly best-effort — if prometheus_client isn't available or
+    the counter definition fails, posting still proceeds.
+
+    Counters used:
+
+    * ``poindexter_social_adapter_posts_total{platform,outcome}`` —
+      one increment per adapter call. ``outcome`` is
+      ``success|failure|error|skipped``.
+    * ``poindexter_social_adapter_errors_total{platform}`` — bumped
+      only when an adapter raises an unexpected exception.
+    """
+    try:
+        from prometheus_client import Counter
+
+        # Map our two metric names to singleton Counters (lazy).
+        counter = _COUNTERS.get(name)
+        if counter is None:
+            if name == "social_adapter_posts_total":
+                counter = Counter(
+                    "poindexter_social_adapter_posts_total",
+                    "Social adapter posting attempts (GH-36)",
+                    ["platform", "outcome"],
+                )
+            elif name == "social_adapter_errors_total":
+                counter = Counter(
+                    "poindexter_social_adapter_errors_total",
+                    "Social adapter unexpected exceptions (GH-36)",
+                    ["platform"],
+                )
+            else:
+                return
+            _COUNTERS[name] = counter
+
+        if labels:
+            counter.labels(**labels).inc()
+        else:
+            counter.inc()
+    except Exception:
+        pass  # metrics are best-effort — never break posting
+
+
+# Counter singletons — prometheus_client refuses duplicate registration.
+_COUNTERS: dict[str, object] = {}
+
+
 async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
-    """Post to each enabled social platform adapter."""
-    results = {}
+    """Post to each enabled social platform adapter.
+
+    Order of operations (GH-36):
+
+    1. Pick the best text for the generic adapters (Twitter copy by
+       default — it's the shortest, so fits everywhere).
+    2. For each enabled platform, call the adapter through
+       :func:`_safe_call_adapter` — that wrapper guarantees a single
+       failing adapter never takes down the distribution job.
+    3. Stub adapters (LinkedIn/Reddit/YouTube) raise
+       ``NotImplementedError``; the wrapper logs INFO + "skipped"
+       metric and moves on.
+    """
+    results: dict[str, dict] = {}
 
     if not posts or not enabled:
         return results
@@ -329,33 +434,31 @@ async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
     url = generic_post.post_url
 
     if "bluesky" in enabled:
-        try:
-            from services.social_adapters.bluesky import post_to_bluesky
-            results["bluesky"] = await post_to_bluesky(text, url)
-        except Exception as e:
-            results["bluesky"] = {"success": False, "error": str(e)}
+        from services.social_adapters.bluesky import post_to_bluesky
+        results["bluesky"] = await _safe_call_adapter(
+            "bluesky", lambda: post_to_bluesky(text, url)
+        )
 
     if "mastodon" in enabled:
-        try:
-            from services.social_adapters.mastodon import post_to_mastodon
-            results["mastodon"] = await post_to_mastodon(text, url)
-        except Exception as e:
-            results["mastodon"] = {"success": False, "error": str(e)}
+        from services.social_adapters.mastodon import post_to_mastodon
+        results["mastodon"] = await _safe_call_adapter(
+            "mastodon", lambda: post_to_mastodon(text, url)
+        )
 
     if "linkedin" in enabled:
-        try:
-            from services.social_adapters.linkedin import post_to_linkedin
-            ln_text = linkedin_post.text if linkedin_post else text
-            results["linkedin"] = await post_to_linkedin(ln_text, url)
-        except Exception as e:
-            results["linkedin"] = {"success": False, "error": str(e)}
+        # Stub per GH-40 — kept so operators can still flip the flag on
+        # once they wire up OAuth; wrapper catches NotImplementedError.
+        from services.social_adapters.linkedin import post_to_linkedin
+        ln_text = linkedin_post.text if linkedin_post else text
+        results["linkedin"] = await _safe_call_adapter(
+            "linkedin", lambda: post_to_linkedin(ln_text, url)
+        )
 
     if "reddit" in enabled:
-        try:
-            from services.social_adapters.reddit import post_to_reddit
-            title = generic_post.text.split("\n")[0][:300] if generic_post else ""
-            results["reddit"] = await post_to_reddit(title, url)
-        except Exception as e:
-            results["reddit"] = {"success": False, "error": str(e)}
+        from services.social_adapters.reddit import post_to_reddit
+        title = generic_post.text.split("\n")[0][:300] if generic_post else ""
+        results["reddit"] = await _safe_call_adapter(
+            "reddit", lambda: post_to_reddit(title, url)
+        )
 
     return results
