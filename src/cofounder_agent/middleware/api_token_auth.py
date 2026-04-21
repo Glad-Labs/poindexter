@@ -2,8 +2,9 @@
 Simple Bearer token authentication for solo operator.
 
 Replaces the JWT + GitHub OAuth system. All API requests must include
-Authorization: Bearer <API_TOKEN> header where API_TOKEN matches the
-API_TOKEN environment variable.
+``Authorization: Bearer <token>`` where the token matches
+``app_settings.api_token`` (read via ``site_config`` on every request,
+so operators can rotate without a worker restart).
 
 OpenClaw skills and Grafana alerts use this token.
 """
@@ -36,9 +37,9 @@ if _dev_mode and _environment == "production":
 async def verify_api_token(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str:
-    """Verify the Bearer token matches API_TOKEN env var.
+    """Verify the Bearer token against ``app_settings.api_token``.
 
-    Also allows the existing dev-token bypass when DEVELOPMENT_MODE=true.
+    Also allows the existing dev-token bypass when ``DEVELOPMENT_MODE=true``.
 
     Returns:
         The verified token string.
