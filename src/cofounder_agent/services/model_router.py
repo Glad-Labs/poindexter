@@ -239,12 +239,20 @@ class ModelRouter:
         )
 
     async def seed_spend_from_db(self, pool) -> None:
-        """Seed the in-memory spend counter from the cost_logs table."""
+        """Seed the in-memory spend counter from the cost_logs table.
+
+        The spend cap is meant to cover paid CLOUD API spend, not local
+        electricity tracking (Ollama calls are billed to this table as
+        provider='ollama' with the cost field set to the electricity cost
+        derived from GPU power × duration). Filter electricity-style
+        entries out so the guard doesn't trip on ~$13 of home power draw.
+        """
         try:
             row = await pool.fetchrow(
                 "SELECT COALESCE(SUM(cost_usd), 0) AS total "
                 "FROM cost_logs "
-                "WHERE created_at >= date_trunc('month', NOW())"
+                "WHERE created_at >= date_trunc('month', NOW()) "
+                "  AND provider NOT IN ('electricity', 'ollama')"
             )
             if row:
                 self._session_cloud_spend = float(row["total"])
