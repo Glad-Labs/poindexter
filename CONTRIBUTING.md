@@ -14,11 +14,32 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 
 1. Create a branch from `main`: `git checkout -b feat/your-feature`
 2. Install the pre-commit hooks once per clone: `pip install pre-commit && pre-commit install` — this wires up `gitleaks` (secret scan) and a few formatting checks so commits are blocked before anything sensitive lands in history.
-3. Make your changes
-4. Run tests and ensure they pass: `python -m pytest tests/unit/ -q`
-5. Run linting: `npm run lint`
-6. Commit with a clear message describing what and why
-7. Open a pull request against `main`
+3. Turn on commit signing: `bash scripts/setup-git-signing.sh` — see [Signed commits](#signed-commits) below.
+4. Make your changes
+5. Run tests and ensure they pass: `python -m pytest tests/unit/ -q`
+6. Run linting: `npm run lint`
+7. Commit with a clear message describing what and why
+8. Open a pull request against `main`
+
+## Signed commits
+
+Commits on `main` and all release tags are expected to be GPG-signed so they
+show a **Verified** badge on Gitea / GitHub. Signed commits prove the work
+actually came from the author's key, not a compromised account.
+
+Quick setup (full walkthrough in [`docs/operations/commit-signing.md`](docs/operations/commit-signing.md)):
+
+1. Generate a GPG key if you don't have one: `gpg --full-generate-key`
+2. Tell git which key to use: `git config --global user.signingkey <KEYID>`
+3. From the repo root: `bash scripts/setup-git-signing.sh`
+   — sets `commit.gpgsign=true` and `tag.gpgsign=true` at the repo scope,
+   then verifies signing works by creating a throwaway signed commit.
+   **Fails loud** if anything is misconfigured, so you'll know immediately.
+4. Upload the public key (`gpg --armor --export <KEYID>`) to your Gitea and
+   GitHub account settings so the Verified badge actually renders.
+
+The pre-commit hook warns (but does not block) when a commit would be
+unsigned — treat the warning as a signal to run the setup script.
 
 ## CI security gates
 
