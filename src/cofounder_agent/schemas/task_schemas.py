@@ -333,6 +333,7 @@ class TaskResponse(BaseModel):
     completed_at: str | None = None
     metadata: dict[str, Any] = {}
     task_metadata: dict[str, Any] = {}
+    tags: list[str] | None = Field(default=None)
     result: dict[str, Any] | None = None
     error_message: str | None = None
     error_details: dict[str, Any] | None = None

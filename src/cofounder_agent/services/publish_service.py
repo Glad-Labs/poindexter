@@ -366,6 +366,13 @@ async def publish_post_from_task(
         or ""
     )
     seo_description = merged.get("seo_description", "") or task.get("seo_description", "")
+    # gitea#268: strip any stray HTML (notably <img> tags) from the SEO
+    # description before it ships as the post's excerpt + meta description.
+    # Upstream writers occasionally leak markup that the /posts cards then
+    # render as literal text.
+    if seo_description:
+        seo_description = re.sub(r"<[^>]+>", "", seo_description).strip()
+        seo_description = re.sub(r"\s+", " ", seo_description)
     seo_keywords = merged.get("seo_keywords", [])
     featured_image_url = merged.get("featured_image_url") or task.get("featured_image_url")
     metadata = merged.get("metadata", {})
@@ -424,6 +431,72 @@ async def publish_post_from_task(
     category_id = await select_category_for_topic(post_title, db_service)
 
     # ---------------------------------------------------------------
+    # 4c. Resolve tags (gitea#267) — derive post.tag_ids from the task's
+    # submitted tags + seo_keywords, upsert into the `tags` table so new
+    # terms auto-create, and pass to content_db.create_post which will
+    # populate post_tags junction. Empty tags → no-op (downstream code
+    # tolerates missing tag_ids).
+    # ---------------------------------------------------------------
+    candidate_tag_strings: list[str] = []
+    # Task-level tags (now threaded via ModelConverter.to_task_response
+    # since gitea#270 fix — pulls from metadata JSONB as fallback).
+    task_tags = task.get("tags") or merged.get("tags") or []
+    if isinstance(task_tags, str):
+        task_tags = [t.strip() for t in task_tags.split(",") if t.strip()]
+    candidate_tag_strings.extend(task_tags or [])
+    # SEO keywords as a fallback source (already a list here; the
+    # str-join happens later when writing posts.seo_keywords).
+    if isinstance(seo_keywords, list):
+        candidate_tag_strings.extend(seo_keywords)
+    elif isinstance(seo_keywords, str) and seo_keywords:
+        candidate_tag_strings.extend(
+            t.strip() for t in seo_keywords.split(",") if t.strip()
+        )
+
+    tag_ids: list[str] = []
+    if candidate_tag_strings:
+        # Normalize to slug form: lowercase, hyphenated, alnum-only.
+        seen_slugs: set[str] = set()
+        clean_pairs: list[tuple[str, str]] = []  # (slug, display_name)
+        for raw in candidate_tag_strings:
+            if not raw or not isinstance(raw, str):
+                continue
+            name = raw.strip()
+            if not name:
+                continue
+            slug_form = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+            if not slug_form or slug_form in seen_slugs:
+                continue
+            seen_slugs.add(slug_form)
+            clean_pairs.append((slug_form, name))
+        if clean_pairs:
+            try:
+                async with pool.acquire() as conn:
+                    for slug_form, display_name in clean_pairs:
+                        row = await conn.fetchrow(
+                            """
+                            INSERT INTO tags (name, slug)
+                            VALUES ($1, $2)
+                            ON CONFLICT (slug) DO UPDATE SET updated_at = NOW()
+                            RETURNING id
+                            """,
+                            display_name, slug_form,
+                        )
+                        if row:
+                            tag_ids.append(str(row["id"]))
+                logger.info(
+                    "[publish_service] Resolved %d tag_ids for task %s: %s",
+                    len(tag_ids), task_id, [p[0] for p in clean_pairs],
+                )
+            except Exception as tag_err:
+                # Tag resolution must never block publishing.
+                logger.warning(
+                    "[publish_service] Tag resolution failed for task %s: %s",
+                    task_id, tag_err,
+                )
+                tag_ids = []
+
+    # ---------------------------------------------------------------
     # 4b. Determine scheduled publish time (content spacing)
     # ---------------------------------------------------------------
     # Pacing is reserved for a future scheduling feature. When honor_pacing
@@ -455,6 +528,7 @@ async def publish_post_from_task(
         "seo_description": seo_description,
         "seo_keywords": ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or ""),
         "metadata": metadata,
+        "tag_ids": tag_ids or None,
     }
     if scheduled_at:
         post_data["published_at"] = scheduled_at
