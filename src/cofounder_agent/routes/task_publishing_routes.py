@@ -326,6 +326,23 @@ async def approve_task(
             logger.error("Failed to update task status to %s: %s", new_status, e, exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to update task status") from e
 
+        # Record the decision on pipeline_reviews so `content_tasks` view's
+        # approval_status / approved_by columns resolve non-NULL. The view's
+        # scalar subquery reads the latest pipeline_reviews row per task.
+        try:
+            from services.pipeline_db import PipelineDB
+            await PipelineDB(db_service.pool).add_review(
+                task_id=task_id,
+                decision=new_status,
+                reviewer=reviewer_id or "operator",
+                feedback=human_feedback,
+            )
+        except Exception as review_err:
+            logger.warning(
+                "[approve_task] pipeline_reviews write failed for %s: %s",
+                task_id, review_err,
+            )
+
         # NOTE: staging_mode is still present in app_settings but no longer
         # gates publish — approval now goes live immediately. The setting is
         # reserved for a future scheduling / release-time-optimization feature
@@ -363,6 +380,25 @@ async def approve_task(
                     merged_result["post_id"] = pub_result.post_id
                     merged_result["post_slug"] = pub_result.post_slug
                     merged_result["published_url"] = pub_result.published_url
+                    # Record the distribution so `content_tasks` view's
+                    # post_id / post_slug / published_at columns resolve
+                    # non-NULL. The view pulls from pipeline_distributions
+                    # where target = 'gladlabs.io'.
+                    try:
+                        from services.pipeline_db import PipelineDB
+                        await PipelineDB(db_service.pool).add_distribution(
+                            task_id=task_id,
+                            target="gladlabs.io",
+                            post_id=pub_result.post_id,
+                            post_slug=pub_result.post_slug,
+                            external_url=pub_result.published_url,
+                            status="published",
+                        )
+                    except Exception as dist_err:
+                        logger.warning(
+                            "[approve_task] pipeline_distributions write failed for %s: %s",
+                            task_id, dist_err,
+                        )
                 else:
                     logger.warning(
                         "[approve_task] Publish failed: %s", pub_result.error
@@ -496,6 +532,24 @@ async def publish_task(
             logger.error("[publish_task] Post creation failed: %s", pub_result.error)
             # Task stays in approved state — don't fail the request entirely
             # but warn about the issue
+        else:
+            # Record the distribution so `content_tasks` view resolves
+            # post_id / post_slug / published_at non-NULL.
+            try:
+                from services.pipeline_db import PipelineDB
+                await PipelineDB(db_service.pool).add_distribution(
+                    task_id=task_id,
+                    target="gladlabs.io",
+                    post_id=pub_result.post_id,
+                    post_slug=pub_result.post_slug,
+                    external_url=pub_result.published_url,
+                    status="published",
+                )
+            except Exception as dist_err:
+                logger.warning(
+                    "[publish_task] pipeline_distributions write failed for %s: %s",
+                    task_id, dist_err,
+                )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)

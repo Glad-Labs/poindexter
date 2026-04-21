@@ -618,6 +618,17 @@ class TaskExecutor:
                         topic[:40], quality_score, min_curation_score,
                     )
                     await self.database_service.update_task(task_id, {"status": "rejected"})
+                    # Record the rejection on pipeline_reviews so the
+                    # `content_tasks` view's approval_status column stops
+                    # resolving NULL for auto-rejected rows.
+                    with suppress(Exception):
+                        from services.pipeline_db import PipelineDB
+                        await PipelineDB(self.database_service.pool).add_review(
+                            task_id=task_id,
+                            decision="rejected",
+                            reviewer="auto_curator",
+                            feedback=f"Quality score {quality_score:.1f} below threshold {min_curation_score:.1f}",
+                        )
                     # Webhook delivery is best-effort; don't mask the rejection
                     # with an emitter failure.
                     with suppress(Exception):
@@ -1343,6 +1354,26 @@ class TaskExecutor:
                 "[AUTO_PUBLISH] Task %s published as post %s (score: %s, slug: %s)",
                 task_id, result.post_id, quality_score, result.post_slug,
             )
+            # Record approval + distribution so `content_tasks` view
+            # resolves approval_status / post_id / post_slug non-NULL for
+            # auto-published rows (same contract as the operator path).
+            with suppress(Exception):
+                from services.pipeline_db import PipelineDB
+                pdb = PipelineDB(self.database_service.pool)
+                await pdb.add_review(
+                    task_id=task_id,
+                    decision="approved",
+                    reviewer="auto_publish",
+                    feedback=f"Auto-approved at quality score {quality_score:.1f}",
+                )
+                await pdb.add_distribution(
+                    task_id=task_id,
+                    target="gladlabs.io",
+                    post_id=result.post_id,
+                    post_slug=result.post_slug,
+                    external_url=result.published_url,
+                    status="published",
+                )
         else:
             logger.error(
                 "[AUTO_PUBLISH] Task %s auto-publish failed: %s", task_id, result.error
