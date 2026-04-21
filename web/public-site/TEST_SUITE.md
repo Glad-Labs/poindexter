@@ -56,7 +56,6 @@ Located: `web/public-site/components/__tests__/`
 
 | File                            | Tests | Purpose                                     |
 | ------------------------------- | ----- | ------------------------------------------- |
-| **PostCard.test.js**            | 14    | Blog post card component, post preview      |
 | **Pagination.test.js**          | 15    | Pagination controls, navigation links       |
 | **ErrorBoundary.test.js**       | 11    | Error boundary, fallback UI                 |
 | **CookieConsentBanner.test.js** | 17    | Cookie consent, GDPR compliance             |
@@ -176,7 +175,7 @@ Located: `web/public-site/__tests__/`
 
 ### User Interface
 
-**Files:** All component tests (PostCard, TopNav, Footer, etc.)
+**Files:** All component tests (TopNav, Footer, etc.)
 
 **Coverage:**
 
