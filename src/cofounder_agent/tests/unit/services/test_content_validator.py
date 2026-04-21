@@ -672,3 +672,171 @@ class TestFillerPhrases:
         result = validate_content("Title", content, "topic")
         filler = [i for i in result.issues if i.category == "filler_phrase"]
         assert filler == []
+
+
+# ============================================================================
+# GH-91: Warning → critical promotion + Prometheus counter
+# ============================================================================
+
+
+class TestWarningThresholdPromotion:
+    """When a single warning category exceeds the reject threshold, every
+    warning in that category should be promoted to critical. This is the
+    fix for the bug where a post with 9 `unlinked_citation` warnings
+    still passed QA at Q80."""
+
+    def _many_filler_phrases(self) -> str:
+        # Construct a body with multiple `filler_phrase` warnings.
+        # `filler_phrase` is a pure warning category with no separate
+        # severity promotion path, so it isolates the count-based
+        # promotion. Ends with a period so the truncation detector
+        # stays quiet.
+        lines = [
+            "Many organizations have found this approach useful.",
+            "The future of AI is here and it runs locally.",
+            "Unlock the full potential of your GPU with these techniques.",
+            "In today's fast-paced digital world, things change quickly.",
+            "Many companies have found success with self-hosting.",
+        ]
+        # Pad with neutral prose so the truncation detector stays happy
+        # and the post is long enough for other validators to not care.
+        return " ".join(lines) + " End of body text."
+
+    def test_many_warnings_promotes_to_critical(self):
+        content = self._many_filler_phrases()
+        result = validate_content("Title", content, "topic")
+        filler = [i for i in result.issues if i.category == "filler_phrase"]
+        assert len(filler) >= 4, (
+            f"expected many filler_phrase matches, got {len(filler)}"
+        )
+        # Count (>= 4) exceeds default threshold of 3, so every
+        # filler_phrase warning should be promoted to critical.
+        assert all(i.severity == "critical" for i in filler), (
+            f"expected all filler warnings promoted to critical, "
+            f"got severities {[i.severity for i in filler]}"
+        )
+        assert result.passed is False, (
+            "promoted warnings should block the post"
+        )
+
+    def test_two_warnings_stay_as_warnings(self):
+        # Two filler_phrase matches — BELOW the default threshold of 3,
+        # so they should remain warnings and the post should pass.
+        content = (
+            "Many organizations have found this helpful. "
+            "The future of local inference is here today. "
+            "Regular prose continues without any filler afterwards."
+        )
+        result = validate_content("Title", content, "topic")
+        filler = [i for i in result.issues if i.category == "filler_phrase"]
+        assert len(filler) == 2, (
+            f"expected exactly 2 filler matches, got {len(filler)}"
+        )
+        # No promotion — count 2 <= threshold 3
+        assert all(i.severity == "warning" for i in filler)
+        assert result.passed is True
+
+
+class TestNamedSourceNoUrlPromotion:
+    """Unlinked citations that name a source type (Medium / article /
+    blog post / documentation / paper / study) without a URL should be
+    promoted to critical individually — this is the hallucinated
+    attribution pattern from issue #91's log example."""
+
+    def test_medium_article_without_url_is_critical(self):
+        # Exact log example from GH-91: unsourced "Medium article" citation
+        content = (
+            "This technique works well in practice, as highlighted in this Medium article."
+        )
+        result = validate_content("Title", content, "topic")
+        unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
+        assert unlinked, "expected an unlinked_citation match"
+        assert all(i.severity == "critical" for i in unlinked)
+        assert result.passed is False
+
+    def test_article_on_redis_memory_usage_without_url_is_critical(self):
+        content = "As noted in this article on Redis memory usage, caching matters."
+        result = validate_content("Title", content, "topic")
+        unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
+        assert unlinked
+        assert all(i.severity == "critical" for i in unlinked)
+
+    def test_medium_article_with_url_stays_warning(self):
+        # The detector still flags the prose, but because a URL sits within
+        # 100 chars the named-source promoter does not fire. Severity stays
+        # at warning (post still passes since it's only one warning).
+        content = (
+            "This technique works, as highlighted in this Medium article "
+            "https://medium.com/@someone/example-post-12345 which explains the details."
+        )
+        result = validate_content("Title", content, "topic")
+        unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
+        if unlinked:
+            assert all(i.severity == "warning" for i in unlinked)
+
+    def test_generic_unlinked_citation_stays_warning(self):
+        # An unlinked_citation that does NOT name a source type should
+        # remain a warning (unless the count threshold fires, which it
+        # doesn't here since we only have one match).
+        content = "The Shadow Price of Speed: What Tech Teams Get Wrong Every Time"
+        result = validate_content("Title", content, "topic")
+        unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
+        if unlinked:
+            assert all(i.severity == "warning" for i in unlinked)
+
+
+class TestPrometheusCounterEmission:
+    """The Prometheus counter exposed as
+    ``content_validator_warnings_total{rule=...}`` should increment once
+    per warning, labeled by the validator rule category. We test by
+    reading the in-process counter's value directly.
+    """
+
+    def _read_counter(self, rule: str) -> float:
+        """Read the current value of the warnings counter for ``rule``."""
+        from services.content_validator import CONTENT_VALIDATOR_WARNINGS_TOTAL
+
+        # prometheus_client Counter stores per-label data on the internal
+        # metric. We read the value via the public `_metrics` dict. If
+        # the counter is the no-op shim (no prometheus_client installed),
+        # skip the test — there's nothing to observe.
+        labeled = CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(rule=rule)
+        # Counter._value is an exposed synchronization primitive; .get()
+        # returns the current count.
+        val = getattr(labeled, "_value", None)
+        if val is None or not hasattr(val, "get"):
+            pytest.skip("prometheus_client not installed in this environment")
+        return float(val.get())
+
+    def test_counter_increments_per_warning(self):
+        rule = "filler_phrase"
+        before = self._read_counter(rule)
+        # Three filler phrases → three counter increments
+        content = (
+            "Many organizations have found that self-hosting is cost-effective.\n"
+            "The future of AI is here and it's running on local hardware.\n"
+            "Unlock the full potential of your local GPU with these techniques.\n"
+        )
+        validate_content("Title", content, "topic")
+        after = self._read_counter(rule)
+        assert after - before >= 3, (
+            f"expected counter to advance by at least 3, went from {before} to {after}"
+        )
+
+    def test_counter_label_matches_rule_category(self):
+        """Each rule increments its own labeled series, not a shared one."""
+        rule_filler = "filler_phrase"
+        rule_unlinked = "unlinked_citation"
+        before_filler = self._read_counter(rule_filler)
+        before_unlinked = self._read_counter(rule_unlinked)
+        # Only a filler phrase in this input; unlinked_citation must NOT
+        # advance. (The detector doesn't fire on clean prose.)
+        validate_content(
+            "Title",
+            "Many organizations have found this approach works.",
+            "topic",
+        )
+        after_filler = self._read_counter(rule_filler)
+        after_unlinked = self._read_counter(rule_unlinked)
+        assert after_filler > before_filler
+        assert after_unlinked == before_unlinked
