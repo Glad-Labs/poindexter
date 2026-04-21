@@ -165,6 +165,7 @@ backfill_podcasts = "cofounder_agent.services.jobs.backfill_podcasts:BackfillPod
 detect_anomalies = "cofounder_agent.services.jobs.detect_anomalies:DetectAnomaliesJob"
 check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
 regenerate_stock_images = "cofounder_agent.services.jobs.regenerate_stock_images:RegenerateStockImagesJob"
+collapse_old_embeddings = "cofounder_agent.services.jobs.collapse_old_embeddings:CollapseOldEmbeddingsJob"
 
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
