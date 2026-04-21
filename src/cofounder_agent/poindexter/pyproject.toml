@@ -1,0 +1,121 @@
+# Standalone PyPI package manifest for the `poindexter` CLI.
+#
+# This file is ONLY consumed when building the public PyPI distribution
+# (see .github/workflows/release-poindexter-to-pypi.yml). The main
+# repo-level build is still driven by ../../pyproject.toml (Poetry) for
+# the backend image; this pyproject carves out just the public CLI +
+# memory client namespace for `pip install poindexter`.
+#
+# Build:
+#   cd src/cofounder_agent/poindexter
+#   python -m build
+#
+# Install from the resulting wheel:
+#   pip install dist/poindexter-*.whl
+#   poindexter --help
+#
+# Version is kept in lockstep with the main repo release-please
+# manifest via release-please-config.json (`extra-files` entry).
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poindexter"
+version = "0.9.0"
+description = "Poindexter — unified CLI for the public AI content pipeline (memory, tasks, posts, settings, sprint, vercel, costs). Built by Glad Labs LLC."
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = { text = "AGPL-3.0-or-later" }
+authors = [
+    { name = "Matthew M. Gladding", email = "mattg@gladlabs.io" },
+]
+maintainers = [
+    { name = "Glad Labs LLC", email = "mattg@gladlabs.io" },
+]
+keywords = [
+    "poindexter",
+    "ai",
+    "content",
+    "pipeline",
+    "cms",
+    "cli",
+    "pgvector",
+    "memory",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
+
+# Runtime deps — kept small. Matches the imports in poindexter/cli/
+# and poindexter/memory/ (see `grep -rh '^\(import\|from\) ' poindexter/`).
+# No FastAPI, no ML libs — the public CLI is a thin client over the
+# same async/Postgres/HTTP primitives the worker uses.
+dependencies = [
+    "click>=8.1,<9",
+    "asyncpg>=0.29,<1",
+    "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+# Dev / build-time extras. Tests live in the umbrella repo under
+# src/cofounder_agent/tests/; this extra just pulls pytest so a fork
+# can run the thin CLI smoke tests locally.
+dev = [
+    "pytest>=7",
+    "pytest-asyncio>=0.21",
+    "build>=1.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/Glad-Labs/poindexter"
+Documentation = "https://github.com/Glad-Labs/poindexter#readme"
+Repository = "https://github.com/Glad-Labs/poindexter"
+Issues = "https://github.com/Glad-Labs/poindexter/issues"
+Changelog = "https://github.com/Glad-Labs/poindexter/blob/main/CHANGELOG.md"
+
+[project.scripts]
+# Plain `poindexter <command>` entry point. Mirrors the `[tool.poetry.scripts]`
+# entry in ../pyproject.toml so the command behaves identically whether the
+# user installed from PyPI or via `poetry install` in the umbrella repo.
+poindexter = "poindexter.cli.app:main"
+
+# ---------------------------------------------------------------------------
+# setuptools configuration
+# ---------------------------------------------------------------------------
+# Only the public `poindexter` namespace is shipped. `cofounder_agent.*`,
+# `brain.*`, etc. stay in the umbrella repo — they are *not* part of the
+# public release. This keeps the PyPI wheel small and reviewable.
+#
+# On-disk, the package is src/cofounder_agent/poindexter/. When building
+# from this directory (`cd src/cofounder_agent/poindexter && python -m
+# build`), the current directory IS the package root, so we map the
+# `poindexter` import name at the package-dir level and enumerate
+# sub-packages explicitly. This is clearer than an auto-discover and
+# guarantees we never accidentally pull in a sibling package.
+
+[tool.setuptools]
+packages = ["poindexter", "poindexter.cli", "poindexter.memory"]
+
+[tool.setuptools.package-dir]
+poindexter = "."
+"poindexter.cli" = "cli"
+"poindexter.memory" = "memory"
+
+[tool.setuptools.package-data]
+poindexter = ["py.typed", "README.md"]

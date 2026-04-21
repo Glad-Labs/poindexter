@@ -23,6 +23,11 @@
           "jsonpath": "$.tool.poetry.version"
         },
         {
+          "type": "toml",
+          "path": "src/cofounder_agent/poindexter/pyproject.toml",
+          "jsonpath": "$.project.version"
+        },
+        {
           "type": "json",
           "path": "web/public-site/package.json",
           "jsonpath": "$.version"
