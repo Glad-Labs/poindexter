@@ -86,8 +86,16 @@ class FinalizeTaskStage:
         # GH-86: derive an excerpt from the finalized content. Frontend was
         # falling back to content[:N] which rendered the opening "What
         # You'll Learn" bullet list as the social-card snippet.
+        #
+        # The title argument lets generate_excerpt reject excerpts that are
+        # just the title repeated — a common degenerate case when the
+        # opening paragraph starts with "# <title>". Pass seo_title (what
+        # the page actually shows) with topic as the fallback seed.
         from services.excerpt_generator import generate_excerpt
-        excerpt_text = generate_excerpt(content_text)
+        excerpt_text = generate_excerpt(
+            title=seo_title or topic,
+            content=content_text,
+        )
 
         # GH-86: format the multi-model QA reviewers' feedback into human-readable
         # text so approvers can see *why* a post scored Q85 vs Q88. Looks at both
