@@ -51,6 +51,10 @@ _JANITOR_TARGETS: list[tuple[str, str, int]] = [
     ("webhook_events", "created_at", 90),
     ("task_status_history", "created_at", 180),
     ("page_views", "created_at", 180),
+    # Brain decision trails — long retention since these feed the
+    # "what did Claude/the agent decide before" semantic search path.
+    ("brain_decisions", "created_at", 365),
+    ("decision_log", "created_at", 365),
 ]
 
 
