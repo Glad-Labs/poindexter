@@ -299,12 +299,18 @@ services:
       # shipper (Loki/Promtail later) can read from there.
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
+      # brain/ is a sibling package imported by config/__init__.py +
+      # services/* for the resolve_database_url() bootstrap-toml fallback.
+      # Mounted at /opt/poindexter/brain below; add /opt/poindexter to
+      # sys.path so `from brain.bootstrap import ...` resolves.
+      PYTHONPATH: "/app:/opt/poindexter"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
       # Dev mount: edit Python files on host, restart worker to pick up changes.
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
       - ./src/cofounder_agent:/app:ro
+      - ./brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
       # Shared with the prometheus container — RenderPrometheusRulesJob
       # writes the DB-sourced rule YAML here; prometheus reads it.
