@@ -2,7 +2,7 @@
 name = "poindexter"
 version = "0.1.0"
 description = "Poindexter — production-ready AI content pipeline with autonomous agents, multi-provider LLM routing, and full-stack web applications. Built by Glad Labs LLC."
-authors = ["Matthew M. Gladding <mattg@gladlabs.io>"]
+authors = ["Matthew M. Gladding <hello@gladlabs.io>"]
 readme = "README.md"
 packages = []
 package-mode = false
@@ -53,7 +53,7 @@ name = "poindexter"
 version = "0.1.0"
 description = "Poindexter — Python agents and content pipeline. Built by Glad Labs LLC."
 authors = [
-  { name="Matthew M. Gladding", email="mattg@gladlabs.io" },
+  { name="Matthew M. Gladding", email="hello@gladlabs.io" },
 ]
 readme = "README.md"
 requires-python = ">=3.10"

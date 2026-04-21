@@ -29,10 +29,10 @@ readme = "README.md"
 requires-python = ">=3.10,<3.14"
 license = { text = "AGPL-3.0-or-later" }
 authors = [
-    { name = "Matthew M. Gladding", email = "mattg@gladlabs.io" },
+    { name = "Matthew M. Gladding", email = "hello@gladlabs.io" },
 ]
 maintainers = [
-    { name = "Glad Labs LLC", email = "mattg@gladlabs.io" },
+    { name = "Glad Labs LLC", email = "hello@gladlabs.io" },
 ]
 keywords = [
     "poindexter",

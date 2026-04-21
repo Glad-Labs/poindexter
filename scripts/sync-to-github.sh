@@ -62,6 +62,12 @@ git rm --cached --quiet infrastructure/grafana/dashboards/infrastructure-data.js
 git rm --cached --quiet infrastructure/grafana/dashboards/link-registry.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2>/dev/null || true
 
+# === Local gitleaks baseline — operator-specific, regenerated per clone ===
+# Contains historical commit hashes + file paths where gitleaks flagged
+# known-false-positive secrets. Reveals repo history structure + author
+# emails; every operator should generate their own baseline anyway.
+git rm --cached --quiet .gitleaks-baseline.json 2>/dev/null || true
+
 # Commit the removal (temporary — never pushed to Gitea)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
 
