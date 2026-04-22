@@ -23,6 +23,14 @@ paths = [
   '''(?i)^brain/seed_app_settings\.json$''',
   # Grafana-provisioned dashboard JSON is public config, not secrets.
   '''(?i)^infrastructure/grafana/dashboards/.*\.json$''',
+  # Test fixtures intentionally embed secret-shaped strings to exercise the
+  # scrubbers, provider-key validators, and secret-storage helpers. The
+  # private baseline suppresses these per-finding; adding the path here lets
+  # the public repo's gitleaks pass without shipping the baseline externally.
+  '''(?i)^src/cofounder_agent/tests/.*\.py$''',
+  # Documentation examples: curl snippets, Authorization header demos,
+  # placeholder bearer tokens like "YOUR_API_TOKEN" / "$TOKEN" / "dev-token".
+  '''(?i)^docs/.*\.md$''',
 ]
 
 # Specific examples gitleaks mis-flags. Keep this list tight — every entry
