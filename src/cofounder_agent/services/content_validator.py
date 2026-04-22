@@ -169,11 +169,19 @@ UNLINKED_CITATION_PATTERNS = [
     # "introduced in <Paper Title>" / "proposed in <Title>" — catches ALL-CAPS
     # acronyms (I-DLM), acronym-colon-title (I-DLM: Introspective...), and
     # plain title-case paper names.
-    r"(?:introduced|proposed|described|presented|outlined|documented|published)\s+in\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?::\s+)?[A-Za-z]+(?:\s+[A-Za-z]+){1,10})",
+    r"(?i:introduced|proposed|described|presented|outlined|documented|published)\s+in\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?::\s+)?[A-Za-z]+(?:\s+[A-Za-z]+){1,10})",
     # "described in 'Paper Title'" — quoted paper references (real papers are linked)
-    r"(?:described|referenced|cited|mentioned)\s+in\s+['\"\u2018\u201c][A-Z][^'\"\u2019\u201d]{15,100}['\"\u2019\u201d]",
-    # "according to Title Case Source" (not followed by a link)
-    r"(?:according\s+to|as\s+(?:highlighted|noted|reported|described|shown)\s+(?:in|by))\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Za-z]+){1,6})",
+    r"(?i:described|referenced|cited|mentioned)\s+in\s+['\"\u2018\u201c][A-Z][^'\"\u2019\u201d]{15,100}['\"\u2019\u201d]",
+    # "according to Title Case Source" (not followed by a link) — academic /
+    # proper-noun citations where the source is Title Case.
+    r"(?i:according\s+to|as\s+(?:highlighted|noted|reported|described|shown)\s+(?:in|by))\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Za-z]+){1,6})",
+    # "in this/a/our [Source] article/post/study/paper/blog/guide/report" —
+    # unsourced journalism-style attributions. Case-insensitive because the
+    # determiner ("this", "a") is always lowercase and the source-type noun
+    # ("article", "post") is the part that anchors it as a real citation
+    # rather than general prose. Source-type noun list is narrow on purpose
+    # so "this article" / "a post" etc. don't catch idiomatic phrases.
+    r"(?i:(?:according\s+to|as\s+(?:highlighted|noted|reported|described|shown)\s+(?:in|by)|in|on)\s+(?:this|a|an|the|our|my)\s+(?:[A-Za-z]+\s+){0,2}(?:article|post|paper|study|blog|documentation|guide|report|research|analysis|piece|series))",
     # Bare paper-style titles with colon: "Word Word: Subtitle With Title Case"
     r"(?<!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Z][a-z]+){1,}:\s+[A-Z][a-z]+(?:\s+[A-Za-z]+){2,})(?!\])",
     # "et al." references — almost certainly fabricated
@@ -369,15 +377,23 @@ def _check_patterns(
     severity: str,
     category: str,
     description_template: str,
+    flags: int = re.IGNORECASE,
 ) -> list[ValidationIssue]:
-    """Run regex patterns against text and return issues."""
+    """Run regex patterns against text and return issues.
+
+    ``flags`` defaults to ``re.IGNORECASE`` for backwards compatibility.
+    Pattern lists that rely on case-sensitive ``[A-Z]`` title matching
+    (e.g. UNLINKED_CITATION_PATTERNS) should pass ``flags=0`` — otherwise
+    ``[A-Z]`` collapses to ``[A-Za-z]`` under IGNORECASE and the pattern
+    matches any lowercase text, producing massive false positives.
+    """
     issues = []
     clean_text = _strip_html(text)
     lines = clean_text.split("\n")
 
     for pattern in patterns:
         for i, line in enumerate(lines, 1):
-            for match in re.finditer(pattern, line, re.IGNORECASE):
+            for match in re.finditer(pattern, line, flags):
                 matched = match.group(0)[:100]
                 issues.append(ValidationIssue(
                     severity=severity,
@@ -791,10 +807,15 @@ def validate_content(
         "Hallucinated internal link: '{matched}'"
     ))
 
-    # 5b. Check for unlinked citations (hallucinated paper/study references)
+    # 5b. Check for unlinked citations (hallucinated paper/study references).
+    # ``flags=0`` — these patterns rely on ``[A-Z]`` title-case discrimination
+    # which collapses to ``[A-Za-z]`` under IGNORECASE (default), producing a
+    # 100% false-positive rate on normal lowercase prose. Inline ``(?i:...)``
+    # groups inside each pattern handle the keyword case-insensitivity.
     issues.extend(_check_patterns(
         full_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
-        "Unlinked citation — possible hallucinated reference: '{matched}'"
+        "Unlinked citation — possible hallucinated reference: '{matched}'",
+        flags=0,
     ))
 
     # 5c. Hallucinated library/API reference detection (GH-83 part b).
