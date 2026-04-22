@@ -29,9 +29,9 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -165,8 +165,13 @@ _DEFAULT_ACRONYM_REPLACEMENTS = {
 }
 
 
-def _get_tts_replacements() -> list:
-    """Load TTS pronunciation replacements, merging DB overrides with defaults."""
+def _get_tts_replacements(site_config: Any) -> list:
+    """Load TTS pronunciation replacements, merging DB overrides with defaults.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Required
+            after the module-level singleton import was removed.
+    """
     import json as _json
 
     # Simple replacements: DB key tts_pronunciations (JSON object: {"written": "spoken"})
@@ -186,8 +191,12 @@ def _get_tts_replacements() -> list:
     return simple
 
 
-def _get_acronym_regex() -> list:
-    """Load acronym replacements from DB, compile to regex list."""
+def _get_acronym_regex(site_config: Any) -> list:
+    """Load acronym replacements from DB, compile to regex list.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+    """
     import json as _json
 
     db_acronyms = site_config.get("tts_acronym_replacements", "")
@@ -202,17 +211,23 @@ def _get_acronym_regex() -> list:
     return [(re.compile(rf"\b{re.escape(k)}\b"), v) for k, v in acronyms.items()]
 
 
-def _normalize_for_speech(text: str) -> str:
-    """Convert written English conventions to natural spoken form."""
+def _normalize_for_speech(text: str, site_config: Any) -> str:
+    """Convert written English conventions to natural spoken form.
+
+    Args:
+        text: Input string to normalize.
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Required
+            for DB-configurable pronunciation + acronym overrides.
+    """
     # Simple replacements (DB-configurable via tts_pronunciations)
-    for written, spoken in _get_tts_replacements():
+    for written, spoken in _get_tts_replacements(site_config):
         # Case-insensitive replace for pronunciation fixes
         text = re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
     # Structural regex patterns (static)
     for pattern, replacement in _SPOKEN_REGEX_STATIC:
         text = pattern.sub(replacement, text)
     # Acronym replacements (DB-configurable via tts_acronym_replacements)
-    for pattern, replacement in _get_acronym_regex():
+    for pattern, replacement in _get_acronym_regex(site_config):
         text = pattern.sub(replacement, text)
     # Smart quotes → straight quotes (TTS handles these better)
     text = text.replace("\u201c", '"').replace("\u201d", '"')
@@ -298,12 +313,17 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-async def _build_script_with_llm(title: str, content: str) -> str:
+async def _build_script_with_llm(title: str, content: str, site_config: Any) -> str:
     """Use Ollama to rewrite a blog post as a natural podcast script.
 
     The LLM handles all nuances: removing visual references, URLs, image credits,
     converting written style to conversational spoken English, restructuring for
     audio flow, etc. Falls back to regex stripping if Ollama is unavailable.
+
+    Args:
+        title: Post title.
+        content: Post content (markdown).
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     import httpx
 
@@ -371,17 +391,17 @@ PODCAST SCRIPT:"""
 
             if len(script_body) < 200:
                 logger.warning("[PODCAST] LLM script too short (%d chars), falling back to regex", len(script_body))
-                return _build_script_fallback(title, content)
+                return _build_script_fallback(title, content, site_config)
 
             logger.info("[PODCAST] LLM generated %d-char script for '%s'", len(script_body), title[:50])
 
     except Exception as e:
         logger.warning("[PODCAST] Ollama script generation failed (%s), falling back to regex", e)
-        return _build_script_fallback(title, content)
+        return _build_script_fallback(title, content, site_config)
 
     # Still apply speech normalization for TTS pronunciation fixes
-    script_body = _normalize_for_speech(script_body)
-    spoken_title = _normalize_for_speech(title)
+    script_body = _normalize_for_speech(script_body, site_config)
+    spoken_title = _normalize_for_speech(title, site_config)
 
     _pname = site_config.get("podcast_name", "the podcast")
     _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
@@ -394,11 +414,17 @@ PODCAST SCRIPT:"""
     return f"{intro}\n\n{script_body}\n\n{outro}"
 
 
-def _build_script_fallback(title: str, content: str) -> str:
-    """Fallback: build script via regex stripping when Ollama is unavailable."""
+def _build_script_fallback(title: str, content: str, site_config: Any) -> str:
+    """Fallback: build script via regex stripping when Ollama is unavailable.
+
+    Args:
+        title: Post title.
+        content: Post content (markdown).
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+    """
     plain_text = _strip_markdown(content)
-    plain_text = _normalize_for_speech(plain_text)
-    spoken_title = _normalize_for_speech(title)
+    plain_text = _normalize_for_speech(plain_text, site_config)
+    spoken_title = _normalize_for_speech(title, site_config)
 
     _pname = site_config.get("podcast_name", "the podcast")
     _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
@@ -441,9 +467,26 @@ class EpisodeResult:
 class PodcastService:
     """Generate podcast MP3 episodes from blog post content using Edge TTS."""
 
-    def __init__(self, output_dir: Path | None = None):
+    def __init__(
+        self,
+        output_dir: Path | None = None,
+        *,
+        site_config: Any | None = None,
+    ):
+        """Construct the PodcastService.
+
+        Args:
+            output_dir: Where to write episode MP3s. Defaults to PODCAST_DIR.
+            site_config: SiteConfig instance (DI — Phase H, GH#95). Optional
+                for tests that exercise disk-only methods (get_episode_path,
+                episode_exists, list_episodes). Required when
+                generate_episode() falls into LLM script generation or any
+                path that reads TTS config from app_settings — will raise
+                AttributeError if ``None`` there.
+        """
         self.output_dir = output_dir or PODCAST_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._site_config = site_config
 
     def get_episode_path(self, post_id: str) -> Path:
         """Return the expected path for an episode MP3."""
@@ -505,7 +548,12 @@ class PodcastService:
             script = pre_generated_script
             logger.info("[PODCAST] Using pre-generated script (%d chars)", len(script))
         else:
-            script = await _build_script_with_llm(title, content)
+            if self._site_config is None:
+                raise RuntimeError(
+                    "PodcastService.generate_episode() requires site_config — "
+                    "pass it to the constructor (Phase H, GH#95)."
+                )
+            script = await _build_script_with_llm(title, content, self._site_config)
 
         if not script.strip():
             return EpisodeResult(success=False, error="Empty content after markdown stripping")
@@ -601,11 +649,20 @@ async def generate_podcast_episode(
     title: str,
     content: str,
     *,
+    site_config: Any,
     pre_generated_script: str | None = None,
 ) -> None:
-    """Fire-and-forget podcast generation. Logs errors but never raises."""
+    """Fire-and-forget podcast generation. Logs errors but never raises.
+
+    Args:
+        post_id: Post identifier (filename stem).
+        title: Post title.
+        content: Post content (markdown).
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+        pre_generated_script: Skip LLM and use this script directly.
+    """
     try:
-        svc = PodcastService()
+        svc = PodcastService(site_config=site_config)
         result = await svc.generate_episode(
             post_id, title, content,
             pre_generated_script=pre_generated_script,
