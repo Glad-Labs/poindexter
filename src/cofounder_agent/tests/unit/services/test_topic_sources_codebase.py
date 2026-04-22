@@ -30,11 +30,55 @@ class TestExtractTopicFromRow:
         assert _extract_topic_from_row("", "posts", 80) is None
         assert _extract_topic_from_row(None, "posts", 80) is None  # type: ignore[arg-type]
 
-    def test_skip_issues_memory_audit(self):
+    def test_memory_skipped(self):
+        # memory rows are operator prefs, not blog topics
         long_text = "A reasonably long piece of text that would otherwise extract fine"
-        assert _extract_topic_from_row(long_text, "issues", 80) is None
         assert _extract_topic_from_row(long_text, "memory", 80) is None
+
+    def test_audit_returns_none_via_fallthrough(self):
+        # audit rows are events, not topics — fall through the "unknown source_table"
+        # branch which returns None by default.
+        long_text = "Audit: qa_decision [warning] Source: multi_model_qa ..."
         assert _extract_topic_from_row(long_text, "audit", 80) is None
+
+    def test_issues_extracts_and_reframes_feat(self):
+        # GiteaIssuesTap's text_preview shape, feat: prefix
+        text = (
+            "Issue #229: feat: Event-driven topic discovery (replace fixed 8-hour cron)\n"
+            "State: closed\nLabels: \n\n## Problem\n\nTopic discovery runs..."
+        )
+        result = _extract_topic_from_row(text, "issues", 120)
+        assert result is not None
+        # Conventional-commit prefix peeled + reframed
+        assert result.startswith("How we shipped: ")
+        assert "Event-driven topic discovery" in result
+
+    def test_issues_extracts_and_reframes_fix(self):
+        text = (
+            "Issue #277: fix: topic_discovery_manual_trigger ignored during cooldown\n"
+            "State: closed"
+        )
+        result = _extract_topic_from_row(text, "issues", 120)
+        assert result is not None
+        assert result.startswith("Debugging: ")
+        assert "manual_trigger" in result
+
+    def test_issues_without_cc_prefix_uses_raw_title(self):
+        text = (
+            "Issue #42: Pipeline throttle investigation\n"
+            "State: closed"
+        )
+        result = _extract_topic_from_row(text, "issues", 120)
+        assert result == "Pipeline throttle investigation"
+
+    def test_issues_too_short_returns_none(self):
+        # "Issue #1: Fix X" — 5-char title below the minimum-length guard
+        text = "Issue #1: fix: Oops\nState: closed"
+        assert _extract_topic_from_row(text, "issues", 120) is None
+
+    def test_issues_malformed_first_line_returns_none(self):
+        text = "Not an issue format line\nState: closed"
+        assert _extract_topic_from_row(text, "issues", 120) is None
 
     def test_posts_extracts_first_long_line(self):
         text = "# A clear informative title for a blog post about something\nshort body"
