@@ -12,12 +12,13 @@ Sources (in priority order):
 
 Usage:
     from services.research_service import ResearchService
-    research = ResearchService(pool)
+    research = ResearchService(pool, site_config=site_config)
     context = await research.build_context("FastAPI and PostgreSQL")
     # context is a formatted string ready for the generation prompt
 """
 
 import re
+from typing import Any
 
 from services.logger_config import get_logger
 
@@ -113,17 +114,23 @@ _DEFAULT_KNOWN_REFERENCES: dict[str, list[dict[str, str]]] = {
 }
 
 
-def get_known_references() -> dict[str, list[dict[str, str]]]:
+def get_known_references(site_config: Any = None) -> dict[str, list[dict[str, str]]]:
     """Return the reference-link database, preferring app_settings if set.
 
     Looks up `known_references_json` in app_settings; if present and
     valid, replaces the default tech-oriented list entirely. Malformed
     JSON logs a warning and falls back to defaults. (#198)
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95). ``None``
+            returns the hardcoded defaults so legacy callers that haven't
+            been threaded through yet still work.
     """
     import json as _json
     try:
-        from services.site_config import site_config as _sc
-        raw = _sc.get("known_references_json", "")
+        if site_config is None:
+            return _DEFAULT_KNOWN_REFERENCES
+        raw = site_config.get("known_references_json", "")
         if not raw:
             return _DEFAULT_KNOWN_REFERENCES
         parsed = _json.loads(raw)
@@ -166,9 +173,21 @@ KNOWN_REFERENCES = _DEFAULT_KNOWN_REFERENCES
 class ResearchService:
     """Builds research context for content generation."""
 
-    def __init__(self, pool=None, settings_service=None):
+    def __init__(self, pool=None, settings_service=None, *, site_config: Any = None):
+        """
+        Args:
+            pool: asyncpg connection pool (optional — without it, internal
+                link lookup returns empty).
+            settings_service: Legacy settings service (reserved; unused
+                today).
+            site_config: SiteConfig instance (DI — Phase H, GH#95). Used
+                to resolve ``known_references_json`` override. ``None``
+                means the hardcoded defaults will always apply — keeps
+                legacy callers working during Phase H rollout.
+        """
         self.pool = pool
         self.settings = settings_service
+        self._site_config = site_config
 
     async def build_context(
         self,
@@ -229,7 +248,7 @@ class ResearchService:
         matched = []
         seen_urls = set()
 
-        _refs = get_known_references()
+        _refs = get_known_references(self._site_config)
         for keyword, refs in _refs.items():
             if keyword in topic_lower:
                 for ref in refs:

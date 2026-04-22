@@ -359,8 +359,14 @@ class GenerateContentStage:
         # 2. ResearchService auto-built context.
         try:
             from services.research_service import ResearchService
+            # Content-pipeline stages don't receive site_config via DI
+            # yet — use a transitional module-singleton import at the
+            # call site until stage fn signatures migrate (pending Phase
+            # H follow-up). GH#95.
+            from services.site_config import site_config as _sc
             research_svc = ResearchService(
-                pool=database_service.pool if database_service else None
+                pool=database_service.pool if database_service else None,
+                site_config=_sc,
             )
             auto = await research_svc.build_context(topic)
             if auto:
