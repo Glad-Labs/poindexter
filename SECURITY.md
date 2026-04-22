@@ -8,14 +8,18 @@ Poindexter is built by [Glad Labs LLC](https://www.gladlabs.io) and licensed und
 
 ## Reporting Vulnerabilities
 
-Email: **security@gladlabs.io** with subject `[SECURITY] Vulnerability Report`.
+**Preferred — GitHub Security Advisories:** <https://github.com/Glad-Labs/poindexter/security/advisories/new>
+
+GitHub's private vulnerability reporting keeps the conversation private, triages more reliably than email, and lets the maintainer + reporter collaborate on a fix before public disclosure. This is the fastest route to a response.
+
+**Fallback — email:** `security@gladlabs.io` with subject `[SECURITY] Vulnerability Report`. Use this only if GitHub Advisories aren't workable for you; the maintainer's email inbox is noisy so the response time on that channel is slower.
 
 Do **not** create public GitHub issues for security vulnerabilities.
 
 Expected response timeline:
 
-- **Initial response:** within 48–72 hours of report
-- **Fix deadline before public disclosure:** 30 days
+- **Initial response:** within 48–72 hours of report (faster via Advisories than email).
+- **Fix deadline before public disclosure:** 30 days.
 
 If a vulnerability requires longer than 30 days to fix responsibly we will tell you and agree on a longer disclosure window.
 

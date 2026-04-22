@@ -77,7 +77,7 @@ Open an issue with:
 
 ## Security
 
-Report security vulnerabilities to **security@gladlabs.io** — never in public GitHub issues. See [SECURITY.md](SECURITY.md) for the full policy.
+Report security vulnerabilities via GitHub Security Advisories: **<https://github.com/Glad-Labs/poindexter/security/advisories/new>** — never in public GitHub issues. See [SECURITY.md](SECURITY.md) for the full policy, including the email fallback if you can't use GitHub.
 
 ## License
 
