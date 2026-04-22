@@ -57,13 +57,22 @@ def _to_json(data: Any) -> str:
 async def _upload_json(key: str, data: str, content_type: str = "application/json") -> str | None:
     """Upload a JSON string to R2/S3-compatible storage. Returns public URL or None."""
     from services.r2_upload_service import upload_to_r2
+    # export_post / export_full_rebuild don't thread site_config through
+    # yet — use a transitional module-singleton import until their own
+    # Phase H migration. GH#95.
+    from services.site_config import site_config as _sc
 
     tmp = None
     try:
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
         tmp.write(data)
         tmp.close()
-        url = await upload_to_r2(tmp.name, f"{_STATIC_PREFIX}/{key}", content_type)
+        url = await upload_to_r2(
+            tmp.name,
+            f"{_STATIC_PREFIX}/{key}",
+            content_type,
+            site_config=_sc,
+        )
         return url
     except Exception as e:
         logger.exception("[STATIC_EXPORT] Upload failed for %s: %s", key, e)

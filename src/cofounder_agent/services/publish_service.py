@@ -821,12 +821,17 @@ async def publish_post_from_task(
             # Give podcast/video/short generation time to complete
             _delay = int(site_config.get("media_r2_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
-            await upload_podcast_episode(pid)
-            await upload_video_episode(pid)
+            await upload_podcast_episode(pid, site_config=_scfg)
+            await upload_video_episode(pid, site_config=_scfg)
             # Upload short video if it exists
             short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}-short.mp4"
             if short_path.exists():
-                await upload_to_r2(str(short_path), f"video/{pid}-short.mp4", "video/mp4")
+                await upload_to_r2(
+                    str(short_path),
+                    f"video/{pid}-short.mp4",
+                    "video/mp4",
+                    site_config=_scfg,
+                )
             # Regenerate public podcast RSS feed on R2
             try:
                 import httpx as _hx
@@ -843,7 +848,12 @@ async def publish_post_from_task(
                     await asyncio.to_thread(
                         _write_text_file, _feed_path, _feed.text,
                     )
-                    await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
+                    await upload_to_r2(
+                        _feed_path,
+                        "podcast/feed.xml",
+                        "application/rss+xml",
+                        site_config=_scfg,
+                    )
                     logger.info("[R2] Podcast RSS feed regenerated on CDN")
             except Exception as _e:
                 logger.warning("[R2] Podcast feed regen failed (non-fatal): %s", _e)
@@ -862,7 +872,12 @@ async def publish_post_from_task(
                     await asyncio.to_thread(
                         _write_text_file, _feed_path, _feed.text,
                     )
-                    await upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
+                    await upload_to_r2(
+                        _feed_path,
+                        "video/feed.xml",
+                        "application/rss+xml",
+                        site_config=_scfg,
+                    )
                     logger.info("[R2] Video RSS feed regenerated on CDN")
             except Exception as _e:
                 logger.warning("[R2] Video feed regen failed (non-fatal): %s", _e)

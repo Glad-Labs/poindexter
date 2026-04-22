@@ -4,6 +4,10 @@ Tests for object-store upload service — S3-compatible media uploads (R2/S3/B2/
 After the #198 rename, non-secret values come from `site_config.get()`
 (sync) and secret values come from `site_config.get_secret()` (async).
 Tests mock both entry points.
+
+Post-Phase-H (GH#95): r2_upload_service drops the module-level
+site_config import. Callers pass site_config via kwarg; tests build a
+MagicMock SiteConfig per case via _mock_sc().
 """
 
 import os
@@ -19,12 +23,14 @@ from services.r2_upload_service import (
 )
 
 
-def _make_site_config_mock(values: dict[str, str]):
-    """Return a site_config mock where .get() is sync and .get_secret() is async.
+def _mock_sc(values: dict[str, str] | None = None) -> MagicMock:
+    """Return a MagicMock shaped like SiteConfig.
 
-    Both read from the same ``values`` dict, supporting both the new
-    ``storage_*`` keys and the legacy ``cloudflare_r2_*`` fallbacks.
+    .get() is sync (values dict with default); .get_secret() is async
+    (reads from the same dict). Supports both new ``storage_*`` keys and
+    legacy ``cloudflare_r2_*`` fallbacks.
     """
+    values = values or {}
     mock = MagicMock()
     mock.get.side_effect = lambda k, d="": values.get(k, d)
 
@@ -40,16 +46,20 @@ class TestUploadToR2:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_file_missing(self, tmp_path):
-        result = await upload_to_r2(str(tmp_path / "nonexistent.mp3"), "podcast/test.mp3")
+        result = await upload_to_r2(
+            str(tmp_path / "nonexistent.mp3"),
+            "podcast/test.mp3",
+            site_config=_mock_sc(),
+        )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_credentials(self, tmp_path):
         mp3 = tmp_path / "test.mp3"
         mp3.write_bytes(b"fake audio data")
-        mock_sc = _make_site_config_mock({})  # nothing configured
-        with patch("services.r2_upload_service.site_config", mock_sc):
-            result = await upload_to_r2(str(mp3), "podcast/test.mp3")
+        result = await upload_to_r2(
+            str(mp3), "podcast/test.mp3", site_config=_mock_sc(),
+        )
         assert result is None
 
     @pytest.mark.asyncio
@@ -60,16 +70,17 @@ class TestUploadToR2:
         mock_s3 = MagicMock()
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        mock_sc = _make_site_config_mock({
+        sc = _mock_sc({
             "storage_access_key": "test_key",
             "storage_secret_key": "test_secret",
             "storage_endpoint": "https://test.r2.dev",
             "storage_bucket": "test-bucket",
             "storage_public_url": "https://pub-test.r2.dev",
         })
-        with patch("services.r2_upload_service.site_config", mock_sc), \
-             patch.dict("sys.modules", {"boto3": mock_boto3}):
-            result = await upload_to_r2(str(mp3), "podcast/abc.mp3")
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await upload_to_r2(
+                str(mp3), "podcast/abc.mp3", site_config=sc,
+            )
 
         assert result == "https://pub-test.r2.dev/podcast/abc.mp3"
         mock_s3.upload_file.assert_called_once()
@@ -86,16 +97,15 @@ class TestUploadToR2:
         mock_s3 = MagicMock()
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        mock_sc = _make_site_config_mock({
+        sc = _mock_sc({
             "storage_access_key": "key",
             "storage_secret_key": "secret",
             "storage_endpoint": "https://x.r2.dev",
             "storage_bucket": "b",
             "storage_public_url": "https://pub.r2.dev",
         })
-        with patch("services.r2_upload_service.site_config", mock_sc), \
-             patch.dict("sys.modules", {"boto3": mock_boto3}):
-            await upload_to_r2(str(mp4), "video/abc.mp4")
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            await upload_to_r2(str(mp4), "video/abc.mp4", site_config=sc)
 
         call_args = mock_s3.upload_file.call_args
         assert call_args[1]["ExtraArgs"]["ContentType"] == "video/mp4"
@@ -108,16 +118,20 @@ class TestUploadToR2:
         mock_s3 = MagicMock()
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        mock_sc = _make_site_config_mock({
+        sc = _mock_sc({
             "storage_access_key": "key",
             "storage_secret_key": "secret",
             "storage_endpoint": "https://x.r2.dev",
             "storage_bucket": "b",
             "storage_public_url": "https://pub.r2.dev",
         })
-        with patch("services.r2_upload_service.site_config", mock_sc), \
-             patch.dict("sys.modules", {"boto3": mock_boto3}):
-            await upload_to_r2(str(f), "custom/file.bin", content_type="application/custom")
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            await upload_to_r2(
+                str(f),
+                "custom/file.bin",
+                content_type="application/custom",
+                site_config=sc,
+            )
 
         call_args = mock_s3.upload_file.call_args
         assert call_args[1]["ExtraArgs"]["ContentType"] == "application/custom"
@@ -131,16 +145,17 @@ class TestUploadToR2:
         mock_s3.upload_file.side_effect = Exception("Connection refused")
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        mock_sc = _make_site_config_mock({
+        sc = _mock_sc({
             "storage_access_key": "key",
             "storage_secret_key": "secret",
             "storage_endpoint": "https://x.r2.dev",
             "storage_bucket": "b",
             "storage_public_url": "https://pub.r2.dev",
         })
-        with patch("services.r2_upload_service.site_config", mock_sc), \
-             patch.dict("sys.modules", {"boto3": mock_boto3}):
-            result = await upload_to_r2(str(f), "podcast/fail.mp3")
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await upload_to_r2(
+                str(f), "podcast/fail.mp3", site_config=sc,
+            )
 
         assert result is None
 
@@ -149,17 +164,18 @@ class TestUploadToR2:
         f = tmp_path / "test.mp3"
         f.write_bytes(b"data")
 
-        mock_sc = _make_site_config_mock({
+        sc = _mock_sc({
             "storage_access_key": "key",
             "storage_secret_key": "secret",
             "storage_endpoint": "https://x.r2.dev",
             "storage_bucket": "b",
             "storage_public_url": "https://pub.r2.dev",
         })
-        with patch("services.r2_upload_service.site_config", mock_sc), \
-             patch.dict("sys.modules", {"boto3": None}), \
+        with patch.dict("sys.modules", {"boto3": None}), \
              patch("builtins.__import__", side_effect=ImportError("no boto3")):
-            result = await upload_to_r2(str(f), "podcast/test.mp3")
+            result = await upload_to_r2(
+                str(f), "podcast/test.mp3", site_config=sc,
+            )
 
         assert result is None
 
@@ -171,7 +187,7 @@ class TestUploadToR2:
         mock_s3 = MagicMock()
         mock_boto3 = MagicMock()
         mock_boto3.client.return_value = mock_s3
-        mock_sc = _make_site_config_mock({
+        sc = _mock_sc({
             # Only legacy keys set — new code should fall back to them.
             "cloudflare_r2_access_key": "legacy_key",
             "cloudflare_r2_secret_key": "legacy_secret",
@@ -179,9 +195,10 @@ class TestUploadToR2:
             "cloudflare_r2_bucket": "legacy-bucket",
             "r2_public_url": "https://pub-legacy.r2.dev",
         })
-        with patch("services.r2_upload_service.site_config", mock_sc), \
-             patch.dict("sys.modules", {"boto3": mock_boto3}):
-            result = await upload_to_r2(str(mp3), "podcast/legacy.mp3")
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await upload_to_r2(
+                str(mp3), "podcast/legacy.mp3", site_config=sc,
+            )
         assert result == "https://pub-legacy.r2.dev/podcast/legacy.mp3"
 
 
@@ -214,7 +231,9 @@ class TestUploadPodcastEpisode:
             mock_path.__truediv__ = MagicMock(return_value=MagicMock(exists=MagicMock(return_value=False)))
             mock_path_cls.return_value = mock_path
             # Use a non-existent post_id
-            result = await upload_podcast_episode("nonexistent-post-id-000")
+            result = await upload_podcast_episode(
+                "nonexistent-post-id-000", site_config=_mock_sc(),
+            )
         assert result is None
 
     @pytest.mark.asyncio
@@ -234,7 +253,9 @@ class TestUploadPodcastEpisode:
             with patch.object(mod, "upload_to_r2", mock_upload):
                 # Call directly with patched path
                 from services.r2_upload_service import upload_to_r2 as real_upload
-                result = await real_upload(str(mp3), "podcast/test-post.mp3")
+                result = await real_upload(
+                    str(mp3), "podcast/test-post.mp3", site_config=_mock_sc(),
+                )
 
             assert result == "https://r2.dev/podcast/test-post.mp3"
 
@@ -244,5 +265,7 @@ class TestUploadVideoEpisode:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_file_missing(self):
-        result = await upload_video_episode("nonexistent-video-id-000")
+        result = await upload_video_episode(
+            "nonexistent-video-id-000", site_config=_mock_sc(),
+        )
         assert result is None
