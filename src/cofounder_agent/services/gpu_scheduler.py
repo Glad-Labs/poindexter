@@ -25,6 +25,7 @@ import asyncio
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 
@@ -32,14 +33,19 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-def _sc_get(key: str, default: str = "") -> str:
-    from services.site_config import site_config
-    return site_config.get(key, default)
+# Module-level defaults used only when a caller builds a GPUScheduler
+# with no site_config (pre-lifespan paths or tests). The module singleton
+# constructed at the bottom of this file binds these values directly so
+# import-time does not touch site_config.
+_DEFAULT_OLLAMA_BASE_URL = "http://host.docker.internal:11434"
+_DEFAULT_NVIDIA_EXPORTER_URL = "http://host.docker.internal:9835/metrics"
 
-OLLAMA_BASE_URL = _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
-
-# nvidia-smi prometheus exporter on the host
-NVIDIA_EXPORTER_URL = _sc_get("nvidia_exporter_url", "http://host.docker.internal:9835/metrics")
+# Backwards-compat module-level attributes — left in place because
+# services/gpu_scheduler.py consumers historically imported them. Once
+# Phase H step 6 lands every caller will read these off the instance
+# (``gpu.OLLAMA_BASE_URL`` / ``gpu.NVIDIA_EXPORTER_URL``) instead.
+OLLAMA_BASE_URL = _DEFAULT_OLLAMA_BASE_URL
+NVIDIA_EXPORTER_URL = _DEFAULT_NVIDIA_EXPORTER_URL
 
 # Models under this VRAM threshold (in GB) skip the lock — they can coexist.
 SMALL_MODEL_THRESHOLD_GB = 2.0
@@ -51,28 +57,43 @@ _DEFAULT_GAMING_CONFIRM_CHECKS = 2  # consecutive checks above threshold to conf
 _DEFAULT_GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
 
 
-def _cfg_int(key: str, default: int) -> int:
-    """Read an int from site_config (DB) with fallback."""
-    try:
-        from services.site_config import site_config
-        return site_config.get_int(key, default)
-    except Exception:
+def _cfg_int(site_config: Any, key: str, default: int) -> int:
+    """Read an int from the injected site_config.
+
+    Phase H (GH#95) — site_config is now a required arg. Previously
+    this function lazy-imported the module singleton.
+    """
+    if site_config is None:
         return default
+    return site_config.get_int(key, default)
 
 
-def _cfg_float(key: str, default: float) -> float:
-    """Read a float from site_config (DB) with fallback."""
-    try:
-        from services.site_config import site_config
-        return site_config.get_float(key, default)
-    except Exception:
+def _cfg_float(site_config: Any, key: str, default: float) -> float:
+    """Read a float from the injected site_config.
+
+    Phase H (GH#95) — site_config is now a required arg. Previously
+    this function lazy-imported the module singleton.
+    """
+    if site_config is None:
         return default
+    return site_config.get_float(key, default)
 
 
 class GPUScheduler:
     """Async-safe GPU resource coordinator with gaming detection."""
 
-    def __init__(self):
+    def __init__(self, *, site_config: Any = None):
+        """Initialise the GPU scheduler.
+
+        Args:
+            site_config: SiteConfig instance (DI — Phase H, GH#95).
+                Optional because the module-level singleton ``gpu`` is
+                constructed at import time, before the app lifespan has
+                a SiteConfig ready. main.py lifespan binds the DB-loaded
+                instance via ``gpu.set_site_config(...)`` once ready.
+                Instance methods that read DB-backed tunables handle the
+                None case by returning shipped defaults.
+        """
         self._lock = asyncio.Lock()
         self._current_owner: str | None = None  # "ollama" or "sdxl"
         self._current_model: str | None = None
@@ -80,6 +101,36 @@ class GPUScheduler:
         self._gaming_detected: bool = False
         self._gaming_paused_since: float = 0
         self._total_gaming_paused_s: float = 0  # cumulative for metrics
+        self._site_config = site_config
+        # Per-instance URL overrides — read once at set_site_config()
+        # time so instance methods don't need repeated DB hits.
+        self._ollama_base_url = _DEFAULT_OLLAMA_BASE_URL
+        self._nvidia_exporter_url = _DEFAULT_NVIDIA_EXPORTER_URL
+        if site_config is not None:
+            self._refresh_urls()
+
+    def set_site_config(self, site_config: Any) -> None:
+        """Rebind site_config after construction — Phase H (GH#95).
+
+        main.py lifespan calls this once ``app.state.site_config`` is
+        ready so subsequent lock() / status() calls read DB-backed
+        tunables (thresholds, nvidia_exporter_url, ollama_base_url).
+        """
+        self._site_config = site_config
+        self._refresh_urls()
+
+    def _refresh_urls(self) -> None:
+        """Re-resolve OLLAMA_BASE_URL / NVIDIA_EXPORTER_URL from site_config."""
+        if self._site_config is None:
+            return
+        self._ollama_base_url = (
+            self._site_config.get("ollama_base_url")
+            or self._site_config.get("ollama_host")
+            or _DEFAULT_OLLAMA_BASE_URL
+        )
+        self._nvidia_exporter_url = self._site_config.get(
+            "nvidia_exporter_url", _DEFAULT_NVIDIA_EXPORTER_URL,
+        )
 
     @asynccontextmanager
     async def lock(
@@ -182,7 +233,7 @@ class GPUScheduler:
         # Sample utilisation / power in parallel with the close path.
         util_pct = await self._get_gpu_utilization()
         power_w = await self._get_gpu_power_watts()
-        electricity_rate = _cfg_float(
+        electricity_rate = _cfg_float(self._site_config,
             "electricity_rate_kwh_usd", 0.12,
         )
         kwh = 0.0
@@ -224,7 +275,7 @@ class GPUScheduler:
         """Query nvidia-smi exporter for current GPU power draw (watts)."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
-                resp = await client.get(NVIDIA_EXPORTER_URL, timeout=5)
+                resp = await client.get(self._nvidia_exporter_url, timeout=5)
                 if resp.status_code != 200:
                     return None
                 for line in resp.text.splitlines():
@@ -238,7 +289,7 @@ class GPUScheduler:
         """Query nvidia-smi exporter for current GPU utilization %."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
-                resp = await client.get(NVIDIA_EXPORTER_URL, timeout=5)
+                resp = await client.get(self._nvidia_exporter_url, timeout=5)
                 if resp.status_code != 200:
                     return None
                 for line in resp.text.splitlines():
@@ -254,10 +305,10 @@ class GPUScheduler:
         Uses consecutive checks to avoid false positives from brief GPU spikes.
         All thresholds are DB-configurable via app_settings.
         """
-        threshold = _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD)
-        check_interval = _cfg_int("gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL)
-        confirm_checks = _cfg_int("gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS)
-        clear_checks = _cfg_int("gpu_gaming_clear_checks", _DEFAULT_GAMING_CLEAR_CHECKS)
+        threshold = _cfg_int(self._site_config, "gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD)
+        check_interval = _cfg_int(self._site_config, "gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL)
+        confirm_checks = _cfg_int(self._site_config, "gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS)
+        clear_checks = _cfg_int(self._site_config, "gpu_gaming_clear_checks", _DEFAULT_GAMING_CLEAR_CHECKS)
 
         # Quick check — if GPU is idle, proceed immediately
         util = await self._get_gpu_utilization()
@@ -304,7 +355,7 @@ class GPUScheduler:
         """Unload all Ollama models to free VRAM for SDXL."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=3.0)) as client:
-                resp = await client.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=10)
+                resp = await client.get(f"{self._ollama_base_url}/api/ps", timeout=10)
                 if resp.status_code != 200:
                     return
                 data = resp.json()
@@ -312,7 +363,7 @@ class GPUScheduler:
                     name = model["name"]
                     logger.info("Unloading Ollama model for SDXL", model=name)
                     await client.post(
-                        f"{OLLAMA_BASE_URL}/api/generate",
+                        f"{self._ollama_base_url}/api/generate",
                         json={"model": name, "keep_alive": 0},
                         timeout=30,
                     )
@@ -344,7 +395,10 @@ class GPUScheduler:
     async def _unload_sdxl(self):
         """Tell the SDXL server to unload its model and free VRAM immediately."""
         from services.bootstrap_defaults import DEFAULT_SDXL_URL
-        sdxl_url = _sc_get("sdxl_server_url", DEFAULT_SDXL_URL)
+        if self._site_config is not None:
+            sdxl_url = self._site_config.get("sdxl_server_url", DEFAULT_SDXL_URL)
+        else:
+            sdxl_url = DEFAULT_SDXL_URL
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
                 resp = await client.post(f"{sdxl_url}/unload", timeout=10)
@@ -373,10 +427,10 @@ class GPUScheduler:
             "gaming_paused_s": current_pause,
             "total_gaming_paused_s": round(self._total_gaming_paused_s + current_pause, 1),
             "config": {
-                "threshold_percent": _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD),
-                "check_interval_s": _cfg_int("gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL),
-                "confirm_checks": _cfg_int("gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS),
-                "clear_checks": _cfg_int("gpu_gaming_clear_checks", _DEFAULT_GAMING_CLEAR_CHECKS),
+                "threshold_percent": _cfg_int(self._site_config, "gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD),
+                "check_interval_s": _cfg_int(self._site_config, "gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL),
+                "confirm_checks": _cfg_int(self._site_config, "gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS),
+                "clear_checks": _cfg_int(self._site_config, "gpu_gaming_clear_checks", _DEFAULT_GAMING_CLEAR_CHECKS),
             },
         }
 
