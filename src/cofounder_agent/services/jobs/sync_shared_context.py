@@ -22,7 +22,6 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.site_config import site_config
 
 from ._subprocess_runner import resolve_scripts_dir, run_python_script
 
@@ -39,7 +38,9 @@ class SyncSharedContextJob:
     schedule = "every 30 minutes"
     idempotent = True  # The script handles re-runs as overwrites
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+    async def run(
+        self, pool: Any, config: dict[str, Any], *, site_config: Any,
+    ) -> JobResult:
         script_path = str(config.get("script_path") or _default_script_path())
         timeout_s = int(config.get("timeout_seconds", 30))
         cwd = site_config.get("repo_root", "/app")
