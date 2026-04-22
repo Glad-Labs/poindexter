@@ -25,6 +25,7 @@ Design:
 
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 from typing import Any
@@ -67,13 +68,23 @@ def _parse_schedule(schedule: str):
 class PluginScheduler:
     """Thin wrapper around apscheduler that understands our Job Protocol."""
 
-    def __init__(self, pool: Any):
-        """Create the scheduler bound to a DB pool.
+    def __init__(self, pool: Any, site_config: Any = None):
+        """Create the scheduler bound to a DB pool + optional SiteConfig.
 
-        ``pool`` is passed into each Job.run() call so Jobs can read/write
-        to the same Postgres the rest of Poindexter uses.
+        Args:
+            pool: Shared asyncpg pool — passed into each Job.run() call
+                so Jobs can read/write to the same Postgres as the rest
+                of Poindexter.
+            site_config: SiteConfig instance (Phase H GH#95 — optional
+                during the incremental migration). When provided, it's
+                forwarded into each ``Job.run(..., site_config=...)``
+                call if and only if the job's signature declares the
+                ``site_config`` parameter. Jobs that haven't migrated
+                yet don't see the kwarg, avoiding TypeError while the
+                rollout is in flight.
         """
         self._pool = pool
+        self._site_config = site_config
         self._scheduler = AsyncIOScheduler()
         self._registered: list[str] = []
 
@@ -103,20 +114,32 @@ class PluginScheduler:
             )
             return False
 
-        async def _runner():
+        # Incremental Phase H migration (#95): forward site_config only
+        # to jobs that declare it. Inspect once at registration time —
+        # signature doesn't change between runs.
+        run_params = inspect.signature(job.run).parameters
+        pass_site_config = "site_config" in run_params
+
+        async def _runner(
+            _pass_sc: bool = pass_site_config,
+            _job: Any = job,
+        ) -> None:
             # Each fire: load fresh config (enables live-toggle without restart)
-            live_cfg = await PluginConfig.load(self._pool, "job", job.name)
+            live_cfg = await PluginConfig.load(self._pool, "job", _job.name)
             if not live_cfg.enabled:
-                logger.debug("scheduler: job %r disabled at fire-time; skip", job.name)
+                logger.debug("scheduler: job %r disabled at fire-time; skip", _job.name)
                 return
             try:
-                result = await job.run(self._pool, live_cfg.config)
+                extra: dict[str, Any] = {}
+                if _pass_sc:
+                    extra["site_config"] = self._site_config
+                result = await _job.run(self._pool, live_cfg.config, **extra)
                 logger.info(
                     "scheduler: job %r ran ok=%s detail=%r changes=%d",
-                    job.name, result.ok, result.detail, result.changes_made,
+                    _job.name, result.ok, result.detail, result.changes_made,
                 )
             except Exception as e:
-                logger.exception("scheduler: job %r raised: %s", job.name, e)
+                logger.exception("scheduler: job %r raised: %s", _job.name, e)
 
         self._scheduler.add_job(
             _runner,
