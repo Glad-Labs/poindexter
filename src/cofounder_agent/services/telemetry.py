@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Any
 
 # Try to import OpenTelemetry - it's optional for development
 try:
@@ -45,13 +46,17 @@ except ImportError:
         OpenAIInstrumentor = None  # type: ignore[assignment,misc]
 
 
-def setup_telemetry(app, service_name="cofounder-agent"):
+def setup_telemetry(app, site_config: Any, service_name: str = "cofounder-agent"):
     """
     Sets up OpenTelemetry tracing for the FastAPI application and OpenAI SDK.
     Simplified to handle trace exporting only (no logs/events to avoid dependency issues).
 
     Args:
         app: The FastAPI application instance.
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Must be
+            passed explicitly — the module-level singleton import was
+            removed. Supply from ``app.state.site_config`` in lifespan /
+            route wiring.
         service_name: The name of the service to appear in traces.
     """
     # Skip if OpenTelemetry is not available
@@ -69,8 +74,7 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         )
         return
 
-    # Check if tracing is enabled via environment variable
-    from services.site_config import site_config
+    # Check if tracing is enabled via the injected site_config.
     if site_config.get("enable_tracing", "false").lower() != "true":
         logging.debug(f"[TELEMETRY] OpenTelemetry tracing disabled for {service_name}")
         return
