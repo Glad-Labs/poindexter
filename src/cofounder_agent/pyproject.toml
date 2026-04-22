@@ -354,6 +354,7 @@ addopts = [
 markers = [
     "unit: unit tests",
     "integration: integration tests",
+    "integration_db: integration tests that require a live Postgres (GH#21 harness)",
     "api: api tests",
     "e2e: end-to-end tests",
     "performance: performance tests",
