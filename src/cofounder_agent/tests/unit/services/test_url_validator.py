@@ -15,9 +15,17 @@ import pytest
 from services.url_validator import URLValidator
 
 
+def _mock_sc(site_domain: str = "localhost:3000", site_name: str = "ContentPipeline") -> MagicMock:
+    """Return a MagicMock shaped like SiteConfig for URLValidator(...)."""
+    sc = MagicMock()
+    values = {"site_domain": site_domain, "site_name": site_name}
+    sc.get.side_effect = lambda k, d="": values.get(k, d)
+    return sc
+
+
 @pytest.fixture
 def validator():
-    return URLValidator(timeout=2.0, cache_ttl=60)
+    return URLValidator(_mock_sc(), timeout=2.0, cache_ttl=60)
 
 
 # ---------------------------------------------------------------------------

@@ -72,7 +72,14 @@ class UrlValidationStage:
 
         try:
             from services.url_validator import get_url_validator
-            validator = get_url_validator()
+            # Phase H step 5 (GH#95): get_url_validator takes site_config
+            # explicitly. Pull from context (seeded by content_router_service
+            # step 4.1); fall back to the module singleton if the caller
+            # hasn't threaded it through yet.
+            _sc = context.get("site_config")
+            if _sc is None:
+                from services.site_config import site_config as _sc
+            validator = get_url_validator(_sc)
             urls = validator.extract_urls(content_text)
             if not urls:
                 return StageResult(
