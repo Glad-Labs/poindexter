@@ -221,7 +221,9 @@ class GenerateContentStage:
                         real_slug_set.add(slug)
         except Exception:
             pass
-        content_text = scrub_fabricated_links(content_text, known_slugs=real_slug_set)
+        content_text = scrub_fabricated_links(
+            content_text, known_slugs=real_slug_set, site_config=_sc,
+        )
 
         # Strip leaked image prompts / descriptions. LLMs sometimes emit
         # visual placeholders that we don't want in the body.

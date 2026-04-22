@@ -194,13 +194,23 @@ class ModelRouter:
         },
     }
 
-    def __init__(self, default_model: str = "ollama/qwen3:8b", use_ollama: bool | None = None):
+    def __init__(
+        self,
+        default_model: str = "ollama/qwen3:8b",
+        use_ollama: bool | None = None,
+        *,
+        site_config: Any = None,
+    ):
         self.default_model = default_model
+
+        if site_config is None:
+            from services.site_config import site_config as _default_sc
+            site_config = _default_sc
+        self._site_config = site_config
 
         # Check USE_OLLAMA environment variable if not explicitly set
         if use_ollama is None:
             try:
-                from services.site_config import site_config
                 use_ollama = site_config.get("use_ollama", "false").lower() == "true"
             except Exception as e:
                 logger.warning("[MODEL_ROUTER] Failed to read use_ollama from config: %s", e)
@@ -222,7 +232,6 @@ class ModelRouter:
         # Spending cap — tracks in-memory estimated spend (resets on restart).
         # For persistent tracking, use cost_aggregation_service.get_budget_status().
         try:
-            from services.site_config import site_config
             self._monthly_spend_limit = float(site_config.get("monthly_spend_limit", "100.0"))
         except Exception as e:
             logger.warning("[MODEL_ROUTER] Failed to read monthly_spend_limit: %s", e)

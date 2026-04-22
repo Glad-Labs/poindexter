@@ -77,6 +77,8 @@ DEFAULT_TRUSTED_DOMAINS: frozenset[str] = frozenset({
 def scrub_fabricated_links(
     content: str,
     known_slugs: set[str] | None = None,
+    *,
+    site_config: Any = None,
 ) -> str:
     """Remove fabricated/hallucinated URLs from LLM-generated content.
 
@@ -91,7 +93,9 @@ def scrub_fabricated_links(
     stage pulls it from ``content_generator._internal_links_cache``)
     should pass it explicitly.
     """
-    from services.site_config import site_config
+    if site_config is None:
+        from services.site_config import site_config as _default_sc
+        site_config = _default_sc
 
     trusted = _resolve_trusted_domains(site_config)
     own_domain = (site_config.get("site_domain", "") or "").lower()
