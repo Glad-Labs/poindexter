@@ -10,7 +10,7 @@ Covers the four cases the issue asks for:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -21,6 +21,17 @@ from services.internal_link_coherence import (
     get_tag_slugs_for_post,
     normalize_tag_set,
 )
+
+
+def _mock_sc() -> MagicMock:
+    """SiteConfig mock — ``get`` returns the caller's default for every key.
+
+    The filter's tunable kwargs win over app_settings reads in every
+    test; this just satisfies the DI requirement.
+    """
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": d
+    return sc
 
 # ---------------------------------------------------------------------------
 # normalize_tag_set — input cleaning
@@ -180,6 +191,7 @@ class TestFilterCandidates:
     @pytest.mark.asyncio
     async def test_pass_overlapping_tags(self):
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,  # disable cap for this test
@@ -199,6 +211,7 @@ class TestFilterCandidates:
     async def test_fail_no_tag_overlap(self):
         """The GH-88 scenario: asyncio post shouldn't link to CadQuery."""
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,
@@ -218,6 +231,7 @@ class TestFilterCandidates:
     @pytest.mark.asyncio
     async def test_fail_target_has_no_tags(self):
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,
@@ -233,6 +247,7 @@ class TestFilterCandidates:
     async def test_fail_source_has_no_tags(self):
         """Source with no tags can't prove coherence → reject (no silent pass)."""
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,
@@ -250,6 +265,7 @@ class TestFilterCandidates:
     async def test_cap_rejects_over_limit(self):
         """Same target beyond the cap is rejected."""
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=False,  # isolate cap behaviour
             cap_enabled=True,
@@ -271,6 +287,7 @@ class TestFilterCandidates:
     @pytest.mark.asyncio
     async def test_cap_accepts_under_limit(self):
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=False,
             cap_enabled=True,
@@ -293,6 +310,7 @@ class TestFilterCandidates:
         """Simulate N+1 attempts at the same target — the N+1th is rejected."""
         # Fresh filter with cap=3.
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=False,
             cap_enabled=True,
@@ -325,6 +343,7 @@ class TestFilterCandidates:
     async def test_both_gates_applied(self):
         """Tag gate is applied before cap; rejection_reason reflects first fail."""
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=True,
@@ -350,6 +369,7 @@ class TestFilterCandidates:
         # Called by get_tag_slugs_for_post.
         pool.fetch = AsyncMock(return_value=[{"slug": "python"}])
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=pool,
             tag_coherence_required=True,
             cap_enabled=False,
@@ -471,6 +491,7 @@ class TestRealisticRagScenario:
     async def test_cadquery_stripped_from_asyncio_post_candidates(self):
         """End-to-end: CadQuery-like candidate rejected; on-topic kept."""
         filt = InternalLinkCoherenceFilter(
+            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,
