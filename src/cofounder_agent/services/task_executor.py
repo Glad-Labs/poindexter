@@ -460,6 +460,22 @@ class TaskExecutor:
                             "result": '{"reason": "Semantic duplicate: matches an existing published post"}',
                         },
                     )
+                    # Write pipeline_reviews row so content_tasks view
+                    # resolves approval_status='rejected' for semantic-
+                    # dedup kills, and flip the model_performance outcome
+                    # for any LLM calls already logged for this task.
+                    with suppress(Exception):
+                        from services.pipeline_db import PipelineDB
+                        await PipelineDB(self.database_service.pool).add_review(
+                            task_id=task_id,
+                            decision="rejected",
+                            reviewer="semantic_dedup",
+                            feedback=_reason[:2000],
+                        )
+                    with suppress(Exception):
+                        await self.database_service.mark_model_performance_outcome(
+                            task_id, human_approved=False,
+                        )
                     # Loud audit event — surfaces on /pipeline dashboard.
                     try:
                         from services.audit_log import audit_log_bg
