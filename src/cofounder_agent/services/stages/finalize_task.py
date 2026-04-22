@@ -83,6 +83,27 @@ class FinalizeTaskStage:
             seo_description = _normalize_text(seo_description)
         content_text = _normalize_text(content_text)
 
+        # Phase 6 / GH#54: if the writer cited external URLs inline but
+        # didn't append a Sources section, add one automatically. Readers
+        # + search engines both benefit from an explicit list, and it's
+        # a low-risk idempotent transform (existing sections left alone).
+        try:
+            from services.citation_verifier import (
+                extract_urls,
+                append_sources_section,
+            )
+            from services.site_config import site_config as _sc_sources
+            if (_sc_sources.get("auto_append_sources_section", "true") or "true").lower() not in ("false", "0", "no"):
+                _site_url = _sc_sources.get("site_url") or None
+                _urls = extract_urls(content_text, site_url=_site_url)
+                if _urls:
+                    content_text = append_sources_section(content_text, _urls)
+        except Exception as _sources_err:
+            logger.debug(
+                "[finalize_task] Sources-section auto-append skipped (non-fatal): %s",
+                _sources_err,
+            )
+
         # GH-86: derive an excerpt from the finalized content. Frontend was
         # falling back to content[:N] which rendered the opening "What
         # You'll Learn" bullet list as the social-card snippet.
