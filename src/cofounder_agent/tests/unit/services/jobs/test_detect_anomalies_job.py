@@ -13,6 +13,15 @@ import pytest
 from services.jobs.detect_anomalies import DetectAnomaliesJob
 
 
+def _mock_sc() -> MagicMock:
+    """SiteConfig mock for post-Phase-H job.run() kwarg."""
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": d
+    sc.get_bool.side_effect = lambda k, d=False: d
+    sc.get_int.side_effect = lambda k, d=0: d
+    return sc
+
+
 def _make_pool(recent_values, hist_stats):
     """Pool whose fetchval returns recent values in order, fetchrow
     returns historical {mean, stddev} dicts in order."""
@@ -46,7 +55,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        result = await DetectAnomaliesJob().run(pool, {})
+        result = await DetectAnomaliesJob().run(pool, {}, site_config=_mock_sc())
         assert result.ok is True
         assert result.changes_made == 0
         assert "normal range" in result.detail
@@ -64,7 +73,7 @@ class TestDetectAnomaliesJobRun:
         )
         with patch("utils.gitea_issues.create_gitea_issue",
                    new=AsyncMock(return_value=True)) as gitea_mock:
-            result = await DetectAnomaliesJob().run(pool, {})
+            result = await DetectAnomaliesJob().run(pool, {}, site_config=_mock_sc())
         assert result.ok is True
         assert result.changes_made == 1
         gitea_mock.assert_not_awaited()
@@ -83,7 +92,7 @@ class TestDetectAnomaliesJobRun:
         )
         with patch("utils.gitea_issues.create_gitea_issue",
                    new=AsyncMock(return_value=True)) as gitea_mock:
-            result = await DetectAnomaliesJob().run(pool, {})
+            result = await DetectAnomaliesJob().run(pool, {}, site_config=_mock_sc())
         assert result.ok is True
         assert result.changes_made == 2
         gitea_mock.assert_awaited_once()
@@ -103,7 +112,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        result = await DetectAnomaliesJob().run(pool, {})
+        result = await DetectAnomaliesJob().run(pool, {}, site_config=_mock_sc())
         assert result.ok is True
         assert result.changes_made == 0
 
@@ -117,7 +126,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        result = await DetectAnomaliesJob().run(pool, {})
+        result = await DetectAnomaliesJob().run(pool, {}, site_config=_mock_sc())
         assert result.ok is True
         # First two metrics skipped due to None; last two are at-mean → no anomalies.
         assert result.changes_made == 0
@@ -135,6 +144,8 @@ class TestDetectAnomaliesJobRun:
         )
         with patch("utils.gitea_issues.create_gitea_issue",
                    new=AsyncMock(return_value=True)) as gitea_mock:
-            result = await DetectAnomaliesJob().run(pool, {"issue_threshold": 1})
+            result = await DetectAnomaliesJob().run(
+                pool, {"issue_threshold": 1}, site_config=_mock_sc(),
+            )
         assert result.changes_made == 1
         gitea_mock.assert_awaited_once()
