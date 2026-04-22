@@ -95,7 +95,7 @@ def _check_task_ownership(task: dict, current_user: Any) -> None:
 # the Herrington-pattern reasoning behind the "Source article:" block.
 
 
-async def _resolve_seed_url(task_request: UnifiedTaskRequest) -> None:
+async def _resolve_seed_url(task_request: UnifiedTaskRequest, site_config: Any) -> None:
     """If ``seed_url`` is set, fetch it and populate topic + research context.
 
     Mutates ``task_request`` in place:
@@ -112,6 +112,12 @@ async def _resolve_seed_url(task_request: UnifiedTaskRequest) -> None:
     On any fetch/parse failure, raises HTTPException 400 with a clear
     reason — we do NOT create a task and fall back to autodiscovery,
     because the caller explicitly asked for this URL.
+
+    Args:
+        task_request: The unified task request (mutated in place).
+        site_config: SiteConfig instance (DI — Phase H, GH#95) threaded
+            down into the seed-URL fetcher's timeout / UA / max-bytes
+            lookups.
     """
     seed_url = (task_request.seed_url or "").strip()
     if not seed_url:
@@ -127,7 +133,7 @@ async def _resolve_seed_url(task_request: UnifiedTaskRequest) -> None:
     )
 
     try:
-        result = await fetch_seed_url(seed_url)
+        result = await fetch_seed_url(seed_url, site_config=site_config)
     except SeedURLError as exc:
         logger.info(
             "[SEED_URL] Fetch rejected for %s (reason=%s): %s",
@@ -283,7 +289,7 @@ async def create_task(
         # Failures bubble up as HTTPException 400 with a clear reason —
         # we deliberately do NOT fall back to autodiscovery, because the
         # caller asked for THIS specific URL.
-        await _resolve_seed_url(task_request)
+        await _resolve_seed_url(task_request, site_config=site_config)
 
         # Validate required fields (belt-and-suspenders — Pydantic also
         # enforces this, but the check keeps the 422 message specific).

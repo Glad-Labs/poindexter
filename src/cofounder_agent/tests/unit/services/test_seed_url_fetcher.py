@@ -19,6 +19,16 @@ from services.seed_url_fetcher import (
     build_source_attribution,
     fetch_seed_url,
 )
+from services.site_config import SiteConfig
+
+
+def _sc() -> SiteConfig:
+    """Fresh SiteConfig for Phase H DI (GH#95).
+
+    Reads env / falls through to the hardcoded defaults defined at the
+    top of services/seed_url_fetcher.py when a key isn't set.
+    """
+    return SiteConfig()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -68,6 +78,7 @@ class TestFetchSeedURLHappyPath:
         async with _mock_client(handler) as client:
             result = await fetch_seed_url(
                 "https://example.com/post", client=client,
+            site_config=_sc(),
             )
 
         assert isinstance(result, SeedURLResult)
@@ -89,6 +100,7 @@ class TestFetchSeedURLHappyPath:
         async with _mock_client(handler) as client:
             result = await fetch_seed_url(
                 "https://example.com/no-title", client=client,
+            site_config=_sc(),
             )
 
         assert result.title == "The H1 Becomes The Topic"
@@ -108,6 +120,7 @@ class TestFetchSeedURLHappyPath:
         async with _mock_client(handler) as client:
             result = await fetch_seed_url(
                 "https://example.com/no-meta", client=client,
+            site_config=_sc(),
             )
 
         # The short <p>Short nav.</p> is below the _MIN_EXCERPT_CHARS
@@ -128,6 +141,7 @@ class TestFetchSeedURLHappyPath:
         async with _mock_client(handler) as client:
             result = await fetch_seed_url(
                 "https://example.com/og", client=client,
+            site_config=_sc(),
             )
 
         assert result.excerpt == "This is the meta description"
@@ -149,6 +163,7 @@ class TestFetchSeedURLErrors:
             with pytest.raises(SeedURLError) as exc_info:
                 await fetch_seed_url(
                     "https://example.com/missing", client=client,
+                site_config=_sc(),
                 )
 
         assert exc_info.value.reason == "http_error"
@@ -163,6 +178,7 @@ class TestFetchSeedURLErrors:
             with pytest.raises(SeedURLError) as exc_info:
                 await fetch_seed_url(
                     "https://example.com/broken", client=client,
+                site_config=_sc(),
                 )
 
         assert exc_info.value.reason == "http_error"
@@ -188,6 +204,7 @@ class TestFetchSeedURLErrors:
             with pytest.raises(SeedURLError) as exc_info:
                 await fetch_seed_url(
                     "https://example.com/premium", client=client,
+                site_config=_sc(),
                 )
 
         # Could fail with either login_wall (if title extraction fails)
@@ -208,6 +225,7 @@ class TestFetchSeedURLErrors:
             with pytest.raises(SeedURLError) as exc_info:
                 await fetch_seed_url(
                     "https://example.com/paid", client=client,
+                site_config=_sc(),
                 )
 
         assert exc_info.value.reason == "login_wall"
@@ -224,6 +242,7 @@ class TestFetchSeedURLErrors:
             with pytest.raises(SeedURLError) as exc_info:
                 await fetch_seed_url(
                     "https://example.com/untitled", client=client,
+                site_config=_sc(),
                 )
 
         assert exc_info.value.reason == "no_title"
@@ -231,13 +250,13 @@ class TestFetchSeedURLErrors:
     @pytest.mark.asyncio
     async def test_invalid_scheme_rejected_before_fetch(self):
         with pytest.raises(SeedURLError) as exc_info:
-            await fetch_seed_url("ftp://example.com/file.txt")
+            await fetch_seed_url("ftp://example.com/file.txt", site_config=_sc())
         assert exc_info.value.reason == "invalid_url"
 
     @pytest.mark.asyncio
     async def test_empty_url_rejected(self):
         with pytest.raises(SeedURLError) as exc_info:
-            await fetch_seed_url("")
+            await fetch_seed_url("", site_config=_sc())
         assert exc_info.value.reason == "invalid_url"
 
     @pytest.mark.asyncio
@@ -249,6 +268,7 @@ class TestFetchSeedURLErrors:
             with pytest.raises(SeedURLError) as exc_info:
                 await fetch_seed_url(
                     "https://unreachable.example.com", client=client,
+                site_config=_sc(),
                 )
 
         assert exc_info.value.reason == "network"
@@ -262,6 +282,7 @@ class TestFetchSeedURLErrors:
             with pytest.raises(SeedURLError) as exc_info:
                 await fetch_seed_url(
                     "https://slow.example.com", client=client,
+                site_config=_sc(),
                 )
 
         assert exc_info.value.reason == "network"
@@ -293,6 +314,7 @@ class TestFetchSeedURLMaxBytes:
                 "https://example.com/huge",
                 client=client,
                 max_bytes=1024,
+            site_config=_sc(),
             )
 
         # content_length is the CAPPED size, never the original.
@@ -313,6 +335,7 @@ class TestFetchSeedURLMaxBytes:
                 "https://example.com/tiny",
                 client=client,
                 max_bytes=1_048_576,
+            site_config=_sc(),
             )
 
         assert result.content_length < 1_048_576
