@@ -67,6 +67,29 @@ class TestDiscoverMemoryDirs:
         origins = [origin for _, origin, _ in dirs]
         assert "openclaw" in origins
 
+    def test_uses_injected_site_config(self, tmp_path: Path):
+        """Runner-injected site_config resolves paths when no explicit
+        args are passed (Phase H step 4.6, GH#95)."""
+
+        class _FakeSC:
+            def __init__(self, vals: dict[str, str]):
+                self._vals = vals
+
+            def get(self, key: str, default=""):
+                return self._vals.get(key, default)
+
+        projects = tmp_path / "sc-projects"
+        (projects / "C--from-sc" / "memory").mkdir(parents=True)
+
+        sc = _FakeSC({"claude_projects_dir": str(projects)})
+        dirs = _discover_memory_dirs(
+            openclaw_memory_dir="__skip__",
+            shared_context_dir="__skip__",
+            site_config=sc,
+        )
+        scopes = [scope for _, origin, scope in dirs if origin == "claude-code"]
+        assert "C--from-sc" in scopes
+
 
 class TestBuildSourceId:
     def test_claude_code_includes_scope(self):
