@@ -65,20 +65,29 @@ def make_mock_db() -> AsyncMock:
 
 @pytest.fixture(autouse=True)
 def _patch_operator_id(monkeypatch):
-    """Force OPERATOR_ID to match TEST_USER in every route module that uses it."""
+    """Force OPERATOR_ID to match TEST_USER in every route module that uses it.
+
+    Phase H (GH#95): ``middleware.api_token_auth`` no longer exposes a
+    module-level OPERATOR_ID — ``get_operator_identity()`` reads
+    ``operator_id`` off site_config per-call. The monkeypatch below is
+    now a no-op (kept with ``raising=False``) for any route module that
+    still references the legacy constant via ``from … import OPERATOR_ID``.
+    """
     target_id = TEST_USER["id"]
-    monkeypatch.setattr("middleware.api_token_auth.OPERATOR_ID", target_id)
+    monkeypatch.setattr(
+        "middleware.api_token_auth.OPERATOR_ID", target_id, raising=False,
+    )
     # Patch the cached module-level reference in each route module that
     # does ``from middleware.api_token_auth import OPERATOR_ID``.
     try:
         import routes.writing_style_routes as ws_mod
 
-        monkeypatch.setattr(ws_mod, "OPERATOR_ID", target_id)
+        monkeypatch.setattr(ws_mod, "OPERATOR_ID", target_id, raising=False)
     except ImportError:
         pass
     try:
         import routes.workflow_history as wh_mod
 
-        monkeypatch.setattr(wh_mod, "OPERATOR_ID", target_id)
+        monkeypatch.setattr(wh_mod, "OPERATOR_ID", target_id, raising=False)
     except ImportError:
         pass

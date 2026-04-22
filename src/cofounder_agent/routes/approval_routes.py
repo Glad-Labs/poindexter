@@ -22,7 +22,7 @@ from middleware.api_token_auth import get_operator_identity, verify_api_token
 from services.database_service import DatabaseService
 from services.error_handler import AppError
 from services.logger_config import get_logger
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["approval"])
@@ -68,6 +68,7 @@ async def reject_task(
     request: RejectionRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ):
     """Reject a task and send it back for revisions.
 
@@ -76,7 +77,7 @@ async def reject_task(
     If allow_revisions=false, status becomes 'rejected_final'.
     """
     try:
-        operator = get_operator_identity()
+        operator = get_operator_identity(site_config)
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -202,10 +203,11 @@ async def get_pending_approvals(
     sort_order: str = Query("desc", description="Sort order: asc|desc"),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ):
     """Get all tasks awaiting human approval, with pagination and optional task_type filter."""
     try:
-        get_operator_identity()  # Verify operator identity is resolvable
+        get_operator_identity(site_config)  # Verify operator identity is resolvable
 
         try:
             result = await db_service.get_tasks_paginated(
