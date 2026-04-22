@@ -8,11 +8,11 @@ or retried up to 3 times.
 
 import asyncio
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -21,7 +21,15 @@ POLL_INTERVAL = 5  # seconds
 
 
 class WebhookDeliveryService:
-    def __init__(self, pool):
+    def __init__(self, pool, site_config: Any):
+        """Initialize the webhook delivery service.
+
+        Args:
+            pool: asyncpg pool for reading/updating webhook_events.
+            site_config: SiteConfig instance (DI — Phase H, GH#95). Must
+                be passed explicitly — the module-level singleton import
+                was removed. Supply from ``app.state.site_config``.
+        """
         self.pool = pool
         self.webhook_url = site_config.get("openclaw_webhook_url", "")
         self.webhook_token = site_config.get("openclaw_webhook_token", "")

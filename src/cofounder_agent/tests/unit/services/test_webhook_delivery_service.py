@@ -1,5 +1,8 @@
 """
 Tests for WebhookDeliveryService — event emission and HTTP delivery to OpenClaw.
+
+Post-Phase-H (GH#95): WebhookDeliveryService.__init__ takes site_config via DI.
+Tests construct a MagicMock SiteConfig per case via _mock_sc().
 """
 
 import json
@@ -17,6 +20,17 @@ from services.webhook_delivery_service import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _mock_sc(webhook_url: str = "", webhook_token: str = "") -> MagicMock:
+    """Return a MagicMock shaped like SiteConfig for WebhookDeliveryService(...)."""
+    sc = MagicMock()
+    values = {
+        "openclaw_webhook_url": webhook_url,
+        "openclaw_webhook_token": webhook_token,
+    }
+    sc.get.side_effect = lambda k, d="": values.get(k, d)
+    return sc
 
 
 def _make_pool():
@@ -98,22 +112,22 @@ class TestEmitWebhookEvent:
 class TestServiceLifecycle:
     """Startup, shutdown, and URL configuration."""
 
-    def test_defaults_when_env_unset(self):
+    def test_defaults_when_config_unset(self):
         pool, _ = _make_pool()
-        with patch.dict("os.environ", {}, clear=True):
-            svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, _mock_sc())
         assert svc.webhook_url == ""
         assert svc.webhook_token == ""
         assert svc._running is False
 
-    def test_reads_url_and_token_from_env(self):
+    def test_reads_url_and_token_from_site_config(self):
         pool, _ = _make_pool()
-        env = {
-            "OPENCLAW_WEBHOOK_URL": "https://openclaw.example.com",
-            "OPENCLAW_WEBHOOK_TOKEN": "secret123",
-        }
-        with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(
+            pool,
+            _mock_sc(
+                webhook_url="https://openclaw.example.com",
+                webhook_token="secret123",
+            ),
+        )
         assert svc.webhook_url == "https://openclaw.example.com"
         assert svc.webhook_token == "secret123"
 
@@ -121,8 +135,7 @@ class TestServiceLifecycle:
     async def test_start_without_url_does_nothing(self):
         """If no webhook URL is configured, start() returns immediately."""
         pool, _ = _make_pool()
-        with patch.dict("os.environ", {}, clear=True):
-            svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, _mock_sc())
         await svc.start()
         assert svc._running is False
         assert svc._client is None
@@ -130,9 +143,7 @@ class TestServiceLifecycle:
     @pytest.mark.asyncio
     async def test_start_with_url_sets_running(self):
         pool, _ = _make_pool()
-        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
-        with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, _mock_sc(webhook_url="https://hook.test"))
 
         with patch("asyncio.create_task"):
             await svc.start()
@@ -144,7 +155,7 @@ class TestServiceLifecycle:
     async def test_stop_closes_client(self):
         pool, _ = _make_pool()
         mock_client = AsyncMock()
-        svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, _mock_sc())
         svc._running = True
         svc._client = mock_client
 
@@ -163,7 +174,7 @@ class TestFormatMessage:
 
     def setup_method(self):
         pool, _ = _make_pool()
-        self.svc = WebhookDeliveryService(pool)
+        self.svc = WebhookDeliveryService(pool, _mock_sc())
 
     def test_task_completed(self):
         msg = self.svc._format_message(
@@ -251,9 +262,7 @@ class TestDeliverPending:
         pool, conn = _make_pool()
         conn.fetch = AsyncMock(return_value=[])
 
-        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
-        with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, _mock_sc(webhook_url="https://hook.test"))
 
         await svc._deliver_pending()
 
@@ -270,9 +279,7 @@ class TestDeliverPending:
         rows = [_make_row(event_id=1), _make_row(event_id=2)]
         conn.fetch = AsyncMock(return_value=rows)
 
-        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
-        with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, _mock_sc(webhook_url="https://hook.test"))
         svc._deliver_event = AsyncMock()
 
         await svc._deliver_pending()
@@ -292,12 +299,13 @@ class TestDeliverEvent:
 
     def setup_method(self):
         self.pool, self.conn = _make_pool()
-        env = {
-            "OPENCLAW_WEBHOOK_URL": "https://hook.test",
-            "OPENCLAW_WEBHOOK_TOKEN": "tok_secret",
-        }
-        with patch.dict("os.environ", env, clear=True):
-            self.svc = WebhookDeliveryService(self.pool)
+        self.svc = WebhookDeliveryService(
+            self.pool,
+            _mock_sc(
+                webhook_url="https://hook.test",
+                webhook_token="tok_secret",
+            ),
+        )
         self.svc._client = AsyncMock()
 
     @pytest.mark.asyncio
@@ -349,9 +357,10 @@ class TestDeliverEvent:
 
     @pytest.mark.asyncio
     async def test_no_token_sends_no_auth_header(self):
-        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
-        with patch.dict("os.environ", env, clear=True):
-            svc = WebhookDeliveryService(self.pool)
+        svc = WebhookDeliveryService(
+            self.pool,
+            _mock_sc(webhook_url="https://hook.test"),
+        )
         svc._client = AsyncMock()
         response = MagicMock()
         response.raise_for_status = MagicMock()
@@ -392,7 +401,7 @@ class TestDeliveryLoop:
     @pytest.mark.asyncio
     async def test_loop_calls_deliver_pending(self):
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, _mock_sc())
         svc._running = True
 
         call_count = 0
@@ -413,7 +422,7 @@ class TestDeliveryLoop:
     async def test_loop_survives_exception(self):
         """Errors in _deliver_pending don't kill the loop."""
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool)
+        svc = WebhookDeliveryService(pool, _mock_sc())
         svc._running = True
 
         call_count = 0
