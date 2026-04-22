@@ -28,15 +28,31 @@ import pytest
 
 # Put brain/ on sys.path so the test can import ``brain.alert_sync``
 # AND ``brain.brain_daemon`` — same prelude as
-# test_brain_daemon_auto_remediate.py.
-_REPO_ROOT = Path(__file__).resolve().parents[5]
-_BRAIN_DIR = _REPO_ROOT / "brain"
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-if str(_BRAIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_BRAIN_DIR))
+# test_brain_daemon_auto_remediate.py. Walk upward to find the repo
+# root rather than hardcoding a parents[N] index — the docker worker
+# mounts `src/cofounder_agent` as `/app` so only 5 parent levels exist
+# and `brain/` is not present at all in that tree.
+_BRAIN_DIR = None
+for _parent in Path(__file__).resolve().parents:
+    _candidate = _parent / "brain"
+    if (_candidate / "alert_sync.py").is_file():
+        _BRAIN_DIR = _candidate
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        if str(_BRAIN_DIR) not in sys.path:
+            sys.path.insert(0, str(_BRAIN_DIR))
+        break
 
-from brain import alert_sync as asx  # noqa: E402
+pytestmark = pytest.mark.skipif(
+    _BRAIN_DIR is None,
+    reason="brain/ directory not present — docker worker only mounts "
+    "src/cofounder_agent as /app; this test runs on the host.",
+)
+
+if _BRAIN_DIR is not None:
+    from brain import alert_sync as asx  # noqa: E402
+else:
+    asx = None  # type: ignore[assignment]
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #

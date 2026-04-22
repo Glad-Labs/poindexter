@@ -371,9 +371,23 @@ class TestFilterCandidates:
 # ---------------------------------------------------------------------------
 
 
-_AUDIT_SCRIPT = (
-    Path(__file__).resolve().parents[5] / "scripts" / "audit_internal_link_coherence.py"
-)
+def _find_audit_script() -> Path | None:
+    """Locate scripts/audit_internal_link_coherence.py regardless of how
+    deep the test file sits in the checkout.
+
+    The test ran from the host where parents[5] landed on the repo root;
+    in the docker worker only `src/cofounder_agent` is mounted as /app so
+    parents[5] raises IndexError. Walk up until we find a scripts/ dir.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "scripts" / "audit_internal_link_coherence.py"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+_AUDIT_SCRIPT = _find_audit_script()
 
 
 def _load_audit_module():
@@ -387,6 +401,11 @@ def _load_audit_module():
     return mod
 
 
+@pytest.mark.skipif(
+    _AUDIT_SCRIPT is None,
+    reason="scripts/audit_internal_link_coherence.py not mounted — docker worker "
+    "only sees src/cofounder_agent as /app; this test runs on the host.",
+)
 class TestAuditScanner:
     def test_cadquery_phrase_matches_live_pattern(self):
         """Real content from GH-88 published post `0b5e81ef`."""
