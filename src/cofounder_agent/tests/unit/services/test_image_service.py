@@ -175,9 +175,6 @@ class TestImageServiceInit:
         assert isinstance(svc.sdxl_initialized, bool)
         assert isinstance(svc.sdxl_available, bool)
 
-    def test_search_cache_starts_empty(self):
-        svc = ImageService()
-        assert svc.search_cache == {}
 
 
 # ---------------------------------------------------------------------------
@@ -398,41 +395,6 @@ class TestPexelsSearch:
         ):
             result = await svc._pexels_search("nature")
         assert result == []
-
-
-# ---------------------------------------------------------------------------
-# generate_image_markdown / optimize_image_for_web / cache helpers
-# ---------------------------------------------------------------------------
-
-
-class TestImageServiceUtils:
-    def test_generate_image_markdown_delegates_to_metadata(self):
-        svc = ImageService()
-        meta = FeaturedImageMetadata(url="https://example.com/photo.jpg", photographer="John")
-        md = svc.generate_image_markdown(meta, caption="Custom caption")
-        assert "Custom caption" in md
-        assert "example.com/photo.jpg" in md
-
-    @pytest.mark.asyncio
-    async def test_optimize_image_returns_original_url(self):
-        svc = ImageService()
-        result = await svc.optimize_image_for_web("https://example.com/image.jpg")
-        assert result is not None
-        assert result["url"] == "https://example.com/image.jpg"
-        assert result["optimized"] is False
-
-    def test_cache_get_returns_none_when_empty(self):
-        svc = ImageService()
-        assert svc.get_search_cache("any_query") is None
-
-    def test_cache_set_and_get(self):
-        svc = ImageService()
-        meta = FeaturedImageMetadata(url="https://example.com/photo.jpg")
-        svc.set_search_cache("nature", [meta])
-        cached = svc.get_search_cache("nature")
-        assert cached is not None
-        assert len(cached) == 1
-        assert cached[0].url == "https://example.com/photo.jpg"
 
 
 # ---------------------------------------------------------------------------
@@ -853,33 +815,16 @@ class TestEnsurePexelsKey:
 
 
 # ---------------------------------------------------------------------------
-# optimize_image_for_web
+# Removed in Phase G step 4 (GH#71)
 #
-# Note: ``get_active_model`` / ``list_available_models`` were removed in
-# Phase G — they referenced the in-process diffusers pipeline state that
-# now lives inside the SdxlProvider. See
-# ``tests/unit/services/test_image_providers_sdxl.py`` for provider-level
-# coverage.
+# - ``get_active_model`` / ``list_available_models`` — in-process pipeline
+#   introspection lives on SdxlProvider's module state now.
+# - ``generate_image_markdown`` / ``optimize_image_for_web`` — placeholder
+#   methods with no callers. ``FeaturedImageMetadata.to_markdown`` is the
+#   public markdown helper if one is ever needed.
+# - ``get_search_cache`` / ``set_search_cache`` — search_cache dict was
+#   never populated (cache never wired in production). Dropped.
+#
+# See ``tests/unit/services/test_image_providers_sdxl.py`` and
+# ``test_image_providers_pexels.py`` for provider-level coverage.
 # ---------------------------------------------------------------------------
-
-
-class TestOptimizeImageForWeb:
-    @pytest.mark.asyncio
-    async def test_returns_placeholder_dict(self):
-        svc = ImageService()
-        result = await svc.optimize_image_for_web("https://cdn.example.com/img.png")
-        assert result is not None
-        assert result["url"] == "https://cdn.example.com/img.png"
-        assert result["optimized"] is False
-        assert "not yet implemented" in result["note"].lower()
-
-    @pytest.mark.asyncio
-    async def test_accepts_size_overrides(self):
-        svc = ImageService()
-        # Just verify it doesn't raise with width/height overrides
-        result = await svc.optimize_image_for_web(
-            "https://cdn.example.com/x.png",
-            max_width=2000,
-            max_height=1000,
-        )
-        assert result is not None

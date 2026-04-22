@@ -201,7 +201,6 @@ class ImageService:
         """
         self._pexels_key_checked_db = False
         self.pexels_available = False
-        self.search_cache: dict[str, list[FeaturedImageMetadata]] = {}
 
     # ------------------------------------------------------------------
     # SDXL provider state shims
@@ -647,61 +646,6 @@ class ImageService:
             return False
 
         return bool(results) and os.path.exists(output_path)
-
-    # =========================================================================
-    # UTILITY METHODS
-    # =========================================================================
-
-    def generate_image_markdown(
-        self,
-        image: FeaturedImageMetadata,
-        caption: str | None = None,
-    ) -> str:
-        """Generate markdown for image with attribution"""
-        return image.to_markdown(caption)
-
-    async def optimize_image_for_web(
-        self,
-        image_url: str,
-        max_width: int = 1200,  # noqa: ARG002 — placeholder, honored once impl lands  # pyright: ignore[reportUnusedParameter]
-        max_height: int = 630,  # noqa: ARG002 — same  # pyright: ignore[reportUnusedParameter]
-    ) -> dict[str, Any] | None:
-        """
-        Optimize image for web delivery.
-
-        Args:
-            image_url: URL of image to optimize
-            max_width: Maximum width
-            max_height: Maximum height
-
-        Returns:
-            Optimization result dict or None
-        """
-        # Placeholder for future image optimization — could integrate
-        # with imgix, Cloudinary, or local pillow pipeline.
-        logger.warning(
-            "[image_service] optimize_image called but not implemented — "
-            "returning unoptimized",
-        )
-        logger.info("Image optimization placeholder for %s", image_url)
-        return {
-            "url": image_url,
-            "optimized": False,
-            "note": "Image optimization not yet implemented",
-        }
-
-    def get_search_cache(self, query: str) -> list[FeaturedImageMetadata] | None:
-        """Get cached search results"""
-        return self.search_cache.get(query)
-
-    def set_search_cache(
-        self,
-        query: str,
-        results: list[FeaturedImageMetadata],
-    ) -> None:
-        """Cache search results (24-hour TTL in production)"""
-        self.search_cache[query] = results
-
 
 def get_image_service() -> ImageService:
     """Factory function for dependency injection"""
