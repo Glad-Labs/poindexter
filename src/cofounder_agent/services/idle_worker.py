@@ -208,7 +208,26 @@ class IdleWorker:
         except Exception as e:
             logger.debug("[IDLE] Throttle-gate check failed: %s", e)
 
-        # 1. Cooldown check
+        # 1. Manual trigger (runs BEFORE cooldown so an operator who
+        # explicitly asks for "discover now" isn't silently ignored for up
+        # to 30 min — they already saw the state and asked to override.
+        # Closes gitea#277. Queue-full from step 0 still applies above:
+        # manual can't stuff more topics onto a wall.
+        try:
+            manual = (await self._get_setting(
+                "topic_discovery_manual_trigger", "false"
+            )).strip().lower()
+            if manual == "true":
+                # Clear the flag so it doesn't re-fire every cycle
+                await self.pool.execute(
+                    "UPDATE app_settings SET value = 'false' "
+                    "WHERE key = 'topic_discovery_manual_trigger'"
+                )
+                return True, "manual_trigger"
+        except Exception as e:
+            logger.debug("[IDLE] Manual trigger check failed: %s", e)
+
+        # 2. Cooldown check (after manual so operator override wins)
         try:
             cooldown_s = int(await self._get_setting(
                 "topic_discovery_min_cooldown_seconds", "1800"
@@ -226,21 +245,6 @@ class IdleWorker:
         now_ts = time.time()
         if now_ts - last_ts < cooldown_s:
             return False, "cooldown"
-
-        # 2. Manual trigger (highest priority after cooldown)
-        try:
-            manual = (await self._get_setting(
-                "topic_discovery_manual_trigger", "false"
-            )).strip().lower()
-            if manual == "true":
-                # Clear the flag so it doesn't re-fire every cycle
-                await self.pool.execute(
-                    "UPDATE app_settings SET value = 'false' "
-                    "WHERE key = 'topic_discovery_manual_trigger'"
-                )
-                return True, "manual_trigger"
-        except Exception as e:
-            logger.debug("[IDLE] Manual trigger check failed: %s", e)
 
         # 3. Queue-low signal
         try:
