@@ -30,9 +30,9 @@ class BackfillVideosJob:
     schedule = "every 6 hours"
     idempotent = True
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        from services.site_config import site_config
-
+    async def run(
+        self, pool: Any, config: dict[str, Any], *, site_config: Any,
+    ) -> JobResult:
         cloud_url = site_config.get("database_url", "")
         if not cloud_url:
             return JobResult(ok=True, detail="no database_url — skipping", changes_made=0)
