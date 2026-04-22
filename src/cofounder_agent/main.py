@@ -228,7 +228,10 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             try:
                 from services.worker_service import WorkerService
 
-                worker_service = WorkerService(services["database"].pool)
+                worker_service = WorkerService(
+                    services["database"].pool,
+                    site_config=app.state.site_config,
+                )
                 await worker_service.register()
                 await worker_service.start_heartbeat()
                 app.state.worker_service = worker_service
