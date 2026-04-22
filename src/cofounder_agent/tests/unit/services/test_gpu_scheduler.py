@@ -236,8 +236,11 @@ class TestWaitForGamingClear:
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=10.0)  # below threshold
 
-        with patch("services.site_config.site_config") as mock_sc:
-            mock_sc.get_int.side_effect = lambda k, d: d  # use defaults
+        # Phase H step 5.4 (GH#95): don't patch the module singleton. _cfg_int
+        # already falls back to the supplied default when site_config lacks the
+        # gpu_* keys (conftest seeds brand keys only), so the test just uses
+        # the hardcoded defaults — same behavior as `lambda k, d: d`.
+        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda k, d: d):
             await scheduler._wait_for_gaming_clear()
         # Did not enter gaming-detected state
         assert scheduler._gaming_detected is False
@@ -253,8 +256,7 @@ class TestWaitForGamingClear:
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=None)
 
-        with patch("services.site_config.site_config") as mock_sc:
-            mock_sc.get_int.side_effect = lambda k, d: d
+        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda k, d: d):
             await scheduler._wait_for_gaming_clear()
         # No exception, no gaming flag set
         assert scheduler._gaming_detected is False
@@ -270,9 +272,8 @@ class TestWaitForGamingClear:
         # First check: 90% (high), second check: 5% (idle)
         scheduler._get_gpu_utilization = AsyncMock(side_effect=[90.0, 5.0])
 
-        with patch("services.site_config.site_config") as mock_sc, \
+        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda k, d: d), \
              patch("asyncio.sleep", new=AsyncMock()):
-            mock_sc.get_int.side_effect = lambda k, d: d
             await scheduler._wait_for_gaming_clear()
         # Was just a spike — gaming not flagged
         assert scheduler._gaming_detected is False
@@ -290,8 +291,7 @@ class TestWaitForGamingClear:
         scheduler._gaming_paused_since = time.monotonic() - 60.0
         scheduler._get_gpu_utilization = AsyncMock(return_value=5.0)
 
-        with patch("services.site_config.site_config") as mock_sc:
-            mock_sc.get_int.side_effect = lambda k, d: d
+        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda k, d: d):
             await scheduler._wait_for_gaming_clear()
 
         assert scheduler._gaming_detected is False
@@ -432,8 +432,9 @@ class TestPropertiesAndConfig:
 
         from services.gpu_scheduler import GPUScheduler
         scheduler = GPUScheduler()
-        with patch("services.site_config.site_config") as mock_sc:
-            mock_sc.get_int.side_effect = lambda k, d: d
+        # Phase H step 5.4 (GH#95): patch the local _cfg_int helper instead
+        # of the module singleton so this test survives singleton deletion.
+        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda k, d: d):
             status = scheduler.status
         assert "config" in status
         assert "threshold_percent" in status["config"]
