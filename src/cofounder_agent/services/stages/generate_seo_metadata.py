@@ -66,7 +66,7 @@ class GenerateSeoMetadataStage:
         logger.info("STAGE 4: Generating SEO metadata...")
 
         seo_generator = get_seo_content_generator(
-            get_content_generator(), site_config=_sc,
+            get_content_generator(site_config=_sc), site_config=_sc,
         )
         seo_assets = seo_generator.metadata_gen.generate_seo_assets(
             title=topic, content=content_text, topic=topic,

@@ -61,22 +61,64 @@ class ContentValidationResult:
 class AIContentGenerator:
     """Unified content generation with provider fallback and self-checking"""
 
-    def __init__(self, quality_threshold: float = 5.0):
+    def __init__(self, quality_threshold: float = 5.0, *, site_config: Any = None):
         """Initialize content generator
 
         Args:
             quality_threshold: Minimum quality score (0-10) for content acceptance
+            site_config: SiteConfig instance (DI — Phase H, GH#95).
+                Optional so the module-level singleton factory
+                (``get_content_generator``) and the TaskExecutor's
+                fallback construction path still work pre-lifespan. Every
+                async method that reads app_settings calls
+                ``_require_site_config()`` which fails loudly when it's
+                None, so accidental unwired callers can't silently fall
+                back to default thresholds.
         """
         self.quality_threshold = quality_threshold
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.generation_attempts = 0
+        self._site_config = site_config
         # #198: tunable via app_settings so operators can widen/tighten
-        # refinement loops without a redeploy.
-        from services.site_config import site_config as _sc
-        self.max_refinement_attempts = _sc.get_int("content_gen_max_refinement_attempts", 3)
+        # refinement loops without a redeploy. Resolved lazily below — we
+        # can't read site_config here because the test suite + legacy
+        # callers construct the class before wiring a site_config.
+        self.max_refinement_attempts = 3  # Default; overridden when site_config is wired.
+        if site_config is not None:
+            self.max_refinement_attempts = site_config.get_int(
+                "content_gen_max_refinement_attempts", 3,
+            )
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
+
+    def set_site_config(self, site_config: Any) -> None:
+        """Rebind site_config after construction — Phase H (GH#95).
+
+        TaskExecutor / stages can call this once site_config is wired so
+        subsequent generate_blog_post / refinement calls read DB-backed
+        tunables instead of raising from ``_require_site_config``.
+        """
+        self._site_config = site_config
+        self.max_refinement_attempts = site_config.get_int(
+            "content_gen_max_refinement_attempts", 3,
+        )
+
+    def _require_site_config(self) -> Any:
+        """Return ``self._site_config`` or raise — Phase H (GH#95).
+
+        Every method that reads app_settings routes through here so a
+        missing wire-up surfaces as a loud RuntimeError, not silent
+        defaults.
+        """
+        if self._site_config is None:
+            raise RuntimeError(
+                "AIContentGenerator instantiated without site_config. "
+                "Pass site_config= to the constructor (or call "
+                "set_site_config() before generate_blog_post) — Phase H "
+                "/ GH#95."
+            )
+        return self._site_config
 
     async def _check_ollama_async(self):
         """Async check if Ollama is running - call this once before using Ollama"""
@@ -84,7 +126,7 @@ class AIContentGenerator:
             logger.debug("Ollama already checked previously: %s", self.ollama_available)
             return
 
-        from services.site_config import site_config as _sc
+        _sc = self._require_site_config()
         ollama_url = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("Checking if Ollama server is running at %s...", ollama_url)
         try:
@@ -107,7 +149,7 @@ class AIContentGenerator:
     async def _populate_internal_links_cache(self):
         """Fetch published post titles + slugs so the LLM can include real internal links."""
         try:
-            from services.site_config import site_config as _sc
+            _sc = self._require_site_config()
             site_url = _sc.get("site_url", "")
 
             import asyncpg
@@ -267,7 +309,7 @@ class AIContentGenerator:
         try:
             logger.info("Loading system prompt...")
             # Word-count window buffers — tunable via app_settings (#198).
-            from services.site_config import site_config as _sc
+            _sc = self._require_site_config()
             _min_ratio = _sc.get_float("content_gen_min_word_ratio", 0.9)
             _max_ratio = _sc.get_float("content_gen_max_word_ratio", 1.1)
             min_words = int(target_length * _min_ratio)
@@ -517,7 +559,7 @@ class AIContentGenerator:
         # Try to refine with same model
         # Calculate max tokens for refinement pass — extra headroom for thinking models.
         # Token multipliers are tunable via app_settings (#198).
-        from services.site_config import site_config as _sc
+        _sc = self._require_site_config()
         _is_thinking_refine = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))
         _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 7.0)
         _standard_mult = _sc.get_float("content_gen_token_mult_standard", 4.5)
@@ -610,7 +652,7 @@ class AIContentGenerator:
             return None
 
         logger.info("[ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
-        from services.site_config import site_config as _sc
+        _sc = self._require_site_config()
         ollama_endpoint = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("   ├─ Endpoint: %s", ollama_endpoint)
         logger.info("   └─ Status: Connecting...\n")
@@ -630,10 +672,10 @@ class AIContentGenerator:
                 model_list = [preferred_model]
                 logger.info("   ├─ Using UI-selected model: %s", preferred_model)
             else:
-                # Read pipeline_writer_model from DB first (DB-first config)
+                # Read pipeline_writer_model from DB first (DB-first config).
+                # _sc already resolved above via self._require_site_config().
                 try:
-                    from services.site_config import site_config
-                    db_model = site_config.get("pipeline_writer_model", "")
+                    db_model = _sc.get("pipeline_writer_model", "")
                     if db_model:
                         # Strip "ollama/" prefix if present
                         db_model = db_model.removeprefix("ollama/")
@@ -650,7 +692,7 @@ class AIContentGenerator:
 
                 # Read fallback model from DB
                 try:
-                    db_fallback = site_config.get("pipeline_fallback_model", "")
+                    db_fallback = _sc.get("pipeline_fallback_model", "")
                     if db_fallback:
                         db_fallback = db_fallback.removeprefix("ollama/")
                         if db_fallback != resolved:
@@ -1008,11 +1050,23 @@ Take action today—the insights you gain will compound over time.
 _generator: AIContentGenerator | None = None
 
 
-def get_content_generator() -> AIContentGenerator:
-    """Get or create global content generator"""
+def get_content_generator(*, site_config: Any = None) -> AIContentGenerator:
+    """Get or create global content generator.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95). When the
+            singleton is being constructed for the first time this is
+            threaded through the ctor. When the singleton already
+            exists, the kwarg is used to rebind via set_site_config()
+            so a late-arriving instance (main.py lifespan after
+            app.state.site_config wires up) takes effect even if a
+            pre-lifespan caller already built the singleton without.
+    """
     global _generator
     if _generator is None:
-        _generator = AIContentGenerator()
+        _generator = AIContentGenerator(site_config=site_config)
+    elif site_config is not None and _generator._site_config is None:
+        _generator.set_site_config(site_config)
     return _generator
 
 
