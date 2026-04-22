@@ -21,11 +21,11 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 """
 
 import logging
+from typing import Any
 
 from fastapi import FastAPI
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 try:
     import sentry_sdk
@@ -72,6 +72,7 @@ class SentryIntegration:
     def initialize(
         cls,
         app: FastAPI,  # noqa: ARG003 — main.py passes the app; FastApiIntegration hooks globally, doesn't need the instance
+        site_config: Any,
         service_name: str = "cofounder-agent",
     ):
         """
@@ -79,6 +80,10 @@ class SentryIntegration:
 
         Args:
             app: FastAPI application instance
+            site_config: SiteConfig instance (DI — Phase H). Must be passed
+                explicitly — the module-level singleton import was removed
+                so tests can construct isolated mocks and so this initializer
+                doesn't read empty values at import time.
             service_name: Name of the service for tracking
 
         Returns:
@@ -92,7 +97,7 @@ class SentryIntegration:
             logger.debug("Sentry already initialized")
             return cls._sentry_enabled
 
-        # Get configuration from site_config (falls back to env vars).
+        # Get configuration from the injected site_config.
         sentry_dsn = site_config.get("sentry_dsn", "").strip()
         sentry_enabled = site_config.get("sentry_enabled", "true").lower() in ("true", "1", "yes")
         environment = site_config.get("environment", "development") or "development"
@@ -348,19 +353,25 @@ class SentryIntegration:
         return cls._sentry_enabled
 
 
-def setup_sentry(app: FastAPI, service_name: str = "cofounder-agent") -> bool:
+def setup_sentry(
+    app: FastAPI,
+    site_config: Any,
+    service_name: str = "cofounder-agent",
+) -> bool:
     """
     Convenience function to initialize Sentry.
 
     Usage in main.py:
         from services.sentry_integration import setup_sentry
-        setup_sentry(app)
+        from services.site_config import site_config
+        setup_sentry(app, site_config)
 
     Args:
         app: FastAPI application instance
+        site_config: SiteConfig instance (DI — Phase H)
         service_name: Name of the service
 
     Returns:
         bool: True if successfully initialized
     """
-    return SentryIntegration.initialize(app, service_name)
+    return SentryIntegration.initialize(app, site_config, service_name)
