@@ -15,12 +15,13 @@ Usage:
         # Reject — content has quality issues
 """
 
+import os
 import re
 import time as _time
 from dataclasses import dataclass, field
+from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config as _sc
 
 logger = get_logger(__name__)
 
@@ -75,22 +76,50 @@ _NAMED_SOURCE_KEYWORDS = (
 # ============================================================================
 
 
+def _env_str(key: str, default: str) -> str:
+    """Read an env var (uppercase) with a default, mirroring SiteConfig.get()."""
+    val = os.getenv(key.upper())
+    return val if val else default
+
+
+def _env_int(key: str, default: int) -> int:
+    """Read an int env var (uppercase) with a default, mirroring SiteConfig.get_int()."""
+    val = os.getenv(key.upper())
+    if not val:
+        return default
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def _get_company_facts() -> dict:
-    """Load company facts from DB (site_config) with env fallback."""
+    """Load company facts from env vars with hardcoded defaults.
+
+    Phase H step 5 (GH#95): module import runs BEFORE the app lifespan
+    populates site_config from DB, so at this point the singleton would
+    only resolve env vars anyway. Reading env directly here makes the
+    dependency explicit and lets the singleton be removed.
+    """
     return {
-        "company_name": _sc.get("company_name", "My Company"),
-        "founded_date": _sc.get("company_founded_date", "2025-01-01"),
-        "founded_year": _sc.get_int("company_founded_year", 2025),
-        "age_months": _sc.get_int("company_age_months", 12),
-        "team_size": _sc.get_int("company_team_size", 1),
-        "founder_name": _sc.get("company_founder_name", "Founder"),
+        "company_name": _env_str("company_name", "My Company"),
+        "founded_date": _env_str("company_founded_date", "2025-01-01"),
+        "founded_year": _env_int("company_founded_year", 2025),
+        "age_months": _env_int("company_age_months", 12),
+        "team_size": _env_int("company_team_size", 1),
+        "founder_name": _env_str("company_founder_name", "Founder"),
         "known_employees": set(),
-        "real_products": set(_sc.get("company_products", "").split(",")) if _sc.get("company_products") else set(),
+        "real_products": (
+            set(_env_str("company_products", "").split(","))
+            if _env_str("company_products", "")
+            else set()
+        ),
         "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "vercel", "grafana"},
     }
 
 
-# Loaded at module import time — uses DB values from site_config cache. Not refreshed on config changes without reimport.
+# Loaded at module import time from env vars (see _get_company_facts).
+# Not refreshed on config changes without reimport.
 GLAD_LABS_FACTS = _get_company_facts()
 _COMPANY_NAME = GLAD_LABS_FACTS["company_name"]
 
@@ -688,6 +717,8 @@ def validate_content(
     content: str,
     topic: str = "",
     tags: list[str] | None = None,
+    *,
+    site_config: Any | None = None,
 ) -> ValidationResult:
     """
     Validate content against hard quality rules.
@@ -700,6 +731,13 @@ def validate_content(
     topic-mismatched library mentions (e.g. recommending CadQuery from
     an ai-ml post). Omitting tags keeps the rule working but with a
     weaker fallback based on the topic/title text.
+
+    site_config (Phase H step 5, GH#95): SiteConfig instance used to
+    read the warning-reject threshold. When None, falls back to the
+    env var CONTENT_VALIDATOR_WARNING_REJECT_THRESHOLD (uppercase) and
+    then to a hardcoded floor of 3 — matches the previous singleton
+    behavior when the DB wasn't loaded yet. Production callers should
+    pass ``app.state.site_config``; tests can omit and get env/default.
     """
     issues: list[ValidationIssue] = []
     title = title or ""
@@ -1039,9 +1077,14 @@ def validate_content(
     # (a) Per-rule threshold promotion. Read the threshold from
     # site_config (DB-first) with a hardcoded floor of 3 so the guard
     # still fires on a cold-boot environment with no settings loaded.
-    _warning_threshold = _sc.get_int(
-        "content_validator_warning_reject_threshold", 3,
-    )
+    if site_config is not None:
+        _warning_threshold = site_config.get_int(
+            "content_validator_warning_reject_threshold", 3,
+        )
+    else:
+        _warning_threshold = _env_int(
+            "content_validator_warning_reject_threshold", 3,
+        )
     if _warning_threshold > 0:
         for _i in issues:
             if (
@@ -1083,11 +1126,20 @@ def validate_content(
 # Call separately from the async pipeline (validate_content is sync)
 # ============================================================================
 
-async def verify_content_urls(content: str) -> list[ValidationIssue]:
+async def verify_content_urls(
+    content: str,
+    *,
+    site_config: Any | None = None,
+) -> list[ValidationIssue]:
     """Extract all URLs from content and verify they resolve.
 
     Returns a list of ValidationIssues for dead/broken links.
     This is async because it makes HTTP requests.
+
+    site_config (Phase H step 5, GH#95): SiteConfig instance used to
+    read the ``site_domains`` skip-list. When None, falls back to the
+    env var SITE_DOMAINS — matches the previous singleton behavior
+    when the DB wasn't loaded yet.
     """
     import httpx
 
@@ -1111,7 +1163,10 @@ async def verify_content_urls(content: str) -> list[ValidationIssue]:
     # Skip internal links (our own site) and known-good domains.
     # Domain list comes from site_config (site_domains = comma-separated),
     # not hardcoded — lets operators bring their own brand (#198).
-    _raw = _sc.get("site_domains", "")
+    if site_config is not None:
+        _raw = site_config.get("site_domains", "")
+    else:
+        _raw = _env_str("site_domains", "")
     skip_domains = {d.strip().lower() for d in _raw.split(",") if d.strip()}
     skip_domains.add("localhost")
 
