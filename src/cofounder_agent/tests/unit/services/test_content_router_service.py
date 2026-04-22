@@ -368,30 +368,39 @@ class TestNormalizeText:
 
 @pytest.mark.unit
 class TestScrubFabricatedLinks:
-    """Tests for link scrubbing that removes hallucinated URLs."""
+    """Tests for link scrubbing that removes hallucinated URLs.
+
+    Phase H step 5 (GH#95): ``scrub_fabricated_links`` now requires
+    site_config. Each test imports the live singleton so behavior
+    mirrors production defaults.
+    """
+
+    def _sc(self):
+        from services.site_config import site_config as _sc_mod
+        return _sc_mod
 
     def test_keeps_trusted_markdown_links(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "Check out [this repo](https://github.com/user/project) for details."
-        assert "github.com/user/project" in _scrub_fabricated_links(content)
+        assert "github.com/user/project" in _scrub_fabricated_links(content, site_config=self._sc())
 
     def test_removes_fabricated_markdown_links(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "See [definition](https://www.dictionary.com/browse/example) for more."
-        result = _scrub_fabricated_links(content)
+        result = _scrub_fabricated_links(content, site_config=self._sc())
         assert "dictionary.com" not in result
         assert "definition" in result  # Link text preserved
 
     def test_removes_bare_fabricated_urls(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "Visit https://www.randomsite.com/fake-article for info."
-        result = _scrub_fabricated_links(content)
+        result = _scrub_fabricated_links(content, site_config=self._sc())
         assert "randomsite.com" not in result
 
     def test_keeps_bare_trusted_urls(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "See https://arxiv.org/abs/2301.12345 for the paper."
-        result = _scrub_fabricated_links(content)
+        result = _scrub_fabricated_links(content, site_config=self._sc())
         assert "arxiv.org" in result
 
     def test_keeps_own_domain_links(self):
@@ -399,16 +408,16 @@ class TestScrubFabricatedLinks:
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         domain = site_config.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
-        assert domain in _scrub_fabricated_links(content)
+        assert domain in _scrub_fabricated_links(content, site_config=site_config)
 
     def test_empty_content_returns_empty(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
-        assert _scrub_fabricated_links("") == ""
+        assert _scrub_fabricated_links("", site_config=self._sc()) == ""
 
     def test_no_links_returns_unchanged(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "This is plain text with no links at all."
-        assert _scrub_fabricated_links(content) == content
+        assert _scrub_fabricated_links(content, site_config=self._sc()) == content
 
     def test_multiple_fabricated_links_all_removed(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
@@ -416,7 +425,7 @@ class TestScrubFabricatedLinks:
             "See [tools](https://www.techtools.io/list) and "
             "[guide](https://www.fakesite.com/guide) for more."
         )
-        result = _scrub_fabricated_links(content)
+        result = _scrub_fabricated_links(content, site_config=self._sc())
         assert "techtools.io" not in result
         assert "fakesite.com" not in result
         assert "tools" in result  # Link texts kept
@@ -611,15 +620,19 @@ class TestCheckTitleOriginality:
 
 
 class TestScrubFabricatedLinksEdgeCases:
+    def _sc(self):
+        from services.site_config import site_config as _sc_mod
+        return _sc_mod
+
     def test_subdomain_of_trusted_domain_kept(self):
         content = "[Wiki article](https://en.wikipedia.org/wiki/Python)"
-        result = _scrub_fabricated_links(content)
+        result = _scrub_fabricated_links(content, site_config=self._sc())
         assert "wikipedia.org" in result
 
     def test_link_inside_markdown_parens_not_double_processed(self):
         """Bare URL regex uses negative lookbehind to skip URLs inside markdown ()."""
         content = "[label](https://github.com/example/repo)"
-        result = _scrub_fabricated_links(content)
+        result = _scrub_fabricated_links(content, site_config=self._sc())
         # The full markdown link should pass through unchanged
         assert result == content
 
@@ -630,7 +643,7 @@ class TestScrubFabricatedLinksEdgeCases:
         if not domain:
             return  # skip if no domain configured
         content = f"[older post](https://{domain}/posts/some-old-post)"
-        result = _scrub_fabricated_links(content)
+        result = _scrub_fabricated_links(content, site_config=site_config)
         assert "/posts/some-old-post" in result
 
 
