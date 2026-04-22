@@ -57,17 +57,14 @@ async def mock_async_client(response):
 
 
 def make_image_service_with_key() -> ImageService:
-    """Return an ImageService with a fake Pexels API key injected.
+    """Return an ImageService that thinks Pexels is configured.
 
-    Post-encrypt refactor: ``ImageService()`` no longer reads the key
-    at __init__ (secrets aren't in site_config; require an async DB
-    fetch). Tests set the fields directly here and flip
-    ``_pexels_key_checked_db`` so the lazy DB lookup is skipped.
+    Post-Phase-G the key itself lives in PexelsProvider — ImageService
+    only caches an ``is-configured`` verdict. Flip the cache flags so
+    tests don't try to hit the DB probe.
     """
     svc = ImageService()
-    svc.pexels_api_key = "fake-pexels-key"
     svc.pexels_available = True
-    svc.pexels_headers = {"Authorization": "fake-pexels-key"}
     svc._pexels_key_checked_db = True
     return svc
 
@@ -167,10 +164,6 @@ class TestImageServiceInit:
         svc = ImageService()
         assert svc.pexels_available is False
 
-    def test_pexels_base_url_set(self):
-        svc = ImageService()
-        assert "pexels.com" in svc.pexels_base_url
-
     def test_sdxl_not_initialized_at_startup(self):
         # Post-Phase-G the SDXL lifecycle lives on SdxlProvider's
         # module-level state. A fresh ImageService surfaces
@@ -194,10 +187,8 @@ class TestImageServiceInit:
 
 class TestSearchFeaturedImage:
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_api_key(self, monkeypatch):
-        monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+    async def test_returns_none_when_no_api_key(self):
         svc = ImageService()
-        svc.pexels_api_key = ""
         svc.pexels_available = False
         svc._pexels_key_checked_db = True  # prevent DB lookup
         result = await svc.search_featured_image("AI")
@@ -205,32 +196,45 @@ class TestSearchFeaturedImage:
 
     @pytest.mark.asyncio
     async def test_returns_image_metadata_on_success(self):
-        svc = make_image_service_with_key()
-        resp = make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(return_value=resp)
-            mock_cls.return_value = mock_ctx
+        from plugins.image_provider import ImageResult
 
+        svc = make_image_service_with_key()
+        fake_provider = MagicMock()
+        fake_provider.name = "pexels"
+        fake_provider.fetch = AsyncMock(return_value=[
+            ImageResult(
+                url=SAMPLE_PHOTO["src"]["large"],
+                thumbnail=SAMPLE_PHOTO["src"]["small"],
+                photographer="Jane Doe",
+                photographer_url="https://pexels.com/@jane",
+                width=1920,
+                height=1080,
+                alt_text="A beautiful landscape",
+                source="pexels",
+                search_query="nature",
+            ),
+        ])
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
+        ):
             result = await svc.search_featured_image("nature")
 
         assert result is not None
         assert isinstance(result, FeaturedImageMetadata)
         assert result.url == SAMPLE_PHOTO["src"]["large"]
+        assert result.source == "pexels"
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_photos_found(self):
         svc = make_image_service_with_key()
-        resp = make_mock_httpx_response({"photos": []})
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(return_value=resp)
-            mock_cls.return_value = mock_ctx
-
+        fake_provider = MagicMock()
+        fake_provider.name = "pexels"
+        fake_provider.fetch = AsyncMock(return_value=[])
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
+        ):
             result = await svc.search_featured_image("very_obscure_topic_xyz")
 
         assert result is None
@@ -238,15 +242,16 @@ class TestSearchFeaturedImage:
     @pytest.mark.asyncio
     async def test_excludes_person_keywords(self):
         svc = make_image_service_with_key()
-        make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
-        captured_queries = []
+        captured_queries: list[str] = []
 
-        async def capture_pexels_search(query, **kwargs):
+        async def capture_pexels_search(query, **kwargs):  # noqa: ARG001
             captured_queries.append(query)
             return []
 
         with patch.object(svc, "_pexels_search", side_effect=capture_pexels_search):
-            await svc.search_featured_image("AI", keywords=["portrait", "people", "technology"])
+            await svc.search_featured_image(
+                "AI", keywords=["portrait", "people", "technology"],
+            )
 
         # "portrait" and "people" should be excluded; "technology" should be included
         assert not any("portrait" in q for q in captured_queries)
@@ -260,10 +265,8 @@ class TestSearchFeaturedImage:
 
 class TestGetImagesForGallery:
     @pytest.mark.asyncio
-    async def test_returns_empty_list_without_api_key(self, monkeypatch):
-        monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+    async def test_returns_empty_list_without_api_key(self):
         svc = ImageService()
-        svc.pexels_api_key = ""
         svc.pexels_available = False
         svc._pexels_key_checked_db = True  # prevent DB lookup
         result = await svc.get_images_for_gallery("AI")
@@ -271,17 +274,29 @@ class TestGetImagesForGallery:
 
     @pytest.mark.asyncio
     async def test_returns_images_up_to_count(self):
-        svc = make_image_service_with_key()
-        # Two photos returned by pexels search
-        photos = [SAMPLE_PHOTO, {**SAMPLE_PHOTO, "src": {"large": "url2", "small": "url2s"}}]
-        resp = make_mock_httpx_response({"photos": photos})
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(return_value=resp)
-            mock_cls.return_value = mock_ctx
+        from plugins.image_provider import ImageResult
 
+        svc = make_image_service_with_key()
+        fake_provider = MagicMock()
+        fake_provider.name = "pexels"
+        fake_provider.fetch = AsyncMock(return_value=[
+            ImageResult(
+                url=SAMPLE_PHOTO["src"]["large"],
+                thumbnail=SAMPLE_PHOTO["src"]["small"],
+                photographer="Jane Doe",
+                source="pexels",
+            ),
+            ImageResult(
+                url="url2",
+                thumbnail="url2s",
+                photographer="Other",
+                source="pexels",
+            ),
+        ])
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
+        ):
             result = await svc.get_images_for_gallery("nature", count=2)
 
         assert len(result) == 2
@@ -295,29 +310,49 @@ class TestGetImagesForGallery:
 
 
 # ---------------------------------------------------------------------------
-# _pexels_search
+# _pexels_search (delegates to PexelsProvider)
+#
+# The raw HTTP call lives in ``services/image_providers/pexels.py`` —
+# see ``test_image_providers_pexels.py`` for per-provider coverage.
+# These tests only exercise the adapter from ``ImageResult`` →
+# ``FeaturedImageMetadata``.
 # ---------------------------------------------------------------------------
 
 
 class TestPexelsSearch:
     @pytest.mark.asyncio
-    async def test_returns_empty_list_without_key(self, monkeypatch):
-        monkeypatch.delenv("PEXELS_API_KEY", raising=False)
-        svc = ImageService()
-        result = await svc._pexels_search("AI")
+    async def test_returns_empty_list_when_provider_not_registered(self):
+        svc = make_image_service_with_key()
+        with patch(
+            "services.image_service._resolve_image_provider", return_value=None,
+        ):
+            result = await svc._pexels_search("AI")
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_maps_photos_to_metadata(self):
-        svc = make_image_service_with_key()
-        resp = make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(return_value=resp)
-            mock_cls.return_value = mock_ctx
+    async def test_maps_image_result_to_metadata(self):
+        from plugins.image_provider import ImageResult
 
+        svc = make_image_service_with_key()
+        fake_provider = MagicMock()
+        fake_provider.name = "pexels"
+        fake_provider.fetch = AsyncMock(return_value=[
+            ImageResult(
+                url="https://img.example/large.jpg",
+                thumbnail="https://img.example/small.jpg",
+                photographer="Jane Doe",
+                photographer_url="https://img.example/@jane",
+                width=1920,
+                height=1080,
+                alt_text="sunset",
+                source="pexels",
+                search_query="nature",
+            ),
+        ])
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
+        ):
             result = await svc._pexels_search("nature")
 
         assert len(result) == 1
@@ -325,21 +360,44 @@ class TestPexelsSearch:
         assert img.photographer == "Jane Doe"
         assert img.width == 1920
         assert img.height == 1080
+        assert img.source == "pexels"
 
     @pytest.mark.asyncio
-    async def test_source_is_pexels(self):
+    async def test_forwards_search_knobs_to_provider(self):
         svc = make_image_service_with_key()
-        resp = make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
-        with patch("httpx.AsyncClient") as mock_cls:
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_ctx.__aexit__ = AsyncMock(return_value=False)
-            mock_ctx.get = AsyncMock(return_value=resp)
-            mock_cls.return_value = mock_ctx
+        fake_provider = MagicMock()
+        fake_provider.name = "pexels"
+        fake_provider.fetch = AsyncMock(return_value=[])
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
+        ):
+            await svc._pexels_search(
+                "mountain", per_page=12, orientation="portrait",
+                size="large", page=3,
+            )
 
+        call = fake_provider.fetch.await_args
+        forwarded = call.args[1] if len(call.args) > 1 else call.kwargs["config"]
+        assert forwarded == {
+            "per_page": 12,
+            "orientation": "portrait",
+            "size": "large",
+            "page": 3,
+        }
+
+    @pytest.mark.asyncio
+    async def test_provider_exception_returns_empty(self):
+        svc = make_image_service_with_key()
+        fake_provider = MagicMock()
+        fake_provider.name = "pexels"
+        fake_provider.fetch = AsyncMock(side_effect=RuntimeError("boom"))
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
+        ):
             result = await svc._pexels_search("nature")
-
-        assert result[0].source == "pexels"
+        assert result == []
 
 
 # ---------------------------------------------------------------------------
@@ -715,22 +773,18 @@ class TestGenerateImageDispatcher:
 
 
 class TestEnsurePexelsKey:
-    """Tests for the DB-first (encrypted) Pexels API key loader.
+    """Tests for ``ImageService._ensure_pexels_key`` post-Phase-G.
 
-    Post-refactor, ``_ensure_pexels_key`` only has two paths:
-    1. Already-checked flag → no-op
-    2. Query ``plugins.secrets.get_secret`` via the shared pool from
-       ``services.container.get_service("database")``
-
-    No more site_config fallback, no more ``os.getenv("LOCAL_DATABASE_URL")``
-    fresh-connection fallback — those contradicted the "DB-first, no
-    hardcoded configs" policy.
+    The probe no longer stores the decrypted key on the service — the
+    PexelsProvider reads the key itself per-fetch. This method just
+    caches a ``pexels_available`` bool so the orchestrator can skip
+    the LLM semantic-query path when Pexels isn't configured.
     """
 
     @pytest.mark.asyncio
     async def test_already_checked_noop(self):
         svc = ImageService()
-        svc.pexels_api_key = "existing-key"
+        svc.pexels_available = True
         svc._pexels_key_checked_db = True
 
         # Should not touch the container at all.
@@ -739,7 +793,7 @@ class TestEnsurePexelsKey:
         mock_get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_loads_from_db_via_get_secret(self):
+    async def test_probe_flips_available_when_key_present(self):
         svc = ImageService()
         svc._pexels_key_checked_db = False
 
@@ -752,13 +806,16 @@ class TestEnsurePexelsKey:
         fake_db_service.pool = MagicMock()
         fake_db_service.pool.acquire = MagicMock(return_value=fake_pool_ctx)
 
-        with patch("services.container.get_service", return_value=fake_db_service), \
-             patch("plugins.secrets.get_secret", new=AsyncMock(return_value="decrypted-key")):
+        with (
+            patch("services.container.get_service", return_value=fake_db_service),
+            patch(
+                "plugins.secrets.get_secret",
+                new=AsyncMock(return_value="decrypted-key"),
+            ),
+        ):
             await svc._ensure_pexels_key()
 
-        assert svc.pexels_api_key == "decrypted-key"
         assert svc.pexels_available is True
-        assert svc.pexels_headers == {"Authorization": "decrypted-key"}
         assert svc._pexels_key_checked_db is True
 
     @pytest.mark.asyncio
@@ -769,7 +826,6 @@ class TestEnsurePexelsKey:
         with patch("services.container.get_service", return_value=None):
             await svc._ensure_pexels_key()
 
-        assert svc.pexels_api_key is None
         assert svc.pexels_available is False
         assert svc._pexels_key_checked_db is True
 
@@ -787,11 +843,12 @@ class TestEnsurePexelsKey:
         fake_db_service.pool = MagicMock()
         fake_db_service.pool.acquire = MagicMock(return_value=fake_pool_ctx)
 
-        with patch("services.container.get_service", return_value=fake_db_service), \
-             patch("plugins.secrets.get_secret", new=AsyncMock(return_value=None)):
+        with (
+            patch("services.container.get_service", return_value=fake_db_service),
+            patch("plugins.secrets.get_secret", new=AsyncMock(return_value=None)),
+        ):
             await svc._ensure_pexels_key()
 
-        assert svc.pexels_api_key is None
         assert svc.pexels_available is False
 
 
