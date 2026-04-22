@@ -67,7 +67,7 @@ class BackfillPodcastsJob:
         finally:
             await cloud.close()
 
-        svc = PodcastService()
+        svc = PodcastService(site_config=site_config)
         generated = 0
         uploaded = 0
 

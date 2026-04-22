@@ -736,11 +736,13 @@ async def publish_post_from_task(
             if background_tasks:
                 background_tasks.add_task(
                     generate_podcast_episode, post_id, post_title, post_content,
+                    site_config=site_config,
                     pre_generated_script=_pre_script,
                 )
             else:
                 _spawn_background(
                     generate_podcast_episode(post_id, post_title, post_content,
+                                            site_config=site_config,
                                             pre_generated_script=_pre_script),
                     name=f"podcast_episode({post_id})",
                 )

@@ -403,7 +403,7 @@ NARRATION:"""
             logger.warning("[SHORT] Summary script too short (%d chars)", len(summary_script))
             return None
 
-        summary_script = _normalize_for_speech(summary_script)
+        summary_script = _normalize_for_speech(summary_script, site_config)
         logger.info("[SHORT] Generated summary script: %d chars", len(summary_script))
 
         # Generate TTS audio
@@ -456,7 +456,7 @@ async def generate_short_video_for_post(
             import edge_tts
 
             from services.podcast_service import _normalize_for_speech
-            script = _normalize_for_speech(pre_generated_summary)
+            script = _normalize_for_speech(pre_generated_summary, site_config)
             short_audio_path = str(VIDEO_DIR / f"{post_id}-short-audio.mp3")
             communicate = edge_tts.Communicate(script, "en-US-AndrewMultilingualNeural")
             await communicate.save(short_audio_path)

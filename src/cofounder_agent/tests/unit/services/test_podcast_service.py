@@ -1,4 +1,8 @@
-"""Unit tests for podcast_service.py — markdown stripping and script building."""
+"""Unit tests for podcast_service.py — markdown stripping and script building.
+
+Post-Phase-H (GH#95): PodcastService + module helpers take site_config
+via DI. Tests build a MagicMock SiteConfig via ``_mock_sc()``.
+"""
 
 import tempfile
 from pathlib import Path
@@ -13,8 +17,21 @@ from services.podcast_service import (
     _strip_markdown,
 )
 from services.podcast_service import (
-    _build_script_fallback as _build_script,
+    _build_script_fallback,
 )
+
+
+def _mock_sc(overrides: dict | None = None) -> MagicMock:
+    """Return a MagicMock shaped like SiteConfig for podcast_service tests."""
+    sc = MagicMock()
+    values = overrides or {}
+    sc.get.side_effect = lambda k, d="": values.get(k, d)
+    return sc
+
+
+def _build_script(title: str, content: str) -> str:
+    """Test-friendly wrapper: build a script using a minimal mock site_config."""
+    return _build_script_fallback(title, content, _mock_sc())
 
 
 class TestStripMarkdown:
@@ -128,18 +145,18 @@ class TestPodcastService:
 
     def test_get_episode_path(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             path = svc.get_episode_path("abc-123")
             assert path == Path(tmp) / "abc-123.mp3"
 
     def test_episode_exists_false(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             assert not svc.episode_exists("nonexistent")
 
     def test_episode_exists_true(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             # Create a fake MP3 file
             ep_path = Path(tmp) / "abc.mp3"
             ep_path.write_bytes(b"fake audio data")
@@ -147,12 +164,12 @@ class TestPodcastService:
 
     def test_list_episodes_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             assert svc.list_episodes() == []
 
     def test_list_episodes_with_files(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             (Path(tmp) / "ep1.mp3").write_bytes(b"data1")
             (Path(tmp) / "ep2.mp3").write_bytes(b"data2")
             episodes = svc.list_episodes()
@@ -163,7 +180,7 @@ class TestPodcastService:
     @pytest.mark.asyncio
     async def test_generate_skips_existing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             # Pre-create episode
             (Path(tmp) / "abc.mp3").write_bytes(b"existing audio")
             result = await svc.generate_episode("abc", "Title", "Content")
@@ -172,10 +189,10 @@ class TestPodcastService:
 
     @pytest.mark.asyncio
     async def test_generate_empty_content(self):
-        async def _mock_script(title, content):
+        async def _mock_script(title, content, site_config):
             return _build_script(title, content)
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             svc._generate_with_voice = AsyncMock(
                 return_value=EpisodeResult(success=False, error="empty content")
             )
@@ -185,10 +202,10 @@ class TestPodcastService:
 
     @pytest.mark.asyncio
     async def test_generate_handles_import_error(self):
-        async def _mock_script(title, content):
+        async def _mock_script(title, content, site_config):
             return _build_script(title, content)
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             svc._generate_with_voice = AsyncMock(
                 return_value=EpisodeResult(success=False, error="no edge_tts")
             )
@@ -208,7 +225,7 @@ class TestGenerateEpisode:
     @pytest.fixture(autouse=True)
     def mock_llm_script(self):
         """Mock _build_script_with_llm to use fallback (no Ollama in tests)."""
-        async def _fallback(title, content):
+        async def _fallback(title, content, site_config):
             return _build_script(title, content)
 
         with patch("services.podcast_service._build_script_with_llm", side_effect=_fallback):
@@ -218,7 +235,7 @@ class TestGenerateEpisode:
     async def test_generate_episode_returns_mp3_path(self):
         """Successful generation returns an EpisodeResult with file_path."""
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
 
             mock_communicate = MagicMock()
             # Make save() an async function that writes a fake MP3 file
@@ -245,7 +262,7 @@ class TestGenerateEpisode:
     async def test_generate_episode_idempotent_skips_existing(self):
         """If an episode already exists, generation is skipped (idempotent)."""
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             # Pre-create the episode file
             episode_path = Path(tmp) / "post-002.mp3"
             episode_path.write_bytes(b"already generated audio")
@@ -264,7 +281,7 @@ class TestGenerateEpisode:
     async def test_generate_episode_force_regenerates(self):
         """With force=True, existing episode is regenerated."""
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             # Pre-create the episode file
             episode_path = Path(tmp) / "post-003.mp3"
             episode_path.write_bytes(b"old audio")
@@ -290,7 +307,7 @@ class TestGenerateEpisode:
     async def test_generate_episode_tries_fallback_voices(self):
         """If the primary voice fails, fallback voices are tried."""
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
 
             call_count = 0
 
@@ -321,7 +338,7 @@ class TestGenerateEpisode:
     async def test_generate_episode_all_voices_fail(self):
         """If all voices fail, returns failure result."""
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
 
             class FailCommunicate:
                 def __init__(self, script, voice):
@@ -352,7 +369,7 @@ class TestListEpisodes:
 
     def test_list_episodes_returns_correct_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             (Path(tmp) / "post-a.mp3").write_bytes(b"audio a")
             episodes = svc.list_episodes()
             assert len(episodes) == 1
@@ -364,7 +381,7 @@ class TestListEpisodes:
 
     def test_list_episodes_sorted_by_name(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             (Path(tmp) / "b-episode.mp3").write_bytes(b"b")
             (Path(tmp) / "a-episode.mp3").write_bytes(b"a")
             episodes = svc.list_episodes()
@@ -373,7 +390,7 @@ class TestListEpisodes:
 
     def test_list_episodes_ignores_non_mp3(self):
         with tempfile.TemporaryDirectory() as tmp:
-            svc = PodcastService(output_dir=Path(tmp))
+            svc = PodcastService(output_dir=Path(tmp), site_config=_mock_sc())
             (Path(tmp) / "notes.txt").write_text("not audio")
             (Path(tmp) / "real.mp3").write_bytes(b"audio")
             episodes = svc.list_episodes()
@@ -389,7 +406,7 @@ class TestListEpisodes:
 class TestNormalizeForSpeech:
     def test_smart_quotes_converted_to_straight(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("\u201cHello\u201d and \u2018world\u2019")
+        result = _normalize_for_speech("\u201cHello\u201d and \u2018world\u2019", _mock_sc())
         assert "\u201c" not in result
         assert "\u201d" not in result
         assert "\u2018" not in result
@@ -397,58 +414,53 @@ class TestNormalizeForSpeech:
 
     def test_ellipsis_converted(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("wait\u2026 for it")
+        result = _normalize_for_speech("wait\u2026 for it", _mock_sc())
         assert "\u2026" not in result
         assert "..." in result
 
     def test_double_spaces_collapsed(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("hello  world   foo")
+        result = _normalize_for_speech("hello  world   foo", _mock_sc())
         assert "  " not in result
 
     def test_double_commas_collapsed(self):
         from services.podcast_service import _normalize_for_speech
-        result = _normalize_for_speech("hello, , world")
+        result = _normalize_for_speech("hello, , world", _mock_sc())
         assert ", ," not in result
 
     def test_db_pronunciation_override_applied(self):
         from services.podcast_service import _normalize_for_speech
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.side_effect = lambda k, d="": {
-                "tts_pronunciations": '{"GitHub": "git hub"}',
-                "tts_acronym_replacements": "",
-            }.get(k, d)
-            result = _normalize_for_speech("Visit GitHub today")
+        sc = _mock_sc({
+            "tts_pronunciations": '{"GitHub": "git hub"}',
+            "tts_acronym_replacements": "",
+        })
+        result = _normalize_for_speech("Visit GitHub today", sc)
         assert "git hub" in result.lower() or "git hub" in result
 
     def test_invalid_db_pronunciations_falls_back_to_defaults(self):
         from services.podcast_service import _normalize_for_speech
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.side_effect = lambda k, d="": {
-                "tts_pronunciations": "not valid json {",
-                "tts_acronym_replacements": "",
-            }.get(k, d)
-            # Should not raise — falls back to defaults
-            result = _normalize_for_speech("Some text")
-            assert isinstance(result, str)
+        sc = _mock_sc({
+            "tts_pronunciations": "not valid json {",
+            "tts_acronym_replacements": "",
+        })
+        # Should not raise — falls back to defaults
+        result = _normalize_for_speech("Some text", sc)
+        assert isinstance(result, str)
 
     def test_acronym_regex_applied(self):
         from services.podcast_service import _normalize_for_speech
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.side_effect = lambda k, d="": {
-                "tts_pronunciations": "",
-                "tts_acronym_replacements": '{"NASA": "nassa"}',
-            }.get(k, d)
-            result = _normalize_for_speech("Working with NASA")
+        sc = _mock_sc({
+            "tts_pronunciations": "",
+            "tts_acronym_replacements": '{"NASA": "nassa"}',
+        })
+        result = _normalize_for_speech("Working with NASA", sc)
         assert "nassa" in result.lower()
 
 
 class TestGetTtsReplacements:
     def test_returns_default_list_when_no_db_config(self):
         from services.podcast_service import _get_tts_replacements
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.return_value = ""
-            result = _get_tts_replacements()
+        result = _get_tts_replacements(_mock_sc())
         assert isinstance(result, list)
         assert len(result) > 0
         # Each entry is a tuple
@@ -457,18 +469,18 @@ class TestGetTtsReplacements:
 
     def test_db_overrides_merge_with_defaults(self):
         from services.podcast_service import _get_tts_replacements
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.return_value = '{"customword": "kustom werd"}'
-            result = _get_tts_replacements()
+        sc = MagicMock()
+        sc.get.return_value = '{"customword": "kustom werd"}'
+        result = _get_tts_replacements(sc)
         # The custom DB key should be in the merged list
         as_dict = dict(result)
         assert as_dict.get("customword") == "kustom werd"
 
     def test_invalid_json_falls_back_to_defaults(self):
         from services.podcast_service import _get_tts_replacements
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.return_value = "not json"
-            result = _get_tts_replacements()
+        sc = MagicMock()
+        sc.get.return_value = "not json"
+        result = _get_tts_replacements(sc)
         # Should still return a non-empty list (the defaults)
         assert isinstance(result, list)
         assert len(result) > 0
@@ -477,9 +489,7 @@ class TestGetTtsReplacements:
 class TestGetAcronymRegex:
     def test_returns_default_list_when_no_db_config(self):
         from services.podcast_service import _get_acronym_regex
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.return_value = ""
-            result = _get_acronym_regex()
+        result = _get_acronym_regex(_mock_sc())
         assert isinstance(result, list)
         assert len(result) > 0
         # Each entry is (compiled_pattern, replacement_string)
@@ -489,18 +499,18 @@ class TestGetAcronymRegex:
 
     def test_db_acronyms_compiled_to_regex(self):
         from services.podcast_service import _get_acronym_regex
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.return_value = '{"AWS": "ay double-yoo ess"}'
-            result = _get_acronym_regex()
+        sc = MagicMock()
+        sc.get.return_value = '{"AWS": "ay double-yoo ess"}'
+        result = _get_acronym_regex(sc)
         # Should find at least one entry whose substitution is the AWS one
         replacements = [r for _, r in result]
         assert "ay double-yoo ess" in replacements
 
     def test_invalid_json_falls_back_to_defaults(self):
         from services.podcast_service import _get_acronym_regex
-        with patch("services.podcast_service.site_config") as mock_sc:
-            mock_sc.get.return_value = "not json"
-            result = _get_acronym_regex()
+        sc = MagicMock()
+        sc.get.return_value = "not json"
+        result = _get_acronym_regex(sc)
         # Returns the default list (not crash, not empty)
         assert isinstance(result, list)
         assert len(result) > 0
@@ -522,7 +532,9 @@ class TestGeneratePodcastEpisodeWrapper:
             mock_instance.generate_episode = AsyncMock(return_value=mock_result)
             MockSvc.return_value = mock_instance
 
-            await generate_podcast_episode("post-1", "Title", "Content body")
+            await generate_podcast_episode(
+                "post-1", "Title", "Content body", site_config=_mock_sc(),
+            )
 
             mock_instance.generate_episode.assert_awaited_once()
             args = mock_instance.generate_episode.await_args
@@ -540,7 +552,9 @@ class TestGeneratePodcastEpisodeWrapper:
             MockSvc.return_value = mock_instance
 
             # Should not raise even though success is False
-            await generate_podcast_episode("post-1", "Title", "Content")
+            await generate_podcast_episode(
+                "post-1", "Title", "Content", site_config=_mock_sc(),
+            )
 
     @pytest.mark.asyncio
     async def test_swallows_unexpected_exception(self):
@@ -552,7 +566,9 @@ class TestGeneratePodcastEpisodeWrapper:
             MockSvc.return_value = mock_instance
 
             # Fire-and-forget — must not propagate
-            await generate_podcast_episode("post-1", "Title", "Content")
+            await generate_podcast_episode(
+                "post-1", "Title", "Content", site_config=_mock_sc(),
+            )
 
     @pytest.mark.asyncio
     async def test_pre_generated_script_passed_through(self):
@@ -563,7 +579,11 @@ class TestGeneratePodcastEpisodeWrapper:
             mock_instance.generate_episode = AsyncMock(return_value=MagicMock(success=True))
             MockSvc.return_value = mock_instance
 
-            await generate_podcast_episode("post-1", "T", "C", pre_generated_script="my custom script")
+            await generate_podcast_episode(
+                "post-1", "T", "C",
+                site_config=_mock_sc(),
+                pre_generated_script="my custom script",
+            )
 
             kwargs = mock_instance.generate_episode.await_args.kwargs
             assert kwargs.get("pre_generated_script") == "my custom script"

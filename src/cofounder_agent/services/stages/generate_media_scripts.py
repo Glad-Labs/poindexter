@@ -90,7 +90,7 @@ class GenerateMediaScriptsStage:
         try:
             # Call 1: Podcast script (reuses podcast_service's proven approach).
             async with gpu.lock("ollama", model=model, task_id=context.get("task_id"), phase="media_scripts"):
-                podcast_script = await _build_script_with_llm(title, content_text)
+                podcast_script = await _build_script_with_llm(title, content_text, site_config)
 
             if podcast_script and len(podcast_script) > 200:
                 logger.info("[MEDIA] Podcast script: %d chars", len(podcast_script))
@@ -124,8 +124,13 @@ class GenerateMediaScriptsStage:
                     scene_output = resp.json().get("response", "").strip()
 
             if scene_output:
+                # Bind site_config into the normalizer so _parse_scene_output can
+                # keep using the 1-arg callback signature (`normalize(text)`).
+                def _normalize_bound(text: str, _sc=site_config) -> str:
+                    return _normalize_for_speech(text, _sc)
+
                 video_scenes, short_summary = _parse_scene_output(
-                    scene_output, _normalize_for_speech,
+                    scene_output, _normalize_bound,
                 )
                 logger.info(
                     "[MEDIA] Video scenes: %d, Short summary: %d chars",
