@@ -41,10 +41,17 @@ class GenerateSeoMetadataStage:
     ) -> StageResult:
         from services.ai_content_generator import get_content_generator
         from services.seo_content_generator import get_seo_content_generator
-        # Transitional: this stage still reads the module-level singleton
-        # (Phase H step 3+ will thread site_config through StageContext);
-        # threaded in locally so seo_content_generator itself stays clean.
-        from services.site_config import site_config as _sc
+
+        # Phase H step 4.3 (GH#95): read site_config from the pipeline
+        # context instead of reaching for the module-level singleton.
+        _sc = context.get("site_config")
+        if _sc is None:
+            # Transitional fallback — removed in Phase H step 5 when the
+            # singleton is deleted. context always has site_config when
+            # invoked through process_content_generation_task (which is
+            # the only production caller). Tests that don't wire a
+            # context["site_config"] still work via this fallback.
+            from services.site_config import site_config as _sc
 
         topic = context.get("topic", "")
         tags = context.get("tags") or []
