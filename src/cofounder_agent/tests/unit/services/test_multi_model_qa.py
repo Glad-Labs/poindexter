@@ -13,6 +13,12 @@ import pytest
 
 from services.content_validator import ValidationIssue, ValidationResult
 from services.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
+from services.site_config import SiteConfig
+
+
+def _make_sc(**overrides):
+    """Build an isolated SiteConfig for per-test determinism (Phase H step 5)."""
+    return SiteConfig(initial_config=dict(overrides))
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -93,7 +99,7 @@ def qa():
         return None
 
     with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-        instance = MultiModelQA(pool=None, settings_service=None)
+        instance = MultiModelQA(pool=None, settings_service=None, site_config=_make_sc())
     # Stub the new gates so existing tests that don't care about them
     # see the pre-gate reviewer count (validator + main critic = 2).
     instance._check_topic_delivery = _skip_gate  # type: ignore[method-assign]
@@ -335,7 +341,7 @@ def _mock_gate_client(json_payload: dict):
 def raw_qa():
     """MultiModelQA WITHOUT the gate stubs — exercises the real gate methods."""
     with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-        return MultiModelQA(pool=None, settings_service=None)
+        return MultiModelQA(pool=None, settings_service=None, site_config=_make_sc())
 
 
 class TestTopicDeliveryGate:
@@ -528,7 +534,7 @@ class TestSettingsOverrides:
             qa_final_score_threshold=70,
         )
         with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         # Stub gates so they don't actually call Ollama
         async def _skip_gate(*args, **kwargs):
@@ -552,7 +558,7 @@ class TestSettingsOverrides:
             qa_final_score_threshold=95,
         )
         with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*args, **kwargs):
             return None
@@ -575,7 +581,7 @@ class TestSettingsOverrides:
             qa_final_score_threshold=50,  # very lenient
         )
         with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*args, **kwargs):
             return None
@@ -593,7 +599,7 @@ class TestSettingsOverrides:
         settings = _settings_service(pipeline_critic_model="ollama/qwen3:30b")
 
         with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*args, **kwargs):
             return None
@@ -864,7 +870,7 @@ class TestWarningQAPenalty:
             content_validator_warning_qa_penalty=3,
         )
         with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*_a, **_k):
             return None
@@ -896,7 +902,7 @@ class TestWarningQAPenalty:
             content_validator_warning_qa_penalty=3,
         )
         with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*_a, **_k):
             return None
@@ -925,7 +931,7 @@ class TestWarningQAPenalty:
             content_validator_warning_qa_penalty=5,
         )
         with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
-            qa = MultiModelQA(pool=None, settings_service=settings)
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*_a, **_k):
             return None
