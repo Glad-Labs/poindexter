@@ -48,14 +48,18 @@ class AIGenerationProvider:
         prompt_model = str(config.get("prompt_model", "llama3:latest"))
         generator_name = str(config.get("generator", "sdxl") or "sdxl")
 
-        # Phase H step 4.5 (GH#95): resolve site_config from the dispatcher's
-        # reserved ``_site_config`` key. Transitional fallback removed in step 5.
+        # Phase H step 5 (GH#95): site_config is resolved from the
+        # dispatcher's reserved ``_site_config`` key. The image_service
+        # dispatcher still needs its own Phase H pass to seed this key
+        # on every call; for now we log once and let _build_sdxl_prompt
+        # fall through to its topic-based fallback string when the key
+        # isn't seeded.
         _sc = config.get("_site_config")
         if _sc is None:
-            try:
-                from services.site_config import site_config as _sc
-            except Exception:
-                _sc = None
+            logger.warning(
+                "[AIGenerationProvider] config missing '_site_config' key; "
+                "image_service dispatcher hasn't been migrated yet (GH#95)",
+            )
 
         sdxl_prompt = await _build_sdxl_prompt(topic, prompt_model, _sc)
 
@@ -96,7 +100,7 @@ class AIGenerationProvider:
 
 
 async def _build_sdxl_prompt(
-    topic: str, model: str, site_config: Any = None,
+    topic: str, model: str, site_config: Any,
 ) -> str:
     """Ask Ollama to write a tailored SDXL prompt. Fall back to a
     generic photorealistic template when Ollama is unreachable.
@@ -104,13 +108,15 @@ async def _build_sdxl_prompt(
     Shared shape with services/jobs/regenerate_stock_images.py — kept in
     sync so both the Job and the Provider produce similar output.
     """
-    if site_config is None:
-        from services.site_config import site_config
-
     fallback = (
         f"photorealistic scene related to {topic[:50]}, cinematic lighting, "
         f"4k, detailed, no people, no text"
     )
+    if site_config is None:
+        # No site_config means we can't resolve the Ollama URL; return the
+        # topic-based fallback directly. (GH#95: dispatcher seeds it when
+        # its own migration lands.)
+        return fallback
     try:
         import httpx
         ollama = site_config.get("ollama_base_url", "http://host.docker.internal:11434")

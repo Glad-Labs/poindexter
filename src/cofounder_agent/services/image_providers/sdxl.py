@@ -118,16 +118,18 @@ class SdxlProvider:
         if not prompt:
             return []
 
-        # Phase H step 4.5 (GH#95): resolve site_config from the dispatcher's
-        # reserved ``_site_config`` key so stages → image_service → provider
-        # never touch the module singleton. Transitional fallback for callers
-        # that haven't seeded the key yet; removed in Phase H step 5.
+        # Phase H step 5 (GH#95): site_config is resolved from the
+        # dispatcher's reserved ``_site_config`` key. The image_service
+        # dispatcher still needs its own Phase H pass to seed this key
+        # on every call, so for now we tolerate a missing key by logging
+        # once and falling through to helper-level defaults (each helper
+        # already guards against site_config=None).
         _sc = config.get("_site_config")
         if _sc is None:
-            try:
-                from services.site_config import site_config as _sc
-            except Exception:
-                _sc = None
+            logger.warning(
+                "[SdxlProvider] config missing '_site_config' key; "
+                "image_service dispatcher hasn't been migrated yet (GH#95)",
+            )
 
         negative = str(config.get("negative_prompt", "") or "")
         if not negative and _sc is not None:
@@ -272,11 +274,6 @@ async def _try_host_sidecar(
       ``services/stages/source_featured_image.py:_resolve_sdxl_featured_response``
       path so both call sites handle the sidecar the same way).
     """
-    if site_config is None:
-        try:
-            from services.site_config import site_config
-        except Exception:
-            site_config = None
     try:
         server_url = (
             site_config.get(
@@ -351,12 +348,6 @@ def _materialize_sidecar_json(
     if not src:
         logger.warning("SDXL sidecar JSON missing image_path: %s", data)
         return False
-
-    if site_config is None:
-        try:
-            from services.site_config import site_config
-        except Exception:
-            site_config = None
     try:
         host_home = (
             site_config.get("host_home", "") or ""
@@ -406,7 +397,7 @@ async def _try_in_process_diffusers(
     if not _state.initialized or (
         target_model is not None and target_model != _state.active_model
     ):
-        model = target_model or get_default_image_model()
+        model = target_model or get_default_image_model(site_config)
         logger.info(
             "First in-process diffusers request — initializing %s...", model.value,
         )
@@ -778,14 +769,17 @@ def _generate_image_sync(
 
 
 async def _upload_to_cloudinary(
-    path: str, prompt: str, site_config: Any = None,
+    path: str, prompt: str, site_config: Any,
 ) -> str:
     """Upload a generated PNG to Cloudinary and return the secure URL."""
     import cloudinary
     import cloudinary.uploader
 
     if site_config is None:
-        from services.site_config import site_config
+        raise RuntimeError(
+            "Cloudinary upload requires site_config; "
+            "image_service dispatcher must seed '_site_config' (GH#95)"
+        )
 
     cloudinary.config(
         cloud_name=site_config.get("cloudinary_cloud_name"),
@@ -810,14 +804,14 @@ async def _upload_to_cloudinary(
     return str(url)
 
 
-async def _upload_to_r2(path: str, prompt: str, site_config: Any = None) -> str:
+async def _upload_to_r2(path: str, prompt: str, site_config: Any) -> str:
     """Upload a generated PNG to R2 via the shared r2_upload_service."""
     from services.r2_upload_service import upload_to_r2
     if site_config is None:
-        # Transitional fallback — removed in Phase H step 5 when the
-        # module singleton is deleted.
-        from services.site_config import site_config as _sc
-        site_config = _sc
+        raise RuntimeError(
+            "R2 upload requires site_config; "
+            "image_service dispatcher must seed '_site_config' (GH#95)"
+        )
     key = f"sdxl/{os.path.basename(path)}"
     url = await upload_to_r2(path, key, "image/png", site_config=site_config)
     if not url:
