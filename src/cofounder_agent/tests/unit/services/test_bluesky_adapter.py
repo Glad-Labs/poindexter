@@ -116,14 +116,9 @@ class TestMissingAtprotoPackage:
     @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
     async def test_importerror_returns_clean_error(self, mock_get_secret):
         mock_get_secret.side_effect = ["handle", "pw"]
-        # Force ImportError by pointing atproto at a broken module.
-        bad_mod = types.ModuleType("atproto")
-
-        def _raise(*a, **kw):
-            raise ImportError("boom")
-
-        # Patch: no Client attribute -> AttributeError -> wrapped exception
-        # Better: simulate by making the import fail entirely
+        # Force ImportError: with `sys.modules["atproto"] = None`, the
+        # import machinery raises ImportError, and the adapter wraps that
+        # into a "not installed" result.
         with patch.dict(sys.modules, {"atproto": None}):
             result = await bluesky.post_to_bluesky("hi", "https://x.com")
         assert result["success"] is False
@@ -166,7 +161,8 @@ class TestHappyPath:
     async def test_url_already_in_text_not_duplicated(self, mock_get_secret):
         mock_get_secret.side_effect = ["h", "p"]
         fake_client = MagicMock()
-        resp = MagicMock(); resp.uri = "at://x"
+        resp = MagicMock()
+        resp.uri = "at://x"
         fake_client.send_post = MagicMock(return_value=resp)
         _install_fake_atproto(fake_client)
 
@@ -183,7 +179,8 @@ class TestHappyPath:
     async def test_long_text_truncated_to_300(self, mock_get_secret):
         mock_get_secret.side_effect = ["h", "p"]
         fake_client = MagicMock()
-        resp = MagicMock(); resp.uri = "at://x"
+        resp = MagicMock()
+        resp.uri = "at://x"
         fake_client.send_post = MagicMock(return_value=resp)
         _install_fake_atproto(fake_client)
 
