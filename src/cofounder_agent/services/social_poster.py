@@ -30,8 +30,10 @@ import httpx
 
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.logger_config import get_logger
-from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
-from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
+from services.telegram_config import (
+    get_telegram_bot_token,
+    get_telegram_chat_id,
+)
 
 from .ollama_client import OllamaClient
 
@@ -187,17 +189,24 @@ async def _notify(message: str, site_config: Any | None = None) -> None:
     mocked httpx client. When None, OpenClaw URL/token fall back to the
     defaults SiteConfig.get would have returned for an unpopulated
     config, and the Discord leg is skipped (``site_config.require()`` on
-    the channel id can't run without a real config source).
+    the channel id can't run without a real config source). Telegram
+    bot token + chat id also come from site_config; when unset they
+    fall through as empty strings (matches legacy behavior where the
+    module-level constants were "" without a populated config).
     """
     try:
         if site_config is not None:
             openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
             openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
             discord_channel: str | None = site_config.require("discord_ops_channel_id")
+            telegram_bot_token = get_telegram_bot_token(site_config)
+            telegram_chat_id = get_telegram_chat_id(site_config)
         else:
             openclaw_url = DEFAULT_OPENCLAW_URL
             openclaw_token = "hooks-gladlabs"
             discord_channel = None
+            telegram_bot_token = ""
+            telegram_chat_id = ""
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0)
@@ -205,8 +214,8 @@ async def _notify(message: str, site_config: Any | None = None) -> None:
             logger.info("[social_poster] Notifying: %s", message[:80])
             # Telegram — direct bot API
             await client.post(
-                f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
+                f"https://api.telegram.org/bot{telegram_bot_token}/sendMessage",
+                json={"chat_id": telegram_chat_id, "text": message},
                 timeout=10,
             )
             # Discord — via OpenClaw hooks
