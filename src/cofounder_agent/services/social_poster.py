@@ -369,7 +369,7 @@ async def generate_and_distribute_social_posts(
         )
 
     # Post to enabled social platforms via adapters
-    adapter_results = await _distribute_to_adapters(posts, enabled)
+    adapter_results = await _distribute_to_adapters(posts, enabled, site_config)
     for platform, result in adapter_results.items():
         if result.get("success"):
             logger.info("[social_poster] Posted to %s: %s", platform, result.get("post_id", ""))
@@ -477,7 +477,9 @@ def _bump_metric(name: str, **labels: str) -> None:
 _COUNTERS: dict[str, object] = {}
 
 
-async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
+async def _distribute_to_adapters(
+    posts: list, enabled: set, site_config: Any | None = None,
+) -> dict:
     """Post to each enabled social platform adapter.
 
     Order of operations (GH-36):
@@ -490,6 +492,10 @@ async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
     3. Stub adapters (LinkedIn/Reddit/YouTube) raise
        ``NotImplementedError``; the wrapper logs INFO + "skipped"
        metric and moves on.
+
+    Phase H (GH#95): ``site_config`` threads through to the Bluesky /
+    Mastodon adapters that read their credentials from it. The other
+    adapters are stubs and don't need it yet.
     """
     results: dict[str, dict] = {}
 
@@ -508,7 +514,7 @@ async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
     if "bluesky" in enabled:
         from services.social_adapters.bluesky import post_to_bluesky
         results["bluesky"] = await _safe_call_adapter(
-            "bluesky", lambda: post_to_bluesky(text, url)
+            "bluesky", lambda: post_to_bluesky(text, url, site_config=site_config)
         )
 
     if "mastodon" in enabled:
