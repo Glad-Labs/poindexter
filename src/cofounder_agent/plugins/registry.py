@@ -220,6 +220,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # context export path was never ported after IdleWorker removal.
         # Re-enable when (and if) the script lands.
         ("jobs", "services.jobs.auto_embed_posts", "AutoEmbedPostsJob"),
+        ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
         ("jobs", "services.jobs.sync_newsletter_subscribers", "SyncNewsletterSubscribersJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
