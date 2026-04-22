@@ -35,11 +35,11 @@ class ReloadSiteConfigJob:
     schedule = "every 1 minute"
     idempotent = True
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+    async def run(
+        self, pool: Any, config: dict[str, Any], *, site_config: Any,
+    ) -> JobResult:
         del config  # Nothing tunable at the job level — site_config.reload
         #            always reads every active non-secret row.
-
-        from services.site_config import site_config
 
         if pool is None:
             return JobResult(ok=False, detail="no pool available", changes_made=0)
