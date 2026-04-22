@@ -222,5 +222,16 @@ class SiteConfig:
         return dict(self._config)
 
 
-# Global singleton — import this everywhere
+# Transitional module-level instance kept alive during Phase H (GH#95)
+# migration. `main.py`'s lifespan rebinds this attribute to the
+# DB-loaded instance it puts on `app.state.site_config`, so function-body
+# lazy-imports (~40 remaining production call sites) see the right values.
+#
+# DO NOT import this in NEW code — accept `site_config` as a ctor/kwarg
+# param or read it from `request.app.state.site_config` / `context["site_config"]`
+# (stages) / `self._site_config` (services) instead. See commits under
+# issue #95 for the established DI patterns.
+#
+# This attribute disappears in the step 5 follow-up once every lazy
+# importer has been migrated.
 site_config = SiteConfig()
