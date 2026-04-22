@@ -202,9 +202,13 @@ class ConnectionPoolHealth:
         return False
 
 
-async def diagnose_connection_issues() -> dict[str, Any]:
+async def diagnose_connection_issues(site_config: Any) -> dict[str, Any]:
     """
     Run diagnostic checks for common connection issues.
+
+    Args:
+        site_config: SiteConfig instance (Phase H — DI; replaces the
+            lazy module-level import).
 
     Returns:
         Dictionary with diagnostic information
@@ -228,7 +232,6 @@ async def diagnose_connection_issues() -> dict[str, Any]:
 
     _config = get_config()
     _is_dev = _config.environment.lower() in ("development", "dev", "local")
-    from services.site_config import site_config
     # GH-92: keep ``min_size`` small in every environment (pools that
     # pre-warm 20 idle connections eat max_connections). Defaults must
     # stay in sync with services/database_service.py.

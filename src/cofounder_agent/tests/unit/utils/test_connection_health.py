@@ -12,7 +12,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services.site_config import SiteConfig
 from utils.connection_health import ConnectionPoolHealth, diagnose_connection_issues
+
+
+def _mock_sc() -> SiteConfig:
+    """Fresh SiteConfig with no DB overrides — falls back to env vars the
+    test patches via ``patch.dict("os.environ", ...)``. Matches the pre-
+    Phase-H behaviour of reaching for the module singleton."""
+    return SiteConfig()
 
 
 def _make_mock_pool(pool_size: int = 10, idle_size: int = 8) -> MagicMock:
@@ -276,7 +284,7 @@ class TestIsPoolCritical:
 class TestDiagnoseConnectionIssues:
     @pytest.mark.asyncio
     async def test_returns_dict_with_required_keys(self):
-        result = await diagnose_connection_issues()
+        result = await diagnose_connection_issues(_mock_sc())
         assert "timestamp" in result
         assert "issues" in result
         assert "recommendations" in result
@@ -288,7 +296,7 @@ class TestDiagnoseConnectionIssues:
             import os
 
             os.environ.pop("DATABASE_URL", None)
-            result = await diagnose_connection_issues()
+            result = await diagnose_connection_issues(_mock_sc())
         issues_text = " ".join(result["issues"])
         assert "DATABASE_URL" in issues_text
 
@@ -300,7 +308,7 @@ class TestDiagnoseConnectionIssues:
             "DATABASE_POOL_MAX_SIZE": "10",  # min > max — invalid
         }
         with patch.dict("os.environ", env_patch):
-            result = await diagnose_connection_issues()
+            result = await diagnose_connection_issues(_mock_sc())
         issues_text = " ".join(result["issues"])
         assert "pool" in issues_text.lower() or "min" in issues_text.lower()
 
@@ -312,7 +320,7 @@ class TestDiagnoseConnectionIssues:
             "DATABASE_POOL_MAX_SIZE": "20",
         }
         with patch.dict("os.environ", env_patch):
-            result = await diagnose_connection_issues()
+            result = await diagnose_connection_issues(_mock_sc())
         # Should have no pool config issues (possibly just no DATABASE_URL if also patched)
         issues_text = " ".join(result["issues"])
         assert "Invalid pool config" not in issues_text

@@ -26,8 +26,17 @@ logger = get_logger(__name__)
 class StartupManager:
     """Manages all startup and shutdown operations for the FastAPI application"""
 
-    def __init__(self):
-        """Initialize startup manager with empty service references"""
+    def __init__(self, site_config: Any):
+        """Initialize startup manager with empty service references.
+
+        Args:
+            site_config: SiteConfig instance — threaded from main.py lifespan
+                into every sub-service that needs DB-backed config at startup
+                (Redis cache, retention janitor, SDXL warmup). Phase H (GH#95)
+                dropped the transitional module-singleton imports in favour
+                of this single construction site.
+        """
+        self._site_config = site_config
         self.database_service = None
         self.redis_cache = None
         self.orchestrator = None
@@ -123,14 +132,11 @@ class StartupManager:
             # app_settings.retention_days__<table>.
             try:
                 from services.retention_janitor import run_forever as _retention_loop
-                # Phase H (GH#95) transitional: StartupManager hasn't been
-                # migrated off the module singleton yet, so we re-import
-                # it here and pass it through. Future migration threads
-                # site_config into StartupManager's ctor.
-                from services.site_config import site_config as _sc
                 if self.database_service and self.database_service.pool:
                     asyncio.create_task(
-                        _retention_loop(self.database_service.pool, _sc),
+                        _retention_loop(
+                            self.database_service.pool, self._site_config,
+                        ),
                         name="retention_janitor",
                     )
                     logger.info("[retention_janitor] Started background loop")
@@ -309,13 +315,8 @@ class StartupManager:
         logger.info("  [INFO] Initializing Redis cache for query optimization...")
         try:
             from services.redis_cache import RedisCache
-            # StartupManager is a legacy bootstrap caller — it doesn't
-            # thread site_config through its own constructor yet. Use a
-            # transitional module-singleton import until StartupManager
-            # itself migrates (its own Phase H follow-up).
-            from services.site_config import site_config as _sc
 
-            self.redis_cache = await RedisCache.create(_sc)
+            self.redis_cache = await RedisCache.create(self._site_config)
             if self.redis_cache._enabled:
                 logger.info(
                     "   [OK] Redis cache initialized (query performance optimization enabled)"
@@ -471,8 +472,7 @@ class StartupManager:
         import os
 
         # Skip warmup unless explicitly enabled (lazy loading is the default)
-        from services.site_config import site_config
-        if site_config.get("enable_sdxl_warmup", "").lower() not in ("true", "1", "yes"):
+        if self._site_config.get("enable_sdxl_warmup", "").lower() not in ("true", "1", "yes"):
             logger.info(
                 "  SDXL warmup: Skipped (lazy loading on first request). Set ENABLE_SDXL_WARMUP=true to pre-load."
             )

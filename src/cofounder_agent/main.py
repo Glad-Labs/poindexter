@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
     Uses StartupManager to orchestrate all service initialization
     in the correct order with proper error handling.
     """
-    startup_manager = StartupManager()
+    startup_manager = StartupManager(site_config=_site_cfg)
     scheduled_publisher_task = None
     pool_health_task = None
 

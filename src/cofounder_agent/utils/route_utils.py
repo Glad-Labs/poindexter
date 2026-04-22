@@ -225,12 +225,16 @@ def get_database_dependency() -> Any:
 def get_site_config_dependency(request: Request) -> Any:
     """FastAPI dependency that returns the lifespan-bound SiteConfig.
 
-    Phase H (#242) is migrating every caller from the module-level
+    Phase H (#242) migrated every caller from the module-level
     ``services.site_config.site_config`` singleton to this DI pattern.
-    The singleton still exists in parallel during the transition; this
-    function returns the SAME instance (attached to ``app.state`` in
-    main.py's lifespan), so routes that switch to ``Depends()`` behave
-    identically to ones still importing directly.
+    lifespan (main.py) is the sole construction site — the instance
+    is attached to ``app.state.site_config`` at startup.
+
+    Raises:
+        RuntimeError: When ``app.state.site_config`` is unset. Tests
+            that exercise routes using this dependency must either set
+            ``app.state.site_config = SiteConfig(...)`` or override
+            the dep via ``app.dependency_overrides``.
 
     Usage::
 
@@ -243,11 +247,10 @@ def get_site_config_dependency(request: Request) -> Any:
     """
     sc = getattr(request.app.state, "site_config", None)
     if sc is None:
-        # Fallback during transition — the module singleton is still
-        # loaded and usable. Once every caller uses Depends(), lifespan
-        # is the sole construction site and this branch goes away.
-        from services.site_config import site_config as _legacy_sc
-        return _legacy_sc
+        raise RuntimeError(
+            "SiteConfig not initialized on app.state — lifespan must set "
+            "app.state.site_config before routes are served."
+        )
     return sc
 
 
