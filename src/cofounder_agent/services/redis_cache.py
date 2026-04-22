@@ -35,7 +35,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]
@@ -123,9 +122,17 @@ class RedisCache:
         self._enabled = enabled
 
     @classmethod
-    async def create(cls) -> RedisCache:
+    async def create(cls, site_config: Any) -> RedisCache:
         """
         Factory method to create a RedisCache instance with environment configuration.
+
+        Args:
+            site_config: SiteConfig instance (DI — Phase H, GH#95). Must be
+                passed explicitly — the module-level singleton import was
+                removed. Supply from ``app.state.site_config`` /
+                ``request.app.state.site_config`` or a transitional
+                ``from services.site_config import site_config`` at the
+                call site for legacy bootstrap paths.
 
         Returns:
             RedisCache: Instance with Redis connection if available, disabled otherwise
@@ -432,21 +439,24 @@ class RedisCache:
 
 
 # Convenience function for backward compatibility
-async def setup_redis_cache() -> bool:
+async def setup_redis_cache(site_config: Any) -> bool:
     """
     Initialize Redis cache service (backward compatibility).
 
     DEPRECATED: Use RedisCache.create() instead in main startup code.
     This function is kept for compatibility but doesn't follow DI pattern.
 
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+
     Usage (old way - do not use):
-        await setup_redis_cache()
+        await setup_redis_cache(site_config)
 
     Usage (new way - recommended):
-        redis_cache = await RedisCache.create()
+        redis_cache = await RedisCache.create(site_config)
         app.state.redis_cache = redis_cache
     """
-    redis_cache = await RedisCache.create()
+    redis_cache = await RedisCache.create(site_config)
     return redis_cache._enabled
 
 
