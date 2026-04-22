@@ -27,7 +27,7 @@ from schemas.settings_schemas import (
 )
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -389,6 +389,7 @@ async def toggle_setting_active(
 async def reload_site_config(
     token: str = Depends(verify_api_token),  # noqa: ARG001 — token auth decorator
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ):
     """Refresh the in-memory site_config snapshot from `app_settings`.
 
@@ -400,8 +401,6 @@ async def reload_site_config(
     so interactive UIs can call it immediately after Save for a sub-second
     turnaround.
     """
-    from services.site_config import site_config
-
     try:
         count = await site_config.reload(db_service.pool)
         logger.info("[settings_routes] site_config reloaded: %d keys", count)
