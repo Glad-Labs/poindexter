@@ -15,15 +15,17 @@ class PexelsClient:
     ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 
-    def __init__(self):
+    def __init__(self, *, site_config=None):
         if not config.PEXELS_API_KEY:
             raise ValueError("PEXELS_API_KEY is not set in the environment.")
         self.headers = {"Authorization": config.PEXELS_API_KEY}
-        # #198: tunable via app_settings.pexels_api_base
-        try:
-            from services.site_config import site_config as _sc
-            _base = _sc.get("pexels_api_base", "https://api.pexels.com/v1")
-        except Exception:
+        # #198: tunable via app_settings.pexels_api_base. Optional kwarg to
+        # keep the ``postgres_image_agent`` factory — the only caller in the
+        # workflow-executor path — unchanged until its surrounding agent
+        # framework migrates (separate GH#72 cleanup).
+        if site_config is not None:
+            _base = site_config.get("pexels_api_base", "https://api.pexels.com/v1")
+        else:
             _base = "https://api.pexels.com/v1"
         self.BASE_URL = f"{_base.rstrip('/')}/search"
 

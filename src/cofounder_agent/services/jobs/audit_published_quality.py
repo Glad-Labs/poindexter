@@ -108,8 +108,6 @@ class AuditPublishedQualityJob:
 
         if issues and file_issue:
             body = "## Quality Audit Findings\n\n" + "\n".join(f"- {i}" for i in issues)
-            # Phase H (GH#95): transitional singleton import — this Job's
-            # run() doesn't thread site_config yet.
             await create_gitea_issue(
                 f"quality: {len(issues)} issues in {len(rows)} audited posts",
                 body,

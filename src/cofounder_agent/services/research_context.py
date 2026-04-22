@@ -24,6 +24,8 @@ async def build_rag_context(
     topic: str,
     source_tags: list[str] | None = None,
     source_category: str | None = None,
+    *,
+    site_config: Any = None,
 ) -> str | None:
     """Search pgvector for similar published posts. Returns None if unavailable.
 
@@ -91,11 +93,6 @@ async def build_rag_context(
                     InternalLinkCoherenceFilter,
                     LinkCandidate,
                 )
-                # Phase H (GH#95): InternalLinkCoherenceFilter now takes
-                # site_config via DI. The generate_content stage caller
-                # is pending its own Phase H migration — resolve the
-                # singleton at the call site for now.
-                from services.site_config import site_config as _sc
                 candidates = [
                     LinkCandidate(
                         slug=r["slug"],
@@ -105,7 +102,7 @@ async def build_rag_context(
                     for r in resolved
                     if r["slug"]
                 ]
-                filt = InternalLinkCoherenceFilter(pool=pool, site_config=_sc)
+                filt = InternalLinkCoherenceFilter(pool=pool, site_config=site_config)
                 kept = await filt.filter_candidates(
                     source_tags=list(source_tags or []),
                     candidates=candidates,

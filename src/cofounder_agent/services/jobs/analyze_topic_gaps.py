@@ -97,10 +97,6 @@ class AnalyzeTopicGapsJob:
 
         if suggestions and file_issue:
             body = "## Topic Gap Analysis\n\n" + "\n".join(f"- {s}" for s in suggestions)
-            # Phase H (GH#95): transitional singleton import at the call
-            # site — this Job hasn't yet migrated its ``run()`` signature
-            # to accept ``site_config``. When it does, pass self's bound
-            # instance instead.
             await create_gitea_issue(
                 f"content: topic gaps — {len(empty)} empty, "
                 f"{len(low)} low, {len(stale_names)} stale",
