@@ -91,6 +91,14 @@ class _FakeDb:
         self.costs.append(cost_log)
 
 
+# Phase H step 5 (GH#95): stages read site_config from the context dict.
+_FAKE_SITE_CONFIG = SimpleNamespace(
+    get=lambda _k, _d=None: _d if _d is not None else "",
+    get_int=lambda _k, _d=0: _d,
+    get_float=lambda _k, _d=0.0: _d,
+)
+
+
 # ---------------------------------------------------------------------------
 # Protocol conformance
 # ---------------------------------------------------------------------------
@@ -255,6 +263,7 @@ class TestExecuteGate:
             "task_id": "t1", "topic": "T", "content": "body",
             "database_service": db,
             "quality_result": _early_quality_result(score=73),
+            "site_config": _FAKE_SITE_CONFIG,
         }
         patches, _ = _patch_stage_imports(_qa_approved(score=88))
         for p in patches:
@@ -277,6 +286,7 @@ class TestExecuteApproved:
             "database_service": db,
             "quality_result": _early_quality_result(score=70),
             "quality_score": 70,  # early eval score
+            "site_config": _FAKE_SITE_CONFIG,
         }
         qa = _qa_approved(score=88, reviews=[
             _reviewer("critic", 90, True), _reviewer("validator", 85, True),
@@ -307,6 +317,7 @@ class TestExecuteRejected:
             "task_id": "t1", "topic": "T", "content": "body",
             "database_service": db,
             "quality_result": _early_quality_result(score=70),
+            "site_config": _FAKE_SITE_CONFIG,
         }
         # Rejected, with a topic_delivery failure → bail after first pass
         # (no rewrite attempted).
@@ -339,6 +350,7 @@ class TestExecuteTimeout:
             "task_id": "t1", "topic": "T", "content": "body",
             "database_service": db,
             "quality_result": _early_quality_result(score=71),
+            "site_config": _FAKE_SITE_CONFIG,
         }
         patches, _ = _patch_stage_imports(None)  # review returns None
         for p in patches:

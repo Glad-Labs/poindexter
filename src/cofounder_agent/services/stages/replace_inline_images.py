@@ -106,17 +106,6 @@ class ReplaceInlineImagesStage:
         image_service = context.get("image_service") or get_image_service()
         category = context.get("category", "technology")
 
-        # Phase H step 4.3 (#95): read site_config from the pipeline
-        # context threaded in by content_router_service. Fall back to
-        # the module singleton for callers that haven't migrated yet —
-        # fallback is removed in Phase H step 5 when the singleton is
-        # deleted.
-        _sc = context.get("site_config")
-        if _sc is None:
-            # Transitional fallback — removed in Phase H step 5 when the
-            # singleton is deleted.
-            from services.site_config import site_config as _sc
-
         if not content_text:
             return StageResult(
                 ok=True,
@@ -128,6 +117,11 @@ class ReplaceInlineImagesStage:
                 ok=False,
                 detail="context missing task_id or database_service",
             )
+
+        # Phase H step 5 (GH#95): site_config is seeded on the pipeline
+        # context by content_router_service. Tests build context dicts
+        # with the fake site_config wired in explicitly.
+        _sc = context["site_config"]
 
         stages = context.setdefault("stages", {})
         updates: dict[str, Any] = {}
@@ -410,7 +404,7 @@ async def _try_sdxl(
         logger.info("  [IMAGE-%s] SDXL generated: %s", num, os.path.basename(tmp_path))
 
         # Step 3: R2 upload, with local-path fallback.
-        return await _upload_to_r2_with_fallback(tmp_path)
+        return await _upload_to_r2_with_fallback(tmp_path, site_config=site_config)
     except Exception as err:
         logger.warning("  [IMAGE-%s] SDXL inline failed: %s", num, err)
         return None
@@ -478,7 +472,7 @@ def _resolve_sdxl_response(img_resp: httpx.Response, *, site_config: Any) -> str
     raise RuntimeError(f"SDXL returned unexpected content-type: {ct}")
 
 
-async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
+async def _upload_to_r2_with_fallback(tmp_path: str, *, site_config: Any) -> str:
     """Upload the image to R2 and return a public URL, or fall back to a local path.
 
     If R2 upload succeeds, the local file is cleaned up. Otherwise the
@@ -488,13 +482,9 @@ async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
     img_url = tmp_path
     try:
         from services.r2_upload_service import upload_to_r2
-        # Content-pipeline stages don't receive site_config via DI yet —
-        # use a transitional module-singleton import at the call site
-        # until stage fn signatures migrate (pending Phase H follow-up).
-        from services.site_config import site_config as _sc
         r2_key = f"images/inline/{uuid.uuid4().hex[:12]}.png"
         r2_url = await upload_to_r2(
-            tmp_path, r2_key, content_type="image/png", site_config=_sc,
+            tmp_path, r2_key, content_type="image/png", site_config=site_config,
         )
         if r2_url:
             img_url = r2_url

@@ -61,14 +61,6 @@ class WriterSelfReviewStage:
         from services.audit_log import audit_log_bg
         from services.self_review import self_review_and_revise as _self_review_and_revise
 
-        # Phase H step 4.3 (GH#95): read site_config from the pipeline
-        # context instead of reaching for the module-level singleton.
-        _sc = context.get("site_config")
-        if _sc is None:
-            # Transitional fallback — removed in Phase H step 5 when the
-            # singleton is deleted.
-            from services.site_config import site_config as _sc
-
         task_id = context.get("task_id")
         topic = context.get("topic", "")
         content_text = context.get("content", "")
@@ -82,6 +74,11 @@ class WriterSelfReviewStage:
                 detail="no content to review",
                 metrics={"skipped": True},
             )
+
+        # Phase H step 5 (GH#95): site_config is seeded on the pipeline
+        # context by content_router_service. Tests build context dicts
+        # with the fake site_config wired in explicitly.
+        _sc = context["site_config"]
 
         try:
             revised_text, stats = await _self_review_and_revise(
