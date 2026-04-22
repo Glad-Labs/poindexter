@@ -162,11 +162,114 @@ MONTHLY_SPEND_USD = Gauge(
 
 
 # ---------------------------------------------------------------------------
+# Metrics migrated from the legacy /api/prometheus hand-built exposer
+# (Gitea #269). Label names + metric names match the legacy strings exactly
+# so existing Grafana queries don't break when the old exposer is removed.
+# ---------------------------------------------------------------------------
+
+# asyncpg pool metrics. Labeled by ``pool`` ("cloud"/"local") — legacy emitted
+# the same label values, keep them identical so dashboards keep working.
+DB_POOL_SIZE = Gauge(
+    "poindexter_db_pool_size",
+    "Current number of connections in pool",
+    ["pool"],
+)
+
+DB_POOL_IDLE = Gauge(
+    "poindexter_db_pool_idle",
+    "Number of idle connections in pool",
+    ["pool"],
+)
+
+DB_POOL_MIN_SIZE = Gauge(
+    "poindexter_db_pool_min_size",
+    "Minimum pool size setting",
+    ["pool"],
+)
+
+DB_POOL_MAX_SIZE = Gauge(
+    "poindexter_db_pool_max_size",
+    "Maximum pool size setting",
+    ["pool"],
+)
+
+# GPU scheduler — mirrors services.gpu_scheduler.gpu.status. These are all
+# snapshot gauges including the "total_seconds" paused metric which the legacy
+# exposer emitted as a Counter but populated from a float counter that only
+# grows → Gauge semantics are accurate, and Counter would require using
+# .inc() on each refresh which doesn't match the monotonically-increasing
+# scalar already maintained by the scheduler. Kept as Gauge (matches how
+# dashboards already query it: absolute value, not rate()).
+GPU_GAMING_DETECTED = Gauge(
+    "poindexter_gpu_gaming_detected",
+    "Whether gaming/external GPU workload is detected (1=yes)",
+)
+
+GPU_GAMING_PAUSED_SECONDS = Gauge(
+    "poindexter_gpu_gaming_paused_seconds",
+    "Current gaming pause duration in seconds",
+)
+
+GPU_GAMING_PAUSED_TOTAL_SECONDS = Gauge(
+    "poindexter_gpu_gaming_paused_total_seconds",
+    "Total time paused for gaming since worker start",
+)
+
+GPU_BUSY = Gauge(
+    "poindexter_gpu_busy",
+    "Whether the GPU lock is held by the pipeline",
+)
+
+# Pipeline throttle (GH-89 AC#2) — mirrors services.pipeline_throttle.get_state
+PIPELINE_THROTTLE_ACTIVE = Gauge(
+    "poindexter_pipeline_throttle_active",
+    "Approval queue is full and pipeline is not advancing (1=throttled)",
+)
+
+PIPELINE_THROTTLE_SECONDS_TOTAL = Gauge(
+    "poindexter_pipeline_throttle_seconds_total",
+    "Cumulative seconds the pipeline spent throttled by the approval queue",
+)
+
+PIPELINE_THROTTLE_QUEUE_SIZE = Gauge(
+    "poindexter_pipeline_throttle_queue_size",
+    "Current awaiting_approval queue size as last observed by the throttle check",
+)
+
+PIPELINE_THROTTLE_QUEUE_LIMIT = Gauge(
+    "poindexter_pipeline_throttle_queue_limit",
+    "Configured max_approval_queue as last observed by the throttle check",
+)
+
+# Task counts — from DatabaseService.tasks.get_task_counts(). These overlap
+# semantically with POSTS_TOTAL above but run against content_tasks and are
+# kept separate because dashboards query them by name.
+TASKS_PENDING = Gauge(
+    "poindexter_tasks_pending",
+    "Number of pending content tasks",
+)
+
+TASKS_IN_PROGRESS = Gauge(
+    "poindexter_tasks_in_progress",
+    "Number of in-progress content tasks",
+)
+
+TASKS_AWAITING_APPROVAL = Gauge(
+    "poindexter_tasks_awaiting_approval",
+    "Number of tasks awaiting approval",
+)
+
+
+# ---------------------------------------------------------------------------
 # Refresh — reads the DB + Ollama, updates the Gauges
 # ---------------------------------------------------------------------------
 
 
-async def refresh_metrics(pool: Any, ollama_url: str) -> None:
+async def refresh_metrics(
+    pool: Any,
+    ollama_url: str,
+    db_service: Any = None,
+) -> None:
     """Update every Gauge by running fresh queries.
 
     Called by the ``/metrics`` handler before generating exposition
@@ -176,6 +279,12 @@ async def refresh_metrics(pool: Any, ollama_url: str) -> None:
     Each source is wrapped in its own try/except — one slow query or
     one missing table must not make ``/metrics`` fail, or Prometheus
     will alert on the endpoint being down.
+
+    ``db_service`` is the full ``DatabaseService`` (has ``.tasks``,
+    ``.local_pool``, etc.) — required for metrics that don't live on
+    the cloud pool alone (task counts, per-pool stats). Passed
+    optionally so callers that only hand over a raw ``pool`` keep
+    working; the extra metrics just skip in that case.
     """
     import time
 
@@ -310,6 +419,64 @@ async def refresh_metrics(pool: Any, ollama_url: str) -> None:
             MONTHLY_SPEND_USD.set(float(row["monthly"] or 0))
     except Exception as e:
         logger.debug("refresh_metrics: cost_logs query failed: %s", e)
+
+    # -----------------------------------------------------------------
+    # Metrics migrated from /api/prometheus (Gitea #269).
+    # -----------------------------------------------------------------
+
+    # asyncpg pool stats — per-pool so the label schema matches the
+    # legacy exposer. The cloud pool is the one already passed in; the
+    # local pool (if distinct) is read off db_service.
+    try:
+        if pool is not None:
+            DB_POOL_SIZE.labels(pool="cloud").set(pool.get_size())
+            DB_POOL_IDLE.labels(pool="cloud").set(pool.get_idle_size())
+            DB_POOL_MIN_SIZE.labels(pool="cloud").set(pool.get_min_size())
+            DB_POOL_MAX_SIZE.labels(pool="cloud").set(pool.get_max_size())
+        local_pool = getattr(db_service, "local_pool", None) if db_service else None
+        if local_pool is not None and local_pool is not pool:
+            DB_POOL_SIZE.labels(pool="local").set(local_pool.get_size())
+            DB_POOL_IDLE.labels(pool="local").set(local_pool.get_idle_size())
+            DB_POOL_MIN_SIZE.labels(pool="local").set(local_pool.get_min_size())
+            DB_POOL_MAX_SIZE.labels(pool="local").set(local_pool.get_max_size())
+    except Exception as e:
+        logger.debug("refresh_metrics: db_pool stats failed: %s", e)
+
+    # GPU scheduler snapshot.
+    try:
+        from services.gpu_scheduler import gpu  # local import — avoid boot cycles
+
+        s = gpu.status
+        GPU_GAMING_DETECTED.set(1 if s.get("gaming_detected") else 0)
+        GPU_GAMING_PAUSED_SECONDS.set(float(s.get("gaming_paused_s") or 0))
+        GPU_GAMING_PAUSED_TOTAL_SECONDS.set(float(s.get("total_gaming_paused_s") or 0))
+        GPU_BUSY.set(1 if s.get("busy") else 0)
+    except Exception as e:
+        logger.debug("refresh_metrics: gpu_scheduler status failed: %s", e)
+
+    # Pipeline throttle state (GH-89 AC#2).
+    try:
+        from services.pipeline_throttle import get_state as _throttle_state
+
+        ts = _throttle_state()
+        PIPELINE_THROTTLE_ACTIVE.set(1 if ts.get("active") else 0)
+        PIPELINE_THROTTLE_SECONDS_TOTAL.set(float(ts.get("total_seconds") or 0))
+        PIPELINE_THROTTLE_QUEUE_SIZE.set(int(ts.get("queue_size") or 0))
+        PIPELINE_THROTTLE_QUEUE_LIMIT.set(int(ts.get("queue_limit") or 0))
+    except Exception as e:
+        logger.debug("refresh_metrics: pipeline_throttle state failed: %s", e)
+
+    # Task counts from content_tasks — needs DatabaseService.tasks.
+    try:
+        if db_service is not None and getattr(db_service, "tasks", None):
+            task_counts = await db_service.tasks.get_task_counts()
+            TASKS_PENDING.set(int(getattr(task_counts, "pending", 0) or 0))
+            TASKS_IN_PROGRESS.set(int(getattr(task_counts, "in_progress", 0) or 0))
+            TASKS_AWAITING_APPROVAL.set(
+                int(getattr(task_counts, "awaiting_approval", 0) or 0)
+            )
+    except Exception as e:
+        logger.debug("refresh_metrics: task_counts query failed: %s", e)
 
 
 def render_exposition() -> tuple[bytes, str]:
