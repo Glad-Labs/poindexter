@@ -210,7 +210,7 @@ async def check_title_originality(title: str, *, site_config: Any = None) -> dic
 
     try:
         from services.web_research import WebResearcher
-        researcher = WebResearcher()
+        researcher = WebResearcher(site_config=site_config)
         search_results = await researcher.search_simple(
             f'"{title}"', num_results=8,
         )
