@@ -41,6 +41,10 @@ class GenerateSeoMetadataStage:
     ) -> StageResult:
         from services.ai_content_generator import get_content_generator
         from services.seo_content_generator import get_seo_content_generator
+        # Transitional: this stage still reads the module-level singleton
+        # (Phase H step 3+ will thread site_config through StageContext);
+        # threaded in locally so seo_content_generator itself stays clean.
+        from services.site_config import site_config as _sc
 
         topic = context.get("topic", "")
         tags = context.get("tags") or []
@@ -54,7 +58,9 @@ class GenerateSeoMetadataStage:
 
         logger.info("STAGE 4: Generating SEO metadata...")
 
-        seo_generator = get_seo_content_generator(get_content_generator())
+        seo_generator = get_seo_content_generator(
+            get_content_generator(), site_config=_sc,
+        )
         seo_assets = seo_generator.metadata_gen.generate_seo_assets(
             title=topic, content=content_text, topic=topic,
         )
