@@ -5,6 +5,8 @@ Tests deterministic routing logic, complexity assessment, token limits,
 metrics tracking, and budget-based model selection — no LLM or DB calls.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 from services.model_router import (
@@ -21,16 +23,26 @@ from services.model_router import (
 # ---------------------------------------------------------------------------
 
 
+# Phase H step 5 (GH#95): ModelRouter ctor requires site_config.
+def _fake_sc():
+    return SimpleNamespace(
+        get=lambda _k, _d=None: _d if _d is not None else "",
+        get_int=lambda _k, _d=0: _d,
+        get_float=lambda _k, _d=0.0: _d,
+        get_bool=lambda _k, _d=False: _d,
+    )
+
+
 @pytest.fixture
 def router() -> ModelRouter:
     """Fresh ModelRouter with Ollama enabled (default policy)."""
-    return ModelRouter(default_model="ollama/qwen3:8b", use_ollama=True)
+    return ModelRouter(default_model="ollama/qwen3:8b", use_ollama=True, site_config=_fake_sc())
 
 
 @pytest.fixture
 def ollama_router() -> ModelRouter:
     """ModelRouter with Ollama enabled (alias for clarity in older test names)."""
-    return ModelRouter(default_model="ollama/qwen3:8b", use_ollama=True)
+    return ModelRouter(default_model="ollama/qwen3:8b", use_ollama=True, site_config=_fake_sc())
 
 
 # ---------------------------------------------------------------------------
@@ -303,11 +315,11 @@ class TestGetModelForPhase:
 @pytest.mark.unit
 class TestGlobalSingleton:
     def test_initialize_returns_model_router_instance(self):
-        instance = initialize_model_router()
+        instance = initialize_model_router(site_config=_fake_sc())
         assert isinstance(instance, ModelRouter)
 
     def test_get_model_router_returns_same_instance(self):
-        instance = initialize_model_router()
+        instance = initialize_model_router(site_config=_fake_sc())
         retrieved = get_model_router()
         assert retrieved is instance
 
@@ -462,11 +474,11 @@ class TestSeedSpendFromDb:
 @pytest.mark.unit
 class TestModelRouterInit:
     def test_use_ollama_explicit_true(self):
-        r = ModelRouter(use_ollama=True)
+        r = ModelRouter(use_ollama=True, site_config=_fake_sc())
         assert r.use_ollama is True
 
     def test_use_ollama_explicit_false(self):
-        r = ModelRouter(use_ollama=False)
+        r = ModelRouter(use_ollama=False, site_config=_fake_sc())
         assert r.use_ollama is False
 
     def test_use_ollama_none_reads_site_config(self):
@@ -484,24 +496,24 @@ class TestModelRouterInit:
         assert r.use_ollama is False
 
     def test_default_model_stored(self):
-        r = ModelRouter(default_model="ollama/custom:7b", use_ollama=True)
+        r = ModelRouter(default_model="ollama/custom:7b", use_ollama=True, site_config=_fake_sc())
         assert r.default_model == "ollama/custom:7b"
 
     def test_metrics_initialized_to_zero(self):
-        r = ModelRouter(use_ollama=True)
+        r = ModelRouter(use_ollama=True, site_config=_fake_sc())
         assert r.metrics["total_requests"] == 0
         assert r.metrics["ollama_uses"] == 0
         assert r.metrics["estimated_cost_actual"] == 0.0
 
     def test_session_cloud_spend_starts_zero(self):
-        r = ModelRouter(use_ollama=True)
+        r = ModelRouter(use_ollama=True, site_config=_fake_sc())
         assert r._session_cloud_spend == 0.0
         assert r._budget_exceeded_logged is False
 
     def test_provider_failures_starts_empty(self):
-        r = ModelRouter(use_ollama=True)
+        r = ModelRouter(use_ollama=True, site_config=_fake_sc())
         assert r._provider_consecutive_failures == {}
 
     def test_failure_threshold_is_five(self):
-        r = ModelRouter(use_ollama=True)
+        r = ModelRouter(use_ollama=True, site_config=_fake_sc())
         assert r._FAILURE_ALERT_THRESHOLD == 5
