@@ -35,3 +35,16 @@ repos:
         # Must not fail the commit — emit warning only. The script always
         # exits 0; this flag is belt-and-suspenders.
         verbose: true
+
+      # GH#93 Phase 3 — reject new os.getenv / os.environ reads in
+      # src/cofounder_agent/services/ outside the explicit allowlist of
+      # bootstrap / config / subprocess-plumbing modules. See the
+      # script's ALLOWED_FILES dict for the existing exemptions and the
+      # justification each one carries.
+      - id: no-os-getenv-in-services
+        name: reject new os.getenv in services/
+        entry: python scripts/check-no-os-getenv-in-services.py
+        language: system
+        pass_filenames: false
+        files: '^src/cofounder_agent/services/.*\.py$'
+        stages: [pre-commit]
