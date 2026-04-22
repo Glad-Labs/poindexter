@@ -307,7 +307,10 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 from plugins.registry import get_core_samples, get_jobs
                 from plugins.scheduler import PluginScheduler
 
-                scheduler = PluginScheduler(db_service.pool)
+                scheduler = PluginScheduler(
+                    db_service.pool,
+                    site_config=getattr(app.state, "site_config", None),
+                )
                 # entry_point-discovered jobs (third-party installs) + core
                 # samples loaded imperatively (see registry.get_core_samples).
                 jobs = list(get_jobs()) + list(get_core_samples().get("jobs", []))
