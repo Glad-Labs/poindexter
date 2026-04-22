@@ -109,7 +109,10 @@ class GenerateContentStage:
 
         logger.info("STAGE 2: Generating blog content...")
 
-        content_generator = get_content_generator()
+        # Phase H (GH#95): thread site_config through the factory so the
+        # singleton's app_settings reads bind to the injected instance
+        # instead of raising from _require_site_config().
+        content_generator = get_content_generator(site_config=_sc)
         preferred_model, preferred_provider = _parse_model_preferences(models_by_phase)
 
         # Fetch active writing style samples for voice/tone matching.

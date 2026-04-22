@@ -22,16 +22,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.ai_content_generator import AIContentGenerator, ContentValidationResult
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
+def _sc() -> SiteConfig:
+    """Fresh SiteConfig for Phase H DI (GH#95)."""
+    return SiteConfig()
+
+
 def _make_generator() -> AIContentGenerator:
     """Instantiate AIContentGenerator. ProviderChecker is gone post-v2.8
-    so no provider-availability patches are needed anymore."""
-    return AIContentGenerator(quality_threshold=7.5)
+    so no provider-availability patches are needed anymore.
+
+    Phase H (GH#95): thread a fresh SiteConfig through the ctor so
+    methods that call _require_site_config() don't blow up when the
+    test doesn't explicitly set it.
+    """
+    return AIContentGenerator(quality_threshold=7.5, site_config=_sc())
 
 
 def _good_content(topic: str = "Python programming", word_count: int = 1000) -> str:
@@ -112,7 +123,7 @@ class TestAIContentGeneratorInit:
         assert gen.quality_threshold == 7.5
 
     def test_custom_quality_threshold(self):
-        gen = AIContentGenerator(quality_threshold=6.0)
+        gen = AIContentGenerator(quality_threshold=6.0, site_config=_sc())
         assert gen.quality_threshold == 6.0
 
     def test_initial_state(self):
