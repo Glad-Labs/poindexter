@@ -471,8 +471,17 @@ class TopicDiscovery:
             )
             published_titles = {r["title"].lower() for r in rows}
 
-            # Also check all recent tasks regardless of status — prevents
-            # re-generating the same topic after rejection or completion.
+            # Also check in-flight tasks (pending/in_progress/awaiting_approval)
+            # and recently-published-but-not-yet-in-posts rows — prevents the
+            # scheduler from queueing the same topic twice while one copy is
+            # mid-generation, and keeps fresh published posts in the exclude
+            # list even before the `posts.status='published'` snapshot catches up.
+            #
+            # Rejected topics are EXPLICITLY NOT in this set (Matt 2026-04-22):
+            # rejecting a bad draft shouldn't permanently block the topic itself.
+            # If gemma3:27b wrote a bad post about Kubernetes and QA killed it,
+            # glm-4.7 writing a different, better post about Kubernetes is still
+            # worth attempting.
             # Window is tunable via app_settings key: qa_topic_dedup_hours (default 48).
             try:
                 from services.site_config import site_config
@@ -480,7 +489,11 @@ class TopicDiscovery:
             except Exception:
                 dedup_hours = 48
             task_rows = await self.pool.fetch(
-                "SELECT topic, title FROM content_tasks WHERE created_at > NOW() - ($1 || ' hours')::interval",
+                """
+                SELECT topic, title FROM content_tasks
+                WHERE created_at > NOW() - ($1 || ' hours')::interval
+                  AND status IN ('pending', 'in_progress', 'awaiting_approval', 'published')
+                """,
                 str(dedup_hours),
             )
             pending_topics = set()
