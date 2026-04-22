@@ -249,7 +249,10 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             try:
                 from services.webhook_delivery_service import WebhookDeliveryService
 
-                webhook_service = WebhookDeliveryService(services["database"].pool)
+                webhook_service = WebhookDeliveryService(
+                    services["database"].pool,
+                    app.state.site_config,
+                )
                 await webhook_service.start()
                 app.state.webhook_service = webhook_service
                 logger.info("[LIFESPAN] Coordinator: webhook delivery started")
