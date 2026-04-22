@@ -22,11 +22,11 @@ Usage:
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 from services.content_validator import ValidationResult, validate_content
 from services.logger_config import get_logger
 from services.model_router import get_model_router
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -268,9 +268,21 @@ class MultiModelQA:
     Change at runtime via OpenClaw or the settings API.
     """
 
-    def __init__(self, pool=None, settings_service=None):
+    def __init__(self, pool=None, settings_service=None, *, site_config: Any):
+        """Build a MultiModelQA instance.
+
+        Args:
+            pool: asyncpg pool (optional — some callers use QA without DB).
+            settings_service: Runtime settings resolver (optional).
+            site_config: SiteConfig instance (DI — Phase H step 5, GH#95).
+                Must be passed explicitly — the module-level singleton
+                import was removed. Supply from ``app.state.site_config``
+                in production, or a ``SiteConfig(initial_config={...})``
+                per-test instance in unit tests.
+        """
         self.pool = pool
         self.settings = settings_service
+        self._site_config = site_config
         self.router = get_model_router()
 
     async def review(
@@ -440,8 +452,9 @@ class MultiModelQA:
                 from urllib.parse import urlparse as _urlparse
                 _internal_domains: set[str] = {"localhost"}
                 try:
-                    from services.site_config import site_config as _sc_int
-                    _site_domain = (_sc_int.get("site_domain", "") or "").lower().strip()
+                    _site_domain = (
+                        self._site_config.get("site_domain", "") or ""
+                    ).lower().strip()
                     if _site_domain:
                         _internal_domains.add(_site_domain)
                         _internal_domains.add(f"www.{_site_domain}")
@@ -872,9 +885,8 @@ class MultiModelQA:
                 )
             ollama_model = default_model.removeprefix("ollama/")
 
-            from services.site_config import site_config as _sc_qa_gate
-            _gate_max = _sc_qa_gate.get_int("qa_gate_max_tokens", 600)
-            _gate_timeout = _sc_qa_gate.get_int("qa_gate_timeout_seconds", 60)
+            _gate_max = self._site_config.get_int("qa_gate_max_tokens", 600)
+            _gate_timeout = self._site_config.get_int("qa_gate_timeout_seconds", 60)
             try:
                 result = await asyncio.wait_for(
                     client.generate(
@@ -1201,7 +1213,7 @@ class MultiModelQA:
                 }
                 resp = await asyncio.wait_for(
                     client.post(
-                        site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
+                        self._site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
                         json=payload,
                     ),
                     timeout=150,
@@ -1390,7 +1402,7 @@ class MultiModelQA:
                 }
                 resp = await asyncio.wait_for(
                     client.post(
-                        site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
+                        self._site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
                         json=payload,
                     ),
                     timeout=200,

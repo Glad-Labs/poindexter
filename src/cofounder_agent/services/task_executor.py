@@ -771,9 +771,18 @@ class TaskExecutor:
                             # that isn't resolvable here.
                             _internal_preview_url = f"http://localhost:8002/preview/{preview_token}"
 
+                            # Resolve site_config: ctor → app.state → module
+                            # singleton fallback (removed in Phase H step 5
+                            # final cleanup).
+                            _pqa_sc = self.site_config
+                            if _pqa_sc is None:
+                                from services.site_config import (
+                                    site_config as _pqa_sc,
+                                )
                             _pqa = MultiModelQA(
                                 pool=self.database_service.pool,
                                 settings_service=_settings_svc,
+                                site_config=_pqa_sc,
                             )
                             _pqa_review = await _pqa._check_rendered_preview(
                                 title=topic,

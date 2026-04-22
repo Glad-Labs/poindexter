@@ -198,7 +198,9 @@ class CrossModelQAStage:
             # is deleted.
             from services.site_config import site_config as _sc
 
-        qa = MultiModelQA(pool=pool, settings_service=settings_service)
+        qa = MultiModelQA(
+            pool=pool, settings_service=settings_service, site_config=_sc,
+        )
 
         max_rewrites = await _resolve_max_rewrites(settings_service, default=2)
 
