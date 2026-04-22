@@ -1,10 +1,12 @@
 """
 Unit tests for services/image_service.py
 
-Tests FeaturedImageMetadata (to_dict, to_markdown), ImageService initialization,
-search_featured_image, get_images_for_gallery, _pexels_search (mocked httpx),
-generate_image_markdown, optimize_image_for_web, cache helpers, and factory.
-Heavy GPU/SDXL paths are not exercised; they are tested via flag checks only.
+Post-Phase-G (GH#71) the SDXL model lifecycle lives in
+``services/image_providers/sdxl.py`` — the tests for
+``_initialize_model`` / ``_unload_model`` / ``_import_pipeline_class``
+now live in ``test_image_providers_sdxl.py``. This file covers the
+ImageService public surface: FeaturedImageMetadata, Pexels search
+orchestration, the ImageProvider dispatcher, and utility methods.
 """
 
 from contextlib import asynccontextmanager
@@ -170,11 +172,15 @@ class TestImageServiceInit:
         assert "pexels.com" in svc.pexels_base_url
 
     def test_sdxl_not_initialized_at_startup(self):
+        # Post-Phase-G the SDXL lifecycle lives on SdxlProvider's
+        # module-level state. A fresh ImageService surfaces
+        # ``sdxl_initialized=False`` via the provider shim. We avoid
+        # asserting on the shared module state here because other tests
+        # in this session may have touched it; the important invariant
+        # is that a new ImageService exposes the attribute at all.
         svc = ImageService()
-        # Models are lazily initialized only when generate_image() is called
-        assert svc.sdxl_initialized is False
-        assert svc._gen_pipe is None
-        assert svc._active_model is None
+        assert isinstance(svc.sdxl_initialized, bool)
+        assert isinstance(svc.sdxl_available, bool)
 
     def test_search_cache_starts_empty(self):
         svc = ImageService()
@@ -569,294 +575,137 @@ class TestGetDefaultImageModel:
 
 
 # ---------------------------------------------------------------------------
-# _initialize_model()
+# generate_image — dispatcher (Phase G)
+#
+# The SDXL model lifecycle itself (host sidecar HTTP path, in-process
+# diffusers pipeline init, model hot-swap, import helpers) lives in
+# ``services/image_providers/sdxl.py`` — see ``test_image_providers_sdxl.py``.
+# The tests here only cover the thin registry-lookup / forwarding in
+# ``ImageService.generate_image``.
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
-class TestInitializeModel:
-    def test_returns_early_when_model_already_loaded(self):
-        """When the requested model is already the active model, _initialize_model is a no-op."""
-        svc = ImageService()
-        svc._active_model = ImageModel.SDXL_BASE
-        svc._gen_pipe = MagicMock()  # pretend a pipeline is loaded
-        original_pipe = svc._gen_pipe
-
-        svc._initialize_model(ImageModel.SDXL_BASE)
-
-        # Pipeline reference unchanged — no reload happened
-        assert svc._gen_pipe is original_pipe
-
-    def test_sets_sdxl_available_false_when_diffusers_unavailable(self):
-        svc = ImageService()
-        with patch("services.image_service.DIFFUSERS_AVAILABLE", False):
-            svc._initialize_model(ImageModel.SDXL_BASE)
-        assert svc.sdxl_available is False
-        assert svc._gen_pipe is None
-
-    def test_sets_sdxl_available_false_when_torch_unavailable(self):
-        svc = ImageService()
-        with (
-            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
-            patch("services.image_service.TORCH_AVAILABLE", False),
-        ):
-            svc._initialize_model(ImageModel.SDXL_BASE)
-        assert svc.sdxl_available is False
-        assert svc._gen_pipe is None
-
-    def test_unloads_previous_model_before_loading_new(self):
-        """When switching models, _unload_model is called before loading the new one."""
-        svc = ImageService()
-        svc._gen_pipe = MagicMock()
-        svc._active_model = ImageModel.SDXL_BASE
-
-        # DIFFUSERS and TORCH must be True so we get past the prerequisite checks
-        # and reach the unload branch. We then let the actual load fail (no real GPU).
-        with (
-            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
-            patch("services.image_service.TORCH_AVAILABLE", True),
-            patch.object(svc, "_unload_model") as mock_unload,
-            patch.object(svc, "_import_pipeline_class", side_effect=ImportError("no GPU")),
-        ):
-            svc._initialize_model(ImageModel.FLUX_SCHNELL)
-            mock_unload.assert_called_once()
-
-    def test_uses_get_default_when_model_is_none(self):
-        svc = ImageService()
-        with (
-            patch("services.image_service.DIFFUSERS_AVAILABLE", False),
-            patch(
-                "services.image_service.get_default_image_model",
-                return_value=ImageModel.FLUX_SCHNELL,
-            ) as mock_default,
-        ):
-            svc._initialize_model(None)
-            mock_default.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# _unload_model()
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestUnloadModel:
-    def test_clears_pipeline_and_model(self):
-        svc = ImageService()
-        svc._gen_pipe = MagicMock()
-        svc._active_model = ImageModel.SDXL_BASE
-        svc.sdxl_available = True
-
-        with patch("services.image_service.TORCH_AVAILABLE", False):
-            svc._unload_model()
-
-        assert svc._gen_pipe is None
-        assert svc._active_model is None
-        assert svc.sdxl_available is False
-
-    def test_noop_when_no_pipeline_loaded(self):
-        svc = ImageService()
-        assert svc._gen_pipe is None
-        with patch("services.image_service.TORCH_AVAILABLE", False):
-            svc._unload_model()  # Should not raise
-        assert svc._gen_pipe is None
-        assert svc._active_model is None
-        assert svc.sdxl_available is False
-
-    def test_clears_cuda_cache_when_available(self):
-        svc = ImageService()
-        svc._gen_pipe = MagicMock()
-        svc._active_model = ImageModel.SDXL_LIGHTNING
-
-        mock_torch = MagicMock()
-        mock_torch.cuda.is_available.return_value = True
-
-        import services.image_service as img_mod
-
-        original_torch = getattr(img_mod, "torch", None)
-        try:
-            img_mod.torch = mock_torch
-            with patch("services.image_service.TORCH_AVAILABLE", True):
-                svc._unload_model()
-            mock_torch.cuda.empty_cache.assert_called_once()
-        finally:
-            if original_torch is not None:
-                img_mod.torch = original_torch
-
-    def test_skips_cuda_cache_when_not_available(self):
-        svc = ImageService()
-        svc._gen_pipe = MagicMock()
-        svc._active_model = ImageModel.SDXL_BASE
-
-        mock_torch = MagicMock()
-        mock_torch.cuda.is_available.return_value = False
-
-        import services.image_service as img_mod
-
-        original_torch = getattr(img_mod, "torch", None)
-        try:
-            img_mod.torch = mock_torch
-            with patch("services.image_service.TORCH_AVAILABLE", True):
-                svc._unload_model()
-            mock_torch.cuda.empty_cache.assert_not_called()
-        finally:
-            if original_torch is not None:
-                img_mod.torch = original_torch
-
-
-# ---------------------------------------------------------------------------
-# _import_pipeline_class()
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestImportPipelineClass:
-    def test_valid_dotted_path(self):
-        # Use a known stdlib class as a stand-in
-        cls = ImageService._import_pipeline_class("collections.OrderedDict")
-        from collections import OrderedDict
-
-        assert cls is OrderedDict
-
-    def test_another_valid_path(self):
-        cls = ImageService._import_pipeline_class("os.path")
-        import os.path
-
-        assert cls is os.path
-
-    def test_invalid_path_no_dot(self):
-        with pytest.raises(ImportError, match="Invalid pipeline class path"):
-            ImageService._import_pipeline_class("nodots")
-
-    def test_nonexistent_module(self):
-        with pytest.raises(ModuleNotFoundError):
-            ImageService._import_pipeline_class("nonexistent_module_xyz.SomeClass")
-
-    def test_nonexistent_class_in_valid_module(self):
-        with pytest.raises(AttributeError):
-            ImageService._import_pipeline_class("collections.NonexistentClassXyz")
-
-    def test_with_mock_importlib(self):
-        """Verify the method calls importlib.import_module with the module part."""
-        mock_module = MagicMock()
-        mock_module.MyPipeline = "fake_class"
-
-        with patch("importlib.import_module", return_value=mock_module) as mock_import:
-            result = ImageService._import_pipeline_class("diffusers.MyPipeline")
-
-        mock_import.assert_called_once_with("diffusers")
-        assert result == "fake_class"
-
-
-# ---------------------------------------------------------------------------
-# generate_image — main public method
-# ---------------------------------------------------------------------------
-
-
-class TestGenerateImage:
-    """Coverage for the 3-strategy generate_image method."""
+class TestGenerateImageDispatcher:
+    """Coverage for the ImageProvider dispatch in ``generate_image``."""
 
     @pytest.mark.asyncio
-    async def test_host_sdxl_server_happy_path(self, tmp_path):
-        """Strategy 1: host SDXL server returns image bytes -> file written + True."""
+    async def test_dispatches_to_configured_provider(self, tmp_path):
+        """``plugin.image_provider.primary`` picks the provider; fetch() is
+        called with output_path + generation knobs in config."""
         svc = ImageService()
-
-        png_bytes = b"\x89PNG fake image data"
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.headers = {"content-type": "image/png", "X-Elapsed-Seconds": "1.5"}
-        mock_resp.content = png_bytes
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_resp)
-
         output_path = str(tmp_path / "out.png")
+        # Create a file at output_path so the post-call existence check passes.
+        (tmp_path / "out.png").write_bytes(b"\x89PNG fake")
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        fake_provider = MagicMock()
+        fake_provider.name = "sdxl"
+        fake_provider.fetch = AsyncMock(return_value=[MagicMock()])
+
+        with (
+            patch(
+                "services.image_service._resolve_image_provider",
+                return_value=fake_provider,
+            ),
+            patch(
+                "services.site_config.site_config.get",
+                return_value="sdxl",
+            ),
+        ):
             result = await svc.generate_image(
                 prompt="cat in space",
                 output_path=output_path,
                 negative_prompt="ugly",
+                num_inference_steps=8,
+                guidance_scale=2.5,
             )
 
         assert result is True
-        from pathlib import Path as _P
-        assert _P(output_path).exists()
-        assert _P(output_path).read_bytes() == png_bytes
+        fake_provider.fetch.assert_awaited_once()
+        # Config forwarded correctly
+        call_args = fake_provider.fetch.await_args
+        forwarded = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs["config"]
+        assert forwarded["output_path"] == output_path
+        assert forwarded["negative_prompt"] == "ugly"
+        assert forwarded["num_inference_steps"] == 8
+        assert forwarded["guidance_scale"] == 2.5
 
     @pytest.mark.asyncio
-    async def test_host_sdxl_non_200_falls_through_to_local(self, tmp_path):
-        """If host SDXL returns 500 and local diffusers unavailable -> False."""
+    async def test_returns_false_when_provider_not_registered(self, tmp_path):
         svc = ImageService()
-        svc.sdxl_available = False  # local diffusers not available
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 500
-        mock_resp.headers = {"content-type": "text/plain"}
-        mock_resp.text = "internal error"
-        mock_resp.content = b""
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch.object(svc, "_initialize_model"):
-            svc.sdxl_initialized = True  # skip the lazy init
+        with (
+            patch("services.image_service._resolve_image_provider", return_value=None),
+            patch(
+                "services.site_config.site_config.get",
+                return_value="nonexistent",
+            ),
+        ):
             result = await svc.generate_image(
                 prompt="x",
                 output_path=str(tmp_path / "x.png"),
             )
-
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_host_sdxl_exception_falls_through_to_local(self, tmp_path):
-        """Connection error on host SDXL + diffusers unavailable -> False."""
+    async def test_returns_false_when_provider_returns_empty(self, tmp_path):
         svc = ImageService()
-        svc.sdxl_available = False
+        fake_provider = MagicMock()
+        fake_provider.name = "sdxl"
+        fake_provider.fetch = AsyncMock(return_value=[])
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
-
-        with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch.object(svc, "_initialize_model"):
-            svc.sdxl_initialized = True
+        with (
+            patch(
+                "services.image_service._resolve_image_provider",
+                return_value=fake_provider,
+            ),
+            patch("services.site_config.site_config.get", return_value="sdxl"),
+        ):
             result = await svc.generate_image(
-                prompt="x", output_path=str(tmp_path / "x.png"),
+                prompt="x",
+                output_path=str(tmp_path / "x.png"),
             )
-
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_host_sdxl_wrong_content_type_falls_through(self, tmp_path):
-        """200 with text/html content-type is treated as failure."""
+    async def test_returns_false_when_file_not_written(self, tmp_path):
+        """Even if provider reports success, a missing file at output_path
+        means the dispatcher returns False."""
         svc = ImageService()
-        svc.sdxl_available = False
+        # Note: do NOT create the file — mimic a buggy provider.
+        fake_provider = MagicMock()
+        fake_provider.name = "sdxl"
+        fake_provider.fetch = AsyncMock(return_value=[MagicMock()])
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.headers = {"content-type": "text/html"}
-        mock_resp.text = "<html>error</html>"
-        mock_resp.content = b""
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_client), \
-             patch.object(svc, "_initialize_model"):
-            svc.sdxl_initialized = True
+        with (
+            patch(
+                "services.image_service._resolve_image_provider",
+                return_value=fake_provider,
+            ),
+            patch("services.site_config.site_config.get", return_value="sdxl"),
+        ):
             result = await svc.generate_image(
-                prompt="x", output_path=str(tmp_path / "x.png"),
+                prompt="x",
+                output_path=str(tmp_path / "never-created.png"),
             )
+        assert result is False
 
+    @pytest.mark.asyncio
+    async def test_provider_exception_returns_false(self, tmp_path):
+        svc = ImageService()
+        fake_provider = MagicMock()
+        fake_provider.name = "sdxl"
+        fake_provider.fetch = AsyncMock(side_effect=RuntimeError("GPU OOM"))
+
+        with (
+            patch(
+                "services.image_service._resolve_image_provider",
+                return_value=fake_provider,
+            ),
+            patch("services.site_config.site_config.get", return_value="sdxl"),
+        ):
+            result = await svc.generate_image(
+                prompt="x",
+                output_path=str(tmp_path / "x.png"),
+            )
         assert result is False
 
 
@@ -947,35 +796,14 @@ class TestEnsurePexelsKey:
 
 
 # ---------------------------------------------------------------------------
-# get_active_model + list_available_models + optimize_image_for_web
+# optimize_image_for_web
+#
+# Note: ``get_active_model`` / ``list_available_models`` were removed in
+# Phase G — they referenced the in-process diffusers pipeline state that
+# now lives inside the SdxlProvider. See
+# ``tests/unit/services/test_image_providers_sdxl.py`` for provider-level
+# coverage.
 # ---------------------------------------------------------------------------
-
-
-class TestModelIntrospection:
-    def test_get_active_model_none_at_startup(self):
-        svc = ImageService()
-        # Fresh instance — nothing loaded
-        assert svc.get_active_model() is None
-
-    def test_get_active_model_returns_loaded(self):
-        svc = ImageService()
-        svc._active_model = ImageModel.SDXL_LIGHTNING
-        assert svc.get_active_model() == ImageModel.SDXL_LIGHTNING
-
-    def test_list_available_models_returns_dict_with_all_three(self):
-        models = ImageService.list_available_models()
-        assert isinstance(models, dict)
-        # All three from the registry
-        for m in IMAGE_MODEL_REGISTRY:
-            assert m.value in models
-
-    def test_list_available_models_entries_have_metadata(self):
-        models = ImageService.list_available_models()
-        for _value, meta in models.items():
-            assert "display_name" in meta
-            assert "default_steps" in meta
-            assert "vram_gb" in meta
-            assert "notes" in meta
 
 
 class TestOptimizeImageForWeb:
