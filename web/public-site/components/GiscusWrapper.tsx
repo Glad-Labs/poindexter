@@ -9,11 +9,17 @@ interface GiscusWrapperProps {
 
 export function GiscusWrapper({ postSlug, postTitle }: GiscusWrapperProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const repo =
-    process.env.NEXT_PUBLIC_GISCUS_REPO || 'Glad-Labs/glad-labs-codebase';
-  const repoId = process.env.NEXT_PUBLIC_GISCUS_REPO_ID || 'R_kgDOQInTBg';
+  // Defaults point at Glad-Labs/poindexter — the public OSS repo that
+  // actually exists on GitHub + has Discussions enabled + has the
+  // Giscus app installed. The previous default 'Glad-Labs/glad-labs-codebase'
+  // pointed at an internal-only repo name; Giscus returned "not installed"
+  // for every post until now. Category is General. Override via
+  // NEXT_PUBLIC_GISCUS_REPO / _REPO_ID / _CATEGORY_ID in Vercel if you
+  // want comments to land on a different repo.
+  const repo = process.env.NEXT_PUBLIC_GISCUS_REPO || 'Glad-Labs/poindexter';
+  const repoId = process.env.NEXT_PUBLIC_GISCUS_REPO_ID || 'R_kgDOR-pAaA';
   const categoryId =
-    process.env.NEXT_PUBLIC_GISCUS_CATEGORY_ID || 'DIC_kwDOQInTBs4CxB4P';
+    process.env.NEXT_PUBLIC_GISCUS_CATEGORY_ID || 'DIC_kwDOR-pAaM4C7ZMV';
   const enabled = process.env.NEXT_PUBLIC_ENABLE_COMMENTS !== 'false';
 
   useEffect(() => {
