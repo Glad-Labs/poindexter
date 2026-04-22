@@ -154,13 +154,6 @@ export default function TopNavigation() {
             >
               Premium
             </Link>
-            <Link
-              href="/claude-templates"
-              className="gl-focus-ring nav-link"
-              style={{ color: 'var(--gl-mint)' }}
-            >
-              Templates
-            </Link>
           </div>
           <div className="hidden md:flex items-center gap-4">
             {searchOpen ? (
@@ -306,13 +299,6 @@ export default function TopNavigation() {
                   }}
                 >
                   Premium
-                </Link>
-                <Link
-                  href="/claude-templates"
-                  className="gl-focus-ring nav-link py-3"
-                  style={{ color: 'var(--gl-mint)' }}
-                >
-                  Templates
                 </Link>
               </div>
 
