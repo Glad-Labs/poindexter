@@ -41,7 +41,9 @@ class AnalyzeTopicGapsJob:
     schedule = "every 24 hours"
     idempotent = True  # Read-only analysis
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+    async def run(
+        self, pool: Any, config: dict[str, Any], *, site_config: Any = None,
+    ) -> JobResult:
         low_threshold = int(config.get("low_threshold", 5))
         stale_days = int(config.get("stale_days", 14))
         file_issue = bool(config.get("file_gitea_issue", True))
@@ -99,12 +101,11 @@ class AnalyzeTopicGapsJob:
             # site — this Job hasn't yet migrated its ``run()`` signature
             # to accept ``site_config``. When it does, pass self's bound
             # instance instead.
-            from services.site_config import site_config as _sc
             await create_gitea_issue(
                 f"content: topic gaps — {len(empty)} empty, "
                 f"{len(low)} low, {len(stale_names)} stale",
                 body,
-                site_config=_sc,
+                site_config=site_config,
             )
 
         detail = (

@@ -29,7 +29,9 @@ class FlagMissingSeoJob:
     schedule = "every 12 hours"
     idempotent = True  # Read-only — no writes to posts
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+    async def run(
+        self, pool: Any, config: dict[str, Any], *, site_config: Any = None,
+    ) -> JobResult:
         limit = int(config.get("limit", 10))
         file_issue = bool(config.get("file_gitea_issue", True))
 
@@ -59,13 +61,10 @@ class FlagMissingSeoJob:
         titles = [(r["title"] or "")[:40] for r in rows]
         if file_issue:
             body = "## Posts Missing SEO\n\n" + "\n".join(f"- {t}" for t in titles)
-            # Phase H (GH#95): transitional singleton import — this Job's
-            # run() doesn't thread site_config yet.
-            from services.site_config import site_config as _sc
             await create_gitea_issue(
                 f"seo: {len(rows)} posts missing SEO title or description",
                 body,
-                site_config=_sc,
+                site_config=site_config,
             )
 
         detail = f"found {len(rows)} post(s) with missing SEO metadata"

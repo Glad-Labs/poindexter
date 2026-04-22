@@ -38,7 +38,9 @@ class DetectDuplicatePostsJob:
     schedule = "every 24 hours"
     idempotent = True  # Read-only — no writes
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+    async def run(
+        self, pool: Any, config: dict[str, Any], *, site_config: Any = None,
+    ) -> JobResult:
         overlap_threshold = float(config.get("overlap_threshold", 0.7))
         min_words = int(config.get("min_words", 4))
         max_pairs = int(config.get("max_pairs_reported", 10))
@@ -97,11 +99,10 @@ class DetectDuplicatePostsJob:
             )
             # Phase H (GH#95): transitional singleton import — this Job's
             # run() doesn't thread site_config yet.
-            from services.site_config import site_config as _sc
             await create_gitea_issue(
                 f"content: {len(duplicates)} potential duplicate post pairs",
                 body,
-                site_config=_sc,
+                site_config=site_config,
             )
 
         detail = (
