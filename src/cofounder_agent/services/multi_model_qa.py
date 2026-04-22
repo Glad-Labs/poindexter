@@ -430,12 +430,26 @@ class MultiModelQA:
                 reviews.append(url_review)
                 logger.warning("[MULTI_QA] URL verifier: %d dead links found", len(dead_links))
             else:
-                # Count verified external citations — bonus scoring
+                # Count verified external citations — bonus scoring.
+                # "Internal" domains (the operator's own site) are excluded
+                # from the citation count. Read site_domain from site_config
+                # so forked Poindexter installs filter their own domain, not
+                # Glad Labs' — prevents a fork's self-links from being
+                # counted as "external citations" and inflating the score.
                 import re as _re
                 from urllib.parse import urlparse as _urlparse
+                _internal_domains: set[str] = {"localhost"}
+                try:
+                    from services.site_config import site_config as _sc_int
+                    _site_domain = (_sc_int.get("site_domain", "") or "").lower().strip()
+                    if _site_domain:
+                        _internal_domains.add(_site_domain)
+                        _internal_domains.add(f"www.{_site_domain}")
+                except Exception:
+                    pass
                 _ext_urls = [
                     m.group(2) for m in _re.finditer(r'\[([^\]]*)\]\((https?://[^)]+)\)', content)
-                    if _urlparse(m.group(2)).netloc.lower() not in {"gladlabs.io", "www.gladlabs.io", "localhost"}
+                    if _urlparse(m.group(2)).netloc.lower() not in _internal_domains
                 ]
                 citation_count = len(_ext_urls)
                 # Reward: +5 per verified citation, max +15
