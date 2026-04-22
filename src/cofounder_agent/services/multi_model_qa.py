@@ -656,10 +656,16 @@ class MultiModelQA:
         topic: str,
         model_override: str | None = None,
         research_sources: str | None = None,
-    ) -> ReviewerResult | None:
+    ) -> tuple[ReviewerResult, dict] | None:
         """Review content using local Ollama (zero cost).
 
         Uses gemma3:27b by default — strong at structured JSON output.
+
+        Returns a ``(review, cost_log)`` tuple on success, or ``None`` if
+        the model was unreachable / returned unparseable output. The
+        caller (``_review_with_cloud_model``) passes the tuple straight
+        through and its outer caller unpacks to ``cross_review,
+        qa_cost_log = cross_result``.
         """
         import asyncio
         import json
