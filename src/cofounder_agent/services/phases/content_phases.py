@@ -430,6 +430,10 @@ class GenerateSEOPhase(BasePhase):
 
         try:
             from .seo_content_generator import get_seo_content_generator  # type: ignore[import]
+            # Transitional: this legacy phase is not itself Phase H
+            # migrated (GH#95). The local singleton import keeps the
+            # call shippable until the phases layer follows.
+            from services.site_config import site_config as _sc
 
             content = inputs.get("content")
             topic = inputs.get("topic")
@@ -437,7 +441,7 @@ class GenerateSEOPhase(BasePhase):
             logger.info("[GenerateSEOPhase] Generating SEO metadata for '%s'", topic)
 
             # Use existing SEO generator
-            seo_generator = get_seo_content_generator()
+            seo_generator = get_seo_content_generator(site_config=_sc)
             seo_assets = await seo_generator.generate_seo_assets(
                 title=topic, content=content, topic=topic
             )

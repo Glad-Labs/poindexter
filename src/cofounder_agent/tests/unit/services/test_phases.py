@@ -523,7 +523,7 @@ class TestGenerateSEOPhase:
             "sys.modules",
             {
                 "services.phases.seo_content_generator": MagicMock(
-                    get_seo_content_generator=lambda: mock_generator
+                    get_seo_content_generator=lambda *a, **kw: mock_generator
                 )
             },
         ):
@@ -555,7 +555,7 @@ class TestGenerateSEOPhase:
             "sys.modules",
             {
                 "services.phases.seo_content_generator": MagicMock(
-                    get_seo_content_generator=lambda: mock_generator
+                    get_seo_content_generator=lambda *a, **kw: mock_generator
                 )
             },
         ):

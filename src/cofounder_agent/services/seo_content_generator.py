@@ -21,7 +21,6 @@ from services.logger_config import get_logger
 from utils.text_utils import extract_keywords_from_text
 
 from .prompt_manager import get_prompt_manager
-from .site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -103,8 +102,19 @@ class EnhancedBlogPost:
 class ContentMetadataGenerator:
     """Generate SEO and metadata for content"""
 
-    def __init__(self, llm_provider_manager=None):
+    def __init__(self, llm_provider_manager=None, *, site_config: Any = None):
+        """
+        Args:
+            llm_provider_manager: optional LLM provider (legacy; currently
+                unused — pattern extractors don't need an LLM).
+            site_config: SiteConfig instance (DI — Phase H). Used by
+                ``generate_json_ld_schema`` to pull the organisation/site
+                name for the schema. ``None`` falls back to a generic
+                "AI Content Pipeline" string so tests that don't care
+                about site_name don't need to wire one.
+        """
         self.llm = llm_provider_manager
+        self._site_config = site_config
 
     def generate_seo_assets(
         self,
@@ -184,13 +194,17 @@ class ContentMetadataGenerator:
         )
 
     def generate_json_ld_schema(self, blog_post: dict[str, Any]) -> dict[str, Any]:
-        """Generate JSON-LD structured data for rich snippets"""
+        """Generate JSON-LD structured data for rich snippets."""
+        if self._site_config is not None:
+            site_name = self._site_config.get("site_name", "AI Content Pipeline")
+        else:
+            site_name = "AI Content Pipeline"
         return {
             "@context": "https://schema.org",
             "@type": "BlogPosting",
             "headline": blog_post.get("title"),
             "description": blog_post.get("excerpt"),
-            "author": {"@type": "Organization", "name": site_config.get("site_name", "AI Content Pipeline")},
+            "author": {"@type": "Organization", "name": site_name},
             "datePublished": datetime.now(timezone.utc).isoformat(),
             "keywords": ",".join(blog_post.get("keywords", [])),
             "image": blog_post.get("featured_image_url"),
@@ -250,10 +264,27 @@ class SEOOptimizedContentGenerator:
     """Main service for SEO-optimized content generation with full metadata"""
 
     def __init__(
-        self, ai_content_generator, metadata_generator: ContentMetadataGenerator | None = None
+        self,
+        ai_content_generator,
+        metadata_generator: ContentMetadataGenerator | None = None,
+        *,
+        site_config: Any = None,
     ):
+        """
+        Args:
+            ai_content_generator: the underlying LLM content generator.
+            metadata_generator: optional pre-built metadata generator. If
+                ``None``, a new ``ContentMetadataGenerator`` is built and
+                wired with the ``site_config`` passed here.
+            site_config: SiteConfig instance (DI — Phase H). Only used when
+                this class needs to construct a default
+                ``ContentMetadataGenerator``. If a metadata_generator is
+                supplied, its own site_config is used instead.
+        """
         self.ai_generator = ai_content_generator
-        self.metadata_gen = metadata_generator or ContentMetadataGenerator()
+        self.metadata_gen = metadata_generator or ContentMetadataGenerator(
+            site_config=site_config,
+        )
 
     async def generate_complete_blog_post(
         self,
@@ -376,7 +407,17 @@ class SEOOptimizedContentGenerator:
         )
 
 
-def get_seo_content_generator(ai_content_generator):
-    """Factory function to create SEO-optimized generator"""
-    metadata_gen = ContentMetadataGenerator()
-    return SEOOptimizedContentGenerator(ai_content_generator, metadata_gen)
+def get_seo_content_generator(ai_content_generator, *, site_config: Any = None):
+    """Factory function to create SEO-optimized generator.
+
+    Args:
+        ai_content_generator: the underlying LLM content generator.
+        site_config: SiteConfig instance (DI — Phase H). Threaded into
+            the ``ContentMetadataGenerator`` so ``generate_json_ld_schema``
+            can pull the organisation name without touching the module
+            singleton.
+    """
+    metadata_gen = ContentMetadataGenerator(site_config=site_config)
+    return SEOOptimizedContentGenerator(
+        ai_content_generator, metadata_gen, site_config=site_config,
+    )
