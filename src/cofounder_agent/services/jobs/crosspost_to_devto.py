@@ -108,6 +108,7 @@ class CrosspostToDevtoJob:
             await create_gitea_issue(
                 f"devto: {len(errors)} cross-post errors of {len(rows)} attempts",
                 body,
+                site_config=site_config,
             )
 
         detail = (

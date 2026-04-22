@@ -191,14 +191,19 @@ class TestCreateGiteaIssue:
 
     @pytest.mark.asyncio
     async def test_delegates_to_shared_utility(self):
-        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
+        sc = _make_sc()
+        worker = IdleWorker(AsyncMock(), site_config=sc)
         with patch(
             "utils.gitea_issues.create_gitea_issue",
             new=AsyncMock(return_value=True),
         ) as mock_util:
             result = await worker._create_gitea_issue("links: broken", "body")
         assert result is True
-        mock_util.assert_awaited_once_with("links: broken", "body")
+        # Phase H (GH#95): the shared utility now requires site_config
+        # and IdleWorker forwards its DI'd instance through.
+        mock_util.assert_awaited_once_with(
+            "links: broken", "body", site_config=sc,
+        )
 
     @pytest.mark.asyncio
     async def test_returns_false_when_utility_returns_false(self):

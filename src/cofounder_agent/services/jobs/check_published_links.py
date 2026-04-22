@@ -101,6 +101,7 @@ class CheckPublishedLinksJob:
             await create_gitea_issue(
                 f"links: {len(broken)} broken URLs in published posts",
                 body,
+                site_config=site_config,
             )
 
         detail = f"checked {checked} URL(s) across {len(rows)} post(s), {len(broken)} broken"

@@ -164,6 +164,7 @@ class FixBrokenExternalLinksJob:
                 f"links: removed {broken_total} broken external URLs from {posts_fixed} posts",
                 "Auto-cleaned 404 / unreachable external links. "
                 "Link text preserved; anchors stripped.",
+                site_config=site_config,
             )
 
         detail = (

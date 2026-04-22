@@ -142,6 +142,7 @@ class RegenerateStockImagesJob:
                 await create_gitea_issue(
                     f"images: regenerated {regenerated} stock photos with SDXL",
                     f"Replaced Pexels stock photos with AI-generated art for {regenerated} posts.",
+                    site_config=site_config,
                 )
             except Exception as e:
                 logger.debug("[REGEN_IMG] gitea issue failed: %s", e)

@@ -6,6 +6,10 @@ Shared across services/jobs/* — any Job that wants to surface a finding
 
 Credentials come from site_config (app_settings), not env vars, per
 Matt's DB-first policy.
+
+Phase H (GH#95): ``create_gitea_issue`` now takes ``site_config`` as a
+keyword-only argument. Callers must pass the SiteConfig they already
+have (jobs receive one per run; services bind one in their ctor).
 """
 
 from __future__ import annotations
@@ -16,13 +20,26 @@ from typing import Any
 
 import httpx
 
-from services.site_config import site_config
-
 logger = logging.getLogger(__name__)
 
 
-async def create_gitea_issue(title: str, body: str, *, timeout: float = 10.0) -> bool:
+async def create_gitea_issue(
+    title: str,
+    body: str,
+    *,
+    site_config: Any,
+    timeout: float = 10.0,
+) -> bool:
     """Create a deduplicated Gitea issue for tracking discovered problems.
+
+    Args:
+        title: Issue title (also used as the dedup key — see below).
+        body: Issue body (Markdown).
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Must be
+            passed explicitly — the module-level singleton import was
+            removed so the utility never reads global state at import
+            time.
+        timeout: HTTP timeout (seconds) for the Gitea API calls.
 
     Dedup strategy: compare the title prefix (everything before the first
     colon, or the first 30 chars) against currently-open issues. If an open
