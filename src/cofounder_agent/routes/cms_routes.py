@@ -371,11 +371,11 @@ async def preview_post_html(preview_token: str):
     quality = post.get("quality_score", "?")
     excerpt = post.get("excerpt", "")
     from html import escape as _esc
-    featured_img = _esc(post.get("featured_image_url", ""))
+    featured_img = _esc(post.get("featured_image_url") or "")
     has_podcast = post.get("has_podcast", False)
     has_video = post.get("has_video", False)
-    podcast_url = _esc(post.get("podcast_url", ""))
-    video_url = _esc(post.get("video_url", ""))
+    podcast_url = _esc(post.get("podcast_url") or "")
+    video_url = _esc(post.get("video_url") or "")
     safe_title = _esc(title)
 
     # Build podcast/video players
