@@ -704,10 +704,10 @@ async def publish_post_from_task(
 
         _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
         if background_tasks:
-            background_tasks.add_task(export_post, _pool, slug)
+            background_tasks.add_task(export_post, _pool, slug, site_config)
         else:
             _spawn_background(
-                export_post(_pool, slug), name=f"static_export({slug})"
+                export_post(_pool, slug, site_config), name=f"static_export({slug})"
             )
         logger.info("[STATIC_EXPORT] Queued export for %s", slug)
     except Exception as e:

@@ -32,7 +32,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -54,13 +53,19 @@ def _to_json(data: Any) -> str:
     return json.dumps(data, default=_json_serial, ensure_ascii=False)
 
 
-async def _upload_json(key: str, data: str, content_type: str = "application/json") -> str | None:
-    """Upload a JSON string to R2/S3-compatible storage. Returns public URL or None."""
+async def _upload_json(
+    key: str, data: str, content_type: str = "application/json",
+    *, site_config: Any,
+) -> str | None:
+    """Upload a JSON string to R2/S3-compatible storage. Returns public URL or None.
+
+    Args:
+        key: Object key under the static export prefix.
+        data: Serialized JSON payload.
+        content_type: MIME type (defaults to application/json).
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+    """
     from services.r2_upload_service import upload_to_r2
-    # export_post / export_full_rebuild don't thread site_config through
-    # yet — use a transitional module-singleton import until their own
-    # Phase H migration. GH#95.
-    from services.site_config import site_config as _sc
 
     tmp = None
     try:
@@ -71,7 +76,7 @@ async def _upload_json(key: str, data: str, content_type: str = "application/jso
             tmp.name,
             f"{_STATIC_PREFIX}/{key}",
             content_type,
-            site_config=_sc,
+            site_config=site_config,
         )
         return url
     except Exception as e:
@@ -280,8 +285,14 @@ def _build_sitemap(posts: list[dict], categories: list[dict], site_url: str) -> 
     return {"urls": urls, "total": len(urls)}
 
 
-async def export_post(pool, slug: str) -> bool:
-    """Incremental export — called when a single post is published or updated."""
+async def export_post(pool, slug: str, site_config: Any) -> bool:
+    """Incremental export — called when a single post is published or updated.
+
+    Args:
+        pool: asyncpg connection pool.
+        slug: Post slug to export.
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+    """
     site_url = site_config.get("public_site_url") or site_config.require("site_url")
     site_title = site_config.get("site_title") or site_config.require("site_name")
     success = True
@@ -289,7 +300,10 @@ async def export_post(pool, slug: str) -> bool:
     try:
         post = await _fetch_post_by_slug(pool, slug)
         if post:
-            url = await _upload_json(f"posts/{slug}.json", _to_json(_post_full(post)))
+            url = await _upload_json(
+                f"posts/{slug}.json", _to_json(_post_full(post)),
+                site_config=site_config,
+            )
             if not url:
                 success = False
             logger.info("[STATIC_EXPORT] Exported post: %s", slug)
@@ -303,19 +317,23 @@ async def export_post(pool, slug: str) -> bool:
             "total": len(all_posts),
             "exported_at": datetime.now(timezone.utc).isoformat(),
         }
-        url = await _upload_json("posts/index.json", _to_json(index_data))
+        url = await _upload_json(
+            "posts/index.json", _to_json(index_data), site_config=site_config,
+        )
         if not url:
             success = False
 
         posts_with_content = await _fetch_published_posts(pool, include_content=True)
         feed = _build_json_feed(posts_with_content[:50], site_url, site_title)
-        url = await _upload_json("feed.json", _to_json(feed))
+        url = await _upload_json("feed.json", _to_json(feed), site_config=site_config)
         if not url:
             success = False
 
         categories = await _fetch_categories(pool)
         sitemap = _build_sitemap(all_posts, categories, site_url)
-        url = await _upload_json("sitemap.json", _to_json(sitemap))
+        url = await _upload_json(
+            "sitemap.json", _to_json(sitemap), site_config=site_config,
+        )
         if not url:
             success = False
 
@@ -327,7 +345,9 @@ async def export_post(pool, slug: str) -> bool:
             "site_url": site_url,
             "last_published_slug": slug,
         }
-        url = await _upload_json("manifest.json", _to_json(manifest))
+        url = await _upload_json(
+            "manifest.json", _to_json(manifest), site_config=site_config,
+        )
         if not url:
             success = False
 
@@ -342,8 +362,13 @@ async def export_post(pool, slug: str) -> bool:
         return False
 
 
-async def export_full_rebuild(pool) -> dict[str, Any]:
-    """Full rebuild — regenerate ALL static files from scratch."""
+async def export_full_rebuild(pool, site_config: Any) -> dict[str, Any]:
+    """Full rebuild — regenerate ALL static files from scratch.
+
+    Args:
+        pool: asyncpg connection pool.
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+    """
     site_url = site_config.get("public_site_url") or site_config.require("site_url")
     site_title = site_config.get("site_title") or site_config.require("site_name")
     errors = []
@@ -358,29 +383,39 @@ async def export_full_rebuild(pool) -> dict[str, Any]:
             "total": len(all_posts),
             "exported_at": datetime.now(timezone.utc).isoformat(),
         }
-        if not await _upload_json("posts/index.json", _to_json(index_data)):
+        if not await _upload_json(
+            "posts/index.json", _to_json(index_data), site_config=site_config,
+        ):
             errors.append("posts/index.json")
 
         for post in all_posts:
             key = f"posts/{post['slug']}.json"
-            if not await _upload_json(key, _to_json(_post_full(post))):
+            if not await _upload_json(
+                key, _to_json(_post_full(post)), site_config=site_config,
+            ):
                 errors.append(key)
 
         cat_data = [{"id": str(c["id"]), "name": c["name"], "slug": c["slug"],
                       "description": c.get("description")} for c in categories]
-        if not await _upload_json("categories.json", _to_json(cat_data)):
+        if not await _upload_json(
+            "categories.json", _to_json(cat_data), site_config=site_config,
+        ):
             errors.append("categories.json")
 
         author_data = [{"id": str(a["id"]), "name": a.get("name", "Unknown")} for a in authors]
-        if not await _upload_json("authors.json", _to_json(author_data)):
+        if not await _upload_json(
+            "authors.json", _to_json(author_data), site_config=site_config,
+        ):
             errors.append("authors.json")
 
         feed = _build_json_feed(all_posts[:50], site_url, site_title)
-        if not await _upload_json("feed.json", _to_json(feed)):
+        if not await _upload_json("feed.json", _to_json(feed), site_config=site_config):
             errors.append("feed.json")
 
         sitemap = _build_sitemap(all_posts, categories, site_url)
-        if not await _upload_json("sitemap.json", _to_json(sitemap)):
+        if not await _upload_json(
+            "sitemap.json", _to_json(sitemap), site_config=site_config,
+        ):
             errors.append("sitemap.json")
 
         manifest = {
@@ -392,7 +427,9 @@ async def export_full_rebuild(pool) -> dict[str, Any]:
             "site_url": site_url,
             "full_rebuild": True,
         }
-        if not await _upload_json("manifest.json", _to_json(manifest)):
+        if not await _upload_json(
+            "manifest.json", _to_json(manifest), site_config=site_config,
+        ):
             errors.append("manifest.json")
 
         total_files = len(all_posts) + 5
