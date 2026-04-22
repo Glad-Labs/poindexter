@@ -650,8 +650,12 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     try:
         from services.devto_service import DevToCrossPostService
+        from services.site_config import site_config as _sc
 
-        devto_svc = DevToCrossPostService(getattr(db_service, "cloud_pool", None) or db_service.pool)
+        devto_svc = DevToCrossPostService(
+            getattr(db_service, "cloud_pool", None) or db_service.pool,
+            _sc,
+        )
         if background_tasks:
             background_tasks.add_task(
                 devto_svc.cross_post_by_post_id, post_id
