@@ -104,12 +104,24 @@ def _content_words(title: str) -> set[str]:
     return words - _STOP_WORDS
 
 
-def _word_overlap_match(words_a: set[str], words_b: set[str], threshold: float = 0.4) -> bool:
-    """True if content-word overlap exceeds threshold (both directions checked)."""
+def _word_overlap_match(
+    words_a: set[str], words_b: set[str], threshold: float = 0.4,
+) -> tuple[bool, float]:
+    """Return (is_duplicate, max_overlap_ratio).
+
+    Content-word overlap > threshold in either direction = duplicate. Both the
+    boolean and the ratio are returned so callers can log the actual score for
+    tuning (gitea#279) — previously this only returned bool and the log line
+    said 'X ≈ Y' with no numeric evidence, making the 0.4 default untunable
+    without instrumentation.
+    """
     if not words_a or not words_b:
-        return False
+        return False, 0.0
     overlap = len(words_a & words_b)
-    return overlap / len(words_a) >= threshold or overlap / len(words_b) >= threshold
+    ratio_a = overlap / len(words_a)
+    ratio_b = overlap / len(words_b)
+    max_ratio = max(ratio_a, ratio_b)
+    return max_ratio >= threshold, max_ratio
 
 
 class TopicDiscovery:
@@ -492,11 +504,12 @@ class TopicDiscovery:
                     existing_words = _content_words(existing_title)
                     if len(existing_words) < 2:
                         continue
-                    if _word_overlap_match(topic_words, existing_words):
+                    is_dup, score = _word_overlap_match(topic_words, existing_words)
+                    if is_dup:
                         topic.is_duplicate = True
                         logger.debug(
-                            "[DEDUP] '%s' matches '%s'",
-                            topic.title[:40], existing_title[:40],
+                            "[DEDUP] '%s' matches '%s' (overlap=%.2f)",
+                            topic.title[:40], existing_title[:40], score,
                         )
                         break
 
@@ -515,11 +528,12 @@ class TopicDiscovery:
                 t2_words = _content_words(t2.title.lower())
                 if len(t2_words) < 2:
                     continue
-                if _word_overlap_match(t1_words, t2_words):
+                is_dup, score = _word_overlap_match(t1_words, t2_words)
+                if is_dup:
                     t2.is_duplicate = True
                     logger.info(
-                        "[DEDUP] Intra-batch: '%s' ≈ '%s'",
-                        t2.title[:40], t1.title[:40],
+                        "[DEDUP] Intra-batch: '%s' ≈ '%s' (overlap=%.2f)",
+                        t2.title[:40], t1.title[:40], score,
                     )
 
         return topics
