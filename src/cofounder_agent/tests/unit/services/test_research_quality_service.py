@@ -9,10 +9,16 @@ recency scoring, deduplication, uniqueness recalculation, and context formatting
 import pytest
 
 from services.research_quality_service import ResearchQualityService, ScoredSource
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _sc() -> SiteConfig:
+    """Fresh SiteConfig instance — Phase H DI (GH#95)."""
+    return SiteConfig()
 
 
 def make_result(
@@ -32,7 +38,7 @@ def make_result(
 
 @pytest.fixture
 def service() -> ResearchQualityService:
-    return ResearchQualityService()
+    return ResearchQualityService(site_config=_sc())
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +416,7 @@ class TestDeduplicate:
     duplicates dropped both sources instead of keeping the winner."""
 
     def test_no_duplicates_keeps_all(self):
-        svc = ResearchQualityService()
+        svc = ResearchQualityService(site_config=_sc())
         a = _make_scored_source("First unique snippet with enough words", 8.0, "https://a.com")
         b = _make_scored_source("Second completely different text here", 7.0, "https://b.com")
         result = svc._deduplicate([a, b])
@@ -418,7 +424,7 @@ class TestDeduplicate:
 
     def test_higher_score_winner_is_kept(self):
         """When source_a wins (>= score), it must appear in output — was the bug."""
-        svc = ResearchQualityService()
+        svc = ResearchQualityService(site_config=_sc())
         # Use identical snippets to guarantee similarity >= SIMILARITY_THRESHOLD
         snippet = "identical content repeated to ensure high similarity score yes"
         winner = _make_scored_source(snippet, 9.0, "https://winner.com")
@@ -430,7 +436,7 @@ class TestDeduplicate:
 
     def test_equal_score_keeps_one_source(self):
         """Equal-score duplicates — old bug dropped both; fix keeps exactly one."""
-        svc = ResearchQualityService()
+        svc = ResearchQualityService(site_config=_sc())
         snippet = "identical content repeated to ensure high similarity score yes"
         s1 = _make_scored_source(snippet, 7.5, "https://s1.com")
         s2 = _make_scored_source(snippet, 7.5, "https://s2.com")
@@ -439,17 +445,17 @@ class TestDeduplicate:
         assert len(result) == 1
 
     def test_single_source_returned_unchanged(self):
-        svc = ResearchQualityService()
+        svc = ResearchQualityService(site_config=_sc())
         s = _make_scored_source("Single source snippet with enough words", 8.0)
         result = svc._deduplicate([s])
         assert len(result) == 1
 
     def test_empty_list_returned_unchanged(self):
-        svc = ResearchQualityService()
+        svc = ResearchQualityService(site_config=_sc())
         assert svc._deduplicate([]) == []
 
     def test_three_distinct_sources_all_kept(self):
-        svc = ResearchQualityService()
+        svc = ResearchQualityService(site_config=_sc())
         sources = [
             _make_scored_source("First source content is completely unique", 8.0, "https://a.com"),
             _make_scored_source(
