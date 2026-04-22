@@ -261,8 +261,13 @@ def _vector_literal(v: Sequence[float]) -> str:
 
 def _summary_source_id(source_table: str, source_ids: Sequence[str]) -> str:
     """Derive a stable, unique source_id for the summary row."""
+    # usedforsecurity=False — this SHA1 is a deterministic short ID for the
+    # summary row's source_id, not an integrity/authenticity check. Keeps
+    # bandit's B324 (weak-hash-for-security) from firing on a non-security
+    # path. Algorithm choice is compatibility-driven (short + deterministic).
     digest = hashlib.sha1(
         ("|".join(sorted(source_ids))).encode("utf-8"),
+        usedforsecurity=False,
     ).hexdigest()[:16]
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
     return f"summary/{source_table}/{stamp}/{digest}"
