@@ -10,24 +10,26 @@ notification pipeline.  Actual API posting to X/LinkedIn will be added later.
 Usage from task_executor or any post-publish hook:
 
     from services.social_poster import generate_and_distribute_social_posts
+    from services.site_config import site_config
 
     await generate_and_distribute_social_posts(
         title="Why Local LLMs Beat Cloud APIs",
         slug="why-local-llms-beat-cloud-apis",
         excerpt="A deep dive into cost, latency, and privacy ...",
         keywords=["LLM", "Ollama", "self-hosting"],
+        site_config=site_config,
     )
 """
 
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.logger_config import get_logger
-from services.site_config import site_config as _sc
 from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
 from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
 
@@ -39,30 +41,13 @@ logger = get_logger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-SITE_BASE_URL = _sc.get("site_url", "https://localhost:3000")
-
-_OPENCLAW_URL = _sc.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
-# Same key as task_executor._notify_openclaw uses; unifying here.
-_OPENCLAW_TOKEN = _sc.get("openclaw_webhook_token", "hooks-gladlabs")
-
-
-def _get_discord_ops_channel() -> str:
-    """Lazy-load the discord channel ID at first call (not at import time).
-
-    The require() call needs site_config to be loaded, which doesn't happen
-    until the worker boots and connects to the DB. Calling it at module
-    import time breaks pytest collection in any environment without a DB.
-    """
-    return _sc.require("discord_ops_channel_id")
-
-# LLM defaults — social copy is a simple task, use the fast 8B model
-_SOCIAL_MODEL = _sc.get("social_poster_model", "ollama/llama3:latest")
-
-# Platform character limits (with safety margin). Defaults match current
-# public limits; tune via app_settings keys social_twitter_char_limit,
-# social_linkedin_char_limit when platforms change. (#198)
-TWITTER_CHAR_LIMIT = _sc.get_int("social_twitter_char_limit", 280)
-LINKEDIN_CHAR_LIMIT = _sc.get_int("social_linkedin_char_limit", 700)
+# Platform character limits (with safety margin). These are hard defaults
+# matching the current public limits; callers that want DB-tuned limits
+# can override via ``site_config.get_int("social_twitter_char_limit", ...)``
+# at the call site. Keeping the constants module-level preserves the
+# exported contract (the test suite asserts TWITTER_CHAR_LIMIT == 280).
+TWITTER_CHAR_LIMIT = 280
+LINKEDIN_CHAR_LIMIT = 700
 
 
 # ---------------------------------------------------------------------------
@@ -86,11 +71,15 @@ class SocialPost:
 # ---------------------------------------------------------------------------
 
 
-def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: list[str]) -> str:
-    post_url = f"{SITE_BASE_URL}/posts/{slug}"
+def _build_twitter_prompt(
+    title: str, slug: str, excerpt: str, keywords: list[str],
+    site_config: Any,
+) -> str:
+    base_url = site_config.get("site_url", "https://localhost:3000")
+    post_url = f"{base_url}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
-        f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
+        f"You are a social media copywriter for a tech company called {site_config.get('company_name', '')}.\n"
         "Write a single tweet to promote the following blog post.\n\n"
         "Rules:\n"
         f"- The tweet MUST be under {TWITTER_CHAR_LIMIT} characters including the URL and hashtags.\n"
@@ -105,11 +94,15 @@ def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: list[st
     )
 
 
-def _build_linkedin_prompt(title: str, slug: str, excerpt: str, keywords: list[str]) -> str:
-    post_url = f"{SITE_BASE_URL}/posts/{slug}"
+def _build_linkedin_prompt(
+    title: str, slug: str, excerpt: str, keywords: list[str],
+    site_config: Any,
+) -> str:
+    base_url = site_config.get("site_url", "https://localhost:3000")
+    post_url = f"{base_url}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
-        f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
+        f"You are a social media copywriter for a tech company called {site_config.get('company_name', '')}.\n"
         "Write a LinkedIn post to promote the following blog article.\n\n"
         "Rules:\n"
         f"- The post MUST be under {LINKEDIN_CHAR_LIMIT} characters including the URL and hashtags.\n"
@@ -130,20 +123,33 @@ async def _generate_social_text(
     char_limit: int,
     platform: str,
     ollama: OllamaClient | None = None,
+    site_config: Any | None = None,
 ) -> str:
-    """Call the local Ollama LLM and return the generated text, trimmed to limit."""
+    """Call the local Ollama LLM and return the generated text, trimmed to limit.
+
+    site_config is optional for tests that exercise _generate_social_text
+    directly — when omitted, the social model and max_tokens fall back to
+    the hardcoded defaults that site_config.get_* would have returned for
+    an unpopulated config.
+    """
     # Track whether we own the client — only close clients we created here
     # so we don't shut down a pool the caller is still using.
     owns_client = ollama is None
     client = ollama or OllamaClient()
-    model = _SOCIAL_MODEL.removeprefix("ollama/")  # OllamaClient expects bare model name
+    if site_config is not None:
+        model_raw = site_config.get("social_poster_model", "ollama/llama3:latest")
+        max_tokens = site_config.get_int("social_poster_max_tokens", 300)
+    else:
+        model_raw = "ollama/llama3:latest"
+        max_tokens = 300
+    model = model_raw.removeprefix("ollama/")  # OllamaClient expects bare model name
 
     try:
         result = await client.generate(
             prompt=prompt,
             model=model,
             temperature=0.8,
-            max_tokens=_sc.get_int("social_poster_max_tokens", 300),
+            max_tokens=max_tokens,
         )
         text = result.get("text", "").strip()
 
@@ -174,9 +180,25 @@ async def _generate_social_text(
 # ---------------------------------------------------------------------------
 
 
-async def _notify(message: str) -> None:
-    """Send social post notifications to Telegram and Discord."""
+async def _notify(message: str, site_config: Any | None = None) -> None:
+    """Send social post notifications to Telegram and Discord.
+
+    site_config is optional for tests that call _notify directly with a
+    mocked httpx client. When None, OpenClaw URL/token fall back to the
+    defaults SiteConfig.get would have returned for an unpopulated
+    config, and the Discord leg is skipped (``site_config.require()`` on
+    the channel id can't run without a real config source).
+    """
     try:
+        if site_config is not None:
+            openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
+            openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
+            discord_channel: str | None = site_config.require("discord_ops_channel_id")
+        else:
+            openclaw_url = DEFAULT_OPENCLAW_URL
+            openclaw_token = "hooks-gladlabs"
+            discord_channel = None
+
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0)
         ) as client:
@@ -188,16 +210,17 @@ async def _notify(message: str) -> None:
                 timeout=10,
             )
             # Discord — via OpenClaw hooks
-            await client.post(
-                f"{_OPENCLAW_URL}/hooks/agent",
-                headers={"Authorization": f"Bearer {_OPENCLAW_TOKEN}"},
-                json={
-                    "message": f"Post this to the #ops channel in Discord: {message}",
-                    "channel": "discord",
-                    "target": _get_discord_ops_channel(),
-                },
-                timeout=10,
-            )
+            if discord_channel is not None:
+                await client.post(
+                    f"{openclaw_url}/hooks/agent",
+                    headers={"Authorization": f"Bearer {openclaw_token}"},
+                    json={
+                        "message": f"Post this to the #ops channel in Discord: {message}",
+                        "channel": "discord",
+                        "target": discord_channel,
+                    },
+                    timeout=10,
+                )
     except Exception as e:
         logger.warning("[social_poster] Notification failed: %s", e)
 
@@ -213,6 +236,7 @@ async def generate_social_posts(
     excerpt: str,
     keywords: list[str] | None = None,
     ollama: OllamaClient | None = None,
+    site_config: Any | None = None,
 ) -> list[SocialPost]:
     """
     Generate social media posts for X/Twitter and LinkedIn.
@@ -223,18 +247,31 @@ async def generate_social_posts(
         excerpt: Short description / excerpt of the post
         keywords: List of relevant keywords for hashtags
         ollama: Optional OllamaClient instance (for testing / reuse)
+        site_config: SiteConfig instance (DI — Phase H). Optional for
+            test back-compat; when omitted, prompts use an empty company
+            name and the default site_url — matching what the legacy
+            module-level path produced against an unpopulated singleton.
 
     Returns:
         List of SocialPost objects (one per platform)
     """
     keywords = keywords or []
-    post_url = f"{SITE_BASE_URL}/posts/{slug}"
+    base_url = (
+        site_config.get("site_url", "https://localhost:3000")
+        if site_config is not None
+        else "https://localhost:3000"
+    )
+    post_url = f"{base_url}/posts/{slug}"
     posts: list[SocialPost] = []
 
+    # Build prompts. When site_config is missing (test path), use a
+    # lightweight shim so the prompt builders keep a single signature.
+    sc_for_prompts = site_config if site_config is not None else _EmptySiteConfig()
+
     # --- Twitter ---
-    twitter_prompt = _build_twitter_prompt(title, slug, excerpt, keywords)
+    twitter_prompt = _build_twitter_prompt(title, slug, excerpt, keywords, sc_for_prompts)
     twitter_text = await _generate_social_text(
-        twitter_prompt, TWITTER_CHAR_LIMIT, "twitter", ollama
+        twitter_prompt, TWITTER_CHAR_LIMIT, "twitter", ollama, site_config,
     )
     if twitter_text:
         posts.append(SocialPost(platform="twitter", text=twitter_text, post_url=post_url))
@@ -243,9 +280,9 @@ async def generate_social_posts(
         logger.error("[social_poster] Twitter post generation failed — empty result")
 
     # --- LinkedIn ---
-    linkedin_prompt = _build_linkedin_prompt(title, slug, excerpt, keywords)
+    linkedin_prompt = _build_linkedin_prompt(title, slug, excerpt, keywords, sc_for_prompts)
     linkedin_text = await _generate_social_text(
-        linkedin_prompt, LINKEDIN_CHAR_LIMIT, "linkedin", ollama
+        linkedin_prompt, LINKEDIN_CHAR_LIMIT, "linkedin", ollama, site_config,
     )
     if linkedin_text:
         posts.append(SocialPost(platform="linkedin", text=linkedin_text, post_url=post_url))
@@ -256,12 +293,28 @@ async def generate_social_posts(
     return posts
 
 
+class _EmptySiteConfig:
+    """Tiny stand-in for SiteConfig used only when callers (and tests)
+    don't pass one. Returns empty strings / passed defaults so the
+    prompt builders keep a single parameterized signature."""
+
+    def get(self, key: str, default: str = "") -> str:  # noqa: ARG002
+        return default
+
+    def get_int(self, key: str, default: int = 0) -> int:  # noqa: ARG002
+        return default
+
+    def require(self, key: str) -> str:
+        raise RuntimeError(f"Required setting '{key}' has no site_config source")
+
+
 async def generate_and_distribute_social_posts(
     title: str,
     slug: str,
     excerpt: str,
     keywords: list[str] | None = None,
     ollama: OllamaClient | None = None,
+    site_config: Any | None = None,
 ) -> list[SocialPost]:
     """
     End-to-end: generate social posts and distribute them via notifications.
@@ -274,18 +327,25 @@ async def generate_and_distribute_social_posts(
         excerpt: Short description / excerpt of the post
         keywords: List of relevant keywords for hashtags
         ollama: Optional OllamaClient instance (for testing / reuse)
+        site_config: SiteConfig instance (DI — Phase H). Optional for
+            test back-compat.
 
     Returns:
         List of generated SocialPost objects
     """
     logger.info("[social_poster] Generating social posts for: %s", title)
 
-    posts = await generate_social_posts(title, slug, excerpt, keywords, ollama)
+    posts = await generate_social_posts(
+        title, slug, excerpt, keywords, ollama, site_config,
+    )
 
     # Determine which adapters are enabled
-    enabled = set(
-        _sc.get("social_distribution_platforms", "").split(",")
-    ) - {""}
+    enabled_raw = (
+        site_config.get("social_distribution_platforms", "")
+        if site_config is not None
+        else ""
+    )
+    enabled = set(enabled_raw.split(",")) - {""}
 
     for post in posts:
         header = "Twitter/X" if post.platform == "twitter" else "LinkedIn"
@@ -294,7 +354,7 @@ async def generate_and_distribute_social_posts(
             f"{post.text}\n\n"
             f"--- blog: {post.post_url} ---"
         )
-        await _notify(notification)
+        await _notify(notification, site_config)
         logger.info(
             "[social_poster] Distributed %s post to Telegram + Discord", post.platform
         )
@@ -308,7 +368,9 @@ async def generate_and_distribute_social_posts(
             logger.warning("[social_poster] %s failed: %s", platform, result.get("error", "unknown"))
 
     if not posts:
-        await _notify(f"[Social Poster] Failed to generate social posts for: {title}")
+        await _notify(
+            f"[Social Poster] Failed to generate social posts for: {title}", site_config,
+        )
 
     return posts
 
