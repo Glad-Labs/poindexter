@@ -191,16 +191,37 @@ class ImageService:
     SDXL lifecycle.
     """
 
-    def __init__(self):
+    def __init__(self, *, site_config: Any = None):
         """Initialize image service.
+
+        Args:
+            site_config: SiteConfig instance (DI — Phase H, GH#95).
+                Optional only because the broader caller surface
+                (startup_manager, blog_image_agent, content_router,
+                unified_orchestrator, routes) hasn't threaded the
+                instance through yet. The two methods that actually
+                touch app_settings (``_llm_semantic_pexels_query`` and
+                ``generate_image``) assert it's non-None at call-time.
 
         Pexels API key resolution lives inside ``PexelsProvider`` now —
         we only cache the "is Pexels configured at all?" verdict here
         so ``search_featured_image`` can short-circuit the expensive
         LLM semantic-query path when there's no key to hit Pexels with.
         """
+        self._site_config = site_config
         self._pexels_key_checked_db = False
         self.pexels_available = False
+
+    def _require_site_config(self) -> Any:
+        """Return ``self._site_config`` or raise — Phase H (GH#95)."""
+        if self._site_config is None:
+            raise RuntimeError(
+                "ImageService instantiated without site_config. Pass "
+                "site_config= to the constructor or use "
+                "get_image_service(site_config=...) from the DI layer "
+                "(Phase H / GH#95)."
+            )
+        return self._site_config
 
     # ------------------------------------------------------------------
     # SDXL provider state shims
@@ -308,8 +329,8 @@ class ImageService:
         except Exception:
             return None
 
-        # Tuning constants via app_settings (#198).
-        from services.site_config import site_config as _sc
+        # Tuning constants via app_settings (#198) — Phase H DI (GH#95).
+        _sc = self._require_site_config()
         _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
         _model = _sc.get("image_search_query_model", "gemma3:27b")
         _max_tokens = _sc.get_int("image_search_query_max_tokens", 30)
@@ -557,6 +578,10 @@ class ImageService:
             return []
 
         try:
+            # Phase H (GH#95): seed `_site_config` into the Pexels
+            # fetch config so PexelsProvider can resolve its API key
+            # from the injected instance instead of importing the
+            # module singleton lazily.
             results = await provider.fetch(
                 query,
                 {
@@ -564,6 +589,7 @@ class ImageService:
                     "orientation": orientation,
                     "size": size,
                     "page": page,
+                    "_site_config": self._site_config,
                 },
             )
         except Exception as e:
@@ -613,7 +639,7 @@ class ImageService:
         Returns:
             True if successful, False otherwise.
         """
-        from services.site_config import site_config
+        site_config = self._require_site_config()
 
         provider_name = site_config.get("plugin.image_provider.primary", "sdxl")
         provider = _resolve_image_provider(provider_name)
@@ -624,9 +650,14 @@ class ImageService:
             )
             return False
 
+        # Phase H (GH#95): seed `_site_config` into the dispatch config
+        # dict so image_providers (sdxl, ai_generation, pexels) can pull
+        # from the injected instance instead of falling back to the
+        # module singleton via their own lazy imports.
         config: dict[str, Any] = {
             "output_path": output_path,
             "negative_prompt": negative_prompt or "",
+            "_site_config": site_config,
         }
         if num_inference_steps is not None:
             config["num_inference_steps"] = num_inference_steps
@@ -647,6 +678,13 @@ class ImageService:
 
         return bool(results) and os.path.exists(output_path)
 
-def get_image_service() -> ImageService:
-    """Factory function for dependency injection"""
-    return ImageService()
+def get_image_service(*, site_config: Any = None) -> ImageService:
+    """Factory function for dependency injection.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Optional
+            for callers that haven't threaded through yet; the class
+            still fails loudly at generate_image / semantic-query time
+            if it was constructed without.
+    """
+    return ImageService(site_config=site_config)
