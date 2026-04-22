@@ -32,6 +32,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from plugins.image_provider import ImageResult
 from services.logger_config import get_logger
 
 # SDXL model registry + torch availability probes live in a shared module
@@ -66,13 +67,6 @@ __all__ = [
     "torch",
 ]
 
-
-try:
-    import httpx
-
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
 
 logger = get_logger(__name__)
 
@@ -133,6 +127,28 @@ class FeaturedImageMetadata:
 *Photo by {photographer_link} on {self.source.capitalize()}*"""
 
 
+def _image_result_to_metadata(r: ImageResult) -> FeaturedImageMetadata:
+    """Adapt ImageResult (provider Protocol) to FeaturedImageMetadata.
+
+    ImageProviders return the generic ``ImageResult`` dataclass;
+    existing callers of ``ImageService.search_featured_image`` still
+    expect the legacy ``FeaturedImageMetadata`` — this keeps the public
+    surface stable during the Pexels-through-provider cutover.
+    """
+    return FeaturedImageMetadata(
+        url=r.url,
+        thumbnail=r.thumbnail,
+        photographer=r.photographer,
+        photographer_url=r.photographer_url,
+        width=r.width,
+        height=r.height,
+        alt_text=r.alt_text,
+        caption=r.caption,
+        source=r.source or "pexels",
+        search_query=r.search_query,
+    )
+
+
 def _resolve_image_provider(name: str) -> Any | None:
     """Look up a registered ImageProvider by name.
 
@@ -178,23 +194,13 @@ class ImageService:
     def __init__(self):
         """Initialize image service.
 
-        The Pexels API key is a secret (encrypted in app_settings) and
-        therefore NOT loaded into site_config at startup. We defer the
-        actual fetch to ``_ensure_pexels_key()``, which runs on first
-        use from an async context with a real DB pool.
+        Pexels API key resolution lives inside ``PexelsProvider`` now —
+        we only cache the "is Pexels configured at all?" verdict here
+        so ``search_featured_image`` can short-circuit the expensive
+        LLM semantic-query path when there's no key to hit Pexels with.
         """
-        self.pexels_api_key: str | None = None
         self._pexels_key_checked_db = False
         self.pexels_available = False
-        # #198: tunable for API version changes / private image proxies
-        from services.site_config import site_config as _sc_pex
-        self.pexels_base_url = _sc_pex.get(
-            "pexels_api_base", "https://api.pexels.com/v1",
-        ).rstrip("/")
-        self.pexels_headers = (
-            {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
-        )
-
         self.search_cache: dict[str, list[FeaturedImageMetadata]] = {}
 
     # ------------------------------------------------------------------
@@ -233,20 +239,20 @@ class ImageService:
         return bool(getattr(_sdxl_state, "initialized", False))
 
     # =========================================================================
-    # DB-FIRST KEY LOADING
+    # DB-FIRST KEY PROBE
     # =========================================================================
 
     async def _ensure_pexels_key(self) -> None:
-        """Load + decrypt the Pexels API key from app_settings.
+        """Probe whether ``pexels_api_key`` is configured.
+
+        Post-Phase-G the PexelsProvider reads the key itself on every
+        ``fetch()`` call — this method exists only to cache the
+        is-it-configured verdict on the service instance so
+        ``search_featured_image`` can short-circuit its LLM semantic-
+        query branch when Pexels isn't set up at all.
 
         Cached per service instance — subsequent calls are no-ops once
-        the key is resolved. Uses the shared DatabaseService pool from
-        the DI container, not a fresh asyncpg.connect — that kept a
-        LOCAL_DATABASE_URL fallback hardcoded here, contradicting the
-        DB-first/bootstrap-only env-var policy.
-
-        Raises on any pool/decryption failure (no try/except swallowing).
-        Callers that need a soft-fail path should catch upstream.
+        the probe has run.
         """
         if self._pexels_key_checked_db:
             return
@@ -258,7 +264,7 @@ class ImageService:
         if db_service is None or not getattr(db_service, "pool", None):
             logger.warning(
                 "DatabaseService not registered in DI container — "
-                "pexels_api_key cannot be loaded. Callers will see "
+                "pexels_api_key probe skipped. Callers will see "
                 "pexels_available=False.",
             )
             self._pexels_key_checked_db = True
@@ -268,11 +274,9 @@ class ImageService:
             value = await get_secret(conn, "pexels_api_key")
 
         self._pexels_key_checked_db = True
+        self.pexels_available = bool(value)
         if value:
-            self.pexels_api_key = value
-            self.pexels_available = True
-            self.pexels_headers = {"Authorization": value}
-            logger.info("Pexels API key loaded from app_settings (encrypted)")
+            logger.info("pexels_api_key present in app_settings")
         else:
             logger.warning("pexels_api_key not set in app_settings")
 
@@ -396,7 +400,7 @@ class ImageService:
 
         await self._ensure_pexels_key()
 
-        if not self.pexels_api_key:
+        if not self.pexels_available:
             logger.warning("Pexels API key not configured (checked env + DB)")
             return None
 
@@ -500,7 +504,7 @@ class ImageService:
         """
         await self._ensure_pexels_key()
 
-        if not self.pexels_api_key:
+        if not self.pexels_available:
             logger.warning("Pexels API key not configured (checked env + DB)")
             return []
 
@@ -538,68 +542,36 @@ class ImageService:
         size: str = "medium",
         page: int = 1,
     ) -> list[FeaturedImageMetadata]:
-        """
-        Internal method to search Pexels API (async-only).
+        """Delegate a Pexels search to the registered PexelsProvider.
 
-        Args:
-            query: Search keywords
-            per_page: Results per page
-            orientation: Image orientation
-            size: Image size
-            page: Results page number (for pagination)
-
-        Returns:
-            List of FeaturedImageMetadata objects
+        The provider handles the HTTP call, API-key resolution, and
+        rate-limit fallbacks. We adapt its ``ImageResult`` list back
+        to the legacy ``FeaturedImageMetadata`` type so existing
+        callers (and the random-selection orchestration above) keep
+        working unchanged.
         """
-        if not self.pexels_api_key:
+        provider = _resolve_image_provider("pexels")
+        if provider is None:
             logger.debug(
-                "Pexels API key not configured - skipping search for '%s'",
-                query,
+                "PexelsProvider not registered - skipping search for '%s'", query,
             )
             return []
 
         try:
-            params = {
-                "query": query,
-                "per_page": min(per_page, 80),
-                "orientation": orientation,
-                "size": size,
-                "page": page,
-            }
-
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{self.pexels_base_url}/search",
-                    headers=self.pexels_headers,
-                    params=params,
-                )
-                response.raise_for_status()
-                data = response.json()
-
-                photos = data.get("photos", [])
-                logger.info(
-                    "Pexels search for '%s' (page %s) returned %s results",
-                    query, page, len(photos),
-                )
-
-                return [
-                    FeaturedImageMetadata(
-                        url=photo["src"]["large"],
-                        thumbnail=photo["src"]["small"],
-                        photographer=photo.get("photographer", "Unknown"),
-                        photographer_url=photo.get("photographer_url", ""),
-                        width=photo.get("width"),
-                        height=photo.get("height"),
-                        alt_text=photo.get("alt", ""),
-                        search_query=query,
-                        source="pexels",
-                    )
-                    for photo in photos
-                ]
-
+            results = await provider.fetch(
+                query,
+                {
+                    "per_page": per_page,
+                    "orientation": orientation,
+                    "size": size,
+                    "page": page,
+                },
+            )
         except Exception as e:
             logger.error("Pexels search error: %s", e, exc_info=True)
             return []
+
+        return [_image_result_to_metadata(r) for r in results]
 
     # =========================================================================
     # IMAGE GENERATION DISPATCH (ImageProvider plugin registry)
