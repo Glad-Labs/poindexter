@@ -40,6 +40,10 @@ _test_site_config = SiteConfig(initial_config={
 def _build_app():
     app = FastAPI()
     app.include_router(router)
+    # Phase H (GH#95): strict DI — supply a fresh SiteConfig for route handlers
+    # that read it via Depends(get_site_config_dependency).
+    from utils.route_utils import get_site_config_dependency
+    app.dependency_overrides[get_site_config_dependency] = lambda: _test_site_config
     return app
 
 
@@ -255,10 +259,15 @@ class TestGenerateEpisode:
     def _make_app_with_auth_override(self):
         """Build app with auth bypassed."""
         from middleware.api_token_auth import verify_api_token
+        from utils.route_utils import get_site_config_dependency
 
         test_app = FastAPI()
         test_app.include_router(router)
         test_app.dependency_overrides[verify_api_token] = lambda: None
+        # Phase H (GH#95): strict DI for site_config.
+        test_app.dependency_overrides[get_site_config_dependency] = (
+            lambda: _test_site_config
+        )
         return TestClient(test_app, raise_server_exceptions=False)
 
     @patch("utils.route_utils.get_services")
