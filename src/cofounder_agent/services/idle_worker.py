@@ -146,6 +146,9 @@ class IdleWorker:
                 try:
                     from services.database_service import DatabaseService
                     from services.publish_service import publish_post_from_task
+                    # idle_worker still on the singleton pending Phase H
+                    # step 3 (jobs/scheduler DI wiring).
+                    from services.site_config import site_config as _sc
 
                     db = DatabaseService()
                     db._pool = self.pool
@@ -154,6 +157,7 @@ class IdleWorker:
                         continue
                     result = await publish_post_from_task(
                         db, task, str(task_id),
+                        site_config=_sc,
                         publisher="scheduled",
                         trigger_revalidation=True,
                         queue_social=True,

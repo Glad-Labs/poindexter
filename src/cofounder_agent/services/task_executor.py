@@ -1362,10 +1362,14 @@ class TaskExecutor:
             logger.error("[AUTO_PUBLISH] Task %s not found after approval", task_id)
             return
 
+        # Phase H transitional: task_executor still uses the singleton
+        # (pending its own ctor-DI migration in Phase H step 3).
+        from services.site_config import site_config as _sc
         result = await publish_post_from_task(
             self.database_service,
             task,
             task_id,
+            site_config=_sc,
             publisher="auto_publish",
             trigger_revalidation=True,
             queue_social=True,

@@ -204,6 +204,7 @@ async def approve_task(
     publish_at: str | None = None,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep: Any = Depends(get_site_config_dependency),
 ):
     """
     Approve or reject a task for publishing.
@@ -406,6 +407,7 @@ async def approve_task(
 
                 pub_result = await publish_post_from_task(
                     db_service, task, task_id,
+                    site_config=site_config_dep,
                     publisher="operator",
                     trigger_revalidation=True,
                     queue_social=True,
@@ -507,6 +509,7 @@ async def publish_task(
     task_id: str,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep: Any = Depends(get_site_config_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """
@@ -568,6 +571,7 @@ async def publish_task(
 
         pub_result = await publish_post_from_task(
             db_service, task, task_id,
+            site_config=site_config_dep,
             publisher="operator",
             trigger_revalidation=True,
             queue_social=True,
