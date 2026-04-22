@@ -7,19 +7,20 @@ content pipeline: warnings are logged but publication is never held up.
 
 Usage:
     from services.url_validator import get_url_validator
+    from services.site_config import site_config
 
-    validator = get_url_validator()
+    validator = get_url_validator(site_config)
     urls = validator.extract_urls(markdown_content)
     results = await validator.validate_urls(urls)
 """
 
 import re
 import time
+from typing import Any
 
 import httpx
 
 from services.logger_config import get_logger
-from services.site_config import site_config as _sc
 
 logger = get_logger(__name__)
 
@@ -28,10 +29,6 @@ _CacheEntry = tuple[bool, int | None, float]
 
 # 7 days in seconds
 _CACHE_TTL = 7 * 24 * 60 * 60
-
-# Internal domains to skip (no point validating our own URLs during generation)
-_site_domain = _sc.get("site_domain", "localhost:3000").split(":")[0]
-_SKIP_DOMAINS = {_site_domain, f"www.{_site_domain}", "localhost", "127.0.0.1"}
 
 # Regex for extracting URLs from markdown / HTML content
 # Matches http(s):// URLs in markdown links, raw URLs, and href attributes
@@ -50,10 +47,32 @@ _URL_PATTERN = re.compile(
 class URLValidator:
     """Async URL validator with in-memory cache and batch support."""
 
-    def __init__(self, timeout: float = 5.0, cache_ttl: int = _CACHE_TTL):
+    def __init__(
+        self,
+        site_config: Any,
+        timeout: float = 5.0,
+        cache_ttl: int = _CACHE_TTL,
+    ):
+        """Initialize a URLValidator.
+
+        Args:
+            site_config: SiteConfig instance (DI — Phase H, GH#95). Must be
+                passed explicitly — the module-level singleton import was
+                removed. Used for ``site_domain`` (internal-domain skip
+                list) and ``site_name`` (User-Agent string).
+            timeout: HTTP timeout per URL check.
+            cache_ttl: How long a cache entry stays fresh.
+        """
+        self._site_config = site_config
         self._timeout = timeout
         self._cache_ttl = cache_ttl
         self._cache: dict[str, _CacheEntry] = {}
+        # Derive skip-domain set from site_config on each instance so
+        # tests / multi-site callers can isolate per-instance config.
+        _site_domain = site_config.get("site_domain", "localhost:3000").split(":")[0]
+        self._skip_domains: set[str] = {
+            _site_domain, f"www.{_site_domain}", "localhost", "127.0.0.1",
+        }
 
     # ------------------------------------------------------------------
     # Public API
@@ -111,7 +130,7 @@ class URLValidator:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
                 follow_redirects=True,
-                headers={"User-Agent": f"{_sc.get('site_name', 'ContentPipeline')}-LinkChecker/1.0"},
+                headers={"User-Agent": f"{self._site_config.get('site_name', 'ContentPipeline')}-LinkChecker/1.0"},
             ) as client:
                 resp = await client.head(url)
                 status_code = resp.status_code
@@ -186,13 +205,12 @@ class URLValidator:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _is_internal(url: str) -> bool:
+    def _is_internal(self, url: str) -> bool:
         """Check if URL belongs to an internal domain we should skip."""
         try:
             from urllib.parse import urlparse
             host = urlparse(url).hostname or ""
-            return host in _SKIP_DOMAINS
+            return host in self._skip_domains
         except Exception:
             return False
 
@@ -204,9 +222,15 @@ class URLValidator:
 _instance: URLValidator | None = None
 
 
-def get_url_validator() -> URLValidator:
-    """Get the module-level URLValidator singleton."""
+def get_url_validator(site_config: Any) -> URLValidator:
+    """Get the module-level URLValidator singleton.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Only used
+            on first call to construct the singleton; subsequent calls
+            return the same cached instance.
+    """
     global _instance
     if _instance is None:
-        _instance = URLValidator()
+        _instance = URLValidator(site_config)
     return _instance
