@@ -453,11 +453,9 @@ export default function ProductPage() {
               <div className="mt-auto">
                 <Button
                   as="a"
-                  href="https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href="https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52?embed=1"
                   variant="primary"
-                  className="w-full"
+                  className="w-full lemonsqueezy-button"
                 >
                   Buy guide — $29
                 </Button>
@@ -480,11 +478,9 @@ export default function ProductPage() {
               <div className="mt-auto">
                 <Button
                   as="a"
-                  href="https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href="https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9?embed=1"
                   variant="secondary"
-                  className="w-full"
+                  className="w-full lemonsqueezy-button"
                 >
                   Subscribe — $9.99/mo
                 </Button>

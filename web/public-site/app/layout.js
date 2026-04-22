@@ -107,6 +107,13 @@ export default function RootLayout({ children }) {
           src="https://lmsqueezy.com/affiliate.js"
           strategy="lazyOnload"
         />
+        {/* Lemon Squeezy checkout overlay — turns any link with
+            class="lemonsqueezy-button" + href ending in ?embed=1 into an
+            in-page modal checkout instead of a full-page redirect. */}
+        <Script
+          src="https://assets.lemonsqueezy.com/lemon.js"
+          strategy="lazyOnload"
+        />
       </body>
     </html>
   );
