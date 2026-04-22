@@ -28,7 +28,7 @@ from services.quality_service import UnifiedQualityService
 try:
     from services.sentry_integration import setup_sentry
 except ImportError:
-    def setup_sentry(*_args, **_kwargs):
+    def setup_sentry(*_args, **_kwargs):  # type: ignore[misc]
         """Stub when Sentry is not installed."""
         return
 
@@ -167,7 +167,11 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # first point where sentry_dsn / enable_pyroscope / enable_tracing are
         # actually populated. Each setup is guarded internally.
         try:
-            setup_sentry(app, service_name="cofounder-agent")
+            # main.py still reads the module singleton (pending its own
+            # Phase H migration); pass it through so sentry_integration no
+            # longer imports it at module scope.
+            from services.site_config import site_config as _sc
+            setup_sentry(app, _sc, service_name="cofounder-agent")
         except Exception as e:
             logger.warning("[LIFESPAN] sentry re-init failed: %s", e)
         try:
@@ -307,10 +311,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 from plugins.registry import get_core_samples, get_jobs
                 from plugins.scheduler import PluginScheduler
 
-                scheduler = PluginScheduler(
-                    db_service.pool,
-                    site_config=getattr(app.state, "site_config", None),
-                )
+                scheduler = PluginScheduler(db_service.pool)
                 # entry_point-discovered jobs (third-party installs) + core
                 # samples loaded imperatively (see registry.get_core_samples).
                 jobs = list(get_jobs()) + list(get_core_samples().get("jobs", []))
@@ -466,8 +467,15 @@ except Exception as _e:
 register_exception_handlers(app)
 
 # ===== ERROR TRACKING: SENTRY INTEGRATION =====
-# Captures exceptions, performance metrics, and error tracking
-setup_sentry(app, service_name="cofounder-agent")
+# Captures exceptions, performance metrics, and error tracking.
+# main.py still reads the module singleton at module-import time (pending
+# its own Phase H migration); pass it through so sentry_integration no
+# longer imports it at module scope.
+try:
+    from services.site_config import site_config as _sc_module
+    setup_sentry(app, _sc_module, service_name="cofounder-agent")
+except Exception as _e:
+    logger.warning("[MODULE] sentry module-level init failed: %s", _e)
 
 # ===== MIDDLEWARE CONFIGURATION =====
 # Register all middleware (centralized in utils.middleware_config)
