@@ -237,6 +237,8 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Core ImageProviders — Phase G migration. Pexels first (search);
         # SDXL generation provider lands in a follow-up slice.
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
+        ("image_providers", "services.image_providers.sdxl", "SdxlProvider"),
+        ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
