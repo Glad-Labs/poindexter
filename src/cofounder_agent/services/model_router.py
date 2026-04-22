@@ -108,7 +108,7 @@ _DEFAULT_MAX_TOKENS_BY_TASK = {
 MAX_TOKENS_BY_TASK = _DEFAULT_MAX_TOKENS_BY_TASK
 
 
-def _token_limits_by_task() -> dict[str, int]:
+def _token_limits_by_task(site_config: Any) -> dict[str, int]:
     """Resolve task → max_tokens with app_settings overrides.
 
     app_settings.model_token_limits_by_task is a JSON object
@@ -118,9 +118,7 @@ def _token_limits_by_task() -> dict[str, int]:
     """
     import json as _json
 
-    from services.site_config import site_config as _sc
-
-    raw = _sc.get("model_token_limits_by_task", "")
+    raw = site_config.get("model_token_limits_by_task", "")
     if not raw:
         return _DEFAULT_MAX_TOKENS_BY_TASK
 
@@ -199,13 +197,12 @@ class ModelRouter:
         default_model: str = "ollama/qwen3:8b",
         use_ollama: bool | None = None,
         *,
-        site_config: Any = None,
+        site_config: Any,
     ):
+        """Phase H step 5 (GH#95): ``site_config`` is now a required kwarg.
+        Callers must inject the SiteConfig instance explicitly.
+        """
         self.default_model = default_model
-
-        if site_config is None:
-            from services.site_config import site_config as _default_sc
-            site_config = _default_sc
         self._site_config = site_config
 
         # Check USE_OLLAMA environment variable if not explicitly set
@@ -403,7 +400,7 @@ class ModelRouter:
 
         # Resolve limits dict once per call — picks up live app_settings
         # overrides without a restart (#198).
-        limits = _token_limits_by_task()
+        limits = _token_limits_by_task(self._site_config)
 
         # Find matching task type
         for task_keyword, max_tokens in limits.items():
@@ -481,10 +478,17 @@ def get_model_router() -> ModelRouter | None:
     return _model_router
 
 
-def initialize_model_router(default_model: str = "ollama/qwen3:8b") -> ModelRouter:
-    """Initialize the global model router."""
+def initialize_model_router(
+    default_model: str = "ollama/qwen3:8b", *, site_config: Any,
+) -> ModelRouter:
+    """Initialize the global model router.
+
+    Phase H step 5 (GH#95): ``site_config`` is now required — callers
+    that bootstrap the module-level singleton must pass the instance
+    explicitly (normally ``app.state.site_config``).
+    """
     global _model_router
-    _model_router = ModelRouter(default_model=default_model)
+    _model_router = ModelRouter(default_model=default_model, site_config=site_config)
     logger.info("Global model router initialized")
     return _model_router
 

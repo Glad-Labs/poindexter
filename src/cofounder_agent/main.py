@@ -315,7 +315,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
             _router = get_model_router()
             if _router is None:
-                _router = initialize_model_router()
+                _router = initialize_model_router(site_config=app.state.site_config)
             if _router and getattr(db_service, "pool", None):
                 await _router.seed_spend_from_db(db_service.pool)
                 logger.info("[LIFESPAN] Model router spend seeded from cost_logs")

@@ -158,7 +158,8 @@ class GenerateContentStage:
         primary_keyword = tags[0] if tags else topic
         existing_titles = await self._fetch_existing_titles(database_service)
         title = await _generate_canonical_title(
-            topic, primary_keyword, content_text[:500], existing_titles=existing_titles,
+            topic, primary_keyword, content_text[:500],
+            existing_titles=existing_titles, site_config=_sc,
         ) or topic
         logger.info("Title generated: %s", title)
 
@@ -175,7 +176,7 @@ class GenerateContentStage:
                 avoid_list += f"\n- {dup_title}"
             title_v2 = await _generate_canonical_title(
                 topic, primary_keyword, content_text[:500],
-                existing_titles=avoid_list,
+                existing_titles=avoid_list, site_config=_sc,
             )
             if title_v2:
                 originality_v2 = await _check_title_originality(title_v2, site_config=_sc)

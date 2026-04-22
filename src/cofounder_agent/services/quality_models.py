@@ -114,6 +114,11 @@ class QualityDimensions:
         Examples:
             clarity=80, relevance=48 → overall capped at 48 → FAIL
             clarity=80, relevance=70 → normal average → may PASS
+
+        Phase H step 5 (GH#95): ``site_config`` is optional but no longer
+        falls back to the module singleton. When None, uses the hardcoded
+        CRITICAL_FLOOR. Callers that want the tunable ``qa_critical_floor``
+        app_setting to apply must pass the config explicitly.
         """
         raw_average = (
             self.clarity
@@ -128,12 +133,6 @@ class QualityDimensions:
         # Enforce minimum-dimension constraint on critical dimensions only.
         # readability excluded (#1238) — Flesch penalizes technical vocabulary.
         # CRITICAL_FLOOR is tunable via app_settings (qa_critical_floor).
-        if site_config is None:
-            try:
-                from services.site_config import site_config as _default_sc
-                site_config = _default_sc
-            except Exception:
-                site_config = None
         try:
             effective_floor = (
                 site_config.get_float("qa_critical_floor", self.CRITICAL_FLOOR)

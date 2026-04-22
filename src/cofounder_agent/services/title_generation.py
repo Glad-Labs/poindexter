@@ -101,12 +101,13 @@ async def generate_canonical_title(
     primary_keyword: str,
     content_excerpt: str,
     existing_titles: str = "",
+    *,
+    site_config: Any,
 ) -> str | None:
     """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles."""
     try:
         from plugins.registry import get_llm_providers
         from services.prompt_manager import get_prompt_manager
-        from services.site_config import site_config
 
         pm = get_prompt_manager()
         providers = {p.name: p for p in get_llm_providers()}
@@ -154,7 +155,7 @@ async def generate_canonical_title(
         return None
 
 
-async def check_title_originality(title: str, *, site_config: Any = None) -> dict:
+async def check_title_originality(title: str, *, site_config: Any) -> dict:
     """Web-search the title; return similarity summary.
 
     Return shape::
@@ -197,9 +198,6 @@ async def check_title_originality(title: str, *, site_config: Any = None) -> dic
         "external_fail_open": False,
     }
 
-    if site_config is None:
-        from services.site_config import site_config as _default_sc
-        site_config = _default_sc
     try:
         threshold = site_config.get_float("qa_title_similarity_threshold", 0.6)
         enabled = site_config.get_bool("qa_title_originality_enabled", True)
