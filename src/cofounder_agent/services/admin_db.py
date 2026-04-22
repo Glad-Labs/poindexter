@@ -161,6 +161,10 @@ class AdminDatabase(DatabaseServiceMixin):
                         )
                 # routing_outcomes — one row per routing decision so the
                 # ML gateway (GH#32) can learn (task_type, model) → outcome.
+                # Same 'system' exclusion as model_performance — no point
+                # training on idle warmup/probe calls.
+                if cost_log.get("model") == "system":
+                    return ModelConverter.to_cost_log_response(row)
                 try:
                     await conn.execute(
                         """
