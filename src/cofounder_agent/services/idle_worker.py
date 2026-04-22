@@ -205,8 +205,12 @@ class IdleWorker:
         # into a full queue. See GH-89.
         try:
             from services.pipeline_throttle import is_queue_full
+            # Phase H (GH#95) transitional: idle_worker itself has not yet
+            # been migrated off the module singleton, so we re-import it here
+            # and pass it through. Future migration cleans this up.
+            from services.site_config import site_config as _sc
 
-            full, queue_size, queue_limit = await is_queue_full(self.pool)
+            full, queue_size, queue_limit = await is_queue_full(self.pool, _sc)
             if full:
                 return False, f"queue_full({queue_size}>={queue_limit})"
         except Exception as e:

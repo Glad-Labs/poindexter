@@ -19,8 +19,9 @@ Design:
       suitable for a Prometheus counter that Grafana can rate() over.
 
 All tunables live in ``app_settings`` (DB-first config) and are read
-through ``services.site_config``. ``max_approval_queue`` is the only
-knob this module needs.
+through a ``site_config`` parameter passed to ``is_queue_full`` — Phase H
+(GH#95) migrated this module off the module-level singleton import.
+``max_approval_queue`` is the only knob this module needs.
 """
 
 from __future__ import annotations
@@ -91,7 +92,7 @@ def _current_total_seconds(now: float) -> float:
     return total
 
 
-async def is_queue_full(pool: Any) -> tuple[bool, int, int]:
+async def is_queue_full(pool: Any, site_config: Any) -> tuple[bool, int, int]:
     """Check whether the approval queue is at/above ``max_approval_queue``.
 
     Returns ``(is_full, queue_size, queue_limit)``.
@@ -103,10 +104,13 @@ async def is_queue_full(pool: Any) -> tuple[bool, int, int]:
 
     Updates module state as a side effect so ``get_state()`` stays
     current even for callers that just want to observe.
-    """
-    # Defer imports so the module is importable in isolation (tests)
-    from services.site_config import site_config
 
+    Phase H (GH#95): ``site_config`` is now an explicit parameter, not a
+    module-level singleton import. Callers pass either the lifespan-bound
+    ``app.state.site_config`` (via ``Depends(get_site_config_dependency)``
+    in routes) or the transitional ``services.site_config.site_config``
+    singleton (in not-yet-migrated services).
+    """
     now = _now()
     max_queue = site_config.get_int("max_approval_queue", 3)
     if not pool:
