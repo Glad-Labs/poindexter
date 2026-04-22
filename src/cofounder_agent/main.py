@@ -636,13 +636,12 @@ async def health():
 
 @app.get("/metrics")
 async def prometheus_metrics_canonical():
-    """Prometheus scrape endpoint (Phase D canonical path).
+    """Prometheus scrape endpoint (canonical path).
 
     Returns exposition-format text via ``services.metrics_exporter``.
-    The legacy ``/api/prometheus`` endpoint below hand-builds its own
-    output; this one uses ``prometheus_client`` properly. Migration of
-    the legacy endpoint's metrics into this exporter is tracked as a
-    Phase D follow-up — both endpoints work in parallel meanwhile.
+    Gitea #269 folded the legacy ``/api/prometheus`` exposer into this
+    one — all 32 ``poindexter_*`` series are now served here via
+    ``prometheus_client``.
     """
     from fastapi import Response
 
@@ -660,7 +659,10 @@ async def prometheus_metrics_canonical():
 
     if pool is not None:
         try:
-            await refresh_metrics(pool, ollama_url)
+            # db_service passed so refresh_metrics can read the local pool
+            # and content_tasks counts (Gitea #269 — metrics migrated off
+            # /api/prometheus).
+            await refresh_metrics(pool, ollama_url, db_service=db_service)
         except Exception as e:
             # Never fail /metrics — Prometheus will alert on "endpoint down"
             # which is not what we want for a refresh hiccup.
