@@ -625,6 +625,10 @@ async def publish_post_from_task(
     if queue_social:
         try:
             from services.social_poster import generate_and_distribute_social_posts
+            # publish_service still reads the module singleton pending
+            # its own Phase H migration; pass it through so social_poster
+            # no longer reaches for it at module scope.
+            from services.site_config import site_config as _sc
 
             _title = task.get("title") or task.get("topic") or post_title
             _seo_kw = seo_keywords
@@ -636,12 +640,14 @@ async def publish_post_from_task(
                         generate_and_distribute_social_posts,
                         title=_title, slug=slug,
                         excerpt=seo_description, keywords=_seo_kw,
+                        site_config=_sc,
                     )
                 else:
                     _spawn_background(
                         generate_and_distribute_social_posts(
                             title=_title, slug=slug,
                             excerpt=seo_description, keywords=_seo_kw,
+                            site_config=_sc,
                         ),
                         name=f"social_posts({slug})",
                     )
