@@ -1,11 +1,25 @@
 """Tests for sentry_integration service."""
 
+import os
 from importlib.util import find_spec
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 _has_sentry = find_spec("sentry_sdk") is not None
+
+
+def _mock_sc() -> MagicMock:
+    """Return a MagicMock shaped like SiteConfig. Post-Phase-H, initialize()
+    takes a site_config param rather than importing the module singleton.
+
+    Keeps the existing env-var-driven tests working by falling back to
+    ``os.getenv(KEY.upper())`` — the same contract the real SiteConfig.get
+    honors for optional settings.
+    """
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": os.getenv(k.upper(), d)
+    return sc
 
 
 @pytest.mark.skipif(not _has_sentry, reason="sentry-sdk not installed")
@@ -24,7 +38,7 @@ class TestSentryIntegration:
 
         app = MagicMock()
         with patch.dict("os.environ", {"SENTRY_DSN": ""}, clear=False):
-            result = SentryIntegration.initialize(app)
+            result = SentryIntegration.initialize(app, _mock_sc())
         assert result is False
         # _initialized intentionally stays False on the no-DSN path so the
         # lifespan re-init (after site_config loads) can retry once the DSN
@@ -41,7 +55,7 @@ class TestSentryIntegration:
             {"SENTRY_DSN": "https://key@sentry.io/123", "SENTRY_ENABLED": "false"},
             clear=False,
         ):
-            result = SentryIntegration.initialize(app)
+            result = SentryIntegration.initialize(app, _mock_sc())
         assert result is False
         assert SentryIntegration._sentry_enabled is False
 
@@ -60,7 +74,7 @@ class TestSentryIntegration:
             },
             clear=False,
         ):
-            result = SentryIntegration.initialize(app)
+            result = SentryIntegration.initialize(app, _mock_sc())
         assert result is True
         assert SentryIntegration._sentry_enabled is True
         mock_sentry.init.assert_called_once()
@@ -72,7 +86,7 @@ class TestSentryIntegration:
         SentryIntegration._initialized = True
         SentryIntegration._sentry_enabled = True
         app = MagicMock()
-        result = SentryIntegration.initialize(app)
+        result = SentryIntegration.initialize(app, _mock_sc())
         assert result is True
         mock_sentry.init.assert_not_called()
 
@@ -87,7 +101,7 @@ class TestSentryIntegration:
             {"SENTRY_DSN": "https://key@sentry.io/123", "SENTRY_ENABLED": "true"},
             clear=False,
         ):
-            result = SentryIntegration.initialize(app)
+            result = SentryIntegration.initialize(app, _mock_sc())
         assert result is False
         assert SentryIntegration._sentry_enabled is False
 
@@ -246,18 +260,20 @@ class TestSetupSentryConvenience:
         from services.sentry_integration import SentryIntegration, setup_sentry
 
         app = MagicMock()
+        sc = _mock_sc()
         with patch.object(SentryIntegration, "initialize", return_value=True) as mock_init:
-            result = setup_sentry(app, "test-service")
-        mock_init.assert_called_once_with(app, "test-service")
+            result = setup_sentry(app, sc, "test-service")
+        mock_init.assert_called_once_with(app, sc, "test-service")
         assert result is True
 
     def test_setup_sentry_default_service_name(self):
         from services.sentry_integration import SentryIntegration, setup_sentry
 
         app = MagicMock()
+        sc = _mock_sc()
         with patch.object(SentryIntegration, "initialize", return_value=False) as mock_init:
-            setup_sentry(app)
-        mock_init.assert_called_once_with(app, "cofounder-agent")
+            setup_sentry(app, sc)
+        mock_init.assert_called_once_with(app, sc, "cofounder-agent")
 
 
 class TestCaptureExceptionEdgeCases:
@@ -528,7 +544,7 @@ class TestInitializeSdkUnavailable:
         from services.sentry_integration import SentryIntegration
 
         app = MagicMock()
-        result = SentryIntegration.initialize(app)
+        result = SentryIntegration.initialize(app, _mock_sc())
         assert result is False
         # Should not have set _initialized=True (returns early)
         assert SentryIntegration._initialized is False
