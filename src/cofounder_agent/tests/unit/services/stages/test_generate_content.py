@@ -96,11 +96,18 @@ class TestSelfReviewEnabled:
         ("false", False), ("no", False), ("0", False), ("", False),
     ])
     def test_parses_flag(self, raw: str, expected: bool):
+        # Phase H step 4.3: site_config is passed explicitly rather than
+        # pulled from the module-level singleton.
+        cfg = SimpleNamespace(get=lambda _k, _d: raw)
+        assert _self_review_enabled(cfg) is expected
+
+    def test_falls_back_to_singleton_when_none(self):
+        # Transitional fallback — will be removed in Phase H step 5.
         with patch(
             "services.site_config.site_config",
-            SimpleNamespace(get=lambda _k, _d: raw),
+            SimpleNamespace(get=lambda _k, _d: "false"),
         ):
-            assert _self_review_enabled() is expected
+            assert _self_review_enabled(None) is False
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +202,12 @@ def _patch_everything():
         patch("services.research_service.ResearchService",
               return_value=SimpleNamespace(build_context=AsyncMock(return_value="auto research"))),
         patch("services.audit_log.audit_log_bg", MagicMock()),
-        patch("services.site_config.site_config",
-              SimpleNamespace(get=lambda _k, _d: "true")),
     ]
+
+
+# Phase H step 4.3: stages read site_config from context rather than the
+# module singleton. Tests wire the fake config directly into the ctx dict.
+_FAKE_SITE_CONFIG = SimpleNamespace(get=lambda _k, _d: "true")
 
 
 @pytest.mark.asyncio
@@ -213,6 +223,7 @@ class TestGenerateContentStageExecute:
             "tags": ["AI"],
             "models_by_phase": {"writer": "glm-4.7-5090"},
             "database_service": db,
+            "site_config": _FAKE_SITE_CONFIG,
         }
         patches = _patch_everything()
         for p in patches:
@@ -258,6 +269,7 @@ class TestGenerateContentStageExecute:
             "style": "tech", "tone": "neutral", "target_length": 1200,
             "tags": [], "models_by_phase": {},
             "database_service": db,
+            "site_config": _FAKE_SITE_CONFIG,
         }
         # First originality check says not original; second check (on
         # regenerated title) says more original → stage should accept v2.
@@ -296,6 +308,7 @@ class TestGenerateContentStageExecute:
             "topic": "AI", "style": "", "tone": "",
             "target_length": 100, "tags": [], "models_by_phase": {},
             "database_service": db,
+            "site_config": _FAKE_SITE_CONFIG,
         }
         patches = _patch_everything()
         for p in patches:
