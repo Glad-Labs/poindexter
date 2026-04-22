@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.logger_config import get_logger
 from services.site_config import site_config as _sc
 from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
@@ -40,7 +41,7 @@ logger = get_logger(__name__)
 
 SITE_BASE_URL = _sc.get("site_url", "https://localhost:3000")
 
-_OPENCLAW_URL = _sc.get("openclaw_gateway_url", "http://localhost:18789")
+_OPENCLAW_URL = _sc.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
 # Same key as task_executor._notify_openclaw uses; unifying here.
 _OPENCLAW_TOKEN = _sc.get("openclaw_webhook_token", "hooks-gladlabs")
 

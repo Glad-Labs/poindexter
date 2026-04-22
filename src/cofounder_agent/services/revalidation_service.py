@@ -30,11 +30,12 @@ async def trigger_nextjs_revalidation(
     if tags is None:
         tags = ["posts", "post-index"]
 
+    from services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
     nextjs_url = (
         site_config.get("public_site_url")
         or site_config.get("site_url")
         or site_config.get("next_public_public_site_url")
-        or site_config.get("next_public_api_base_url", "http://localhost:3000")
+        or site_config.get("next_public_api_base_url", DEFAULT_PUBLIC_SITE_URL)
     )
     if nextjs_url.endswith("/api"):
         nextjs_url = nextjs_url[:-4]
