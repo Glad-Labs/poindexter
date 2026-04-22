@@ -54,34 +54,25 @@ except ImportError:
 logger = get_logger(__name__)
 
 
-def _cache_ttl(key: str, default: int) -> int:
-    """Resolve a TTL from app_settings (cache_<key>_ttl_seconds) with a default.
-
-    Read at class-load time — restart the worker to pick up app_settings
-    changes. (#198)
-    """
-    try:
-        from services.site_config import site_config as _sc
-        return _sc.get_int(f"cache_{key}_ttl_seconds", default)
-    except Exception:
-        return default
-
-
 class CacheConfig:
     """Configuration for cache behavior.
 
-    All TTLs read from app_settings with sensible defaults; operators
-    tune per-category without a code change via keys like
-    `cache_default_ttl_seconds`, `cache_query_ttl_seconds`, etc. (#198)
+    TTL defaults live here; operators can override per-category via
+    app_settings keys (``cache_default_ttl_seconds``,
+    ``cache_query_ttl_seconds``, etc.) — see
+    :meth:`CacheConfig.resolve_ttl` for the DI-based reader. The class-
+    level attributes stay as last-resort defaults so older call sites
+    that haven't migrated off the constants still get a sensible value.
     """
 
-    # Default TTLs (Time-To-Live) in seconds — values come from app_settings
-    DEFAULT_TTL = _cache_ttl("default", 3600)        # 1 hour
-    QUERY_CACHE_TTL = _cache_ttl("query", 1800)       # 30 minutes for DB queries
-    USER_CACHE_TTL = _cache_ttl("user", 300)          # 5 minutes for user data
-    METRICS_CACHE_TTL = _cache_ttl("metrics", 60)     # 1 minute for rapidly changing metrics
-    CONTENT_CACHE_TTL = _cache_ttl("content", 7200)   # 2 hours for content
-    MODEL_CACHE_TTL = _cache_ttl("model", 86400)      # 1 day for model configs
+    # Default TTLs (Time-To-Live) in seconds. Override per-category via
+    # app_settings (``cache_<category>_ttl_seconds``) + ``resolve_ttl``.
+    DEFAULT_TTL = 3600        # 1 hour
+    QUERY_CACHE_TTL = 1800    # 30 minutes for DB queries
+    USER_CACHE_TTL = 300      # 5 minutes for user data
+    METRICS_CACHE_TTL = 60    # 1 minute for rapidly changing metrics
+    CONTENT_CACHE_TTL = 7200  # 2 hours for content
+    MODEL_CACHE_TTL = 86400   # 1 day for model configs
 
     # Cache key prefixes for organization
     PREFIX_QUERY = "query:"
@@ -91,6 +82,33 @@ class CacheConfig:
     PREFIX_MODEL = "model:"
     PREFIX_SESSION = "session:"
     PREFIX_TASK = "task:"
+
+    _CATEGORY_DEFAULTS: dict[str, int] = {
+        "default": 3600,
+        "query": 1800,
+        "user": 300,
+        "metrics": 60,
+        "content": 7200,
+        "model": 86400,
+    }
+
+    @classmethod
+    def resolve_ttl(cls, site_config: Any, category: str) -> int:
+        """Resolve a TTL from app_settings (``cache_<category>_ttl_seconds``).
+
+        Args:
+            site_config: SiteConfig instance (DI — Phase H, GH#95).
+            category: One of ``default``, ``query``, ``user``, ``metrics``,
+                ``content``, ``model``.
+
+        Falls back to the hardcoded default for the category when the
+        key is absent in app_settings.
+        """
+        default = cls._CATEGORY_DEFAULTS.get(category, cls.DEFAULT_TTL)
+        try:
+            return site_config.get_int(f"cache_{category}_ttl_seconds", default)
+        except Exception:
+            return default
 
 
 class RedisCache:
