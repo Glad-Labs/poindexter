@@ -15,6 +15,7 @@ from services.quality_scorers import (
     flesch_kincaid_grade_level,
     generate_feedback,
     generate_suggestions,
+    qa_cfg,
     score_accuracy,
     score_clarity,
     score_completeness,
@@ -23,8 +24,18 @@ from services.quality_scorers import (
     score_relevance,
     score_seo,
 )
+from services.site_config import SiteConfig
 
-# Default config for testing (avoids DB calls)
+
+def _sc() -> SiteConfig:
+    """Fresh SiteConfig for deterministic qa_cfg() tests (Phase H / GH#95)."""
+    return SiteConfig()
+
+
+# Default config for testing (avoids DB calls). Includes the
+# site_domain + trusted_source_domains keys that Phase H (GH#95) added
+# to the qa_cfg() dict shape so score_accuracy no longer lazy-imports
+# site_config.
 _CFG = {
     "clarity_ideal_min": 15, "clarity_ideal_max": 20,
     "clarity_good_min": 10, "clarity_good_max": 25,
@@ -46,6 +57,8 @@ _CFG = {
     "relevance_stuffing_hard": 5.0, "relevance_stuffing_soft": 3.0,
     "seo_baseline": 6.0,
     "engagement_baseline": 6.0,
+    "site_domain": "",
+    "trusted_source_domains": "",
 }
 
 
@@ -419,7 +432,7 @@ class TestGenerateSuggestions:
 class TestQaCfg:
     def test_returns_dict_with_expected_keys(self):
         from services.quality_scorers import qa_cfg
-        cfg = qa_cfg()
+        cfg = qa_cfg(_sc())
         assert isinstance(cfg, dict)
         # Spot check keys
         for key in [
@@ -433,13 +446,20 @@ class TestQaCfg:
 
     def test_threshold_values_are_numeric(self):
         from services.quality_scorers import qa_cfg
-        cfg = qa_cfg()
+        cfg = qa_cfg(_sc())
+        # Phase H (GH#95): the dict now also carries site_domain +
+        # trusted_source_domains strings for score_accuracy. Numeric
+        # threshold check scopes to the qa_* keys.
+        _non_numeric_keys = {"site_domain", "trusted_source_domains"}
         for k, v in cfg.items():
+            if k in _non_numeric_keys:
+                assert isinstance(v, str)
+                continue
             assert isinstance(v, (int, float)), f"{k} should be numeric, got {type(v).__name__}"
 
     def test_clarity_ranges_have_sensible_ordering(self):
         from services.quality_scorers import qa_cfg
-        cfg = qa_cfg()
+        cfg = qa_cfg(_sc())
         assert cfg["clarity_ideal_min"] < cfg["clarity_ideal_max"]
         assert cfg["clarity_good_min"] <= cfg["clarity_ideal_min"]
         assert cfg["clarity_good_max"] >= cfg["clarity_ideal_max"]

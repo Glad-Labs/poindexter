@@ -6,7 +6,9 @@ These are stateless heuristics that score content on various quality
 dimensions (0-10 scale) using pattern-based analysis.
 
 All functions that previously accessed self._qa_cfg() now accept a
-``cfg`` dict parameter or call ``qa_cfg()`` directly.
+``cfg`` dict parameter explicitly. ``qa_cfg(site_config)`` is the
+canonical factory — UnifiedQualityService builds it once per evaluation
+and threads it through.
 """
 
 import re
@@ -21,15 +23,24 @@ logger = get_logger(__name__)
 # Config loader
 # ---------------------------------------------------------------------------
 
-def qa_cfg() -> dict:
+def qa_cfg(site_config: Any) -> dict:
     """Load all QA pipeline thresholds from DB via site_config.
 
     Every threshold in the QA pipeline is tunable via app_settings
     (key prefix: qa_). Returns a dict of all values with sensible defaults.
     Change any value with a simple SQL UPDATE on app_settings.
-    """
-    from services.site_config import site_config
 
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Must be
+            passed explicitly — the module-level singleton import was
+            removed. UnifiedQualityService threads this through from its
+            constructor (which main.py lifespan wires from
+            app.state.site_config).
+
+    The returned dict also carries ``site_domain`` + ``trusted_source_domains``
+    so ``score_accuracy`` doesn't need a second site_config lookup for its
+    reputable-domain bookkeeping.
+    """
     return {
         # --- Overall pipeline ---
         "pass_threshold": site_config.get_float("qa_pass_threshold", 70.0),
@@ -78,6 +89,9 @@ def qa_cfg() -> dict:
         "seo_baseline": site_config.get_float("qa_seo_baseline", 6.0),
         # --- Engagement ---
         "engagement_baseline": site_config.get_float("qa_engagement_baseline", 6.0),
+        # --- Reputable-domains data (used by score_accuracy) ---
+        "site_domain": site_config.get("site_domain", ""),
+        "trusted_source_domains": site_config.get("trusted_source_domains", ""),
     }
 
 
@@ -85,10 +99,13 @@ def qa_cfg() -> dict:
 # Scoring functions (all return 0-10 scale)
 # ---------------------------------------------------------------------------
 
-def score_clarity(content: str, sentence_count: int, word_count: int, cfg: dict | None = None) -> float:
+def score_clarity(content: str, sentence_count: int, word_count: int, cfg: dict) -> float:
     """Score clarity based on sentence structure and word count.
-    Thresholds tunable via qa_clarity_* app_settings keys."""
-    cfg = cfg or qa_cfg()
+    Thresholds tunable via qa_clarity_* app_settings keys.
+
+    ``cfg`` required — Phase H (GH#95). Call qa_cfg(site_config) once at
+    the orchestration layer and thread it through.
+    """
     if word_count == 0 or sentence_count == 0:
         return 5.0
 
@@ -103,10 +120,15 @@ def score_clarity(content: str, sentence_count: int, word_count: int, cfg: dict 
     return 5.0
 
 
-def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
+def score_accuracy(content: str, context: dict[str, Any], cfg: dict) -> float:
     """Score accuracy based on citation patterns and factual anchors.
-    Thresholds tunable via qa_accuracy_* app_settings keys."""
-    cfg = cfg or qa_cfg()
+    Thresholds tunable via qa_accuracy_* app_settings keys.
+
+    ``cfg`` must be a qa_cfg()-shaped dict. Phase H (GH#95) made it
+    required — site_config is no longer read lazily from the module
+    singleton. Call qa_cfg(site_config) at the orchestration layer and
+    thread the result through.
+    """
     score = cfg["accuracy_baseline"]
     content_lower = content.lower()
 
@@ -115,9 +137,8 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
     # content_router, so one list covers both external-link validation
     # and citation credibility (#198).
     all_links = re.findall(r"https?://([^\s\)\]\"'>]+)", content)
-    from services.site_config import site_config as _sc
-    _domain = _sc.get("site_domain", "")
-    _override_csv = _sc.get("trusted_source_domains", "")
+    _domain = cfg.get("site_domain", "")
+    _override_csv = cfg.get("trusted_source_domains", "")
     _default_reputable = {
         "github.com", "arxiv.org", "docs.python.org", "docs.rs",
         "developer.mozilla.org", "stackoverflow.com", "wikipedia.org",
@@ -185,10 +206,13 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
     return min(max(score, 0.0), 10.0)
 
 
-def score_completeness(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
+def score_completeness(content: str, context: dict[str, Any], cfg: dict) -> float:
     """Score completeness based on depth signals beyond raw word count.
-    Thresholds tunable via qa_completeness_* app_settings keys."""
-    cfg = cfg or qa_cfg()
+    Thresholds tunable via qa_completeness_* app_settings keys.
+
+    ``cfg`` required — Phase H (GH#95). Call qa_cfg(site_config) once at
+    the orchestration layer and thread it through.
+    """
     word_count = len(content.split())
     score = 0.0
 
@@ -229,10 +253,13 @@ def score_completeness(content: str, context: dict[str, Any], cfg: dict | None =
     return min(score, 10.0)
 
 
-def score_relevance(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
+def score_relevance(content: str, context: dict[str, Any], cfg: dict) -> float:
     """Score relevance using topic-word family matching to resist keyword stuffing.
-    Thresholds tunable via qa_relevance_* app_settings keys."""
-    cfg = cfg or qa_cfg()
+    Thresholds tunable via qa_relevance_* app_settings keys.
+
+    ``cfg`` required — Phase H (GH#95). Call qa_cfg(site_config) once at
+    the orchestration layer and thread it through.
+    """
     topic = context.get("topic", "") or context.get("primary_keyword", "")
     if not topic:
         return cfg["relevance_no_topic_default"]
@@ -267,7 +294,7 @@ def score_relevance(content: str, context: dict[str, Any], cfg: dict | None = No
     return min(base, 10.0)
 
 
-def score_seo(content: str, context: dict[str, Any], cfg: dict | None = None) -> float:
+def score_seo(content: str, context: dict[str, Any], cfg: dict) -> float:
     """Score SEO quality. Baseline tunable via qa_seo_baseline.
 
     Awards points for:
@@ -277,8 +304,10 @@ def score_seo(content: str, context: dict[str, Any], cfg: dict | None = None) ->
     - Primary keywords present anywhere in the content (+1.5)
     - Primary keywords missing (-1.0, dragging an otherwise-fine post
       below the passing threshold)
+
+    ``cfg`` required — Phase H (GH#95). Call qa_cfg(site_config) once at
+    the orchestration layer and thread it through.
     """
-    cfg = cfg or qa_cfg()
     score = cfg["seo_baseline"]
 
     # Check for headers
@@ -338,9 +367,12 @@ def score_readability(content: str) -> float:
         return max(7.0, 7.0 + flesch * 0.017)  # 0->7.0, 30->7.5
 
 
-def score_engagement(content: str, cfg: dict | None = None) -> float:
-    """Score engagement based on structure and style. Baseline tunable via qa_engagement_baseline."""
-    cfg = cfg or qa_cfg()
+def score_engagement(content: str, cfg: dict) -> float:
+    """Score engagement based on structure and style. Baseline tunable via qa_engagement_baseline.
+
+    ``cfg`` required — Phase H (GH#95). Call qa_cfg(site_config) once at
+    the orchestration layer and thread it through.
+    """
     score = cfg["engagement_baseline"]
 
     # Bullet points / lists

@@ -107,7 +107,14 @@ class TaskExecutor:
         # because startup_manager constructs TaskExecutor before the lifespan
         # has stashed site_config on app.state.
         self._site_config = site_config
-        self.quality_service = UnifiedQualityService()  # Quality validation service
+        # Phase H (GH#95): wire site_config through the quality service so
+        # its qa_cfg() lookups hit the injected SiteConfig instead of the
+        # module singleton. self._site_config may be None here (worker
+        # startup constructs TaskExecutor before app.state.site_config is
+        # ready); the lifespan rebinds via set_site_config() once ready.
+        self.quality_service = UnifiedQualityService(
+            site_config=self._site_config,
+        )
         self.content_generator = AIContentGenerator()  # Fallback content generation
         self.poll_interval = poll_interval
         self.running = False
