@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -24,16 +25,30 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 15.0
 MAX_CONTENT_CHARS = 50000  # safety cap on extracted text
 
+# Fallback used when no site_config is passed (e.g. by legacy callers
+# mid-Phase-H rollout). Keeps the scraper running even if the DI chain
+# hasn't reached every call site yet — it just sends a generic UA.
+_FALLBACK_USER_AGENT = (
+    "Mozilla/5.0 (compatible; PoindexterBot/1.0; no-contact-configured) "
+    "AI content pipeline topic scraper"
+)
 
-def _build_user_agent() -> str:
+
+def _build_user_agent(site_config: Any) -> str:
     """Build the URL-scraper User-Agent string from site_config (#198).
 
     Uses site_contact_url for the bot identifier so operators can bring
     their own brand. Falls back to a neutral generic if unset.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H). ``None`` returns
+            the generic fallback UA so legacy callers that haven't been
+            threaded through yet still work.
     """
-    from services.site_config import site_config as _sc
-    contact = _sc.get("site_contact_url", "").strip()
-    bot_name = _sc.get("scraper_bot_name", "PoindexterBot/1.0").strip()
+    if site_config is None:
+        return _FALLBACK_USER_AGENT
+    contact = site_config.get("site_contact_url", "").strip()
+    bot_name = site_config.get("scraper_bot_name", "PoindexterBot/1.0").strip()
     identifier = f"+{contact}" if contact else "no-contact-configured"
     return (
         f"Mozilla/5.0 (compatible; {bot_name}; {identifier}) "
@@ -41,14 +56,16 @@ def _build_user_agent() -> str:
     )
 
 
-USER_AGENT = _build_user_agent()
-
-
 class URLScrapeError(Exception):
     """Raised when a URL cannot be scraped."""
 
 
-async def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
+async def scrape_url(
+    url: str,
+    timeout: float = DEFAULT_TIMEOUT,
+    *,
+    site_config: Any = None,
+) -> dict:
     """Scrape a URL and return structured content.
 
     Returns:
@@ -66,6 +83,14 @@ async def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
 
     Raises:
         URLScrapeError: if the URL can't be fetched or parsed.
+
+    Args:
+        url: the URL to scrape.
+        timeout: HTTP request timeout in seconds.
+        site_config: SiteConfig instance (DI — Phase H). Used to build
+            the User-Agent string and to resolve ``arxiv_base_url`` for
+            the arXiv scraper. ``None`` falls back to sensible defaults
+            so callers mid-rollout still work.
     """
     if not url or not url.startswith(("http://", "https://")):
         raise URLScrapeError(f"Invalid URL: {url!r}")
@@ -75,19 +100,20 @@ async def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
 
     # Route to specialized scrapers for known platforms
     if "github.com" in hostname:
-        return await _scrape_github(url, timeout)
+        return await _scrape_github(url, timeout, site_config=site_config)
     if "arxiv.org" in hostname:
-        return await _scrape_arxiv(url, timeout)
+        return await _scrape_arxiv(url, timeout, site_config=site_config)
 
     # Default: generic HTML article extraction
-    return await _scrape_generic(url, timeout)
+    return await _scrape_generic(url, timeout, site_config=site_config)
 
 
-async def _fetch(url: str, timeout: float) -> str:
+async def _fetch(url: str, timeout: float, *, site_config: Any) -> str:
     """Fetch HTML with a reasonable user agent."""
+    user_agent = _build_user_agent(site_config)
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout, connect=5.0),
-        headers={"User-Agent": USER_AGENT},
+        headers={"User-Agent": user_agent},
         follow_redirects=True,
     ) as client:
         resp = await client.get(url)
@@ -95,10 +121,10 @@ async def _fetch(url: str, timeout: float) -> str:
         return resp.text
 
 
-async def _scrape_generic(url: str, timeout: float) -> dict:
+async def _scrape_generic(url: str, timeout: float, *, site_config: Any) -> dict:
     """Extract title + main content from a generic HTML page."""
     try:
-        html = await _fetch(url, timeout)
+        html = await _fetch(url, timeout, site_config=site_config)
     except httpx.HTTPError as e:
         raise URLScrapeError(f"Fetch failed: {e}") from e
 
@@ -159,23 +185,24 @@ async def _scrape_generic(url: str, timeout: float) -> dict:
     }
 
 
-async def _scrape_github(url: str, timeout: float) -> dict:
+async def _scrape_github(url: str, timeout: float, *, site_config: Any) -> dict:
     """Extract README + metadata from a GitHub repo URL.
 
     Accepts: https://github.com/owner/repo[/...]
     """
     parts = urlparse(url).path.strip("/").split("/")
     if len(parts) < 2:
-        return await _scrape_generic(url, timeout)
+        return await _scrape_generic(url, timeout, site_config=site_config)
 
     owner, repo = parts[0], parts[1]
     api_url = f"https://api.github.com/repos/{owner}/{repo}"
     readme_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
 
+    user_agent = _build_user_agent(site_config)
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(timeout, connect=5.0),
-            headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
+            headers={"User-Agent": user_agent, "Accept": "application/vnd.github+json"},
         ) as client:
             repo_resp = await client.get(api_url)
             repo_data = repo_resp.json() if repo_resp.is_success else {}
@@ -204,15 +231,17 @@ async def _scrape_github(url: str, timeout: float) -> dict:
     }
 
 
-async def _scrape_arxiv(url: str, timeout: float) -> dict:
+async def _scrape_arxiv(url: str, timeout: float, *, site_config: Any) -> dict:
     """Extract abstract from arXiv paper URL.
 
     Handles both /abs/ and /pdf/ URLs.
     arxiv_base_url setting lets operators point at a mirror or
     local-proxied instance (#198).
     """
-    from services.site_config import site_config as _sc
-    _arxiv_base = _sc.get("arxiv_base_url", "https://arxiv.org").rstrip("/")
+    if site_config is None:
+        _arxiv_base = "https://arxiv.org"
+    else:
+        _arxiv_base = site_config.get("arxiv_base_url", "https://arxiv.org").rstrip("/")
     # Normalize to /abs/ URL for HTML scraping
     m = re.search(r"arxiv\.org/(abs|pdf)/(\d+\.\d+)", url)
     if m:
@@ -222,7 +251,7 @@ async def _scrape_arxiv(url: str, timeout: float) -> dict:
         abs_url = url
 
     try:
-        html = await _fetch(abs_url, timeout)
+        html = await _fetch(abs_url, timeout, site_config=site_config)
     except httpx.HTTPError as e:
         raise URLScrapeError(f"arXiv fetch failed: {e}") from e
 
