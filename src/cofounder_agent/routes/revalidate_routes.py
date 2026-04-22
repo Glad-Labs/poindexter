@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 from services.revalidation_service import trigger_nextjs_revalidation
+from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -35,7 +36,8 @@ class RevalidateCacheRequest(BaseModel):
 @router.post("/revalidate-cache")
 async def revalidate_cache(
     request_data: RevalidateCacheRequest,
-    token: str = Depends(verify_api_token),
+    token: str = Depends(verify_api_token),  # noqa: ARG001
+    site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """
     Securely revalidate public site cache after publishing content.
@@ -54,7 +56,7 @@ async def revalidate_cache(
     tags = request_data.tags or ["posts", "post-index"]
 
     # Trigger ISR revalidation on public site (both paths and tags)
-    success = await trigger_nextjs_revalidation(paths, tags)
+    success = await trigger_nextjs_revalidation(paths, tags, site_config=site_config)
 
     return {
         "success": success,

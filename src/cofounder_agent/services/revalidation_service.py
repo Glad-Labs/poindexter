@@ -5,22 +5,28 @@ import: publish_service → routes was violating the one-way dependency
 rule (routes should import services, not vice versa).
 """
 
+from typing import Any
+
 import httpx
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
 
 async def trigger_nextjs_revalidation(
-    paths: list | None = None, tags: list | None = None
+    paths: list | None = None,
+    tags: list | None = None,
+    *,
+    site_config: Any,
 ) -> bool:
     """Trigger Next.js ISR revalidation on the public site.
 
     Args:
         paths: List of paths to revalidate. Defaults to ["/", "/archive"].
         tags: List of cache tags to revalidate. Defaults to ["posts", "post-index"].
+        site_config: SiteConfig instance (DI — Phase H). Keyword-only so
+            callers don't pass it positionally by mistake.
 
     Returns:
         True if revalidation succeeded, False otherwise.
@@ -49,7 +55,7 @@ async def trigger_nextjs_revalidation(
         pool = getattr(db_service, "pool", None)
         if pool:
             row = await pool.fetchrow(
-                "SELECT value FROM app_settings WHERE key = 'revalidate_secret'"
+                "SELECT value FROM app_settings WHERE key = 'revalidate_secret'",
             )
             if row and row["value"]:
                 revalidate_secret = row["value"]
@@ -58,7 +64,9 @@ async def trigger_nextjs_revalidation(
 
     if not revalidate_secret:
         revalidate_secret = site_config.get("revalidate_secret", "")
-    environment = (site_config.get("environment", "development") or "development").lower()
+    environment = (
+        site_config.get("environment", "development") or "development"
+    ).lower()
 
     if not revalidate_secret:
         logger.error("REVALIDATE_SECRET is not set — refusing to revalidate in %s", environment)

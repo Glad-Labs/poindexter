@@ -676,10 +676,13 @@ async def publish_post_from_task(
     if trigger_revalidation:
         try:
             from services.revalidation_service import trigger_nextjs_revalidation
+            from services.site_config import site_config as _sc
 
             reval_paths = ["/", "/archive", "/posts", f"/posts/{slug}"]
             reval_tags = ["posts", "post-index", f"post:{slug}"]
-            revalidation_success = await trigger_nextjs_revalidation(reval_paths, reval_tags)
+            revalidation_success = await trigger_nextjs_revalidation(
+                reval_paths, reval_tags, site_config=_sc,
+            )
             if not revalidation_success:
                 logger.warning("[publish_service] ISR revalidation returned failure for %s", slug)
         except Exception as reval_err:
