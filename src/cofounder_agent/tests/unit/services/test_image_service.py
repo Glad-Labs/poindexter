@@ -23,6 +23,12 @@ from services.image_service import (
     get_default_image_model,
     get_image_service,
 )
+from services.site_config import SiteConfig
+
+
+def _sc() -> SiteConfig:
+    """Fresh SiteConfig for Phase H DI (GH#95)."""
+    return SiteConfig()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -63,7 +69,7 @@ def make_image_service_with_key() -> ImageService:
     only caches an ``is-configured`` verdict. Flip the cache flags so
     tests don't try to hit the DB probe.
     """
-    svc = ImageService()
+    svc = ImageService(site_config=_sc())
     svc.pexels_available = True
     svc._pexels_key_checked_db = True
     return svc
@@ -75,7 +81,7 @@ def make_image_service_no_key() -> ImageService:
         import os
 
         os.environ.pop("PEXELS_API_KEY", None)
-        return ImageService()
+        return ImageService(site_config=_sc())
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +167,7 @@ class TestImageServiceInit:
 
     def test_pexels_not_available_without_key(self, monkeypatch):
         monkeypatch.delenv("PEXELS_API_KEY", raising=False)
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         assert svc.pexels_available is False
 
     def test_sdxl_not_initialized_at_startup(self):
@@ -171,7 +177,7 @@ class TestImageServiceInit:
         # asserting on the shared module state here because other tests
         # in this session may have touched it; the important invariant
         # is that a new ImageService exposes the attribute at all.
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         assert isinstance(svc.sdxl_initialized, bool)
         assert isinstance(svc.sdxl_available, bool)
 
@@ -185,7 +191,7 @@ class TestImageServiceInit:
 class TestSearchFeaturedImage:
     @pytest.mark.asyncio
     async def test_returns_none_when_no_api_key(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         svc.pexels_available = False
         svc._pexels_key_checked_db = True  # prevent DB lookup
         result = await svc.search_featured_image("AI")
@@ -263,7 +269,7 @@ class TestSearchFeaturedImage:
 class TestGetImagesForGallery:
     @pytest.mark.asyncio
     async def test_returns_empty_list_without_api_key(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         svc.pexels_available = False
         svc._pexels_key_checked_db = True  # prevent DB lookup
         result = await svc.get_images_for_gallery("AI")
@@ -376,6 +382,11 @@ class TestPexelsSearch:
 
         call = fake_provider.fetch.await_args
         forwarded = call.args[1] if len(call.args) > 1 else call.kwargs["config"]
+        # Phase H (GH#95): ImageService seeds `_site_config` into the
+        # provider dispatch dict so Pexels etc. can resolve the API key
+        # from the injected instance. Drop it for the legacy equality
+        # check against pure search knobs.
+        forwarded = {k: v for k, v in forwarded.items() if k != "_site_config"}
         assert forwarded == {
             "per_page": 12,
             "orientation": "portrait",
@@ -612,7 +623,7 @@ class TestGenerateImageDispatcher:
     async def test_dispatches_to_configured_provider(self, tmp_path):
         """``plugin.image_provider.primary`` picks the provider; fetch() is
         called with output_path + generation knobs in config."""
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         output_path = str(tmp_path / "out.png")
         # Create a file at output_path so the post-call existence check passes.
         (tmp_path / "out.png").write_bytes(b"\x89PNG fake")
@@ -651,7 +662,7 @@ class TestGenerateImageDispatcher:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_provider_not_registered(self, tmp_path):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         with (
             patch("services.image_service._resolve_image_provider", return_value=None),
             patch(
@@ -667,7 +678,7 @@ class TestGenerateImageDispatcher:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_provider_returns_empty(self, tmp_path):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         fake_provider = MagicMock()
         fake_provider.name = "sdxl"
         fake_provider.fetch = AsyncMock(return_value=[])
@@ -689,7 +700,7 @@ class TestGenerateImageDispatcher:
     async def test_returns_false_when_file_not_written(self, tmp_path):
         """Even if provider reports success, a missing file at output_path
         means the dispatcher returns False."""
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         # Note: do NOT create the file — mimic a buggy provider.
         fake_provider = MagicMock()
         fake_provider.name = "sdxl"
@@ -710,7 +721,7 @@ class TestGenerateImageDispatcher:
 
     @pytest.mark.asyncio
     async def test_provider_exception_returns_false(self, tmp_path):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         fake_provider = MagicMock()
         fake_provider.name = "sdxl"
         fake_provider.fetch = AsyncMock(side_effect=RuntimeError("GPU OOM"))
@@ -745,7 +756,7 @@ class TestEnsurePexelsKey:
 
     @pytest.mark.asyncio
     async def test_already_checked_noop(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         svc.pexels_available = True
         svc._pexels_key_checked_db = True
 
@@ -756,7 +767,7 @@ class TestEnsurePexelsKey:
 
     @pytest.mark.asyncio
     async def test_probe_flips_available_when_key_present(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         svc._pexels_key_checked_db = False
 
         fake_conn = AsyncMock()
@@ -782,7 +793,7 @@ class TestEnsurePexelsKey:
 
     @pytest.mark.asyncio
     async def test_no_db_service_sets_unavailable(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         svc._pexels_key_checked_db = False
 
         with patch("services.container.get_service", return_value=None):
@@ -793,7 +804,7 @@ class TestEnsurePexelsKey:
 
     @pytest.mark.asyncio
     async def test_db_returns_empty_leaves_unavailable(self):
-        svc = ImageService()
+        svc = ImageService(site_config=_sc())
         svc._pexels_key_checked_db = False
 
         fake_conn = AsyncMock()
