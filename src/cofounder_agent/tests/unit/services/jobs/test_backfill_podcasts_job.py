@@ -152,7 +152,7 @@ class TestBackfillPodcastsJobRun:
 
         upload_calls = []
 
-        async def _upload(path, key, ct):
+        async def _upload(path, key, ct, *, site_config=None):
             upload_calls.append((path, key, ct))
             return f"https://r2/{key}"
 

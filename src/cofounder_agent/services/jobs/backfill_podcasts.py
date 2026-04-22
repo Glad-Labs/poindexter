@@ -78,7 +78,9 @@ class BackfillPodcastsJob:
             for post in posts:
                 if svc.episode_exists(post["id"]) and sync_count < r2_sync_cap:
                     try:
-                        r2_url = await upload_podcast_episode(post["id"])
+                        r2_url = await upload_podcast_episode(
+                            post["id"], site_config=site_config,
+                        )
                         if r2_url:
                             sync_count += 1
                     except Exception:  # noqa: BLE001 — sync failure shouldn't block generation
@@ -109,7 +111,9 @@ class BackfillPodcastsJob:
                     # Upload the fresh episode to R2 too.
                     try:
                         from services.r2_upload_service import upload_podcast_episode
-                        r2_url = await upload_podcast_episode(post["id"])
+                        r2_url = await upload_podcast_episode(
+                            post["id"], site_config=site_config,
+                        )
                         if r2_url:
                             uploaded += 1
                     except Exception as r2_err:
@@ -141,7 +145,12 @@ class BackfillPodcastsJob:
                     os.makedirs(os.path.dirname(feed_path), exist_ok=True)
                     with open(feed_path, "w", encoding="utf-8") as f:
                         f.write(feed.text)
-                    await upload_to_r2(feed_path, "podcast/feed.xml", "application/rss+xml")
+                    await upload_to_r2(
+                        feed_path,
+                        "podcast/feed.xml",
+                        "application/rss+xml",
+                        site_config=site_config,
+                    )
                     logger.info("[BACKFILL_PODCASTS] Podcast RSS feed rebuilt on R2")
             except Exception as feed_err:
                 logger.warning(

@@ -9,14 +9,16 @@ touching code.
 Usage:
     from services.r2_upload_service import upload_to_r2
 
-    url = await upload_to_r2("/path/to/file.mp3", "podcast/abc123.mp3")
+    url = await upload_to_r2(
+        "/path/to/file.mp3", "podcast/abc123.mp3", site_config=site_config,
+    )
 """
 
 import os
 from pathlib import Path
+from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -32,7 +34,7 @@ _CONTENT_TYPES = {
 }
 
 
-def _storage(key: str, default: str = "") -> str:
+def _storage(site_config: Any, key: str, default: str = "") -> str:
     """Read a NON-SECRET object-store setting. Prefers the generic
     ``storage_*`` namespace; falls back to the legacy ``cloudflare_r2_*``
     keys so an in-flight deployment keeps working during the rename (#198).
@@ -42,7 +44,7 @@ def _storage(key: str, default: str = "") -> str:
     )
 
 
-async def _storage_secret(key: str, default: str = "") -> str:
+async def _storage_secret(site_config: Any, key: str, default: str = "") -> str:
     """Read a SECRET object-store setting via on-demand DB query.
 
     Secrets aren't kept in the in-memory site_config cache (is_secret=true
@@ -60,6 +62,8 @@ async def upload_to_r2(
     local_path: str,
     r2_key: str,
     content_type: str | None = None,
+    *,
+    site_config: Any,
 ) -> str | None:
     """Upload a file to Cloudflare R2 and return its public URL.
 
@@ -67,6 +71,9 @@ async def upload_to_r2(
         local_path: Absolute path to the local file.
         r2_key: Object key in R2 (e.g. "podcast/abc123.mp3").
         content_type: MIME type. Auto-detected from extension if not provided.
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Must be
+            passed explicitly — the module-level singleton import was
+            removed.
 
     Returns:
         Public URL of the uploaded file, or None on failure.
@@ -80,8 +87,8 @@ async def upload_to_r2(
     # access_key is NOT marked is_secret (it's paired with the secret and
     # can't do damage alone), so site_config has it cached. secret_key
     # and token ARE secrets — fetched via on-demand DB query.
-    access_key = _storage("access_key")
-    secret_key = await _storage_secret("secret_key")
+    access_key = _storage(site_config, "access_key")
+    secret_key = await _storage_secret(site_config, "secret_key")
 
     if not access_key or not secret_key:
         logger.warning(
@@ -90,8 +97,8 @@ async def upload_to_r2(
         )
         return None
 
-    endpoint_url = _storage("endpoint")
-    bucket = _storage("bucket")
+    endpoint_url = _storage(site_config, "endpoint")
+    bucket = _storage(site_config, "bucket")
     if not endpoint_url or not bucket:
         logger.warning(
             "[STORAGE] storage_endpoint or storage_bucket not configured — "
@@ -123,7 +130,9 @@ async def upload_to_r2(
             ExtraArgs={"ContentType": content_type},
         )
 
-        public_url = _storage("public_url") or site_config.get("r2_public_url", "")
+        public_url = _storage(site_config, "public_url") or site_config.get(
+            "r2_public_url", "",
+        )
         if not public_url:
             logger.warning(
                 "[STORAGE] storage_public_url not set — can't construct "
@@ -142,25 +151,42 @@ async def upload_to_r2(
         return None
 
 
-async def upload_podcast_episode(post_id: str) -> str | None:
+async def upload_podcast_episode(post_id: str, *, site_config: Any) -> str | None:
     """Upload a podcast episode MP3 to R2. Returns public URL or None.
-    Uses versioned path (podcast_cdn_version) for cache-busting."""
+    Uses versioned path (podcast_cdn_version) for cache-busting.
+
+    Args:
+        post_id: Post UUID (used as episode file stem).
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+    """
     try:
-        from services.site_config import site_config
         cdn_ver = site_config.get("podcast_cdn_version", "v2")
     except Exception:
         cdn_ver = "v2"
     podcast_dir = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
     mp3_path = podcast_dir / f"{post_id}.mp3"
     if mp3_path.exists():
-        return await upload_to_r2(str(mp3_path), f"podcast/{cdn_ver}/{post_id}.mp3")
+        return await upload_to_r2(
+            str(mp3_path),
+            f"podcast/{cdn_ver}/{post_id}.mp3",
+            site_config=site_config,
+        )
     return None
 
 
-async def upload_video_episode(post_id: str) -> str | None:
-    """Upload a video episode MP4 to R2. Returns public URL or None."""
+async def upload_video_episode(post_id: str, *, site_config: Any) -> str | None:
+    """Upload a video episode MP4 to R2. Returns public URL or None.
+
+    Args:
+        post_id: Post UUID (used as episode file stem).
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+    """
     video_dir = Path(os.path.expanduser("~")) / ".poindexter" / "video"
     mp4_path = video_dir / f"{post_id}.mp4"
     if mp4_path.exists():
-        return await upload_to_r2(str(mp4_path), f"video/{post_id}.mp4")
+        return await upload_to_r2(
+            str(mp4_path),
+            f"video/{post_id}.mp4",
+            site_config=site_config,
+        )
     return None

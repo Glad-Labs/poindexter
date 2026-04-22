@@ -425,9 +425,15 @@ async def _upload_featured_to_r2(output_path: str, task_id: str | None) -> str:
     """Upload the featured image to R2 and return the final URL."""
     try:
         from services.r2_upload_service import upload_to_r2
+        # Content-pipeline stages don't receive site_config via DI yet —
+        # use a transitional module-singleton import at the call site
+        # until stage fn signatures migrate (pending Phase H follow-up).
+        from services.site_config import site_config as _sc
         r2_id = task_id or uuid.uuid4().hex[:12]
         r2_key = f"images/featured/{r2_id}.jpg"
-        r2_url = await upload_to_r2(output_path, r2_key, content_type="image/jpeg")
+        r2_url = await upload_to_r2(
+            output_path, r2_key, content_type="image/jpeg", site_config=_sc,
+        )
         if r2_url:
             logger.info("Uploaded to R2: %s", r2_url[:80])
             with suppress(OSError):

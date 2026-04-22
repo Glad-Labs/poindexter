@@ -460,8 +460,14 @@ async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
     img_url = tmp_path
     try:
         from services.r2_upload_service import upload_to_r2
+        # Content-pipeline stages don't receive site_config via DI yet —
+        # use a transitional module-singleton import at the call site
+        # until stage fn signatures migrate (pending Phase H follow-up).
+        from services.site_config import site_config as _sc
         r2_key = f"images/inline/{uuid.uuid4().hex[:12]}.png"
-        r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
+        r2_url = await upload_to_r2(
+            tmp_path, r2_key, content_type="image/png", site_config=_sc,
+        )
         if r2_url:
             img_url = r2_url
             with suppress(OSError):

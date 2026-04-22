@@ -774,8 +774,13 @@ async def _upload_to_cloudinary(path: str, prompt: str) -> str:
 async def _upload_to_r2(path: str, prompt: str) -> str:
     """Upload a generated PNG to R2 via the shared r2_upload_service."""
     from services.r2_upload_service import upload_to_r2
+    # ImageProvider plugins don't receive site_config via the Protocol
+    # yet — use a transitional module-singleton import at the call site
+    # until plugins/image_provider.py threads DI through (pending Phase H
+    # follow-up alongside PluginScheduler).
+    from services.site_config import site_config as _sc
     key = f"sdxl/{os.path.basename(path)}"
-    url = await upload_to_r2(path, key, "image/png")
+    url = await upload_to_r2(path, key, "image/png", site_config=_sc)
     if not url:
         raise RuntimeError("r2_upload_service returned empty URL")
     logger.debug("[SdxlProvider] uploaded %s for prompt %r", key, prompt[:40])
