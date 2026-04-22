@@ -50,7 +50,15 @@ class GenerateMediaScriptsStage:
             _normalize_for_speech,
             _strip_markdown,
         )
-        from services.site_config import site_config
+
+        # Phase H step 4.3 (GH#95): prefer the site_config threaded through
+        # the pipeline context; fall back to the module singleton for
+        # callers that haven't migrated yet. Fallback removed in step 5.
+        site_config = context.get("site_config")
+        if site_config is None:
+            # Transitional fallback — removed in Phase H step 5 when the singleton
+            # is deleted.
+            from services.site_config import site_config
 
         title = context.get("title", "")
         content_text = context.get("content", "")
