@@ -760,11 +760,13 @@ async def publish_post_from_task(
             if background_tasks:
                 background_tasks.add_task(
                     generate_video_episode, post_id, post_title, post_content,
+                    site_config=site_config,
                     pre_generated_scenes=_video_scenes,
                 )
             else:
                 _spawn_background(
                     generate_video_episode(post_id, post_title, post_content,
+                                          site_config=site_config,
                                           pre_generated_scenes=_video_scenes),
                     name=f"video_episode({post_id})",
                 )
@@ -792,6 +794,7 @@ async def publish_post_from_task(
                         pid, ptitle, pcontent,
                         pre_generated_scenes=scenes,
                         pre_generated_summary=short_script,
+                        site_config=site_config,
                     )
                     if not result.success:
                         logger.warning("[SHORT] Failed for post %s: %s", pid, result.error)

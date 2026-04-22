@@ -169,7 +169,10 @@ async def stream_video(post_id: str):
 
 
 @router.post("/generate/{post_id}", dependencies=[Depends(verify_api_token)])
-async def generate_video(post_id: str):
+async def generate_video(
+    post_id: str,
+    site_config: Any = Depends(get_site_config_dependency),
+):
     """Manually trigger video generation for a published post."""
     from utils.route_utils import get_services
 
@@ -202,6 +205,7 @@ async def generate_video(post_id: str):
         title=row["title"],
         content=row["content"] or "",
         force=True,
+        site_config=site_config,
     )
 
     if not result.success:
