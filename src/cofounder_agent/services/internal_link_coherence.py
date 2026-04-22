@@ -35,8 +35,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +100,11 @@ class LinkCandidate:
 
     slug: str
     title: str
-    post_id: Optional[str] = None
-    similarity: Optional[float] = None
-    tag_slugs: Optional[set[str]] = None
-    inbound_count: Optional[int] = None
-    rejection_reason: Optional[str] = None
+    post_id: str | None = None
+    similarity: float | None = None
+    tag_slugs: set[str] | None = None
+    inbound_count: int | None = None
+    rejection_reason: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -113,7 +114,7 @@ class LinkCandidate:
 
 
 async def get_tag_slugs_for_post(
-    pool, *, post_id: Optional[str] = None, slug: Optional[str] = None
+    pool, *, post_id: str | None = None, slug: str | None = None
 ) -> set[str]:
     """Return the set of tag slugs attached to a post.
 
@@ -251,9 +252,9 @@ class InternalLinkCoherenceFilter:
         self,
         *,
         pool=None,
-        tag_coherence_required: Optional[bool] = None,
-        single_target_cap: Optional[int] = None,
-        cap_enabled: Optional[bool] = None,
+        tag_coherence_required: bool | None = None,
+        single_target_cap: int | None = None,
+        cap_enabled: bool | None = None,
     ) -> None:
         self.pool = pool
         self.tag_coherence_required = (

@@ -89,8 +89,8 @@ class FinalizeTaskStage:
         # a low-risk idempotent transform (existing sections left alone).
         try:
             from services.citation_verifier import (
-                extract_urls,
                 append_sources_section,
+                extract_urls,
             )
             from services.site_config import site_config as _sc_sources
             if (_sc_sources.get("auto_append_sources_section", "true") or "true").lower() not in ("false", "0", "no"):

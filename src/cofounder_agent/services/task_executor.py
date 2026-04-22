@@ -1149,13 +1149,13 @@ class TaskExecutor:
             # One-shot UPDATE…RETURNING so we don't race with the executor
             # picking up a task between SELECT and UPDATE.
             rows = await self.database_service.pool.fetch(
-                f"""
+                """
                 UPDATE content_tasks
                 SET status = 'cancelled',
                     error_message = 'Auto-cancelled: stuck in pending for >' || $1 || ' hours '
                                   || '(stale_pending_timeout_hours). Likely throttled because '
                                   || 'awaiting_approval queue was full. See GH-89.',
-                    result = COALESCE(result, '{{}}'::jsonb) || jsonb_build_object(
+                    result = COALESCE(result, '{}'::jsonb) || jsonb_build_object(
                         'reason', 'stale_pending_auto_cancel',
                         'stale_pending_timeout_hours', $1::int,
                         'cancelled_at', NOW()::text
