@@ -4,13 +4,31 @@ Unit tests for services/research_service.py
 Tests topic research via known references, internal link lookup,
 web search integration, context building, and error handling.
 All external dependencies (DB pool, web search) are mocked.
+
+Post-Phase-H (GH#95): ResearchService accepts site_config via ctor.
+`site_config=None` falls back to hardcoded _DEFAULT_KNOWN_REFERENCES,
+preserving legacy behavior. Tests construct a MagicMock SiteConfig via
+_mock_sc() to exercise the DI path.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.research_service import KNOWN_REFERENCES, ResearchService
+from services.research_service import (
+    KNOWN_REFERENCES,
+    ResearchService,
+    get_known_references,
+)
+
+
+def _mock_sc(known_references_json: str = "") -> MagicMock:
+    """Return a MagicMock shaped like SiteConfig for ResearchService."""
+    sc = MagicMock()
+    values = {"known_references_json": known_references_json}
+    sc.get.side_effect = lambda k, d="": values.get(k, d)
+    return sc
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -250,6 +268,12 @@ class TestConstructor:
         svc = ResearchService()
         assert svc.pool is None
         assert svc.settings is None
+        assert svc._site_config is None
+
+    def test_accepts_site_config_via_kwarg(self):
+        sc = _mock_sc()
+        svc = ResearchService(site_config=sc)
+        assert svc._site_config is sc
 
 
 # ---------------------------------------------------------------------------
@@ -269,3 +293,42 @@ class TestKnownReferences:
         for keyword, refs in KNOWN_REFERENCES.items():
             urls = [r["url"] for r in refs]
             assert len(urls) == len(set(urls)), f"Duplicate URLs under {keyword}"
+
+
+# ---------------------------------------------------------------------------
+# get_known_references — DI (site_config) path
+# ---------------------------------------------------------------------------
+
+
+class TestGetKnownReferencesDI:
+    def test_no_site_config_returns_defaults(self):
+        refs = get_known_references(site_config=None)
+        assert refs is not None
+        assert "fastapi" in refs
+
+    def test_empty_site_config_override_returns_defaults(self):
+        refs = get_known_references(site_config=_mock_sc(""))
+        assert "fastapi" in refs
+
+    def test_valid_json_override_replaces_defaults(self):
+        override = '{"mytool": [{"title": "MyTool Docs", "url": "https://mytool.example.com"}]}'
+        refs = get_known_references(site_config=_mock_sc(override))
+        assert "mytool" in refs
+        # Defaults replaced entirely per the docstring contract
+        assert "fastapi" not in refs
+        assert refs["mytool"][0]["url"] == "https://mytool.example.com"
+
+    def test_malformed_json_falls_back_to_defaults(self):
+        refs = get_known_references(site_config=_mock_sc("{not valid json"))
+        assert "fastapi" in refs
+
+    def test_non_dict_json_falls_back_to_defaults(self):
+        refs = get_known_references(site_config=_mock_sc('["not", "a", "dict"]'))
+        assert "fastapi" in refs
+
+    def test_service_with_site_config_uses_override(self):
+        override = '{"mytool": [{"title": "MyTool Docs", "url": "https://mytool.example.com"}]}'
+        svc = ResearchService(site_config=_mock_sc(override))
+        refs = svc._find_references("mytool integration guide")
+        urls = {r["url"] for r in refs}
+        assert "https://mytool.example.com" in urls
