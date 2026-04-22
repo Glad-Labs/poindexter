@@ -1532,7 +1532,7 @@ class MultiModelQA:
                 len(claims_list), claims_list, critic_concerned,
             )
 
-            researcher = WebResearcher()
+            researcher = WebResearcher(site_config=self._site_config)
             verified = 0
             contradicted = 0
             evidence_lines = []

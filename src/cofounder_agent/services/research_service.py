@@ -300,7 +300,7 @@ class ResearchService:
         """Search the web for fresh sources (free — DuckDuckGo, no API key)."""
         try:
             from services.web_research import WebResearcher
-            researcher = WebResearcher()
+            researcher = WebResearcher(site_config=self._site_config)
             results = await researcher.search_simple(topic, num_results=5)
             return results
         except Exception as e:
