@@ -405,6 +405,23 @@ class CrossModelQAStage:
                     "[cross_model_qa] mark_model_performance_outcome failed: %s",
                     mp_err,
                 )
+            # Write the rejection to pipeline_reviews so the content_tasks
+            # view's approval_status resolves correctly. Otherwise QA-rejected
+            # tasks show NULL in Grafana approval-status charts, because the
+            # view's scalar subquery on pipeline_reviews returns nothing.
+            try:
+                from services.pipeline_db import PipelineDB
+                await PipelineDB(database_service.pool).add_review(
+                    task_id=task_id,
+                    decision="rejected",
+                    reviewer="multi_model_qa",
+                    feedback=reason[:2000],
+                )
+            except Exception as pr_err:
+                logger.warning(
+                    "[cross_model_qa] pipeline_reviews write failed for %s: %s",
+                    task_id[:8], pr_err,
+                )
 
             updates["status"] = "rejected"
             return StageResult(
