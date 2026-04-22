@@ -95,10 +95,18 @@ class TaskExecutor:
         orchestrator=None,
         poll_interval: int = 5,
         app_state=None,
+        *,
+        site_config=None,
     ):
         self.database_service = database_service
         self.orchestrator_initial = orchestrator  # Initial orchestrator from startup
         self.app_state = app_state  # Reference to app.state for dynamic orchestrator updates
+        # Phase H step 4.2 (#95): site_config threads through to the content
+        # pipeline so stages can read context.get("site_config") instead of
+        # touching the module singleton. Usually resolved lazily via app_state
+        # because startup_manager constructs TaskExecutor before the lifespan
+        # has stashed site_config on app.state.
+        self._site_config = site_config
         self.quality_service = UnifiedQualityService()  # Quality validation service
         self.content_generator = AIContentGenerator()  # Fallback content generation
         self.poll_interval = poll_interval
@@ -140,6 +148,20 @@ class TaskExecutor:
             if orch is not None:
                 return orch
         return self.orchestrator_initial
+
+    @property
+    def site_config(self):
+        """Resolve site_config from ctor → app.state → None.
+
+        Tests construct TaskExecutor without site_config and without app_state
+        — in that case return None and let process_content_generation_task
+        fall back to the module singleton (removed in Phase H step 5).
+        """
+        if self._site_config is not None:
+            return self._site_config
+        if self.app_state is not None:
+            return getattr(self.app_state, "site_config", None)
+        return None
 
     def inject_orchestrator(self, orchestrator) -> None:
         """Inject or replace the orchestrator at runtime."""
@@ -566,6 +588,7 @@ class TaskExecutor:
                         quality_preference=task.get("quality_preference", "balanced"),
                         category=task.get("category", "general"),
                         target_audience=task.get("target_audience", "General"),
+                        site_config=self.site_config,
                     )
 
                 # GH-90 AC #2: run a background heartbeat for the entire duration
