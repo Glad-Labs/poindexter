@@ -10,7 +10,6 @@ Auth is overridden via dependency injection.
 """
 
 import asyncio
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -181,12 +180,12 @@ def _mock_site_config():
 
 @pytest.mark.unit
 class TestTriggerNextjsRevalidation:
-    @pytest.fixture(autouse=True)
-    def _patch_site_config(self):
-        mock_cfg = _mock_site_config()
-        with patch("services.site_config.site_config", mock_cfg), \
-             patch("services.revalidation_service.site_config", mock_cfg):
-            yield
+    """Direct tests of the revalidation helper.
+
+    Post-Phase-H (GH#95) site_config is injected via keyword arg. Each
+    test builds a fresh mock and passes it explicitly — no module-level
+    singleton to mutate.
+    """
 
     def _run(self, coro):
         return asyncio.run(coro)
@@ -194,19 +193,25 @@ class TestTriggerNextjsRevalidation:
     def test_returns_true_on_200(self):
         mock_client = _make_mock_httpx_client(status_code=200)
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            result = self._run(trigger_nextjs_revalidation(["/", "/archive"]))
+            result = self._run(trigger_nextjs_revalidation(
+                ["/", "/archive"], site_config=_mock_site_config(),
+            ))
         assert result is True
 
     def test_returns_false_on_non_200(self):
         mock_client = _make_mock_httpx_client(status_code=500, text="Internal Server Error")
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            result = self._run(trigger_nextjs_revalidation(["/blog"]))
+            result = self._run(trigger_nextjs_revalidation(
+                ["/blog"], site_config=_mock_site_config(),
+            ))
         assert result is False
 
     def test_returns_false_on_404(self):
         mock_client = _make_mock_httpx_client(status_code=404, text="Not Found")
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            result = self._run(trigger_nextjs_revalidation(["/about"]))
+            result = self._run(trigger_nextjs_revalidation(
+                ["/about"], site_config=_mock_site_config(),
+            ))
         assert result is False
 
     def test_returns_false_on_timeout(self):
@@ -215,7 +220,9 @@ class TestTriggerNextjsRevalidation:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            result = self._run(trigger_nextjs_revalidation(["/", "/archive"]))
+            result = self._run(trigger_nextjs_revalidation(
+                ["/", "/archive"], site_config=_mock_site_config(),
+            ))
         assert result is False
 
     def test_returns_false_on_http_error(self):
@@ -224,7 +231,9 @@ class TestTriggerNextjsRevalidation:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=httpx.HTTPError("Connection refused"))
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            result = self._run(trigger_nextjs_revalidation(["/blog"]))
+            result = self._run(trigger_nextjs_revalidation(
+                ["/blog"], site_config=_mock_site_config(),
+            ))
         assert result is False
 
     def test_returns_false_on_os_error(self):
@@ -233,14 +242,18 @@ class TestTriggerNextjsRevalidation:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client.post = AsyncMock(side_effect=OSError("Network unreachable"))
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            result = self._run(trigger_nextjs_revalidation(["/blog"]))
+            result = self._run(trigger_nextjs_revalidation(
+                ["/blog"], site_config=_mock_site_config(),
+            ))
         assert result is False
 
     def test_default_paths_are_root_and_archive(self):
         """When paths=None the helper should call with ["/", "/archive"]."""
         mock_client = _make_mock_httpx_client(status_code=200)
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            result = self._run(trigger_nextjs_revalidation(None))
+            result = self._run(trigger_nextjs_revalidation(
+                None, site_config=_mock_site_config(),
+            ))
         assert result is True
         call_kwargs = mock_client.post.call_args
         posted_json = call_kwargs[1].get("json") or call_kwargs[0][1] if call_kwargs[0] else {}
@@ -255,10 +268,10 @@ class TestTriggerNextjsRevalidation:
             "revalidate_secret": "test-secret",
             "public_site_url": "http://my-site.example.com",
         }.get(key, default)
-        with patch("services.site_config.site_config", mock_cfg), \
-             patch("services.revalidation_service.site_config", mock_cfg), \
-             patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            result = self._run(trigger_nextjs_revalidation(["/blog"]))
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
+            result = self._run(trigger_nextjs_revalidation(
+                ["/blog"], site_config=mock_cfg,
+            ))
         assert result is True
         # Confirm the call URL contains the custom host
         post_args = mock_client.post.call_args
@@ -268,14 +281,14 @@ class TestTriggerNextjsRevalidation:
     def test_strips_api_suffix_from_base_url(self):
         """If NEXT_PUBLIC_API_BASE_URL ends in /api it is stripped before appending /api/revalidate."""
         mock_client = _make_mock_httpx_client(status_code=200)
+        mock_cfg = MagicMock()
+        mock_cfg.get = lambda key, default=None: {
+            "revalidate_secret": "test-secret",
+            "public_site_url": "",
+            "next_public_api_base_url": "http://stripped.example.com/api",
+        }.get(key, default)
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
-            with patch.dict(
-                os.environ,
-                {
-                    "NEXT_PUBLIC_PUBLIC_SITE_URL": "",
-                    "NEXT_PUBLIC_API_BASE_URL": "http://stripped.example.com/api",
-                },
-                clear=False,
-            ):
-                result = self._run(trigger_nextjs_revalidation(["/blog"]))
+            result = self._run(trigger_nextjs_revalidation(
+                ["/blog"], site_config=mock_cfg,
+            ))
         assert result is True

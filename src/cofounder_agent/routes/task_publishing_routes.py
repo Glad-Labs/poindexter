@@ -687,6 +687,7 @@ async def go_live(
                 "post-index",
                 f"post:{row['slug']}",
             ],
+            site_config=site_config_dep,
         )
         if reval_ok:
             logger.info("[GO-LIVE] ISR revalidation triggered for %s", row["slug"])
