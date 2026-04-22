@@ -28,7 +28,6 @@ Config (``plugin.tap.memory`` in ``app_settings``):
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -55,30 +54,41 @@ def _discover_memory_dirs(
       it's the project-scope directory name (e.g. ``C--WINDOWS-system32``).
       For other origins, an empty string — they don't have scopes.
 
-    Env vars ``CLAUDE_PROJECTS_DIR`` / ``OPENCLAW_MEMORY_DIR`` /
-    ``SHARED_CONTEXT_DIR`` override the defaults; config args override
-    env vars. Passing the sentinel ``"__skip__"`` disables that source
+    site_config keys ``claude_projects_dir`` / ``openclaw_memory_dir`` /
+    ``shared_context_dir`` override the defaults; config args override
+    site_config. Passing the sentinel ``"__skip__"`` disables that source
     entirely — useful for tests that shouldn't touch real home dirs.
     """
 
-    def _resolve(cfg_value, env_var, default):
+    try:
+        from services.site_config import site_config as _sc
+    except Exception:
+        _sc = None
+
+    def _resolve(cfg_value, sc_key, default):
         if cfg_value == _SENTINEL_SKIP:
             return None
-        return Path(cfg_value or os.getenv(env_var) or default)
+        if cfg_value:
+            return Path(cfg_value)
+        if _sc is not None:
+            sc_val = _sc.get(sc_key, "")
+            if sc_val:
+                return Path(sc_val)
+        return Path(default)
 
     projects_root = _resolve(
         claude_projects_dir,
-        "CLAUDE_PROJECTS_DIR",
+        "claude_projects_dir",
         Path.home() / ".claude" / "projects",
     )
     openclaw_root = _resolve(
         openclaw_memory_dir,
-        "OPENCLAW_MEMORY_DIR",
+        "openclaw_memory_dir",
         Path.home() / ".openclaw" / "workspace" / "memory",
     )
     shared_root = _resolve(
         shared_context_dir,
-        "SHARED_CONTEXT_DIR",
+        "shared_context_dir",
         Path.home() / "glad-labs-website" / ".shared-context",
     )
 
