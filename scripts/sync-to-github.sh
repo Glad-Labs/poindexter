@@ -75,8 +75,14 @@ git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev
 # Force push this clean branch to GitHub as main
 git push "$GITHUB_REMOTE" "${TEMP_BRANCH}:${BRANCH}" --force 2>&1
 
-# Switch back to original branch and delete temp
-git checkout "$BRANCH" 2>/dev/null
-git branch -D "$TEMP_BRANCH" 2>/dev/null
+# Switch back to original branch and delete temp.
+# Force-checkout: the temp branch has lots of files removed from the index via
+# `git rm --cached` above; without -f, git refuses to overwrite what it now sees
+# as untracked working-tree files — even though they're identical to $BRANCH's
+# tracked versions. Dropping -f left the script stuck on the temp branch (set -e
+# exits before `branch -D` runs). -f is safe here because working tree content
+# matches $BRANCH's tree exactly (only the index was mutated).
+git checkout -f "$BRANCH"
+git branch -D "$TEMP_BRANCH"
 
 echo "Done. GitHub synced (private files excluded)."
