@@ -121,19 +121,19 @@
 
 ## Documentation Status
 
-| Document           | Status      | Location                                                    |
-| ------------------ | ----------- | ----------------------------------------------------------- |
-| README.md          | WORKING     | Root — honest, up-to-date                                   |
-| Quick Start Guide  | DRAFT       | docs/quick-start-guide.md — 431 lines, needs Matt's voice   |
-| CONTRIBUTING.md    | MINIMAL     | Root — 53 lines, needs dev setup instructions               |
-| SECURITY.md        | WORKING     | Root — covers API token, secrets                            |
-| CODE_OF_CONDUCT.md | WORKING     | Root                                                        |
-| LICENSE            | WORKING     | AGPL-3.0                                                    |
-| CLAUDE.md          | WORKING     | Root — comprehensive dev reference (internal)               |
-| Feature Status     | THIS FILE   | docs/FEATURE-STATUS.md                                      |
-| Architecture docs  | EXISTS      | docs/ARCHITECTURE.md + docs/architecture/ (in prompts repo) |
-| Troubleshooting    | EXISTS      | docs/operations/troubleshooting.md (in main repo)           |
-| API Reference      | NOT STARTED | No docs/API.md                                              |
+| Document           | Status      | Location                                                                     |
+| ------------------ | ----------- | ---------------------------------------------------------------------------- |
+| README.md          | WORKING     | Root — honest, up-to-date                                                    |
+| Quick Start Guide  | OUTLINE     | docs/quick-start-guide-outline.md here; full draft in glad-labs-prompts repo |
+| CONTRIBUTING.md    | MINIMAL     | Root — 53 lines, needs dev setup instructions                                |
+| SECURITY.md        | WORKING     | Root — covers API token, secrets                                             |
+| CODE_OF_CONDUCT.md | WORKING     | Root                                                                         |
+| LICENSE            | WORKING     | AGPL-3.0                                                                     |
+| CLAUDE.md          | WORKING     | Root — comprehensive dev reference (internal)                                |
+| Feature Status     | THIS FILE   | docs/FEATURE-STATUS.md                                                       |
+| Architecture docs  | EXISTS      | docs/ARCHITECTURE.md + docs/architecture/ (in prompts repo)                  |
+| Troubleshooting    | EXISTS      | docs/operations/troubleshooting.md (in main repo)                            |
+| API Reference      | NOT STARTED | No docs/API.md                                                               |
 
 ---
 
