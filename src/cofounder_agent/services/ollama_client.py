@@ -22,6 +22,17 @@ from typing import Any
 import httpx
 
 from services.logger_config import get_logger
+# Phase H (GH#95): bind the SiteConfig singleton at module-load time.
+#
+# The old ``_sc_get`` helper did ``from services.site_config import
+# site_config`` inside its body. The REFERENCE is safe to import this
+# early — the CACHED VALUES inside the singleton are populated later
+# in the startup lifespan, and every helper below calls
+# ``_site_config.get(...)`` per-invocation so late-binding works
+# (app_settings edits take effect on the next ctor call without a
+# restart). No threading site_config through every caller of
+# OllamaClient (there are a lot of them, most in excluded files).
+from services.site_config import site_config as _site_config
 
 logger = get_logger(__name__)
 
@@ -32,8 +43,7 @@ logger = get_logger(__name__)
 
 def _sc_get(key: str, default: str = "") -> str:
     """Get from site_config (falls back to env automatically)."""
-    from services.site_config import site_config
-    return site_config.get(key, default)
+    return _site_config.get(key, default)
 
 # All config below is resolved lazily via _default_*() helpers because
 # site_config is empty at module-import time (loaded later in the lifespan).
