@@ -60,6 +60,10 @@ class WriterSelfReviewStage:
     ) -> StageResult:
         from services.audit_log import audit_log_bg
         from services.self_review import self_review_and_revise as _self_review_and_revise
+        # writer_self_review stage hasn't migrated away from the singleton
+        # yet (pending its own Phase H pass); pass it through so
+        # self_review no longer reaches for the singleton at module scope.
+        from services.site_config import site_config as _sc
 
         task_id = context.get("task_id")
         topic = context.get("topic", "")
@@ -77,7 +81,7 @@ class WriterSelfReviewStage:
 
         try:
             revised_text, stats = await _self_review_and_revise(
-                content_text, title, topic,
+                content_text, title, topic, _sc,
             )
         except Exception as e:
             logger.warning("[SELF_REVIEW] Stage failed (non-fatal): %s", e)
