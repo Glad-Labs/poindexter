@@ -85,7 +85,14 @@ async def seed_defaults(pool):
         ("enable_memory_system", "true", "features", "Enable agent memory system", False),
         ("redis_enabled", "false", "features", "Enable Redis for caching and pub/sub", False),
         # --- cors ---
-        ("allowed_origins", "https://gladlabs.io,https://www.gladlabs.io", "cors", "Comma-separated allowed CORS origins", False),
+        # Default empty — operator must configure before exposing the API.
+        # Matches how webhook URLs + API tokens are seeded here: placeholder
+        # that forces a conscious setup step, rather than a hardcoded domain
+        # that silently mis-points a forked Poindexter install at gladlabs.io.
+        # Operators set this post-install via `poindexter cli config set
+        # allowed_origins "https://your-site.com,https://www.your-site.com"`
+        # or directly in the settings UI.
+        ("allowed_origins", "", "cors", "Comma-separated allowed CORS origins. Must be set before exposing the API publicly — empty value means no cross-origin requests are accepted.", False),
         ("rate_limit_per_minute", "100", "cors", "Max API requests per minute per client", False),
         # --- webhooks ---
         ("openclaw_webhook_url", "", "webhooks", "OpenClaw webhook delivery URL", False),
