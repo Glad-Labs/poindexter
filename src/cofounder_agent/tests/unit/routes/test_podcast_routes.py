@@ -17,7 +17,20 @@ from routes.podcast_routes import (
     _rfc2822,
     router,
 )
-from services.site_config import site_config as _test_site_config
+from services.site_config import SiteConfig
+
+# Phase H step 5.4 (GH#95): local SiteConfig instance instead of the module
+# singleton. Keep the same brand keys the tests previously relied on so XML
+# assertions still match.
+_test_site_config = SiteConfig(initial_config={
+    "site_name": "Test Site",
+    "site_url": "https://www.test-site.example.com",
+    "site_domain": "test-site.example.com",
+    "podcast_name": "Test Podcast",
+    "podcast_description": "A test podcast feed",
+    "owner_name": "Tester",
+    "owner_email": "owner@test.example.com",
+})
 
 # ---------------------------------------------------------------------------
 # Test app
