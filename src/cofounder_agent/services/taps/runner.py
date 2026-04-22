@@ -216,9 +216,23 @@ async def run_tap(tap: Any, pool: Any, mem: Any) -> TapStats:
         logger.info("Tap %s disabled; skipping", stats.name)
         return stats
 
+    # Phase H step 4.6 (GH#95): seed the module-level site_config singleton
+    # into the per-invocation config dict so Taps can read it without
+    # importing the singleton themselves. The reserved ``_site_config`` key
+    # is under the leading-underscore namespace so it can't collide with
+    # user-supplied app_settings keys. Taps should fall back to the
+    # singleton import if the key is absent (transitional).
+    tap_config: dict[str, Any] = dict(cfg.config)
+    if "_site_config" not in tap_config:
+        try:
+            from services.site_config import site_config as _sc
+            tap_config["_site_config"] = _sc
+        except Exception:
+            tap_config["_site_config"] = None
+
     start = time.monotonic()
     try:
-        async for doc in tap.extract(pool, cfg.config):
+        async for doc in tap.extract(pool, tap_config):
             try:
                 outcome = await _store_document(mem, pool, doc)
             except Exception as e:
