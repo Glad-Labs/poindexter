@@ -520,7 +520,7 @@ async def _distribute_to_adapters(
     if "mastodon" in enabled:
         from services.social_adapters.mastodon import post_to_mastodon
         results["mastodon"] = await _safe_call_adapter(
-            "mastodon", lambda: post_to_mastodon(text, url)
+            "mastodon", lambda: post_to_mastodon(text, url, site_config=site_config)
         )
 
     if "linkedin" in enabled:
