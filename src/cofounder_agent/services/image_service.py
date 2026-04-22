@@ -26,17 +26,45 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 import asyncio
 import importlib
 import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Any
 
 from services.logger_config import get_logger
 
-# Module-level logger (unified across the codebase). Used once at import
-# time below for the diffusers-missing warning — the rest of the file
-# uses `logger` from get_logger().
-_import_logger = get_logger(__name__)
+# SDXL model registry + torch availability probes live in a shared module
+# so ``services/image_providers/sdxl.py`` can own the model lifecycle
+# without routing back through image_service. Re-exported here for
+# backward compatibility: existing callers import
+# ``ImageModel`` / ``IMAGE_MODEL_REGISTRY`` / ``get_default_image_model``
+# from ``services.image_service``, and tests patch
+# ``services.image_service.TORCH_AVAILABLE`` etc.
+from services.image_providers._sdxl_models import (
+    DIFFUSERS_AVAILABLE,
+    IMAGE_MODEL_REGISTRY,
+    TORCH_AVAILABLE,
+    XFORMERS_AVAILABLE,
+    ImageModel,
+    ImageModelConfig,
+    get_default_image_model,
+    torch,
+)
+
+# Re-exports for backward compatibility. Callers + tests reach through
+# ``services.image_service`` for these; keep the surface stable during
+# Phase G so the cutover can ship incrementally.
+__all__ = [
+    "DIFFUSERS_AVAILABLE",
+    "FeaturedImageMetadata",
+    "IMAGE_MODEL_REGISTRY",
+    "ImageModel",
+    "ImageModelConfig",
+    "ImageService",
+    "TORCH_AVAILABLE",
+    "XFORMERS_AVAILABLE",
+    "get_default_image_model",
+    "get_image_service",
+    "torch",
+]
 
 
 def _write_image_bytes(path: str, content: bytes) -> None:
@@ -49,6 +77,7 @@ def _write_image_bytes(path: str, content: bytes) -> None:
     with open(path, "wb") as f:
         f.write(content)
 
+
 try:
     import httpx
 
@@ -56,111 +85,7 @@ try:
 except ImportError:
     HTTPX_AVAILABLE = False
 
-try:
-    import torch
-
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-
-# Diffusers pipelines — imported lazily per model type
-DIFFUSERS_AVAILABLE = False
-try:
-    from diffusers import StableDiffusionXLPipeline
-
-    DIFFUSERS_AVAILABLE = True
-except (ImportError, RuntimeError) as e:
-    StableDiffusionXLPipeline = None
-    _import_logger.warning("Diffusers library not available: %s", e)
-
-# Optional optimization packages. find_spec instead of try/import —
-# lets us probe availability without holding a reference to the module
-# we never call (ruff F401). E402 suppressed because this deliberately
-# lives below the try/except ImportError block that provisions the
-# diffusers fallback.
-from importlib.util import find_spec as _find_spec  # noqa: E402
-
-XFORMERS_AVAILABLE = _find_spec("xformers") is not None
-
 logger = get_logger(__name__)
-
-
-# =============================================================================
-# IMAGE MODEL REGISTRY
-# =============================================================================
-
-
-class ImageModel(str, Enum):
-    """Available image generation models."""
-
-    SDXL_BASE = "sdxl_base"
-    SDXL_LIGHTNING = "sdxl_lightning"
-    FLUX_SCHNELL = "flux_schnell"
-
-
-@dataclass(frozen=True)
-class ImageModelConfig:
-    """Configuration for an image generation model."""
-
-    model_id: str
-    display_name: str
-    default_steps: int
-    default_guidance_scale: float
-    pipeline_class: str  # dotted import path within diffusers
-    lora_repo: str | None = None
-    lora_weight_name: str | None = None
-    scheduler_override: str | None = None  # e.g. "EulerDiscreteScheduler"
-    scheduler_kwargs: dict[str, Any] | None = None
-    torch_dtype_str: str = "float16"  # "float16" or "bfloat16"
-    vram_gb: float = 6.0
-    notes: str = ""
-
-
-IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
-    ImageModel.SDXL_BASE: ImageModelConfig(
-        model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        display_name="SDXL Base",
-        default_steps=30,
-        default_guidance_scale=7.5,
-        pipeline_class="diffusers.StableDiffusionXLPipeline",
-        vram_gb=6.5,
-        notes="Original SDXL, high quality at 30-50 steps",
-    ),
-    ImageModel.SDXL_LIGHTNING: ImageModelConfig(
-        model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        display_name="SDXL Lightning",
-        default_steps=4,
-        default_guidance_scale=0.0,
-        pipeline_class="diffusers.StableDiffusionXLPipeline",
-        lora_repo="ByteDance/SDXL-Lightning",
-        lora_weight_name="sdxl_lightning_4step_lora.safetensors",
-        scheduler_override="EulerDiscreteScheduler",
-        scheduler_kwargs={"timestep_spacing": "trailing"},
-        vram_gb=6.5,
-        notes="4-step distilled LoRA — 10x faster, great quality",
-    ),
-    ImageModel.FLUX_SCHNELL: ImageModelConfig(
-        model_id="black-forest-labs/FLUX.1-schnell",
-        display_name="Flux.1 Schnell",
-        default_steps=4,
-        default_guidance_scale=0.0,
-        pipeline_class="diffusers.FluxPipeline",
-        torch_dtype_str="bfloat16",
-        vram_gb=12.0,
-        notes="Best quality, needs ~12GB VRAM",
-    ),
-}
-
-
-def get_default_image_model() -> ImageModel:
-    """Get the default image model from config or fallback."""
-    from services.site_config import site_config
-    model_name = site_config.get("image_model", "sdxl_lightning")
-    try:
-        return ImageModel(model_name)
-    except ValueError:
-        logger.warning("Unknown IMAGE_MODEL '%s', falling back to sdxl_lightning", model_name)
-        return ImageModel.SDXL_LIGHTNING
 
 
 class FeaturedImageMetadata:
