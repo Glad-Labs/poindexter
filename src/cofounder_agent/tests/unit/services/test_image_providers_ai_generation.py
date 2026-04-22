@@ -136,21 +136,19 @@ class TestBuildSDXLPrompt:
         ctx.__aenter__ = AsyncMock(return_value=client)
         ctx.__aexit__ = AsyncMock(return_value=False)
 
-        with patch(
-            "services.site_config.site_config.get",
-            return_value="http://ollama",
-        ), \
-             patch("httpx.AsyncClient", return_value=ctx):
-            result = await _build_sdxl_prompt("A post title", "llama3:latest")
+        # Phase H step 5 (GH#95): _build_sdxl_prompt takes site_config
+        # as a required arg instead of reaching for the module singleton.
+        from types import SimpleNamespace
+        sc = SimpleNamespace(get=lambda _k, _d=None: "http://ollama")
+        with patch("httpx.AsyncClient", return_value=ctx):
+            result = await _build_sdxl_prompt("A post title", "llama3:latest", sc)
         assert "photoreal" in result
 
     async def test_ollama_failure_returns_fallback(self):
-        with patch(
-            "services.site_config.site_config.get",
-            return_value="http://ollama",
-        ), \
-             patch("httpx.AsyncClient", side_effect=RuntimeError("boom")):
-            result = await _build_sdxl_prompt("X", "llama3:latest")
+        from types import SimpleNamespace
+        sc = SimpleNamespace(get=lambda _k, _d=None: "http://ollama")
+        with patch("httpx.AsyncClient", side_effect=RuntimeError("boom")):
+            result = await _build_sdxl_prompt("X", "llama3:latest", sc)
         assert "photorealistic scene related to X" in result
 
     async def test_short_response_falls_back(self):
@@ -164,10 +162,8 @@ class TestBuildSDXLPrompt:
         ctx.__aenter__ = AsyncMock(return_value=client)
         ctx.__aexit__ = AsyncMock(return_value=False)
 
-        with patch(
-            "services.site_config.site_config.get",
-            return_value="http://ollama",
-        ), \
-             patch("httpx.AsyncClient", return_value=ctx):
-            result = await _build_sdxl_prompt("My blog post", "llama3:latest")
+        from types import SimpleNamespace
+        sc = SimpleNamespace(get=lambda _k, _d=None: "http://ollama")
+        with patch("httpx.AsyncClient", return_value=ctx):
+            result = await _build_sdxl_prompt("My blog post", "llama3:latest", sc)
         assert "photorealistic scene" in result  # fell back

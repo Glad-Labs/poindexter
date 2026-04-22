@@ -574,35 +574,49 @@ class TestImageModelRegistry:
 
 @pytest.mark.unit
 class TestGetDefaultImageModel:
+    # Phase H step 5 (GH#95): get_default_image_model now takes an
+    # optional site_config. Tests pass a fresh SiteConfig so env-var
+    # precedence still applies.
+    def _sc(self):
+        from services.site_config import SiteConfig
+        return SiteConfig()
+
     def test_returns_sdxl_lightning_when_env_not_set(self, monkeypatch):
         monkeypatch.delenv("IMAGE_MODEL", raising=False)
-        result = get_default_image_model()
+        result = get_default_image_model(self._sc())
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_returns_sdxl_base_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "sdxl_base")
-        result = get_default_image_model()
+        result = get_default_image_model(self._sc())
         assert result is ImageModel.SDXL_BASE
 
     def test_returns_flux_schnell_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "flux_schnell")
-        result = get_default_image_model()
+        result = get_default_image_model(self._sc())
         assert result is ImageModel.FLUX_SCHNELL
 
     def test_returns_sdxl_lightning_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "sdxl_lightning")
-        result = get_default_image_model()
+        result = get_default_image_model(self._sc())
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_falls_back_on_invalid_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "nonexistent_model_xyz")
-        result = get_default_image_model()
+        result = get_default_image_model(self._sc())
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_falls_back_on_empty_string_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "")
-        result = get_default_image_model()
+        result = get_default_image_model(self._sc())
         assert result is ImageModel.SDXL_LIGHTNING
+
+    def test_returns_sdxl_lightning_when_no_site_config_passed(self):
+        # Provider-level fallback: when the dispatcher hasn't seeded
+        # site_config into the config dict yet, callers can invoke
+        # get_default_image_model() with None and get a safe default.
+        assert get_default_image_model() is ImageModel.SDXL_LIGHTNING
+        assert get_default_image_model(None) is ImageModel.SDXL_LIGHTNING
 
 
 # ---------------------------------------------------------------------------
