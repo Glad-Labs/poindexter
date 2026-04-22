@@ -318,7 +318,9 @@ class MultiModelQA:
         reviews: list[ReviewerResult] = []
 
         # 1. Programmatic validation (always runs, fast, deterministic)
-        validation = validate_content(title, content, topic)
+        validation = validate_content(
+            title, content, topic, site_config=self._site_config,
+        )
         validator_review = ReviewerResult(
             reviewer="programmatic_validator",
             approved=validation.passed,
@@ -427,7 +429,9 @@ class MultiModelQA:
         # citations is rewarded with a score bonus (carrot, not stick).
         try:
             from services.content_validator import verify_content_urls
-            url_issues = await verify_content_urls(content)
+            url_issues = await verify_content_urls(
+                content, site_config=self._site_config,
+            )
             dead_links = [i for i in url_issues if i.category == "dead_link"]
 
             if dead_links:
