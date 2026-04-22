@@ -523,6 +523,14 @@ class TestParseModelPreferences:
 class TestCheckTitleOriginality:
     """Tests for title originality checking via web search."""
 
+    @staticmethod
+    def _mock_sc(enabled: bool = True, threshold: float = 0.6) -> MagicMock:
+        """Build a site_config mock matching the check_title_originality contract."""
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = threshold
+        mock_cfg.get_bool.return_value = enabled
+        return mock_cfg
+
     @pytest.mark.asyncio
     async def test_original_title_passes(self):
         """Title with no web matches should be marked original."""
@@ -530,12 +538,10 @@ class TestCheckTitleOriginality:
         mock_researcher.search_simple = AsyncMock(return_value=[])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.site_config.site_config") as mock_cfg:
-                mock_cfg.get_float.return_value = 0.6
-                mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality(
-                    "A Completely Unique Title Nobody Has Written"
-                )
+            result = await _check_title_originality(
+                "A Completely Unique Title Nobody Has Written",
+                site_config=self._mock_sc(),
+            )
 
         assert result["is_original"] is True
         assert result["similar_titles"] == []
@@ -550,12 +556,10 @@ class TestCheckTitleOriginality:
         ])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.site_config.site_config") as mock_cfg:
-                mock_cfg.get_float.return_value = 0.6
-                mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality(
-                    "How AI Is Changing Healthcare in 2026"
-                )
+            result = await _check_title_originality(
+                "How AI Is Changing Healthcare in 2026",
+                site_config=self._mock_sc(),
+            )
 
         assert result["is_original"] is False
         assert len(result["similar_titles"]) >= 1
@@ -564,10 +568,9 @@ class TestCheckTitleOriginality:
     @pytest.mark.asyncio
     async def test_disabled_returns_original(self):
         """When disabled via config, should always return original."""
-        with patch("services.site_config.site_config") as mock_cfg:
-            mock_cfg.get_float.return_value = 0.6
-            mock_cfg.get_bool.return_value = False
-            result = await _check_title_originality("Any Title")
+        result = await _check_title_originality(
+            "Any Title", site_config=self._mock_sc(enabled=False),
+        )
 
         assert result["is_original"] is True
 
@@ -578,10 +581,9 @@ class TestCheckTitleOriginality:
         mock_researcher.search_simple = AsyncMock(side_effect=Exception("Network error"))
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.site_config.site_config") as mock_cfg:
-                mock_cfg.get_float.return_value = 0.6
-                mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality("Test Title")
+            result = await _check_title_originality(
+                "Test Title", site_config=self._mock_sc(),
+            )
 
         assert result["is_original"] is True
 
@@ -594,12 +596,10 @@ class TestCheckTitleOriginality:
         ])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.site_config.site_config") as mock_cfg:
-                mock_cfg.get_float.return_value = 0.6
-                mock_cfg.get_bool.return_value = True
-                result = await _check_title_originality(
-                    "Understanding GPU Architecture for ML Workloads"
-                )
+            result = await _check_title_originality(
+                "Understanding GPU Architecture for ML Workloads",
+                site_config=self._mock_sc(),
+            )
 
         assert result["is_original"] is True
 
