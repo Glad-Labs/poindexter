@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -38,7 +38,7 @@ class _ThrottleState:
     active: bool = False
     # monotonic() timestamp when the current throttled interval began,
     # or None when we are not currently throttled.
-    active_since_ts: Optional[float] = None
+    active_since_ts: float | None = None
     # Cumulative seconds spent throttled across all intervals since boot.
     total_seconds: float = 0.0
     # Last observed queue size and limit — surfaced to operators for
@@ -47,7 +47,7 @@ class _ThrottleState:
     last_queue_limit: int = 0
     # Wall-clock timestamp of last check — used by /api/prometheus to
     # freshness-stamp the gauge even if no check has been done yet.
-    last_check_monotonic: Optional[float] = None
+    last_check_monotonic: float | None = None
 
 
 # Module-level singleton. Tests reset via ``reset_for_tests``.

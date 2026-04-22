@@ -171,8 +171,8 @@ class GPUScheduler:
         # reference; resolve via brain.bootstrap so it works the same in
         # worker + test environments.
         try:
-            from brain.bootstrap import resolve_database_url
             import asyncpg
+            from brain.bootstrap import resolve_database_url
         except Exception:
             return
         dsn = resolve_database_url()

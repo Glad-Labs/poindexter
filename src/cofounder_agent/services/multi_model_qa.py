@@ -993,7 +993,8 @@ class MultiModelQA:
 
         try:
             from services.citation_verifier import (
-                verify_citations, verdict_from_report,
+                verdict_from_report,
+                verify_citations,
             )
             report = await verify_citations(
                 content,

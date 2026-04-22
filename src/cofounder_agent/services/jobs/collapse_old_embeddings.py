@@ -58,8 +58,9 @@ import json
 import logging
 import math
 import random
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 from plugins.job import JobResult
 
