@@ -18,11 +18,11 @@ import asyncio
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -40,19 +40,26 @@ def _write_bytes(path: str, content: bytes) -> None:
         f.write(content)
 
 
-def _video_server_url() -> str:
+def _video_server_url(site_config: Any) -> str:
     """Resolve VIDEO_SERVER_URL from site_config per-call.
 
     Previously captured at module-import time. Since this module
     imports before site_config.load() completes, the cached value was
     always the hardcoded default — changing video_server_url in
     app_settings had no effect until worker restart.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     return site_config.get("video_server_url", "http://host.docker.internal:9837")
 
 
-def _sdxl_server_url() -> str:
-    """Resolve SDXL_SERVER_URL from site_config per-call (same rationale)."""
+def _sdxl_server_url(site_config: Any) -> str:
+    """Resolve SDXL_SERVER_URL from site_config per-call (same rationale).
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+    """
     return site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
 
 
@@ -68,12 +75,18 @@ class VideoResult:
 
 
 async def _generate_images_for_video(
-    title: str, content: str, num_images: int = 4
+    title: str, content: str, num_images: int = 4, *, site_config: Any,
 ) -> list[str]:
     """Generate SDXL images for the video slideshow.
 
     Uses Ollama to create topic-specific prompts, then SDXL to generate images.
     Returns list of local file paths to generated images.
+
+    Args:
+        title: Post title for prompt seed.
+        content: Post content for prompt context.
+        num_images: Target image count.
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     # Use llama3 for prompt generation — some models (glm, qwen thinking mode) return empty
@@ -131,12 +144,13 @@ async def _generate_images_for_video(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("[VIDEO] Generating %d SDXL images from %d prompts", len(prompts), len(prompts))
+    sdxl_url = _sdxl_server_url(site_config)
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
         for i, prompt in enumerate(prompts):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{_sdxl_server_url()}/generate",
+                    f"{sdxl_url}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         "steps": 4, "guidance_scale": 1.0,
@@ -201,10 +215,16 @@ async def _extract_images_from_content(content: str) -> list[str]:
     return image_paths
 
 
-async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
+async def _generate_images_from_scenes(
+    scenes: list[str], *, site_config: Any,
+) -> list[str]:
     """Generate SDXL images from pre-generated scene descriptions.
 
     Skips Ollama prompt generation since scenes are already written.
+
+    Args:
+        scenes: Pre-generated scene prompts.
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     neg = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
     output_dir = VIDEO_DIR / "frames"
@@ -212,12 +232,13 @@ async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
     image_paths = []
 
     logger.info("[VIDEO] Generating %d SDXL images from pre-generated scenes", len(scenes))
+    sdxl_url = _sdxl_server_url(site_config)
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
         for i, prompt in enumerate(scenes):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{_sdxl_server_url()}/generate",
+                    f"{sdxl_url}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         "steps": 4, "guidance_scale": 1.0,
@@ -245,6 +266,8 @@ async def generate_video_for_post(
     podcast_path: str | None = None,
     force: bool = False,
     pre_generated_scenes: list[str] | None = None,
+    *,
+    site_config: Any,
 ) -> VideoResult:
     """Generate a video for a published post.
 
@@ -256,6 +279,8 @@ async def generate_video_for_post(
         content: Post content excerpt (context for image prompts).
         podcast_path: Path to podcast MP3 file. If None, checks default location.
         force: Regenerate even if video exists.
+        pre_generated_scenes: Optional pre-generated SDXL prompts.
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
 
     Returns:
         VideoResult with file path and duration info.
@@ -290,9 +315,13 @@ async def generate_video_for_post(
     new_images = []
     if supplement_count > 0:
         if pre_generated_scenes and len(pre_generated_scenes) >= 2:
-            new_images = await _generate_images_from_scenes(pre_generated_scenes[:supplement_count])
+            new_images = await _generate_images_from_scenes(
+                pre_generated_scenes[:supplement_count], site_config=site_config,
+            )
         else:
-            new_images = await _generate_images_for_video(title, content, num_images=supplement_count)
+            new_images = await _generate_images_for_video(
+                title, content, num_images=supplement_count, site_config=site_config,
+            )
 
     # Interleave: post image, new image, post image, new image...
     image_paths = []
@@ -319,9 +348,10 @@ async def generate_video_for_post(
 
     # Call video server with host-side file paths
     logger.info("[VIDEO] Rendering video (%d images + audio)", len(image_paths))
+    video_url = _video_server_url(site_config)
     try:
         async with httpx.AsyncClient(timeout=600) as client:
-            resp = await client.post(f"{_video_server_url()}/generate", json={
+            resp = await client.post(f"{video_url}/generate", json={
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
@@ -360,12 +390,18 @@ async def generate_video_for_post(
 
 
 async def _generate_short_summary_audio(
-    post_id: str, title: str, content: str,
+    post_id: str, title: str, content: str, *, site_config: Any,
 ) -> str | None:
     """Generate a 60-second summary TTS audio for the short-form video.
 
     Uses Ollama to write a tight ~150-word hook + key takeaways,
     then Edge TTS to convert to speech.
+
+    Args:
+        post_id: Post identifier (filename stem for the audio).
+        title: Post title for hook.
+        content: Post content.
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     model = "llama3:latest"
@@ -430,12 +466,24 @@ async def generate_short_video_for_post(
     pre_generated_scenes: list[str] | None = None,
     pre_generated_summary: str | None = None,
     force: bool = False,
+    *,
+    site_config: Any,
 ) -> VideoResult:
     """Generate a vertical short-form video (TikTok/YouTube Shorts).
 
     Generates a separate 60-second summary narration (not the full podcast).
     Uses post images + SDXL images for visuals.
     Output: 1080x1920 MP4, max 60 seconds.
+
+    Args:
+        post_id: Post identifier (filename stem).
+        title: Post title.
+        content: Post content excerpt.
+        podcast_path: Optional podcast MP3 path to fall back to.
+        pre_generated_scenes: Optional pre-generated SDXL prompts.
+        pre_generated_summary: Optional pre-generated summary script.
+        force: Regenerate even if file exists.
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     output_path = VIDEO_DIR / f"{post_id}-short.mp4"
@@ -467,7 +515,9 @@ async def generate_short_video_for_post(
             logger.warning("[SHORT] Pre-generated summary TTS failed: %s", e)
 
     if not short_audio:
-        short_audio = await _generate_short_summary_audio(post_id, title, content)
+        short_audio = await _generate_short_summary_audio(
+            post_id, title, content, site_config=site_config,
+        )
     if not short_audio:
         # Fall back to full podcast if summary generation fails
         if not podcast_path:
@@ -484,9 +534,13 @@ async def generate_short_video_for_post(
     new_images = []
     if supplement_count > 0:
         if pre_generated_scenes and len(pre_generated_scenes) >= 2:
-            new_images = await _generate_images_from_scenes(pre_generated_scenes[:supplement_count])
+            new_images = await _generate_images_from_scenes(
+                pre_generated_scenes[:supplement_count], site_config=site_config,
+            )
         else:
-            new_images = await _generate_images_for_video(title, content, num_images=supplement_count)
+            new_images = await _generate_images_for_video(
+                title, content, num_images=supplement_count, site_config=site_config,
+            )
 
     image_paths = (post_images + new_images)[:4]
 
@@ -501,9 +555,10 @@ async def generate_short_video_for_post(
     host_audio_path = _to_host_path(short_audio)
 
     logger.info("[SHORT] Rendering short video (%d images, summary audio)", len(image_paths))
+    video_url = _video_server_url(site_config)
     try:
         async with httpx.AsyncClient(timeout=300) as client:
-            resp = await client.post(f"{_video_server_url()}/generate-short", json={
+            resp = await client.post(f"{video_url}/generate-short", json={
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
@@ -542,13 +597,23 @@ async def generate_video_episode(
     title: str,
     content: str,
     *,
+    site_config: Any,
     pre_generated_scenes: list[str] | None = None,
 ) -> None:
-    """Fire-and-forget full-length video generation. Logs errors but never raises."""
+    """Fire-and-forget full-length video generation. Logs errors but never raises.
+
+    Args:
+        post_id: Post identifier.
+        title: Post title.
+        content: Post content.
+        site_config: SiteConfig instance (DI — Phase H, GH#95).
+        pre_generated_scenes: Optional pre-generated SDXL prompts.
+    """
     try:
         result = await generate_video_for_post(
             post_id, title, content,
             pre_generated_scenes=pre_generated_scenes,
+            site_config=site_config,
         )
         if not result.success:
             logger.warning("[VIDEO] Failed for post %s: %s", post_id, result.error)
