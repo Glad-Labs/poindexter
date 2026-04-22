@@ -20,7 +20,7 @@ from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 # Configure logging
 logger = get_logger(__name__)
@@ -265,6 +265,7 @@ async def create_task(
     task_request: UnifiedTaskRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """Unified task creation endpoint - routes to appropriate handler based on task_type.
@@ -302,6 +303,13 @@ async def create_task(
             )
         # Solo-operator: pass a dict with "id" for backward compat with handlers
         operator_user = {"id": "operator"}
+        # Blog handler needs site_config for the throttle check (Phase H).
+        # Other handlers ignore extra kwargs via signature inspection below;
+        # we pass it only to the blog handler to keep other signatures stable.
+        if task_request.task_type == "blog_post":
+            return await handler(
+                task_request, operator_user, db_service, site_config=site_config,
+            )
         return await handler(task_request, operator_user, db_service)
 
     except HTTPException:
@@ -320,9 +328,19 @@ async def create_task(
 
 
 async def _handle_blog_post_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest,
+    current_user: dict,
+    db_service: DatabaseService,
+    *,
+    site_config: Any = None,
 ) -> dict[str, Any]:
-    """Handle blog post task creation"""
+    """Handle blog post task creation.
+
+    ``site_config`` is kw-only and optional for back-compat with any in-tree
+    callers that haven't threaded it through yet; if omitted we fall back to
+    the module singleton. Phase H (GH#95) is migrating callers off that
+    fallback.
+    """
     task_id = str(uuid_lib.uuid4())
 
     # Log model selections (#952) so we can confirm user choices are applied
@@ -393,8 +411,16 @@ async def _handle_blog_post_creation(
     try:
         from services.pipeline_throttle import is_queue_full
 
+        # Phase H (GH#95): is_queue_full now requires site_config as an
+        # explicit parameter. Fall back to the module singleton only if the
+        # caller (older test path) didn't thread one in.
+        if site_config is None:
+            from services.site_config import site_config as _sc
+        else:
+            _sc = site_config
         queue_full, queue_position, queue_limit = await is_queue_full(
-            db_service.pool if db_service else None
+            db_service.pool if db_service else None,
+            _sc,
         )
     except Exception as e:
         logger.debug("[create_task] Throttle state check failed: %s", e)
