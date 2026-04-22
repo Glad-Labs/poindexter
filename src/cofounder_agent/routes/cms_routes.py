@@ -946,7 +946,10 @@ async def get_view_stats(
 
 
 @router.post("/api/export/rebuild", dependencies=[Depends(verify_api_token)])
-async def rebuild_static_export(db_service=Depends(get_database_dependency)):
+async def rebuild_static_export(
+    db_service=Depends(get_database_dependency),
+    site_config=Depends(get_site_config_dependency),
+):
     """Full rebuild of all static JSON files on CDN.
 
     Regenerates: posts index, individual post files, JSON feed,
@@ -956,7 +959,7 @@ async def rebuild_static_export(db_service=Depends(get_database_dependency)):
 
     try:
         from services.static_export_service import export_full_rebuild
-        result = await export_full_rebuild(pool)
+        result = await export_full_rebuild(pool, site_config)
         status_code = 200 if result.get("success") else 207
         return JSONResponse(content=result, status_code=status_code)
     except Exception as e:
