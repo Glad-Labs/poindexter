@@ -147,31 +147,22 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # Stash on app.state so routes + stages can Depends() it instead of
         # reaching into the module-level singleton (Gitea #242).
         try:
-            from services.site_config import site_config
             db_pool = services["database"].pool
-            loaded = await site_config.load(db_pool)
-            app.state.site_config = site_config
+            loaded = await _site_cfg.load(db_pool)
+            app.state.site_config = _site_cfg
             logger.info("[LIFESPAN] Site config loaded: %d settings from DB", loaded)
         except Exception as e:
             logger.warning("[LIFESPAN] Site config load failed (using env fallbacks): %s", e)
-            # Still attach the module singleton so Depends() works — it will
-            # fall back to env/defaults for misses until the DB is reachable.
-            try:
-                from services.site_config import site_config
-                app.state.site_config = site_config
-            except Exception:
-                app.state.site_config = None
+            # Attach the env-loaded instance so Depends() still works — it
+            # returns env/defaults for missed keys until the DB is reachable.
+            app.state.site_config = _site_cfg
 
         # Re-initialize observability stack now that site_config is loaded from
         # DB. Module-level setup() calls earlier saw empty values — this is the
         # first point where sentry_dsn / enable_pyroscope / enable_tracing are
         # actually populated. Each setup is guarded internally.
         try:
-            # main.py still reads the module singleton (pending its own
-            # Phase H migration); pass it through so sentry_integration no
-            # longer imports it at module scope.
-            from services.site_config import site_config as _sc
-            setup_sentry(app, _sc, service_name="cofounder-agent")
+            setup_sentry(app, _site_cfg, service_name="cofounder-agent")
         except Exception as e:
             logger.warning("[LIFESPAN] sentry re-init failed: %s", e)
         try:
@@ -396,9 +387,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
-# Late import — site_config depends on services/database_service which
-# can't load until config is ready above, which in turn pulls env vars.
-from services.site_config import site_config as _site_cfg  # noqa: E402
+# Phase H step 5 (GH#95): construct a fresh SiteConfig instance locally.
+# Pre-lifespan reads come from env/defaults; lifespan calls `.load(pool)`
+# on this same instance to pull DB values and then attaches it to
+# ``app.state.site_config`` for route handlers + DI.
+from services.site_config import SiteConfig  # noqa: E402
+_site_cfg = SiteConfig()
 
 _site_name = _site_cfg.get("site_name", "AI Content Pipeline")
 
@@ -446,7 +440,7 @@ Admin panel at `/admin`.
 try:
     from admin import setup_admin
 
-    setup_admin(app)
+    setup_admin(app, _site_cfg)
     logger.info("[ADMIN] SQLAdmin panel mounted at /admin")
 except Exception as e:
     logger.warning(f"[ADMIN] SQLAdmin not available: {e}")
@@ -472,8 +466,7 @@ register_exception_handlers(app)
 # its own Phase H migration); pass it through so sentry_integration no
 # longer imports it at module scope.
 try:
-    from services.site_config import site_config as _sc_module
-    setup_sentry(app, _sc_module, service_name="cofounder-agent")
+    setup_sentry(app, _site_cfg, service_name="cofounder-agent")
 except Exception as _e:
     logger.warning("[MODULE] sentry module-level init failed: %s", _e)
 
@@ -661,10 +654,11 @@ async def prometheus_metrics_canonical():
     # app.state.database is the DatabaseService; its .pool is the asyncpg pool.
     db_service = getattr(app.state, "database", None)
     pool = getattr(db_service, "pool", None) if db_service else None
-    # Ollama URL: read from app_settings via site_config if wired, else default
+    # Ollama URL: read from app_settings via app.state.site_config if wired,
+    # else fall back to the module-level _site_cfg (env/defaults only).
     try:
-        from services.site_config import site_config
-        ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+        sc = getattr(app.state, "site_config", None) or _site_cfg
+        ollama_url = sc.get("ollama_base_url", "http://host.docker.internal:11434")
     except Exception:
         ollama_url = "http://host.docker.internal:11434"
 
