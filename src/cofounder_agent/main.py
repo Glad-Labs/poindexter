@@ -170,6 +170,16 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         import services.site_config as _site_config_mod
         _site_config_mod.site_config = _site_cfg
 
+        # Phase H (GH#95): bind the GPU scheduler singleton to the
+        # DB-loaded site_config so its lock() / status() / _unload_sdxl()
+        # paths read DB-backed tunables (thresholds, nvidia_exporter_url,
+        # ollama_base_url) instead of module-level defaults.
+        try:
+            from services.gpu_scheduler import gpu as _gpu
+            _gpu.set_site_config(_site_cfg)
+        except Exception as e:
+            logger.warning("[LIFESPAN] gpu.set_site_config failed: %s", e)
+
         # Re-initialize observability stack now that site_config is loaded from
         # DB. Module-level setup() calls earlier saw empty values — this is the
         # first point where sentry_dsn / enable_pyroscope / enable_tracing are
@@ -200,7 +210,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
-        quality_service = UnifiedQualityService()
+        # Phase H (GH#95): thread site_config through ctor so pattern-
+        # based + LLM scorers don't import the module singleton.
+        quality_service = UnifiedQualityService(site_config=_site_cfg)
         service_container.register("quality", quality_service)
         logger.info("[LIFESPAN] ✅ Quality service initialized")
 
