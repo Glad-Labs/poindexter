@@ -625,10 +625,6 @@ async def publish_post_from_task(
     if queue_social:
         try:
             from services.social_poster import generate_and_distribute_social_posts
-            # publish_service still reads the module singleton pending
-            # its own Phase H migration; pass it through so social_poster
-            # no longer reaches for it at module scope.
-            from services.site_config import site_config as _sc
 
             _title = task.get("title") or task.get("topic") or post_title
             _seo_kw = seo_keywords
@@ -640,14 +636,14 @@ async def publish_post_from_task(
                         generate_and_distribute_social_posts,
                         title=_title, slug=slug,
                         excerpt=seo_description, keywords=_seo_kw,
-                        site_config=_sc,
+                        site_config=site_config,
                     )
                 else:
                     _spawn_background(
                         generate_and_distribute_social_posts(
                             title=_title, slug=slug,
                             excerpt=seo_description, keywords=_seo_kw,
-                            site_config=_sc,
+                            site_config=site_config,
                         ),
                         name=f"social_posts({slug})",
                     )
@@ -826,8 +822,8 @@ async def publish_post_from_task(
             # Give podcast/video/short generation time to complete
             _delay = int(site_config.get("media_r2_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
-            await upload_podcast_episode(pid, site_config=_scfg)
-            await upload_video_episode(pid, site_config=_scfg)
+            await upload_podcast_episode(pid, site_config=site_config)
+            await upload_video_episode(pid, site_config=site_config)
             # Upload short video if it exists
             short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}-short.mp4"
             if short_path.exists():
@@ -835,7 +831,7 @@ async def publish_post_from_task(
                     str(short_path),
                     f"video/{pid}-short.mp4",
                     "video/mp4",
-                    site_config=_scfg,
+                    site_config=site_config,
                 )
             # Regenerate public podcast RSS feed on R2
             try:
@@ -857,7 +853,7 @@ async def publish_post_from_task(
                         _feed_path,
                         "podcast/feed.xml",
                         "application/rss+xml",
-                        site_config=_scfg,
+                        site_config=site_config,
                     )
                     logger.info("[R2] Podcast RSS feed regenerated on CDN")
             except Exception as _e:
@@ -881,7 +877,7 @@ async def publish_post_from_task(
                         _feed_path,
                         "video/feed.xml",
                         "application/rss+xml",
-                        site_config=_scfg,
+                        site_config=site_config,
                     )
                     logger.info("[R2] Video RSS feed regenerated on CDN")
             except Exception as _e:
