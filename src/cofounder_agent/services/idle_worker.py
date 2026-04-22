@@ -2,9 +2,9 @@
 
 import time
 from contextlib import suppress
+from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -12,8 +12,19 @@ logger = get_logger(__name__)
 class IdleWorker:
     """Background maintenance tasks for when the pipeline is idle."""
 
-    def __init__(self, pool):
+    def __init__(self, pool, *, site_config: Any):
+        """Build an IdleWorker.
+
+        Args:
+            pool: asyncpg pool for DB access.
+            site_config: SiteConfig instance (DI — Phase H step 5, GH#95).
+                Must be passed explicitly — the module-level singleton
+                import was removed. Supply from ``app.state.site_config``
+                in production, or a ``SiteConfig(initial_config={...})``
+                per-test instance in unit tests.
+        """
         self.pool = pool
+        self._site_config = site_config
         self._last_run: dict[str, float] = {}
         self._schedules_loaded = False
 
@@ -146,9 +157,6 @@ class IdleWorker:
                 try:
                     from services.database_service import DatabaseService
                     from services.publish_service import publish_post_from_task
-                    # idle_worker still on the singleton pending Phase H
-                    # step 3 (jobs/scheduler DI wiring).
-                    from services.site_config import site_config as _sc
 
                     db = DatabaseService()
                     db._pool = self.pool
@@ -157,7 +165,7 @@ class IdleWorker:
                         continue
                     result = await publish_post_from_task(
                         db, task, str(task_id),
-                        site_config=_sc,
+                        site_config=self._site_config,
                         publisher="scheduled",
                         trigger_revalidation=True,
                         queue_social=True,
@@ -205,12 +213,10 @@ class IdleWorker:
         # into a full queue. See GH-89.
         try:
             from services.pipeline_throttle import is_queue_full
-            # Phase H (GH#95) transitional: idle_worker itself has not yet
-            # been migrated off the module singleton, so we re-import it here
-            # and pass it through. Future migration cleans this up.
-            from services.site_config import site_config as _sc
 
-            full, queue_size, queue_limit = await is_queue_full(self.pool, _sc)
+            full, queue_size, queue_limit = await is_queue_full(
+                self.pool, self._site_config
+            )
             if full:
                 return False, f"queue_full({queue_size}>={queue_limit})"
         except Exception as e:
@@ -302,7 +308,7 @@ class IdleWorker:
             streak_threshold = 3
 
         try:
-            _streak_h = site_config.get_int("topic_discovery_streak_window_hours", 6)
+            _streak_h = self._site_config.get_int("topic_discovery_streak_window_hours", 6)
             recent = await self.pool.fetch(
                 "SELECT status FROM content_tasks "
                 f"WHERE updated_at > NOW() - INTERVAL '{_streak_h} hours' "

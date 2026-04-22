@@ -335,7 +335,19 @@ class TaskExecutor:
                         from services.idle_worker import IdleWorker
                         if self.database_service and self.database_service.pool:
                             if not hasattr(self, '_idle_worker'):
-                                self._idle_worker = IdleWorker(self.database_service.pool)
+                                # Resolve site_config: ctor → app.state → module
+                                # singleton fallback (removed in Phase H step 5
+                                # final cleanup). Mirrors the ``site_config``
+                                # property above.
+                                _idle_sc = self.site_config
+                                if _idle_sc is None:
+                                    from services.site_config import (
+                                        site_config as _idle_sc,
+                                    )
+                                self._idle_worker = IdleWorker(
+                                    self.database_service.pool,
+                                    site_config=_idle_sc,
+                                )
                             await self._idle_worker.run_cycle()
                     except Exception as idle_err:
                         logger.debug("[TASK_EXEC_LOOP] Idle worker error (non-critical): %s", idle_err)
