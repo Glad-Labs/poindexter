@@ -227,6 +227,83 @@ Re-enable after the trend passes. Long-term fix: pgvector-based thematic dedup (
 
 ---
 
+## Approval rate drops to ~0% — every generated task lands in "rejected"
+
+**Symptom.** New blog-post tasks keep firing on schedule (hourly, per the content router cadence), they run to completion, but every single one comes back `status=rejected`. The Prometheus `NoPublishedPostsRecently` alert goes pending, then firing. `pipeline_reviews` shows the rejections concentrated under `reviewer=auto_curator` ("Quality score X below threshold 75.0") and `reviewer=multi_model_qa` ("programmatic_validator @ N: Unlinked citation — possible hallucinated reference"). No genuine operator intervention has changed in this window.
+
+**Root cause.** `app_settings.pipeline_writer_model` silently got flipped off the intended writer (`ollama/glm-4.7-5090:latest`) and onto a smaller budget-tier model like `ollama/gemma3:27b`. The content generator reads that key on every run via `services.ai_content_generator._resolve_model_list` (see `ai_content_generator.py` ~line 636) — **not** `model_role_writer`, which looks like a sibling setting but is orphaned and unused by the generator. With the weaker writer active the content hits fact-fabrication / citation-hallucination patterns that the anti-hallucination gates (`services/content_validator.py` `UNLINKED_CITATION_PATTERNS`, `HALLUCINATED_LINK_PATTERNS`) correctly kill.
+
+Once this flip is in place the approval rate stays at ~0–5% until the setting is reverted. The `pipeline_tasks.model_used` column reflects what was actually used (will show `gemma3:27b` during the bad window, `glm-4.7-5090:latest` before and after).
+
+**Debugging checks.**
+
+```sql
+-- Which model is the pipeline USING?
+SELECT key, value, updated_at FROM app_settings WHERE key = 'pipeline_writer_model';
+
+-- What model did recent tasks run under? Last successful-published vs current.
+SELECT DATE(created_at) AS day, model_used, COUNT(*) FROM pipeline_tasks
+WHERE created_at > NOW() - INTERVAL '14d' AND model_used IS NOT NULL
+GROUP BY day, model_used ORDER BY day DESC;
+
+-- Approval rate, day-by-day.
+SELECT DATE(created_at) AS day,
+       SUM(CASE WHEN decision='approved' THEN 1 ELSE 0 END) AS a,
+       SUM(CASE WHEN decision='rejected' THEN 1 ELSE 0 END) AS r
+FROM pipeline_reviews WHERE reviewer='auto_curator' AND created_at > NOW() - INTERVAL '14d'
+GROUP BY day ORDER BY day DESC;
+```
+
+**Fix.**
+
+```sql
+UPDATE app_settings SET value = 'ollama/glm-4.7-5090:latest', updated_at = NOW()
+WHERE key = 'pipeline_writer_model';
+```
+
+Write an `audit_log` row so the flip is traceable next time.
+
+**Thinking-model gotcha.** `glm-4.7-5090` is a thinking model — Ollama returns `message.content` AND `message.thinking`, where thinking can eat the full `num_predict` budget on short prompts. The generator already knows about this (see `_is_thinking = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))` and the `content_gen_token_mult_thinking` multiplier, default 7.0). If you're testing the model manually with a small `num_predict`, add `"think": false` to the payload or expect empty `content`.
+
+**Related.** Surfaced 2026-04-21. Writer flip happened 2026-04-11. Memory `feedback_model_selection.md` ("Use glm-4.7-5090 for writing"). Fixed via `app_settings` UPDATE + audit_log entry.
+
+---
+
+## Gitleaks CI starts reporting hundreds of "new" leaks right after a pre-commit scrub of `.gitleaks-baseline.json`
+
+**Symptom.** Gitea Actions Security job starts emitting `WRN leaks found: 286` (or similar — roughly the size of the baseline). Every finding IS already in `.gitleaks-baseline.json` — fingerprints match. Both the private and public gitleaks scans start failing loudly.
+
+**Root cause.** Gitleaks 8.x's baseline check does `findingsEqual()` which compares `Commit + File + Line + Author + Email + Secret + Match` — **any** field mismatch and the baseline entry is treated as absent. If you scrub the `Email` field in the baseline (say for a privacy sweep: "replace mattg@x with hello@x"), every commit in the actual git history still has the old email as author, so equality fails for all 285+ entries at once and they re-fire as new findings.
+
+The scanner isn't broken. It's working exactly as documented. The baseline is the artifact that changed.
+
+**Fix.** Revert the `Email` scrub in the baseline file. It's not a real privacy benefit — the email is already public in every commit's author metadata — and the baseline is excluded from the public-sync tree by `scripts/sync-to-github.sh` (so the "leak to the world" angle never applied). Keep the scrub on `pyproject.toml` authors and other non-baseline surfaces.
+
+**Verification after revert.** Gitleaks output drops from `leaks found: 286` back to `leaks found: 1` or similar — whatever genuinely-new findings exist post-baseline. Compare fingerprint sets:
+
+```python
+baseline_fps = {f"{e['Commit']}:{e['File']}:{e.get('RuleID',e['Description'])}:{e['StartLine']}"
+                for e in json.load(open('.gitleaks-baseline.json'))}
+log_fps = [l.split('Fingerprint:',1)[1].strip() for l in log.splitlines() if 'Fingerprint:' in l]
+# Expect most log fingerprints to already be in baseline_fps.
+```
+
+**Related.** Surfaced 2026-04-22. Regression from commit 8ef90218, fixed by commit 10c6f232.
+
+---
+
+## `scripts/sync-to-github.sh` leaves the repo stuck on a `github-sync-temp-*` branch
+
+**Symptom.** You run `bash scripts/sync-to-github.sh` and the GitHub push appears to succeed, but afterwards `git status` shows you on `github-sync-temp-NNN` with dozens of "untracked" files (CLAUDE.md, docs/, web/storefront/, infrastructure/grafana/dashboards/approval-queue.json, etc.). Next `git commit` or `git checkout` fails or behaves oddly. On the next run the script pushes fine again but also leaves you stuck — and now you have two stale temp branches.
+
+**Root cause.** Historical version of the script ended with `git checkout "$BRANCH" 2>/dev/null && git branch -D "$TEMP_BRANCH" 2>/dev/null`. The temp branch's index has a ton of files removed via `git rm --cached` (they stay on disk — only the index entries were dropped). When the script tries to checkout main, git refuses because main's tree has those files tracked and considers the on-disk copies as "untracked" — refusing to overwrite them on a non-forced checkout. `2>/dev/null` hides the error, `set -e` exits the script, and `git branch -D` never runs. The repo is stranded on the temp.
+
+**Fix.** `git checkout -f main`, then `git branch -D github-sync-temp-<NNN>`. Safe because working-tree content matches main's tree content — only the index was different.
+
+**Permanent fix.** Script now uses `git checkout -f "$BRANCH"` and drops the `2>/dev/null` so any real error surfaces instead of silently stranding the repo. Fixed in commit 5cfe19d7.
+
+---
+
 ## How to add a new entry to this doc
 
 1. You hit an issue that took more than 10 minutes to diagnose.
