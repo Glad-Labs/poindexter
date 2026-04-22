@@ -111,6 +111,16 @@ class SourceFeaturedImageStage:
     ) -> StageResult:
         from services.image_service import get_image_service
 
+        # Phase H step 4.3 (GH#95): read site_config from the pipeline
+        # context instead of importing the module-level singleton. Falls
+        # back to the singleton when context doesn't carry one — removed
+        # in Phase H step 5 when the singleton is deleted.
+        _sc = context.get("site_config")
+        if _sc is None:
+            # Transitional fallback — removed in Phase H step 5 when the singleton
+            # is deleted.
+            from services.site_config import site_config as _sc
+
         topic = context.get("topic", "")
         tags = context.get("tags") or []
         generate_featured_image = bool(context.get("generate_featured_image", True))
@@ -152,6 +162,7 @@ class SourceFeaturedImageStage:
                 task_id=task_id,
                 on_style_picked=lambda s: updates.update({"image_style": s}),
                 style_tracker=style_tracker,
+                site_config=_sc,
             )
             if sdxl_image is not None:
                 stages["3_featured_image_found"] = True
@@ -231,20 +242,29 @@ async def _try_sdxl_featured(
     task_id: str | None,
     on_style_picked: Any,  # callable that records the chosen style
     style_tracker: Any,    # ImageStyleTracker instance
+    site_config: Any = None,
 ) -> GeneratedImage | None:
     """Full SDXL path: pick style → build prompt → render → upload to R2."""
-    from services.site_config import site_config
+    if site_config is None:
+        # Transitional fallback — removed in Phase H step 5 when the singleton
+        # is deleted.
+        from services.site_config import site_config as _singleton
+        site_config = _singleton
 
     try:
         negative = site_config.get("image_negative_prompt", DEFAULT_NEGATIVE)
         sdxl_prompt = existing_prompt
         if not sdxl_prompt:
-            sdxl_prompt = await _build_sdxl_prompt(topic, on_style_picked, style_tracker)
+            sdxl_prompt = await _build_sdxl_prompt(
+                topic, on_style_picked, style_tracker, site_config=site_config,
+            )
 
         sdxl_url = site_config.get(
             "sdxl_server_url", "http://host.docker.internal:9836",
         )
-        output_path = await _render_sdxl(sdxl_url, sdxl_prompt, negative, task_id=task_id)
+        output_path = await _render_sdxl(
+            sdxl_url, sdxl_prompt, negative, task_id=task_id, site_config=site_config,
+        )
         if output_path is None:
             return None
 
@@ -264,13 +284,18 @@ async def _build_sdxl_prompt(
     topic: str,
     on_style_picked: Any,
     style_tracker: Any,
+    site_config: Any = None,
 ) -> str:
     """Pick a rotation style + ask Ollama for an editorial prompt."""
-    from services.site_config import site_config
+    if site_config is None:
+        # Transitional fallback — removed in Phase H step 5 when the singleton
+        # is deleted.
+        from services.site_config import site_config as _singleton
+        site_config = _singleton
 
-    styles = _load_styles_from_settings() or list(DEFAULT_STYLES)
+    styles = _load_styles_from_settings(site_config=site_config) or list(DEFAULT_STYLES)
 
-    recent = await _load_recent_published_styles()
+    recent = await _load_recent_published_styles(site_config=site_config)
     mem_recent = style_tracker.recent()
     all_recent = set(recent) | set(mem_recent)
 
@@ -319,9 +344,13 @@ async def _build_sdxl_prompt(
         return f"{chosen_style}, {style_tags}, no text, no faces"
 
 
-def _load_styles_from_settings() -> list[tuple[str, str]]:
+def _load_styles_from_settings(site_config: Any = None) -> list[tuple[str, str]]:
     """Read app_settings.image_styles (JSON array of {scene, tags})."""
-    from services.site_config import site_config
+    if site_config is None:
+        # Transitional fallback — removed in Phase H step 5 when the singleton
+        # is deleted.
+        from services.site_config import site_config as _singleton
+        site_config = _singleton
     raw = site_config.get("image_styles", "")
     if not raw:
         return []
@@ -332,12 +361,16 @@ def _load_styles_from_settings() -> list[tuple[str, str]]:
     return [(s["scene"], s["tags"]) for s in parsed if "scene" in s and "tags" in s]
 
 
-async def _load_recent_published_styles() -> list[str]:
+async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
     """Fetch the 5 most-recently-published posts' image_style from metadata."""
     try:
         import asyncpg
 
-        from services.site_config import site_config as _sc
+        _sc = site_config
+        if _sc is None:
+            # Transitional fallback — removed in Phase H step 5 when the singleton
+            # is deleted.
+            from services.site_config import site_config as _sc
         cloud_url = _sc.get("database_url", "")
         if not cloud_url:
             return []
@@ -361,6 +394,7 @@ async def _render_sdxl(
     sdxl_prompt: str,
     negative_prompt: str,
     task_id: str | None = None,
+    site_config: Any = None,
 ) -> str | None:
     """Call the SDXL server and return the local path of the generated image."""
     from services.gpu_scheduler import gpu
@@ -386,12 +420,18 @@ async def _render_sdxl(
     if resp.status_code != 200:
         return None
 
-    return _resolve_sdxl_featured_response(resp)
+    return _resolve_sdxl_featured_response(resp, site_config=site_config)
 
 
-def _resolve_sdxl_featured_response(resp: httpx.Response) -> str | None:
+def _resolve_sdxl_featured_response(
+    resp: httpx.Response, site_config: Any = None,
+) -> str | None:
     """Decode the SDXL server's response to a local path."""
-    from services.site_config import site_config
+    if site_config is None:
+        # Transitional fallback — removed in Phase H step 5 when the singleton
+        # is deleted.
+        from services.site_config import site_config as _singleton
+        site_config = _singleton
 
     ct = resp.headers.get("content-type", "")
     if ct.startswith("application/json"):
