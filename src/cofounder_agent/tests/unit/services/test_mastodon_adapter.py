@@ -14,7 +14,6 @@ import pytest
 
 from services.social_adapters import mastodon as mastodon_adapter
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

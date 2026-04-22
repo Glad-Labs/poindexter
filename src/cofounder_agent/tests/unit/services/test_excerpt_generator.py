@@ -8,7 +8,6 @@ exists to produce a real 1-2 sentence teaser from the first prose
 paragraph.
 """
 
-import pytest
 
 from services.excerpt_generator import generate_excerpt
 

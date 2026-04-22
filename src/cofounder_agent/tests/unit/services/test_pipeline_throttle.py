@@ -10,8 +10,6 @@ Covers (per GH-89):
 - reset_for_tests clears module state between tests
 """
 
-import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

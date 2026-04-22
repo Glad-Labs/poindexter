@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import pytest
 
-
 pytestmark = [
     pytest.mark.integration_db,
     # Tests that consume session-scoped async fixtures need to run on

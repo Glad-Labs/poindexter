@@ -18,7 +18,6 @@ Coverage:
 
 from __future__ import annotations
 
-import json
 import sys
 import urllib.error
 from io import BytesIO
@@ -38,7 +37,6 @@ if str(_BRAIN_DIR) not in sys.path:
     sys.path.insert(0, str(_BRAIN_DIR))
 
 from brain import alert_sync as asx  # noqa: E402
-
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #

@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import json
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 
 def _repo_root() -> Path:
