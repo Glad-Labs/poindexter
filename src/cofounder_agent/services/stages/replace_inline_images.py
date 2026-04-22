@@ -106,6 +106,17 @@ class ReplaceInlineImagesStage:
         image_service = context.get("image_service") or get_image_service()
         category = context.get("category", "technology")
 
+        # Phase H step 4.3 (#95): read site_config from the pipeline
+        # context threaded in by content_router_service. Fall back to
+        # the module singleton for callers that haven't migrated yet —
+        # fallback is removed in Phase H step 5 when the singleton is
+        # deleted.
+        _sc = context.get("site_config")
+        if _sc is None:
+            # Transitional fallback — removed in Phase H step 5 when the
+            # singleton is deleted.
+            from services.site_config import site_config as _sc
+
         if not content_text:
             return StageResult(
                 ok=True,
@@ -159,6 +170,7 @@ class ReplaceInlineImagesStage:
                 content_text=content_text,
                 image_service=image_service,
                 used_image_ids=used_image_ids,
+                site_config=_sc,
             )
 
         content_text = _cleanup_leaked_descriptions(content_text)
@@ -277,10 +289,10 @@ async def _resolve_one_placeholder(
     content_text: str,
     image_service: Any,
     used_image_ids: set[str],
+    site_config: Any,
 ) -> str:
     """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it."""
     from services.alt_text import sanitize_alt_text
-    from services.site_config import site_config as _sc_alt
     search_query = desc.strip() if desc else topic
     alt_text = desc.strip() if desc else f"{topic} illustration"
     # Normalize structural artefacts of the placeholder format.
@@ -290,11 +302,11 @@ async def _resolve_one_placeholder(
     # DB-configurable budget with word-boundary truncation (no mid-word chop).
     alt_text = sanitize_alt_text(
         alt_text,
-        budget=_sc_alt.get_int("alt_text_budget", 120),
+        budget=site_config.get_int("alt_text_budget", 120),
     )
 
     # Strategy 1: SDXL.
-    img_url = await _try_sdxl(num, search_query, topic)
+    img_url = await _try_sdxl(num, search_query, topic, site_config=site_config)
     if img_url and img_url not in used_image_ids:
         used_image_ids.add(img_url)
         content_text = _inject_html_image(
@@ -327,10 +339,15 @@ async def _resolve_one_placeholder(
     return content_text
 
 
-async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
+async def _try_sdxl(
+    num: str,
+    search_query: str,
+    topic: str,
+    *,
+    site_config: Any,
+) -> str | None:
     """Generate an SDXL image and return its final URL (R2 or local)."""
     from services.gpu_scheduler import gpu
-    from services.site_config import site_config
 
     try:
         sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
@@ -376,7 +393,7 @@ async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
             logger.warning("  [IMAGE-%s] SDXL returned %s", num, img_resp.status_code)
             return None
 
-        tmp_path = _resolve_sdxl_response(img_resp)
+        tmp_path = _resolve_sdxl_response(img_resp, site_config=site_config)
         logger.info("  [IMAGE-%s] SDXL generated: %s", num, os.path.basename(tmp_path))
 
         # Step 3: R2 upload, with local-path fallback.
@@ -386,7 +403,7 @@ async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
         return None
 
 
-def _resolve_sdxl_response(img_resp: httpx.Response) -> str:
+def _resolve_sdxl_response(img_resp: httpx.Response, *, site_config: Any) -> str:
     """Decode the SDXL server's response to a local image path.
 
     The server either:
@@ -398,8 +415,6 @@ def _resolve_sdxl_response(img_resp: httpx.Response) -> str:
     Raises RuntimeError on any other response shape or if the returned
     path escapes the allowed directories (path traversal guard).
     """
-    from services.site_config import site_config
-
     ct = img_resp.headers.get("content-type", "")
     if ct.startswith("application/json"):
         data = img_resp.json()
