@@ -65,14 +65,6 @@ class GenerateContentStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        # Phase H (GH#95): site_config is seeded on the pipeline context
-        # by content_router_service. Resolve it up-front so the whole
-        # execute() body has access. Transitional fallback to the module
-        # singleton for tests that build their own context dict.
-        _sc = context.get("site_config")
-        if _sc is None:
-            from services.site_config import site_config as _sc
-
         # Late imports — these helpers live in the legacy god-file and
         # form a cluster that's still being decomposed. Import-at-call
         # sidesteps any circular-import risk with content_router_service
@@ -107,6 +99,11 @@ class GenerateContentStage:
                 detail="context missing task_id or database_service",
             )
 
+        # Phase H (GH#95): site_config is seeded on the pipeline context
+        # by content_router_service. Tests build context dicts with the
+        # fake site_config wired in explicitly.
+        _sc = context["site_config"]
+
         logger.info("STAGE 2: Generating blog content...")
 
         # Phase H (GH#95): thread site_config through the factory so the
@@ -124,6 +121,7 @@ class GenerateContentStage:
         # built context, then RAG-from-pgvector.
         research_context = await self._collect_research_context(
             database_service, task_id, topic,
+            site_config=_sc,
             source_tags=context.get("tags") or [],
             source_category=context.get("category") or "",
         )
@@ -235,11 +233,6 @@ class GenerateContentStage:
         # Writer self-review pass (opt-in via enable_writer_self_review).
         if _self_review_enabled(_sc):
             try:
-                # generate_content stage hasn't migrated away from the
-                # singleton yet (pending its own Phase H pass); pass it
-                # through so self_review no longer imports the singleton
-                # at module scope.
-                from services.site_config import site_config as _sc
                 revised, sr_meta = await _self_review_and_revise(
                     content_text, title, topic, _sc,
                 )
@@ -345,6 +338,7 @@ class GenerateContentStage:
         database_service: Any,
         task_id: str,
         topic: str,
+        site_config: Any,
         source_tags: list[str] | None = None,
         source_category: str | None = None,
     ) -> str:
@@ -372,14 +366,9 @@ class GenerateContentStage:
         # 2. ResearchService auto-built context.
         try:
             from services.research_service import ResearchService
-            # Content-pipeline stages don't receive site_config via DI
-            # yet — use a transitional module-singleton import at the
-            # call site until stage fn signatures migrate (pending Phase
-            # H follow-up). GH#95.
-            from services.site_config import site_config as _sc
             research_svc = ResearchService(
                 pool=database_service.pool if database_service else None,
-                site_config=_sc,
+                site_config=site_config,
             )
             auto = await research_svc.build_context(topic)
             if auto:
@@ -481,18 +470,15 @@ def _extract_caller_research(task_row: dict[str, Any]) -> str:
     )
 
 
-def _self_review_enabled(site_config: Any = None) -> bool:
+def _self_review_enabled(site_config: Any) -> bool:
     """Read the ``enable_writer_self_review`` feature flag from site_config.
 
     ``site_config`` is the config object threaded through the pipeline
-    context (Phase H step 4). When None, falls back to the module-level
-    singleton for backward compatibility — removed in step 5.
+    context (Phase H step 4). Required — the caller must pass the config
+    wired onto the context dict.
     """
     try:
-        cfg = site_config
-        if cfg is None:
-            from services.site_config import site_config as cfg
-        raw = cfg.get("enable_writer_self_review", "true")
+        raw = site_config.get("enable_writer_self_review", "true")
         return str(raw).lower() in ("true", "1", "yes")
     except Exception:
         return True

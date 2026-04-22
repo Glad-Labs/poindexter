@@ -96,18 +96,20 @@ class TestSelfReviewEnabled:
         ("false", False), ("no", False), ("0", False), ("", False),
     ])
     def test_parses_flag(self, raw: str, expected: bool):
-        # Phase H step 4.3: site_config is passed explicitly rather than
-        # pulled from the module-level singleton.
+        # Phase H step 5 (GH#95): site_config is required — stage callers
+        # always pass it via the context dict.
         cfg = SimpleNamespace(get=lambda _k, _d: raw)
         assert _self_review_enabled(cfg) is expected
 
-    def test_falls_back_to_singleton_when_none(self):
-        # Transitional fallback — will be removed in Phase H step 5.
-        with patch(
-            "services.site_config.site_config",
-            SimpleNamespace(get=lambda _k, _d: "false"),
-        ):
-            assert _self_review_enabled(None) is False
+    def test_returns_true_on_malformed_config(self):
+        # Defensive: if .get raises (e.g. None-like config in a busted
+        # test fixture), fail open to enabled so we don't silently skip
+        # self-review in production.
+        class _Busted:
+            def get(self, *_args, **_kwargs):
+                raise RuntimeError("boom")
+
+        assert _self_review_enabled(_Busted()) is True
 
 
 # ---------------------------------------------------------------------------

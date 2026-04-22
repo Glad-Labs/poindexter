@@ -188,15 +188,10 @@ class CrossModelQAStage:
             except Exception:
                 settings_service = None
 
-        # Phase H step 4.3 (GH#95): site_config is threaded through the
-        # pipeline context (see content_router_service step 4.1). Fall
-        # back to the module singleton for callers that haven't migrated
-        # yet — removed in step 5 when the singleton is deleted.
-        _sc = context.get("site_config")
-        if _sc is None:
-            # Transitional fallback — removed in Phase H step 5 when the singleton
-            # is deleted.
-            from services.site_config import site_config as _sc
+        # Phase H step 5 (GH#95): site_config is seeded on the pipeline
+        # context by content_router_service. Tests build context dicts
+        # with the fake site_config wired in explicitly.
+        _sc = context["site_config"]
 
         qa = MultiModelQA(
             pool=pool, settings_service=settings_service, site_config=_sc,
@@ -492,7 +487,7 @@ async def _rewrite_draft(
     settings_service: Any,
     task_id: str,
     attempt: int,
-    site_config: Any = None,
+    site_config: Any,
 ) -> str | None:
     """Call the writer to fix flagged issues. Returns the new draft or None.
 
@@ -503,12 +498,6 @@ async def _rewrite_draft(
     """
     from plugins.registry import get_llm_providers
     from services.audit_log import audit_log_bg
-
-    if site_config is None:
-        # Transitional fallback — removed in Phase H step 5 when the singleton
-        # is deleted.
-        from services.site_config import site_config as _singleton
-        site_config = _singleton
 
     prompt = QA_AGGREGATE_REWRITE_PROMPT.format(
         title=title, issues_to_fix=issues_to_fix, content=content_text,
