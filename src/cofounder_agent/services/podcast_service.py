@@ -516,9 +516,14 @@ class PodcastService:
             len(script),
         )
 
-        # Rotate voice based on post_id hash for variety across episodes
+        # Rotate voice based on post_id hash for variety across episodes.
+        # usedforsecurity=False — MD5 here is "pick a stable index from this
+        # post_id", not an integrity check; bandit's B324 (weak-hash-for-
+        # security) is a false positive on this path.
         import hashlib
-        voice_index = int(hashlib.md5(post_id.encode()).hexdigest(), 16) % len(VOICE_POOL)
+        voice_index = int(
+            hashlib.md5(post_id.encode(), usedforsecurity=False).hexdigest(), 16,
+        ) % len(VOICE_POOL)
         selected_voice = VOICE_POOL[voice_index]
         # Try selected voice first, then remaining pool voices, then fallbacks
         remaining_pool = [v for v in VOICE_POOL if v != selected_voice]
