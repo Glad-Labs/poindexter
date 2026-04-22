@@ -416,17 +416,20 @@ class TestCheckTitleOriginalityIntegration:
             fail_open=False,
         )
 
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = 0.6
+        mock_cfg.get_bool.return_value = True
+
         with patch(
             "services.web_research.WebResearcher",
             return_value=mock_researcher,
         ), patch(
             "services.title_originality_external.check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
-        ), patch("services.site_config.site_config") as mock_cfg:
-            mock_cfg.get_float.return_value = 0.6
-            mock_cfg.get_bool.return_value = True
-
-            result = await check_title_originality("The Exact Title")
+        ):
+            result = await check_title_originality(
+                "The Exact Title", site_config=mock_cfg,
+            )
 
         assert result["is_original"] is False
         assert result["external_verbatim_match"] is True
@@ -447,17 +450,20 @@ class TestCheckTitleOriginalityIntegration:
             fail_open=True, fail_reason="rate_limited",
         )
 
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = 0.6
+        mock_cfg.get_bool.return_value = True
+
         with patch(
             "services.web_research.WebResearcher",
             return_value=mock_researcher,
         ), patch(
             "services.title_originality_external.check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
-        ), patch("services.site_config.site_config") as mock_cfg:
-            mock_cfg.get_float.return_value = 0.6
-            mock_cfg.get_bool.return_value = True
-
-            result = await check_title_originality("Some Title")
+        ):
+            result = await check_title_originality(
+                "Some Title", site_config=mock_cfg,
+            )
 
         assert result["is_original"] is True
         assert result["external_fail_open"] is True

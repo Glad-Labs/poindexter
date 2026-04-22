@@ -18,6 +18,7 @@ generate_content stage uses back-to-back:
 from __future__ import annotations
 
 import logging
+from typing import Any
 import re
 from difflib import SequenceMatcher
 
@@ -153,7 +154,7 @@ async def generate_canonical_title(
         return None
 
 
-async def check_title_originality(title: str) -> dict:
+async def check_title_originality(title: str, *, site_config: Any = None) -> dict:
     """Web-search the title; return similarity summary.
 
     Return shape::
@@ -196,8 +197,10 @@ async def check_title_originality(title: str) -> dict:
         "external_fail_open": False,
     }
 
+    if site_config is None:
+        from services.site_config import site_config as _default_sc
+        site_config = _default_sc
     try:
-        from services.site_config import site_config
         threshold = site_config.get_float("qa_title_similarity_threshold", 0.6)
         enabled = site_config.get_bool("qa_title_originality_enabled", True)
         if not enabled:
@@ -250,12 +253,7 @@ async def check_title_originality(title: str) -> dict:
         from services.title_originality_external import (
             check_external_title_duplicates,
         )
-        # Transitional: title_generation.py is itself still on the
-        # module singleton pending its own Phase H migration. Import
-        # locally at the call site and thread through so
-        # title_originality_external stays clean.
-        from services.site_config import site_config as _sc
-        ext = await check_external_title_duplicates(title, site_config=_sc)
+        ext = await check_external_title_duplicates(title, site_config=site_config)
         result["external_verbatim_match"] = ext.verbatim_match
         result["external_near_match"] = ext.near_match
         result["external_penalty"] = ext.penalty

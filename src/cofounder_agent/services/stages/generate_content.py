@@ -65,6 +65,14 @@ class GenerateContentStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
+        # Phase H (GH#95): site_config is seeded on the pipeline context
+        # by content_router_service. Resolve it up-front so the whole
+        # execute() body has access. Transitional fallback to the module
+        # singleton for tests that build their own context dict.
+        _sc = context.get("site_config")
+        if _sc is None:
+            from services.site_config import site_config as _sc
+
         # Late imports — these helpers live in the legacy god-file and
         # form a cluster that's still being decomposed. Import-at-call
         # sidesteps any circular-import risk with content_router_service
@@ -156,7 +164,7 @@ class GenerateContentStage:
         # Title originality: if the title collides with something on the
         # web, regenerate with a stronger avoidance list. Only take the
         # regenerated version if it's actually more original.
-        originality = await _check_title_originality(title)
+        originality = await _check_title_originality(title, site_config=_sc)
         if not originality["is_original"]:
             logger.warning(
                 "[TITLE] Title too similar to existing content — regenerating with stronger uniqueness prompt"
@@ -169,7 +177,7 @@ class GenerateContentStage:
                 existing_titles=avoid_list,
             )
             if title_v2:
-                originality_v2 = await _check_title_originality(title_v2)
+                originality_v2 = await _check_title_originality(title_v2, site_config=_sc)
                 # GH-87: prefer the regenerated title if it drops below
                 # either the internal-corpus similarity threshold OR the
                 # external-duplicate flag. Previously we only looked at
@@ -220,16 +228,6 @@ class GenerateContentStage:
         content_text = _strip_leaked_image_prompts(content_text)
 
         # Writer self-review pass (opt-in via enable_writer_self_review).
-        # Phase H step 4.3 (GH#95): read site_config from the pipeline
-        # context instead of reaching for the module-level singleton.
-        _sc = context.get("site_config")
-        if _sc is None:
-            # Transitional fallback — removed in Phase H step 5 when the
-            # singleton is deleted. Logs nothing because context always has
-            # site_config when invoked through process_content_generation_task
-            # (which is the only production caller). Tests that don't wire
-            # a context["site_config"] still work via this fallback.
-            from services.site_config import site_config as _sc
         if _self_review_enabled(_sc):
             try:
                 # generate_content stage hasn't migrated away from the
