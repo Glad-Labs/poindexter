@@ -54,6 +54,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+from typing import Any
 
 import httpx
 
@@ -151,11 +152,19 @@ def _cache_key(title: str) -> str:
     return collapsed
 
 
-def _cache_ttl_seconds() -> int:
-    """Read the TTL from app_settings; default 24h. Failures → 24h."""
+def _cache_ttl_seconds(site_config: Any) -> int:
+    """Read the TTL from app_settings; default 24h. Failures → 24h.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H). ``None`` falls
+            back to the 24h default so the cache works even if the
+            caller hasn't wired one.
+    """
     try:
-        from services.site_config import site_config
-        hours = site_config.get_int("title_originality_cache_ttl_hours", 24)
+        if site_config is None:
+            hours = 24
+        else:
+            hours = site_config.get_int("title_originality_cache_ttl_hours", 24)
     except Exception:
         hours = 24
     # Guardrail: never a non-positive TTL, never more than a week.
@@ -174,8 +183,10 @@ def _cache_lookup(key: str) -> ExternalOriginalityResult | None:
     return value
 
 
-def _cache_store(key: str, value: ExternalOriginalityResult) -> None:
-    _CACHE[key] = (time.time() + _cache_ttl_seconds(), value)
+def _cache_store(
+    key: str, value: ExternalOriginalityResult, site_config: Any,
+) -> None:
+    _CACHE[key] = (time.time() + _cache_ttl_seconds(site_config), value)
 
 
 # ---------------------------------------------------------------------------
@@ -308,16 +319,23 @@ def _parse_ddg_results(body: str, limit: int = 10) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def _read_settings() -> tuple[bool, int]:
-    """Return ``(enabled, penalty)`` with safe defaults on config failure."""
+def _read_settings(site_config: Any) -> tuple[bool, int]:
+    """Return ``(enabled, penalty)`` with safe defaults on config failure.
+
+    Args:
+        site_config: SiteConfig instance (DI — Phase H). ``None`` returns
+            the default enabled/penalty tuple.
+    """
     try:
-        from services.site_config import site_config
-        enabled = site_config.get_bool(
-            "title_originality_external_check_enabled", True,
-        )
-        penalty = site_config.get_int(
-            "title_originality_external_penalty", -50,
-        )
+        if site_config is None:
+            enabled, penalty = True, -50
+        else:
+            enabled = site_config.get_bool(
+                "title_originality_external_check_enabled", True,
+            )
+            penalty = site_config.get_int(
+                "title_originality_external_penalty", -50,
+            )
     except Exception:
         enabled, penalty = True, -50
     # Penalty is stored as a negative int in settings for human readability.
@@ -326,7 +344,11 @@ def _read_settings() -> tuple[bool, int]:
     return enabled, abs(int(penalty))
 
 
-async def check_external_title_duplicates(title: str) -> ExternalOriginalityResult:
+async def check_external_title_duplicates(
+    title: str,
+    *,
+    site_config: Any = None,
+) -> ExternalOriginalityResult:
     """Search DDG for the exact title; return a structured originality result.
 
     Flow:
@@ -342,11 +364,18 @@ async def check_external_title_duplicates(title: str) -> ExternalOriginalityResu
     Any failure in step 3 or 4 is treated as fail-open: we log + bump the
     Prometheus counter and return an all-zero result with ``fail_open=True``
     so the pipeline continues.
+
+    Args:
+        title: the probe title to search for.
+        site_config: SiteConfig instance (DI — Phase H). When ``None``,
+            the module defaults (enabled=True, penalty=-50, TTL=24h) are
+            used so the function stays callable from legacy code paths
+            during the rollout.
     """
     if not title or not title.strip():
         return ExternalOriginalityResult()
 
-    enabled, penalty = _read_settings()
+    enabled, penalty = _read_settings(site_config)
     if not enabled:
         logger.debug("[TITLE_ORIG_EXT] External check disabled via settings")
         return ExternalOriginalityResult()
@@ -407,7 +436,7 @@ async def check_external_title_duplicates(title: str) -> ExternalOriginalityResu
         matches=matches,
         fail_open=False,
     )
-    _cache_store(key, result)
+    _cache_store(key, result, site_config)
 
     if verbatim_match:
         logger.warning(

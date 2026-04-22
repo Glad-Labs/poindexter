@@ -250,7 +250,12 @@ async def check_title_originality(title: str) -> dict:
         from services.title_originality_external import (
             check_external_title_duplicates,
         )
-        ext = await check_external_title_duplicates(title)
+        # Transitional: title_generation.py is itself still on the
+        # module singleton pending its own Phase H migration. Import
+        # locally at the call site and thread through so
+        # title_originality_external stays clean.
+        from services.site_config import site_config as _sc
+        ext = await check_external_title_duplicates(title, site_config=_sc)
         result["external_verbatim_match"] = ext.verbatim_match
         result["external_near_match"] = ext.near_match
         result["external_penalty"] = ext.penalty

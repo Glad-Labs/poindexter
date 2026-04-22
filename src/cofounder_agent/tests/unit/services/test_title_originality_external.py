@@ -45,24 +45,33 @@ def _clear_originality_cache():
     clear_cache()
 
 
+def _mock_sc(*, enabled: bool = True, penalty: int = -50, ttl_hours: int = 24) -> MagicMock:
+    """Build a MagicMock shaped like SiteConfig for the originality check.
+
+    Post-Phase-H, ``check_external_title_duplicates`` takes ``site_config``
+    as a kw-only parameter instead of reading the module singleton. Tests
+    wire a purpose-built mock here rather than patching the module.
+    """
+    sc = MagicMock()
+    sc.get_bool.side_effect = lambda key, default=False: {
+        "title_originality_external_check_enabled": enabled,
+    }.get(key, default)
+    sc.get_int.side_effect = lambda key, default=0: {
+        "title_originality_external_penalty": penalty,
+        "title_originality_cache_ttl_hours": ttl_hours,
+    }.get(key, default)
+    return sc
+
+
 @pytest.fixture
 def _enabled_settings():
-    """Patch site_config so the feature is on with default penalty."""
-    with patch("services.site_config.site_config") as mock_cfg:
-        mock_cfg.get_bool.return_value = True
-        mock_cfg.get_int.side_effect = lambda key, default: {
-            "title_originality_external_penalty": -50,
-            "title_originality_cache_ttl_hours": 24,
-        }.get(key, default)
-        yield mock_cfg
+    """Return a SiteConfig mock with the feature enabled + default penalty."""
+    return _mock_sc(enabled=True, penalty=-50, ttl_hours=24)
 
 
 @pytest.fixture
 def _disabled_settings():
-    with patch("services.site_config.site_config") as mock_cfg:
-        mock_cfg.get_bool.return_value = False
-        mock_cfg.get_int.side_effect = lambda key, default: default
-        yield mock_cfg
+    return _mock_sc(enabled=False)
 
 
 def _fake_async_client(*, response=None, raise_exc=None):
@@ -183,7 +192,9 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
 
         assert result.verbatim_match is True
         assert result.near_match is False
@@ -205,7 +216,9 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
 
         # 0.835 lands in the near-match band: warning but no penalty.
         assert result.near_match is True
@@ -225,7 +238,9 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
 
         assert result.verbatim_match is False
         assert result.near_match is False
@@ -244,10 +259,14 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=fake_client,
         ) as mock_client_cls:
-            first = await check_external_title_duplicates(probe)
+            first = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
             # Second call (same title, different casing + trailing punct) —
             # should hit the cache, not call httpx again.
-            second = await check_external_title_duplicates("CACHE TEST TITLE!")
+            second = await check_external_title_duplicates(
+                "CACHE TEST TITLE!", site_config=_enabled_settings,
+            )
 
         assert first.verbatim_match is True
         assert second.verbatim_match is True
@@ -266,7 +285,9 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.TITLE_ORIGINALITY_FAIL_OPEN",
         ) as mock_counter:
             mock_counter.labels.return_value = mock_counter
-            result = await check_external_title_duplicates(probe)
+            result = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
 
         assert result.fail_open is True
         assert result.fail_reason == "rate_limited"
@@ -282,7 +303,9 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(raise_exc=httpx.TimeoutException("boom")),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
 
         assert result.fail_open is True
         assert result.fail_reason == "timeout"
@@ -299,7 +322,9 @@ class TestCheckExternalTitleDuplicates:
             "services.title_originality_external.httpx.AsyncClient",
             return_value=_fake_async_client(response=resp),
         ):
-            result = await check_external_title_duplicates(probe)
+            result = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
 
         assert result.fail_open is True
         assert result.fail_reason == "captcha"
@@ -321,8 +346,12 @@ class TestCheckExternalTitleDuplicates:
                 _fake_async_client(response=rate_limited),
                 _fake_async_client(response=ok_resp),
             ]
-            first = await check_external_title_duplicates(probe)
-            second = await check_external_title_duplicates(probe)
+            first = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
+            second = await check_external_title_duplicates(
+                probe, site_config=_enabled_settings,
+            )
 
         assert first.fail_open is True
         # Second call went back to the network (fail-open wasn't cached)
@@ -336,7 +365,9 @@ class TestCheckExternalTitleDuplicates:
         with patch(
             "services.title_originality_external.httpx.AsyncClient",
         ) as mock_cls:
-            result = await check_external_title_duplicates(probe)
+            result = await check_external_title_duplicates(
+                probe, site_config=_disabled_settings,
+            )
 
         assert result == ExternalOriginalityResult()
         assert mock_cls.call_count == 0
@@ -346,8 +377,12 @@ class TestCheckExternalTitleDuplicates:
         with patch(
             "services.title_originality_external.httpx.AsyncClient",
         ) as mock_cls:
-            result = await check_external_title_duplicates("")
-            result2 = await check_external_title_duplicates("   ")
+            result = await check_external_title_duplicates(
+                "", site_config=_enabled_settings,
+            )
+            result2 = await check_external_title_duplicates(
+                "   ", site_config=_enabled_settings,
+            )
 
         assert result.verbatim_match is False
         assert result2.verbatim_match is False
