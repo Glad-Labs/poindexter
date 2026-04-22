@@ -55,6 +55,9 @@ _JANITOR_TARGETS: list[tuple[str, str, int]] = [
     # "what did Claude/the agent decide before" semantic search path.
     ("brain_decisions", "created_at", 365),
     ("decision_log", "created_at", 365),
+    # post_performance snapshots grow ~N_posts per day; 180d is plenty
+    # of history for week-over-week comparisons without bloating forever.
+    ("post_performance", "measured_at", 180),
 ]
 
 
