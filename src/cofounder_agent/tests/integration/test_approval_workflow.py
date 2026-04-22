@@ -318,13 +318,17 @@ class TestRejectTaskFlow:
             data = self._reject(client, payload=payload).json()
         assert data["status"] == "rejected_retry"
 
-    def test_reject_without_revisions_sets_failed_status(self):
+    def test_reject_without_revisions_sets_rejected_final_status(self):
         db = _make_mock_db_for_reject()
         payload = {**REJECT_PAYLOAD, "allow_revisions": False}
         with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             data = self._reject(client, payload=payload).json()
-        assert data["status"] == "failed"
+        # routes/approval_routes.py:95 sets final_status = "rejected_final"
+        # when allow_revisions=False. The test's original assertion of
+        # "failed" predated that routing decision; updating here to match
+        # the current contract.
+        assert data["status"] == "rejected_final"
 
     def test_reject_response_includes_feedback(self):
         db = _make_mock_db_for_reject()

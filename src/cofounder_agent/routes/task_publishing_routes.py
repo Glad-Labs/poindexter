@@ -14,13 +14,13 @@ import os
 import re
 import uuid as uuid_lib
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from routes.task_routes import _check_task_ownership
 from schemas.model_converter import ModelConverter
 from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
@@ -31,6 +31,30 @@ from utils.route_utils import get_database_dependency, get_site_config_dependenc
 logger = get_logger(__name__)
 
 publishing_router = APIRouter(tags=["Task Publishing"])
+
+
+def _check_task_ownership(task: dict, current_user: Any) -> None:
+    """Ownership check — local copy to avoid circular import.
+
+    `routes.task_routes` imports `publishing_router` from this module (late
+    import at the bottom of task_routes.py). If this module imports
+    `_check_task_ownership` from `task_routes` at the top, Python enters
+    the circular-import trap: test files that `patch("routes.task_
+    publishing_routes._check_task_ownership")` fail with "module 'routes'
+    has no attribute 'task_publishing_routes'" because task_routes gets
+    partially initialized first.
+
+    Kept byte-identical to `task_routes._check_task_ownership` so behaviour
+    stays in lockstep. Moving it to a shared `utils/` module is the cleaner
+    long-term fix (GH#93 has room for it); duplicating here is the minimum
+    surgery to unstick the integration test suite today.
+    """
+    if isinstance(current_user, str):
+        return
+    task_owner = task.get("user_id")
+    request_user = current_user.get("id") if isinstance(current_user, dict) else None
+    if task_owner and request_user and str(task_owner) != str(request_user):
+        raise HTTPException(status_code=403, detail="Access denied")
 
 
 async def _embed_published_post(db_service: DatabaseService, post_dict: dict) -> None:
