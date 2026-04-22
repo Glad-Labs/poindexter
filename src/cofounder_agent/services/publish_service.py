@@ -900,8 +900,12 @@ async def publish_post_from_task(
         async def _send_newsletter(_pid: str, ptitle: str, pexcerpt: str, pslug: str) -> None:
             try:
                 from services.newsletter_service import send_post_newsletter
+                # publish_service still uses the module singleton pending
+                # its own Phase H migration; pass it through so
+                # newsletter_service no longer reaches for it at module scope.
+                from services.site_config import site_config as _sc
                 _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-                result = await send_post_newsletter(_pool, ptitle, pexcerpt, pslug)
+                result = await send_post_newsletter(_pool, ptitle, pexcerpt, pslug, _sc)
                 logger.info("[NEWSLETTER] Result: %s", result)
             except Exception as e:
                 logger.debug("[NEWSLETTER] Failed (non-fatal): %s", e)
