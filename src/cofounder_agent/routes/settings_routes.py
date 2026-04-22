@@ -376,3 +376,42 @@ async def toggle_setting_active(
         raise HTTPException(
             status_code=500, detail=f"Failed to toggle setting: {exc}"
         ) from exc
+
+
+@router.post(
+    "/reload",
+    summary="Force-reload the in-memory site_config cache from the DB",
+    responses={
+        200: {"description": "Reload succeeded; returns the new row count."},
+        500: {"description": "Reload failed — see logs for the underlying error."},
+    },
+)
+async def reload_site_config(
+    token: str = Depends(verify_api_token),  # noqa: ARG001 — token auth decorator
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """Refresh the in-memory site_config snapshot from `app_settings`.
+
+    Fixes the class of bugs filed as gitea#280: any UPDATE to `app_settings`
+    (via this route's own PUT endpoints, a SQL client, or the OpenClaw admin
+    UI) is invisible to the running worker until either a container restart
+    or this endpoint fires. The 60s periodic reload job (services/jobs/
+    reload_site_config.py) covers the background case; this endpoint exists
+    so interactive UIs can call it immediately after Save for a sub-second
+    turnaround.
+    """
+    from services.site_config import site_config
+
+    try:
+        count = await site_config.reload(db_service.pool)
+        logger.info("[settings_routes] site_config reloaded: %d keys", count)
+        return {
+            "reloaded": True,
+            "keys_loaded": count,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as exc:
+        logger.exception("[settings_routes] site_config reload failed")
+        raise HTTPException(
+            status_code=500, detail=f"site_config reload failed: {exc}"
+        ) from exc
