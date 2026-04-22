@@ -2,6 +2,9 @@
 
 Covers the enable_pyroscope gate, missing-package graceful path, and
 the pyroscope.configure call shape.
+
+Phase H (GH#95): setup_pyroscope now takes site_config as an explicit
+first positional argument. Tests build a mock and pass it in.
 """
 
 from __future__ import annotations
@@ -11,28 +14,35 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+def _mock_sc(values: dict | None = None) -> MagicMock:
+    """SiteConfig mock passed to setup_pyroscope.
+
+    ``values`` maps app_settings keys to stub return values. Missing keys
+    return the caller-provided default, matching the real get() contract.
+    """
+    vals = values or {}
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": vals.get(k, d)
+    sc.get_bool.side_effect = lambda k, d=False: vals.get(k, d)
+    sc.get_int.side_effect = lambda k, d=0: vals.get(k, d)
+    return sc
+
+
 @pytest.mark.unit
 class TestSetupPyroscope:
     def test_skips_when_disabled(self):
         from services.profiling import setup_pyroscope
 
-        with patch(
-            "services.site_config.site_config.get",
-            return_value="false",
-        ):
-            # Should exit cleanly without importing pyroscope.
-            setup_pyroscope()
+        # Should exit cleanly without importing pyroscope.
+        setup_pyroscope(_mock_sc({"enable_pyroscope": "false"}))
 
     def test_warns_when_enabled_but_package_missing(self, caplog):
         from services.profiling import setup_pyroscope
 
-        def _fake_get(key: str, default: str = "") -> str:
-            return {"enable_pyroscope": "true"}.get(key, default)
-
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
-             patch.dict("sys.modules", {"pyroscope": None}):
+        sc = _mock_sc({"enable_pyroscope": "true"})
+        with patch.dict("sys.modules", {"pyroscope": None}):
             with caplog.at_level("WARNING"):
-                setup_pyroscope()
+                setup_pyroscope(sc)
 
         msgs = " ".join(r.message for r in caplog.records)
         assert "pyroscope-io not installed" in msgs
@@ -43,16 +53,14 @@ class TestSetupPyroscope:
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock()
 
-        def _fake_get(key: str, default: str = "") -> str:
-            return {
-                "enable_pyroscope": "true",
-                "pyroscope_server_url": "http://pyroscope:4040",
-                "environment": "production",
-            }.get(key, default)
+        sc = _mock_sc({
+            "enable_pyroscope": "true",
+            "pyroscope_server_url": "http://pyroscope:4040",
+            "environment": "production",
+        })
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
-             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
-            setup_pyroscope("test-service")
+        with patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope(sc, service_name="test-service")
 
         fake_pyroscope.configure.assert_called_once()
         call_kwargs = fake_pyroscope.configure.call_args.kwargs
@@ -66,10 +74,7 @@ class TestSetupPyroscope:
         fake_pyroscope = MagicMock()
         fake_pyroscope.configure = MagicMock(side_effect=RuntimeError("boom"))
 
-        def _fake_get(key: str, default: str = "") -> str:
-            return {"enable_pyroscope": "true"}.get(key, default)
-
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
-             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+        sc = _mock_sc({"enable_pyroscope": "true"})
+        with patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             # Must not raise — profiling failure should never kill startup.
-            setup_pyroscope()
+            setup_pyroscope(sc)
