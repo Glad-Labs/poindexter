@@ -543,13 +543,17 @@ curl http://localhost:8002/api/agents/memory/stats
 
 ## 🔗 Related Documentation
 
-- **[Architecture](./System-Design.md)** - System overview
-- **[Setup Guide](../01-Getting-Started/)** - Getting started
-- **[Development](../04-Development/Development-Workflow.md)** - Development patterns
-- **[Deployment](../05-Operations/Operations-Maintenance.md)** - Production setup
+- **[Architecture overview](../ARCHITECTURE.md)** - system-wide design
+- **[Plugin architecture](./plugin-architecture.md)** - how stages /
+  taps / probes / jobs plug in
+- **[Database schema](./database-schema.md)** - tables + migrations
+- **[Operations: troubleshooting](../operations/troubleshooting.md)** -
+  runbook for things that break
+- **[Operations: environment variables](../operations/environment-variables.md)** -
+  bootstrap env vars vs `app_settings`
+- **[Reference: app_settings](../reference/app-settings.md)** -
+  every DB-backed knob
 
 ---
 
-**[← Back to Documentation Hub](../00-README.md)**
-
-[Setup](../01-Getting-Started/) • [Architecture](./System-Design.md) • [Development](../04-Development/Development-Workflow.md) • [Operations](../05-Operations/Operations-Maintenance.md)
+**[← Back to Documentation Hub](../README.md)**
