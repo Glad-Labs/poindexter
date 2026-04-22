@@ -188,6 +188,16 @@ class CrossModelQAStage:
             except Exception:
                 settings_service = None
 
+        # Phase H step 4.3 (GH#95): site_config is threaded through the
+        # pipeline context (see content_router_service step 4.1). Fall
+        # back to the module singleton for callers that haven't migrated
+        # yet — removed in step 5 when the singleton is deleted.
+        _sc = context.get("site_config")
+        if _sc is None:
+            # Transitional fallback — removed in Phase H step 5 when the singleton
+            # is deleted.
+            from services.site_config import site_config as _sc
+
         qa = MultiModelQA(pool=pool, settings_service=settings_service)
 
         max_rewrites = await _resolve_max_rewrites(settings_service, default=2)
@@ -247,6 +257,7 @@ class CrossModelQAStage:
                 settings_service=settings_service,
                 task_id=task_id,
                 attempt=rewrite_attempts + 1,
+                site_config=_sc,
             )
             if revised is None:
                 break
@@ -257,7 +268,6 @@ class CrossModelQAStage:
             # the model actually addressed between revisions (gitea#271 Phase 3.A2).
             try:
                 from services.content_revisions_logger import log_revision
-                from services.site_config import site_config as _sc_rev
                 await log_revision(
                     database_service.pool,
                     task_id=task_id,
@@ -268,7 +278,7 @@ class CrossModelQAStage:
                         f"Rewrite attempt {rewrite_attempts + 1} addressing "
                         f"{len(issues_to_fix)} QA issues"
                     ),
-                    model_used=_sc_rev.get("qa_writer_model") or "writer",
+                    model_used=_sc.get("qa_writer_model") or "writer",
                     quality_score=None,
                 )
             except Exception as rev_err:
@@ -480,6 +490,7 @@ async def _rewrite_draft(
     settings_service: Any,
     task_id: str,
     attempt: int,
+    site_config: Any = None,
 ) -> str | None:
     """Call the writer to fix flagged issues. Returns the new draft or None.
 
@@ -490,7 +501,12 @@ async def _rewrite_draft(
     """
     from plugins.registry import get_llm_providers
     from services.audit_log import audit_log_bg
-    from services.site_config import site_config
+
+    if site_config is None:
+        # Transitional fallback — removed in Phase H step 5 when the singleton
+        # is deleted.
+        from services.site_config import site_config as _singleton
+        site_config = _singleton
 
     prompt = QA_AGGREGATE_REWRITE_PROMPT.format(
         title=title, issues_to_fix=issues_to_fix, content=content_text,
