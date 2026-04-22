@@ -24,8 +24,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Sequence
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
 
 import pytest
 
@@ -41,7 +40,6 @@ from services.jobs.collapse_old_embeddings import (
     build_summary_text,
     kmeans_cluster,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fake pool — good enough to stand in for asyncpg in unit tests
@@ -85,7 +83,7 @@ class FakePool:
 
 
 class _AcquireCtx:
-    def __init__(self, pool: "FakePool"):
+    def __init__(self, pool: FakePool):
         self.pool = pool
 
     async def __aenter__(self):
@@ -96,7 +94,7 @@ class _AcquireCtx:
 
 
 class _TxCtx:
-    def __init__(self, conn: "_RecordingConn"):
+    def __init__(self, conn: _RecordingConn):
         self.conn = conn
 
     async def __aenter__(self):
@@ -119,7 +117,7 @@ class _TxCtx:
 
 
 class _RecordingConn:
-    def __init__(self, pool: "FakePool"):
+    def __init__(self, pool: FakePool):
         self.pool = pool
         self.in_tx = False
         self.tx_inserts: list[dict[str, Any]] = []

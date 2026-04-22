@@ -8,7 +8,6 @@ Covers:
 * propagate_canonical_title produces the consistent triple (title, seo_title, body)
 """
 
-import pytest
 
 from utils.title_utils import (
     DEFAULT_SEO_TITLE_MAX_LEN,
@@ -19,7 +18,6 @@ from utils.title_utils import (
     strip_emoji,
     truncate_at_word_boundary,
 )
-
 
 # ---------------------------------------------------------------------------
 # strip_emoji

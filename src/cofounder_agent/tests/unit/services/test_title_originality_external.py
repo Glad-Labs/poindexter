@@ -14,14 +14,12 @@ we never touch the real network.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from services.title_originality_external import (
-    DDG_HTML_ENDPOINT,
     ExternalOriginalityResult,
     _cache_key,
     _normalise_for_compare,
@@ -29,7 +27,6 @@ from services.title_originality_external import (
     check_external_title_duplicates,
     clear_cache,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures + helpers

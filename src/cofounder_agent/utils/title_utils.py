@@ -27,8 +27,6 @@ The split into helpers (rather than one giant function) is deliberate:
 from __future__ import annotations
 
 import re
-from typing import Optional, Tuple
-
 
 # ---------------------------------------------------------------------------
 # Emoji strip
@@ -202,7 +200,7 @@ def _strip_code_fences(content: str) -> str:
     return "\n".join(out_lines)
 
 
-def extract_body_h1(content: str) -> Optional[str]:
+def extract_body_h1(content: str) -> str | None:
     """Return the first H1 (``# Title``) in ``content``, or ``None`` if missing.
 
     Returns the title text only — no leading ``#`` or trailing newline.
@@ -225,7 +223,7 @@ def extract_body_h1(content: str) -> Optional[str]:
     return title or None
 
 
-def replace_body_h1(content: str, new_title: str) -> Tuple[str, bool]:
+def replace_body_h1(content: str, new_title: str) -> tuple[str, bool]:
     """Replace the first H1 in ``content`` with ``new_title``.
 
     Returns a tuple ``(updated_content, replaced)`` where ``replaced`` is
@@ -273,7 +271,7 @@ def propagate_canonical_title(
     canonical: str,
     content: str,
     max_seo_len: int = DEFAULT_SEO_TITLE_MAX_LEN,
-) -> Tuple[str, str, str]:
+) -> tuple[str, str, str]:
     """Given the canonical title + body, return the consistent triple.
 
     Returns ``(title, seo_title, content)`` where:

@@ -22,7 +22,6 @@ from services.internal_link_coherence import (
     normalize_tag_set,
 )
 
-
 # ---------------------------------------------------------------------------
 # normalize_tag_set — input cleaning
 # ---------------------------------------------------------------------------

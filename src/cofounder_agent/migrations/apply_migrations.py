@@ -21,7 +21,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import psycopg2
-
 from brain.bootstrap import resolve_database_url
 
 # Setup logging
