@@ -39,7 +39,10 @@ python-dotenv = "^1.0"
 # Logging & Monitoring
 python-json-logger = "^2.0"
 setuptools = "<81"  # Pin to avoid pkg_resources deprecation (see: setuptools#3932)
-# sentry-sdk removed — sentry_enabled=false, never configured. Grafana + brain daemon handle monitoring.
+# sentry-sdk re-added 2026-04-21 — GlitchTip DSN now configured in
+# app_settings.sentry_dsn, error tracking is active for the cofounder-agent
+# project. [fastapi] extra wires the ASGI + Starlette middleware.
+sentry-sdk = { version = "^2.18.0", extras = ["fastapi"] }
 
 # Storage & Files
 python-multipart = ">=0.0.26"
