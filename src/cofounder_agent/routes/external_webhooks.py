@@ -37,8 +37,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
-from services.site_config import site_config
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -50,7 +49,11 @@ external_webhooks_router = APIRouter(prefix="/api/webhooks", tags=["External Web
 # ---------------------------------------------------------------------------
 
 
-def _verify_lemon_squeezy_signature(body: bytes, provided_signature: str | None) -> bool:
+def _verify_lemon_squeezy_signature(
+    body: bytes,
+    provided_signature: str | None,
+    site_config: Any,
+) -> bool:
     """Lemon Squeezy signs payloads with HMAC-SHA256 using the webhook secret.
 
     See https://docs.lemonsqueezy.com/help/webhooks for the scheme.
@@ -64,7 +67,7 @@ def _verify_lemon_squeezy_signature(body: bytes, provided_signature: str | None)
     if not provided_signature:
         return False
     expected = hmac.new(
-        secret.encode("utf-8"), body, hashlib.sha256
+        secret.encode("utf-8"), body, hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(expected, provided_signature)
 
@@ -85,6 +88,7 @@ async def lemon_squeezy_webhook(
     request: Request,
     x_signature: str | None = Header(default=None, alias="X-Signature"),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ):
     """Receive Lemon Squeezy webhooks and record a revenue_events row.
 
@@ -93,7 +97,7 @@ async def lemon_squeezy_webhook(
     for audit completeness.
     """
     body = await request.body()
-    if not _verify_lemon_squeezy_signature(body, x_signature):
+    if not _verify_lemon_squeezy_signature(body, x_signature, site_config):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
@@ -161,7 +165,11 @@ async def lemon_squeezy_webhook(
 # ---------------------------------------------------------------------------
 
 
-def _verify_resend_signature(body: bytes, provided_signature: str | None) -> bool:
+def _verify_resend_signature(
+    body: bytes,
+    provided_signature: str | None,
+    site_config: Any,
+) -> bool:
     """Resend uses Svix-style HMAC signatures — Authorization-style header.
 
     https://resend.com/docs/dashboard/webhooks/verify-webhooks
@@ -187,6 +195,7 @@ async def resend_webhook(
     request: Request,
     svix_signature: str | None = Header(default=None, alias="Svix-Signature"),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ):
     """Receive Resend webhooks and record a subscriber_events row.
 
@@ -194,7 +203,7 @@ async def resend_webhook(
     email.clicked, email.bounced, email.complained.
     """
     body = await request.body()
-    if not _verify_resend_signature(body, svix_signature):
+    if not _verify_resend_signature(body, svix_signature, site_config):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
