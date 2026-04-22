@@ -15,6 +15,19 @@ import pytest
 from services.jobs.verify_published_posts import VerifyPublishedPostsJob
 
 
+def _mock_sc() -> MagicMock:
+    """Return a MagicMock shaped like SiteConfig for job.run() calls.
+
+    Post-Phase-H (GH#95) jobs receive site_config via the Job Protocol
+    kwarg instead of reaching into a module singleton.
+    """
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": d
+    sc.get_bool.side_effect = lambda k, d=False: d
+    sc.get_int.side_effect = lambda k, d=0: d
+    return sc
+
+
 def _make_pool(
     rows: list[dict] | None = None,
     fetch_raises: BaseException | None = None,
@@ -68,11 +81,9 @@ class TestRun:
     async def test_missing_site_url_returns_not_ok(self):
         pool, _ = _make_pool([])
         job = VerifyPublishedPostsJob()
-        with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "" if k == "site_url" else d,
-        ):
-            result = await job.run(pool, {})
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "" if k == "site_url" else d
+        result = await job.run(pool, {}, site_config=sc)
         assert result.ok is False
         assert "site_url not configured" in result.detail
 
@@ -80,11 +91,9 @@ class TestRun:
     async def test_no_recent_posts_is_ok(self):
         pool, _ = _make_pool([])
         job = VerifyPublishedPostsJob()
-        with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d,
-        ):
-            result = await job.run(pool, {"window_hours": 12})
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d
+        result = await job.run(pool, {"window_hours": 12}, site_config=sc)
         assert result.ok is True
         assert result.changes_made == 0
         assert "no posts published" in result.detail
@@ -100,15 +109,14 @@ class TestRun:
             "https://gladlabs.io/posts/t1": 200,
             "https://gladlabs.io/posts/t2": 200,
         })
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d
         with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d,
-        ), patch(
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ):
             job = VerifyPublishedPostsJob()
-            result = await job.run(pool, {"file_gitea_issue": False})
+            result = await job.run(pool, {"file_gitea_issue": False}, site_config=sc)
         assert result.ok is True
         assert result.changes_made == 0
         assert result.metrics == {
@@ -121,10 +129,9 @@ class TestRun:
             {"id": "p1", "title": "Vanished", "slug": "vanished"},
         ])
         client = _patched_client({"https://gladlabs.io/posts/vanished": 404})
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d
         with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d,
-        ), patch(
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
@@ -132,7 +139,7 @@ class TestRun:
             new=AsyncMock(return_value=True),
         ) as mock_gitea:
             job = VerifyPublishedPostsJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {}, site_config=sc)
         assert result.changes_made == 1
         assert result.metrics["posts_failed"] == 1
         # audit_log insert should have fired.
@@ -147,10 +154,9 @@ class TestRun:
         client = _patched_client({
             "https://gladlabs.io/posts/no-dns": httpx.ConnectError("dns fail"),
         })
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d
         with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d,
-        ), patch(
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
@@ -158,7 +164,7 @@ class TestRun:
             new=AsyncMock(return_value=True),
         ):
             job = VerifyPublishedPostsJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {}, site_config=sc)
         assert result.metrics["posts_failed"] == 1
 
     @pytest.mark.asyncio
@@ -166,15 +172,14 @@ class TestRun:
         """Avoid building "https://site.io//posts/slug" when site_url ends in /."""
         pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "t"}])
         client = _patched_client({"https://site.io/posts/t": 200})
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "https://site.io/" if k == "site_url" else d
         with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "https://site.io/" if k == "site_url" else d,
-        ), patch(
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ):
             job = VerifyPublishedPostsJob()
-            result = await job.run(pool, {"file_gitea_issue": False})
+            result = await job.run(pool, {"file_gitea_issue": False}, site_config=sc)
         assert result.metrics["posts_verified"] == 1
 
     @pytest.mark.asyncio
@@ -185,10 +190,9 @@ class TestRun:
         ])
         conn.execute = AsyncMock(side_effect=RuntimeError("audit_log missing"))
         client = _patched_client({"https://gladlabs.io/posts/failed": 500})
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d
         with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d,
-        ), patch(
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
@@ -196,7 +200,7 @@ class TestRun:
             new=AsyncMock(return_value=True),
         ):
             job = VerifyPublishedPostsJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {}, site_config=sc)
         assert result.ok is True
         assert result.metrics["posts_failed"] == 1
 
@@ -205,10 +209,9 @@ class TestRun:
         pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "bad"}])
         client = _patched_client({"https://gladlabs.io/posts/bad": 503})
         mock_gitea = AsyncMock(return_value=False)
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d
         with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d,
-        ), patch(
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
@@ -216,17 +219,15 @@ class TestRun:
             new=mock_gitea,
         ):
             job = VerifyPublishedPostsJob()
-            await job.run(pool, {"file_gitea_issue": False})
+            await job.run(pool, {"file_gitea_issue": False}, site_config=sc)
         mock_gitea.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):
         pool, _ = _make_pool(fetch_raises=RuntimeError("pool closed"))
         job = VerifyPublishedPostsJob()
-        with patch(
-            "services.jobs.verify_published_posts.site_config.get",
-            side_effect=lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d,
-        ):
-            result = await job.run(pool, {})
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d
+        result = await job.run(pool, {}, site_config=sc)
         assert result.ok is False
         assert "pool closed" in result.detail
