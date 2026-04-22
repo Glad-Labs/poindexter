@@ -18,7 +18,18 @@ import os
 from unittest.mock import MagicMock
 
 import services.telemetry as telemetry_mod
+from services.site_config import SiteConfig
 from services.telemetry import setup_telemetry
+
+
+def _sc() -> SiteConfig:
+    """Fresh SiteConfig instance — Phase H DI (GH#95).
+
+    Constructs a stand-alone SiteConfig with no initial_config so the
+    ``.get()`` lookups fall through to the env vars the tests are
+    already setting via ``monkeypatch.setenv``.
+    """
+    return SiteConfig()
 
 # ---------------------------------------------------------------------------
 # When OpenTelemetry is not available
@@ -30,13 +41,13 @@ class TestSetupTelemetryNotAvailable:
         monkeypatch.setattr(telemetry_mod, "OPENTELEMETRY_AVAILABLE", False)
         app = MagicMock()
         # Should not raise and should not instrument anything
-        setup_telemetry(app)
+        setup_telemetry(app, _sc())
 
     def test_returns_early_when_trace_is_none(self, monkeypatch):
         monkeypatch.setattr(telemetry_mod, "OPENTELEMETRY_AVAILABLE", True)
         monkeypatch.setattr(telemetry_mod, "trace", None)
         app = MagicMock()
-        setup_telemetry(app)
+        setup_telemetry(app, _sc())
         # No instrumentation should happen — app should not have been touched
         app.assert_not_called()
 
@@ -51,20 +62,20 @@ class TestSetupTelemetryTracingDisabled:
         monkeypatch.setattr(telemetry_mod, "OPENTELEMETRY_AVAILABLE", True)
         monkeypatch.setenv("ENABLE_TRACING", "false")
         app = MagicMock()
-        setup_telemetry(app)
+        setup_telemetry(app, _sc())
 
     def test_returns_early_when_enable_tracing_missing(self, monkeypatch):
         monkeypatch.setattr(telemetry_mod, "OPENTELEMETRY_AVAILABLE", True)
         monkeypatch.delenv("ENABLE_TRACING", raising=False)
         app = MagicMock()
-        setup_telemetry(app)
+        setup_telemetry(app, _sc())
 
     def test_returns_early_when_enable_tracing_mixed_case(self, monkeypatch):
         monkeypatch.setattr(telemetry_mod, "OPENTELEMETRY_AVAILABLE", True)
         monkeypatch.setenv("ENABLE_TRACING", "True")  # Not lowercase "true"
         # "True" != "true" per the .lower() == "true" check
         app = MagicMock()
-        setup_telemetry(app)
+        setup_telemetry(app, _sc())
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +110,7 @@ class TestSetupTelemetryNoEndpoint:
         monkeypatch.setattr(telemetry_mod, "trace", mock_trace)
 
         app = MagicMock()
-        setup_telemetry(app, service_name="test-service")
+        setup_telemetry(app, _sc(), service_name="test-service")
         # Should complete without exception
 
 
@@ -176,7 +187,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         _apply_mocks(monkeypatch, mocks)
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
 
-        setup_telemetry(MagicMock(), service_name="test-svc")
+        setup_telemetry(MagicMock(), _sc(), service_name="test-svc")
 
         mocks["_provider"].add_span_processor.assert_called_once()
 
@@ -188,7 +199,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
 
         app = MagicMock()
-        setup_telemetry(app, service_name="test-svc")
+        setup_telemetry(app, _sc(), service_name="test-svc")
 
         mocks["FastAPIInstrumentor"].instrument_app.assert_called_once()
 
@@ -199,7 +210,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         _apply_mocks(monkeypatch, mocks)
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
 
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
         mocks["trace"].set_tracer_provider.assert_called_once_with(mocks["_provider"])
 
@@ -210,7 +221,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         _apply_mocks(monkeypatch, mocks)
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
 
-        setup_telemetry(MagicMock(), service_name="my-custom-service")
+        setup_telemetry(MagicMock(), _sc(), service_name="my-custom-service")
 
         call_kwargs = mocks["Resource"].create.call_args
         attrs = call_kwargs[1].get("attributes") or (call_kwargs[0][0] if call_kwargs[0] else {})
@@ -226,7 +237,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
 
         # Should not raise
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
     def test_set_tracer_provider_runtime_error_is_caught(self, monkeypatch):
         """If set_tracer_provider raises RuntimeError about 'current TracerProvider', continue."""
@@ -240,7 +251,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         )
 
         # Should not raise
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
     def test_set_tracer_provider_other_runtime_error_is_not_caught(self, monkeypatch):
         """RuntimeErrors about something else should propagate (caught by outer try/except)."""
@@ -252,7 +263,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         mocks["trace"].set_tracer_provider.side_effect = RuntimeError("unrelated error")
 
         # The outer except Exception catches this and logs — should not propagate
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
     def test_fastapi_instrumentor_failure_is_caught(self, monkeypatch):
         """Failure in FastAPIInstrumentor.instrument_app should not crash setup."""
@@ -266,7 +277,7 @@ class TestSetupTelemetryWithOtlpEndpoint:
         )
 
         # Should not raise
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
 
 class TestSetupTelemetryWithOpenAiInstrumentor:
@@ -280,7 +291,7 @@ class TestSetupTelemetryWithOpenAiInstrumentor:
         mock_oai_cls = MagicMock(return_value=mock_oai_instance)
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", mock_oai_cls)
 
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
         mock_oai_instance.instrument.assert_called_once()
 
@@ -296,7 +307,7 @@ class TestSetupTelemetryWithOpenAiInstrumentor:
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", mock_oai_cls)
 
         # Should not raise
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
     def test_openai_instrumentor_skipped_when_none(self, monkeypatch):
         monkeypatch.setenv("ENABLE_TRACING", "true")
@@ -306,7 +317,7 @@ class TestSetupTelemetryWithOpenAiInstrumentor:
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
 
         # No exception expected
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
 
 class TestSetupTelemetryOtlpCaptureEnvVar:
@@ -319,6 +330,6 @@ class TestSetupTelemetryOtlpCaptureEnvVar:
         _apply_mocks(monkeypatch, mocks)
         monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
 
-        setup_telemetry(MagicMock())
+        setup_telemetry(MagicMock(), _sc())
 
         assert os.getenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT") == "true"

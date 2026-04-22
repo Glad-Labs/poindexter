@@ -179,7 +179,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning("[LIFESPAN] sentry re-init failed: %s", e)
         try:
-            setup_telemetry(app)
+            setup_telemetry(app, _site_cfg)
         except Exception as e:
             logger.warning("[LIFESPAN] telemetry re-init failed: %s", e)
         try:
@@ -465,7 +465,7 @@ except Exception as e:
     logger.warning(f"[ADMIN] SQLAdmin not available: {e}")
 
 # Initialize OpenTelemetry tracing
-setup_telemetry(app)
+setup_telemetry(app, _site_cfg)
 
 # Initialize Pyroscope continuous profiling (opt-in via
 # app_settings.enable_pyroscope). LGTM+P stack, GH #75.
