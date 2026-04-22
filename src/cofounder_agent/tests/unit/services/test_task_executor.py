@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.error_handler import ServiceError
+from services.site_config import SiteConfig
 from services.task_executor import (
     TaskExecutor,
 )
@@ -55,7 +56,7 @@ def _make_task(task_id=TASK_ID, status="pending"):
     }
 
 
-def _make_executor(db=None, orchestrator=None, poll_interval=1):
+def _make_executor(db=None, orchestrator=None, poll_interval=1, site_config=None):
     if db is None:
         db = _make_db()
     with (
@@ -67,6 +68,7 @@ def _make_executor(db=None, orchestrator=None, poll_interval=1):
             database_service=db,
             orchestrator=orchestrator,
             poll_interval=poll_interval,
+            site_config=site_config,
         )
     # Default _get_setting mock — returns the default arg so callers like
     # _semantic_dedup_enabled, min_curation_score etc. get sensible values
@@ -343,17 +345,14 @@ class TestThrottleMetricToggle:
         db.pool = MagicMock()
         db.pool.fetchrow = AsyncMock(return_value={"c": 10})
 
-        executor = _make_executor(db=db, poll_interval=0)
+        # Phase H step 5.4 (GH#95): pass a local SiteConfig via ctor instead
+        # of patching services.site_config.site_config. TaskExecutor already
+        # threads `self.site_config` into is_queue_full().
+        sc = SiteConfig(initial_config={"max_approval_queue": "3"})
+        executor = _make_executor(db=db, poll_interval=0, site_config=sc)
         executor.running = True
 
-        # Force max_approval_queue=3 via patched site_config
-        mock_cfg = MagicMock()
-        mock_cfg.get_int = MagicMock(
-            side_effect=lambda k, default=0: 3 if k == "max_approval_queue" else default
-        )
-
         with (
-            patch("services.site_config.site_config", mock_cfg),
             patch.object(executor, "_process_single_task", new_callable=AsyncMock) as mock_single,
             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
@@ -381,16 +380,11 @@ class TestThrottleMetricToggle:
         db.pool = MagicMock()
         db.pool.fetchrow = AsyncMock(return_value={"c": 1})  # under limit
 
-        executor = _make_executor(db=db, poll_interval=0)
+        sc = SiteConfig(initial_config={"max_approval_queue": "3"})
+        executor = _make_executor(db=db, poll_interval=0, site_config=sc)
         executor.running = True
 
-        mock_cfg = MagicMock()
-        mock_cfg.get_int = MagicMock(
-            side_effect=lambda k, default=0: 3 if k == "max_approval_queue" else default
-        )
-
         with (
-            patch("services.site_config.site_config", mock_cfg),
             patch.object(executor, "_process_single_task", new_callable=AsyncMock) as mock_single,
             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),

@@ -226,14 +226,12 @@ class TaskExecutor:
                 # emit a structured "we are throttled" signal — see GH-89.
                 try:
                     from services.pipeline_throttle import is_queue_full
-                    # Phase H (GH#95) transitional: task_executor has not
-                    # been migrated off the module singleton yet, so we
-                    # re-import and pass it through. Future migration
-                    # threads site_config into TaskExecutor's ctor.
-                    from services.site_config import site_config as _sc
-
+                    # Phase H (GH#95): site_config comes through the
+                    # ctor → app.state chain on `self.site_config`. The
+                    # enclosing try/except falls through cleanly if the
+                    # property returns None (e.g. legacy test harness).
                     _full, _queue_size, _queue_limit = await is_queue_full(
-                        self.database_service.pool, _sc,
+                        self.database_service.pool, self.site_config,
                     )
                     if _full and pending_tasks:
                         # WARN (not INFO) so this shows up in the default log
