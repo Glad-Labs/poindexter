@@ -23,42 +23,44 @@ Usage:
 import json
 import re
 import uuid
+from typing import Any
 
 import httpx
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
-
-
-def _devto_api_base() -> str:
-    """Dev.to (or self-hosted Forem) API base. Tunable so customers
-    running a private Forem instance — or pointing at a future Dev.to
-    API version — can swap without a code change (#198).
-
-    Lazy lookup because this module imports before site_config.load()
-    runs in the worker lifespan; capturing at import time meant DB
-    overrides took no effect until restart.
-    """
-    return site_config.get("devto_api_base", "https://dev.to/api")
-
-
-def _site_url() -> str:
-    """Return the canonical site URL. Reads site_config lazily because
-    this module may be imported before site_config has been populated
-    from the DB. Fails loud (RuntimeError) if the setting is missing —
-    an empty canonical URL silently produces broken relative paths."""
-    return site_config.require("site_url")
 
 
 class DevToCrossPostService:
     """Cross-post blog content to Dev.to as drafts with canonical URLs."""
 
-    def __init__(self, pool):
+    def __init__(self, pool, site_config: Any):
+        """
+        Args:
+            pool: asyncpg connection pool
+            site_config: SiteConfig instance (DI — Phase H). Read from
+                ``request.app.state.site_config`` or the lifespan-bound
+                instance. Must be passed explicitly — Phase H removes
+                the module-level singleton.
+        """
         self.pool = pool
+        self._site_config = site_config
         self._api_key: str | None = None
         self._api_key_loaded = False
+
+    @property
+    def _devto_api_base(self) -> str:
+        """Dev.to (or self-hosted Forem) API base. Tunable so customers
+        running a private Forem instance — or pointing at a future
+        Dev.to API version — can swap without a code change (#198)."""
+        return self._site_config.get("devto_api_base", "https://dev.to/api")
+
+    @property
+    def _site_url(self) -> str:
+        """Canonical site URL. Fails loud (RuntimeError) if unset — an
+        empty canonical URL silently produces broken relative paths."""
+        return self._site_config.require("site_url")
 
     async def _get_api_key(self) -> str | None:
         """Fetch + decrypt the Dev.to API key from app_settings.
@@ -84,26 +86,34 @@ class DevToCrossPostService:
         return self._api_key
 
     @staticmethod
-    def _clean_markdown(content: str) -> str:
+    def _clean_markdown(content: str, site_url: str = "") -> str:
         """Prepare markdown for Dev.to.
 
         - Converts relative internal links to absolute URLs
+          (when ``site_url`` is non-empty)
         - Strips HTML-only elements (iframes, script tags, custom components)
         - Removes any HTML comments
-        """
-        # Convert relative links like [text](/posts/slug) to absolute
-        content = re.sub(
-            r'\[([^\]]+)\]\((/[^)]+)\)',
-            lambda m: f'[{m.group(1)}]({_site_url()}{m.group(2)})',
-            content,
-        )
 
-        # Convert relative image paths to absolute
-        content = re.sub(
-            r'!\[([^\]]*)\]\((/[^)]+)\)',
-            lambda m: f'![{m.group(1)}]({_site_url()}{m.group(2)})',
-            content,
-        )
+        Args:
+            content: Raw markdown body.
+            site_url: Canonical site URL used to resolve relative links.
+                Pass an empty string to leave relative links unchanged —
+                tests pass ``""`` when they only care about HTML stripping.
+        """
+        if site_url:
+            # Convert relative links like [text](/posts/slug) to absolute
+            content = re.sub(
+                r"\[([^\]]+)\]\((/[^)]+)\)",
+                lambda m: f"[{m.group(1)}]({site_url}{m.group(2)})",
+                content,
+            )
+
+            # Convert relative image paths to absolute
+            content = re.sub(
+                r"!\[([^\]]*)\]\((/[^)]+)\)",
+                lambda m: f"![{m.group(1)}]({site_url}{m.group(2)})",
+                content,
+            )
 
         # Strip <script> tags
         content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL | re.IGNORECASE)
@@ -174,7 +184,7 @@ class DevToCrossPostService:
             logger.debug("[DEVTO] No API key configured — skipping cross-post")
             return None
 
-        cleaned_content = self._clean_markdown(content_markdown)
+        cleaned_content = self._clean_markdown(content_markdown, self._site_url)
         normalized_tags = self._normalize_tags(tags or [])
 
         # Auto-publish on Dev.to if configured (default: True — one approval is enough)
@@ -201,11 +211,11 @@ class DevToCrossPostService:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
-                    f"{_devto_api_base()}/articles",
+                    f"{self._devto_api_base}/articles",
                     headers={
                         "api-key": api_key,
                         "Content-Type": "application/json",
-                        "User-Agent": f"{site_config.get('company_name', 'ContentEngine')}/1.0",
+                        "User-Agent": f"{self._site_config.get('company_name', 'ContentEngine')}/1.0",
                     },
                     json=payload,
                 )
@@ -254,7 +264,7 @@ class DevToCrossPostService:
             return None
 
         # Build canonical URL
-        canonical_url = f"{_site_url()}/posts/{row['slug']}"
+        canonical_url = f"{self._site_url}/posts/{row['slug']}"
 
         # Parse tags from seo_keywords
         tags = []
