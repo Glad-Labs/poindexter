@@ -20,7 +20,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 from utils.text_utils import extract_title_from_content
 
 logger = get_logger(__name__)
@@ -116,21 +115,25 @@ async def _sync_published_post(post_id: str) -> None:
         logger.warning("[SYNC] Failed to sync published post (non-fatal): %s", e)
 
 
-async def _ping_search_engines(site_url: str, post_url: str) -> None:
+async def _ping_search_engines(
+    site_url: str,
+    post_url: str,
+    site_config: Any,
+) -> None:
     """Notify search engines about new content via IndexNow and Google ping."""
     import httpx
 
     # Tight caps on external SEO pings — they're fire-and-forget, we don't
     # want them to delay anything else if the target is slow.
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(10.0, connect=3.0)
+        timeout=httpx.Timeout(10.0, connect=3.0),
     ) as client:
         # IndexNow (Bing, Yandex, Naver, Seznam).
         # #198: both endpoint + key settings-backed. Setting the endpoint
         # to '' disables the ping without code changes.
         _indexnow_key = site_config.get("indexnow_key", "")
         _indexnow_url = site_config.get(
-            "indexnow_ping_url", "https://api.indexnow.org/indexnow"
+            "indexnow_ping_url", "https://api.indexnow.org/indexnow",
         )
         if _indexnow_url:
             try:
@@ -146,7 +149,7 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
         # Search-engine sitemap ping (Google's /ping endpoint by default;
         # set google_sitemap_ping_url='' to skip).
         _sitemap_ping = site_config.get(
-            "google_sitemap_ping_url", "https://www.google.com/ping"
+            "google_sitemap_ping_url", "https://www.google.com/ping",
         )
         if _sitemap_ping:
             try:
@@ -329,6 +332,7 @@ async def publish_post_from_task(
     task: dict[str, Any],
     task_id: str,
     *,
+    site_config: Any,
     publisher: str = "operator",
     trigger_revalidation: bool = True,
     queue_social: bool = True,
@@ -650,11 +654,10 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     try:
         from services.devto_service import DevToCrossPostService
-        from services.site_config import site_config as _sc
 
         devto_svc = DevToCrossPostService(
             getattr(db_service, "cloud_pool", None) or db_service.pool,
-            _sc,
+            site_config,
         )
         if background_tasks:
             background_tasks.add_task(
@@ -676,12 +679,11 @@ async def publish_post_from_task(
     if trigger_revalidation:
         try:
             from services.revalidation_service import trigger_nextjs_revalidation
-            from services.site_config import site_config as _sc
 
             reval_paths = ["/", "/archive", "/posts", f"/posts/{slug}"]
             reval_tags = ["posts", "post-index", f"post:{slug}"]
             revalidation_success = await trigger_nextjs_revalidation(
-                reval_paths, reval_tags, site_config=_sc,
+                reval_paths, reval_tags, site_config=site_config,
             )
             if not revalidation_success:
                 logger.warning("[publish_service] ISR revalidation returned failure for %s", slug)
@@ -711,7 +713,7 @@ async def publish_post_from_task(
     site_url = site_config.require("site_url")
     published_url_full = f"{site_url}/posts/{slug}"
     _spawn_background(
-        _ping_search_engines(site_url, published_url_full),
+        _ping_search_engines(site_url, published_url_full, site_config),
         name=f"ping_search_engines({slug})",
     )
 
@@ -773,8 +775,9 @@ async def publish_post_from_task(
                 """Wait for podcast, then generate short video."""
                 import asyncio as _aio
 
-                from services.site_config import site_config as _scfg
-                _delay = int(_scfg.get("short_video_post_publish_delay_seconds", "180"))
+                _delay = int(
+                    site_config.get("short_video_post_publish_delay_seconds", "180"),
+                )
                 await _aio.sleep(_delay)
                 try:
                     result = await generate_short_video_for_post(
@@ -809,9 +812,8 @@ async def publish_post_from_task(
                 upload_to_r2,
                 upload_video_episode,
             )
-            from services.site_config import site_config as _scfg
             # Give podcast/video/short generation time to complete
-            _delay = int(_scfg.get("media_r2_upload_delay_seconds", "240"))
+            _delay = int(site_config.get("media_r2_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
             await upload_podcast_episode(pid)
             await upload_video_episode(pid)
@@ -824,8 +826,9 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                from services.site_config import site_config as _scfg
-                _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                _api_base = site_config.get(
+                    "internal_api_base_url", DEFAULT_WORKER_API_URL,
+                )
                 async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
                     _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
                     _feed_path = "/tmp/podcast-feed.xml"
@@ -844,8 +847,9 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                from services.site_config import site_config as _scfg
-                _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                _api_base = site_config.get(
+                    "internal_api_base_url", DEFAULT_WORKER_API_URL,
+                )
                 async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
                     _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
                     _feed_path = "/tmp/video-feed.xml"
@@ -859,8 +863,7 @@ async def publish_post_from_task(
 
             # Upload video to YouTube if enabled
             try:
-                from services.site_config import site_config as _scfg_yt
-                _platforms = _scfg_yt.get("social_distribution_platforms", "")
+                _platforms = site_config.get("social_distribution_platforms", "")
                 if "youtube" in _platforms:
                     video_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}.mp4"
                     if video_path.exists():
@@ -872,7 +875,7 @@ async def publish_post_from_task(
                         ) if db_service and db_service.pool else None
                         _yt_title = _post["title"] if _post else "Poindexter Video"
                         _yt_slug = _post["slug"] if _post else ""
-                        _site_url = _scfg_yt.get("site_url", "https://www.gladlabs.io")
+                        _site_url = site_config.get("site_url", "https://www.gladlabs.io")
                         _yt_desc = (
                             f"{_post['excerpt'] or ''}\n\n"
                             f"Read the full article: {_site_url}/posts/{_yt_slug}\n\n"
@@ -907,12 +910,10 @@ async def publish_post_from_task(
         async def _send_newsletter(_pid: str, ptitle: str, pexcerpt: str, pslug: str) -> None:
             try:
                 from services.newsletter_service import send_post_newsletter
-                # publish_service still uses the module singleton pending
-                # its own Phase H migration; pass it through so
-                # newsletter_service no longer reaches for it at module scope.
-                from services.site_config import site_config as _sc
                 _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-                result = await send_post_newsletter(_pool, ptitle, pexcerpt, pslug, _sc)
+                result = await send_post_newsletter(
+                    _pool, ptitle, pexcerpt, pslug, site_config,
+                )
                 logger.info("[NEWSLETTER] Result: %s", result)
             except Exception as e:
                 logger.debug("[NEWSLETTER] Failed (non-fatal): %s", e)

@@ -37,6 +37,19 @@ from services.publish_service import (
 # ---------------------------------------------------------------------------
 
 
+def _mock_sc() -> MagicMock:
+    """Build a mock SiteConfig for tests that just need publish_post_from_task
+    to receive *something* for the Phase H site_config kwarg."""
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": d
+    sc.get_bool.side_effect = lambda k, d=False: d
+    sc.get_int.side_effect = lambda k, d=0: d
+    sc.require.side_effect = (
+        lambda k: "https://test.example.com" if k == "site_url" else ""
+    )
+    return sc
+
+
 def _make_db(
     *,
     today_count: int = 0,
@@ -271,6 +284,7 @@ class TestPublishHappyPath:
 
         with _LazyImportContext():
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db,
                 task=task,
                 task_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -306,6 +320,7 @@ class TestPublishHappyPath:
         task = _make_task()
 
         result = await publish_post_from_task(
+            site_config=_mock_sc(),
             db_service=db, task=task, task_id=task_id, queue_social=False,
         )
 
@@ -324,6 +339,7 @@ class TestPublishHappyPath:
 
         with _LazyImportContext():
             await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-12345678", queue_social=False,
             )
 
@@ -344,6 +360,7 @@ class TestPublishHappyPath:
 
         with _LazyImportContext():
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id=tid, queue_social=False,
             )
 
@@ -367,6 +384,7 @@ class TestPublishMissingContent:
         task = _make_task(topic="AI", content="")
 
         result = await publish_post_from_task(
+            site_config=_mock_sc(),
             db_service=db, task=task, task_id="tid-00000000"
         )
 
@@ -380,6 +398,7 @@ class TestPublishMissingContent:
         task = _make_task(topic="", content="")
 
         result = await publish_post_from_task(
+            site_config=_mock_sc(),
             db_service=db, task=task, task_id="tid-00000001"
         )
 
@@ -401,6 +420,7 @@ class TestPublishMissingContent:
 
         with _LazyImportContext():
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-fallback", queue_social=False,
             )
 
@@ -428,6 +448,7 @@ class TestPublishDbFailure:
 
         with _LazyImportContext():
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-fail", queue_social=False,
             )
 
@@ -566,13 +587,16 @@ class TestSearchEnginePing:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=Exception("network down"))
+        sc = _mock_sc()
 
         with patch("httpx.AsyncClient") as mock_cls:
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
             # Should not raise
-            await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test")
+            await _ping_search_engines(
+                "https://gladlabs.io", "https://gladlabs.io/posts/test", sc,
+            )
 
     @pytest.mark.asyncio
     async def test_ping_success_completes(self):
@@ -581,12 +605,21 @@ class TestSearchEnginePing:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=MagicMock(status_code=200))
+        sc = _mock_sc()
+        # Need the two config keys to produce non-empty URLs so pings fire
+        sc.get.side_effect = lambda k, d="": {
+            "indexnow_key": "fake-indexnow",
+            "indexnow_ping_url": "https://api.indexnow.org/indexnow",
+            "google_sitemap_ping_url": "https://www.google.com/ping",
+        }.get(k, d)
 
         with patch("httpx.AsyncClient") as mock_cls:
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test")
+            await _ping_search_engines(
+                "https://gladlabs.io", "https://gladlabs.io/posts/test", sc,
+            )
 
         # Both IndexNow and Google ping were attempted
         assert mock_client.get.await_count == 2
@@ -616,6 +649,7 @@ class TestDevtoCrossPost:
 
         with _LazyImportContext(overrides={"services.devto_service": devto_mod}):
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-devto", queue_social=False,
             )
 
@@ -650,6 +684,7 @@ class TestScheduledPublishApplied:
             _LazyImportContext(),
         ):
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-sched",
                 queue_social=False, honor_pacing=True,
             )
@@ -673,6 +708,7 @@ class TestScheduledPublishApplied:
             _LazyImportContext(),
         ):
             await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-nosched",
                 queue_social=False, honor_pacing=True,
             )
@@ -703,6 +739,7 @@ class TestWebhookNonBlocking:
 
         with _LazyImportContext(overrides={"services.webhook_delivery_service": webhook_mod}):
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-webhook", queue_social=False,
             )
 
@@ -731,6 +768,7 @@ class TestRevalidation:
 
         with _LazyImportContext(overrides={"services.revalidation_service": reval_mod}):
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-reval",
                 trigger_revalidation=True, queue_social=False,
             )
@@ -748,6 +786,7 @@ class TestRevalidation:
 
         with _LazyImportContext():
             result = await publish_post_from_task(
+                site_config=_mock_sc(),
                 db_service=db, task=task, task_id="tid-noreval",
                 trigger_revalidation=False, queue_social=False,
             )
