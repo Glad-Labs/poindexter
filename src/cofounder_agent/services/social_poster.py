@@ -10,8 +10,10 @@ notification pipeline.  Actual API posting to X/LinkedIn will be added later.
 Usage from task_executor or any post-publish hook:
 
     from services.social_poster import generate_and_distribute_social_posts
-    from services.site_config import site_config
 
+    # site_config is threaded in from the caller (Phase H DI) —
+    # e.g. from a route handler's Depends(get_site_config_dependency),
+    # or from a service that accepts site_config via its own ctor/kwarg.
     await generate_and_distribute_social_posts(
         title="Why Local LLMs Beat Cloud APIs",
         slug="why-local-llms-beat-cloud-apis",
