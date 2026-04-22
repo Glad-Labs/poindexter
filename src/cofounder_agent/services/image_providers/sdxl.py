@@ -244,8 +244,19 @@ async def _try_host_sidecar(
     steps: int | None,
     guidance: float | None,
 ) -> bool:
-    """POST the prompt to the host SDXL sidecar. Return True on 200 +
-    ``image/*`` content-type with bytes written to ``output_path``."""
+    """POST the prompt to the host SDXL sidecar. Return True once a PNG
+    is present at ``output_path``.
+
+    The sidecar has two response formats:
+
+    - ``image/*`` — raw PNG bytes in the body. Write them directly.
+    - ``application/json`` — ``{"image_path": "<host-filesystem path>"}``.
+      The sidecar wrote the file to its own filesystem; we map
+      ``host_home`` → the worker's ``~`` and copy it to ``output_path``
+      (the mapping mirrors the existing
+      ``services/stages/source_featured_image.py:_resolve_sdxl_featured_response``
+      path so both call sites handle the sidecar the same way).
+    """
     try:
         from services.site_config import site_config
         server_url = site_config.get(
@@ -281,6 +292,11 @@ async def _try_host_sidecar(
                     elapsed, output_path,
                 )
                 return True
+            if resp.status_code == 200 and ct.startswith("application/json"):
+                if await asyncio.to_thread(
+                    _materialize_sidecar_json, resp, output_path,
+                ):
+                    return True
             logger.warning(
                 "SDXL server returned %s (content-type=%r): %s",
                 resp.status_code, ct, resp.text[:200],
@@ -290,6 +306,54 @@ async def _try_host_sidecar(
             "SDXL host server unavailable (%s), trying local diffusers...", e,
         )
     return False
+
+
+def _materialize_sidecar_json(resp: httpx.Response, output_path: str) -> bool:
+    """Copy the sidecar-generated PNG at the path advertised in its JSON
+    response to the caller's ``output_path``. Returns True on success.
+    """
+    import shutil
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        logger.warning("SDXL sidecar JSON parse failed: %s", e)
+        return False
+
+    src = str(data.get("image_path", "") or "")
+    if not src:
+        logger.warning("SDXL sidecar JSON missing image_path: %s", data)
+        return False
+
+    try:
+        from services.site_config import site_config
+        host_home = site_config.get("host_home", "") or ""
+    except Exception:
+        host_home = ""
+    if host_home and src.startswith(host_home):
+        src = src.replace(host_home, os.path.expanduser("~"), 1)
+    src = src.replace("\\", "/")
+
+    if not os.path.exists(src):
+        logger.warning(
+            "SDXL sidecar file not visible from worker: src=%s host_home=%r",
+            src, host_home,
+        )
+        return False
+
+    try:
+        shutil.copyfile(src, output_path)
+    except OSError as e:
+        logger.warning("SDXL sidecar copy failed: %s -> %s: %s", src, output_path, e)
+        return False
+
+    logger.info(
+        "SDXL image materialized from sidecar (%dms, %dpx): %s",
+        int(data.get("generation_time_ms", 0) or 0),
+        int(data.get("width", 0) or 0),
+        output_path,
+    )
+    return True
 
 
 async def _try_in_process_diffusers(

@@ -51,6 +51,25 @@ def _html_response():
     return resp
 
 
+def _json_sidecar_response(image_path: str, width: int = 1024, elapsed_ms: int = 900):
+    """Fake httpx response matching the real SDXL sidecar's JSON format."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.headers = {"content-type": "application/json"}
+    resp.json = MagicMock(
+        return_value={
+            "image_path": image_path,
+            "filename": image_path.rsplit("/", 1)[-1],
+            "width": width,
+            "height": width,
+            "model": "sdxl_lightning",
+            "generation_time_ms": elapsed_ms,
+            "seed": 42,
+        },
+    )
+    return resp
+
+
 @contextmanager
 def _mock_httpx_post(response):
     """Patch httpx.AsyncClient to yield a client whose .post returns ``response``.
@@ -285,6 +304,46 @@ class TestSdxlProviderFetch:
 
         assert results[0].url == "https://cdn.r2/x.png"
         up.assert_awaited_once()
+
+    async def test_sidecar_json_response_materializes_file(self, tmp_path):
+        """Real sidecar returns JSON with ``image_path`` pointing at a file
+        it wrote on the host. The provider copies it to output_path."""
+        sidecar_src = tmp_path / "sdxl_abc.png"
+        sidecar_src.write_bytes(b"\x89PNG_sidecar_generated")
+        output_path = str(tmp_path / "caller-out.png")
+
+        resp = _json_sidecar_response(str(sidecar_src))
+        with _mock_httpx_post(resp):
+            results = await SdxlProvider().fetch(
+                "a scene", {"output_path": output_path},
+            )
+
+        assert len(results) == 1
+        assert results[0].url == f"file://{output_path}"
+        # File was actually materialized to the caller's path
+        assert (tmp_path / "caller-out.png").read_bytes() == b"\x89PNG_sidecar_generated"
+
+    async def test_sidecar_json_missing_image_path_returns_empty(self, tmp_path):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.headers = {"content-type": "application/json"}
+        resp.json = MagicMock(return_value={"error": "oom"})
+        resp.text = '{"error": "oom"}'
+
+        with _mock_httpx_post(resp), _diffusers_unavailable():
+            results = await SdxlProvider().fetch(
+                "x", {"output_path": str(tmp_path / "x.png")},
+            )
+        assert results == []
+
+    async def test_sidecar_json_source_file_missing_returns_empty(self, tmp_path):
+        """Sidecar advertises a path that doesn't exist → fall through."""
+        resp = _json_sidecar_response("/nonexistent/path/image.png")
+        with _mock_httpx_post(resp), _diffusers_unavailable():
+            results = await SdxlProvider().fetch(
+                "x", {"output_path": str(tmp_path / "x.png")},
+            )
+        assert results == []
 
     async def test_cloudinary_upload_failure_falls_back_to_file_url(
         self, tmp_path,
