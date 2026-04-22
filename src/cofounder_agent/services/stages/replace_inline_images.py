@@ -136,8 +136,13 @@ class ReplaceInlineImagesStage:
         # the Image Decision Agent to plan + inject them.
         placeholders = _PLACEHOLDER_RE.findall(content_text)
         if not placeholders:
+            # Phase H step 5 (GH#95): thread site_config to the image
+            # decision agent. Stages receive site_config via the pipeline
+            # context dict (seeded by content_router_service step 4.1);
+            # fall back to the module singleton for legacy callers.
+            _sc = context.get("site_config")
             content_text, plan = await _plan_and_inject_placeholders(
-                content_text, topic, category,
+                content_text, topic, category, site_config=_sc,
             )
             if plan is not None and plan.get("featured_image_plan"):
                 updates["featured_image_plan"] = plan["featured_image_plan"]
@@ -217,12 +222,18 @@ async def _plan_and_inject_placeholders(
     content_text: str,
     topic: str,
     category: str,
+    site_config: Any = None,
 ) -> tuple[str, dict[str, Any] | None]:
     """Ask the Image Decision Agent to decide + inject [IMAGE-N] placeholders.
 
     Returns ``(content_text, info)`` where info may carry a
     ``featured_image_plan`` (if the agent recommends one) or an
     ``agent_error`` string (if the decision agent crashed).
+
+    Args:
+        site_config: SiteConfig instance threaded to ``plan_images``.
+            ``None`` means ``plan_images`` will fall back to the module
+            singleton (transitional — Phase H step 5, GH#95).
     """
     try:
         from services.image_decision_agent import plan_images
@@ -231,7 +242,9 @@ async def _plan_and_inject_placeholders(
         return content_text, {"agent_error": str(e)}
 
     try:
-        plan = await plan_images(content_text, topic, category, max_images=3)
+        plan = await plan_images(
+            content_text, topic, category, max_images=3, site_config=site_config,
+        )
     except Exception as agent_err:
         logger.exception("[IMAGE_AGENT] Image Decision Agent FAILED: %s", agent_err)
         return content_text, {"agent_error": str(agent_err)}

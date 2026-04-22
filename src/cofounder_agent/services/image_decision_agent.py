@@ -13,16 +13,17 @@ is reusable for other decision points (model selection, topic scoring, etc.)
 
 Usage:
     from services.image_decision_agent import plan_images
-    plan = await plan_images(content, topic, category)
+    from services.site_config import site_config
+    plan = await plan_images(content, topic, category, site_config=site_config)
     # plan.images = [{section, source, style, prompt, position}, ...]
 """
 
 import json
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -51,6 +52,7 @@ async def plan_images(
     topic: str,
     category: str = "technology",
     max_images: int = 4,
+    site_config: Any = None,
 ) -> ImagePlanResult:
     """Analyze article content and plan image placement + sourcing.
 
@@ -62,11 +64,20 @@ async def plan_images(
         topic: Article topic/title
         category: Content category (technology, gaming, etc.)
         max_images: Maximum number of inline images (excluding featured)
+        site_config: SiteConfig instance (DI — Phase H, GH#95). Required
+            in new code; falls back to the module singleton if omitted
+            so legacy callers keep working. Removed in a future cleanup.
 
     Returns:
         ImagePlanResult with per-image decisions
     """
     import httpx
+
+    if site_config is None:
+        # Transitional fallback — removed once all callers thread
+        # site_config through. Phase H step 5 (GH#95).
+        from services.site_config import site_config as _singleton
+        site_config = _singleton
 
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     model = site_config.get("model_role_image_decision", "qwen3:8b").removeprefix("ollama/")
