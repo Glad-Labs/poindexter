@@ -190,28 +190,28 @@ class TestQualityAssessment:
 @pytest.mark.unit
 class TestCriticalFloorTunable:
     def test_site_config_overrides_default_floor(self):
-        from unittest.mock import patch
+        from unittest.mock import MagicMock
         dims = QualityDimensions(
             clarity=90, accuracy=90, completeness=90,
             relevance=55,  # Above default 50, but below custom 60
             seo_quality=90, readability=90, engagement=90,
         )
-        with patch("services.site_config.site_config") as mock_cfg:
-            mock_cfg.get_float.return_value = 60.0
-            result = dims.average()
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.return_value = 60.0
+        result = dims.average(site_config=mock_cfg)
         # relevance (55) < custom floor (60) → cap at 55
         assert result == 55.0
 
     def test_site_config_exception_falls_back_to_default(self):
-        from unittest.mock import patch
+        from unittest.mock import MagicMock
         dims = QualityDimensions(
             clarity=90, accuracy=90, completeness=90,
             relevance=30,  # Below default floor 50
             seo_quality=90, readability=90, engagement=90,
         )
-        with patch("services.site_config.site_config") as mock_cfg:
-            mock_cfg.get_float.side_effect = RuntimeError("config down")
-            result = dims.average()
+        mock_cfg = MagicMock()
+        mock_cfg.get_float.side_effect = RuntimeError("config down")
+        result = dims.average(site_config=mock_cfg)
         # Falls back to CRITICAL_FLOOR=50 → 30 < 50 → cap at 30
         assert result == 30.0
 

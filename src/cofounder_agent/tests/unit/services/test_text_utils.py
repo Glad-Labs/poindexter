@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from services.text_utils import (
     DEFAULT_TRUSTED_DOMAINS,
@@ -40,61 +39,53 @@ class TestScrubFabricatedLinks:
 
     def test_keeps_trusted_markdown_link(self):
         body = "See [docs](https://github.com/python/cpython) for more."
-        with patch("services.site_config.site_config", self._site_cfg()):
-            out = scrub_fabricated_links(body)
+        out = scrub_fabricated_links(body, site_config=self._site_cfg())
         assert "https://github.com/python/cpython" in out
 
     def test_removes_untrusted_markdown_link_keeps_text(self):
         body = "A [fake source](https://totally-made-up.example) claim."
-        with patch("services.site_config.site_config", self._site_cfg()):
-            out = scrub_fabricated_links(body)
+        out = scrub_fabricated_links(body, site_config=self._site_cfg())
         assert "made-up.example" not in out
         assert "fake source" in out  # text preserved
 
     def test_strips_untrusted_bare_url(self):
         body = "Check https://totally-made-up.example here"
-        with patch("services.site_config.site_config", self._site_cfg()):
-            out = scrub_fabricated_links(body)
+        out = scrub_fabricated_links(body, site_config=self._site_cfg())
         assert "made-up.example" not in out
         assert "here" in out
 
     def test_respects_csv_override(self):
         body = "See [x](https://niche-reference.example/a)"
-        with patch(
-            "services.site_config.site_config",
-            self._site_cfg(trusted_source_domains="niche-reference.example"),
-        ):
-            out = scrub_fabricated_links(body)
+        out = scrub_fabricated_links(
+            body,
+            site_config=self._site_cfg(trusted_source_domains="niche-reference.example"),
+        )
         assert "niche-reference.example" in out  # now trusted
 
     def test_trusts_own_domain_plus_www_variant(self):
         body = "See [x](https://example.com/about) and [y](https://www.example.com/blog)"
-        with patch(
-            "services.site_config.site_config",
-            self._site_cfg(site_domain="example.com"),
-        ):
-            out = scrub_fabricated_links(body)
+        out = scrub_fabricated_links(
+            body, site_config=self._site_cfg(site_domain="example.com"),
+        )
         assert "example.com/about" in out
         assert "www.example.com/blog" in out
 
     def test_internal_posts_slug_allowlist_filters_fakes(self):
         body = "See [real](https://example.com/posts/real-slug) vs [fake](https://example.com/posts/made-up)."
-        with patch(
-            "services.site_config.site_config",
-            self._site_cfg(site_domain="example.com"),
-        ):
-            out = scrub_fabricated_links(body, known_slugs={"real-slug"})
+        out = scrub_fabricated_links(
+            body,
+            known_slugs={"real-slug"},
+            site_config=self._site_cfg(site_domain="example.com"),
+        )
         assert "posts/real-slug" in out
         assert "posts/made-up" not in out  # dropped; text "fake" preserved
         assert "fake" in out
 
     def test_no_slug_allowlist_accepts_internal_links(self):
         body = "See [x](https://example.com/posts/any-slug)."
-        with patch(
-            "services.site_config.site_config",
-            self._site_cfg(site_domain="example.com"),
-        ):
-            out = scrub_fabricated_links(body)  # known_slugs defaults to None
+        out = scrub_fabricated_links(
+            body, site_config=self._site_cfg(site_domain="example.com"),
+        )  # known_slugs defaults to None
         assert "posts/any-slug" in out
 
     def test_default_trusted_domains_freezeset(self):

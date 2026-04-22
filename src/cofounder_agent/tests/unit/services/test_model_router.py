@@ -470,19 +470,18 @@ class TestModelRouterInit:
         assert r.use_ollama is False
 
     def test_use_ollama_none_reads_site_config(self):
-        from unittest.mock import patch
-        # site_config returns "true" → use_ollama becomes True
-        with patch("services.site_config.site_config") as mock_cfg:
-            mock_cfg.get.return_value = "true"
-            r = ModelRouter(use_ollama=None)
-            assert r.use_ollama is True
+        from unittest.mock import MagicMock
+        mock_cfg = MagicMock()
+        mock_cfg.get.return_value = "true"
+        r = ModelRouter(use_ollama=None, site_config=mock_cfg)
+        assert r.use_ollama is True
 
     def test_use_ollama_none_site_config_exception_defaults_false(self):
-        from unittest.mock import patch
-        with patch("services.site_config.site_config") as mock_cfg:
-            mock_cfg.get.side_effect = RuntimeError("config down")
-            r = ModelRouter(use_ollama=None)
-            assert r.use_ollama is False
+        from unittest.mock import MagicMock
+        mock_cfg = MagicMock()
+        mock_cfg.get.side_effect = RuntimeError("config down")
+        r = ModelRouter(use_ollama=None, site_config=mock_cfg)
+        assert r.use_ollama is False
 
     def test_default_model_stored(self):
         r = ModelRouter(default_model="ollama/custom:7b", use_ollama=True)
