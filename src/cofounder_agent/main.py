@@ -157,6 +157,19 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             # returns env/defaults for missed keys until the DB is reachable.
             app.state.site_config = _site_cfg
 
+        # Phase H step 5 (GH#95): point the module-level `site_config`
+        # attribute at the same loaded instance so legacy function-body
+        # imports (~40+ services still pending migration) see the same
+        # DB-loaded values as `app.state.site_config`. Without this, every
+        # ``from services.site_config import site_config`` reaches for a
+        # separate env-default-only instance — a silent regression that
+        # makes the pipeline generate content using the WRONG model /
+        # prompt config. The follow-up migration will remove each lazy
+        # importer; this shim just keeps them pointing at the right
+        # instance until then.
+        import services.site_config as _site_config_mod
+        _site_config_mod.site_config = _site_cfg
+
         # Re-initialize observability stack now that site_config is loaded from
         # DB. Module-level setup() calls earlier saw empty values — this is the
         # first point where sentry_dsn / enable_pyroscope / enable_tracing are
