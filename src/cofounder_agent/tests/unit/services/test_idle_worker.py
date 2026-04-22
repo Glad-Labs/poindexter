@@ -13,6 +13,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.idle_worker import IdleWorker
+from services.site_config import SiteConfig
+
+
+def _make_sc(**overrides):
+    """Build an isolated SiteConfig for per-test determinism (Phase H step 5)."""
+    return SiteConfig(initial_config=dict(overrides))
 
 
 def _make_pool(pending_count=0):
@@ -29,7 +35,7 @@ class TestRunCycleSkipsWhenBusy:
     async def test_skips_when_tasks_pending(self):
         pool = _make_pool(pending_count=5)
         # Mark all lightweight/pre-gate tasks as recently run so they don't fire
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         now = time.time()
         worker._last_run["sync_page_views"] = now
         worker._last_run["sync_newsletter_subscribers"] = now
@@ -51,7 +57,7 @@ class TestRunCycleSkipsWhenBusy:
     @pytest.mark.asyncio
     async def test_runs_when_no_tasks(self):
         pool = _make_pool(pending_count=0)
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         # Force all tasks to be due
         worker._last_run = {}
         # Mock every async method except run_cycle itself to prevent real HTTP/DB calls
@@ -71,16 +77,16 @@ class TestRunCycleSkipsWhenBusy:
 
 class TestIsDue:
     def test_first_run_is_always_due(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         assert worker._is_due("test_task", 60) is True
 
     def test_not_due_within_interval(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         worker._last_run["test_task"] = time.time()
         assert worker._is_due("test_task", 60) is False
 
     def test_due_after_interval(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         worker._last_run["test_task"] = time.time() - 3700  # Over 1 hour ago
         assert worker._is_due("test_task", 60) is True
 
@@ -89,7 +95,7 @@ class TestMarkRun:
     @pytest.mark.asyncio
     async def test_updates_timestamp(self):
         pool = _make_pool()
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         before = time.time()
         await worker._persist_mark_run("test_task")
         assert worker._last_run["test_task"] >= before
@@ -99,7 +105,7 @@ class TestPersistMarkRun:
     @pytest.mark.asyncio
     async def test_persists_to_db(self):
         pool = _make_pool()
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         before = time.time()
         await worker._persist_mark_run("my_task")
         assert worker._last_run["my_task"] >= before
@@ -112,7 +118,7 @@ class TestPersistMarkRun:
     async def test_persists_even_if_db_fails(self):
         pool = _make_pool()
         pool.execute = AsyncMock(side_effect=Exception("DB down"))
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         await worker._persist_mark_run("my_task")
         # In-memory should still be updated even if DB fails
         assert "my_task" in worker._last_run
@@ -126,7 +132,7 @@ class TestLoadPersistedSchedules:
             {"key": "idle_last_run_quality_audit", "value": "1700000000.0"},
             {"key": "idle_last_run_link_check", "value": "1700000100.0"},
         ])
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         await worker._load_persisted_schedules()
         assert worker._last_run["quality_audit"] == 1700000000.0
         assert worker._last_run["link_check"] == 1700000100.0
@@ -136,7 +142,7 @@ class TestLoadPersistedSchedules:
     async def test_skips_on_second_call(self):
         pool = _make_pool()
         pool.fetch = AsyncMock(return_value=[])
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         await worker._load_persisted_schedules()
         pool.fetch.reset_mock()
         await worker._load_persisted_schedules()
@@ -146,7 +152,7 @@ class TestLoadPersistedSchedules:
     async def test_handles_db_failure(self):
         pool = _make_pool()
         pool.fetch = AsyncMock(side_effect=Exception("DB error"))
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         await worker._load_persisted_schedules()
         # Should mark as loaded so it doesn't retry every cycle
         assert worker._schedules_loaded is True
@@ -154,13 +160,13 @@ class TestLoadPersistedSchedules:
 
 class TestMarkCompleted:
     def test_sets_completion_key(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         worker._mark_completed("audit_quality")
         assert "audit_quality_completed" in worker._last_run
 
     def test_completion_cooldown_extends_interval(self):
         """After _mark_completed, task should use 4x interval."""
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         # Task last ran 90 mins ago (due at 60 min interval normally)
         worker._last_run["audit_quality"] = time.time() - 5400
         # But it completed all work — should NOT be due (need 4x = 240 min)
@@ -168,7 +174,7 @@ class TestMarkCompleted:
         assert worker._is_due("audit_quality", 60) is False
 
     def test_normal_interval_without_completion(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         worker._last_run["audit_quality"] = time.time() - 5400
         # No completion marker — normal 60-min interval, 90 min elapsed = due
         assert worker._is_due("audit_quality", 60) is True
@@ -185,7 +191,7 @@ class TestCreateGiteaIssue:
 
     @pytest.mark.asyncio
     async def test_delegates_to_shared_utility(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         with patch(
             "utils.gitea_issues.create_gitea_issue",
             new=AsyncMock(return_value=True),
@@ -196,7 +202,7 @@ class TestCreateGiteaIssue:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_utility_returns_false(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         with patch(
             "utils.gitea_issues.create_gitea_issue",
             new=AsyncMock(return_value=False),
@@ -213,7 +219,7 @@ class TestCreateGiteaIssue:
 class TestIdleWorkerInit:
     def test_initializes_with_pool(self):
         pool = AsyncMock()
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         assert worker.pool is pool
         assert worker._last_run == {}
         assert worker._schedules_loaded is False
@@ -227,7 +233,7 @@ class TestIdleWorkerInit:
 class TestDiscoverAndQueueTopics:
     @pytest.mark.asyncio
     async def test_no_topics_found(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         fake_discovery = MagicMock()
         fake_discovery.discover = AsyncMock(return_value=[])
         fake_discovery.queue_topics = AsyncMock()
@@ -241,7 +247,7 @@ class TestDiscoverAndQueueTopics:
 
     @pytest.mark.asyncio
     async def test_topics_discovered_and_queued(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         fake_topic = MagicMock()
         fake_topic.title = "Some Trending Topic in AI"
 
@@ -258,7 +264,7 @@ class TestDiscoverAndQueueTopics:
 
     @pytest.mark.asyncio
     async def test_discovery_exception_returns_error(self):
-        worker = IdleWorker(AsyncMock())
+        worker = IdleWorker(AsyncMock(), site_config=_make_sc())
         fake_discovery = MagicMock()
         fake_discovery.discover = AsyncMock(side_effect=RuntimeError("hn down"))
 
@@ -280,7 +286,7 @@ class TestShouldTriggerDiscoveryThrottleGate:
     @pytest.mark.asyncio
     async def test_early_returns_when_queue_full(self):
         pool = _make_pool(pending_count=0)
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         # Patch the shared throttle check to report a full queue
         with patch(
             "services.pipeline_throttle.is_queue_full",
@@ -295,7 +301,7 @@ class TestShouldTriggerDiscoveryThrottleGate:
         """Not-full queue does NOT short-circuit — we proceed to the
         normal cooldown/manual/signal ladder."""
         pool = _make_pool(pending_count=0)
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
 
         # Suppress everything past the gate via a huge cooldown so
         # _should_trigger_discovery returns "cooldown" — proving we
@@ -323,7 +329,7 @@ class TestShouldTriggerDiscoveryThrottleGate:
         """A failing throttle check must NOT poison the decision — the
         rest of the signal ladder still runs."""
         pool = _make_pool(pending_count=0)
-        worker = IdleWorker(pool)
+        worker = IdleWorker(pool, site_config=_make_sc())
         worker._get_setting = AsyncMock(return_value="0")  # cooldown 0 = due
         # Block the rest of the ladder so we can assert we got past the gate
         pool.fetchval = AsyncMock(return_value=0)  # pending=0 triggers queue_low
