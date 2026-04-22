@@ -60,18 +60,13 @@ def _discover_memory_dirs(
     site_config. Passing the sentinel ``"__skip__"`` disables that source
     entirely — useful for tests that shouldn't touch real home dirs.
 
-    ``site_config`` is injected by the runner (Phase H step 4.6, GH#95) so
-    this module no longer reaches for the module-level singleton. When
-    ``None``, falls back to the singleton import to keep legacy callers
-    working during the transition.
+    ``site_config`` is injected by the runner (Phase H, GH#95) so this
+    module no longer reaches for the module-level singleton. When ``None``
+    (legacy test callers), only config-arg values are honored — no
+    site_config key lookups.
     """
 
     _sc = site_config
-    if _sc is None:
-        try:
-            from services.site_config import site_config as _sc  # type: ignore[no-redef]
-        except Exception:
-            _sc = None
 
     def _resolve(cfg_value, sc_key, default):
         if cfg_value == _SENTINEL_SKIP:
