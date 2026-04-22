@@ -90,7 +90,9 @@ class MemoryClient:
     Connection config is resolved in this order (#198: no hardcoded defaults):
       1. explicit dsn / ollama_url args to __init__
       2. POINDEXTER_MEMORY_DSN env var (or fall back to DATABASE_URL)
-      3. OLLAMA_URL env var
+      3. OLLAMA_URL env var, then OLLAMA_BASE_URL (Poindexter worker
+         containers set OLLAMA_BASE_URL; the standalone CLI path still
+         accepts OLLAMA_URL — GH#93 Phase 1 consolidation)
       4. RuntimeError — no silent localhost fallback
     """
 
@@ -116,11 +118,17 @@ class MemoryClient:
                 "POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, DATABASE_URL "
                 "in the environment."
             )
-        resolved_ollama = ollama_url or os.getenv("OLLAMA_URL")
+        # OLLAMA_URL kept for the standalone CLI path; OLLAMA_BASE_URL is
+        # the name the worker container + compose stack uses, so accept
+        # both and prefer OLLAMA_URL when set (GH#93 Phase 1).
+        resolved_ollama = (
+            ollama_url or os.getenv("OLLAMA_URL") or os.getenv("OLLAMA_BASE_URL")
+        )
         if not resolved_ollama:
             raise RuntimeError(
                 "MemoryClient requires an Ollama URL. Pass ollama_url= or set "
-                "OLLAMA_URL in the environment (no hardcoded default — #198)."
+                "one of OLLAMA_URL / OLLAMA_BASE_URL in the environment (no "
+                "hardcoded default — #198)."
             )
         self.ollama_url = resolved_ollama.rstrip("/")
         self.embed_model = embed_model
