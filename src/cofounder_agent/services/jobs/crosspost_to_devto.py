@@ -31,18 +31,15 @@ class CrosspostToDevtoJob:
     schedule = "every 4 hours"
     idempotent = True  # dedup on metadata.devto_url — safe to retry
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+    async def run(
+        self, pool: Any, config: dict[str, Any], *, site_config: Any,
+    ) -> JobResult:
         from services.devto_service import DevToCrossPostService
-        # Jobs don't have access to the lifespan-bound site_config yet —
-        # Phase H step 3 wires site_config through PluginScheduler so jobs
-        # get it alongside the pool. Until then, fall back to the module
-        # singleton at the call site.
-        from services.site_config import site_config as _sc
 
         batch_size = int(config.get("batch_size", 3))
         file_issue = bool(config.get("file_gitea_issue", False))
 
-        svc = DevToCrossPostService(pool, _sc)
+        svc = DevToCrossPostService(pool, site_config)
 
         # Early-out before we touch the DB: if there's no API key there's
         # nothing we can do.
