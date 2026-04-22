@@ -222,8 +222,13 @@ class GenerateContentStage:
         # Writer self-review pass (opt-in via enable_writer_self_review).
         if _self_review_enabled():
             try:
+                # generate_content stage hasn't migrated away from the
+                # singleton yet (pending its own Phase H pass); pass it
+                # through so self_review no longer imports the singleton
+                # at module scope.
+                from services.site_config import site_config as _sc
                 revised, sr_meta = await _self_review_and_revise(
-                    content_text, title, topic,
+                    content_text, title, topic, _sc,
                 )
                 if sr_meta.get("revised"):
                     logger.info(
