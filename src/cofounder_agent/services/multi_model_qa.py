@@ -340,6 +340,14 @@ class MultiModelQA:
                 "[MULTI_QA] Validator flagged known_wrong_fact only — deferring to web fact-check"
             )
 
+        # 1b. Citation verifier — HTTP HEAD every external URL in the content
+        # (GH#54 / gitea#271 Phase 6). Dead links + insufficient citation
+        # count feed the weighted average as a new reviewer. Behind a
+        # DB-configurable flag so it can be silenced per-niche if needed.
+        citation_review = await self._check_citations(content)
+        if citation_review is not None:
+            reviews.append(citation_review)
+
         # 2. Cross-model review using a DIFFERENT provider than the writer
         # Model is configurable via app_settings (pipeline_critic_model)
         critic_model = None
@@ -914,6 +922,97 @@ class MultiModelQA:
         except Exception as e:
             logger.warning("[MULTI_QA] %s gate failed (non-critical): %s", reviewer_name, e)
             return None
+
+    async def _check_citations(self, content: str) -> ReviewerResult | None:
+        """Verify every external URL cited in ``content`` resolves + enforce
+        a minimum-citation floor. Part of Phase 6 / GH#54 source-verified
+        pipeline. Returns a ReviewerResult with approval=False if dead-link
+        ratio exceeds ``qa_citation_max_dead_ratio`` (default 0.30) or the
+        citation count is below ``qa_citation_min_count`` (default 0, i.e.
+        disabled unless an operator opts in). Returns None when the feature
+        is flagged off entirely via ``qa_citation_verify_enabled=false``.
+
+        All behaviors are DB-configurable per the project's app_settings
+        pattern — operators can soften the gate per-niche if a niche has
+        fewer natural citation targets.
+        """
+        # Feature flag — default on.
+        enabled = True
+        if self.settings:
+            val = await self.settings.get("qa_citation_verify_enabled")
+            if val is not None:
+                enabled = str(val).lower() not in ("false", "0", "no")
+        if not enabled:
+            return None
+
+        max_dead_ratio = 0.30
+        min_count = 0
+        timeout_s = 8.0
+        concurrency = 5
+        site_url = None
+        if self.settings:
+            try:
+                raw = await self.settings.get("qa_citation_max_dead_ratio")
+                if raw is not None:
+                    max_dead_ratio = float(raw)
+            except (TypeError, ValueError):
+                pass
+            try:
+                raw = await self.settings.get("qa_citation_min_count")
+                if raw is not None:
+                    min_count = int(raw)
+            except (TypeError, ValueError):
+                pass
+            try:
+                raw = await self.settings.get("qa_citation_timeout_seconds")
+                if raw is not None:
+                    timeout_s = float(raw)
+            except (TypeError, ValueError):
+                pass
+            site_url = await self.settings.get("site_url") or None
+
+        try:
+            from services.citation_verifier import (
+                verify_citations, verdict_from_report,
+            )
+            report = await verify_citations(
+                content,
+                site_url=site_url,
+                timeout_s=timeout_s,
+                concurrency=concurrency,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[MULTI_QA] citation_verifier raised (non-fatal): %s", exc,
+            )
+            return None
+
+        passed, reason = await verdict_from_report(
+            report, max_dead_ratio=max_dead_ratio, min_citations=min_count,
+        )
+        # Score: 100 when alive + >=min, linearly scaled down with dead ratio.
+        # Skip (None → neutral score=85) when there were no external URLs
+        # and min_count=0 — a citation-free post isn't penalized if the
+        # operator didn't require citations.
+        if report.unique_urls == 0:
+            if min_count == 0:
+                return None  # No citations to grade; skip the reviewer silently.
+            score = 0.0
+        else:
+            score = max(0.0, 100.0 * (1.0 - report.dead_ratio))
+        logger.info(
+            "[MULTI_QA] citation_verifier: %s (%d urls, %d dead, %.0f%% alive)",
+            "PASS" if passed else "FAIL",
+            report.unique_urls, len(report.dead),
+            100.0 * (1.0 - report.dead_ratio),
+        )
+        return ReviewerResult(
+            reviewer="citation_verifier",
+            approved=passed,
+            score=float(score),
+            feedback=reason,
+            provider="http_head",
+        )
 
     async def _check_topic_delivery(
         self, topic: str, content: str
