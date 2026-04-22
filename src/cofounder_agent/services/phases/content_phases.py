@@ -431,9 +431,13 @@ class GenerateSEOPhase(BasePhase):
         try:
             from .seo_content_generator import get_seo_content_generator  # type: ignore[import]
             # Transitional: this legacy phase is not itself Phase H
-            # migrated (GH#95). The local singleton import keeps the
-            # call shippable until the phases layer follows.
-            from services.site_config import site_config as _sc
+            # Phase H step 4.4 (GH#95): read from inputs (the phase's
+            # equivalent of the stage context dict) with a transitional
+            # fallback to the module singleton for any caller that
+            # hasn't seeded it yet. Fallback goes away in step 5.
+            _sc = inputs.get("site_config")
+            if _sc is None:
+                from services.site_config import site_config as _sc
 
             content = inputs.get("content")
             topic = inputs.get("topic")
@@ -546,9 +550,13 @@ class CaptureTrainingDataPhase(BasePhase):
         model_used = inputs.get("model_used", "unknown")
         scores = inputs.get("scores", {})
 
-        # Feature flag: opt-out via config or environment variable
-        from services.site_config import site_config
-        _capture_flag = site_config.get("enable_training_capture", "true")
+        # Feature flag: opt-out via config or environment variable.
+        # Phase H step 4.4 (GH#95): prefer the phase inputs dict, fall back
+        # to the module singleton until step 5 deletes it.
+        _sc_capture = inputs.get("site_config")
+        if _sc_capture is None:
+            from services.site_config import site_config as _sc_capture
+        _capture_flag = _sc_capture.get("enable_training_capture", "true")
         if str(_capture_flag).lower() == "false":
             logger.info("[CaptureTrainingDataPhase] Skipped (ENABLE_TRAINING_CAPTURE=false)")
             self.status = "completed"
