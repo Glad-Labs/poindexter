@@ -1102,22 +1102,22 @@
       },
       "targets": [
         {
-          "expr": "max without(job, instance) (poindexter_tasks_in_progress)",
+          "expr": "poindexter_tasks_in_progress",
           "legendFormat": "Tasks In Progress",
           "refId": "A"
         },
         {
-          "expr": "max without(job, instance) (poindexter_tasks_awaiting_approval)",
+          "expr": "poindexter_tasks_awaiting_approval",
           "legendFormat": "Awaiting Approval",
           "refId": "B"
         },
         {
-          "expr": "max without(job, instance) (poindexter_db_pool_size)",
+          "expr": "poindexter_db_pool_size",
           "legendFormat": "DB Pool Size",
           "refId": "C"
         },
         {
-          "expr": "max without(job, instance) (poindexter_db_pool_idle)",
+          "expr": "poindexter_db_pool_idle",
           "legendFormat": "DB Pool Idle",
           "refId": "D"
         },
