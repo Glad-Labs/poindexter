@@ -136,9 +136,16 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
 }
 
 
-def get_default_image_model() -> ImageModel:
-    """Get the default image model from site_config or fallback."""
-    from services.site_config import site_config
+def get_default_image_model(site_config: Any = None) -> ImageModel:
+    """Get the default image model from site_config or fallback.
+
+    Phase H step 4.5 (GH#95): site_config is an optional param so callers
+    with an explicit instance (e.g. DI from app.state) can pass it in.
+    Falls back to the module singleton for callers that haven't migrated
+    — removed in Phase H step 5.
+    """
+    if site_config is None:
+        from services.site_config import site_config
     model_name = site_config.get("image_model", "sdxl_lightning")
     try:
         return ImageModel(model_name)

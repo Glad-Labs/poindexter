@@ -48,7 +48,16 @@ class AIGenerationProvider:
         prompt_model = str(config.get("prompt_model", "llama3:latest"))
         generator_name = str(config.get("generator", "sdxl") or "sdxl")
 
-        sdxl_prompt = await _build_sdxl_prompt(topic, prompt_model)
+        # Phase H step 4.5 (GH#95): resolve site_config from the dispatcher's
+        # reserved ``_site_config`` key. Transitional fallback removed in step 5.
+        _sc = config.get("_site_config")
+        if _sc is None:
+            try:
+                from services.site_config import site_config as _sc
+            except Exception:
+                _sc = None
+
+        sdxl_prompt = await _build_sdxl_prompt(topic, prompt_model, _sc)
 
         # Resolve the downstream provider. Stay inside the plugin registry
         # so swapping to flux/dalle/etc. later is a config change.
@@ -86,14 +95,17 @@ class AIGenerationProvider:
         return relabelled
 
 
-async def _build_sdxl_prompt(topic: str, model: str) -> str:
+async def _build_sdxl_prompt(
+    topic: str, model: str, site_config: Any = None,
+) -> str:
     """Ask Ollama to write a tailored SDXL prompt. Fall back to a
     generic photorealistic template when Ollama is unreachable.
 
     Shared shape with services/jobs/regenerate_stock_images.py — kept in
     sync so both the Job and the Provider produce similar output.
     """
-    from services.site_config import site_config
+    if site_config is None:
+        from services.site_config import site_config
 
     fallback = (
         f"photorealistic scene related to {topic[:50]}, cinematic lighting, "

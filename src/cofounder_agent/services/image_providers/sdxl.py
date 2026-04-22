@@ -118,11 +118,21 @@ class SdxlProvider:
         if not prompt:
             return []
 
-        negative = str(config.get("negative_prompt", "") or "")
-        if not negative:
+        # Phase H step 4.5 (GH#95): resolve site_config from the dispatcher's
+        # reserved ``_site_config`` key so stages → image_service → provider
+        # never touch the module singleton. Transitional fallback for callers
+        # that haven't seeded the key yet; removed in Phase H step 5.
+        _sc = config.get("_site_config")
+        if _sc is None:
             try:
-                from services.site_config import site_config
-                negative = site_config.get("image_negative_prompt", "") or ""
+                from services.site_config import site_config as _sc
+            except Exception:
+                _sc = None
+
+        negative = str(config.get("negative_prompt", "") or "")
+        if not negative and _sc is not None:
+            try:
+                negative = _sc.get("image_negative_prompt", "") or ""
             except Exception:
                 negative = ""
 
@@ -152,6 +162,7 @@ class SdxlProvider:
             steps=int(steps) if steps is not None else None,
             guidance=float(guidance) if guidance is not None else None,
             task_id=str(task_id) if task_id is not None else None,
+            site_config=_sc,
             target_model=target_model,
         )
 
@@ -167,7 +178,7 @@ class SdxlProvider:
         upload_target = str(config.get("upload_to", "") or "")
         if upload_target == "cloudinary":
             try:
-                url = await _upload_to_cloudinary(output_path, prompt)
+                url = await _upload_to_cloudinary(output_path, prompt, _sc)
             except Exception as e:
                 logger.warning(
                     "[SdxlProvider] Cloudinary upload failed (serving file:// URL): %s",
@@ -175,7 +186,7 @@ class SdxlProvider:
                 )
         elif upload_target == "r2":
             try:
-                url = await _upload_to_r2(output_path, prompt)
+                url = await _upload_to_r2(output_path, prompt, _sc)
             except Exception as e:
                 logger.warning(
                     "[SdxlProvider] R2 upload failed (serving file:// URL): %s", e,
@@ -213,6 +224,7 @@ async def _generate_to_path(
     guidance: float | None,
     task_id: str | None,
     target_model: ImageModel | None,
+    site_config: Any = None,
 ) -> bool:
     """Run the sidecar + diffusers strategies in order. Returns True
     when a file has been written to ``output_path``.
@@ -223,6 +235,7 @@ async def _generate_to_path(
         output_path=output_path,
         steps=steps,
         guidance=guidance,
+        site_config=site_config,
     ):
         return True
     return await _try_in_process_diffusers(
@@ -233,6 +246,7 @@ async def _generate_to_path(
         guidance=guidance,
         task_id=task_id,
         target_model=target_model,
+        site_config=site_config,
     )
 
 
@@ -243,6 +257,7 @@ async def _try_host_sidecar(
     output_path: str,
     steps: int | None,
     guidance: float | None,
+    site_config: Any = None,
 ) -> bool:
     """POST the prompt to the host SDXL sidecar. Return True once a PNG
     is present at ``output_path``.
@@ -257,10 +272,18 @@ async def _try_host_sidecar(
       ``services/stages/source_featured_image.py:_resolve_sdxl_featured_response``
       path so both call sites handle the sidecar the same way).
     """
+    if site_config is None:
+        try:
+            from services.site_config import site_config
+        except Exception:
+            site_config = None
     try:
-        from services.site_config import site_config
-        server_url = site_config.get(
-            "sdxl_server_url", "http://host.docker.internal:9836",
+        server_url = (
+            site_config.get(
+                "sdxl_server_url", "http://host.docker.internal:9836",
+            )
+            if site_config is not None
+            else "http://host.docker.internal:9836"
         )
     except Exception:
         server_url = "http://host.docker.internal:9836"
@@ -294,7 +317,7 @@ async def _try_host_sidecar(
                 return True
             if resp.status_code == 200 and ct.startswith("application/json"):
                 if await asyncio.to_thread(
-                    _materialize_sidecar_json, resp, output_path,
+                    _materialize_sidecar_json, resp, output_path, site_config,
                 ):
                     return True
             logger.warning(
@@ -308,7 +331,11 @@ async def _try_host_sidecar(
     return False
 
 
-def _materialize_sidecar_json(resp: httpx.Response, output_path: str) -> bool:
+def _materialize_sidecar_json(
+    resp: httpx.Response,
+    output_path: str,
+    site_config: Any = None,
+) -> bool:
     """Copy the sidecar-generated PNG at the path advertised in its JSON
     response to the caller's ``output_path``. Returns True on success.
     """
@@ -325,9 +352,17 @@ def _materialize_sidecar_json(resp: httpx.Response, output_path: str) -> bool:
         logger.warning("SDXL sidecar JSON missing image_path: %s", data)
         return False
 
+    if site_config is None:
+        try:
+            from services.site_config import site_config
+        except Exception:
+            site_config = None
     try:
-        from services.site_config import site_config
-        host_home = site_config.get("host_home", "") or ""
+        host_home = (
+            site_config.get("host_home", "") or ""
+            if site_config is not None
+            else ""
+        )
     except Exception:
         host_home = ""
     if host_home and src.startswith(host_home):
@@ -365,6 +400,7 @@ async def _try_in_process_diffusers(
     guidance: float | None,
     task_id: str | None,
     target_model: ImageModel | None,
+    site_config: Any = None,  # noqa: ARG001 — reserved for future use
 ) -> bool:
     """Initialize (if needed) + run the in-process diffusers pipeline."""
     if not _state.initialized or (
@@ -741,12 +777,15 @@ def _generate_image_sync(
 # ---------------------------------------------------------------------------
 
 
-async def _upload_to_cloudinary(path: str, prompt: str) -> str:
+async def _upload_to_cloudinary(
+    path: str, prompt: str, site_config: Any = None,
+) -> str:
     """Upload a generated PNG to Cloudinary and return the secure URL."""
     import cloudinary
     import cloudinary.uploader
 
-    from services.site_config import site_config
+    if site_config is None:
+        from services.site_config import site_config
 
     cloudinary.config(
         cloud_name=site_config.get("cloudinary_cloud_name"),
@@ -771,16 +810,16 @@ async def _upload_to_cloudinary(path: str, prompt: str) -> str:
     return str(url)
 
 
-async def _upload_to_r2(path: str, prompt: str) -> str:
+async def _upload_to_r2(path: str, prompt: str, site_config: Any = None) -> str:
     """Upload a generated PNG to R2 via the shared r2_upload_service."""
     from services.r2_upload_service import upload_to_r2
-    # ImageProvider plugins don't receive site_config via the Protocol
-    # yet — use a transitional module-singleton import at the call site
-    # until plugins/image_provider.py threads DI through (pending Phase H
-    # follow-up alongside PluginScheduler).
-    from services.site_config import site_config as _sc
+    if site_config is None:
+        # Transitional fallback — removed in Phase H step 5 when the
+        # module singleton is deleted.
+        from services.site_config import site_config as _sc
+        site_config = _sc
     key = f"sdxl/{os.path.basename(path)}"
-    url = await upload_to_r2(path, key, "image/png", site_config=_sc)
+    url = await upload_to_r2(path, key, "image/png", site_config=site_config)
     if not url:
         raise RuntimeError("r2_upload_service returned empty URL")
     logger.debug("[SdxlProvider] uploaded %s for prompt %r", key, prompt[:40])
