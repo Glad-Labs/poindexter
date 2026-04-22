@@ -20,8 +20,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
+from services.site_config import SiteConfig
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 
 def _import_publishing_module():
@@ -96,6 +97,11 @@ def _build_app(mock_db=None) -> FastAPI:
 
     # Override DB
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
+
+    # Phase H (GH#95): get_site_config_dependency no longer falls back to the
+    # module singleton. Supply a fresh SiteConfig so routes exercising the
+    # Depends(get_site_config_dependency) parameter don't raise.
+    app.dependency_overrides[get_site_config_dependency] = lambda: SiteConfig()
 
     return app
 

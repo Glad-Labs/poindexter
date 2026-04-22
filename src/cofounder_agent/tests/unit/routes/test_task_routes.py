@@ -26,9 +26,10 @@ from middleware.api_token_auth import verify_api_token, verify_api_token_optiona
 
 # Import helpers under test directly (pure functions, no I/O)
 from routes.task_routes import _normalize_seo_keywords_in_task, router
+from services.site_config import SiteConfig
 from tests.unit.routes.conftest import TEST_USER, make_mock_db
 from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 
 @pytest.fixture(autouse=True)
@@ -63,6 +64,11 @@ def _build_app(mock_db=None) -> FastAPI:
 
     # Override DB
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
+
+    # Phase H (GH#95): get_site_config_dependency reads app.state.site_config
+    # strictly (no module-singleton fallback). Override with a fresh SiteConfig
+    # so tests don't need to simulate the lifespan's DB load.
+    app.dependency_overrides[get_site_config_dependency] = lambda: SiteConfig()
 
     return app
 

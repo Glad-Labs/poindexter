@@ -22,8 +22,9 @@ from fastapi.testclient import TestClient
 import routes.approval_routes as approval_module
 from middleware.api_token_auth import verify_api_token
 from routes.approval_routes import router
+from services.site_config import SiteConfig
 from tests.unit.routes.conftest import make_mock_db
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 # ---------------------------------------------------------------------------
 # App / client factory
@@ -39,6 +40,9 @@ def _build_app(mock_db=None) -> FastAPI:
 
     app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
+    # Phase H (GH#95): strict DI — supply a fresh SiteConfig for route handlers
+    # that read it via Depends(get_site_config_dependency).
+    app.dependency_overrides[get_site_config_dependency] = lambda: SiteConfig()
 
     return app
 

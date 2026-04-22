@@ -19,6 +19,8 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from routes.revalidate_routes import router, trigger_nextjs_revalidation
+from services.site_config import SiteConfig
+from utils.route_utils import get_site_config_dependency
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token-for-revalidate"}
 
@@ -27,6 +29,8 @@ def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[verify_api_token] = lambda: "test-token"
+    # Phase H (GH#95): strict DI — supply a fresh SiteConfig.
+    app.dependency_overrides[get_site_config_dependency] = lambda: SiteConfig()
     return app
 
 

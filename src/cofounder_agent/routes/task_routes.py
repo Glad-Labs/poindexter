@@ -334,14 +334,13 @@ async def _handle_blog_post_creation(
     current_user: dict,
     db_service: DatabaseService,
     *,
-    site_config: Any = None,
+    site_config: Any,
 ) -> dict[str, Any]:
     """Handle blog post task creation.
 
-    ``site_config`` is kw-only and optional for back-compat with any in-tree
-    callers that haven't threaded it through yet; if omitted we fall back to
-    the module singleton. Phase H (GH#95) is migrating callers off that
-    fallback.
+    ``site_config`` is required (kw-only). Phase H (GH#95) finished the
+    migration off the module-singleton fallback — every caller threads
+    site_config through explicitly.
     """
     task_id = str(uuid_lib.uuid4())
 
@@ -363,9 +362,6 @@ async def _handle_blog_post_creation(
             from services.topic_discovery import TopicDiscovery
             pool = db_service.pool if db_service else None
             # Phase H step 5 (GH#95): thread site_config explicitly.
-            # ``site_config`` is the kwarg on this handler; pass None
-            # when unset so TopicDiscovery's transitional fallback
-            # picks up the module singleton.
             discovery = TopicDiscovery(pool, site_config=site_config)
             topics = await discovery.discover(max_topics=3)
             fresh = [t for t in topics if not t.is_duplicate]
@@ -417,16 +413,12 @@ async def _handle_blog_post_creation(
     try:
         from services.pipeline_throttle import is_queue_full
 
-        # Phase H (GH#95): is_queue_full now requires site_config as an
-        # explicit parameter. Fall back to the module singleton only if the
-        # caller (older test path) didn't thread one in.
-        if site_config is None:
-            from services.site_config import site_config as _sc
-        else:
-            _sc = site_config
+        # Phase H (GH#95): is_queue_full requires site_config as an
+        # explicit parameter. ``site_config`` is the kw-only arg threaded
+        # through from create_task's Depends(get_site_config_dependency).
         queue_full, queue_position, queue_limit = await is_queue_full(
             db_service.pool if db_service else None,
-            _sc,
+            site_config,
         )
     except Exception as e:
         logger.debug("[create_task] Throttle state check failed: %s", e)
