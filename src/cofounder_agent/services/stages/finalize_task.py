@@ -92,7 +92,13 @@ class FinalizeTaskStage:
                 append_sources_section,
                 extract_urls,
             )
-            from services.site_config import site_config as _sc_sources
+            # Phase H step 4.3 (GH#95): read site_config from the pipeline
+            # context instead of reaching for the module-level singleton.
+            _sc_sources = context.get("site_config")
+            if _sc_sources is None:
+                # Transitional fallback — removed in Phase H step 5 when
+                # the singleton is deleted.
+                from services.site_config import site_config as _sc_sources
             if (_sc_sources.get("auto_append_sources_section", "true") or "true").lower() not in ("false", "0", "no"):
                 _site_url = _sc_sources.get("site_url") or None
                 _urls = extract_urls(content_text, site_url=_site_url)
