@@ -65,8 +65,10 @@ The reference section is the deepest layer — exhaustive catalogs of
 every setting, prompt, validator, and extension point. Tracked in
 the [GitHub backlog](https://github.com/Glad-Labs/poindexter/milestones).
 
-- `reference/app-settings.md` — every key in the `app_settings`
-  table, default value, what reads it. **Coming soon.**
+- **[`reference/app-settings.md`](reference/app-settings.md)** —
+  every key in the `app_settings` table with default, category, and
+  secret classification. Auto-generated from the live DB — rerun
+  `python scripts/regen-app-settings-doc.py` to refresh.
 - `reference/prompt-templates.md` — how `prompt_templates` works
   and how to override a prompt without a redeploy. **Coming soon.**
 - `reference/qa-pipeline.md` — the 6-stage content pipeline, scoring
