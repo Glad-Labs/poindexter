@@ -14,6 +14,17 @@ import pytest
 from services.jobs.backfill_podcasts import BackfillPodcastsJob
 
 
+def _mock_sc(cloud_url: str = "postgres://cloud") -> MagicMock:
+    """SiteConfig mock for post-Phase-H job.run() kwarg."""
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": (
+        cloud_url if k == "database_url" else d
+    )
+    sc.get_bool.side_effect = lambda k, d=False: d
+    sc.get_int.side_effect = lambda k, d=0: d
+    return sc
+
+
 def _fake_asyncpg(rows: list[dict] | None = None):
     cloud_conn = AsyncMock()
     cloud_conn.fetch = AsyncMock(return_value=rows or [])
@@ -52,8 +63,8 @@ class TestBackfillPodcastsJobMetadata:
 class TestBackfillPodcastsJobRun:
     async def test_skips_when_no_database_url(self):
         job = BackfillPodcastsJob()
-        with patch("services.site_config.site_config.get", return_value=""):
-            result = await job.run(MagicMock(), {})
+        sc = _mock_sc(cloud_url="")
+        result = await job.run(MagicMock(), {}, site_config=sc)
         assert result.ok is True
         assert "no database_url" in result.detail
 
@@ -64,12 +75,13 @@ class TestBackfillPodcastsJobRun:
 
         svc = _mk_podcast_svc(existing=set())  # nothing exists yet
 
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.podcast_service.PodcastService", return_value=svc), \
              patch("services.r2_upload_service.upload_podcast_episode",
                    new=AsyncMock(return_value=None)):
-            result = await job.run(MagicMock(), {"max_per_cycle": 2})
+            result = await job.run(
+                MagicMock(), {"max_per_cycle": 2}, site_config=_mock_sc(),
+            )
 
         assert result.ok is True
         # Default max_per_cycle via arg → 2 generated
@@ -82,12 +94,11 @@ class TestBackfillPodcastsJobRun:
 
         svc = _mk_podcast_svc(existing={"p1", "p2"})  # all exist
 
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.podcast_service.PodcastService", return_value=svc), \
              patch("services.r2_upload_service.upload_podcast_episode",
                    new=AsyncMock(return_value="https://r2/p.mp3")):
-            result = await job.run(MagicMock(), {})
+            result = await job.run(MagicMock(), {}, site_config=_mock_sc())
 
         assert result.ok is True
         # Nothing generated because everything existed.
@@ -114,12 +125,13 @@ class TestBackfillPodcastsJobRun:
 
         svc.generate_episode = _flaky_gen
 
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.podcast_service.PodcastService", return_value=svc), \
              patch("services.r2_upload_service.upload_podcast_episode",
                    new=AsyncMock(return_value="https://r2/p.mp3")):
-            result = await job.run(MagicMock(), {"max_per_cycle": 2})
+            result = await job.run(
+                MagicMock(), {"max_per_cycle": 2}, site_config=_mock_sc(),
+            )
 
         assert result.ok is True
         # First failed, second generated.
@@ -144,15 +156,20 @@ class TestBackfillPodcastsJobRun:
             upload_calls.append((path, key, ct))
             return f"https://r2/{key}"
 
-        with patch("services.site_config.site_config.get",
-                   side_effect=lambda k, d="": "postgres://cloud" if k == "database_url" else "http://api"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": (
+            "postgres://cloud" if k == "database_url" else "http://api"
+        )
+        sc.get_bool.side_effect = lambda k, d=False: d
+        sc.get_int.side_effect = lambda k, d=0: d
+
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.podcast_service.PodcastService", return_value=svc), \
              patch("services.r2_upload_service.upload_podcast_episode",
                    new=AsyncMock(return_value="https://r2/ep.mp3")), \
              patch("services.r2_upload_service.upload_to_r2", new=_upload), \
              patch("httpx.AsyncClient", return_value=mock_http_ctx):
-            result = await job.run(MagicMock(), {})
+            result = await job.run(MagicMock(), {}, site_config=sc)
 
         assert result.ok is True
         # The feed rebuild should have pushed podcast/feed.xml.
