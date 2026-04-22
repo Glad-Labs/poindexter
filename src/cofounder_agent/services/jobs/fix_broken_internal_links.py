@@ -124,10 +124,14 @@ class FixBrokenInternalLinksJob:
                     )
 
         if fixed and file_issue:
+            # Phase H (GH#95): transitional singleton import — this Job's
+            # run() doesn't thread site_config yet.
+            from services.site_config import site_config as _sc
             await create_gitea_issue(
                 f"links: removed broken internal links from {fixed} posts",
                 "Auto-cleaned links to unpublished/deleted posts. "
                 "Anchor text preserved; sidebar list items removed wholesale.",
+                site_config=_sc,
             )
 
         detail = f"scanned {len(candidates)} post(s), rewrote {fixed}"

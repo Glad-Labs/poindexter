@@ -95,9 +95,13 @@ class DetectDuplicatePostsJob:
             body = "## Potential Duplicate Posts\n\n" + "\n".join(
                 f'- "{a}" vs "{b}"' for a, b in duplicates[:max_pairs]
             )
+            # Phase H (GH#95): transitional singleton import — this Job's
+            # run() doesn't thread site_config yet.
+            from services.site_config import site_config as _sc
             await create_gitea_issue(
                 f"content: {len(duplicates)} potential duplicate post pairs",
                 body,
+                site_config=_sc,
             )
 
         detail = (

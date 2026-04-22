@@ -128,6 +128,7 @@ class VerifyPublishedPostsJob:
             await create_gitea_issue(
                 f"publish-verify: {len(failures)}/{len(rows)} recent posts not reachable",
                 "## Failed to verify\n\n" + "\n".join(body_lines),
+                site_config=site_config,
             )
 
         detail = (

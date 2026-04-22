@@ -162,6 +162,7 @@ class DetectAnomaliesJob:
                 )
                 await create_gitea_issue(
                     f"anomaly: {len(anomalies)} metrics outside normal range", body,
+                    site_config=site_config,
                 )
             except Exception as e:
                 logger.warning("[ANOMALY] gitea issue creation failed: %s", e)

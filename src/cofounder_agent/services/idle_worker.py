@@ -65,9 +65,14 @@ class IdleWorker:
 
         Historically this was inline here; extracted to utils.gitea_issues
         so services/jobs/* can share the same dedup logic.
+
+        Phase H (GH#95): pass the DI'd site_config through — the utility
+        no longer imports the module-level singleton.
         """
         from utils.gitea_issues import create_gitea_issue
-        return await create_gitea_issue(title, body)
+        return await create_gitea_issue(
+            title, body, site_config=self._site_config,
+        )
 
     def _is_due(self, task_name: str, interval_minutes: int) -> bool:
         """Check if a task is due. Uses 4x cooldown if task previously completed all work."""

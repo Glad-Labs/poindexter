@@ -95,10 +95,14 @@ class FixUncategorizedPostsJob:
             return JobResult(ok=False, detail=f"query failed: {e}", changes_made=0)
 
         if fixed and file_issue:
+            # Phase H (GH#95): transitional singleton import — this Job's
+            # run() doesn't thread site_config yet.
+            from services.site_config import site_config as _sc
             await create_gitea_issue(
                 f"content: assigned {default_slug} category to {fixed} uncategorized posts",
                 f"Posts defaulted to `{default_slug}` category. "
                 "Review and reassign if a different category fits better.",
+                site_config=_sc,
             )
 
         detail = f"assigned {default_slug!r} to {fixed} of {len(posts)} post(s)"
