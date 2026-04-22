@@ -275,10 +275,11 @@ services:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       # CLOUD_DATABASE_URL removed — Railway eliminated. All data on local Postgres + R2.
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
-      # MemoryClient / auto-embed read OLLAMA_URL (not OLLAMA_BASE_URL).
-      # Keep both set to the same value to avoid a silent "no Ollama" error
-      # when /api/memory/* is called from the worker (#198).
-      OLLAMA_URL: "http://host.docker.internal:11434"
+      # OLLAMA_URL was historically set separately because MemoryClient +
+      # auto-embed only read OLLAMA_URL. GH#93 Phase 1: MemoryClient now
+      # falls back to OLLAMA_BASE_URL when OLLAMA_URL isn't set, so the
+      # duplicate is retired. Standalone CLI paths (outside the worker
+      # container) can still set OLLAMA_URL directly if preferred.
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
       # No Telegram tokens — OpenClaw owns Telegram/Discord connections.
       # SITE_NAME / SITE_DOMAIN / SITE_URL / COMPANY_NAME / DEFAULT_OLLAMA_MODEL
