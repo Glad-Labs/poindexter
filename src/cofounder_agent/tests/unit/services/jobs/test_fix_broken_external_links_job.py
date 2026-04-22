@@ -18,6 +18,15 @@ from services.jobs.fix_broken_external_links import (
 )
 
 
+def _mock_sc() -> MagicMock:
+    """SiteConfig mock for post-Phase-H job.run() kwarg."""
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": d
+    sc.get_bool.side_effect = lambda k, d=False: d
+    sc.get_int.side_effect = lambda k, d=0: d
+    return sc
+
+
 def _make_pool(
     rows: list[dict] | None = None,
     fetch_raises: BaseException | None = None,
@@ -139,7 +148,7 @@ class TestRun:
     async def test_no_candidates_returns_ok(self):
         pool, _ = _make_pool([])
         job = FixBrokenExternalLinksJob()
-        result = await job.run(pool, {"file_gitea_issue": False})
+        result = await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
         assert result.ok is True
         assert result.changes_made == 0
         assert "no published posts" in result.detail
@@ -155,7 +164,7 @@ class TestRun:
             return_value=client,
         ):
             job = FixBrokenExternalLinksJob()
-            result = await job.run(pool, {"file_gitea_issue": False})
+            result = await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
         assert result.ok is True
         assert result.changes_made == 0
         conn.execute.assert_not_awaited()
@@ -181,7 +190,7 @@ class TestRun:
             new=AsyncMock(return_value=True),
         ) as mock_gitea:
             job = FixBrokenExternalLinksJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {}, site_config=_mock_sc())
 
         assert result.ok is True
         assert result.changes_made == 1
@@ -211,7 +220,7 @@ class TestRun:
             new=AsyncMock(return_value=True),
         ):
             job = FixBrokenExternalLinksJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {}, site_config=_mock_sc())
         assert result.changes_made == 1
         conn.execute.assert_awaited_once()
 
@@ -228,7 +237,7 @@ class TestRun:
             return_value=client,
         ):
             job = FixBrokenExternalLinksJob()
-            result = await job.run(pool, {"file_gitea_issue": False})
+            result = await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
         assert result.changes_made == 0
         conn.execute.assert_not_awaited()
 
@@ -247,6 +256,7 @@ class TestRun:
             job = FixBrokenExternalLinksJob()
             result = await job.run(
                 pool, {"urls_per_post": 3, "file_gitea_issue": False},
+                site_config=_mock_sc(),
             )
         assert result.metrics["urls_checked"] == 3
 
@@ -265,14 +275,14 @@ class TestRun:
             new=mock_gitea,
         ):
             job = FixBrokenExternalLinksJob()
-            await job.run(pool, {"file_gitea_issue": False})
+            await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
         mock_gitea.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):
         pool, _ = _make_pool(fetch_raises=RuntimeError("pool closed"))
         job = FixBrokenExternalLinksJob()
-        result = await job.run(pool, {})
+        result = await job.run(pool, {}, site_config=_mock_sc())
         assert result.ok is False
         assert "pool closed" in result.detail
 
@@ -298,7 +308,7 @@ class TestRun:
             new=AsyncMock(return_value=False),
         ):
             job = FixBrokenExternalLinksJob()
-            result = await job.run(pool, {"file_gitea_issue": False})
+            result = await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
         # Both updates failed, so changes_made=0, but the job still completes.
         assert result.ok is True
         assert result.metrics["urls_checked"] == 2
