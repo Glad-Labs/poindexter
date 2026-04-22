@@ -502,16 +502,11 @@ except Exception as _e:
     logger.warning("[MODULE] sentry module-level init failed: %s", _e)
 
 # ===== MIDDLEWARE CONFIGURATION =====
-# Register all middleware (centralized in utils.middleware_config)
+# Register all middleware (centralized in utils.middleware_config). Uses
+# main.py's local _site_cfg — the same instance `app.state.site_config`
+# gets rebound to after `_site_cfg.load(pool)` in the lifespan.
 middleware_config = MiddlewareConfig()
-# Transitional: pass the module-level singleton through. main.py is still
-# on its own Phase H migration; once it constructs a local SiteConfig
-# instance (cf. 1e1cd5ba), this can switch to that reference.
-try:
-    from services.site_config import site_config as _mw_sc
-    middleware_config.register_all_middleware(app, site_config=_mw_sc)
-except Exception:
-    middleware_config.register_all_middleware(app)
+middleware_config.register_all_middleware(app, site_config=_site_cfg)
 
 # ===== ROUTE REGISTRATION =====
 # Register API routes based on deployment mode (coordinator or worker)

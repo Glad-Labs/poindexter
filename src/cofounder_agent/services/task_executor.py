@@ -23,12 +23,11 @@ from .webhook_delivery_service import emit_webhook_event
 # Telegram notifications now routed through OpenClaw gateway (no direct bot token needed)
 
 
-async def _notify_discord(message: str) -> None:
+async def _notify_discord(message: str, site_config: Any) -> None:
     """Send ops notification to Discord #ops channel via webhook."""
     _logger = get_logger(__name__)
     try:
         # Load webhook URL from app_settings (DB-first config)
-        from services.site_config import site_config
         webhook_url = site_config.get("discord_ops_webhook_url", "")
         if not webhook_url:
             _logger.debug("[NOTIFY:discord] No discord_ops_webhook_url configured — skipping")
@@ -44,7 +43,9 @@ async def _notify_discord(message: str) -> None:
         _logger.warning("[NOTIFY:discord] Failed: %s", e)
 
 
-async def _notify_openclaw(message: str, critical: bool = False) -> None:
+async def _notify_openclaw(
+    message: str, site_config: Any, critical: bool = False,
+) -> None:
     """Send pipeline notification via OpenClaw gateway (routes to Telegram + Discord).
 
     No direct bot tokens needed — OpenClaw owns all messaging channels.
@@ -56,7 +57,6 @@ async def _notify_openclaw(message: str, critical: bool = False) -> None:
     if critical:
         try:
             from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
-            from services.site_config import site_config
             openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
             openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
             async with _httpx.AsyncClient(timeout=10) as client:
@@ -72,7 +72,7 @@ async def _notify_openclaw(message: str, critical: bool = False) -> None:
             _logger.debug("[NOTIFY:openclaw] Gateway unavailable, falling back to Discord: %s", e)
 
     # Fallback: Discord webhook (always works, no bot token needed)
-    await _notify_discord(message)
+    await _notify_discord(message, site_config)
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: E402,F401
@@ -135,9 +135,11 @@ class TaskExecutor:
         # How long (seconds) the queue may have pending tasks without any being
         # picked up before we fire a CRITICAL alert. Tunable via
         # app_settings.task_executor_idle_alert_threshold_seconds (#198).
-        from services.site_config import site_config as _sc_idle
-        self._IDLE_ALERT_THRESHOLD_S: int = _sc_idle.get_int(
-            "task_executor_idle_alert_threshold_seconds", 300
+        _idle_sc = self.site_config
+        self._IDLE_ALERT_THRESHOLD_S: int = (
+            _idle_sc.get_int("task_executor_idle_alert_threshold_seconds", 300)
+            if _idle_sc is not None
+            else 300
         )
         # Timestamp tracker for stale task sweeping (FIX: was dead code)
         self._last_sweep: float = 0.0
@@ -345,17 +347,9 @@ class TaskExecutor:
                         if self.database_service and self.database_service.pool:
                             if not hasattr(self, '_idle_worker'):
                                 # Resolve site_config: ctor → app.state → module
-                                # singleton fallback (removed in Phase H step 5
-                                # final cleanup). Mirrors the ``site_config``
-                                # property above.
-                                _idle_sc = self.site_config
-                                if _idle_sc is None:
-                                    from services.site_config import (
-                                        site_config as _idle_sc,
-                                    )
                                 self._idle_worker = IdleWorker(
                                     self.database_service.pool,
-                                    site_config=_idle_sc,
+                                    site_config=self.site_config,
                                 )
                             await self._idle_worker.run_cycle()
                     except Exception as idle_err:
@@ -584,7 +578,10 @@ class TaskExecutor:
             logger.info("[OK] [TASK_SINGLE] Task marked as in_progress")
 
             # Notify Discord #ops that a task started generating
-            await _notify_discord(f"Generating: \"{topic[:80]}\" ({category or 'uncategorized'})")
+            await _notify_discord(
+                f"Generating: \"{topic[:80]}\" ({category or 'uncategorized'})",
+                self.site_config,
+            )
 
             # 2. Run through content router pipeline (the full 6-stage pipeline)
             logger.info(
@@ -594,14 +591,6 @@ class TaskExecutor:
             # Removed "Processing..." notification — too noisy. Only notify on completion.
             try:
                 from services.content_router_service import process_content_generation_task
-
-                # Phase H step 5 (GH#95): resolve site_config with a
-                # module-singleton fallback for the StartupManager path
-                # (StartupManager doesn't thread site_config through the
-                # TaskExecutor ctor yet — tracked as a follow-up).
-                _pipeline_sc = self.site_config
-                if _pipeline_sc is None:
-                    from services.site_config import site_config as _pipeline_sc
 
                 async def _run_content_pipeline():
                     return await process_content_generation_task(
@@ -617,7 +606,7 @@ class TaskExecutor:
                         quality_preference=task.get("quality_preference", "balanced"),
                         category=task.get("category", "general"),
                         target_audience=task.get("target_audience", "General"),
-                        site_config=_pipeline_sc,
+                        site_config=self.site_config,
                     )
 
                 # GH-90 AC #2: run a background heartbeat for the entire duration
@@ -762,9 +751,10 @@ class TaskExecutor:
                                WHERE task_id = $2""",
                             preview_token, task_id,
                         )
-                        from services.site_config import site_config as _sc
                         # Use worker's own URL for HTML preview (accessible via Tailscale)
-                        _preview_base = _sc.get("preview_base_url", "http://100.81.93.12:8002")
+                        _preview_base = self.site_config.get(
+                            "preview_base_url", "http://100.81.93.12:8002",
+                        )
                         preview_url = f"{_preview_base}/preview/{preview_token}"
                     except Exception:
                         logger.debug("[PREVIEW] Failed to create preview token", exc_info=True)
@@ -788,18 +778,10 @@ class TaskExecutor:
                             # that isn't resolvable here.
                             _internal_preview_url = f"http://localhost:8002/preview/{preview_token}"
 
-                            # Resolve site_config: ctor → app.state → module
-                            # singleton fallback (removed in Phase H step 5
-                            # final cleanup).
-                            _pqa_sc = self.site_config
-                            if _pqa_sc is None:
-                                from services.site_config import (
-                                    site_config as _pqa_sc,
-                                )
                             _pqa = MultiModelQA(
                                 pool=self.database_service.pool,
                                 settings_service=_settings_svc,
-                                site_config=_pqa_sc,
+                                site_config=self.site_config,
                             )
                             _pqa_review = await _pqa._check_rendered_preview(
                                 title=topic,
@@ -846,7 +828,7 @@ class TaskExecutor:
                     if preview_url:
                         msg += f"Preview: {preview_url}\n"
                     msg += f"Approve: /approve-post {task_id[:8]}"
-                    await _notify_openclaw(msg, critical=True)
+                    await _notify_openclaw(msg, self.site_config, critical=True)
 
                 return
 
@@ -951,7 +933,10 @@ class TaskExecutor:
                     })
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
-                await _notify_openclaw(f"Failed: \"{topic}\" - {str(error_msg)[:100]}", critical=True)
+                await _notify_openclaw(
+                    f"Failed: \"{topic}\" - {str(error_msg)[:100]}",
+                    self.site_config, critical=True,
+                )
             else:
                 logger.info(
                     "[OK] [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
@@ -1428,14 +1413,11 @@ class TaskExecutor:
             logger.error("[AUTO_PUBLISH] Task %s not found after approval", task_id)
             return
 
-        # Phase H transitional: task_executor still uses the singleton
-        # (pending its own ctor-DI migration in Phase H step 3).
-        from services.site_config import site_config as _sc
         result = await publish_post_from_task(
             self.database_service,
             task,
             task_id,
-            site_config=_sc,
+            site_config=self.site_config,
             publisher="auto_publish",
             trigger_revalidation=True,
             queue_social=True,
