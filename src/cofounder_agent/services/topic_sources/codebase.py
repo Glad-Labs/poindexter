@@ -57,18 +57,38 @@ _DEFAULT_SEED_QUERIES: tuple[str, ...] = (
 
 
 # Source tables that don't yield blog-quality topics when extracted —
-# internal system state, private audit events, prefs, etc. Keep in sync
-# with the legacy extract heuristic.
-_SKIP_SOURCE_TABLES: frozenset[str] = frozenset({"issues", "memory", "audit"})
+# internal system state, private prefs. `issues` and `audit` moved out
+# of the skip set (2026-04-22) since the GiteaIssuesTap + AuditTap write
+# text_previews in predictable shapes we can parse. `memory` stays: those
+# are operator preferences + meta-notes, not blog-post material.
+_SKIP_SOURCE_TABLES: frozenset[str] = frozenset({"memory"})
+
+
+# Matches the first-line shape GiteaIssuesTap writes:
+#   "Issue #229: feat: Event-driven topic discovery (replace fixed 8-hour cron)"
+# Keeps the conventional-commit prefix (feat:/fix:/etc) dropped in the caller
+# when framing the blog topic so the extracted title reads naturally.
+import re as _re
+
+_ISSUE_TITLE_RE = _re.compile(r"^Issue\s+#\d+:\s*(.+?)\s*$")
+_CC_PREFIX_RE = _re.compile(r"^([a-z]+)(?:\([^)]+\))?!?:\s*(.+)$")
 
 
 def _extract_topic_from_row(text: str, source_table: str, max_chars: int) -> str | None:
     """Extract a blog-worthy topic title from a row's text_preview.
 
     Source-agnostic derivation — the topic comes from the content,
-    not the source metadata. Most source_tables produce noise (internal
-    audit, memory prefs); ``posts`` is the only table that reliably
-    yields good titles (they're already publication-quality).
+    not the source metadata.
+
+    - ``posts``: first long line of the preview (titles already publication-
+      quality).
+    - ``issues``: strip the "Issue #N: " prefix and the conventional-commit
+      prefix, reframe as a first-person engineering topic. Matt's ask
+      2026-04-22: internal-work fallback for when external sources dedup
+      to zero. The issue bodies are already embedded via GiteaIssuesTap, so
+      this rides the existing pgvector path — no new HTTP scrape needed.
+    - Unknown source_tables: skip by default to avoid garbage from a
+      new tap that hasn't been whitelisted here.
     """
     if not text or len(text) < 30:
         return None
@@ -80,8 +100,33 @@ def _extract_topic_from_row(text: str, source_table: str, max_chars: int) -> str
             if len(candidate) > 40:
                 return candidate[:max_chars]
         return None
-    # Unknown source_table — skip by default so we don't generate garbage
-    # from a new tap that hasn't been whitelisted here.
+    if source_table == "issues":
+        first_line = text.split("\n", 1)[0].strip()
+        m = _ISSUE_TITLE_RE.match(first_line)
+        if not m:
+            return None
+        raw_title = m.group(1).strip()
+        # Peel the conventional-commit prefix if present.
+        prefix_match = _CC_PREFIX_RE.match(raw_title)
+        if prefix_match:
+            prefix, rest = prefix_match.group(1).lower(), prefix_match.group(2).strip()
+            frames = {
+                "feat": f"How we shipped: {rest}",
+                "fix": f"Debugging: {rest}",
+                "refactor": f"Refactoring: {rest}",
+                "perf": f"Performance win: {rest}",
+                "chore": f"Cleanup: {rest}",
+                "docs": f"Documenting: {rest}",
+                "security": f"Security writeup: {rest}",
+            }
+            framed = frames.get(prefix, rest)
+        else:
+            framed = raw_title
+        framed = framed.rstrip(".").strip()
+        # Minimum length guard: a 2-word issue title won't make a good post.
+        if len(framed) < 20:
+            return None
+        return framed[:max_chars]
     return None
 
 
