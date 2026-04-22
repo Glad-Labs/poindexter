@@ -43,13 +43,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Trivy
+        # The upstream install.sh piped through /usr/local/bin failed
+        # silently on the Gitea runner ("Failure - Main Install Trivy" with no
+        # stderr). Fetch the release tarball directly, same pattern as the
+        # gitleaks install below — zero shell wrapper, zero privileged paths.
+        # Bumped to v0.69.3 to match .github/workflows/security.yml.
         run: |
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b /usr/local/bin v0.58.0
-          trivy --version
+          curl -sSfL -o trivy.tar.gz \
+            https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz
+          tar -xzf trivy.tar.gz trivy
+          chmod +x trivy
+          ./trivy --version
       - name: Scan filesystem (fail on HIGH/CRITICAL)
         run: |
-          trivy fs . \
+          ./trivy fs . \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
             --exit-code 1 \
@@ -57,7 +64,7 @@ jobs:
             --skip-dirs '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
       - name: Scan Dockerfiles / compose for misconfig
         run: |
-          trivy config . \
+          ./trivy config . \
             --severity HIGH,CRITICAL \
             --exit-code 1 \
             --format table \
@@ -80,7 +87,11 @@ jobs:
         run: syft packages dir:. -o cyclonedx-json=sbom.cdx.json
       - name: Scan SBOM with grype (fail on HIGH/CRITICAL)
         run: grype sbom:sbom.cdx.json --fail-on high --only-fixed
-      - uses: actions/upload-artifact@v4
+      # upload-artifact@v4 uses the new @actions/artifact v2 API which isn't
+      # supported on Gitea Actions (GHES-compatible runner). Pin to v3 which
+      # uses the older API Gitea does implement. GitHub's .github/ security.yml
+      # can stay on v4 — that runs on real GitHub Actions.
+      - uses: actions/upload-artifact@v3
         if: always()
         with:
           name: sbom-cyclonedx
