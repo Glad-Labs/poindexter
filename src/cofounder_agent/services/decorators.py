@@ -24,38 +24,46 @@ from collections.abc import Callable
 from typing import Any
 
 from services.logger_config import get_logger
+# Phase H (GH#95): import the SiteConfig singleton at module-load time.
+#
+# Previously each of the ``_slow_query_threshold_ms`` /
+# ``_log_all_queries`` / ``_enable_query_monitoring`` helpers imported
+# the singleton inside its body on every call — the canonical "lazy
+# function-body import" the Phase H cleanup targets. We can do it at
+# module scope instead because the module that owns the singleton
+# (``services.site_config``) is safe to import this early; the CACHED
+# VALUES inside that singleton are what gets populated later in the
+# startup lifespan, and every helper here reads those values per-call
+# so late-binding still works (app_settings edits take effect without
+# a restart).
+from services.site_config import site_config as _site_config
 
 logger = get_logger(__name__)
 
-def _site_config():
-    """Lazy site_config lookup — avoids import-cycle headaches and
-    ensures we always see the loaded values, not a stale import-time
-    snapshot. See ``_slow_query_threshold_ms`` for the rationale."""
-    from services.site_config import site_config
-    return site_config
+
+def set_site_config(site_config: Any) -> None:
+    """Override the SiteConfig instance the decorators read from.
+
+    Intended for tests + alternative wiring. Production code relies on
+    the module-level import of ``services.site_config.site_config``;
+    swapping it here lets a test point the decorators at a bespoke
+    SiteConfig without monkey-patching imports.
+    """
+    global _site_config
+    _site_config = site_config
 
 
 def _slow_query_threshold_ms() -> int:
-    """Read SLOW_QUERY_THRESHOLD_MS from site_config per-call.
-
-    Previously captured at module import time — but the decorators
-    module imports before site_config.load() runs in lifespan, so the
-    captured values were always the env-var/default fallback. Switching
-    settings in app_settings had no effect until a worker restart,
-    which contradicts the DB-first config promise.
-
-    Uses site_config.get_int which already validates and falls back
-    to the default on bad data — no try/except needed here.
-    """
-    return _site_config().get_int("slow_query_threshold_ms", 100)
+    """Read SLOW_QUERY_THRESHOLD_MS from the bound site_config."""
+    return _site_config.get_int("slow_query_threshold_ms", 100)
 
 
 def _log_all_queries() -> bool:
-    return _site_config().get_bool("log_all_queries", False)
+    return _site_config.get_bool("log_all_queries", False)
 
 
 def _enable_query_monitoring() -> bool:
-    return _site_config().get_bool("enable_query_monitoring", True)
+    return _site_config.get_bool("enable_query_monitoring", True)
 
 
 def log_query_performance(
