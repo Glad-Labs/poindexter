@@ -74,7 +74,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 from collections.abc import AsyncIterator
@@ -255,16 +254,20 @@ def _extract_assistant_text(event: dict[str, Any], max_tool_result_chars: int) -
 def _resolve_projects_dir(config: dict[str, Any]) -> Path:
     """Resolve the ``.claude/projects`` root.
 
-    Priority: ``config.claude_projects_dir`` > ``CLAUDE_PROJECTS_DIR``
-    env var > ``~/.claude/projects``. Same ordering as MemoryFilesTap
-    so the two taps agree on which scopes exist.
+    Priority: ``config.claude_projects_dir`` > ``site_config.claude_projects_dir``
+    > ``~/.claude/projects``. Same ordering as MemoryFilesTap so the two
+    taps agree on which scopes exist.
     """
     override = config.get("claude_projects_dir")
     if override:
         return Path(override)
-    env_val = os.getenv("CLAUDE_PROJECTS_DIR")
-    if env_val:
-        return Path(env_val)
+    try:
+        from services.site_config import site_config as _sc
+        sc_val = _sc.get("claude_projects_dir", "")
+        if sc_val:
+            return Path(sc_val)
+    except Exception:
+        pass
     return Path.home() / ".claude" / "projects"
 
 

@@ -27,7 +27,6 @@ production, so the ~70 LOC of HF retry plumbing was dead weight.
 """
 
 import asyncio
-import os
 import re
 import time
 from contextlib import suppress
@@ -112,20 +111,22 @@ class AIContentGenerator:
             site_url = _sc.get("site_url", "")
 
             import asyncpg
-            dsn = os.getenv("DATABASE_URL", "")
-            if not dsn:
-                try:
-                    import sys as _sys
-                    from pathlib import Path as _Path
-                    for _p in _Path(__file__).resolve().parents:
-                        if (_p / "brain" / "bootstrap.py").is_file():
-                            if str(_p) not in _sys.path:
-                                _sys.path.insert(0, str(_p))
-                            break
-                    from brain.bootstrap import resolve_database_url
-                    dsn = resolve_database_url() or ""
-                except Exception:
-                    pass
+            # brain.bootstrap.resolve_database_url() is the canonical DSN
+            # resolver across the project — it already checks
+            # LOCAL_DATABASE_URL / DATABASE_URL / bootstrap.toml in order,
+            # so services shouldn't reach into os.getenv directly.
+            try:
+                import sys as _sys
+                from pathlib import Path as _Path
+                for _p in _Path(__file__).resolve().parents:
+                    if (_p / "brain" / "bootstrap.py").is_file():
+                        if str(_p) not in _sys.path:
+                            _sys.path.insert(0, str(_p))
+                        break
+                from brain.bootstrap import resolve_database_url
+                dsn = resolve_database_url() or ""
+            except Exception:
+                dsn = ""
             if not dsn:
                 self._internal_links_cache = []
                 return

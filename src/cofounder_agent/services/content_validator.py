@@ -222,23 +222,22 @@ def _load_fact_overrides_sync() -> list[tuple[str, str, str]]:
 
     try:
         import asyncio
-        import os
         import sys
         from pathlib import Path
 
-        db_url = os.getenv("DATABASE_URL", "")
-        if not db_url:
-            try:
-                _proj = Path(__file__).resolve()
-                for _p in _proj.parents:
-                    if (_p / "brain" / "bootstrap.py").is_file():
-                        if str(_p) not in sys.path:
-                            sys.path.insert(0, str(_p))
-                        break
-                from brain.bootstrap import resolve_database_url
-                db_url = resolve_database_url() or ""
-            except Exception:
-                pass
+        # brain.bootstrap.resolve_database_url() is the canonical DSN
+        # resolver — no os.getenv in services (project-wide rule).
+        try:
+            _proj = Path(__file__).resolve()
+            for _p in _proj.parents:
+                if (_p / "brain" / "bootstrap.py").is_file():
+                    if str(_p) not in sys.path:
+                        sys.path.insert(0, str(_p))
+                    break
+            from brain.bootstrap import resolve_database_url
+            db_url = resolve_database_url() or ""
+        except Exception:
+            db_url = ""
         if not db_url:
             return _fact_overrides_cache
 
