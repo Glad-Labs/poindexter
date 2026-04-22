@@ -57,14 +57,15 @@ async def _load_gitea_config(pool: Any) -> dict[str, str]:
     except ImportError:
         get_secret = None  # type: ignore[assignment]
 
+    from services.bootstrap_defaults import DEFAULT_GITEA_URL
     async with pool.acquire() as conn:
         if resolve_url is not None:
-            url = await resolve_url(conn, "gitea_url", default="http://localhost:3001")
+            url = await resolve_url(conn, "gitea_url", default=DEFAULT_GITEA_URL)
         else:
             raw = await conn.fetchval(
                 "SELECT value FROM app_settings WHERE key = 'gitea_url'"
             )
-            url = raw or "http://localhost:3001"
+            url = raw or DEFAULT_GITEA_URL
 
         user = await conn.fetchval("SELECT value FROM app_settings WHERE key = 'gitea_user'")
 

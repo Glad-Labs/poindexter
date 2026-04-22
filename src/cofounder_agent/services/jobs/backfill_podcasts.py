@@ -131,7 +131,8 @@ class BackfillPodcastsJob:
                 import httpx
 
                 from services.r2_upload_service import upload_to_r2
-                api_base = site_config.get("internal_api_base_url", "http://localhost:8002")
+                from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
+                api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
                     feed = await client.get(f"{api_base}/api/podcast/feed.xml", timeout=30)
                     feed_path = os.path.join(

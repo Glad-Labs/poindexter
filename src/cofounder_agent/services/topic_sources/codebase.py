@@ -151,9 +151,10 @@ class CodebaseSource:
             list(seed_queries_cfg) if isinstance(seed_queries_cfg, list) and seed_queries_cfg
             else list(_DEFAULT_SEED_QUERIES)
         )
+        from services.bootstrap_defaults import DEFAULT_OLLAMA_URL
         ollama_url = (
             config.get("ollama_url")
-            or site_config.get("ollama_base_url", "http://localhost:11434")
+            or site_config.get("ollama_base_url", DEFAULT_OLLAMA_URL)
         )
         embed_model = (
             config.get("embed_model")

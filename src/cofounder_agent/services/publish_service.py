@@ -816,8 +816,9 @@ async def publish_post_from_task(
             try:
                 import httpx as _hx
 
+                from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
                 from services.site_config import site_config as _scfg
-                _api_base = _scfg.get("internal_api_base_url", "http://localhost:8002")
+                _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
                     _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
                     _feed_path = "/tmp/podcast-feed.xml"
@@ -835,8 +836,9 @@ async def publish_post_from_task(
             try:
                 import httpx as _hx
 
+                from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
                 from services.site_config import site_config as _scfg
-                _api_base = _scfg.get("internal_api_base_url", "http://localhost:8002")
+                _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
                     _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
                     _feed_path = "/tmp/video-feed.xml"

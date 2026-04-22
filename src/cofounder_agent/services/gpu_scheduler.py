@@ -343,7 +343,8 @@ class GPUScheduler:
 
     async def _unload_sdxl(self):
         """Tell the SDXL server to unload its model and free VRAM immediately."""
-        sdxl_url = _sc_get("sdxl_server_url", "http://localhost:9836")
+        from services.bootstrap_defaults import DEFAULT_SDXL_URL
+        sdxl_url = _sc_get("sdxl_server_url", DEFAULT_SDXL_URL)
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
                 resp = await client.post(f"{sdxl_url}/unload", timeout=10)

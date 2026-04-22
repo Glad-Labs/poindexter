@@ -55,8 +55,9 @@ async def _notify_openclaw(message: str, critical: bool = False) -> None:
     # Try OpenClaw gateway first (routes to both Telegram + Discord)
     if critical:
         try:
+            from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
             from services.site_config import site_config
-            openclaw_url = site_config.get("openclaw_gateway_url", "http://localhost:18789")
+            openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
             openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
             async with _httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(
