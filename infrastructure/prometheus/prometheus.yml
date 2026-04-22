@@ -23,17 +23,11 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:9835"]
 
-  # Phase D canonical path — exposition produced via prometheus_client.
-  # Same worker, new path; additive to /api/prometheus below.
+  # Canonical worker metrics — exposition produced via prometheus_client.
+  # Gitea #269 folded the legacy /api/prometheus exposer into this path;
+  # there's now a single scrape job for all poindexter_* metrics.
   - job_name: poindexter-worker
     metrics_path: /metrics
-    static_configs:
-      - targets: ["worker:8002"]
-
-  # Legacy hand-built exposition path. Will be folded into /metrics once
-  # every metric has migrated (tracked as Phase D follow-up).
-  - job_name: poindexter-worker-legacy
-    metrics_path: /api/prometheus
     static_configs:
       - targets: ["worker:8002"]
 
