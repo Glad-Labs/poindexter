@@ -23,6 +23,19 @@ from services.jobs.update_utility_rates import (
 )
 
 
+def _mock_sc() -> MagicMock:
+    """Return a MagicMock shaped like SiteConfig for job.run() calls.
+
+    Post-Phase-H (GH#95) jobs receive site_config via the Job Protocol
+    kwarg instead of reaching into a module singleton.
+    """
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": d
+    sc.get_bool.side_effect = lambda k, d=False: d
+    sc.get_int.side_effect = lambda k, d=0: d
+    return sc
+
+
 def _make_pool(
     electricity_current: Any = None,
     gpu_current: Any = None,
@@ -80,33 +93,25 @@ def _patched_httpx(json_body: dict | None = None, raise_for_status=False, raises
 
 class TestLoadGpuTdpMap:
     def test_empty_config_returns_defaults(self):
-        with patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value="",
-        ):
-            assert _load_gpu_tdp_map() is DEFAULT_GPU_TDP_MAP
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d="": "" if k == "gpu_tdp_map" else d
+        assert _load_gpu_tdp_map(sc) is DEFAULT_GPU_TDP_MAP
 
     def test_valid_json_override_parsed(self):
-        with patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value='{"RTX 9999": 999}',
-        ):
-            result = _load_gpu_tdp_map()
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d="": '{"RTX 9999": 999}' if k == "gpu_tdp_map" else d
+        result = _load_gpu_tdp_map(sc)
         assert result == {"RTX 9999": 999}
 
     def test_invalid_json_falls_back_to_defaults(self):
-        with patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value="{not-json",
-        ):
-            assert _load_gpu_tdp_map() is DEFAULT_GPU_TDP_MAP
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d="": "{not-json" if k == "gpu_tdp_map" else d
+        assert _load_gpu_tdp_map(sc) is DEFAULT_GPU_TDP_MAP
 
     def test_non_dict_override_ignored(self):
-        with patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value='["not", "a", "dict"]',
-        ):
-            assert _load_gpu_tdp_map() is DEFAULT_GPU_TDP_MAP
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d="": '["not", "a", "dict"]' if k == "gpu_tdp_map" else d
+        assert _load_gpu_tdp_map(sc) is DEFAULT_GPU_TDP_MAP
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +269,7 @@ class TestRun:
         result = await job.run(
             pool,
             {"skip_electricity": True, "skip_gpu": True},
+            site_config=_mock_sc(),
         )
         assert result.ok is True
         assert result.changes_made == 0
@@ -290,7 +296,7 @@ class TestRun:
             return_value={"RTX 5090": 575},
         ):
             job = UpdateUtilityRatesJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {}, site_config=_mock_sc())
         # 1 change (GPU) despite EIA failing.
         assert result.ok is True
         assert result.changes_made == 1
@@ -311,7 +317,7 @@ class TestRun:
             new=AsyncMock(side_effect=FileNotFoundError("nvidia-smi not found")),
         ):
             job = UpdateUtilityRatesJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {}, site_config=_mock_sc())
         assert result.ok is True
         assert result.changes_made == 0
 
@@ -320,18 +326,17 @@ class TestRun:
         """``config.eia_api_key`` overrides site_config."""
         pool, _ = _make_pool()
         client = _patched_httpx(json_body={"response": {"data": []}})
+        sc = _mock_sc()
+        sc.get.side_effect = lambda k, d="": "SITE_KEY"
         with patch(
             "services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=client,
         ) as mock_cls, patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value="SITE_KEY",
-        ), patch(
             "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(side_effect=FileNotFoundError),
         ):
             job = UpdateUtilityRatesJob()
-            await job.run(pool, {"eia_api_key": "OVERRIDE"})
+            await job.run(pool, {"eia_api_key": "OVERRIDE"}, site_config=sc)
         # Verify the URL built with OVERRIDE.
         mock_cls.assert_called_once()
         # The URL is the first positional arg to client.get
@@ -358,7 +363,7 @@ class TestRun:
             return_value={"RTX 5090": 575},
         ):
             job = UpdateUtilityRatesJob()
-            await job.run(pool, {})
+            await job.run(pool, {}, site_config=_mock_sc())
 
         # Two execute calls: 1) UPSERT gpu_power_watts, 2) audit_log INSERT
         assert conn.execute.await_count >= 2
@@ -405,7 +410,7 @@ class TestRun:
             return_value={"RTX 5090": 575},
         ):
             job = UpdateUtilityRatesJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {}, site_config=_mock_sc())
         # The UPSERT succeeded; audit_log failure didn't reset changes_made.
         assert result.ok is True
         assert result.changes_made == 1
