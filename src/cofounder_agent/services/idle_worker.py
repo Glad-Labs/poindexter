@@ -328,7 +328,11 @@ class IdleWorker:
         """Discover trending topics and queue them as content tasks."""
         try:
             from services.topic_discovery import TopicDiscovery
-            discovery = TopicDiscovery(self.pool)
+            # Phase H step 5 (GH#95): thread the module-level singleton
+            # explicitly instead of letting TopicDiscovery reach for it.
+            # idle_worker itself still imports the singleton — migrated
+            # in its own Phase H follow-up.
+            discovery = TopicDiscovery(self.pool, site_config=site_config)
             topics = await discovery.discover(max_topics=5)
 
             if not topics:

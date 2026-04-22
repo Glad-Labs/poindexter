@@ -211,6 +211,7 @@ async def discover_topics(
     queue: bool = Query(True, description="Queue fresh topics as content tasks"),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ):
     """Run TopicDiscovery on demand instead of waiting for the 8-hour idle cycle.
 
@@ -224,7 +225,8 @@ async def discover_topics(
         pool = db_service.pool
         if not pool:
             raise HTTPException(status_code=503, detail="Database pool unavailable")
-        discovery = TopicDiscovery(pool)
+        # Phase H step 5 (GH#95): thread site_config explicitly.
+        discovery = TopicDiscovery(pool, site_config=site_config)
         topics = await discovery.discover(max_topics=max_topics)
         fresh = [t for t in topics if not getattr(t, "is_duplicate", False)]
 
@@ -360,7 +362,11 @@ async def _handle_blog_post_creation(
         try:
             from services.topic_discovery import TopicDiscovery
             pool = db_service.pool if db_service else None
-            discovery = TopicDiscovery(pool)
+            # Phase H step 5 (GH#95): thread site_config explicitly.
+            # ``site_config`` is the kwarg on this handler; pass None
+            # when unset so TopicDiscovery's transitional fallback
+            # picks up the module singleton.
+            discovery = TopicDiscovery(pool, site_config=site_config)
             topics = await discovery.discover(max_topics=3)
             fresh = [t for t in topics if not t.is_duplicate]
             if fresh:

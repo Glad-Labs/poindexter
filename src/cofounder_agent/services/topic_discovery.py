@@ -14,7 +14,9 @@ All free, no API keys. Runs as part of the idle worker or on a cron.
 
 Usage:
     from services.topic_discovery import TopicDiscovery
-    discovery = TopicDiscovery(pool)
+    from services.site_config import site_config
+
+    discovery = TopicDiscovery(pool, site_config=site_config)
     topics = await discovery.discover(max_topics=5)
     await discovery.queue_topics(topics)
 """
@@ -26,7 +28,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -127,8 +128,25 @@ def _word_overlap_match(
 class TopicDiscovery:
     """Discover trending topics from free web sources."""
 
-    def __init__(self, pool):
+    def __init__(self, pool, site_config: Any = None):
+        """Initialize the topic discovery dispatcher.
+
+        Args:
+            pool: asyncpg pool for reading published posts / app_settings.
+            site_config: SiteConfig instance (DI — Phase H, GH#95).
+                Optional with transitional fallback to the module
+                singleton — removed once all callers migrate. Tests
+                should pass an explicit mock via
+                ``SiteConfig(initial_config={...})``.
+        """
         self.pool = pool
+        if site_config is None:
+            # Transitional fallback — removed in a follow-up once all
+            # callers (idle_worker, routes/task_routes) thread the
+            # instance through explicitly.
+            from services.site_config import site_config as _singleton
+            site_config = _singleton
+        self._site_config = site_config
 
     async def discover(self, max_topics: int = 10, categories: list[str] | None = None) -> list[DiscoveredTopic]:
         """Discover fresh topics from multiple sources.
@@ -252,7 +270,7 @@ class TopicDiscovery:
             (1500, 2000, 0.3),   # Medium reads (6-8 min)
             (2500, 3500, 0.1),   # Deep dives (10-15 min)
         ]
-        _raw_lengths = site_config.get("topic_discovery_length_distribution", "")
+        _raw_lengths = self._site_config.get("topic_discovery_length_distribution", "")
         if _raw_lengths:
             try:
                 _parsed = _json.loads(_raw_lengths)
@@ -276,7 +294,7 @@ class TopicDiscovery:
             ("educational", "professional"),  # How-to / explainer
             ("narrative", "casual"),          # Conversational analysis
         ]
-        _raw_styles = site_config.get("topic_discovery_style_distribution", "")
+        _raw_styles = self._site_config.get("topic_discovery_style_distribution", "")
         if _raw_styles:
             try:
                 _parsed_styles = _json.loads(_raw_styles)
@@ -396,7 +414,7 @@ class TopicDiscovery:
         top_days = await self._get_int_setting("devto_top_days", 7)
         min_reactions = await self._get_int_setting("devto_min_reactions", 20)
         tag = (await self._get_str_setting("devto_tag", "")).strip()
-        api_base = site_config.get("devto_api_base", "https://dev.to/api")
+        api_base = self._site_config.get("devto_api_base", "https://dev.to/api")
         source = DevtoSource()
         try:
             topics = await source.extract(
@@ -447,7 +465,7 @@ class TopicDiscovery:
         from services.topic_sources.codebase import CodebaseSource
         if not self.pool:
             return []
-        lookback = site_config.get_int("topic_discovery_ideation_lookback_days", 30)
+        lookback = self._site_config.get_int("topic_discovery_ideation_lookback_days", 30)
         source = CodebaseSource()
         try:
             topics = await source.extract(
@@ -484,8 +502,7 @@ class TopicDiscovery:
             # worth attempting.
             # Window is tunable via app_settings key: qa_topic_dedup_hours (default 48).
             try:
-                from services.site_config import site_config
-                dedup_hours = site_config.get_int("qa_topic_dedup_hours", 48)
+                dedup_hours = self._site_config.get_int("qa_topic_dedup_hours", 48)
             except Exception:
                 dedup_hours = 48
             task_rows = await self.pool.fetch(
