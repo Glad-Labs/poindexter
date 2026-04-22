@@ -259,19 +259,13 @@ def _resolve_projects_dir(config: dict[str, Any]) -> Path:
     taps agree on which scopes exist.
 
     site_config is injected by the runner under ``config["_site_config"]``
-    (Phase H step 4.6, GH#95). Falls back to the module-level singleton
-    when the runner didn't seed it — keeps direct-call sites working
-    during the transition.
+    (Phase H, GH#95). When None, skip the site_config lookup and fall
+    through to the home-dir default.
     """
     override = config.get("claude_projects_dir")
     if override:
         return Path(override)
     _sc = config.get("_site_config")
-    if _sc is None:
-        try:
-            from services.site_config import site_config as _sc  # type: ignore[no-redef]
-        except Exception:
-            _sc = None
     if _sc is not None:
         try:
             sc_val = _sc.get("claude_projects_dir", "")

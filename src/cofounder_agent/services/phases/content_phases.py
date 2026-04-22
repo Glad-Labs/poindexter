@@ -430,14 +430,10 @@ class GenerateSEOPhase(BasePhase):
 
         try:
             from .seo_content_generator import get_seo_content_generator  # type: ignore[import]
-            # Transitional: this legacy phase is not itself Phase H
-            # Phase H step 4.4 (GH#95): read from inputs (the phase's
-            # equivalent of the stage context dict) with a transitional
-            # fallback to the module singleton for any caller that
-            # hasn't seeded it yet. Fallback goes away in step 5.
-            _sc = inputs.get("site_config")
-            if _sc is None:
-                from services.site_config import site_config as _sc
+            # Phase H step 5 (GH#95): site_config is seeded on the phase
+            # inputs by the caller (process_content_generation_task for
+            # the production path; tests wire it in explicitly).
+            _sc = inputs["site_config"]
 
             content = inputs.get("content")
             topic = inputs.get("topic")
@@ -551,11 +547,9 @@ class CaptureTrainingDataPhase(BasePhase):
         scores = inputs.get("scores", {})
 
         # Feature flag: opt-out via config or environment variable.
-        # Phase H step 4.4 (GH#95): prefer the phase inputs dict, fall back
-        # to the module singleton until step 5 deletes it.
-        _sc_capture = inputs.get("site_config")
-        if _sc_capture is None:
-            from services.site_config import site_config as _sc_capture
+        # Phase H step 5 (GH#95): site_config is seeded on inputs by
+        # the caller.
+        _sc_capture = inputs["site_config"]
         _capture_flag = _sc_capture.get("enable_training_capture", "true")
         if str(_capture_flag).lower() == "false":
             logger.info("[CaptureTrainingDataPhase] Skipped (ENABLE_TRAINING_CAPTURE=false)")

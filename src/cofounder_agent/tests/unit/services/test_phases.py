@@ -12,6 +12,7 @@ Covers:
 All external I/O (AI, DB, image search) is mocked so tests run with zero real deps.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,6 +20,14 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+# Phase H step 5 (GH#95): phases read site_config from the inputs dict.
+_FAKE_SITE_CONFIG = SimpleNamespace(
+    get=lambda _k, _d=None: _d if _d is not None else "",
+    get_int=lambda _k, _d=0: _d,
+    get_float=lambda _k, _d=0.0: _d,
+)
 
 
 def _make_content_phase(phase_id: str = "phase-1"):
@@ -528,7 +537,11 @@ class TestGenerateSEOPhase:
             },
         ):
             result = await phase.execute(
-                inputs={"content": "Long content...", "topic": "AI in Healthcare"},
+                inputs={
+                    "content": "Long content...",
+                    "topic": "AI in Healthcare",
+                    "site_config": _FAKE_SITE_CONFIG,
+                },
                 config={},
             )
 
@@ -561,7 +574,11 @@ class TestGenerateSEOPhase:
         ):
             with pytest.raises(RuntimeError, match="SEO service failed"):
                 await phase.execute(
-                    inputs={"content": "text", "topic": "AI"},
+                    inputs={
+                        "content": "text",
+                        "topic": "AI",
+                        "site_config": _FAKE_SITE_CONFIG,
+                    },
                     config={},
                 )
         assert phase.status == "failed"
@@ -600,6 +617,7 @@ class TestCaptureTrainingDataPhase:
                 "topic": "AI",
                 "model_used": "claude-3-sonnet",
                 "scores": {"clarity": 90},
+                "site_config": _FAKE_SITE_CONFIG,
             },
             config={"database_service": mock_db, "task_id": "task-123"},
         )
@@ -616,6 +634,7 @@ class TestCaptureTrainingDataPhase:
                 "content": "blog post text",
                 "overall_score": 82.0,
                 "topic": "AI",
+                "site_config": _FAKE_SITE_CONFIG,
             },
             config={},  # no database_service
         )
@@ -627,12 +646,16 @@ class TestCaptureTrainingDataPhase:
     @pytest.mark.asyncio
     async def test_execute_disabled_via_env_var(self, monkeypatch):
         monkeypatch.setenv("ENABLE_TRAINING_CAPTURE", "false")
+        # Phase H step 5 (GH#95): use a real SiteConfig so env-var
+        # precedence still applies.
+        from services.site_config import SiteConfig
         phase = _make_capture_phase()
         result = await phase.execute(
             inputs={
                 "content": "text",
                 "overall_score": 80.0,
                 "topic": "AI",
+                "site_config": SiteConfig(),
             },
             config={},
         )
@@ -654,6 +677,7 @@ class TestCaptureTrainingDataPhase:
                 "content": "text",
                 "overall_score": 80.0,
                 "topic": "AI",
+                "site_config": _FAKE_SITE_CONFIG,
             },
             config={"database_service": mock_db},
         )
@@ -685,6 +709,7 @@ class TestCaptureTrainingDataPhase:
                 "content": "text",
                 "overall_score": 80.0,
                 "topic": "AI",
+                "site_config": _FAKE_SITE_CONFIG,
             },
             config={"database_service": mock_db},
         )

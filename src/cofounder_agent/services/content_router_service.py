@@ -77,9 +77,14 @@ async def process_content_generation_task(
     category: str | None = None,
     target_audience: str | None = None,
     *,
-    site_config: "SiteConfig | None" = None,
+    site_config: "SiteConfig",
 ) -> dict[str, Any]:
-    """Run the full content generation pipeline (verify, generate, QA, images, SEO, finalize)."""
+    """Run the full content generation pipeline (verify, generate, QA, images, SEO, finalize).
+
+    Phase H step 5 (GH#95): ``site_config`` is a required keyword arg —
+    no module-singleton fallback. Callers (task_executor) pass the instance
+    from ``app.state.site_config``.
+    """
     from uuid import uuid4
 
     # Generate task_id if not provided
@@ -89,15 +94,6 @@ async def process_content_generation_task(
     if not database_service:
         logger.error("DatabaseService not provided - cannot persist content")
         raise ValueError("DatabaseService is required for content_tasks persistence")
-
-    # Phase H step 4 (#95): site_config is threaded through the pipeline
-    # context so stages can read it via `context.get("site_config")` without
-    # touching the module-level singleton. Caller (task_executor) should
-    # pass app.state.site_config; fall back to the module singleton for
-    # stragglers until step 5 deletes it.
-    if site_config is None:
-        from services.site_config import site_config as _singleton_site_config
-        site_config = _singleton_site_config
 
     logger.info("=" * 80)
     logger.info("COMPLETE CONTENT GENERATION PIPELINE")

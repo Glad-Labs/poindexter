@@ -160,9 +160,13 @@ class TaskExecutor:
     def site_config(self):
         """Resolve site_config from ctor → app.state → None.
 
-        Tests construct TaskExecutor without site_config and without app_state
-        — in that case return None and let process_content_generation_task
-        fall back to the module singleton (removed in Phase H step 5).
+        Phase H step 5 (GH#95): content_router_service now requires a
+        real SiteConfig. StartupManager doesn't wire site_config through
+        the TaskExecutor ctor yet — tracked as the final piece of the
+        task_executor → content_router handoff migration. Until then,
+        the module singleton is imported at the call site (see
+        ``process_content_generation_task`` invocation below) rather
+        than silently threading None through the pipeline.
         """
         if self._site_config is not None:
             return self._site_config
@@ -591,6 +595,14 @@ class TaskExecutor:
             try:
                 from services.content_router_service import process_content_generation_task
 
+                # Phase H step 5 (GH#95): resolve site_config with a
+                # module-singleton fallback for the StartupManager path
+                # (StartupManager doesn't thread site_config through the
+                # TaskExecutor ctor yet — tracked as a follow-up).
+                _pipeline_sc = self.site_config
+                if _pipeline_sc is None:
+                    from services.site_config import site_config as _pipeline_sc
+
                 async def _run_content_pipeline():
                     return await process_content_generation_task(
                         topic=task.get("topic", ""),
@@ -605,7 +617,7 @@ class TaskExecutor:
                         quality_preference=task.get("quality_preference", "balanced"),
                         category=task.get("category", "general"),
                         target_audience=task.get("target_audience", "General"),
-                        site_config=self.site_config,
+                        site_config=_pipeline_sc,
                     )
 
                 # GH-90 AC #2: run a background heartbeat for the entire duration

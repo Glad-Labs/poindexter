@@ -144,13 +144,10 @@ class CodebaseSource:
             logger.warning("CodebaseSource: no pool, returning empty")
             return []
 
-        # Resolve config with site_config fallbacks. Phase H step 4.7 (GH#95):
-        # read site_config from the config dict (seeded by runner.py) instead
-        # of importing the module-level singleton. Transitional fallback keeps
-        # things working until step 5 deletes the singleton.
+        # Phase H step 5 (GH#95): site_config is seeded on config by the
+        # runner. When absent (legacy direct callers), all site_config
+        # lookups below return their hardcoded defaults.
         _sc = config.get("_site_config")
-        if _sc is None:
-            from services.site_config import site_config as _sc
         seed_queries_cfg = config.get("seed_queries")
         seed_queries = (
             list(seed_queries_cfg) if isinstance(seed_queries_cfg, list) and seed_queries_cfg
@@ -159,11 +156,11 @@ class CodebaseSource:
         from services.bootstrap_defaults import DEFAULT_OLLAMA_URL
         ollama_url = (
             config.get("ollama_url")
-            or _sc.get("ollama_base_url", DEFAULT_OLLAMA_URL)
+            or (_sc.get("ollama_base_url", DEFAULT_OLLAMA_URL) if _sc else DEFAULT_OLLAMA_URL)
         )
         embed_model = (
             config.get("embed_model")
-            or _sc.get("embed_model", "nomic-embed-text")
+            or (_sc.get("embed_model", "nomic-embed-text") if _sc else "nomic-embed-text")
             or "nomic-embed-text"
         )
         lookback_days = int(config.get("lookback_days", 30) or 30)
