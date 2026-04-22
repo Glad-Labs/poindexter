@@ -120,9 +120,7 @@ export default function GuidePage() {
         >
           <div className="sf-pricing">
             <div>
-              <div className="sf-pricing__label">
-                // One-time · Lifetime updates
-              </div>
+              <div className="sf-pricing__label">// One-time purchase</div>
               <div className="sf-pricing__amount">
                 ${GUIDE_PRICE_USD}
                 <span className="sf-pricing__cents">.00</span>
