@@ -48,6 +48,8 @@ in 30 minutes without any of the reading below.
 - **[Local development setup](operations/local-development-setup.md)** —
   end-to-end walkthrough: `poindexter setup`, model pulls, stack
   startup, and how to verify each layer came up correctly.
+- **[CLI reference](operations/cli-reference.md)** — every `poindexter`
+  subcommand with flags, examples, and JSON output mode.
 - **[Environment variables](operations/environment-variables.md)** —
   the small set of env vars needed for Docker bootstrap. Most
   configuration lives in the `app_settings` Postgres table and
@@ -62,22 +64,12 @@ in 30 minutes without any of the reading below.
 - **[Commit signing](operations/commit-signing.md)** — how Poindexter
   commits are GPG-signed and why. For contributors.
 
-## Reference (work in progress)
-
-The reference section is the deepest layer — exhaustive catalogs of
-every setting, prompt, validator, and extension point. Tracked in
-the [GitHub backlog](https://github.com/Glad-Labs/poindexter/milestones).
+## Reference
 
 - **[`reference/app-settings.md`](reference/app-settings.md)** —
   every key in the `app_settings` table with default, category, and
   secret classification. Auto-generated from the live DB — rerun
   `python scripts/regen-app-settings-doc.py` to refresh.
-- `reference/prompt-templates.md` — how `prompt_templates` works
-  and how to override a prompt without a redeploy. **Coming soon.**
-- `reference/qa-pipeline.md` — the 6-stage content pipeline, scoring
-  weights, and gate veto rules. **Coming soon.**
-- `reference/validators.md` — every `ValidationIssue` category with
-  example matches and score penalties. **Coming soon.**
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:8002` (local worker — the only supported deployment today)
 **Status:** Alpha. Surface area is broad but not contractually stable across releases.
-**Last Updated:** 2026-04-17
+**Last Updated:** 2026-04-23
 
 ---
 
@@ -191,15 +191,52 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
 
 ### Other Endpoints
 
-| Group      | Path                       | Purpose                           |
-| ---------- | -------------------------- | --------------------------------- |
-| Categories | `GET /api/categories`      | List content categories           |
-| Export     | `POST /api/export/rebuild` | Trigger static JSON rebuild to R2 |
-| Memory     | `GET /api/memory/search`   | Semantic search via pgvector      |
-| Memory     | `GET /api/memory/stats`    | Embedding statistics              |
-| Pipeline   | `GET /api/pipeline/events` | Pipeline event stream             |
-| Analytics  | `GET /api/analytics/views` | Page view data                    |
-| Tracking   | `POST /api/track/view`     | Record a page view                |
+| Group           | Method + Path                             | Auth   | Purpose                                                         |
+| --------------- | ----------------------------------------- | ------ | --------------------------------------------------------------- |
+| **Categories**  | `GET /api/categories`                     | public | List all content categories with post counts                    |
+| Categories      | `GET /api/categories/{slug}`              | public | Single category metadata + posts                                |
+| **Posts**       | `GET /api/posts`                          | public | Paginated post list (status, category, limit, offset query)     |
+| Posts           | `GET /api/posts/{slug}`                   | public | Single published post by slug                                   |
+| Posts           | `GET /api/posts/search?q=...`             | public | Full-text + pgvector similarity search                          |
+| Posts           | `GET /api/posts/preview/{preview_token}`  | token  | Preview a pre-publish post using a signed one-shot token        |
+| Posts           | `PATCH /api/posts/{post_id}`              | bearer | Update post metadata (title, tags, SEO fields)                  |
+| Posts           | `DELETE /api/posts/{post_id}`             | bearer | Soft delete (archive) a post                                    |
+| **Tags**        | `GET /api/tags`                           | public | List all tags with post counts                                  |
+| **Memory**      | `GET /api/memory/search?q=...`            | bearer | Semantic search via pgvector (top-k cosine similarity)          |
+| Memory          | `GET /api/memory/stats`                   | bearer | Embedding counts by source_table / writer                       |
+| **Pipeline**    | `GET /api/pipeline/events`                | bearer | Live event stream (recent task transitions, with pagination)    |
+| Pipeline        | `GET /api/pipeline/events/task/{task_id}` | bearer | Event history for a single task                                 |
+| **Analytics**   | `GET /api/analytics/views`                | bearer | Page view rollups (day, post_id, geo if configured)             |
+| Analytics       | `POST /api/track/view`                    | public | Record a page view beacon (called by the frontend on page load) |
+| **Export**      | `POST /api/export/rebuild`                | bearer | Trigger static JSON + RSS rebuild to R2 / configured storage    |
+| **Media**       | `GET /images/generated/{filename}`        | public | Serve a generated SDXL / Pexels image                           |
+| Media           | `GET /episodes`                           | public | List all podcast episodes                                       |
+| Media           | `GET /episodes/{post_id}.mp3`             | public | Stream a podcast audio episode                                  |
+| Media           | `GET /episodes/{post_id}.mp4`             | public | Stream a podcast video episode                                  |
+| Media           | `POST /generate/{post_id}`                | bearer | Regenerate audio/video for a specific post                      |
+| **Subscribers** | `GET /subscribers/count`                  | public | Total opted-in newsletter subscribers                           |
+| Subscribers     | `POST /subscribe`                         | public | Double opt-in newsletter signup (captcha recommended)           |
+| Subscribers     | `POST /unsubscribe`                       | public | One-click unsubscribe by token                                  |
+| **Feed**        | `GET /feed.xml`                           | public | RSS 2.0 feed of published posts                                 |
+| **Webhooks**    | `POST /alertmanager`                      | signed | Prometheus Alertmanager webhook receiver (routes to Discord)    |
+| **Frontend**    | `POST /revalidate-cache`                  | bearer | Trigger Next.js ISR cache revalidation after publish            |
+| Frontend        | `GET /preview/{preview_token}`            | token  | Server-rendered preview HTML for vision-gate QA                 |
+
+Everything prefixed `/api` is the REST surface. Media routes
+(`/episodes/*`, `/images/generated/*`) and the RSS feed sit at the
+server root without the `/api` prefix to match classic web
+expectations.
+
+### Webhook security
+
+`POST /alertmanager` verifies the Alertmanager webhook signature
+(HMAC-SHA256, shared secret in `app_settings.alertmanager_webhook_secret`).
+Invalid signatures are rejected with 401.
+
+Preview tokens (`/api/posts/preview/{token}`, `/preview/{token}`) are
+single-purpose signed tokens issued by the worker at post creation.
+They expire after 24 hours and can only be used to read — never to
+modify state.
 
 ---
 
