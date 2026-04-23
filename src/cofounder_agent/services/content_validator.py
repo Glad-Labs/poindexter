@@ -812,8 +812,19 @@ def validate_content(
     # which collapses to ``[A-Za-z]`` under IGNORECASE (default), producing a
     # 100% false-positive rate on normal lowercase prose. Inline ``(?i:...)``
     # groups inside each pattern handle the keyword case-insensitivity.
+    #
+    # Strip markdown headings (# lines) and list-item leaders (*, -, 1.) before
+    # matching: pattern 5 ("Word Word: Subtitle") is the normal shape of blog
+    # section titles, so every descriptive header would otherwise false-flag
+    # as an unlinked citation. Only prose citations are real hallucinations.
+    _no_structure_text = "\n".join(
+        line for line in full_text.split("\n")
+        if not line.lstrip().startswith("#")
+        and not re.match(r"^\s*[*\-]\s+", line)
+        and not re.match(r"^\s*\d+[.)]\s+", line)
+    )
     issues.extend(_check_patterns(
-        full_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
+        _no_structure_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
         "Unlinked citation — possible hallucinated reference: '{matched}'",
         flags=0,
     ))
