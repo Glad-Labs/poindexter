@@ -180,6 +180,25 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning("[LIFESPAN] gpu.set_site_config failed: %s", e)
 
+        # Phase H (GH#95): wire site_config into the TaskExecutor that
+        # startup_manager built. startup_manager runs before the DB pool
+        # exists so it can't construct TaskExecutor with site_config
+        # directly. Without this rebind TaskExecutor.site_config resolves
+        # to None, the pipeline seeds ``context["site_config"]=None``,
+        # and the first stage that calls get_content_generator(...) hits
+        # AIContentGenerator._require_site_config() → RuntimeError +
+        # task fails.
+        _te = services.get("task_executor")
+        if _te is not None:
+            _te._site_config = _site_cfg
+            _te.app_state = app.state
+            try:
+                _te.quality_service.set_site_config(_site_cfg)
+            except Exception as e:
+                logger.warning(
+                    "[LIFESPAN] task_executor.quality_service.set_site_config failed: %s", e,
+                )
+
         # Re-initialize observability stack now that site_config is loaded from
         # DB. Module-level setup() calls earlier saw empty values — this is the
         # first point where sentry_dsn / enable_pyroscope / enable_tracing are

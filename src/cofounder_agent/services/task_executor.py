@@ -13,8 +13,13 @@ import httpx as _httpx
 
 from services.logger_config import get_logger
 
+# Kept importable (not instantiated) so tests can
+# patch("services.task_executor.AIContentGenerator") and verify no
+# production path actually constructs one. Pipeline uses
+# get_content_generator() from the generate_content stage.
+from .ai_content_generator import AIContentGenerator  # noqa: F401
+
 # Import AI content generator for fallback
-from .ai_content_generator import AIContentGenerator
 from .error_handler import ServiceError
 from .quality_service import UnifiedQualityService
 from .usage_tracker import get_usage_tracker
@@ -115,7 +120,13 @@ class TaskExecutor:
         self.quality_service = UnifiedQualityService(
             site_config=self._site_config,
         )
-        self.content_generator = AIContentGenerator()  # Fallback content generation
+        # ``self.content_generator`` is initialized for test patchability
+        # only — the pipeline uses ``get_content_generator()`` from the
+        # generate_content stage, so this instance is never read in
+        # production. Kept as None to avoid the pre-site_config
+        # AIContentGenerator() construction that used to crash with a
+        # Phase H RuntimeError.
+        self.content_generator = None
         self.poll_interval = poll_interval
         self.running = False
         self.task_count = 0
