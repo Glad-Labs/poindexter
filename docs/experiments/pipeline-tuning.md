@@ -75,6 +75,74 @@ is fixed.
 
 ---
 
+## Batch E — N=2 repro of batch D (exact same config)
+
+- **Config**: identical to batch D. writer `glm-4.7-5090`, critic `gemma3:27b`, weights 0.4/0.6, `qa_gate_weight`=0, threshold 80.
+- **Task IDs**: 851-860
+- **Approval rate**: **1/10 (10%)** — massive regression vs D's 5/10
+- **Avg score**: 71.2 (D was 79.5, A was 77.4)
+
+### Results
+
+| ID  | Status      | Score | Failure Mode                                   |
+| --- | ----------- | ----- | ---------------------------------------------- |
+| 851 | rejected    | 63    | url_verifier — dead link (Qwen3 HF path)       |
+| 852 | rejected    | 66    | score-gate                                     |
+| 853 | rejected    | 57    | score-gate                                     |
+| 854 | rejected    | 81    | named-source without URL                       |
+| 855 | rejected    | 87    | named-source without URL                       |
+| 856 | rejected    | 74    | score-gate                                     |
+| 857 | rejected    | 65    | score-gate                                     |
+| 858 | ✅ approved | 86    | —                                              |
+| 859 | rejected    | 75    | named-source without URL + hallucinated lib    |
+| 860 | rejected    | 61    | url_verifier — dead HN links (hallucinated ID) |
+
+### Same-topic comparison: D vs E (both at gate_weight=0)
+
+| Topic               | D score | E score | Δ                                        |
+| ------------------- | ------- | ------- | ---------------------------------------- |
+| Qwen3 self-host     | 66      | 63      | -3                                       |
+| Ollama vs llama.cpp | 87 ✅   | 66      | -21                                      |
+| RAG over notes      | 69      | 57      | -12                                      |
+| pgvector vs Qdrant  | 71      | 81      | +10                                      |
+| GGUF quant          | 87 ✅   | 87      | 0 (flip: approve→reject on named-source) |
+| Fine-tune local LLM | 83 ✅   | 74      | -9                                       |
+| Prompt eng          | 84 ✅   | 65      | -19                                      |
+| Context window      | 74      | 86 ✅   | +12                                      |
+| LoRA                | 91 ✅   | 75      | -16                                      |
+| Local AI agents     | 86 ✅   | 61      | -25                                      |
+
+- **Mean Δ: −8.3 pts.** Generation variance dominates.
+- Same config, same topics — approval rate swung from 50% down to 10%.
+
+### Aggregate analysis across A/D/E
+
+| Batch | Config   | Approved | Avg score |
+| ----- | -------- | -------- | --------- |
+| A     | gate=0.3 | 3/10     | 77.4      |
+| D     | gate=0   | 5/10     | 79.5      |
+| E     | gate=0   | 1/10     | 71.2      |
+
+- **Combined D+E (N=2, 20 tasks)**: 6/20 = **30%** approved — identical to A.
+- **The 50% approval in D was a lucky batch**, not a stable property of `gate_weight=0`.
+
+### Revised interpretation
+
+- **Matt's design principle is still right** — gates _should_ be veto-only by philosophy, and `gate_weight=0` is cleaner architecture (no double-counting of LLM judgment).
+- **But the _empirical_ approval lift was noise.** With σ ~15pt per-topic between runs, a single 10-topic batch can swing from 1/10 to 5/10 on pure variance.
+- **Real takeaway: the writer and critic produce wildly inconsistent output** on the same topic with the same prompt and same settings. This is the dominant problem, not any single knob.
+- **Named-source without URL** is the most frequent hard-veto (2/10 D, 3/10 E). The writer keeps producing phrases like "according to the official documentation" without naming which documentation. This is a prompt-engineering problem, not a gate problem.
+- **Dead links** are the second most frequent (1/10 D, 2/10 E). Writer hallucinates specific paths on real domains. Also a prompt problem.
+
+### Follow-up recommendations
+
+- **Keep `gate_weight=0`** as the right design, but drop the claim that it materially boosts approvals
+- Run **N=3 batches per config** going forward. N=1 is dangerously misleading at this variance level
+- **Address the named-source + dead-link pattern directly** — either by prompt ("never cite a source without a URL") or by wider regex on named-source-without-URL promotion. This would unblock 3-5 rejections per batch
+- **Temperature / sampling** of the writer is probably contributing to variance — worth checking if generation temperature is tunable
+
+---
+
 ## Batch D — qa_gate_weight = 0 (disable gate drag)
 
 - **Config**: writer `glm-4.7-5090:latest`, critic `gemma3:27b`, weights reverted to `qa_validator_weight`=0.4 / `qa_critic_weight`=0.6, **`qa_gate_weight` = 0** (was 0.3). Only delta vs batch A is the gate weight.
