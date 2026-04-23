@@ -179,13 +179,32 @@ fires `notify_operator()` (Telegram → Discord → alerts.log → stderr)
 then `sys.exit(2)`.
 
 **Everything else lives in `app_settings` (200+ keys).** Code accesses
-settings through `services.site_config`:
+settings through a `SiteConfig` instance that is dependency-injected
+(Phase H, GH#95). `main.py` constructs the canonical instance, loads it
+from the DB at startup, and attaches it to `app.state.site_config`.
+
+Get a reference to the instance through the appropriate DI seam:
+
+- **Route handlers:** `site_config: SiteConfig = Depends(get_site_config_dependency)`
+- **Services:** accept `site_config` in `__init__` (ctor kwarg) or the
+  method signature, store on `self._site_config`
+- **Pipeline stages:** `context.get("site_config")` — seeded by
+  `content_router_service.process_content_generation_task`
+- **Image providers / taps / topic sources:** `config.get("_site_config")` —
+  seeded by the dispatcher/runner
+
+Then call methods on the instance:
 
 - `site_config.get(key, default)` — sync, reads from in-memory cache
   populated at startup
 - `site_config.get_secret(key, default)` — **async**, hits DB each call
   (secrets are filtered out of the cache, so `is_secret=true` keys
   MUST be fetched via this method)
+
+Do NOT write `from services.site_config import site_config` — that
+module-level singleton was removed in Phase H step 5. Tests should
+construct their own instance with `SiteConfig(initial_config={...})`
+or use the `test_site_config` fixture in `tests/unit/conftest.py`.
 
 For SaaS / A/B-testing readiness, every tunable should be a
 DB-backed setting. Background algorithm windows (anomaly detection,

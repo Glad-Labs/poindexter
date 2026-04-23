@@ -75,8 +75,14 @@ This is the biggest conceptual shift in the refactor. Phase D handles it **addit
 class Job(Protocol):
     name: str
     schedule: str  # cron or interval, handed to apscheduler
-    async def run(self, pool, config) -> JobResult: ...
+    async def run(
+        self, pool, config, *, site_config: SiteConfig,
+    ) -> JobResult: ...
 ```
+
+`PluginScheduler` uses `inspect.signature` to forward `site_config`
+only to jobs that declare it in their `run()` kwargs — jobs that
+don't need app_settings can keep the two-arg shape (Phase H, GH#95).
 
 apscheduler is the runner. Each Job registers via entry_points. `idle_worker.py` becomes a thin bootstrap that hands jobs to apscheduler's async scheduler. State (`last_run_at`) persisted in Postgres — survival across restarts is free.
 

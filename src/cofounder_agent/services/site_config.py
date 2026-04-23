@@ -2,29 +2,43 @@
 Site Configuration — DB-first, env-fallback identity and config.
 
 Loads all identity/config from app_settings on startup.
-Every service reads from this module instead of os.getenv().
+Every service reads from an injected ``SiteConfig`` instance instead
+of ``os.getenv()``.
 
 Only DATABASE_URL and PORT remain as env vars (chicken-and-egg).
 Everything else comes from the database.
 
-Usage:
-    from services.site_config import site_config
-    name = site_config.get("site_name")            # "Glad Labs"
-    url = site_config.get("api_base_url")           # "https://..."
-    email = site_config.get("privacy_email")        # "privacy@..."
+Usage (post Phase H, GH#95):
+    ``main.py`` owns the canonical instance. The lifespan constructs it
+    once, loads it from the DB, and attaches it to ``app.state.site_config``:
 
-    # Or with a default
-    gpu = site_config.get("gpu_model", "Unknown GPU")
+        _site_cfg = SiteConfig()
+        await _site_cfg.load(pool)
+        app.state.site_config = _site_cfg
 
-Startup:
-    Called from main.py lifespan after DB pool is ready:
-        await site_config.load(pool)
+    Code that needs site_config gets it via the DI seam for its layer:
+
+    * **Route handlers** — FastAPI dependency:
+        ``site_config: SiteConfig = Depends(get_site_config_dependency)``
+    * **Services** — accept ``site_config`` in ``__init__``; store on
+      ``self._site_config``. Make it required (no None default) for
+      production classes; tests construct with
+      ``SiteConfig(initial_config={...})``.
+    * **Pipeline stages** — read ``context.get("site_config")``. The
+      context dict is seeded by ``process_content_generation_task``.
+    * **Image providers / taps / topic sources** — read
+      ``config.get("_site_config")``. The dispatcher/runner seeds it.
+
+    There is NO module-level ``site_config`` singleton any more. Doing
+    ``from services.site_config import site_config`` raises
+    ``ImportError`` — that's intentional. New code accepts the instance
+    as a parameter; legacy code that still needs migration should do
+    the same.
 
 Testing:
     Tests should construct their own ``SiteConfig(initial_config=...)``
-    instead of mutating the shared singleton. This avoids test pollution
-    between cases that seed different values, and unblocks #242 one
-    test file at a time without touching production callers.
+    or use the ``test_site_config`` fixture in
+    ``tests/unit/conftest.py``.
 
         cfg = SiteConfig(initial_config={"site_url": "https://test"})
         assert cfg.get("site_url") == "https://test"
