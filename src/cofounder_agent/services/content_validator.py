@@ -606,6 +606,9 @@ _HALLUCINATION_WHITELIST = {
 }
 
 
+_PLAIN_TITLECASE_RE = re.compile(r"^[A-Z][a-z]+$")
+
+
 def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
     """Pull potential library/API references from the text.
 
@@ -614,6 +617,12 @@ def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
     because that is what we compare against the stdlib / PyPI lists.
 
     Deduplicated by the pair to avoid spamming issues for the same token.
+
+    Plain TitleCase English words ("Use", "Large", "Retrieval") fall out of
+    the narrative verb regex ("adopt Large", "using Retrieval", "Use API")
+    but are not library names. If the token is plain TitleCase and doesn't
+    match a known reference list, skip it — real fake-library names are
+    almost always CamelCase, snake_case, dotted, or all-lowercase.
     """
     seen: set[tuple[str, str]] = set()
     out: list[tuple[str, str]] = []
@@ -629,6 +638,10 @@ def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
                 continue
             # Skip tokens that are just a single short letter (likely noise)
             if len(norm) < 3:
+                continue
+            # Plain TitleCase ("Use", "Large") without a known-library hit is
+            # almost always just an English word, not a hallucinated library.
+            if _PLAIN_TITLECASE_RE.match(root) and not _is_known_reference(norm):
                 continue
             key = (raw, norm)
             if key in seen:
