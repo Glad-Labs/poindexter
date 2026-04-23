@@ -20,8 +20,6 @@ of the reading below.
   commands, project status. Read this first.
 - **[Architecture overview](ARCHITECTURE.md)** — the system end-to-end.
   Components, data flow, technology choices, principles.
-- **[Feature status](feature-status.md)** — honest inventory of what
-  works today, what's partial, what's scaffold-only. No marketing.
 
 ## Architecture
 
@@ -29,6 +27,9 @@ of the reading below.
   12-stage `Stage` plugin chain, how `StageRunner` orders and
   times them, and how cross-model QA short-circuits the pipeline
   when content is rejected.
+- **[Multi-agent pipeline](architecture/multi-agent-pipeline.md)** —
+  writer / reviewer / adversarial model orchestration and the
+  multi-model QA veto flow.
 - **[Plugin architecture](architecture/plugin-architecture.md)** —
   the six plugin Protocols (Tap, Probe, Job, Stage, Pack,
   LLMProvider) and the phased refactor that's consolidating
@@ -58,6 +59,8 @@ of the reading below.
   Transparency only — if you're self-hosting you don't need this.
 - **[Disaster recovery](operations/disaster-recovery.md)** — recovery
   procedures for each service, ordered by severity.
+- **[Commit signing](operations/commit-signing.md)** — how Poindexter
+  commits are GPG-signed and why. For contributors.
 
 ## Reference (work in progress)
 

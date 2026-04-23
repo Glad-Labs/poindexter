@@ -223,4 +223,3 @@ Common status codes: `400` validation, `401` missing/bad token,
 
 - **[Local Development Setup](../operations/local-development-setup.md)** — full setup walkthrough
 - **[Troubleshooting](../operations/troubleshooting.md)** — production issues and fixes
-- **[Feature Status](../feature-status.md)** — honest inventory of what works

@@ -249,7 +249,6 @@ dive into specific areas:
 - **[Local development setup](docs/operations/local-development-setup.md)** — end-to-end setup walkthrough
 - **[Environment variables](docs/operations/environment-variables.md)** — bootstrap-layer config
 - **[Troubleshooting](docs/operations/troubleshooting.md)** — production issues we've hit
-- **[Feature status](docs/feature-status.md)** — honest inventory of what works
 
 The docs are written for operators and contributors who want to
 master the system. They take hours to read end-to-end. If you want
