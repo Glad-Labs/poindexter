@@ -111,7 +111,7 @@ Poindexter is in **alpha**. Honestly:
 - The legacy `bootstrap.sh` has been replaced by `poindexter setup` (interactive wizard with `--auto` mode). If you're using bootstrap.sh from an older clone, switch to the new flow.
 - No managed/hosted Poindexter offering. Self-host only.
 - No multi-tenant deployment recipe. One operator, one machine.
-- 1 Grafana dashboard ships free (Pipeline Operations). 5 additional dashboards (Cost Analytics, Quality, Infrastructure, Approval Queue, Link Registry) available with the Seed Package.
+- 1 Grafana dashboard ships free (Pipeline Operations). 5 additional dashboards (Cost Analytics, Quality, Infrastructure, Approval Queue, Link Registry) ship with Pro.
 - Native Windows cmd / PowerShell is not supported. Use Git Bash or WSL.
 - Database schema is not yet considered stable across releases. Read the CHANGELOG before upgrading.
 
@@ -252,23 +252,22 @@ dive into specific areas:
 
 The docs are written for operators and contributors who want to
 master the system. They take hours to read end-to-end. If you want
-a guided shortcut, the paid Quick Start Guide (below) skips the
-reading.
+a guided shortcut, Pro (below) includes the full Poindexter book
+so you skip the reading and get straight to publishing.
 
-## Premium Add-Ons
+## Pricing
 
-The engine is free and open-source. For production-quality output:
+The engine is free and open-source. Pro is a subscription for operators who want production-grade output without tuning from scratch.
 
-| Tier                  | Price        | What You Get                                                                                                                                       |
-| --------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free**              | $0           | Full pipeline engine, basic prompts, 1 Grafana dashboard (Pipeline Operations)                                                                     |
-| **Quick Start Guide** | $29 one-time | Production-tuned config (235+ settings), anti-hallucination rules, writing samples, 5 premium dashboards, Matt's exact deploy steps                |
-| **Premium**           | $9.99/mo     | Everything in Quick Start + monthly updated prompts, private repo access, new fact-check rules, premium Discord, AI Content Pipeline book chapters |
+| Tier     | Price                                                 | What You Get                                                                                                                                                               |
+| -------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Free** | $0                                                    | Full pipeline engine, basic prompts, 1 Grafana dashboard (Pipeline Operations), GitHub issues support                                                                      |
+| **Pro**  | $9/mo or $89/year (save ~17%)<br>**7-day free trial** | Premium prompts (anti-hallucination, SEO, QA, research), 5 additional Grafana dashboards, prompt updates as Matt tunes them, private VIP Discord, the full Poindexter book |
 
-The free tier runs the pipeline end-to-end. The paid tiers give you months of tuning in a single install — the difference between default output and content that actually ranks.
+The free tier runs the pipeline end-to-end. Pro gives you months of tuning in a single install — the difference between default output and content that actually ranks.
 
-- [Buy the Quick Start Guide — $29](https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52)
-- [Subscribe to Premium — $9.99/mo](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)
+- **[Start your 7-day Pro trial — $9/mo](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)**
+- [Subscribe annually — $89/year](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)
 - [Compare tiers on gladlabs.io/product](https://www.gladlabs.io/product)
 
 ## Contributing
