@@ -590,4 +590,3 @@ The roadmap is tracked via GitHub milestones at
 - **[Database Schema](architecture/database-schema.md)** — every table + migration system
 - **[API Reference](api/README.md)** — REST endpoints
 - **[Local Development](operations/local-development-setup.md)** — setup walkthrough
-- **[Feature Status](feature-status.md)** — honest inventory of what works
