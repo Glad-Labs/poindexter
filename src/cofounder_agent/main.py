@@ -213,7 +213,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.warning("[LIFESPAN] telemetry re-init failed: %s", e)
         try:
             from services.profiling import setup_pyroscope
-            setup_pyroscope()
+            setup_pyroscope(_site_cfg)
         except Exception as e:
             logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
 
@@ -352,7 +352,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 from plugins.registry import get_core_samples, get_jobs
                 from plugins.scheduler import PluginScheduler
 
-                scheduler = PluginScheduler(db_service.pool)
+                scheduler = PluginScheduler(db_service.pool, site_config=_site_cfg)
                 # entry_point-discovered jobs (third-party installs) + core
                 # samples loaded imperatively (see registry.get_core_samples).
                 jobs = list(get_jobs()) + list(get_core_samples().get("jobs", []))
@@ -502,7 +502,7 @@ setup_telemetry(app, _site_cfg)
 # app_settings.enable_pyroscope). LGTM+P stack, GH #75.
 try:
     from services.profiling import setup_pyroscope
-    setup_pyroscope()
+    setup_pyroscope(_site_cfg)
 except Exception as _e:
     logger.debug(f"[PYROSCOPE] setup skipped: {_e}")
 
