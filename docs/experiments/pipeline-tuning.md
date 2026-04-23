@@ -75,6 +75,57 @@ is fixed.
 
 ---
 
+## Batch F — Tightened anti-fabrication prompt (prompt change, not config)
+
+- **Config**: writer glm-4.7-5090, critic gemma3:27b, weights 0.4/0.6, gate_weight=0, threshold 80. Identical config to batch A/D/E. **Only change: rewrote `blog_generation.initial_draft` in the premium prompts repo** to move anti-fabrication rules to the top, add a pre-submission self-check block, and tighten the "never cite unlinked named sources" language.
+- **Task IDs**: 866-875
+- **Approval rate**: 2/10 (20%)
+- **Max score**: 94 (batch A max was 87 — +7 ceiling lift)
+- **Approved cleanly** (score, programmatic, citation_verifier all green):
+  - **871 @ 94** — programmatic 100/100, citation_verifier 100/100. Cleanest post of the whole session.
+  - 870 @ 88 — programmatic 97/100 with one advisory warning.
+
+### Results
+
+| ID  | Status      | Score | Failure Mode                                               |
+| --- | ----------- | ----- | ---------------------------------------------------------- |
+| 866 | rejected    | 75    | named-source no URL + unlinked citation                    |
+| 867 | rejected    | 68    | score-gate                                                 |
+| 868 | rejected    | 76    | score-gate                                                 |
+| 869 | rejected    | 72    | score-gate                                                 |
+| 870 | ✅ approved | 88    | —                                                          |
+| 871 | ✅ approved | 94    | — (programmatic 100/100, citation_verifier 100/100)        |
+| 872 | rejected    | 90    | named-source no URL                                        |
+| 873 | rejected    | 27    | **FALSE POSITIVE: `pgvector` flagged as hallucinated lib** |
+| 874 | rejected    | 90    | named-source no URL                                        |
+| 875 | rejected    | 72    | score-gate                                                 |
+
+### Comparison: A vs F (same config, new prompt)
+
+| Metric                         | A (old prompt) | F (tightened prompt) |
+| ------------------------------ | -------------- | -------------------- |
+| Approval rate                  | 3/10           | 2/10                 |
+| Avg score                      | 77.4           | 75.2                 |
+| Max score                      | 87             | **94**               |
+| Fabrication-related rejections | 2/10           | 3/10                 |
+| Score-gate rejections          | 5/10           | 4/10                 |
+| Validator false-positives      | 0/10           | 1/10 (pgvector)      |
+
+### Findings
+
+- **Prompt change LIFTED ceiling, not approval rate.** Max score jumped 87→94, and 871 was the cleanest content we've produced. The writer IS following the anti-fabrication rules more rigorously when it follows them at all.
+- **But the writer still produces ≥1 unsourced named citation in 3/10 posts** (866, 872, 874). Those posts otherwise scored 75/90/90 — they'd have cleared 80 if not for that one phrase. So the prompt isn't fully self-checking.
+- **Score-gate remains the persistent drag** — same pattern as A/D/E. The critic LLM's "section tension" advisory is independent of writer behavior.
+- **Newly-surfaced validator false-positive: `pgvector`**. Same class as LoRA / REST / PostgreSQL / transformers. The hallucinated-library whitelist is incomplete for AI/ML/database extensions. Dropped task 873 from a passing-quality score to 27 on a single false flag.
+
+### Next levers (if continuing to tweak)
+
+1. **Fix the validator whitelist** — add `pgvector`, `lora`, `rest`, `postgresql`, `transformers` and similar AI-adjacent non-PyPI identifiers. Code change, small surface area.
+2. **Pre-publish rewrite loop targeted at named-source** — if the programmatic_validator catches a named-source-no-URL, automatically rewrite that single sentence (we have a rewrite loop in cross_model_qa, but it's general-purpose, not surgical).
+3. **Prompt variant with a MANDATORY "suggested_urls" JSON block** — force the writer to commit to a source list up front. Then the validator knows which named sources are "real" for this post.
+
+---
+
 ## Batch E — N=2 repro of batch D (exact same config)
 
 - **Config**: identical to batch D. writer `glm-4.7-5090`, critic `gemma3:27b`, weights 0.4/0.6, `qa_gate_weight`=0, threshold 80.
