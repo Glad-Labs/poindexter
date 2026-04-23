@@ -3,8 +3,8 @@
 **Last Updated:** 2026-04-18
 
 Poindexter ships with a self-hosted Grafana instance (Docker container
-on port 3000) and one pre-configured dashboard. Premium dashboards
-are available with the Seed Package.
+on port 3000) and one pre-configured dashboard. Five additional
+premium dashboards ship with Poindexter Pro.
 
 ## Local Setup (ships out of the box)
 
@@ -24,9 +24,9 @@ setup needed — `bash scripts/start-stack.sh` brings it up.
 | ------------------------------------- | --------------------------------------------- |
 | `dashboards/pipeline-operations.json` | Pipeline status, queue depth, recent activity |
 
-### Premium (Seed Package — $29)
+### Premium (Poindexter Pro — $9/mo or $89/yr)
 
-Available in the `glad-labs-prompts` repo after purchase:
+Available in the `glad-labs-prompts` repo to Pro subscribers:
 
 | File                       | Description                                  |
 | -------------------------- | -------------------------------------------- |

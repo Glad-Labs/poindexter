@@ -1,6 +1,6 @@
--- Minimal default settings for the Glad Labs Engine.
+-- Minimal default settings for Poindexter.
 -- This seeds just enough to start the system. For production-quality
--- configuration, see the Quick Start Guide at gladlabs.io.
+-- configuration, see Poindexter Pro at gladlabs.ai/guide.
 
 CREATE TABLE IF NOT EXISTS app_settings (
     id SERIAL PRIMARY KEY,

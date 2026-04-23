@@ -56,12 +56,13 @@ git rm --cached --quiet .github/workflows/ci.yml 2>/dev/null || true          # 
 git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full stack with Gitea, pgAdmin, SDXL, etc.
 git rm --cached --quiet .env.example 2>/dev/null || true                      # Legacy; customers use poindexter setup
 
-# === Premium Grafana dashboards (Seed Package — keep only pipeline-operations free) ===
+# === Premium Grafana dashboards (Poindexter Pro — keep only pipeline-operations free) ===
 git rm --cached --quiet infrastructure/grafana/dashboards/approval-queue.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/cost-analytics.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/infrastructure-data.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/link-registry.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2>/dev/null || true
+git rm --cached --quiet infrastructure/grafana/dashboards/qa-observability.json 2>/dev/null || true
 
 # === Local gitleaks baseline — operator-specific, regenerated per clone ===
 # Contains historical commit hashes + file paths where gitleaks flagged

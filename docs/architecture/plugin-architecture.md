@@ -27,7 +27,7 @@ Poindexter keeps inventing "feature parent + sources as children" informally in 
 | `services/topic_discovery.py`                   | 955   | Sources dispatched via if-chain  |
 | `brain/health_probes.py` + `business_probes.py` | ~1000 | Flat functions; Protocol unused  |
 
-Every new Tap (Slack, Notion, Gmail), Provider (Midjourney, Flux), Reviewer (plagiarism check), or Adapter (new social platform) requires editing a 1000+ line file instead of dropping in a file. That blocks the plugin ecosystem vision and the $9.99/mo premium overlay.
+Every new Tap (Slack, Notion, Gmail), Provider (Midjourney, Flux), Reviewer (plagiarism check), or Adapter (new social platform) requires editing a 1000+ line file instead of dropping in a file. That blocks the plugin ecosystem vision and the Pro subscription overlay.
 
 ## Core insight: adopt standards, don't invent
 

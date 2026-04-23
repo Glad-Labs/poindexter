@@ -6,8 +6,8 @@
 
 > This document is the mastery-grade reference for how Poindexter is
 > built. It is intentionally long. For a guided setup in 30 minutes,
-> see the [Quick Start Guide](https://www.gladlabs.io/products/quick-start).
-> For running the stack locally right now, see
+> see [Poindexter Pro](https://www.gladlabs.ai/guide) which includes
+> the full setup book. For running the stack locally right now, see
 > [operations/local-development-setup.md](operations/local-development-setup.md).
 
 ---
@@ -565,12 +565,11 @@ CREATE TABLE memories (
 The roadmap is tracked via GitHub milestones at
 [Glad-Labs/poindexter/milestones](https://github.com/Glad-Labs/poindexter/milestones).
 
-| Milestone           | Status      | Description                                             |
-| ------------------- | ----------- | ------------------------------------------------------- |
-| M1: Stabilize       | Done        | Pipeline runs end-to-end, fresh clone works, tests pass |
-| M3: Ship the Guide  | In progress | $29 Quick Start Guide on Lemon Squeezy                  |
-| M4: Premium Prompts | Planned     | $9/mo recurring subscription                            |
-| Backlog             | Ongoing     | 30+ issues for post-revenue features                    |
+| Milestone                 | Status      | Description                                                                   |
+| ------------------------- | ----------- | ----------------------------------------------------------------------------- |
+| M1: Stabilize             | Done        | Pipeline runs end-to-end, fresh clone works, tests pass                       |
+| M3: Launch Poindexter Pro | In progress | Single subscription tier on Lemon Squeezy — $9/mo or $89/yr, 7-day free trial |
+| Backlog                   | Ongoing     | 30+ issues for post-revenue features                                          |
 
 ---
 

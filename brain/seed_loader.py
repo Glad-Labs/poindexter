@@ -6,8 +6,8 @@ boot-critical keys aren't present), we load the core seed from
 `brain/seed_app_settings.json` using `INSERT ... ON CONFLICT DO NOTHING` so
 any human-applied edits win over the seed.
 
-The core seed is the free-tier starter pack. The paid-tier Quick Start Guide
-ships an optimized seed overlay that the CLI applies on top (via
+The core seed is the free-tier starter pack. Poindexter Pro ships an
+optimized seed overlay that the CLI applies on top (via
 `poindexter premium activate <license-key>` — see Gitea #225).
 
 This module has no external dependencies beyond asyncpg; it runs inside the
