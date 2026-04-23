@@ -246,6 +246,7 @@ dive into specific areas:
 - **[Multi-agent pipeline](docs/architecture/multi-agent-pipeline.md)** — the content pipeline + cross-model QA
 - **[Database schema](docs/architecture/database-schema.md)** — every table + migration system
 - **[API reference](docs/api/README.md)** — REST endpoints exposed by the worker
+- **[CLI reference](docs/operations/cli-reference.md)** — every `poindexter` subcommand with flags + examples
 - **[Local development setup](docs/operations/local-development-setup.md)** — end-to-end setup walkthrough
 - **[Environment variables](docs/operations/environment-variables.md)** — bootstrap-layer config
 - **[Troubleshooting](docs/operations/troubleshooting.md)** — production issues we've hit
