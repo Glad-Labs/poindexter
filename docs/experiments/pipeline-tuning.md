@@ -46,13 +46,56 @@ evaluation. All on-brand (AI/ML, self-hosted, local inference niche).
 
 ---
 
-## Batch B — Writer: qwen3:30b (in progress)
+## Batch B — Writer: qwen3:30b
 
 - **Config**: writer `qwen3:30b`, critic `gemma3:27b` (unchanged), thresholds unchanged
 - **Task IDs**: 810-819
-- **Status**: ⏳ running
+- **Approval rate**: 0/10 (0%)
+- **Avg generation time**: 133s per task
 
-Results will be populated as the batch completes.
+### Results
+
+| ID  | Status   | Score | Duration | Failure Mode                                                          |
+| --- | -------- | ----- | -------- | --------------------------------------------------------------------- |
+| 810 | rejected | 68    | 107s     | score-gate (internal_consistency @ 40)                                |
+| 811 | rejected | 73    | 123s     | citation_verifier — 50% dead GitHub URLs (hallucinated)               |
+| 812 | rejected | 0     | 137s     | programmatic veto — `pg_hba.conf` flagged (FALSE POSITIVE, real file) |
+| 813 | rejected | 77    | 173s     | score-gate (internal_consistency @ 40)                                |
+| 814 | rejected | 74    | 127s     | score-gate (internal_consistency @ 40)                                |
+| 815 | rejected | 75    | 144s     | **fabricated person "Dr. Chen"** (programmatic veto)                  |
+| 816 | rejected | 80    | 125s     | **fabricated stat "300% increase"** + named-source no URL             |
+| 817 | rejected | 61    | 114s     | **fabricated stats "15% reduction", "10%"**                           |
+| 818 | rejected | 0     | 114s     | **fabricated stat "12% drop"**                                        |
+| 819 | rejected | 69    | 163s     | score-gate (internal_consistency @ 40)                                |
+
+### Rejection Breakdown
+
+- **4/10 fabrications** — writer hallucinated people ("Dr. Chen") and percentages ("12%", "15%", "300%"). This is a new failure class that glm-4.7-5090 did not produce.
+- **4/10 score-gate** — below 80 threshold, same section-tension pattern as batch A.
+- **1/10 dead links** — hallucinated GitHub paths on real domains.
+- **1/10 validator false-positive** — `pg_hba.conf` flagged as hallucinated library. Snake_case + `.conf` extension not caught by the plain-TitleCase filter. Logged as a follow-up code fix.
+
+### Comparison: A vs B (same topics, same critic, same thresholds)
+
+| Metric                      | Batch A (glm-4.7-5090) | Batch B (qwen3:30b) |
+| --------------------------- | ---------------------- | ------------------- |
+| Approval rate               | 3/10 (30%)             | 0/10 (0%)           |
+| Avg score on rejects        | 75.3                   | 61.0                |
+| Fabrications (stats/people) | 0/10                   | 4/10                |
+| Avg generation time         | 152s                   | 133s                |
+| Dead citations              | 0/10                   | 1/10                |
+
+### Notes
+
+- **qwen3:30b fabricates heavily** — 40% of its output had a critical validator veto for fake stats or people. glm-4.7-5090 had 0 fabrications.
+- qwen3:30b is ~15% faster per task but produces unpublishable content at a much higher rate.
+- Decision: **qwen3:30b is unsuitable as writer for this niche.** Reverting writer to glm-4.7-5090 for subsequent batches.
+- New validator edge found: `pg_hba.conf`-style config files flagged as hallucinated libraries. Will need a file-extension whitelist for dotted backticked tokens.
+
+### Follow-up experiments queued
+
+- Batch C: glm-4.7-5090 writer + rebalanced weights (0.5/0.5 validator/critic) to reduce critic drag
+- After C: threshold sensitivity (try 75) or critic swap to qwen3:30b in the critique role
 
 ---
 
