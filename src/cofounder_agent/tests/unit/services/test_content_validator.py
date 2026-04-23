@@ -784,6 +784,42 @@ class TestNamedSourceNoUrlPromotion:
         if unlinked:
             assert all(i.severity == "warning" for i in unlinked)
 
+    def test_markdown_headings_with_colons_not_flagged(self):
+        # Regression: tasks 718/719 rejected because section headers like
+        # "### The Amplifier Effect: Why AI Multiplies Bad Engineering"
+        # matched the bare-paper-title pattern. Markdown headings and list
+        # items are structure, not prose citations — they must be stripped
+        # before running UNLINKED_CITATION_PATTERNS.
+        content = (
+            "Some prose here.\n\n"
+            "### The Amplifier Effect: Why AI Multiplies Bad Engineering\n\n"
+            "Body text.\n\n"
+            "### From Data Silos to Smart Answers: The Infrastructure of Scale\n\n"
+            "More body.\n\n"
+            "*   The Solo Developer's Command Center: Personal Dashboard\n"
+            "*   The Amplifier Effect: Multipliers and Divisors\n"
+            "1.  The Roadmap: From Idea to Launch\n"
+        )
+        result = validate_content("Test Post", content, "topic")
+        unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
+        assert not unlinked, (
+            f"Markdown structure should not trigger unlinked_citation, got: "
+            f"{[i.matched_text for i in unlinked]}"
+        )
+
+    def test_prose_citation_still_flagged_after_heading_strip(self):
+        # Confirm the structure-strip does not cripple real detection:
+        # a prose mention with "according to X Title Case Y" must still fire.
+        content = (
+            "Some prose here.\n\n"
+            "### Clean Section Heading With Colon: No Flag\n\n"
+            "According to MIT Research: New Findings on Transformers, "
+            "models have improved substantially over the last year."
+        )
+        result = validate_content("Test Post", content, "topic")
+        unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
+        assert unlinked, "prose citation should still be flagged after heading strip"
+
 
 class TestPrometheusCounterEmission:
     """The Prometheus counter exposed as
