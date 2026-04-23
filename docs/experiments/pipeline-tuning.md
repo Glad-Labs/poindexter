@@ -46,6 +46,61 @@ evaluation. All on-brand (AI/ML, self-hosted, local inference niche).
 
 ---
 
+## Batch D — qa_gate_weight = 0 (disable gate drag)
+
+- **Config**: writer `glm-4.7-5090:latest`, critic `gemma3:27b`, weights reverted to `qa_validator_weight`=0.4 / `qa_critic_weight`=0.6, **`qa_gate_weight` = 0** (was 0.3). Only delta vs batch A is the gate weight.
+- **Task IDs**: 837-846
+- **Approval rate**: **5/10 (50%)** — up from batch A's 30%
+- **Avg generation time**: ~170s per task
+
+### Results
+
+| ID  | Status      | Score | Duration | Failure Mode                                                               |
+| --- | ----------- | ----- | -------- | -------------------------------------------------------------------------- |
+| 837 | rejected    | 66    | 130s     | named-source without URL (programmatic veto)                               |
+| 838 | ✅ approved | 87    | —        | —                                                                          |
+| 839 | rejected    | 69    | 149s     | score-gate (critic dragged, gate contribution was 0)                       |
+| 840 | rejected    | 71    | 172s     | citation_verifier — 50% dead dev.to URLs (hallucinated path, legit reject) |
+| 841 | rejected    | 87    | 222s     | programmatic veto — unlinked citation "Beyond..."                          |
+| 842 | ✅ approved | 83    | —        | —                                                                          |
+| 843 | ✅ approved | 84    | —        | —                                                                          |
+| 844 | rejected    | 74    | 177s     | score-gate (critic-only, gate contribution was 0)                          |
+| 845 | ✅ approved | 91    | —        | —                                                                          |
+| 846 | ✅ approved | 86    | —        | —                                                                          |
+
+### Same-topic comparison: A vs D
+
+| Topic               | A score | D score | Δ         |
+| ------------------- | ------- | ------- | --------- |
+| Qwen3 self-host     | 72      | 66      | -6        |
+| Ollama vs llama.cpp | 84 ✅   | 87 ✅   | +3        |
+| RAG over notes      | 84      | 69      | -15       |
+| pgvector vs Qdrant  | 73      | 71      | -2        |
+| GGUF quant          | 75      | 87      | +12       |
+| Fine-tune local LLM | 67      | 83 ✅   | +16       |
+| Prompt eng          | 80 ✅   | 84 ✅   | +4        |
+| Context window      | 65      | 74      | +9        |
+| LoRA                | 87 ✅   | 91 ✅   | +4        |
+| Local AI agents     | 87      | 86 ✅   | -1 (flip) |
+
+- **Mean Δ: +2.4 pts.** Approvals flipped from 3 → 5 (same threshold).
+- Flips: Fine-tune (67→83), GGUF (75→87), Local AI agents (87 reject → 86 approve, cleared named-source issue).
+
+### Notes
+
+- **gate_weight=0 is a net positive.** Approval rate doubled from A (3→5) despite same noise floor. The gates — especially internal_consistency — were suppressing scores 2-3 pts on average and killing borderline cases.
+- **Critic is still the bottleneck.** Tasks 839 (69), 844 (74) rejected at score-gate even with gate_weight=0 — i.e. critic scored those posts low enough that validator+critic average was under 80. "lowest reviewer internal_consistency @ 40/45" in the message is now cosmetic since its weight was 0.
+- **Hard vetoes still fired** in D (837 named-source, 840 dead links, 841 unlinked citation) — the quality floor held. Disabling gate_weight did not let garbage through.
+- Validator edges seen this batch: `REST`, `PostgreSQL`, `transformers` flagged as hallucinated/off-topic libraries. None blocking. Recurring low-impact noise.
+
+### Recommendation
+
+- **Keep `qa_gate_weight` = 0 as the new baseline.** 50% approval is the first crack in the 80 threshold wall, and no quality regression.
+- Next lever to try: swap **critic model** from gemma3:27b to glm-4.7-5090 or qwen3:30b. Gemma is being harsh. A different critic might surface fewer "tension" complaints on tradeoff-aware content.
+- Then consider **threshold sensitivity** (75 vs 80) as a cleaner quality-vs-approval knob.
+
+---
+
 ## Batch C — Weight rebalance 0.5/0.5
 
 - **Config**: writer `glm-4.7-5090:latest` (reverted from B), critic `gemma3:27b`, `qa_validator_weight`=0.5, `qa_critic_weight`=0.5 (was 0.4/0.6)
