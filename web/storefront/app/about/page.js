@@ -103,8 +103,9 @@ export default function AboutPage() {
               <em>Direct</em>
             </div>
             <p className="sf-fact__body">
-              No subscription. Buy the guide, download it, keep it. Lifetime
-              updates. Stripe-less — checkout runs on Lemon Squeezy.
+              Engine is free and open-source. Pro is $9/mo or $89/yr with a
+              7-day free trial. Cancel anytime, keep everything downloaded.
+              Stripe-less — checkout runs on Lemon Squeezy.
             </p>
           </div>
 
