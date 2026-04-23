@@ -46,6 +46,48 @@ evaluation. All on-brand (AI/ML, self-hosted, local inference niche).
 
 ---
 
+## Batch C — Weight rebalance 0.5/0.5
+
+- **Config**: writer `glm-4.7-5090:latest` (reverted from B), critic `gemma3:27b`, `qa_validator_weight`=0.5, `qa_critic_weight`=0.5 (was 0.4/0.6)
+- **Task IDs**: 822-831
+- **Approval rate**: 2/10 (20%)
+- **Avg generation time**: ~145s per task
+
+### Same-topic comparison: A vs C
+
+Same 10 topics, same writer + critic — only `qa_validator_weight` and `qa_critic_weight` changed. Shows the generation-variance noise floor.
+
+| Topic               | A score | C score | Δ   |
+| ------------------- | ------- | ------- | --- |
+| Qwen3 self-host     | 72      | 75      | +3  |
+| Ollama vs llama.cpp | 84 ✅   | 83 ✅   | -1  |
+| RAG over notes      | 84      | 75      | -9  |
+| pgvector vs Qdrant  | 73      | 52      | -21 |
+| GGUF quant          | 75      | 83 ✅   | +8  |
+| Fine-tune local LLM | 67      | 67      | 0   |
+| Prompt eng          | 80 ✅   | 74      | -6  |
+| Context window      | 65      | 77      | +12 |
+| LoRA                | 87 ✅   | 63      | -24 |
+| Local AI agents     | 87      | 71      | -16 |
+
+- **Mean Δ: −5.4 pts.** Within noise floor.
+- **σ across same-topic runs: ~12 pts.**
+- Two approvals this batch (823, 826); one same-topic flip won (826 GGUF), one lost (828 prompt eng).
+
+### Notes
+
+- The weight rebalance did not materially change outcomes. Direction is possibly slightly negative but swamped by generation variance.
+- **Statistical reality:** a single 10-topic batch has noise of ±10-15 pts per topic. Need N=3 batches per config to distinguish signal from variance.
+- **Confirmed bottleneck:** the `internal_consistency` advisory drag is present in both A and C as the dominant score suppressor. Lowering critic weight was NOT sufficient — the advisory flag contributes through the `internal_consistency` gate itself (weight 0.3), which we didn't touch.
+- Additional validator edges observed: `REST` flagged as hallucinated library (all-caps acronym, same class as `LoRA`). Low-impact, didn't block approval.
+
+### Follow-up experiments
+
+- **Batch D (proposed):** disable `internal_consistency` gate entirely to isolate its contribution. If approval jumps to 60%+, we've isolated the bottleneck. If not, re-evaluate.
+- Later: critic model swap (glm or qwen3 as critic instead of gemma3), threshold sensitivity (75 vs 80)
+
+---
+
 ## Batch B — Writer: qwen3:30b
 
 - **Config**: writer `qwen3:30b`, critic `gemma3:27b` (unchanged), thresholds unchanged
