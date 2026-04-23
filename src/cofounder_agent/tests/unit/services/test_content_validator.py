@@ -820,6 +820,35 @@ class TestNamedSourceNoUrlPromotion:
         unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
         assert unlinked, "prose citation should still be flagged after heading strip"
 
+    def test_markdown_linked_citation_not_flagged(self):
+        # Linked citation [Title](url) — by definition linked, not unlinked.
+        # The (?<!\[) lookbehind in the regex only blocks matches that START
+        # at the bracket; matches that begin inside the text still slip
+        # through unless we strip the whole link construct.
+        content = (
+            "As noted in [The Amplifier Effect: Why AI Multiplies Bad Engineering]"
+            "(https://www.gladlabs.io/posts/x), AI amplifies existing systems."
+        )
+        result = validate_content("Test Post", content, "topic")
+        unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
+        assert not unlinked, (
+            f"linked citation should not flag as unlinked, got: "
+            f"{[i.matched_text for i in unlinked]}"
+        )
+
+    def test_unlinked_prose_citation_still_flagged_after_link_strip(self):
+        # Regression: ensure link-stripping doesn't accidentally swallow
+        # the rest of the line. A real hallucinated-paper citation in
+        # plain prose must still fire.
+        content = (
+            "See [good source](https://example.com) for background. "
+            "This aligns with principles discussed in The API Evolution: "
+            "Why GraphQL is Reshaping the SaaS Landscape."
+        )
+        result = validate_content("Test Post", content, "topic")
+        unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
+        assert unlinked, "unlinked prose citation should still be flagged"
+
 
 class TestPrometheusCounterEmission:
     """The Prometheus counter exposed as

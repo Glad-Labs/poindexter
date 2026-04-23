@@ -826,12 +826,19 @@ def validate_content(
     # 100% false-positive rate on normal lowercase prose. Inline ``(?i:...)``
     # groups inside each pattern handle the keyword case-insensitivity.
     #
-    # Strip markdown headings (# lines) and list-item leaders (*, -, 1.) before
-    # matching: pattern 5 ("Word Word: Subtitle") is the normal shape of blog
-    # section titles, so every descriptive header would otherwise false-flag
-    # as an unlinked citation. Only prose citations are real hallucinations.
+    # Preprocess the text before matching:
+    #
+    #   - Strip markdown headings (# lines) and list-item leaders so section
+    #     titles shaped "Word Word: Subtitle" don't false-flag (pattern 5).
+    #   - Strip markdown link constructs ``[text](url)`` — the display text
+    #     of a link IS linked, so by definition cannot be an *un*linked
+    #     citation. Patterns already have ``(?<!\[)`` lookbehinds, but those
+    #     only block matches that START at the ``[`` boundary; matches
+    #     beginning a few words in ("in [The Amplifier Effect: ...]") slip
+    #     through. Full removal is robust.
+    _no_links_text = re.sub(r"\[([^\]]*)\]\([^)]+\)", " ", full_text)
     _no_structure_text = "\n".join(
-        line for line in full_text.split("\n")
+        line for line in _no_links_text.split("\n")
         if not line.lstrip().startswith("#")
         and not re.match(r"^\s*[*\-]\s+", line)
         and not re.match(r"^\s*\d+[.)]\s+", line)
