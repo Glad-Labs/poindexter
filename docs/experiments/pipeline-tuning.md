@@ -32,17 +32,46 @@ evaluation. All on-brand (AI/ML, self-hosted, local inference niche).
 
 ---
 
+## Design principle: gates are veto-only, not scored
+
+As of batch D we locked in `qa_gate_weight = 0`. Rationale:
+
+The gate reviewers — `url_verifier`, `web_factcheck`, `vision_gate`,
+`consistency_gate` — all answer binary pass/fail questions. A URL
+either resolves or doesn't. External facts either hold up or don't.
+The rendered page either looks right or doesn't. The post either
+contradicts itself catastrophically or it doesn't.
+
+None of these produce meaningful _gradations_ that should drag a
+weighted average. Feeding a gate's score into the aggregate treats
+it as a "soft opinion" on quality, which double-counts LLM judgment
+(since the critic LLM is already scoring quality) and penalizes
+posts for advisory complaints on top of their real quality score.
+
+Correct model:
+
+- **Gates**: veto-only. Hard pass/fail. Contribute 0 to the aggregate.
+- **Scoring reviewers**: `programmatic_validator` (deterministic rule score)
+  - critic LLM (judgment score). Different kinds of signal, sensibly
+    combined in a weighted average.
+
+Default in code still ships `qa_gate_weight=0.3` — but operators
+running Poindexter should override to `0` until the upstream default
+is fixed.
+
+---
+
 ## Global Thresholds (as of 2026-04-23)
 
-| Setting                                      | Value | Effect                                          |
-| -------------------------------------------- | ----- | ----------------------------------------------- |
-| `qa_final_score_threshold`                   | 80    | Min weighted score to approve                   |
-| `qa_consistency_veto_threshold`              | 30    | internal_consistency hard-vetoes if score < 30  |
-| `content_validator_warning_reject_threshold` | 5     | >5 same-category warnings promote to critical   |
-| `content_validator_warning_qa_penalty`       | 3     | Pts subtracted per validator warning            |
-| `qa_validator_weight`                        | 0.4   | Weight of programmatic_validator in final score |
-| `qa_critic_weight`                           | 0.6   | Weight of critic LLM in final score             |
-| `qa_gate_weight`                             | 0.3   | Weight of consistency/topic/vision/url gates    |
+| Setting                                      | Value | Effect                                                                                      |
+| -------------------------------------------- | ----- | ------------------------------------------------------------------------------------------- |
+| `qa_final_score_threshold`                   | 80    | Min weighted score to approve                                                               |
+| `qa_consistency_veto_threshold`              | 30    | internal_consistency hard-vetoes if score < 30                                              |
+| `content_validator_warning_reject_threshold` | 5     | >5 same-category warnings promote to critical                                               |
+| `content_validator_warning_qa_penalty`       | 3     | Pts subtracted per validator warning                                                        |
+| `qa_validator_weight`                        | 0.4   | Weight of programmatic_validator in final score                                             |
+| `qa_critic_weight`                           | 0.6   | Weight of critic LLM in final score                                                         |
+| `qa_gate_weight`                             | 0 ⬅   | Was 0.3. Zeroed in batch D — gates are veto-only, not scored. See "Design principle" above. |
 
 ---
 
