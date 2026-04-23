@@ -9,7 +9,7 @@ export const metadata = {
     template: `%s · ${SITE_NAME}`,
   },
   description:
-    'Local-first AI publishing pipeline. The Quick Start Guide, the hardware spec, the full source. No SaaS. No subscription.',
+    'Local-first AI publishing pipeline. Free OSS engine, optional Pro subscription ($9/mo, 7-day free trial) for tuned prompts, premium dashboards, and the full book.',
   metadataBase: new URL(SITE_URL),
   openGraph: {
     type: 'website',

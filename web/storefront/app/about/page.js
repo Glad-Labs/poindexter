@@ -54,8 +54,9 @@ export default function AboutPage() {
               about.
             </p>
             <p>
-              The Quick Start Guide is how you get there fastest. The Writing
-              &amp; Research site (
+              Poindexter Pro is how you get there fastest — tuned prompts,
+              premium dashboards, and the full operator book. The Writing &amp;
+              Research site (
               <Link
                 href="https://www.gladlabs.io"
                 style={{

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Eyebrow, Display, Button } from '@glad-labs/brand';
 import { LemonSqueezyOverlay } from '@/components/LemonSqueezyOverlay';
-import { LS_GUIDE_URL, GUIDE_PRICE_USD } from '@/lib/site.config';
+import { LS_PRO_URL, PRO_MONTHLY_USD, PRO_TRIAL_DAYS } from '@/lib/site.config';
 
 export default function Landing() {
   return (
@@ -37,13 +37,24 @@ export default function Landing() {
             </p>
 
             <div className="sf-reveal sf-reveal--4 sf-hero__ctas">
-              <LemonSqueezyOverlay productUrl={LS_GUIDE_URL} variant="primary">
-                ▶ Get the guide — ${GUIDE_PRICE_USD}
+              <LemonSqueezyOverlay productUrl={LS_PRO_URL} variant="primary">
+                ▶ Start {PRO_TRIAL_DAYS}-day free trial
               </LemonSqueezyOverlay>
               <Button as={Link} href="/guide" variant="secondary">
-                What&apos;s inside
+                What&apos;s in Pro
               </Button>
             </div>
+            <p
+              className="sf-reveal sf-reveal--4"
+              style={{
+                marginTop: '1rem',
+                fontSize: '0.85rem',
+                opacity: 0.7,
+              }}
+            >
+              Pro — ${PRO_MONTHLY_USD}/month or $89/year · cancel anytime · free
+              OSS engine doesn&apos;t require a subscription.
+            </p>
           </div>
 
           <div className="sf-cards">

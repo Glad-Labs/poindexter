@@ -1,12 +1,17 @@
 import Link from 'next/link';
 import { Eyebrow, Display, Button } from '@glad-labs/brand';
 import { LemonSqueezyOverlay } from '@/components/LemonSqueezyOverlay';
-import { LS_GUIDE_URL, GUIDE_PRICE_USD } from '@/lib/site.config';
+import {
+  LS_PRO_URL,
+  PRO_MONTHLY_USD,
+  PRO_ANNUAL_USD,
+  PRO_TRIAL_DAYS,
+} from '@/lib/site.config';
 
 export const metadata = {
-  title: 'The Quick Start Guide',
+  title: 'Poindexter Pro',
   description:
-    'The $29 Quick Start Guide — stand up an autonomous AI publishing pipeline on your own hardware in a weekend.',
+    'Poindexter Pro — tuned prompts, the full book, premium dashboards, and the VIP Discord. $9/month or $89/year with a 7-day free trial.',
 };
 
 export default function GuidePage() {
@@ -16,19 +21,19 @@ export default function GuidePage() {
         <div className="sf-rail" style={{ maxWidth: '760px' }}>
           <div className="sf-reveal sf-reveal--1 sf-hero__meta">
             <span>
-              <span className="dot" aria-hidden="true" /> PRODUCT · 01
+              <span className="dot" aria-hidden="true" /> PRODUCT · PRO
             </span>
-            <span>PDF · EPUB · REPO ACCESS</span>
-            <span>INSTANT DELIVERY</span>
+            <span>PROMPTS · DASHBOARDS · BOOK · DISCORD</span>
+            <span>{PRO_TRIAL_DAYS}-DAY FREE TRIAL</span>
           </div>
 
           <div
             className="sf-reveal sf-reveal--2"
             style={{ marginTop: '2.5rem' }}
           >
-            <Eyebrow>GLAD LABS · QUICK START GUIDE</Eyebrow>
+            <Eyebrow>GLAD LABS · POINDEXTER PRO</Eyebrow>
             <Display>
-              A weekend <Display.Accent>is enough.</Display.Accent>
+              Skip the tuning. <Display.Accent>Ship faster.</Display.Accent>
             </Display>
           </div>
 
@@ -36,10 +41,10 @@ export default function GuidePage() {
             className="sf-reveal sf-reveal--3 gl-body gl-body--lg"
             style={{ maxWidth: '640px', marginTop: '1.5rem' }}
           >
-            The exact path from an empty workstation to a publishing pipeline
-            that ships one post a day — with a human review gate, quality
-            scoring, SEO, a newsletter feed, and a podcast. Written by someone
-            who actually runs it.
+            The free Poindexter engine runs the full pipeline end-to-end. Pro
+            gives you months of production tuning in a single install — the
+            exact prompts, dashboards, and configuration Matt runs in his daily
+            content business, updated continuously as the system improves.
           </p>
         </div>
 
@@ -51,64 +56,62 @@ export default function GuidePage() {
             className="gl-eyebrow"
             style={{ marginBottom: '1.2rem', color: 'var(--gl-cyan)' }}
           >
-            // WHAT&apos;S INSIDE
+            // WHAT&apos;S IN PRO
           </div>
 
           <ul className="sf-checklist">
             <li>
               <span>
-                <strong>CHAPTER 01</strong> — Architecture. The five surfaces
-                (tap, stage, quality, publish, observability) and why every
-                other decision falls out of that shape.
+                <strong>PROMPT LIBRARY</strong> — production-tuned prompts for
+                drafting, research, QA, SEO, social, and image generation. The
+                anti-fabrication ruleset, the multi-model QA critic, the
+                pre-submission self-check. Updated as Matt tunes the live
+                system.
               </span>
             </li>
             <li>
               <span>
-                <strong>CHAPTER 02</strong> — Hardware. The exact parts list +
-                thermal + electrical considerations for a 24/7 single-node rig.
-                Budget tier, enthusiast tier, and &ldquo;what Matt actually
-                runs&rdquo;.
+                <strong>5 PREMIUM GRAFANA DASHBOARDS</strong> — Cost Analytics,
+                Content Quality, Infrastructure, Approval Queue, Link Registry.
+                Plus the QA Observability dashboard for real-time rejection
+                metrics. Know exactly what&apos;s happening in your pipeline.
               </span>
             </li>
             <li>
               <span>
-                <strong>CHAPTER 03</strong> — Models. Model-per-GPU allocation,
-                quant trade-offs, when to prefer a bigger model at lower
-                throughput vs. a smaller one with more parallelism.
+                <strong>THE POINDEXTER BOOK</strong> — 18 chapters plus
+                appendices covering architecture, hardware, models, prompts,
+                quality gates, operations, distribution, and the DB-driven
+                config plane. New chapters ship as the system evolves.
               </span>
             </li>
             <li>
               <span>
-                <strong>CHAPTER 04</strong> — Prompts. The actual prompt
-                templates — research, drafting, scoring, editing — with the
-                failure modes and the DB-tunable knobs.
+                <strong>200+ TUNED APP_SETTINGS</strong> — every knob Matt
+                touched to get production output. No guessing at threshold
+                values or weight balances; import the known-good configuration
+                and run.
               </span>
             </li>
             <li>
               <span>
-                <strong>CHAPTER 05</strong> — Quality. How to score output
-                reliably, how to gate publishing on the score, and how to keep
-                the bar high without the agent drifting.
+                <strong>FACT OVERRIDES DATABASE</strong> — curated
+                anti-hallucination rules, hardware facts, and brand corrections.
+                Keeps the writer honest about things LLMs commonly get wrong.
               </span>
             </li>
             <li>
               <span>
-                <strong>CHAPTER 06</strong> — Ops. Observability (LGTM+P), error
-                reporting (GlitchTip), uptime (Kuma), and how to let the system
-                self-heal instead of paging you.
+                <strong>VIP DISCORD</strong> — private operator channel. Share
+                tunings, niche-specific tweaks, and get direct access to Matt.
+                The community is where the real tuning knowledge lives.
               </span>
             </li>
             <li>
               <span>
-                <strong>CHAPTER 07</strong> — Distribution. Cross-posting,
-                newsletter, podcast, RSS, and the analytics you actually need
-                (not the ones every platform wants you to stare at).
-              </span>
-            </li>
-            <li>
-              <span>
-                <strong>APPENDIX</strong> — The full Poindexter source,
-                AGPL-3.0. You fork it. You own what you build with it.
+                <strong>CONTINUOUS UPDATES</strong> — every prompt improvement,
+                new dashboard, and tuning win lands in your repo as the system
+                evolves. Cancel anytime, keep everything you&apos;ve downloaded.
               </span>
             </li>
           </ul>
@@ -120,18 +123,43 @@ export default function GuidePage() {
         >
           <div className="sf-pricing">
             <div>
-              <div className="sf-pricing__label">// One-time purchase</div>
+              <div className="sf-pricing__label">
+                // Monthly · cancel anytime
+              </div>
               <div className="sf-pricing__amount">
-                ${GUIDE_PRICE_USD}
-                <span className="sf-pricing__cents">.00</span>
+                ${PRO_MONTHLY_USD}
+                <span className="sf-pricing__cents">/mo</span>
               </div>
               <div className="sf-pricing__tagline">
-                Instant PDF + EPUB + repository access. Cancel-proof (you own
-                it).
+                {PRO_TRIAL_DAYS}-day free trial · no card on most gateways.
               </div>
             </div>
-            <LemonSqueezyOverlay productUrl={LS_GUIDE_URL} variant="primary">
-              ▶ Get the guide
+            <LemonSqueezyOverlay productUrl={LS_PRO_URL} variant="primary">
+              ▶ Start free trial
+            </LemonSqueezyOverlay>
+          </div>
+
+          <div
+            className="sf-pricing"
+            style={{
+              marginTop: '1.5rem',
+              borderTop: '1px dashed var(--gl-border)',
+              paddingTop: '1.5rem',
+            }}
+          >
+            <div>
+              <div className="sf-pricing__label">// Annual · save ~17%</div>
+              <div className="sf-pricing__amount">
+                ${PRO_ANNUAL_USD}
+                <span className="sf-pricing__cents">/yr</span>
+              </div>
+              <div className="sf-pricing__tagline">
+                Best value. Equivalent to ${(PRO_ANNUAL_USD / 12).toFixed(2)}
+                /month.
+              </div>
+            </div>
+            <LemonSqueezyOverlay productUrl={LS_PRO_URL} variant="secondary">
+              Go annual
             </LemonSqueezyOverlay>
           </div>
         </section>

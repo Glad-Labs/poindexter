@@ -9,13 +9,11 @@
 
   Usage:
     <LemonSqueezyOverlay
-      productUrl="https://gladlabs.lemonsqueezy.com/buy/REPLACE_WITH_REAL_PRODUCT"
+      productUrl={LS_PRO_URL}
       variant="primary"
     >
-      ▶ Get the guide — $29
+      ▶ Start 7-day free trial
     </LemonSqueezyOverlay>
-
-  When Matt drops in the real product URL, no other change needed.
 */
 
 import { useEffect, useCallback } from 'react';
