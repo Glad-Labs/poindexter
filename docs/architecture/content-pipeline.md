@@ -215,11 +215,26 @@ returns a `StageResult`.
 docstring which keys it reads from `context` and which it writes
 back. For example, `generate_content` reads `topic`, `style`,
 `tone`, `target_length`, `tags`, `models_by_phase`,
-`database_service`; it writes `content`, `content_length`, `title`,
-`model_used`. The runner merges `StageResult.context_updates` into
-the shared context after each stage. See
+`database_service`, `site_config`; it writes `content`, `content_length`,
+`title`, `model_used`. The runner merges `StageResult.context_updates`
+into the shared context after each stage. See
 `src/cofounder_agent/services/stages/generate_content.py` for the
 canonical shape.
+
+The context dict also carries shared services that stages would
+otherwise reach for as module-level singletons (Phase H, GH#95):
+
+- `site_config` — the `SiteConfig` instance from `app.state.site_config`
+- `image_service` — the `ImageService` dispatcher
+- `settings_service` — `SettingsService` for app_settings
+- `image_style_tracker` — `ImageStyleTracker` rotation state
+- `database_service` — the `DatabaseService` coordinator
+
+These are seeded once by `process_content_generation_task` when it
+builds the initial context, so every stage reads from the same
+DB-loaded instances. Stages should never do
+`from services.site_config import site_config` — that module-level
+attribute was removed.
 
 **Early exit (`continue_workflow=False`).** A stage that has
 succeeded but wants to stop the pipeline (e.g. cross-model QA that
