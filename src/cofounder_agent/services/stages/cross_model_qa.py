@@ -388,7 +388,19 @@ class CrossModelQAStage:
                 "rewrite_attempts": rewrite_attempts,
             }, task_id=task_id, severity="warning")
 
-            reason = _build_rejection_reason(qa_result)
+            # Thread the live consistency-veto threshold through so the
+            # rejection message correctly distinguishes a real veto from
+            # a score-gate rejection where internal_consistency is only
+            # advisory (approved=False but score above threshold).
+            _consistency_threshold = _CONSISTENCY_VETO_THRESHOLD_DEFAULT
+            if settings_service is not None:
+                try:
+                    _raw = await settings_service.get("qa_consistency_veto_threshold")
+                    if _raw is not None:
+                        _consistency_threshold = float(_raw)
+                except Exception:
+                    pass
+            reason = _build_rejection_reason(qa_result, _consistency_threshold)
             await database_service.update_task(task_id, {
                 "status": "rejected",
                 "error_message": reason,
@@ -582,28 +594,63 @@ async def _rewrite_draft(
     return None
 
 
-def _build_rejection_reason(qa_result: Any) -> str:
+_CONSISTENCY_VETO_THRESHOLD_DEFAULT = 50.0
+
+
+def _reviewer_actually_vetoes(r: Any, consistency_threshold: float) -> bool:
+    """Mirror of the veto semantics used by MultiModelQA.aggregate().
+
+    A reviewer with ``approved=False`` does NOT always veto — the
+    ``internal_consistency`` gate is advisory unless its score is below
+    ``qa_consistency_veto_threshold``. Naming a non-vetoing reviewer as
+    "the veto" in the rejection message misleads operators into thinking
+    that reviewer blocked the publish when really the aggregate score
+    fell short of the threshold.
+    """
+    if getattr(r, "approved", True):
+        return False
+    if getattr(r, "reviewer", "") == "internal_consistency":
+        score = float(getattr(r, "score", 0) or 0)
+        return 0 < score < consistency_threshold
+    return True
+
+
+def _build_rejection_reason(qa_result: Any, consistency_threshold: float | None = None) -> str:
     """Build a human-readable rejection message naming the vetoing reviewer.
 
     Two rejection modes to distinguish:
 
-    1. A reviewer vetoed (approved=False) — name them and relay their feedback.
-    2. All reviewers passed but the weighted final_score is below the
-       approval threshold. There is no vetoer; picking ``reviews[-1]`` and
-       calling it the veto is misleading (the last-added reviewer is
-       often ``url_verifier`` whose positive "+10 bonus" feedback reads
-       bizarre as a rejection reason). Report the score-gate mode instead.
+    1. A reviewer actually vetoed (via the gate logic in _reviewer_actually_vetoes,
+       not just approved=False). Name them and relay their feedback.
+    2. No reviewer vetoed but the weighted final_score is below the approval
+       threshold. There is no vetoer; picking ``reviews[-1]`` or any
+       ``approved=False`` reviewer as the veto is misleading. Report the
+       score-gate mode and show the lowest scorer so the rewrite prompt
+       has a concrete target.
+
+    ``consistency_threshold`` defaults to the MultiModelQA default (50) so
+    callers that don't pass it still get sensible behavior; production
+    callers should thread the live ``qa_consistency_veto_threshold``
+    setting through.
     """
-    vetoer = next((r for r in qa_result.reviews if not r.approved), None)
+    threshold = (
+        consistency_threshold
+        if consistency_threshold is not None
+        else _CONSISTENCY_VETO_THRESHOLD_DEFAULT
+    )
+    vetoer = next(
+        (r for r in qa_result.reviews if _reviewer_actually_vetoes(r, threshold)),
+        None,
+    )
     if vetoer is None:
         if not qa_result.reviews:
             return (
                 f"Multi-model QA rejected (score: {qa_result.final_score:.0f}): "
                 "No reviews recorded"
             )
-        # All reviewers approved individually but the aggregate score was
-        # still under the approval threshold — show the lowest scorer so
-        # the rewrite prompt has somewhere to aim.
+        # No reviewer vetoed — this is a score-gate rejection. Surface the
+        # lowest scorer (includes advisory approved=False reviewers whose
+        # score fell short of their own gate but didn't hard-block).
         lowest = min(qa_result.reviews, key=lambda r: r.score)
         feedback = (lowest.feedback or "no feedback").strip()[:300]
         return (

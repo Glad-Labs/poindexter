@@ -230,6 +230,33 @@ class TestBuildRejectionReason:
         assert "veto: topic_delivery" in msg
         assert "score-gate" not in msg
 
+    def test_internal_consistency_advisory_above_threshold_is_not_veto(self):
+        """Regression: internal_consistency has special veto semantics —
+        approved=False but score >= threshold is ADVISORY, not a veto.
+        The rejection is score-gate."""
+        reviews = [
+            _reviewer("internal_consistency", 60, False,
+                      feedback="minor section tension"),
+            _reviewer("critic", 65, True, feedback="ok"),
+        ]
+        qr = _qa_rejected(score=66.0, reviews=reviews)
+        msg = _build_rejection_reason(qr, consistency_threshold=50.0)
+        assert "score-gate" in msg
+        assert "veto: internal_consistency" not in msg
+
+    def test_internal_consistency_below_threshold_is_real_veto(self):
+        """Regression: internal_consistency with score < threshold IS a real
+        veto — message must name it."""
+        reviews = [
+            _reviewer("internal_consistency", 30, False,
+                      feedback="major contradictions"),
+            _reviewer("critic", 70, True, feedback="ok"),
+        ]
+        qr = _qa_rejected(score=60.0, reviews=reviews)
+        msg = _build_rejection_reason(qr, consistency_threshold=50.0)
+        assert "veto: internal_consistency" in msg
+        assert "30" in msg
+
 
 @pytest.mark.asyncio
 class TestResolveMaxRewrites:
