@@ -583,15 +583,33 @@ async def _rewrite_draft(
 
 
 def _build_rejection_reason(qa_result: Any) -> str:
-    """Build a human-readable rejection message naming the vetoing reviewer."""
-    vetoer = next(
-        (r for r in qa_result.reviews if not r.approved),
-        qa_result.reviews[-1] if qa_result.reviews else None,
-    )
+    """Build a human-readable rejection message naming the vetoing reviewer.
+
+    Two rejection modes to distinguish:
+
+    1. A reviewer vetoed (approved=False) — name them and relay their feedback.
+    2. All reviewers passed but the weighted final_score is below the
+       approval threshold. There is no vetoer; picking ``reviews[-1]`` and
+       calling it the veto is misleading (the last-added reviewer is
+       often ``url_verifier`` whose positive "+10 bonus" feedback reads
+       bizarre as a rejection reason). Report the score-gate mode instead.
+    """
+    vetoer = next((r for r in qa_result.reviews if not r.approved), None)
     if vetoer is None:
+        if not qa_result.reviews:
+            return (
+                f"Multi-model QA rejected (score: {qa_result.final_score:.0f}): "
+                "No reviews recorded"
+            )
+        # All reviewers approved individually but the aggregate score was
+        # still under the approval threshold — show the lowest scorer so
+        # the rewrite prompt has somewhere to aim.
+        lowest = min(qa_result.reviews, key=lambda r: r.score)
+        feedback = (lowest.feedback or "no feedback").strip()[:300]
         return (
-            f"Multi-model QA rejected (score: {qa_result.final_score:.0f}): "
-            "No reviews recorded"
+            f"Multi-model QA rejected (score: {qa_result.final_score:.0f}, "
+            f"score-gate: below approval threshold, lowest reviewer "
+            f"{lowest.reviewer} @ {lowest.score:.0f}): {feedback}"
         )
     feedback = (vetoer.feedback or "no feedback").strip()[:300]
     return (

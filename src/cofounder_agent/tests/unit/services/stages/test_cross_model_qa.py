@@ -200,6 +200,36 @@ class TestBuildRejectionReason:
         msg = _build_rejection_reason(qr)
         assert "No reviews recorded" in msg
 
+    def test_score_gate_rejection_names_lowest_reviewer_not_last(self):
+        """Regression: when no reviewer vetoes but final_score is below the
+        approval threshold, the message must NOT name the last-added reviewer
+        (typically url_verifier with a positive "+bonus" feedback that reads
+        absurd as a rejection reason). Instead point at the lowest scorer."""
+        reviews = [
+            _reviewer("critic", 70, True, feedback="solid article"),
+            _reviewer("programmatic", 65, True, feedback="minor filler"),
+            _reviewer("url_verifier", 90, True,
+                      feedback="2 verified external citations (+10 bonus)"),
+        ]
+        qr = _qa_rejected(score=75.0, reviews=reviews)
+        msg = _build_rejection_reason(qr)
+        assert "score-gate" in msg
+        assert "url_verifier" not in msg  # not the vetoer — passed
+        assert "programmatic" in msg  # lowest score should be surfaced
+        assert "65" in msg
+
+    def test_real_veto_still_takes_precedence_over_score_gate(self):
+        """If ANY reviewer is approved=False, name them — even if the score
+        gate would also fire. The reviewer veto is the more specific signal."""
+        reviews = [
+            _reviewer("topic_delivery", 30, False, feedback="off-topic"),
+            _reviewer("critic", 60, True, feedback="ok"),
+        ]
+        qr = _qa_rejected(score=55.0, reviews=reviews)
+        msg = _build_rejection_reason(qr)
+        assert "veto: topic_delivery" in msg
+        assert "score-gate" not in msg
+
 
 @pytest.mark.asyncio
 class TestResolveMaxRewrites:
