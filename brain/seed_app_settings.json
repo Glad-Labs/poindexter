@@ -1,7 +1,7 @@
 {
   "_meta": {
     "name": "Poindexter core seed",
-    "description": "Free-tier starter settings. The brain bootstraps this into app_settings on first boot when the table is empty. Designed to be the minimum viable config to make the pipeline runnable — docker compose up, visit /api/health, submit a task. For the optimized production seed (site-specific models, tuned QA workflows, image styles, writing styles), see the premium Quick Start Guide product on Lemon Squeezy.",
+    "description": "Free-tier starter settings. The brain bootstraps this into app_settings on first boot when the table is empty. Designed to be the minimum viable config to make the pipeline runnable — docker compose up, visit /api/health, submit a task. For the optimized production seed (site-specific models, tuned QA workflows, image styles, writing styles), see Poindexter Pro on Lemon Squeezy.",
     "version": "1",
     "tier": "free",
     "last_updated": "2026-04-18"

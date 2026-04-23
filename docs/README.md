@@ -5,10 +5,10 @@ open-source AI content pipeline built by [Glad Labs LLC](https://www.gladlabs.io
 
 The docs are written for operators and contributors who want to
 **master** the system. They are comprehensive, detailed, and take
-hours to read end-to-end. If you want a guided shortcut, the $29
-[Quick Start Guide](https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52)
-gets you from zero to a running instance in 30 minutes without any
-of the reading below.
+hours to read end-to-end. If you want a guided shortcut,
+[Poindexter Pro](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)
+includes the full book and gets you from zero to a running instance
+in 30 minutes without any of the reading below.
 
 **The engine is free. The convenience is paid.**
 
@@ -81,15 +81,14 @@ the [GitHub backlog](https://github.com/Glad-Labs/poindexter/milestones).
 
 ---
 
-## Paid add-ons
+## Paid add-on
 
-- **[$29 Seed Package](https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52)** —
-  Matt's production config (235+ tuned settings), 5 premium Grafana
-  dashboards, anti-hallucination rules, and the Quick Start Guide.
-- **[$9/mo Premium](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)** —
-  monthly updated prompts, private repo access, new fact-check rules,
-  and the _AI Content Pipeline_ book chapters as they ship. Cancel
-  anytime — you keep what you downloaded.
+- **[Poindexter Pro — $9/mo or $89/yr, 7-day free trial](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)** —
+  Matt's full production stack: 235+ tuned `app_settings`, the premium
+  prompt library (continuously updated as the live system is tuned),
+  5 additional Grafana dashboards, anti-hallucination fact overrides,
+  the full _Poindexter_ book (18 chapters + appendices), and the VIP
+  Discord. Cancel anytime — you keep every file you've downloaded.
 
 ---
 
