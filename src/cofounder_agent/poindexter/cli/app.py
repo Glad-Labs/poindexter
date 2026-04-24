@@ -15,6 +15,7 @@ from .setup import setup_command
 from .sprint import sprint_group
 from .tasks import tasks_group
 from .vercel import vercel_group
+from .webhooks import webhooks_group
 
 # Quiet down the client's own info-level logs unless the user asks for -v.
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
@@ -47,6 +48,7 @@ main.add_command(costs_group, name="costs")
 main.add_command(sprint_group, name="sprint")
 main.add_command(vercel_group, name="vercel")
 main.add_command(premium_group, name="premium")
+main.add_command(webhooks_group, name="webhooks")
 
 
 if __name__ == "__main__":

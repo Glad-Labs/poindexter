@@ -1,0 +1,375 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Declarative integrations framework health. Every row in webhook_endpoints, retention_policies (GH-110), external_taps (GH-103), etc. shows up here with last-seen + counters + enabled state. See docs/architecture/declarative-data-plane-rfc-2026-04-24.md.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "Webhook endpoints",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Number of enabled webhook endpoints. Zero = framework landed but operator hasn't flipped anything on yet.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 3 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 101,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Enabled\" FROM webhook_endpoints WHERE enabled = TRUE;",
+          "refId": "A"
+        }
+      ],
+      "title": "Enabled endpoints",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Inbound rows — endpoints that receive webhooks from third-party services (Lemon Squeezy, Resend, Alertmanager, ...).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 102,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Inbound total\" FROM webhook_endpoints WHERE direction='inbound';",
+          "refId": "A"
+        }
+      ],
+      "title": "Inbound endpoints",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Outbound rows — destinations Poindexter pushes events to (Discord, Telegram, Vercel ISR, ...).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 103,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Outbound total\" FROM webhook_endpoints WHERE direction='outbound';",
+          "refId": "A"
+        }
+      ],
+      "title": "Outbound endpoints",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Deliveries (inbound + outbound) recorded in the last 24 hours across all rows.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 104,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Active 24h\" FROM webhook_endpoints WHERE last_success_at > now() - INTERVAL '24 hours' OR last_failure_at > now() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Active (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Rows with a last_failure_at newer than their last_success_at. These are the endpoints currently in a failing state.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 105,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Failing\" FROM webhook_endpoints WHERE enabled = TRUE AND last_failure_at IS NOT NULL AND (last_success_at IS NULL OR last_failure_at > last_success_at);",
+          "refId": "A"
+        }
+      ],
+      "title": "Failing endpoints",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Enabled rows that reference a secret_key_ref but where the referenced app_settings row is missing. Signature verification would 503 on these.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "id": 106,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Missing secrets\" FROM webhook_endpoints we WHERE we.enabled = TRUE AND we.secret_key_ref IS NOT NULL AND NOT EXISTS (SELECT 1 FROM app_settings s WHERE s.key = we.secret_key_ref);",
+          "refId": "A"
+        }
+      ],
+      "title": "Missing secrets",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Every webhook_endpoints row. Green = enabled, yellow = disabled. \"Secret\" column: yes = secret_key_ref set AND the app_settings row exists; no = the reference exists but the value is missing (signature verification will 503). \"Last OK age\" = time since last successful delivery.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": { "type": "auto" }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Enabled" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "basic" }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "true": { "text": "enabled", "color": "green" },
+                      "false": { "text": "disabled", "color": "yellow" }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Secret?" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": { "text": "—", "color": "text" },
+                      "1": { "text": "yes", "color": "green" },
+                      "2": { "text": "missing", "color": "red" }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 5 },
+      "id": 107,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT we.name AS \"Name\", we.direction AS \"Direction\", we.handler_name AS \"Handler\", we.signing_algorithm AS \"Algo\", we.enabled AS \"Enabled\", CASE WHEN we.secret_key_ref IS NULL THEN 0 WHEN EXISTS(SELECT 1 FROM app_settings s WHERE s.key = we.secret_key_ref) THEN 1 ELSE 2 END AS \"Secret?\", we.total_success AS \"Success\", we.total_failure AS \"Failure\", we.last_success_at AS \"Last OK\", we.last_failure_at AS \"Last FAIL\", LEFT(COALESCE(we.last_error, ''), 80) AS \"Last error\" FROM webhook_endpoints we ORDER BY we.direction, we.name;",
+          "refId": "A"
+        }
+      ],
+      "title": "All webhook endpoints",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["integrations", "webhooks", "declarative-data-plane"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Integration Health",
+  "uid": "integration-health",
+  "version": 1,
+  "weekStart": ""
+}
