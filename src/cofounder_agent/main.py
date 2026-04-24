@@ -180,6 +180,22 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning("[LIFESPAN] gpu.set_site_config failed: %s", e)
 
+        # Phase H finish (GH#95): bind the same DB-loaded SiteConfig into
+        # ``services.decorators`` and ``services.ollama_client``. These
+        # two modules used to import the singleton at module load — that
+        # captured a stale reference to the empty pre-lifespan singleton.
+        # Lifespan now wires them explicitly via setters.
+        try:
+            from services import decorators as _decorators
+            _decorators.set_site_config(_site_cfg)
+        except Exception as e:
+            logger.warning("[LIFESPAN] decorators.set_site_config failed: %s", e)
+        try:
+            from services import ollama_client as _ollama_client_mod
+            _ollama_client_mod.set_site_config(_site_cfg)
+        except Exception as e:
+            logger.warning("[LIFESPAN] ollama_client.set_site_config failed: %s", e)
+
         # Phase H (GH#95): wire site_config into the TaskExecutor that
         # startup_manager built. startup_manager runs before the DB pool
         # exists so it can't construct TaskExecutor with site_config
@@ -316,7 +332,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             async def _get_pool():
                 return db_pool
 
-            scheduled_publisher_task = asyncio.create_task(run_scheduled_publisher(_get_pool))
+            scheduled_publisher_task = asyncio.create_task(
+                run_scheduled_publisher(_get_pool, site_config=_site_cfg)
+            )
             logger.info("[LIFESPAN] Coordinator: scheduled post publisher started")
 
         # Start connection pool health monitor (#819)
