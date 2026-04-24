@@ -55,7 +55,10 @@ async def create_gitea_issue(
     """
     gitea_url = site_config.get("gitea_url", "http://localhost:3001")
     gitea_user = site_config.get("gitea_user", "gladlabs")
-    gitea_pass = site_config.get("gitea_password", "")
+    # gitea_password is is_secret=true in app_settings — fetch via
+    # get_secret() so we get the plaintext, not the enc:v1:<ciphertext>
+    # blob that .get() returns (GH-107).
+    gitea_pass = await site_config.get_secret("gitea_password", "")
     gitea_repo = site_config.get("gitea_repo", "gladlabs/glad-labs-codebase")
 
     if not gitea_pass:
