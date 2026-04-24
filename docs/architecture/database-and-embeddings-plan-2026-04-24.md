@@ -1,9 +1,18 @@
 # Database + Embeddings Plan
 
 **Date:** 2026-04-24
-**Status:** Proposal — awaiting operator review before execution
+**Status:** Approved with scope adjustment on Phase 4 — see decisions log
 **Covers:** GH-27 (feedback-loop tables), GH-57 (schema audit), GH-106 (embedding retention)
 **Scope:** Everything in the PostgreSQL database that needs attention before we add more features
+
+## Operator decisions (2026-04-24)
+
+| Decision                     | Choice                                                                                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| TTL values (30 / 90 / 180 d) | Approved as proposed                                                                                                                                                     |
+| Temporal summarization       | On-demand + threshold trigger (not weekly batch)                                                                                                                         |
+| `gpu_metrics` specifically   | **Rescoped:** don't ship a one-off prune job. Build a standardized retention-job framework so every new tap/source gets retention enable/disable by config, not by code. |
+| `experiments` table          | Leave dormant (GH-96)                                                                                                                                                    |
 
 ---
 
@@ -101,7 +110,12 @@ For `claude_sessions` specifically — group N consecutive chunks into time wind
 
 **Loss:** you can't grep for the exact phrase anymore. Semantic retrieval still works ("what have we decided about X") because the summary captures intent.
 
-**When to run:** weekly job, operating on data older than 7 days so recent context stays retrievable at fine grain.
+**When to run:** on-demand, triggered by threshold — not a weekly batch.
+
+- Default threshold: `claude_sessions` rows older than 7 days exceeding **1,000**. Tunable via `app_settings.embedding_summarize_threshold_rows` + `embedding_summarize_threshold_days`.
+- Runner checks the threshold on the scheduler tick; only executes when tripped.
+- Manual trigger available via `poindexter embeddings summarize --source=claude_sessions` for operator-initiated runs.
+- Per-run cap (default 500 source rows) so the first few passes stay observable.
 
 #### C. Orphan cleanup (zero-risk cleanup)
 
@@ -205,13 +219,52 @@ After Phase 2: 40% reduction in embeddings rows. Primarily targets claude_sessio
 
 After Phase 3: 7,095 → ~500 claude_sessions rows (approx). The 6,369-row Apr 20 backfill dump becomes 3 summaries.
 
-### Phase 4 — Retention for other append-only tables (1 hour)
+### Phase 4 — Standardized retention-job framework (1-2 days)
 
-- [ ] Add `services/jobs/prune_gpu_metrics.py` (30-day raw + hourly rollup beyond that)
-- [ ] Extend audit_log retention (90 days, same job pattern)
-- [ ] Verify backups capture pre-prune state first
+**Rescoped from "add a gpu_metrics prune job" to "build the framework so every tap/source declares retention as data, not code."**
 
-After Phase 4: predictable DB growth. GPU metrics stop scaling linearly forever.
+Problem being solved: each new tap today requires a hand-rolled prune job. That doesn't scale and breaks Matt's DB-first-configuration rule. A tap should ship with its retention policy declared alongside, and enabling/disabling retention should be a config flip.
+
+**Shape:**
+
+- New table `retention_policies`:
+  - `source_name` (text, PK) — e.g. `gpu_metrics`, `audit_log`, `embeddings.claude_sessions`
+  - `table_name` (text) — actual PG table
+  - `filter_sql` (text, nullable) — optional WHERE fragment for per-source filtering inside shared tables (the embeddings case)
+  - `age_column` (text) — which column to compare against
+  - `ttl_days` (int, nullable) — null means no TTL
+  - `downsample_rule` (jsonb, nullable) — e.g. `{"keep_raw_days": 30, "rollup_table": "gpu_metrics_hourly", "rollup_interval": "1 hour"}`
+  - `summarize_handler` (text, nullable) — name of a registered summarization plugin (e.g. `claude_sessions_temporal`)
+  - `enabled` (bool, default false)
+  - `last_run_at`, `last_run_deleted_count`, `last_run_summarized_count`
+- New job `services/jobs/retention_runner.py`:
+  - Single scheduled job (daily) that walks `retention_policies WHERE enabled=true`
+  - For each policy: TTL prune, downsample, or summarize based on which columns are set
+  - Logs to `audit_log` per policy run, writes back `last_run_*` fields
+- New handler registry `services/retention/handlers.py`:
+  - `ttl_prune_handler` (generic DELETE WHERE age > TTL)
+  - `downsample_handler` (keep raw N days + rollup beyond)
+  - `temporal_summarize_handler` (Phase 3 logic, reused here)
+
+**Seed policies on migrate:**
+
+| Source                       | ttl_days | downsample_rule                                | summarize_handler          | enabled |
+| ---------------------------- | -------- | ---------------------------------------------- | -------------------------- | ------- |
+| `embeddings.claude_sessions` | 30       | —                                              | `claude_sessions_temporal` | false   |
+| `embeddings.audit`           | 90       | —                                              | —                          | false   |
+| `embeddings.brain`           | 180      | —                                              | —                          | false   |
+| `embeddings.issues`          | —        | —                                              | —                          | false   |
+| `embeddings.memory`          | —        | —                                              | —                          | false   |
+| `embeddings.posts`           | —        | —                                              | —                          | false   |
+| `audit_log`                  | 90       | —                                              | —                          | false   |
+| `gpu_metrics`                | —        | `{keep_raw_days:30, rollup_interval:"1 hour"}` | —                          | false   |
+| `brain_decisions`            | 90       | —                                              | —                          | false   |
+
+All seeded as `enabled=false`. Flip them on individually via `UPDATE retention_policies SET enabled=true WHERE source_name=...` so every activation is observable and reversible.
+
+**Adding a new tap later:** the tap's migration declares its `retention_policies` row. Zero code change in the runner. Meets "standardized jobs so enabling/disabling retention for a new tap is trivial."
+
+After Phase 4: one runner, one policy table, N sources all declared as data. Phase 2's one-shot TTL prune is retired in favor of the runner's declarative version.
 
 ### Phase 5 — Feedback-loop webhook handlers (half day)
 
@@ -246,11 +299,11 @@ After Phase 5: 5 of 7 feedback-loop tables populating. Only `external_metrics` a
 
 ---
 
-## Decisions Matt needs to make
+## Execution order (post-approval)
 
-1. **TTL values** — are 30 / 90 / 180 days right, or do you want longer for claude_sessions? Easy to tune (app_settings) but worth setting defaults that don't surprise you.
-2. **Temporal summarization rollout** — weekly batch, or on-demand only? Weekly is fire-and-forget; on-demand is safer for the first few passes.
-3. **Do `gpu_metrics` at all** — the 20k rows isn't hurting anything today. Could defer Phase 4 if you're not measuring GPU time-series trends.
-4. **experiments table** — leave dormant (GH-96) or kill off and re-file when we actually need A/B?
+1. Phase 1 (indexes + seeded policy table rows, all `enabled=false`) — low-risk, ~1 hour
+2. Phase 4 framework first, then flip each policy on as we're ready to verify — this _replaces_ the one-shot prune in Phase 2
+3. Phase 3 temporal summarization plugged into the Phase 4 runner as `claude_sessions_temporal` handler
+4. Phase 5 (webhook handlers) independent of the above, can ship in parallel
 
-Zero code runs without a yes on each of the above. Plan is proposal-only until you sign off.
+Phase 2 as originally written (one-shot manual prune) is superseded by Phase 4's declarative runner — pruning happens when the policy is flipped on, not as a one-time operation.
