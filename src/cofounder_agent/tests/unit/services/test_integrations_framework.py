@@ -30,7 +30,7 @@ def _clear_registry():
 class TestHandlerRegistry:
     def test_register_and_lookup(self):
         @register_handler("webhook", "echo")
-        async def echo(payload, *, site_config, row):
+        async def echo(payload, *, site_config, row, pool):
             return ("echo", payload)
 
         resolved = lookup("webhook", "echo")
@@ -42,17 +42,17 @@ class TestHandlerRegistry:
 
     def test_duplicate_registration_raises(self):
         @register_handler("retention", "ttl_prune")
-        async def first(payload, *, site_config, row):
+        async def first(payload, *, site_config, row, pool):
             return 1
 
         with pytest.raises(HandlerRegistrationError):
 
             @register_handler("retention", "ttl_prune")
-            async def second(payload, *, site_config, row):
+            async def second(payload, *, site_config, row, pool):
                 return 2
 
     def test_registering_same_function_twice_is_idempotent(self):
-        async def handler(payload, *, site_config, row):
+        async def handler(payload, *, site_config, row, pool):
             return "ok"
 
         register_handler("tap", "noop")(handler)
@@ -60,11 +60,11 @@ class TestHandlerRegistry:
 
     def test_surface_namespace_isolation(self):
         @register_handler("webhook", "shared_name")
-        async def webhook_version(payload, *, site_config, row):
+        async def webhook_version(payload, *, site_config, row, pool):
             return "webhook"
 
         @register_handler("tap", "shared_name")
-        async def tap_version(payload, *, site_config, row):
+        async def tap_version(payload, *, site_config, row, pool):
             return "tap"
 
         assert lookup("webhook", "shared_name") is webhook_version
@@ -72,11 +72,11 @@ class TestHandlerRegistry:
 
     def test_registered_names_filters_by_surface(self):
         @register_handler("webhook", "a")
-        async def a(payload, *, site_config, row):
+        async def a(payload, *, site_config, row, pool):
             pass
 
         @register_handler("retention", "b")
-        async def b(payload, *, site_config, row):
+        async def b(payload, *, site_config, row, pool):
             pass
 
         assert registered_names("webhook") == ["webhook.a"]
@@ -100,10 +100,11 @@ class TestDispatch:
         captured: dict[str, Any] = {}
 
         @register_handler("webhook", "capture")
-        async def capture(payload, *, site_config, row):
+        async def capture(payload, *, site_config, row, pool):
             captured["payload"] = payload
             captured["site_config"] = site_config
             captured["row"] = row
+            captured["pool"] = pool
             return "ok"
 
         result = await dispatch(
@@ -112,11 +113,13 @@ class TestDispatch:
             {"event": "test"},
             site_config="site_config_sentinel",
             row={"name": "test_row"},
+            pool="pool_sentinel",
         )
         assert result == "ok"
         assert captured["payload"] == {"event": "test"}
         assert captured["site_config"] == "site_config_sentinel"
         assert captured["row"] == {"name": "test_row"}
+        assert captured["pool"] == "pool_sentinel"
 
     @pytest.mark.asyncio
     async def test_dispatch_unknown_raises(self):

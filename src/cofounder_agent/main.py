@@ -527,6 +527,12 @@ except Exception as _e:
 middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app, site_config=_site_cfg)
 
+# ===== INTEGRATIONS FRAMEWORK HANDLER LOAD =====
+# Must run before route registration so the catch-all webhooks_router has
+# every handler available when the first request lands.
+from services.integrations.handlers import load_all as _load_integration_handlers
+_load_integration_handlers()
+
 # ===== ROUTE REGISTRATION =====
 # Register API routes based on deployment mode (coordinator or worker)
 logger.info("[STARTUP] Registering routes for deployment mode: %s", _deployment_mode)

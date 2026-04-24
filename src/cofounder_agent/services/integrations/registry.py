@@ -90,6 +90,7 @@ async def dispatch(
     *,
     site_config: Any,
     row: dict[str, Any],
+    pool: Any = None,
 ) -> Any:
     """Invoke the named handler.
 
@@ -98,15 +99,19 @@ async def dispatch(
     - Receives the parsed payload (dict, bytes — handler-specific)
     - Receives ``site_config`` for secret decryption + config lookups
     - Receives ``row`` — the integration row as a dict, so the handler
-      can read its own config from ``row["config"]`` and update its own
-      counters via the caller's DB connection
+      can read its own config from ``row["config"]`` and see its own
+      ``name`` / ``metadata`` without another DB query
+    - Receives ``pool`` — asyncpg pool for writing to target tables
+      (revenue_events, subscriber_events, alert_events, etc.). May be
+      ``None`` for pure-compute handlers; DB-touching handlers should
+      raise a clear error when it's missing
 
     Exceptions propagate. The caller (e.g. the webhook dispatcher or
     retention runner) is responsible for logging, counter updates, and
     deciding whether to retry.
     """
     handler = lookup(surface, name)
-    return await handler(payload, site_config=site_config, row=row)
+    return await handler(payload, site_config=site_config, row=row, pool=pool)
 
 
 def registered_names(surface: str | None = None) -> list[str]:
