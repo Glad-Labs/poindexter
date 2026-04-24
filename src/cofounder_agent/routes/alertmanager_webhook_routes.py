@@ -37,7 +37,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
@@ -132,6 +132,33 @@ async def _ensure_table(pool: Any) -> None:
         await conn.execute(_ENSURE_TABLE_SQL)
 
 
+def _parse_iso(val: Any) -> Any:
+    """Alertmanager sends timestamps as ISO-8601 strings ('2026-04-23T15:40:46.108Z').
+    asyncpg won't cast these to timestamptz implicitly — we must hand it a
+    datetime instance. Returns None when the input is falsy, already a
+    datetime, or a sentinel zero ('0001-01-01T00:00:00Z' — Alertmanager's
+    marker for "no end time yet" on firing alerts).
+    """
+    if not val:
+        return None
+    if hasattr(val, "isoformat"):
+        return val  # already a datetime
+    if isinstance(val, str):
+        # Alertmanager uses "0001-01-01T00:00:00Z" for "never ended"
+        if val.startswith("0001-01-01"):
+            return None
+        # Normalize trailing 'Z' → '+00:00' for fromisoformat (Python < 3.11 compat)
+        import datetime as _dt
+        s = val.rstrip("Z")
+        if not any(c in s[10:] for c in ("+", "-")):
+            s = s + "+00:00"
+        try:
+            return _dt.datetime.fromisoformat(s)
+        except ValueError:
+            return None
+    return None
+
+
 async def _insert_alert(pool: Any, alert: dict[str, Any]) -> None:
     """Persist one alert from the Alertmanager payload."""
     labels = alert.get("labels") or {}
@@ -151,8 +178,8 @@ async def _insert_alert(pool: Any, alert: dict[str, Any]) -> None:
             labels.get("category"),
             json.dumps(labels),
             json.dumps(annotations),
-            alert.get("startsAt"),
-            alert.get("endsAt"),
+            _parse_iso(alert.get("startsAt")),
+            _parse_iso(alert.get("endsAt")),
             alert.get("fingerprint"),
         )
 
@@ -194,13 +221,20 @@ def _format_alert_message(alert: dict[str, Any]) -> str:
     return header
 
 
-async def _dispatch_to_operator(alert: dict[str, Any]) -> None:
+async def _dispatch_to_operator(alert: dict[str, Any], site_config: Any) -> None:
     """Send the alert to the OpenClaw gateway.
 
     Uses the existing ``_notify_openclaw`` helper — OpenClaw owns the
     Telegram + Discord bot tokens, the worker just POSTs a message.
     Critical severity gets the ``critical=True`` flag so OpenClaw routes
-    to the high-urgency channel.
+    to the high-urgency channel (Telegram + Discord). Non-critical
+    falls through to Discord-only via the ``_notify_discord`` fallback
+    inside ``_notify_openclaw``.
+
+    site_config is required — ``_notify_openclaw`` reads
+    ``openclaw_gateway_url`` and ``openclaw_webhook_token`` from it.
+    Omitting site_config previously silently broke every alert dispatch
+    with a TypeError that the outer try/except swallowed.
     """
     try:
         from services.task_executor import _notify_openclaw
@@ -211,7 +245,9 @@ async def _dispatch_to_operator(alert: dict[str, Any]) -> None:
     severity = (alert.get("labels") or {}).get("severity", "info").lower()
     message = _format_alert_message(alert)
     try:
-        await _notify_openclaw(message, critical=severity == "critical")
+        await _notify_openclaw(
+            message, site_config, critical=severity == "critical",
+        )
     except Exception as e:
         logger.warning("alertmanager webhook: operator dispatch failed: %s", e)
 
@@ -266,6 +302,7 @@ async def _maybe_remediate(pool: Any, alert: dict[str, Any]) -> str | None:
 @router.post("/alertmanager", dependencies=[Depends(verify_alertmanager_token)])
 async def alertmanager_webhook(
     payload: dict[str, Any],
+    request: Request,
     db: Any = Depends(get_database_dependency),
 ) -> dict[str, Any]:
     """Consume an Alertmanager webhook payload.
@@ -281,6 +318,7 @@ async def alertmanager_webhook(
         return {"ok": False, "reason": "alerts must be a list", "count": 0}
 
     pool = db.pool
+    site_config = getattr(request.app.state, "site_config", None)
     try:
         await _ensure_table(pool)
     except Exception as e:
@@ -300,7 +338,7 @@ async def alertmanager_webhook(
             logger.warning("alertmanager webhook: insert failed: %s", e)
 
         if _should_page_operator(alert):
-            await _dispatch_to_operator(alert)
+            await _dispatch_to_operator(alert, site_config)
             paged += 1
 
         try:
