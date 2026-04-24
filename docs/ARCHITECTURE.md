@@ -1,6 +1,6 @@
 # Poindexter Architecture
 
-**Last Updated:** 2026-04-11
+**Last Updated:** 2026-04-23
 **Version:** 0.1.x (alpha)
 **Status:** Production-ready on the author's daily-driver setup. Public alpha.
 
@@ -114,7 +114,7 @@ execution and multi-agent orchestration.
 
 ### Data Architecture
 
-- **Primary DB**: PostgreSQL 15+
+- **Primary DB**: PostgreSQL 16 with pgvector extension
 - **Driver**: `asyncpg` (Full Async)
 - **Schema Management**: Managed via `DatabaseService` delegates (`TasksDatabase`, `UsersDatabase`, etc.).
 │  ┌────────────┐ ┌────────────┐ ┌──────────┐ ┌──────────┐       │
@@ -327,57 +327,30 @@ GET  /api/categories               # List categories
 GET  /api/tags                     # List tags
 ```
 
-### 3. Agent System Architecture (Self-Critiquing Pipeline)
+### 3. Agent System Architecture
 
-**Location:** `src/agents/content_agent/`
+**Location:** `src/cofounder_agent/agents/`
 
-**Purpose:** Modular AI agents for specialized tasks with self-critique feedback loops
+**Purpose:** Specialized role-based agents used by pipeline stages. Agents are stateless wrappers around LLM calls with typed inputs/outputs — not classical "autonomous agents" with long-lived state.
 
-**Key Features:**
+**Actual agents in the current codebase:**
 
-- Self-critiquing pipeline: Creative generation → QA evaluation → Feedback → Refinement
-- Individual agent capabilities: Research, Creative, Images, Publishing, QA, Summarizer
-- Model fallback chain: Ollama primary → `pipeline_fallback_model` (Ollama) → HuggingFace transformers (CPU emergency)
-- Modular usage: End-to-end blog generation OR individual agent access
-- Output formatting: Markdown + SEO assets + Database compatible
+- `blog_content_generator_agent.py` — drafts the post body, handles RAG context injection and title dedup
+- `blog_image_agent.py` — routes between SDXL and Pexels for inline + featured images
+- `blog_publisher_agent.py` — finalizes post metadata and formats for storage
+- `blog_quality_agent.py` — the LLM critic that scores drafts on clarity / accuracy / completeness / relevance / SEO / readability / engagement
+- `content_agent/` (subpackage) — research + sub-agents for fact gathering
 
-**Core Agents:**
+A lightweight `registry.py` wires agent instances into the pipeline. No `BaseAgent` inheritance; agents are composed, not sub-classed.
 
-```python
-# Agent roles and responsibilities
-- CreativeAgent: Content generation with style consistency
-- ResearchAgent: Topic research and fact gathering
-- ImageAgent: Image selection and optimization
-- PublishingAgent: Database formatting and publishing
-- QAAgent: Quality evaluation and improvement suggestions
-- SummarizerAgent: Extract key points and outline creation
-```
+**Stage-driven pipeline (not agent-driven):**
 
-**Self-Critiquing Pipeline Flow:**
+As of the Phase F+G refactor, the pipeline runs through `StageRunner` and 12 sequential stages (see `services/stages/`, catalogued in [`reference/services.md`](../reference/services.md)). Agents are called _by stages_ when an LLM invocation is needed — they don't orchestrate each other. The self-critiquing loop happens inside `services/stages/cross_model_qa.py`, not via agent-to-agent messaging.
 
-```text
-1. Input: Topic/Request
-   ↓
-2. ResearchAgent → Research data
-   ↓
-3. CreativeAgent → Draft content
-   ↓
-4. QAAgent → Evaluate & critique
-   ↓
-5. CreativeAgent (with feedback) → Refined content
-   ↓
-6. ImageAgent → Select visual assets
-   ↓
-7. PublishingAgent → Format for CMS
-   ↓
-8. Output: Publication-ready content
-```
+**Usage patterns:**
 
-**Usage Patterns:**
-
-- **End-to-end Content:** POST `/api/tasks` → Executes agent pipeline via TaskExecutor
-- **Individual agents:** POST `/api/agents/{agent-name}` → Specific capability
-- **Custom workflows:** Combine agents in any order for flexible pipelines
+- **End-to-end content:** `POST /api/tasks` → `TaskExecutor` claims the row → `ContentRouterService` runs the stage chain
+- **Ad-hoc agent use:** Not exposed via the public API. Operators call stages directly in tests and scripts.
 
 ### 4. Poindexter Worker (FastAPI Backend)
 
@@ -403,54 +376,27 @@ GET  /api/tags                     # List tags
 - Token counting per task type (`model_token_limits_by_task` JSON in app_settings)
 - Future refactor: extracts into `LLMProvider` plugin family (GitHub [#64 Phase J](https://github.com/Glad-Labs/poindexter/issues/64))
 
-#### Multi-Agent Orchestrator (`multi_agent_orchestrator.py`)
+#### Unified Orchestrator (`services/unified_orchestrator.py`)
 
-- Agent lifecycle management
-- Task distribution and scheduling
-- Parallel execution coordination
-- Result aggregation
-- Error recovery
+- Routes `POST /api/tasks` by `task_type` to the correct pipeline (blog / image / etc.)
+- Calls `ContentRouterService` for blog posts, which runs the 12-stage `StageRunner` chain
+- Returns a task record that the `TaskExecutor` polling loop will pick up asynchronously
+- Error recovery is per-stage — a failing stage can halt the pipeline or mark the task rejected
 
-#### Specialized Agents
+#### Stage Plugin System (`plugins/stage.py` + `services/stages/*`)
 
-```python
-# Each agent inherits from BaseAgent
+- `Stage` protocol: `name: str`, `async def run(context) -> context`
+- `StageRunner` calls each stage in `DEFAULT_STAGE_ORDER` and short-circuits if a stage returns `halt=True` (e.g. `cross_model_qa` on an unrecoverable reject)
+- Context dict threads through every stage — the pipeline's shared memory
+- Adding a new stage = drop a file in `services/stages/`, register in `DEFAULT_STAGE_ORDER`, no other code changes
 
-class ContentAgent(BaseAgent):
-    """Generates and manages content"""
-    - Content planning
-    - Blog post generation
-    - Social media content
-    - Email campaigns
+#### Semantic Memory (`services/embedding_service.py` + pgvector)
 
-class FinancialAgent(BaseAgent):
-    """Manages business financials"""
-    - Cost tracking
-    - Revenue calculations
-    - Budget management
-    - Financial projections
-
-class MarketInsightAgent(BaseAgent):
-    """Market analysis and trends"""
-    - Competitor analysis
-    - Trend identification
-    - Audience insights
-    - Opportunity detection
-
-class ComplianceAgent(BaseAgent):
-    """Legal and regulatory compliance"""
-    - Content compliance checking
-    - GDPR/CCPA checks
-    - Risk assessment
-    - Privacy policy management
-```
-
-#### Memory System (`memory_system.py`)
-
-- Short-term context (current conversation)
-- Long-term memory (persistent storage)
-- Semantic search across memories
-- Automatic cleanup and optimization
+- pgvector extension in PostgreSQL 16 powers cosine-similarity search
+- `embeddings` table stores 768-dim vectors keyed by `(source_table, source_id)`
+- Writer-segregated: `brain`, `audit`, `posts`, `memory`, `claude_sessions`, `issues`
+- Accessible via `poindexter memory search "..."` (CLI) or `GET /api/memory/search` (API)
+- Retention policy (stale embedding cleanup) tracked at GH-106
 
 **API Endpoints (Core):**
 

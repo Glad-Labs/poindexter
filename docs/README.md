@@ -70,6 +70,9 @@ in 30 minutes without any of the reading below.
   every key in the `app_settings` table with default, category, and
   secret classification. Auto-generated from the live DB — rerun
   `python scripts/regen-app-settings-doc.py` to refresh.
+- **[`reference/services.md`](reference/services.md)** — catalog of
+  every service in `src/cofounder_agent/services/`, grouped by
+  responsibility with one-line purposes and main entry points.
 
 ---
 
