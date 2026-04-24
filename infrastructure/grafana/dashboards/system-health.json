@@ -388,7 +388,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval rate over last 24h. Post 2026-04-24 whitelist fix, healthy steady state is 60-80%.",
+      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline — bump to 40% green once topic-discovery dedup (GH-101) ships.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -399,9 +399,9 @@
             "mode": "absolute",
             "steps": [
               { "color": "red", "value": null },
-              { "color": "orange", "value": 20 },
-              { "color": "yellow", "value": 40 },
-              { "color": "green", "value": 60 }
+              { "color": "orange", "value": 10 },
+              { "color": "yellow", "value": 20 },
+              { "color": "green", "value": 35 }
             ]
           },
           "unit": "percent"
@@ -650,29 +650,27 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Posts published in the last 24h that have at least one podcast audio asset recorded in media_assets (type='audio').",
+      "description": "Hours since the backfill_podcasts job last ran. The scheduler runs it every 4 hours — green <6h, yellow <24h, red >24h (scheduler may be stuck). media_assets-backed coverage % was removed because backfill jobs write to R2 directly, not that table.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
           "mappings": [],
-          "max": 100,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "green", "value": 90 }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 6 },
+              { "color": "red", "value": 24 }
             ]
           },
-          "unit": "percent"
+          "unit": "h"
         }
       },
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 12 },
       "id": 22,
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
@@ -690,11 +688,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH recent AS (SELECT id FROM posts WHERE status='published' AND published_at > NOW() - INTERVAL '7 days'), with_audio AS (SELECT DISTINCT post_id FROM media_assets WHERE type IN ('audio','podcast')) SELECT ROUND(100.0 * (SELECT COUNT(*) FROM recent r WHERE EXISTS (SELECT 1 FROM with_audio a WHERE a.post_id::text = r.id::text))::numeric / NULLIF((SELECT COUNT(*) FROM recent), 0), 0) AS \"Podcast coverage %\";",
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key = 'idle_last_run_podcast_backfill';",
           "refId": "A"
         }
       ],
-      "title": "Podcast coverage (7d)",
+      "title": "Podcast backfill last run",
       "type": "stat"
     },
     {
@@ -702,29 +700,27 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Posts published in the last 7d that have at least one video asset.",
+      "description": "Hours since the backfill_videos job last ran. Scheduler runs every 6 hours — green <8h, yellow <24h, red >24h.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
           "mappings": [],
-          "max": 100,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "green", "value": 90 }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 8 },
+              { "color": "red", "value": 24 }
             ]
           },
-          "unit": "percent"
+          "unit": "h"
         }
       },
       "gridPos": { "h": 5, "w": 6, "x": 18, "y": 12 },
       "id": 23,
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
@@ -742,11 +738,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH recent AS (SELECT id FROM posts WHERE status='published' AND published_at > NOW() - INTERVAL '7 days'), with_video AS (SELECT DISTINCT post_id FROM media_assets WHERE type IN ('video','short_video')) SELECT ROUND(100.0 * (SELECT COUNT(*) FROM recent r WHERE EXISTS (SELECT 1 FROM with_video v WHERE v.post_id::text = r.id::text))::numeric / NULLIF((SELECT COUNT(*) FROM recent), 0), 0) AS \"Video coverage %\";",
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key = 'idle_last_run_video_backfill';",
           "refId": "A"
         }
       ],
-      "title": "Video coverage (7d)",
+      "title": "Video backfill last run",
       "type": "stat"
     },
     {
@@ -912,7 +908,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Spend (USD) across all LLM calls in the last 24 hours. Ollama-only should be effectively $0 — anything above $0.50 means a cloud provider was called.",
+      "description": "24h cost across cost_logs — electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -921,8 +917,8 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.5 },
-              { "color": "red", "value": 5 }
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
             ]
           },
           "unit": "currencyUSD"
@@ -954,7 +950,7 @@
           "refId": "A"
         }
       ],
-      "title": "LLM spend (24h)",
+      "title": "Ops cost (24h)",
       "type": "stat"
     },
     {
@@ -1062,7 +1058,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of encrypted app_settings rows that still look like ciphertext when read via the in-memory (non-get_secret) path. Should always be 0 — a non-zero count means a new encrypted secret was added and its callers need to use get_secret().",
+      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 — any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -1099,11 +1095,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Encrypted secrets\" FROM app_settings WHERE is_secret = true AND value LIKE 'enc:v1:%';",
+          "rawSql": "SELECT COUNT(*) AS \"Plaintext secrets\" FROM app_settings WHERE is_secret = true AND value != '' AND value NOT LIKE 'enc:v1:%';",
           "refId": "A"
         }
       ],
-      "title": "Encrypted secrets in DB",
+      "title": "Plaintext secrets (should be 0)",
       "type": "stat"
     },
     {
@@ -1111,7 +1107,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks that rejected in the last 24h due to a citation_verifier or programmatic_validator hard veto. These are real writer-quality problems, not variance noise.",
+      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline — expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -1120,8 +1116,8 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 3 },
-              { "color": "red", "value": 10 }
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 60 }
             ]
           },
           "unit": "short"
