@@ -1405,3 +1405,180 @@ class TestHeartbeatLoop:
 
         # Loop kept running after the first exception.
         assert db.heartbeat_task.await_count >= 2
+
+
+# ---------------------------------------------------------------------------
+# _notify_alert / _notify_telegram / _notify_discord — direct-to-API fan-out
+# ---------------------------------------------------------------------------
+# As of 2026-04-24 the worker talks to Discord + Telegram directly; the
+# OpenClaw gateway is no longer a dependency for alerting. These tests pin
+# the fan-out contract so a future refactor can't silently drop a channel.
+
+
+class TestNotifyAlertFanout:
+    """_notify_alert fans out: Discord always, Telegram on critical or
+    when telegram_alerts_enabled=true in app_settings."""
+
+    @pytest.mark.asyncio
+    async def test_discord_always_receives_alert(self):
+        from services.task_executor import _notify_alert
+        sc = MagicMock()
+        sc.get = lambda key, default=None: {
+            "discord_ops_webhook_url": "https://discord.example/webhook",
+            "telegram_bot_token": "",  # Telegram disabled
+            "telegram_chat_id": "",
+            "telegram_alerts_enabled": "false",
+        }.get(key, default)
+
+        with patch("services.task_executor._notify_discord", new=AsyncMock()) as dmock, \
+             patch("services.task_executor._notify_telegram", new=AsyncMock()) as tmock:
+            await _notify_alert("hello", sc, critical=False)
+        dmock.assert_awaited_once()
+        tmock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_critical_fires_telegram(self):
+        from services.task_executor import _notify_alert
+        sc = MagicMock()
+        sc.get = lambda key, default=None: {
+            "discord_ops_webhook_url": "https://discord.example/webhook",
+            "telegram_alerts_enabled": "false",
+        }.get(key, default)
+
+        with patch("services.task_executor._notify_discord", new=AsyncMock()) as dmock, \
+             patch("services.task_executor._notify_telegram", new=AsyncMock()) as tmock:
+            await _notify_alert("critical alert", sc, critical=True)
+        dmock.assert_awaited_once()
+        tmock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_telegram_alerts_enabled_opts_in_routine_alerts(self):
+        """Operator-level opt-in: even non-critical alerts go to Telegram."""
+        from services.task_executor import _notify_alert
+        sc = MagicMock()
+        sc.get = lambda key, default=None: {
+            "discord_ops_webhook_url": "https://discord.example/webhook",
+            "telegram_alerts_enabled": "true",
+        }.get(key, default)
+
+        with patch("services.task_executor._notify_discord", new=AsyncMock()) as dmock, \
+             patch("services.task_executor._notify_telegram", new=AsyncMock()) as tmock:
+            await _notify_alert("routine", sc, critical=False)
+        dmock.assert_awaited_once()
+        tmock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_notify_openclaw_is_back_compat_alias_for_notify_alert(self):
+        """Pre-2026-04-24 callers import _notify_openclaw. The alias must
+        still work and fan out the same way (Discord + Telegram direct)."""
+        from services.task_executor import _notify_alert, _notify_openclaw
+        assert _notify_openclaw is _notify_alert
+
+
+class TestNotifyTelegramDirect:
+    @pytest.mark.asyncio
+    async def test_calls_telegram_bot_api_with_text_and_chat_id(self):
+        """_notify_telegram POSTs to api.telegram.org with the bot token
+        and configured chat_id. Token is fetched via get_secret() because
+        it's encrypted in app_settings."""
+        import httpx as _httpx
+        from services.task_executor import _notify_telegram
+        sc = MagicMock()
+        sc.get = lambda key, default=None: {
+            "telegram_chat_id": "987654321",
+        }.get(key, default)
+        sc.get_secret = AsyncMock(return_value="123:ABCDEF")
+
+        captured = {}
+
+        async def _fake_post(url, json=None, **_):
+            captured["url"] = url
+            captured["json"] = json
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = "ok"
+            return resp
+
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            post = staticmethod(_fake_post)
+
+        with patch.object(_httpx, "AsyncClient", _FakeClient):
+            await _notify_telegram("hello telegram", sc)
+
+        assert captured["url"] == "https://api.telegram.org/bot123:ABCDEF/sendMessage"
+        assert captured["json"]["chat_id"] == "987654321"
+        assert captured["json"]["text"] == "hello telegram"
+        assert captured["json"]["disable_web_page_preview"] is True
+
+    @pytest.mark.asyncio
+    async def test_skips_when_not_configured(self):
+        """If bot_token or chat_id are missing, skip silently rather than
+        hitting a malformed URL."""
+        import httpx as _httpx
+        from services.task_executor import _notify_telegram
+        sc = MagicMock()
+        sc.get = lambda key, default=None: ""  # nothing configured
+        sc.get_secret = AsyncMock(return_value="")
+
+        calls = []
+
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                calls.append("instantiated")
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def post(self, *args, **kwargs):
+                calls.append("posted")
+
+        with patch.object(_httpx, "AsyncClient", _FakeClient):
+            await _notify_telegram("nope", sc)
+
+        # No HTTP client constructed — we returned before any API call.
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_swallows_http_errors(self):
+        """Telegram API returning 4xx/5xx must NOT raise to the caller —
+        alerts are fire-and-forget; a failure logs and moves on."""
+        import httpx as _httpx
+        from services.task_executor import _notify_telegram
+        sc = MagicMock()
+        sc.get = lambda key, default=None: {
+            "telegram_bot_token": "123:ABCDEF",
+            "telegram_chat_id": "987654321",
+        }.get(key, default)
+
+        sc.get_secret = AsyncMock(return_value="123:ABCDEF")
+
+        async def _bad_post(*args, **kwargs):
+            raise _httpx.ConnectError("network down")
+
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            post = staticmethod(_bad_post)
+
+        with patch.object(_httpx, "AsyncClient", _FakeClient):
+            # Must not raise
+            await _notify_telegram("will fail", sc)
