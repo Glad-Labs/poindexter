@@ -201,8 +201,16 @@ async def _notify(message: str, site_config: Any | None = None) -> None:
             openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
             openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
             discord_channel: str | None = site_config.require("discord_ops_channel_id")
-            telegram_bot_token = get_telegram_bot_token(site_config)
-            telegram_chat_id = get_telegram_chat_id(site_config)
+            # telegram_bot_token is encrypted in app_settings — must go
+            # through get_secret() for decryption. Raw .get() returns
+            # 'enc:v1:...' ciphertext which httpx rejects when building
+            # the bot-API URL. Same bug pattern as revalidate_secret
+            # (fixed in commit 441d4adc).
+            try:
+                telegram_bot_token = (await site_config.get_secret("telegram_bot_token") or "").strip()
+            except Exception:
+                telegram_bot_token = ""
+            telegram_chat_id = (get_telegram_chat_id(site_config) or "").strip()
         else:
             openclaw_url = DEFAULT_OPENCLAW_URL
             openclaw_token = "hooks-gladlabs"
