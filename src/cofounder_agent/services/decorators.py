@@ -19,51 +19,80 @@ Usage:
 """
 
 import functools
+import os
 import time
 from collections.abc import Callable
 from typing import Any
 
 from services.logger_config import get_logger
-# Phase H (GH#95): import the SiteConfig singleton at module-load time.
-#
-# Previously each of the ``_slow_query_threshold_ms`` /
-# ``_log_all_queries`` / ``_enable_query_monitoring`` helpers imported
-# the singleton inside its body on every call — the canonical "lazy
-# function-body import" the Phase H cleanup targets. We can do it at
-# module scope instead because the module that owns the singleton
-# (``services.site_config``) is safe to import this early; the CACHED
-# VALUES inside that singleton are what gets populated later in the
-# startup lifespan, and every helper here reads those values per-call
-# so late-binding still works (app_settings edits take effect without
-# a restart).
-from services.site_config import site_config as _site_config
 
 logger = get_logger(__name__)
 
+# Phase H finish (GH#95): the module-level
+# ``from services.site_config import site_config as _site_config`` is
+# gone. That import bound a stale reference to the empty singleton
+# constructed at site_config import time — when ``main.py``'s lifespan
+# rebound ``services.site_config.site_config`` to a DB-loaded instance,
+# every decorator helper here kept reading the empty original. The
+# decorators run from import-time (db service classes decorate methods
+# at module load), so we can't accept site_config via ctor injection
+# the way services do.
+#
+# Instead the lifespan calls ``decorators.set_site_config(site_cfg)``
+# explicitly once the DB-loaded instance is ready (see main.py's Phase H
+# wiring). Until then the helpers fall back to env vars + sensible
+# defaults — fine for the small window between import and lifespan
+# startup, and tests monkeypatch the helpers directly rather than the
+# binding (see tests/unit/services/test_decorators.py).
+_site_config: Any = None
+
 
 def set_site_config(site_config: Any) -> None:
-    """Override the SiteConfig instance the decorators read from.
+    """Bind the SiteConfig instance the decorators should read from.
 
-    Intended for tests + alternative wiring. Production code relies on
-    the module-level import of ``services.site_config.site_config``;
-    swapping it here lets a test point the decorators at a bespoke
-    SiteConfig without monkey-patching imports.
+    Called by ``main.py``'s lifespan once the DB-loaded SiteConfig is
+    available, and by tests that want a custom config without
+    monkey-patching every helper. Passing ``None`` reverts to the
+    env-fallback path used during early startup.
     """
     global _site_config
     _site_config = site_config
 
 
+def _bool_from_env(env_key: str, default: bool) -> bool:
+    val = os.getenv(env_key)
+    if val is None:
+        return default
+    return val.strip().lower() in ("true", "1", "yes", "on")
+
+
+def _int_from_env(env_key: str, default: int) -> int:
+    val = os.getenv(env_key)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def _slow_query_threshold_ms() -> int:
-    """Read SLOW_QUERY_THRESHOLD_MS from the bound site_config."""
-    return _site_config.get_int("slow_query_threshold_ms", 100)
+    """Read SLOW_QUERY_THRESHOLD_MS from the bound site_config (env-fallback before lifespan)."""
+    if _site_config is not None:
+        return _site_config.get_int("slow_query_threshold_ms", 100)
+    return _int_from_env("SLOW_QUERY_THRESHOLD_MS", 100)
 
 
 def _log_all_queries() -> bool:
-    return _site_config.get_bool("log_all_queries", False)
+    if _site_config is not None:
+        return _site_config.get_bool("log_all_queries", False)
+    return _bool_from_env("LOG_ALL_QUERIES", False)
 
 
 def _enable_query_monitoring() -> bool:
-    return _site_config.get_bool("enable_query_monitoring", True)
+    if _site_config is not None:
+        return _site_config.get_bool("enable_query_monitoring", True)
+    return _bool_from_env("ENABLE_QUERY_MONITORING", True)
 
 
 def log_query_performance(
