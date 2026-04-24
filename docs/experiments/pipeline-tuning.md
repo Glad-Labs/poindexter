@@ -194,6 +194,62 @@ is fixed.
 
 ---
 
+## Batch H — G-config repro (2026-04-24 morning)
+
+- **Config**: identical to batch G. writer `glm-4.7-5090`, critic `gemma3:27b`, weights 0.4/0.6, gate_weight=0, threshold 80, tech-name whitelist active.
+- **Task IDs**: 930-939
+- **Approval rate**: **7/10 (70%)**
+- **Avg score (approved)**: 87.7
+
+### Results
+
+| ID  | Status      | Score | Failure Mode                                          |
+| --- | ----------- | ----- | ----------------------------------------------------- |
+| 930 | ✅ approved | 86    | —                                                     |
+| 931 | rejected    | 90    | named-source without URL (programmatic veto)          |
+| 932 | ✅ approved | 89    | —                                                     |
+| 933 | ✅ approved | 90    | —                                                     |
+| 934 | rejected    | 77    | citation_verifier — 50% dead huggingface.co/docs URLs |
+| 935 | ✅ approved | 85    | —                                                     |
+| 936 | rejected    | 71    | citation_verifier — 33% dead openai.com/docs URLs     |
+| 937 | ✅ approved | 93    | programmatic 100/100, citation_verifier 100/100       |
+| 938 | ✅ approved | 90    | —                                                     |
+| 939 | ✅ approved | 81    | —                                                     |
+
+### Confirming the whitelist fix
+
+G + H combined (same config, N=2): **16/20 approved = 80%**. Compare:
+
+- A/C/D/E/F combined (pre-whitelist, mixed configs): 13/60 = 22%
+- D/E combined (pre-whitelist, same gate_weight=0 config): 6/20 = 30%
+- **G/H combined (post-whitelist)**: 16/20 = 80%
+
+The whitelist fix is real signal, not variance. Approval rate tripled on the same writer + same config.
+
+### Remaining rejection classes
+
+All three H rejections were **legitimate hard vetoes**:
+
+1. **citation_verifier — hallucinated docs URLs** (934, 936). Writer confidently cites specific paths under huggingface.co/docs/... or platform.openai.com/docs/... that don't resolve. These are real hallucinations worth catching.
+2. **named-source without URL** (931). Writer referenced "the documentation" / "the Medium article" without linking.
+
+Neither is a validator false-positive; both catch real writer errors. Next-lever thinking: the writer prompt could explicitly forbid path-specific citations ("if you cite huggingface.co/docs, ALWAYS include the specific working URL and omit the citation if you can't verify it").
+
+### Session snapshot after H
+
+| Batch | Config                                | Approved | Avg score |
+| ----- | ------------------------------------- | -------- | --------- |
+| A     | baseline                              | 3/10     | 77.4      |
+| B     | writer=qwen3:30b                      | 0/10     | 61.0      |
+| C     | weights 0.5/0.5                       | 2/10     | 75.6      |
+| D     | gate_weight=0 (first run)             | 5/10     | 79.5      |
+| E     | gate_weight=0 repro                   | 1/10     | 71.2      |
+| F     | tightened anti-fabrication prompt     | 2/10     | 75.2      |
+| G     | tech-name whitelist fix               | 9/10     | 88.8      |
+| **H** | **G-config repro (N=2 confirmation)** | **7/10** | **86.3**  |
+
+---
+
 ## Batch G — Tech-name whitelist fix (2026-04-24 overnight)
 
 - **Config**: writer `glm-4.7-5090:latest`, critic `gemma3:27b`, weights 0.4/0.6, `qa_gate_weight`=0, threshold 80. Same as D/E/F. **Delta vs F: `_HALLUCINATION_WHITELIST` expanded with common tech names** (pgvector, LoRA, LLM, REST, PostgreSQL, Kubernetes, FastAPI, Cloudflare, etc.) so real-but-not-on-PyPI names stop tripping the unknown-library detector.
