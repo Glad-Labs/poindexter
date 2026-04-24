@@ -603,6 +603,40 @@ _HALLUCINATION_WHITELIST = {
     "model", "models", "schema", "schemas", "view", "template",
     # Python style shorthands often used in examples
     "np", "pd", "plt", "tf", "torch",
+    # AI/ML acronyms and concepts (real but not on PyPI top-500)
+    "lora", "rag", "llm", "llms", "ai", "ml", "mlops", "sdxl", "rlhf", "dpo",
+    "ppo", "peft", "flashattention", "quantization", "mixtral", "qwen",
+    "gemma", "phi", "claude", "gpt", "falcon", "llama", "llama3", "llama2",
+    "mistral", "grok", "vllm", "tensorrt", "tensorflow", "pytorch",
+    # Web / API concepts (real but not Python packages)
+    "rest", "restful", "graphql", "grpc", "api", "apis", "webhook", "webhooks",
+    "oauth", "oauth2", "openid", "saml", "jwt", "json", "xml", "yaml", "toml",
+    "http", "https", "tcp", "udp", "websocket", "sse",
+    # Database products / extensions
+    "postgresql", "postgres", "mysql", "mariadb", "sqlite", "mongodb",
+    "clickhouse", "duckdb", "cassandra", "dynamodb", "cockroachdb",
+    "pgvector", "pg-hba", "pg_hba.conf", "pg-dump", "pg_dump",
+    # Infrastructure products / OSS tools
+    "docker", "kubernetes", "k8s", "podman", "terraform", "ansible",
+    "nginx", "haproxy", "traefik", "caddy", "envoy", "istio",
+    "prometheus", "grafana", "loki", "tempo", "pyroscope", "jaeger",
+    "alertmanager", "opentelemetry", "otel", "sentry", "glitchtip",
+    # Cloud / hosting / SaaS (name-drops in tech posts)
+    "cloudflare", "vercel", "netlify", "railway", "fly", "render",
+    "aws", "gcp", "azure", "linode", "digitalocean", "hetzner",
+    "cloudfront", "route53", "s3", "r2", "b2", "minio",
+    # Version control / CI
+    "github", "gitlab", "gitea", "forgejo", "bitbucket", "woodpecker",
+    "jenkins", "circleci", "travis", "buildkite",
+    # Editors / dev tools
+    "vscode", "neovim", "emacs", "cursor", "zed",
+    # Frameworks / runtimes (often backticked by name)
+    "fastapi", "django", "flask", "starlette", "uvicorn", "gunicorn",
+    "nextjs", "react", "vue", "svelte", "astro", "remix", "nuxt",
+    "node", "nodejs", "deno", "bun",
+    # OS / kernel terms that look like package names
+    "linux", "ubuntu", "debian", "alpine", "arch", "fedora", "centos",
+    "systemd", "cron", "crontab", "bash", "zsh", "powershell",
 }
 
 
