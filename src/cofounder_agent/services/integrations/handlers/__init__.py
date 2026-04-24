@@ -42,4 +42,8 @@ def load_all() -> None:
     from services.integrations.handlers import outbound_telegram  # noqa: F401
     from services.integrations.handlers import outbound_vercel_isr  # noqa: F401
 
+    # retention.*
+    from services.integrations.handlers import retention_downsample  # noqa: F401
+    from services.integrations.handlers import retention_ttl_prune  # noqa: F401
+
     logger.info("integrations.handlers.load_all: handler modules imported")
