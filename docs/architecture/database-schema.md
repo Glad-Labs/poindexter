@@ -1,25 +1,29 @@
 # Poindexter Database Schema
 
 This document defines the database schema Poindexter runs on. The
-entire system uses PostgreSQL 15+ through asyncpg. There is no ORM —
-queries are hand-written SQL, and schema changes are tracked as
-numbered migration files in `src/cofounder_agent/migrations/`.
+entire system uses PostgreSQL 16 with the pgvector extension through
+asyncpg. There is no ORM — queries are hand-written SQL, and schema
+changes are tracked as numbered migration files in
+`src/cofounder_agent/migrations/`.
 
-**Last Updated:** 2026-04-11
+**Last Updated:** 2026-04-23
 **Version:** 0.1.x (alpha)
-**Architecture:** PostgreSQL 15+ + FastAPI + asyncpg background workers
+**Architecture:** PostgreSQL 16 + pgvector + FastAPI + asyncpg background workers
 
 ---
 
 ## **PostgreSQL Database Module Overview**
 
-The system uses a modular database architecture with 5 specialized database modules, each handling domain-specific operations:
+The system uses a modular database architecture with 6 specialized database modules, each handling domain-specific operations:
 
 1. **UsersDatabase** - User accounts, OAuth, authentication
 2. **TasksDatabase** - Task CRUD, filtering, status management
 3. **ContentDatabase** - Posts, articles, publishing metadata
 4. **AdminDatabase** - Logging, financial tracking, system health
 5. **WritingStyleDatabase** - Writing samples for RAG-based style matching
+6. **EmbeddingsDatabase** - pgvector storage and cosine-similarity search (writer-segregated across `brain`, `audit`, `posts`, `memory`, `claude_sessions`, `issues`, `samples`)
+
+All six are reached through `services/database_service.py::DatabaseService` — callers don't import them directly. See [`../reference/services.md`](../reference/services.md) for service-level details and [GH-106](https://github.com/Glad-Labs/poindexter/issues/106) for the stale-embedding retention policy.
 
 ---
 

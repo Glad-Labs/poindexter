@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### 2026-04-23 — Tuning session, pricing consolidation, comprehensive docs sweep
+
+**Pricing consolidated to single Pro tier.** Removed the split $29 Quick Start Guide + $9.99/mo Premium product in favor of **Poindexter Pro — $9/month or $89/year with a 7-day free trial**. Everything previously split across two products (prompt library, premium Grafana dashboards, anti-hallucination fact overrides, 200+ tuned app_settings, the Poindexter book, VIP Discord) is now in a single subscription. Commits: `0b2c3007`, `87cda44e`, `12a205d4`, `16d33f43`, `d659f22` (prompts repo), `65c7bbe` (prompts repo).
+
+**Validator fix trilogy + one.** 100% QA-rejection bug traced and fixed. Four commits eliminated four distinct validator false-positive classes:
+
+- `e1b8aaed` — `re.IGNORECASE` collapsed `[A-Z]` in UNLINKED_CITATION_PATTERNS to `[A-Za-z]`, matching any prose
+- `c7df911c` — markdown section headings matched the bare-paper-title pattern
+- `9e802e60` — plain TitleCase English words ("Use", "Large", "Retrieval") flagged as hallucinated libraries
+- `89768318` — markdown `[title](url)` links still matched because the lookbehind only blocked at the bracket
+
+**Rejection-message fix.** `_build_rejection_reason` now distinguishes a real reviewer veto from a score-gate rejection, and mirrors the special-case advisory semantics of `internal_consistency`. Commits `aa4648ca` + `70297913`.
+
+**Pipeline lifespan wiring.** Site_config, task_executor, Pyroscope, and PluginScheduler all correctly rebound on startup post-Phase-H DI migration. Commits `7b65e807`, `21a87c2f`.
+
+**New Grafana dashboard.** `qa-observability.json` at UID `poindexter-qa` — rejection rate, approval rate, avg score, stacked rejection reasons over time, hallucination warnings by rule (via the Prometheus counter), score distribution, top rejection reasons, and approval rate by writer model. Commit `9ef8cfa3`.
+
+**Comprehensive docs sweep.** Four commits overhauling the doc base so operators can fully self-serve:
+
+- `886f90fc` — new `docs/operations/cli-reference.md` (34 subcommands across 9 groups, extracted live from the CLI tree); API endpoint reference expanded from 7 rows to 28; "Coming soon" reference stubs removed.
+- `57f6d9d2` — new `docs/reference/services.md` cataloguing every service in `src/cofounder_agent/services/`; ARCHITECTURE.md first-pass corrections (fictional agent hierarchy removed, `unified_orchestrator.py` / `blog_*_agent.py` file names corrected, PostgreSQL 15+ → 16 with pgvector, Stage plugin protocol section added).
+- `bbe58348` — ARCHITECTURE.md second pass (high-level ASCII diagram updated to real layering, request-flow rewritten as the actual 10 steps, endpoint counts corrected).
+- `6538ac22` — new `docs/operations/extending-poindexter.md` (step-by-step for Stage/Reviewer/Adapter/Provider/Tap/Job/Probe); troubleshooting runbook expanded with the three bug classes from this session; `docs/architecture/multi-agent-pipeline.md` gutted to a pointer doc (the 500 lines of pre-Phase-E fiction are gone).
+
+**GitHub issues filed for future work.** GH-99 (AI Visibility Score), GH-100 (real-time Grafana observability for rejection + hallucination), GH-101 (Intelligence Feed — productize topic_discovery), GH-102 (Brand Library for multi-brand operators), GH-103 (Singer tap protocol support), GH-104 (multi-LLM provider support — Phase J), GH-105 (S3-compatible output target), GH-106 (stale embedding compression / retention policy).
+
+**Tuning session log.** `docs/experiments/pipeline-tuning.md` captures 6 batches (A-F) of writer + config experimentation. Key finding: generation variance (σ ~12-15pt per topic) dominates small config changes; need N=3 per config for statistical signal. Design principle locked in: **gates are veto-only, not scored** (`qa_gate_weight=0` as permanent baseline).
+
 ### Renamed
 
 - **Project rebrand: Glad Labs Engine → Poindexter (built by Glad Labs LLC).** The public product is now known as Poindexter. Glad Labs LLC remains the legal entity and copyright holder. Migration impact for existing users:
