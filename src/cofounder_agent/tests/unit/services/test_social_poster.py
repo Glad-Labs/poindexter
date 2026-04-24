@@ -40,14 +40,26 @@ def _mock_sc(
     social_model: str = "ollama/llama3:latest",
     openclaw_url: str = "http://localhost:8787",
     openclaw_token: str = "hooks-gladlabs",
+    telegram_bot_token: str = "",
     discord_channel: str = "test-discord-channel-id",
     distribution_platforms: str = "",
     max_tokens: int = 300,
 ) -> MagicMock:
     """Build a MagicMock shaped like SiteConfig. Post-Phase-H, social_poster
     takes site_config as a parameter rather than reading the module
-    singleton — tests pass this mock through."""
+    singleton — tests pass this mock through.
+
+    Post-GH-107: openclaw_webhook_token and telegram_bot_token are
+    is_secret=true, so they're read via ``await get_secret(...)``. The
+    mock exposes ``get`` for non-secret keys and ``get_secret`` for the
+    encrypted ones; both side-effects share the same backing mapping.
+    """
     sc = MagicMock()
+
+    secret_mapping = {
+        "openclaw_webhook_token": openclaw_token,
+        "telegram_bot_token": telegram_bot_token,
+    }
 
     def _get(k: str, d: str = "") -> str:
         return {
@@ -55,8 +67,9 @@ def _mock_sc(
             "company_name": company_name,
             "social_poster_model": social_model,
             "openclaw_gateway_url": openclaw_url,
-            "openclaw_webhook_token": openclaw_token,
             "social_distribution_platforms": distribution_platforms,
+            # Kept here too in case any legacy non-secret reader survives.
+            "openclaw_webhook_token": openclaw_token,
         }.get(k, d)
 
     def _get_int(k: str, d: int = 0) -> int:
@@ -64,6 +77,7 @@ def _mock_sc(
 
     sc.get.side_effect = _get
     sc.get_int.side_effect = _get_int
+    sc.get_secret = AsyncMock(side_effect=lambda k, d="": secret_mapping.get(k, d))
     sc.require.side_effect = lambda k: discord_channel if k == "discord_ops_channel_id" else ""
     return sc
 

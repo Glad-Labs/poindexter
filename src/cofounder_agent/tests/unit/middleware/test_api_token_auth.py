@@ -6,7 +6,7 @@ Tests build a MagicMock Request whose ``.app.state.site_config`` is a
 mock-SiteConfig configured per case.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -31,7 +31,13 @@ def _make_credentials(token: str):
 
 def _make_request(api_token: str = "", dev_mode: bool = False, operator_id: str = "operator"):
     """Build a FastAPI Request stand-in whose ``.app.state.site_config``
-    returns the supplied values."""
+    returns the supplied values.
+
+    Post-GH-107: ``api_token`` lives behind ``get_secret`` (async) since
+    it's an is_secret row in app_settings. The mock exposes both ``get``
+    (sync) and ``get_secret`` (async) — non-secret keys go through
+    ``get``, the api_token resolves via ``get_secret``.
+    """
     mapping = {
         "api_token": api_token,
         "development_mode": "true" if dev_mode else "",
@@ -39,6 +45,7 @@ def _make_request(api_token: str = "", dev_mode: bool = False, operator_id: str 
     }
     sc = MagicMock()
     sc.get = MagicMock(side_effect=lambda k, d="": mapping.get(k, d))
+    sc.get_secret = AsyncMock(side_effect=lambda k, d="": mapping.get(k, d))
     req = MagicMock()
     req.app.state.site_config = sc
     return req

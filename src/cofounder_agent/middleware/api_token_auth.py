@@ -40,6 +40,16 @@ class _EnvSiteConfig:
             return env_val
         return default
 
+    async def get_secret(self, key: str, default: str = "") -> str:
+        """Async-fetch surface that mirrors ``SiteConfig.get_secret``.
+
+        The stub has no DB pool, so the lookup degrades to the same
+        env-var fallback ``get`` already uses. Required so callers that
+        migrate to ``await site_config.get_secret(...)`` for encrypted
+        keys (GH-107) keep working in minimal-app tests.
+        """
+        return self.get(key, default)
+
 
 _EMPTY_SITE_CONFIG = _EnvSiteConfig()
 
@@ -83,7 +93,10 @@ async def verify_api_token(
         The verified token string.
     """
     site_config = _site_config_from_request(request)
-    api_token = site_config.get("api_token", "")
+    # api_token is stored encrypted in app_settings (is_secret=true), so go
+    # through get_secret() to decrypt — get() returns enc:v1:<ciphertext>
+    # which would silently fail the constant-time compare below (GH-107).
+    api_token = await site_config.get_secret("api_token", "")
     dev_mode = site_config.get("development_mode", "").lower() == "true"
 
     if not credentials:
@@ -145,7 +158,9 @@ async def verify_api_token_optional(
     shows drafts only when authenticated).
     """
     site_config = _site_config_from_request(request)
-    api_token = site_config.get("api_token", "")
+    # See verify_api_token — api_token is encrypted in app_settings, so
+    # use get_secret() to decrypt rather than the raw .get() (GH-107).
+    api_token = await site_config.get_secret("api_token", "")
     dev_mode = site_config.get("development_mode", "").lower() == "true"
 
     if not credentials:
