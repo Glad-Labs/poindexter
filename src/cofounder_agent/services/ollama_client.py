@@ -16,34 +16,68 @@ Pull models: ollama pull qwen3:8b
 
 import asyncio
 import json
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
 from services.logger_config import get_logger
-# Phase H (GH#95): bind the SiteConfig singleton at module-load time.
-#
-# The old ``_sc_get`` helper did ``from services.site_config import
-# site_config`` inside its body. The REFERENCE is safe to import this
-# early — the CACHED VALUES inside the singleton are populated later
-# in the startup lifespan, and every helper below calls
-# ``_site_config.get(...)`` per-invocation so late-binding works
-# (app_settings edits take effect on the next ctor call without a
-# restart). No threading site_config through every caller of
-# OllamaClient (there are a lot of them, most in excluded files).
-from services.site_config import site_config as _site_config
 
 logger = get_logger(__name__)
+
+# Phase H finish (GH#95): the module-level
+# ``from services.site_config import site_config as _site_config`` is
+# gone. That import bound a stale reference to the empty singleton
+# constructed at site_config import time — when ``main.py``'s lifespan
+# rebound ``services.site_config.site_config`` to a DB-loaded instance,
+# the OllamaClient defaults here kept reading the empty original
+# (wrong base_url, wrong default model, wrong timeout).
+#
+# Two ways the right SiteConfig reaches us now:
+#
+# 1. ``OllamaClient.__init__(..., site_config=...)`` — preferred for
+#    new callers. The ctor reads its defaults off ``self._site_config``.
+# 2. ``ollama_client.set_site_config(site_cfg)`` — called by
+#    ``main.py``'s lifespan to bind the module-level fallback. Existing
+#    callers that build ``OllamaClient()`` with no args still get the
+#    DB-loaded values once the lifespan has run.
+#
+# Pre-lifespan / no-binding: the ``_sc_get`` helper falls back to env
+# vars + the documented hardcoded defaults (e.g. host.docker.internal
+# for ollama_base_url, "auto" for default_ollama_model).
+_site_config: Any = None
+
+
+def set_site_config(site_config: Any) -> None:
+    """Bind the SiteConfig instance ``OllamaClient()`` (no-arg) reads from.
+
+    Called by ``main.py``'s lifespan once the DB-loaded SiteConfig is
+    available. New callers should pass ``site_config=`` to the ctor
+    directly instead of relying on this module-level binding.
+    """
+    global _site_config
+    _site_config = site_config
 
 
 # ============================================================================
 # CONSTANTS
 # ============================================================================
 
-def _sc_get(key: str, default: str = "") -> str:
-    """Get from site_config (falls back to env automatically)."""
-    return _site_config.get(key, default)
+def _sc_get(key: str, default: str = "", *, site_config: Any = None) -> str:
+    """Get from site_config (falls back to module binding, then env, then default).
+
+    ``site_config`` kwarg lets per-instance ``OllamaClient`` calls read
+    from their own ctor-injected SiteConfig before the module-level one
+    is bound by the lifespan.
+    """
+    sc = site_config if site_config is not None else _site_config
+    if sc is not None:
+        return sc.get(key, default)
+    env_val = os.getenv(key.upper())
+    if env_val:
+        return env_val
+    return default
 
 # All config below is resolved lazily via _default_*() helpers because
 # site_config is empty at module-import time (loaded later in the lifespan).
@@ -51,42 +85,42 @@ def _sc_get(key: str, default: str = "") -> str:
 # ignore any app_settings overrides set after first import.
 
 
-def _default_model() -> str:
-    return _sc_get("default_ollama_model", "auto")
+def _default_model(site_config: Any = None) -> str:
+    return _sc_get("default_ollama_model", "auto", site_config=site_config)
 
 
-def _default_base_url() -> str:
+def _default_base_url(site_config: Any = None) -> str:
     return (
-        _sc_get("ollama_base_url")
-        or _sc_get("ollama_host")
+        _sc_get("ollama_base_url", site_config=site_config)
+        or _sc_get("ollama_host", site_config=site_config)
         or "http://host.docker.internal:11434"
     )
 
 
-def _default_gpu_power_watts() -> float:
+def _default_gpu_power_watts(site_config: Any = None) -> float:
     """GPU electricity cost default (RTX 5090: 575W TDP, ~300W typical inference)."""
     try:
-        return float(_sc_get("gpu_inference_watts", "300"))
+        return float(_sc_get("gpu_inference_watts", "300", site_config=site_config))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for gpu_inference_watts: {exc}"
         ) from exc
 
 
-def _default_electricity_rate_kwh() -> float:
+def _default_electricity_rate_kwh(site_config: Any = None) -> float:
     try:
-        return float(_sc_get("electricity_rate_kwh", "0.12"))
+        return float(_sc_get("electricity_rate_kwh", "0.12", site_config=site_config))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for electricity_rate_kwh: {exc}"
         ) from exc
 
 
-def _default_num_ctx() -> int:
+def _default_num_ctx(site_config: Any = None) -> int:
     """Context window limit — prevents models from allocating massive KV caches.
     Default 8192 is plenty for article generation and saves ~15GB VRAM vs 65K context."""
     try:
-        return int(_sc_get("ollama_num_ctx", "8192"))
+        return int(_sc_get("ollama_num_ctx", "8192", site_config=site_config))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for ollama_num_ctx: {exc}"
@@ -143,9 +177,21 @@ class OllamaClient:
     Model profiles are discovered dynamically from the Ollama server.
     """
 
-    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int | None = None):
-        self.base_url = (base_url or _default_base_url()).rstrip("/")
-        self.model = model or _default_model()
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        timeout: int | None = None,
+        *,
+        site_config: Any = None,
+    ):
+        # Phase H finish (GH#95): callers may pass an explicit
+        # ``site_config`` so the client reads its defaults from that
+        # instance instead of the module-level fallback. Used by
+        # services that already accept site_config via ctor.
+        self._site_config = site_config
+        self.base_url = (base_url or _default_base_url(site_config=site_config)).rstrip("/")
+        self.model = model or _default_model(site_config=site_config)
         # Default timeout is high (600s) because a 70B+ writer model can
         # easily take 3-10 minutes to generate a long blog post on a
         # single GPU. The old default of 120s silently dropped big-model
@@ -155,7 +201,9 @@ class OllamaClient:
         # gemma3:27b the whole time. Callers can still override for
         # short-timeout use cases (health checks, quick list calls).
         if timeout is None:
-            timeout = int(_sc_get("ollama_client_timeout_seconds", "600") or 600)
+            timeout = int(_sc_get(
+                "ollama_client_timeout_seconds", "600", site_config=site_config,
+            ) or 600)
         self.timeout = timeout
         self.client = httpx.AsyncClient(timeout=timeout)
         self._model_cache: dict[str, dict[str, Any]] = {}
@@ -163,8 +211,8 @@ class OllamaClient:
         self._resolved_default: str | None = None  # Lazily resolved from installed models
 
         # Electricity cost parameters — updated at runtime via configure_electricity()
-        self._gpu_power_watts: float = _default_gpu_power_watts()
-        self._electricity_rate_kwh: float = _default_electricity_rate_kwh()
+        self._gpu_power_watts: float = _default_gpu_power_watts(site_config=site_config)
+        self._electricity_rate_kwh: float = _default_electricity_rate_kwh(site_config=site_config)
 
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
 
@@ -208,7 +256,7 @@ class OllamaClient:
             installed_names = {m.get("name", "") for m in models}
 
             # Check config first — user knows which model is best for their hardware
-            preferred = _sc_get("preferred_ollama_model", "")
+            preferred = _sc_get("preferred_ollama_model", "", site_config=self._site_config)
             if preferred and preferred in installed_names:
                 self._resolved_default = preferred
                 logger.info("Auto-resolved model from PREFERRED_OLLAMA_MODEL: %s", preferred)
@@ -384,7 +432,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": stream,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
         }
 
         if max_tokens:
@@ -473,7 +521,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
         }
 
         if max_tokens:
@@ -628,7 +676,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
         }
 
         if max_tokens:
@@ -741,6 +789,9 @@ class OllamaClient:
 
 # Initialize function for easy integration
 async def initialize_ollama_client(
-    base_url: str | None = None, model: str | None = None
+    base_url: str | None = None,
+    model: str | None = None,
+    *,
+    site_config: Any = None,
 ) -> OllamaClient:
-    return OllamaClient(base_url=base_url, model=model)
+    return OllamaClient(base_url=base_url, model=model, site_config=site_config)
