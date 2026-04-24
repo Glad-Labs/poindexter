@@ -12,6 +12,11 @@ from typing import Any
 import httpx as _httpx
 
 from services.logger_config import get_logger
+from services.telegram_config import (
+    get_telegram_bot_token,
+    get_telegram_chat_id,
+    telegram_configured,
+)
 
 # Kept importable (not instantiated) so tests can
 # patch("services.task_executor.AIContentGenerator") and verify no
@@ -29,8 +34,11 @@ from .webhook_delivery_service import emit_webhook_event
 
 
 async def _notify_discord(message: str, site_config: Any) -> None:
-    """Send ops notification to Discord #ops channel via webhook."""
+    """Send ops notification to Discord #ops channel via webhook (direct API call)."""
     _logger = get_logger(__name__)
+    if site_config is None:
+        _logger.debug("[NOTIFY:discord] site_config is None — skipping")
+        return
     try:
         # Load webhook URL from app_settings (DB-first config)
         webhook_url = site_config.get("discord_ops_webhook_url", "")
@@ -48,36 +56,106 @@ async def _notify_discord(message: str, site_config: Any) -> None:
         _logger.warning("[NOTIFY:discord] Failed: %s", e)
 
 
-async def _notify_openclaw(
-    message: str, site_config: Any, critical: bool = False,
-) -> None:
-    """Send pipeline notification via OpenClaw gateway (routes to Telegram + Discord).
+async def _notify_telegram(message: str, site_config: Any) -> None:
+    """Send ops notification directly to Telegram bot API.
 
-    No direct bot tokens needed — OpenClaw owns all messaging channels.
-    Falls back to Discord webhook if OpenClaw is unavailable.
+    Bypasses OpenClaw so the worker has zero gateway dependencies for
+    alerting. Silently skips if Telegram isn't configured (bot_token
+    or chat_id missing) — caller decides whether that's acceptable.
+
+    Uses POST /botTOKEN/sendMessage with timeout=10. Telegram's API
+    is 2xx on success, 4xx on bad request (chat_id wrong, token
+    invalid), 5xx when Telegram is having a bad day.
     """
     _logger = get_logger(__name__)
+    if site_config is None:
+        _logger.debug("[NOTIFY:telegram] site_config is None — skipping")
+        return
 
-    # Try OpenClaw gateway first (routes to both Telegram + Discord)
-    if critical:
-        try:
-            from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
-            openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
-            openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
-            async with _httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    f"{openclaw_url}/api/hooks/pipeline",
-                    json={"text": message, "critical": True},
-                    headers={"Authorization": f"Bearer {openclaw_token}"},
+    # The bot token is a secret — stored encrypted in app_settings with
+    # an 'enc:v1:...' prefix. Must go through get_secret() to decrypt;
+    # site_config.get() returns the ciphertext which doesn't belong in a
+    # URL. Chat ID is not a secret, regular .get() is fine. Strip both
+    # to survive accidental trailing whitespace from pgAdmin paste.
+    try:
+        bot_token = (await site_config.get_secret("telegram_bot_token") or "").strip()
+    except Exception as e:
+        _logger.debug("[NOTIFY:telegram] get_secret failed: %s — skipping", e)
+        return
+    chat_id = (get_telegram_chat_id(site_config) or "").strip()
+    if not bot_token or not chat_id:
+        _logger.debug("[NOTIFY:telegram] bot_token or chat_id empty — skipping")
+        return
+
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": message,
+                    # Disable preview to keep alerts compact
+                    "disable_web_page_preview": True,
+                },
+            )
+            if resp.status_code < 300:
+                _logger.info("[NOTIFY:telegram] %s", message[:80])
+            else:
+                _logger.warning(
+                    "[NOTIFY:telegram] HTTP %d: %s",
+                    resp.status_code, resp.text[:200],
                 )
-                if resp.status_code < 300:
-                    _logger.info("[NOTIFY:openclaw] %s", message[:80])
-                    return
-        except Exception as e:
-            _logger.debug("[NOTIFY:openclaw] Gateway unavailable, falling back to Discord: %s", e)
+    except Exception as e:
+        _logger.warning("[NOTIFY:telegram] Failed: %s", e)
 
-    # Fallback: Discord webhook (always works, no bot token needed)
+
+async def _notify_alert(
+    message: str, site_config: Any, critical: bool = False,
+) -> None:
+    """Fan out an operator alert to Discord + Telegram directly.
+
+    Post-2026-04-24 rewrite. Previously this went through an OpenClaw
+    gateway; two silent-failure bugs in that path (ISO timestamps,
+    Phase-H DI migration arg drop) killed every Telegram alert for
+    weeks and we only caught it by accident. Direct-to-API is:
+
+    - **Simpler** — two calls, no shared service between them.
+    - **Debuggable** — each target's success/failure is independent.
+    - **No SPOF** — if OpenClaw is down, alerts still fire.
+
+    Behavior:
+    - Always posts to Discord #ops via webhook.
+    - If ``critical=True`` OR ``telegram_alerts_enabled=true``, also
+      posts to Telegram via direct bot API.
+
+    OpenClaw remains available for its own features (operator UI,
+    channel pairing, pipeline control) — it's just no longer on the
+    alerting critical path.
+    """
+    # Discord: always
     await _notify_discord(message, site_config)
+
+    # Telegram: on critical, OR when operator has opted in for routine
+    # alerts. Both conditions produce a direct API call — no gateway.
+    # site_config can be None in early-boot paths (pre-lifespan) or in
+    # older tests — in that case we can't know the opt-in preference
+    # and only fire on critical so operators never miss a real alert.
+    if site_config is None:
+        if critical:
+            await _notify_telegram(message, site_config)
+        return
+
+    telegram_enabled = (
+        str(site_config.get("telegram_alerts_enabled", "false")).lower() == "true"
+    )
+    if critical or telegram_enabled:
+        await _notify_telegram(message, site_config)
+
+
+# Back-compat alias. Pre-2026-04-24 code called ``_notify_openclaw``;
+# existing call sites keep working without edits. New code should call
+# ``_notify_alert`` directly — the name now matches what it does.
+_notify_openclaw = _notify_alert
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: E402,F401

@@ -222,30 +222,27 @@ def _format_alert_message(alert: dict[str, Any]) -> str:
 
 
 async def _dispatch_to_operator(alert: dict[str, Any], site_config: Any) -> None:
-    """Send the alert to the OpenClaw gateway.
+    """Fan out the alert to Discord + Telegram directly.
 
-    Uses the existing ``_notify_openclaw`` helper — OpenClaw owns the
-    Telegram + Discord bot tokens, the worker just POSTs a message.
-    Critical severity gets the ``critical=True`` flag so OpenClaw routes
-    to the high-urgency channel (Telegram + Discord). Non-critical
-    falls through to Discord-only via the ``_notify_discord`` fallback
-    inside ``_notify_openclaw``.
+    As of 2026-04-24 this goes through ``_notify_alert``, which calls
+    the Discord webhook and Telegram bot API directly (no OpenClaw
+    dependency). Discord always receives the alert; Telegram fires
+    when severity=critical or when telegram_alerts_enabled=true in
+    app_settings.
 
-    site_config is required — ``_notify_openclaw`` reads
-    ``openclaw_gateway_url`` and ``openclaw_webhook_token`` from it.
-    Omitting site_config previously silently broke every alert dispatch
-    with a TypeError that the outer try/except swallowed.
+    site_config is required — it carries both the Discord webhook URL
+    and the Telegram bot credentials.
     """
     try:
-        from services.task_executor import _notify_openclaw
+        from services.task_executor import _notify_alert
     except Exception as e:
-        logger.warning("alertmanager webhook: _notify_openclaw unavailable: %s", e)
+        logger.warning("alertmanager webhook: _notify_alert unavailable: %s", e)
         return
 
     severity = (alert.get("labels") or {}).get("severity", "info").lower()
     message = _format_alert_message(alert)
     try:
-        await _notify_openclaw(
+        await _notify_alert(
             message, site_config, critical=severity == "critical",
         )
     except Exception as e:
