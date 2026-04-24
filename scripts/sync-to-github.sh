@@ -63,6 +63,7 @@ git rm --cached --quiet infrastructure/grafana/dashboards/infrastructure-data.js
 git rm --cached --quiet infrastructure/grafana/dashboards/link-registry.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/qa-observability.json 2>/dev/null || true
+git rm --cached --quiet infrastructure/grafana/dashboards/system-health.json 2>/dev/null || true
 
 # === Local gitleaks baseline — operator-specific, regenerated per clone ===
 # Contains historical commit hashes + file paths where gitleaks flagged
