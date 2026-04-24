@@ -1,7 +1,7 @@
 # RFC: Declarative Data Plane — Integrations as DB Rows, Not Code
 
 **Date:** 2026-04-24
-**Status:** Draft, awaiting operator review
+**Status:** Approved 2026-04-24 — decisions recorded in Section 10. Phase 0 + Phase 1 in flight.
 **Authors:** Claude (audit + synthesis), Matt (direction)
 **Supersedes / reframes:** ad-hoc plans for [GH-103](https://github.com/Glad-Labs/poindexter/issues/103), [GH-110](https://github.com/Glad-Labs/poindexter/issues/110), [GH-111](https://github.com/Glad-Labs/poindexter/issues/111)
 **Covers:** a project-wide pattern that should be applied to ~12 integration surfaces
@@ -397,3 +397,33 @@ Each phase is independently shippable. Phases 1–3 are the big rocks; phase 4 i
 4. Phase 0 scaffolding — do you want to see the scaffolding PR separately before any real migration work starts?
 
 No code runs without a green light on each.
+
+---
+
+## 10. Decisions recorded (2026-04-24)
+
+### Open questions — operator answers
+
+| #   | Question                           | Answer                                                                                |
+| --- | ---------------------------------- | ------------------------------------------------------------------------------------- |
+| 1   | One table per surface vs shared?   | **One table per surface.** Surface-specific columns stay clean.                       |
+| 2   | Row-level vs surface-level enable? | **Per-row.** No surface-wide kill switch; operator toggles individual rows.           |
+| 3   | CLI v1 scope?                      | **Minimal** — list / enable / disable / set-secret in v1. Full CRUD in v1.1.          |
+| 4   | Per-handler markdown docs?         | **Yes** — every handler gets a doc in `docs/integrations/<handler>.md`.               |
+| 5   | Test-fire mechanism?               | **Both** — handlers declare `synthetic_payload()` AND CLI accepts `--payload=<file>`. |
+
+### Decisions requested — operator answers
+
+1. **Overall pattern approved.** Sections 3–5 locked in.
+2. **Tier ranking approved with one caveat:** Matt wants Tiers 2–3 either executed now OR explicitly tracked as GH issues with design content for future work. Explicitly rejected items (Tier 4) stay in this doc as a "do not revisit" decision record. **Action:** file GH issues for the remaining Tier 2–3 surfaces not already tracked (social publishing adapters, object stores, cache invalidation backends, QA gates, MCP connections) before Phase 1 ships.
+3. Open questions nailed down above.
+4. **Phase 0 scaffolding ships with Phase 1** — no separate PR. Execute end-to-end.
+
+### Execution marching orders
+
+1. File GH issues for untracked Tier 2–3 surfaces (task 22).
+2. Phase 0 scaffolding (`services/integrations/` package + handlers.py + secret_resolver.py + CLI base + migration 0083) (task 23).
+3. Phase 1 webhook framework: `webhook_endpoints` table + catch-all dispatcher + handler migrations for the 3 inbound and 3 outbound destinations (task 24). Legacy routes stay as shims until rows are seeded and verified.
+4. Per-handler markdown docs under `docs/integrations/` added alongside each handler.
+
+No pause for review between phases. Report on Telegram when Phase 1 is live.
