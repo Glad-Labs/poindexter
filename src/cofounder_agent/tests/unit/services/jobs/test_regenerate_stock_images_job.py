@@ -11,11 +11,17 @@ from services.jobs.regenerate_stock_images import RegenerateStockImagesJob, _bui
 
 
 def _mock_sc() -> MagicMock:
-    """SiteConfig mock for post-Phase-H job.run() kwarg."""
+    """SiteConfig mock for post-Phase-H job.run() kwarg.
+
+    Post-GH-107: cloudinary_api_key/secret are read via ``get_secret``;
+    the mock exposes that as an AsyncMock that returns the same default
+    fallback as ``get`` to keep test bodies untouched.
+    """
     sc = MagicMock()
     sc.get.side_effect = lambda k, d="": d
     sc.get_bool.side_effect = lambda k, d=False: d
     sc.get_int.side_effect = lambda k, d=0: d
+    sc.get_secret = AsyncMock(side_effect=lambda k, d="": d)
     return sc
 
 

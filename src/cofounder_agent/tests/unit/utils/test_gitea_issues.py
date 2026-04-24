@@ -38,7 +38,13 @@ def _mock_sc(
     url: str = "http://gitea.example",
     repo: str = "gladlabs/codebase",
 ) -> MagicMock:
-    """Build a SiteConfig mock with the given Gitea credentials."""
+    """Build a SiteConfig mock with the given Gitea credentials.
+
+    Post-GH-107: gitea_password is is_secret=true, so it's read via
+    ``await site_config.get_secret(...)``. The mock exposes ``get`` for
+    non-secret keys (gitea_user/url/repo) and ``get_secret`` for the
+    password.
+    """
     mapping = {
         "gitea_password": password,
         "gitea_user": user,
@@ -47,6 +53,7 @@ def _mock_sc(
     }
     sc = MagicMock()
     sc.get = MagicMock(side_effect=lambda k, d=None: mapping.get(k, d))
+    sc.get_secret = AsyncMock(side_effect=lambda k, d="": mapping.get(k, d))
     return sc
 
 

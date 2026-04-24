@@ -781,10 +781,13 @@ async def _upload_to_cloudinary(
             "image_service dispatcher must seed '_site_config' (GH#95)"
         )
 
+    # cloudinary_api_key and cloudinary_api_secret are is_secret=true in
+    # app_settings — fetch via get_secret() so we get plaintext rather
+    # than the enc:v1:<ciphertext> blob that .get() returns (GH-107).
     cloudinary.config(
         cloud_name=site_config.get("cloudinary_cloud_name"),
-        api_key=site_config.get("cloudinary_api_key"),
-        api_secret=site_config.get("cloudinary_api_secret"),
+        api_key=await site_config.get_secret("cloudinary_api_key"),
+        api_secret=await site_config.get_secret("cloudinary_api_secret"),
     )
 
     def _upload() -> dict:

@@ -22,10 +22,17 @@ def _mock_sc(
     redis_url: str = "redis://localhost:6379/0",
     redis_enabled: str = "true",
 ) -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for RedisCache.create()."""
+    """Return a MagicMock shaped like SiteConfig for RedisCache.create().
+
+    Post-GH-107: redis_url is is_secret=true (it can carry an AUTH
+    password), so RedisCache.create() reads it via ``get_secret`` rather
+    than ``get``. The mock exposes both — ``get`` for redis_enabled and
+    ``get_secret`` for redis_url.
+    """
     sc = MagicMock()
     values = {"redis_url": redis_url, "redis_enabled": redis_enabled}
     sc.get.side_effect = lambda k, d="": values.get(k, d)
+    sc.get_secret = AsyncMock(side_effect=lambda k, d="": values.get(k, d))
     return sc
 
 # ---------------------------------------------------------------------------

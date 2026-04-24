@@ -159,8 +159,14 @@ class RedisCache:
             logger.warning("Redis not available - caching disabled")
             return cls(redis_instance=None, enabled=False)
 
-        # Get configuration from site_config (falls back to env vars)
-        redis_url = site_config.get("redis_url", "redis://localhost:6379/0")
+        # Get configuration from site_config (falls back to env vars).
+        # redis_url is is_secret=true in app_settings (it can carry an
+        # AUTH password), so it must go through get_secret() for
+        # decryption — get() returns the enc:v1:<ciphertext> blob and
+        # would break aioredis.from_url (GH-107).
+        redis_url = await site_config.get_secret(
+            "redis_url", "redis://localhost:6379/0"
+        )
         redis_enabled = site_config.get("redis_enabled", "true").lower() in ("true", "1", "yes")
 
         if not redis_enabled:
