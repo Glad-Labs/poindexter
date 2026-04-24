@@ -63,7 +63,13 @@ async def _notify_openclaw(
         try:
             from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
             openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
-            openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
+            # openclaw_webhook_token is is_secret=true — must go through
+            # get_secret() for decryption, otherwise the Authorization
+            # header carries enc:v1:<ciphertext> and OpenClaw 401s us
+            # (GH-107, prod incident 2026-04-23).
+            openclaw_token = await site_config.get_secret(
+                "openclaw_webhook_token", "hooks-gladlabs"
+            )
             async with _httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(
                     f"{openclaw_url}/api/hooks/pipeline",

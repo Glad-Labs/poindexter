@@ -173,12 +173,19 @@ def _make_mock_httpx_client(status_code: int = 200, text: str = "ok"):
 
 
 def _mock_site_config():
-    """Return a mock site_config that provides a revalidate_secret."""
+    """Return a mock site_config that provides a revalidate_secret.
+
+    Post-GH-107: revalidate_secret is is_secret=true and is fetched via
+    ``await site_config.get_secret(...)``. Tests get an AsyncMock for
+    that surface; non-secret keys still go through ``get``.
+    """
     cfg = MagicMock()
     cfg.get = lambda key, default=None: {
-        "revalidate_secret": "test-secret",
         "public_site_url": "http://localhost:3000",
     }.get(key, default)
+    cfg.get_secret = AsyncMock(side_effect=lambda key, default="": {
+        "revalidate_secret": "test-secret",
+    }.get(key, default))
     return cfg
 
 
@@ -269,9 +276,11 @@ class TestTriggerNextjsRevalidation:
         mock_client = _make_mock_httpx_client(status_code=200)
         mock_cfg = MagicMock()
         mock_cfg.get = lambda key, default=None: {
-            "revalidate_secret": "test-secret",
             "public_site_url": "http://my-site.example.com",
         }.get(key, default)
+        mock_cfg.get_secret = AsyncMock(side_effect=lambda key, default="": {
+            "revalidate_secret": "test-secret",
+        }.get(key, default))
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(
                 ["/blog"], site_config=mock_cfg,
@@ -287,10 +296,12 @@ class TestTriggerNextjsRevalidation:
         mock_client = _make_mock_httpx_client(status_code=200)
         mock_cfg = MagicMock()
         mock_cfg.get = lambda key, default=None: {
-            "revalidate_secret": "test-secret",
             "public_site_url": "",
             "next_public_api_base_url": "http://stripped.example.com/api",
         }.get(key, default)
+        mock_cfg.get_secret = AsyncMock(side_effect=lambda key, default="": {
+            "revalidate_secret": "test-secret",
+        }.get(key, default))
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(
                 ["/blog"], site_config=mock_cfg,

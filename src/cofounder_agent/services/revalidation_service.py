@@ -48,22 +48,13 @@ async def trigger_nextjs_revalidation(
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
 
-    revalidate_secret = ""
-    try:
-        from utils.route_utils import get_database_dependency
-        db_service = get_database_dependency()
-        pool = getattr(db_service, "pool", None)
-        if pool:
-            row = await pool.fetchrow(
-                "SELECT value FROM app_settings WHERE key = 'revalidate_secret'",
-            )
-            if row and row["value"]:
-                revalidate_secret = row["value"]
-    except Exception as e:
-        logger.warning("Failed to fetch revalidate_secret from DB: %s", e)
-
-    if not revalidate_secret:
-        revalidate_secret = site_config.get("revalidate_secret", "")
+    # revalidate_secret is is_secret=true in app_settings — must use
+    # get_secret() for decryption. Previously we did a raw SELECT here
+    # (which bypassed decryption entirely) and a .get() fallback (which
+    # returned the enc:v1:<ciphertext> blob); both shipped the wrong
+    # value as the x-revalidate-secret header and the public site 401'd
+    # every revalidation (GH-107, prod incident 2026-04-23).
+    revalidate_secret = await site_config.get_secret("revalidate_secret", "")
     environment = (
         site_config.get("environment", "development") or "development"
     ).lower()
