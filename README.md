@@ -248,6 +248,7 @@ dive into specific areas:
 - **[API reference](docs/api/README.md)** — REST endpoints exposed by the worker
 - **[CLI reference](docs/operations/cli-reference.md)** — every `poindexter` subcommand with flags + examples
 - **[Services reference](docs/reference/services.md)** — catalog of every service in the worker
+- **[Extending Poindexter](docs/operations/extending-poindexter.md)** — how to add stages, reviewers, adapters, taps, jobs, and probes
 - **[Local development setup](docs/operations/local-development-setup.md)** — end-to-end setup walkthrough
 - **[Environment variables](docs/operations/environment-variables.md)** — bootstrap-layer config
 - **[Troubleshooting](docs/operations/troubleshooting.md)** — production issues we've hit

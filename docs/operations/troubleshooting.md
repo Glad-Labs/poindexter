@@ -304,6 +304,63 @@ log_fps = [l.split('Fingerprint:',1)[1].strip() for l in log.splitlines() if 'Fi
 
 ---
 
+## Pipeline rejects 100% of content with "unlinked_citation" validator veto
+
+**Symptom.** Every single content task hits `rejected` with the error message `Multi-model QA rejected (score: NN, veto: programmatic_validator @ NN): Unlinked citation — possible hallucinated reference: '<some-random-lowercase-prose>'`. Approval rate is literally 0%. Scores cluster around 60-75 — not rejection because the content is bad, rejection because the validator is firing on everything.
+
+**Root cause.** `services/content_validator._check_patterns()` defaults to `re.IGNORECASE`, which collapses `[A-Z]` in the `UNLINKED_CITATION_PATTERNS` regex set down to `[A-Za-z]`. Patterns intended to match Title-Case citations ("according to MIT Research") then match any lowercase word sequence. Every post has at least one such match.
+
+**Fix.** Commit `e1b8aaed` — `_check_patterns()` now takes a `flags: int` parameter; the unlinked-citation call site passes `flags=0` so `[A-Z]` stays case-sensitive. Inline `(?i:...)` groups inside each pattern handle the keyword case-insensitivity where needed.
+
+**Related.** The false-positive hunt also surfaced three more validator edge classes, each with its own commit:
+
+- `c7df911c` — markdown section headings ("### The Amplifier Effect: Why AI Multiplies...") matched the bare-paper-title pattern. Fix: strip heading lines and list-item leaders before running UNLINKED_CITATION_PATTERNS.
+- `9e802e60` — narrative verb regex ("Use API", "adopt Large Language Models") captured plain TitleCase English words as library names. Fix: skip candidates matching `^[A-Z][a-z]+$` unless they're in a known reference list.
+- `89768318` — markdown linked citations (`[Title](url)`) still matched because the `(?<!\[)` lookbehind only blocks matches that START at the bracket. Fix: strip the full `[text](url)` construct from the text before running unlinked-citation patterns.
+
+All four fixes have regression tests. See `docs/experiments/pipeline-tuning.md` for the tuning session that uncovered them.
+
+---
+
+## Rejection message says `veto: url_verifier @ 90: 2 verified external citations (+10 bonus)`
+
+**Symptom.** A rejected task's `error_message` names `url_verifier` as the vetoing reviewer, but quotes its feedback as a positive "+10 bonus" note. Makes zero sense as a rejection reason.
+
+**Root cause.** `services/stages/cross_model_qa._build_rejection_reason()` historically fell back to `reviews[-1]` when no reviewer had `approved=False`. url_verifier is typically the last-added reviewer (stage 2f), and when it approves with score 90 ("+bonus"), the fallback still named it as "the veto" — even though the real rejection mode was the score gate (final_score below `qa_final_score_threshold`).
+
+**Fix.** Commits `aa4648ca` + `70297913` — `_build_rejection_reason()` now distinguishes three cases:
+
+1. A reviewer truly vetoed (via the gate logic, not just `approved=False`) → name them
+2. No one vetoed but the final_score is below threshold → report `score-gate: below approval threshold, lowest reviewer X @ Y`
+3. No reviews at all → explicit "No reviews recorded"
+
+The function also mirrors the special-case gate logic for `internal_consistency` — `approved=False` with score ≥ `qa_consistency_veto_threshold` is advisory, not a veto. Two regression tests pin both branches.
+
+---
+
+## `pgvector`, `LoRA`, `REST`, or `PostgreSQL` flagged as hallucinated library
+
+**Symptom.** A content task rejects at a score that would otherwise pass, with error `Likely hallucinated library/API reference: 'pgvector'` (or `LoRA`, `REST`, `PostgreSQL`, `transformers`, etc.). All of those are real things, just not in the PyPI top-500.
+
+**Root cause.** `services/content_validator._extract_library_candidates()` flags any backticked identifier that isn't in the stdlib / PyPI-top-500 / Ollama-models whitelist. AI/ML acronyms (LoRA, RAG, REST, SDXL), database extensions (pgvector), and product names (PostgreSQL, Redis) aren't in those lists.
+
+**Partial fix.** The plain-TitleCase English-word filter (commit `9e802e60`) catches single-word cases like "Use" or "Large", but not multi-word acronyms or snake_case extensions.
+
+**Full fix — not yet shipped.** Add these to `_HALLUCINATION_WHITELIST`:
+
+```python
+# Common AI/ML acronyms that aren't PyPI packages
+"lora", "rag", "rest", "sdxl", "llm", "ai", "api",
+# Database extensions/products (real but not on PyPI)
+"pgvector", "postgresql", "redis", "elasticsearch", "clickhouse",
+# Hugging Face org-adjacent names
+"transformers", "diffusers", "accelerate",
+```
+
+Until shipped, operator workaround: `poindexter settings set content_validator_warning_reject_threshold 8` to raise the promotion threshold so one or two flagged acronyms won't critical-promote the warning. Tracked in the experiments log.
+
+---
+
 ## How to add a new entry to this doc
 
 1. You hit an issue that took more than 10 minutes to diagnose.
