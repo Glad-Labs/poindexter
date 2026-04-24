@@ -34,7 +34,7 @@ import os
 
 import pytest
 
-from services.site_config import SiteConfig, site_config
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Layer 1 — brand-identity seed (legacy + Phase H step 5.4 fixture, GH#95)
@@ -59,18 +59,12 @@ _TEST_BRAND_CONFIG = {
     "owner_email": "owner@test.example.com",
 }
 
-# Phase H step 5.4 (GH#95): every new test should get its site_config
-# through the `test_site_config` fixture below, not by mutating the module
-# singleton. Construct once so fixture consumers share identity (handy when
-# a helper stashes it on app.state and a downstream service reads it back).
+# Phase H cleanup (2026-04-24): module-level site_config singleton has
+# been removed. Every test that needs brand-identity defaults consumes
+# the ``test_site_config`` fixture below, which returns this shared
+# instance. Tests that need isolation construct their own
+# ``SiteConfig(initial_config=...)`` inline.
 _CONFTEST_SITE_CFG = SiteConfig(initial_config=dict(_TEST_BRAND_CONFIG))
-
-# Backwards-compat shim: the rest of the test suite still does
-# `from services.site_config import site_config` and reads it directly. The
-# shim lives on until those tests migrate too; once they have, the next two
-# loops can be deleted with the module-level singleton itself (step 5.3).
-for _key, _value in _TEST_BRAND_CONFIG.items():
-    site_config._config.setdefault(_key, _value)
 
 
 @pytest.fixture
@@ -161,17 +155,11 @@ def _reset_singletons_between_tests():
     except Exception:
         pass
 
-    # site_config has a module-level dict; preserve the brand keys we
-    # seeded at conftest import time + drop anything set during the test.
-    # Also reset the Phase H fixture instance so tests that mutated it via
-    # `test_site_config._config[...] = ...` don't leak state into the next
-    # test case.
+    # Reset the shared Phase H fixture instance so tests that mutated it
+    # via `test_site_config._config[...] = ...` don't leak state into the
+    # next test case. No module-level singleton to reset any more —
+    # Phase H cleanup removed it.
     try:
-        from services.site_config import site_config as _sc
-        _sc._config = {k: v for k, v in _sc._config.items() if k in _TEST_BRAND_CONFIG}
-        # Re-seed in case a test wiped the brand keys.
-        for k, v in _TEST_BRAND_CONFIG.items():
-            _sc._config.setdefault(k, v)
         _CONFTEST_SITE_CFG._config = dict(_TEST_BRAND_CONFIG)
     except Exception:
         pass

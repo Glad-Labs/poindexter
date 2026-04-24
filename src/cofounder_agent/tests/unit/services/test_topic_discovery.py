@@ -10,7 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from services.site_config import SiteConfig
 from services.topic_discovery import CATEGORY_SEARCHES, DiscoveredTopic, TopicDiscovery
+
+# Shared empty SiteConfig for tests that don't care about config values.
+# TopicDiscovery requires site_config (Phase H DI, GH#95) — tests that
+# exercise config-dependent branches should construct their own
+# SiteConfig(initial_config={...}) with the keys they need.
+_TEST_SC = SiteConfig(initial_config={})
 
 
 def _make_pool(published_titles=None, pending_topics=None):
@@ -30,35 +37,35 @@ def _make_pool(published_titles=None, pending_topics=None):
 
 class TestClassifyCategory:
     def test_security_topic(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._classify_category("Zero Trust Architecture for Developers") == "security"
 
     def test_startup_topic(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._classify_category("How to Launch Your MVP in a Weekend") == "startup"
 
     def test_engineering_topic(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._classify_category("Monorepo vs Polyrepo Architecture Patterns") == "engineering"
 
     def test_default_to_technology(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._classify_category("Something completely unrelated to anything") == "technology"
 
     def test_hardware_topic(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._classify_category("AMD vs NVIDIA GPU Benchmarks") == "hardware"
 
     def test_gaming_topic(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._classify_category("Indie Game Development with Godot Engine") == "gaming"
 
     def test_business_topic(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._classify_category("SaaS Metrics That Matter for Growth") == "business"
 
     def test_insights_topic(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._classify_category("State of Developer Productivity Survey Results") == "insights"
 
 
@@ -69,24 +76,24 @@ class TestClassifyCategory:
 
 class TestRewriteTitle:
     def test_removes_show_hn_prefix(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._rewrite_as_blog_topic("[Show HN] My Cool Project") == "My Cool Project"
 
     def test_removes_site_suffix(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._rewrite_as_blog_topic("Cool Article | TechCrunch") == "Cool Article"
 
     def test_clean_title_unchanged(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         assert d._rewrite_as_blog_topic("A Perfectly Normal Blog Title") == "A Perfectly Normal Blog Title"
 
     def test_removes_ask_hn_prefix(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         result = d._rewrite_as_blog_topic("[Ask HN] Best way to deploy ML models?")
         assert "[Ask HN]" not in result
 
     def test_removes_dash_site_suffix(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
         result = d._rewrite_as_blog_topic("Cool New Framework - InfoWorld")
         assert "InfoWorld" not in result
 
@@ -140,7 +147,7 @@ class TestDeduplicate:
     @pytest.mark.asyncio
     async def test_marks_exact_duplicates(self):
         pool = _make_pool(published_titles=["Docker Best Practices"])
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [
             DiscoveredTopic(title="Docker Best Practices", category="technology",
                            source="hn", source_url="http://example.com"),
@@ -154,7 +161,7 @@ class TestDeduplicate:
     @pytest.mark.asyncio
     async def test_marks_similar_titles(self):
         pool = _make_pool(published_titles=["how to use docker containers effectively"])
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [
             DiscoveredTopic(title="how to use docker containers in production",
                            category="technology", source="hn", source_url=""),
@@ -164,7 +171,7 @@ class TestDeduplicate:
 
     @pytest.mark.asyncio
     async def test_no_pool_skips_dedup(self):
-        d = TopicDiscovery(None)
+        d = TopicDiscovery(None, site_config=_TEST_SC)
         topics = [DiscoveredTopic(title="Test", category="tech", source="hn", source_url="")]
         result = await d._deduplicate(topics)
         assert result[0].is_duplicate is False
@@ -172,7 +179,7 @@ class TestDeduplicate:
     @pytest.mark.asyncio
     async def test_marks_pending_task_duplicates(self):
         pool = _make_pool(pending_topics=["Kubernetes Scaling Guide"])
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [
             DiscoveredTopic(title="Kubernetes Scaling Guide", category="engineering",
                            source="devto", source_url=""),
@@ -184,7 +191,7 @@ class TestDeduplicate:
     async def test_short_titles_not_fuzzy_matched(self):
         """Single content word titles skip fuzzy matching."""
         pool = _make_pool(published_titles=["advanced python tricks"])
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [
             DiscoveredTopic(title="Python", category="technology",
                            source="hn", source_url=""),
@@ -196,7 +203,7 @@ class TestDeduplicate:
     async def test_db_error_doesnt_crash(self):
         pool = AsyncMock()
         pool.fetch = AsyncMock(side_effect=Exception("connection lost"))
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [DiscoveredTopic(title="Test", category="tech", source="hn", source_url="")]
         result = await d._deduplicate(topics)
         assert result[0].is_duplicate is False  # Graceful fallback
@@ -212,7 +219,7 @@ class TestQueueTopics:
     async def test_queues_to_database(self):
         pool = AsyncMock()
         pool.execute = AsyncMock()
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [
             DiscoveredTopic(title="New Topic", category="technology",
                            source="hackernews", source_url="http://hn.com/123"),
@@ -225,7 +232,7 @@ class TestQueueTopics:
     async def test_handles_db_error(self):
         pool = AsyncMock()
         pool.execute = AsyncMock(side_effect=Exception("unique violation"))
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [DiscoveredTopic(title="Dup", category="tech", source="hn", source_url="")]
         queued = await d.queue_topics(topics)
         assert queued == 0
@@ -234,7 +241,7 @@ class TestQueueTopics:
     async def test_queues_multiple_topics(self):
         pool = AsyncMock()
         pool.execute = AsyncMock()
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [
             DiscoveredTopic(title=f"Topic {i}", category="technology",
                            source="hn", source_url="")
@@ -254,7 +261,7 @@ class TestQueueTopics:
             if call_count == 2:
                 raise Exception("DB error on second topic")
         pool.execute = AsyncMock(side_effect=_side_effect)
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         topics = [
             DiscoveredTopic(title=f"Topic {i}", category="tech", source="hn", source_url="")
             for i in range(3)
@@ -271,7 +278,7 @@ class TestQueueTopics:
 class TestScrapeHackerNews:
     @pytest.mark.asyncio
     async def test_returns_topics_from_hn(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         def _mock_response(url):
             resp = MagicMock()
@@ -300,7 +307,7 @@ class TestScrapeHackerNews:
 
     @pytest.mark.asyncio
     async def test_handles_network_error(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         # httpx is imported inside the source module after Phase F;
         # patch the source's httpx reference, not the legacy dispatcher's.
@@ -323,7 +330,7 @@ class TestScrapeHackerNews:
 class TestScrapeDevTo:
     @pytest.mark.asyncio
     async def test_returns_topics_from_devto(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         with patch("services.topic_sources.devto.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -345,7 +352,7 @@ class TestScrapeDevTo:
 
     @pytest.mark.asyncio
     async def test_handles_network_error(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         with patch("services.topic_sources.devto.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -437,7 +444,7 @@ class TestIsNewsOrJunk:
 class TestSearchByCategory:
     @pytest.mark.asyncio
     async def test_returns_topics_from_research_results(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(return_value=[
@@ -454,7 +461,7 @@ class TestSearchByCategory:
 
     @pytest.mark.asyncio
     async def test_empty_results_returns_empty_list(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(return_value=[])
@@ -466,7 +473,7 @@ class TestSearchByCategory:
 
     @pytest.mark.asyncio
     async def test_unknown_category_skipped(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(return_value=[])
@@ -479,7 +486,7 @@ class TestSearchByCategory:
 
     @pytest.mark.asyncio
     async def test_research_exception_returns_empty(self):
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(side_effect=RuntimeError("ddg down"))
@@ -493,7 +500,7 @@ class TestSearchByCategory:
     @pytest.mark.asyncio
     async def test_filters_titles_that_rewrite_to_empty(self):
         """Titles rejected by _rewrite_as_blog_topic (e.g. Show HN) should not appear."""
-        d = TopicDiscovery(AsyncMock())
+        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(return_value=[
@@ -521,7 +528,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_combines_sources_and_returns_top_n(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         # Stub all the source methods
@@ -547,7 +554,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_filters_brand_irrelevant(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[
@@ -567,7 +574,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_source_exception_does_not_crash(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[])
@@ -585,7 +592,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_max_topics_cap(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         # Generate 10 brand-relevant topics with distinct titles
@@ -621,7 +628,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_category_filter_applied(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool)
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[

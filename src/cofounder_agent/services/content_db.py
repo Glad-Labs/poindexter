@@ -531,12 +531,16 @@ class ContentDatabase(DatabaseServiceMixin):
                 # Calculate total cost from financial tracking (if implemented).
                 # Kept as a separate query because cost_logs is a different table and
                 # may not exist in all environments.
+                # Window is a fixed 30 days (matches Grafana Cost Analytics
+                # dashboard range). No site_config lookup needed here —
+                # this method runs from a context where threading SiteConfig
+                # in just to read one tunable is disproportionate.
                 total_cost = 0
                 try:
-                    from services.site_config import site_config as _sc
-                    _cost_days = _sc.get_int("cost_summary_window_days", 30)
-                    cost_query = f"SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '{_cost_days} days'"
-                    cost_result = await conn.fetchrow(cost_query)
+                    cost_result = await conn.fetchrow(
+                        "SELECT SUM(cost_usd) as total FROM cost_logs "
+                        "WHERE created_at >= NOW() - INTERVAL '30 days'"
+                    )
                     if cost_result and cost_result["total"]:
                         total_cost = round(float(cost_result["total"]), 2)
                 except (ValueError, TypeError, AttributeError) as e:
