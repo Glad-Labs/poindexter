@@ -48,22 +48,16 @@ async def trigger_nextjs_revalidation(
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
 
+    # revalidate_secret is is_secret=true in app_settings — stored as
+    # 'enc:v1:...' ciphertext. Must go through site_config.get_secret()
+    # to decrypt; raw DB read returns ciphertext which httpx rejects
+    # with "Illegal header value". Fallback path uses the same async
+    # helper so decryption happens in both branches.
     revalidate_secret = ""
     try:
-        from utils.route_utils import get_database_dependency
-        db_service = get_database_dependency()
-        pool = getattr(db_service, "pool", None)
-        if pool:
-            row = await pool.fetchrow(
-                "SELECT value FROM app_settings WHERE key = 'revalidate_secret'",
-            )
-            if row and row["value"]:
-                revalidate_secret = row["value"]
+        revalidate_secret = await site_config.get_secret("revalidate_secret")
     except Exception as e:
-        logger.warning("Failed to fetch revalidate_secret from DB: %s", e)
-
-    if not revalidate_secret:
-        revalidate_secret = site_config.get("revalidate_secret", "")
+        logger.warning("Failed to fetch revalidate_secret from site_config: %s", e)
     environment = (
         site_config.get("environment", "development") or "development"
     ).lower()

@@ -173,12 +173,19 @@ def _make_mock_httpx_client(status_code: int = 200, text: str = "ok"):
 
 
 def _mock_site_config():
-    """Return a mock site_config that provides a revalidate_secret."""
+    """Return a mock site_config that provides a revalidate_secret.
+
+    Post-2026-04-24: revalidate_secret is read via async get_secret()
+    because it's stored encrypted (enc:v1:...) in app_settings. Older
+    tests used site_config.get() — kept for back-compat on non-secret
+    fields like public_site_url.
+    """
     cfg = MagicMock()
     cfg.get = lambda key, default=None: {
         "revalidate_secret": "test-secret",
         "public_site_url": "http://localhost:3000",
     }.get(key, default)
+    cfg.get_secret = AsyncMock(return_value="test-secret")
     return cfg
 
 
@@ -272,6 +279,7 @@ class TestTriggerNextjsRevalidation:
             "revalidate_secret": "test-secret",
             "public_site_url": "http://my-site.example.com",
         }.get(key, default)
+        mock_cfg.get_secret = AsyncMock(return_value="test-secret")
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(
                 ["/blog"], site_config=mock_cfg,
@@ -291,6 +299,7 @@ class TestTriggerNextjsRevalidation:
             "public_site_url": "",
             "next_public_api_base_url": "http://stripped.example.com/api",
         }.get(key, default)
+        mock_cfg.get_secret = AsyncMock(return_value="test-secret")
         with patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(
                 ["/blog"], site_config=mock_cfg,
