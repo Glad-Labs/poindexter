@@ -46,4 +46,8 @@ def load_all() -> None:
     from services.integrations.handlers import retention_downsample  # noqa: F401
     from services.integrations.handlers import retention_ttl_prune  # noqa: F401
 
+    # tap.*
+    from services.integrations.handlers import tap_builtin_topic_source  # noqa: F401
+    from services.integrations.handlers import tap_singer_subprocess  # noqa: F401
+
     logger.info("integrations.handlers.load_all: handler modules imported")
