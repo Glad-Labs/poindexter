@@ -227,6 +227,16 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.reload_site_config", "ReloadSiteConfigJob"),
         ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
         ("jobs", "services.jobs.sync_newsletter_subscribers", "SyncNewsletterSubscribersJob"),
+        # Media backfill — produces podcast audio + video for published
+        # posts that don't have them yet. Orphaned after the IdleWorker
+        # removal (gitea#229) — re-registered 2026-04-24 so approved
+        # posts actually get their podcast + video. Pipeline only
+        # generates SCRIPTS during stage 4B; these jobs render audio+video.
+        ("jobs", "services.jobs.backfill_podcasts", "BackfillPodcastsJob"),
+        ("jobs", "services.jobs.backfill_videos", "BackfillVideosJob"),
+        # Pgvector retention — GH-106. Prunes stale embeddings using
+        # per-source TTLs. Still in initial rollout; weekly cadence.
+        ("jobs", "services.jobs.collapse_old_embeddings", "CollapseOldEmbeddingsJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
