@@ -88,10 +88,14 @@ class RegenerateStockImagesJob:
 
             import cloudinary
             import cloudinary.uploader
+            # cloudinary_api_key / cloudinary_api_secret are is_secret=true
+            # in app_settings — fetch via get_secret() so we configure the
+            # client with plaintext rather than the enc:v1:<ciphertext>
+            # blob .get() returns (GH-107).
             cloudinary.config(
                 cloud_name=site_config.get("cloudinary_cloud_name"),
-                api_key=site_config.get("cloudinary_api_key"),
-                api_secret=site_config.get("cloudinary_api_secret"),
+                api_key=await site_config.get_secret("cloudinary_api_key"),
+                api_secret=await site_config.get_secret("cloudinary_api_secret"),
             )
 
             regenerated = 0

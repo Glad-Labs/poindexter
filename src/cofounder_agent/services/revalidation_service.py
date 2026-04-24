@@ -83,16 +83,13 @@ async def trigger_nextjs_revalidation(
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
 
-    # revalidate_secret is is_secret=true in app_settings — stored as
-    # 'enc:v1:...' ciphertext. Must go through site_config.get_secret()
-    # to decrypt; raw DB read returns ciphertext which httpx rejects
-    # with "Illegal header value". Fallback path uses the same async
-    # helper so decryption happens in both branches.
-    revalidate_secret = ""
-    try:
-        revalidate_secret = await site_config.get_secret("revalidate_secret")
-    except Exception as e:
-        logger.warning("Failed to fetch revalidate_secret from site_config: %s", e)
+    # revalidate_secret is is_secret=true in app_settings — must use
+    # get_secret() for decryption. Previously we did a raw SELECT here
+    # (which bypassed decryption entirely) and a .get() fallback (which
+    # returned the enc:v1:<ciphertext> blob); both shipped the wrong
+    # value as the x-revalidate-secret header and the public site 401'd
+    # every revalidation (GH-107, prod incident 2026-04-23).
+    revalidate_secret = await site_config.get_secret("revalidate_secret", "")
     environment = (
         site_config.get("environment", "development") or "development"
     ).lower()
