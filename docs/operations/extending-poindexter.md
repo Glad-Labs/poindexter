@@ -1,0 +1,423 @@
+# Extending Poindexter
+
+**Last Updated:** 2026-04-23
+
+How to add new capabilities to Poindexter without forking the monorepo
+or touching 1,000-line files. Every extension point below corresponds
+to a Protocol in `src/cofounder_agent/plugins/`; the plugin architecture
+umbrella ([GH-64](https://github.com/Glad-Labs/poindexter/issues/64))
+covers the long-range roadmap.
+
+This guide is prescriptive. If you want design rationale, read
+[`architecture/plugin-architecture.md`](../architecture/plugin-architecture.md).
+
+---
+
+## Quick picker
+
+| I want to...                                              | Add a...     | Protocol                        | Example                                    |
+| --------------------------------------------------------- | ------------ | ------------------------------- | ------------------------------------------ |
+| Run a new step in the content pipeline                    | **Stage**    | `plugins/stage.py::Stage`       | `services/stages/writer_self_review.py`    |
+| Score a draft against a new quality rule                  | **Reviewer** | `plugins/stage.py::Reviewer`    | `services/content_validator.py`            |
+| Publish finished posts to a new social platform           | **Adapter**  | `plugins/stage.py::Adapter`     | `services/social_adapters/bluesky.py`      |
+| Generate media (image / audio / video) from a new engine  | **Provider** | `plugins/stage.py::Provider`    | `services/providers/sdxl.py` (in-progress) |
+| Ingest content ideas from a new source (API, file, queue) | **Tap**      | `plugins/tap.py::Tap`           | `services/topic_sources/hackernews.py`     |
+| Run a background probe for health / business metrics      | **Probe**    | `plugins/probe.py::Probe`       | `brain/health_probes.py`                   |
+| Schedule a recurring background task                      | **Job**      | `plugins/job.py::Job`           | `services/jobs/reload_site_config.py`      |
+| Swap the LLM backend (Ollama → vLLM / OpenAI / Claude)    | **Provider** | `plugins/provider.py::Provider` | Phase J, tracked at GH-104                 |
+
+Each column below describes the full "how" per extension type.
+
+---
+
+## 1. Adding a Stage
+
+A **Stage** is a pipeline step that runs on a single content task.
+Stages chain via `StageRunner`; order lives in the
+`pipeline.stages.order` app_setting.
+
+### 1a. Minimum viable Stage
+
+Create `src/cofounder_agent/services/stages/my_stage.py`:
+
+```python
+from typing import Any
+from plugins.stage import StageResult
+
+
+class MyStage:
+    name = "my_stage"
+    description = "One-line description of what this stage does."
+    # Optional: override default timeout (default 120s)
+    timeout_seconds = 60
+    # Optional: whether a failure should halt the chain (default True)
+    halts_on_failure = False
+
+    async def execute(
+        self,
+        context: dict[str, Any],
+        config: dict[str, Any],
+    ) -> StageResult:
+        # Read from context. Common keys: task_id, topic, content, site_config.
+        topic = context.get("topic", "")
+
+        # Do the work. Any LLM/DB/IO calls go here.
+        updated_content = do_something(topic)
+
+        # Return. context_updates is shallow-merged into the shared context.
+        return StageResult(
+            ok=True,
+            detail=f"stage ran for topic={topic!r}",
+            context_updates={"my_stage_output": updated_content},
+        )
+```
+
+### 1b. Register it
+
+Add to `src/cofounder_agent/plugins/registry.py` — the stage must be
+importable by name. The registry is the gateway; stages not registered
+are invisible to StageRunner.
+
+### 1c. Slot it into the pipeline order
+
+```sql
+-- Insert after cross_model_qa, before finalize_task
+UPDATE app_settings
+SET value = '["verify_task", "generate_content", "writer_self_review",
+              "quality_evaluation", "url_validation", "replace_inline_images",
+              "source_featured_image", "cross_model_qa", "my_stage",
+              "generate_seo_metadata", "generate_media_scripts",
+              "capture_training_data", "finalize_task"]'
+WHERE key = 'pipeline.stages.order';
+```
+
+Or use the CLI:
+
+```bash
+poindexter settings set pipeline.stages.order '["verify_task", ...]'
+```
+
+No worker restart needed — the orchestrator reloads the stage order
+each task.
+
+### 1d. Stage-specific config
+
+Each stage reads its config from `plugin.stage.<name>` in app_settings.
+Standard fields honored by the runner:
+
+- `enabled` (bool, default true) — runtime off-switch
+- `timeout_seconds` (int) — per-invocation deadline
+- `halts_on_failure` (bool) — whether to abort the chain on error
+
+Custom fields (whatever your stage needs) live alongside. Example:
+
+```json
+{
+  "enabled": true,
+  "timeout_seconds": 90,
+  "halts_on_failure": false,
+  "my_stage_model": "ollama/qwen3:8b",
+  "my_stage_max_tokens": 1024
+}
+```
+
+### 1e. Test it
+
+Every stage ships with a unit test that builds a fake context + config
+and asserts the returned `StageResult`. Model the test on
+`tests/unit/services/stages/test_*.py`. Test that `halts_on_failure`
+and `timeout_seconds` are honored under the failure paths you care about.
+
+---
+
+## 2. Adding a Reviewer
+
+A **Reviewer** produces a score (0-100) and a pass/fail judgment on a
+draft. Reviewers run inside the `cross_model_qa` stage and contribute to
+the weighted final score.
+
+```python
+from plugins.stage import ReviewerResult
+
+
+class MyReviewer:
+    name = "my_quality_check"
+    description = "Checks for specific brand-voice violations."
+
+    async def review(
+        self,
+        title: str,
+        content: str,
+        topic: str,
+        context: dict,
+    ) -> ReviewerResult:
+        violations = my_rule_engine(content)
+        if not violations:
+            return ReviewerResult(
+                reviewer="my_quality_check",
+                approved=True,
+                score=95,
+                feedback="no violations found",
+                provider="programmatic",
+            )
+        return ReviewerResult(
+            reviewer="my_quality_check",
+            approved=False,
+            score=max(0, 100 - len(violations) * 10),
+            feedback="; ".join(v.description for v in violations[:3]),
+            provider="programmatic",
+        )
+```
+
+### How your score is weighted
+
+Weights live in `app_settings`:
+
+- `qa_validator_weight` (default 0.4) — programmatic reviewers
+- `qa_critic_weight` (default 0.6) — LLM critics
+- `qa_gate_weight` (default 0, was 0.3) — binary pass/fail gates
+
+Pick the right `provider` string. The aggregator maps provider → weight:
+
+| Provider string                                                    | Weight source         |
+| ------------------------------------------------------------------ | --------------------- |
+| `programmatic`                                                     | `qa_validator_weight` |
+| `anthropic`, `google`, `ollama`                                    | `qa_critic_weight`    |
+| `consistency_gate`, `url_verifier`, `vision_gate`, `web_factcheck` | `qa_gate_weight`      |
+
+If your reviewer answers a binary question (URL resolves / fact
+verified / layout passes), use a gate provider and let `qa_gate_weight=0`
+keep it as pure veto. If it produces a meaningful graded score, use
+`programmatic`.
+
+### Register
+
+Add to `services/multi_model_qa.py::MultiModelQA.review()` in the
+reviewer-assembly section. Future plugin-architecture work (Phase E)
+will move this to an entry-point discovery.
+
+---
+
+## 3. Adding an Adapter (new publishing platform)
+
+Adapters publish finished posts to external platforms. They sit after
+the approval gate, in the `publish_post` flow rather than the pipeline
+itself.
+
+Existing adapters live in `services/social_adapters/`:
+
+- `bluesky.py` — working
+- `threads.py` — working
+- `linkedin.py`, `reddit.py`, `youtube.py` — stubbed (`NotImplementedError`, tracked at GH-40)
+
+### Minimum shape
+
+```python
+class MyAdapter:
+    name = "my_platform"
+    description = "Posts to my platform's API."
+
+    async def publish(
+        self,
+        post: PostRecord,
+        config: dict[str, Any],
+    ) -> AdapterResult:
+        # Transform the post for this platform's format
+        payload = self._format(post)
+
+        # Call the platform's API
+        try:
+            response = await self._http_post(config["api_url"], payload)
+            return AdapterResult(
+                ok=True,
+                platform_url=response.get("url"),
+                platform_post_id=response.get("id"),
+            )
+        except Exception as e:
+            return AdapterResult(
+                ok=False,
+                error=str(e),
+            )
+```
+
+### Config
+
+Store credentials in app_settings with `is_secret=true` so they're
+redacted from logs and lists:
+
+```bash
+poindexter settings set my_platform_api_token "xxx" --category secrets
+poindexter settings set my_platform_enabled true
+```
+
+Register the adapter in `services/social_publisher.py` platform map.
+
+---
+
+## 4. Adding a new LLM Provider (Phase J)
+
+Tracked at [GH-104](https://github.com/Glad-Labs/poindexter/issues/104).
+
+The `LLMProvider` Protocol abstracts the inference backend. Today
+there's effectively one implementation (Ollama); the Phase J refactor
+exposes it as a registry so operators can choose between Ollama,
+vLLM, llama.cpp server, OpenAI-compatible endpoints, and paid cloud
+providers (Anthropic, Google, OpenRouter) via one app_setting.
+
+Until Phase J ships, `pipeline_writer_model` accepts the `ollama/<name>`
+prefix and routes to Ollama. Other provider prefixes will be valid once
+the registry lands.
+
+```python
+# Future shape (Phase J):
+class MyProvider:
+    name = "myprovider"
+
+    async def complete(
+        self,
+        model: str,
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: int = 2048,
+    ) -> ProviderResponse:
+        ...
+
+    async def embed(self, text: str) -> list[float]:
+        ...
+```
+
+---
+
+## 5. Adding a Tap (new topic source)
+
+A **Tap** pulls content ideas from an external source and emits them
+as candidate topics. Taps run on a schedule (driven by topic discovery)
+and their output feeds the content pipeline.
+
+Existing taps live in `services/topic_sources/`:
+
+- `hackernews.py` — HN top stories
+- `devto.py` — Dev.to top posts by tag
+- `knowledge.py` — internal brain knowledge
+
+Each implements `.extract(pool, config) → list[DiscoveredTopic]`.
+
+### Minimum shape
+
+```python
+from services.topic_sources.base import TopicSource, DiscoveredTopic
+
+
+class MyTap:
+    async def extract(
+        self,
+        pool,
+        config: dict,
+    ) -> list[DiscoveredTopic]:
+        # Fetch from your source
+        items = await fetch_from_api(config["api_url"])
+
+        # Convert to DiscoveredTopic
+        return [
+            DiscoveredTopic(
+                title=item["title"],
+                source="my_tap",
+                score=item.get("score", 50),
+                category="technology",
+                metadata={"url": item["url"]},
+            )
+            for item in items
+        ]
+```
+
+Singer-protocol intake is tracked at
+[GH-103](https://github.com/Glad-Labs/poindexter/issues/103) — that
+lets you pull from 600+ off-the-shelf Singer taps without writing
+any connector code.
+
+---
+
+## 6. Adding a Job (scheduled background task)
+
+A **Job** is a recurring task (cron-like) that runs independently of
+the content pipeline. Examples: reload app_settings cache, prune stale
+embeddings, re-embed posts, scrape HackerNews.
+
+Jobs live in `services/jobs/`.
+
+```python
+from typing import Any
+
+
+class MyJob:
+    name = "my_job"
+    # apscheduler trigger: "interval" or "cron"
+    trigger = "interval"
+    # For interval: seconds. For cron: cron-style string.
+    schedule = 300  # every 5 minutes
+
+    async def run(self, *, site_config: Any = None, **kwargs) -> None:
+        # Do the work. Anything long-running belongs in a Job.
+        ...
+```
+
+Register in `plugins/scheduler.py`. The scheduler auto-picks up jobs
+based on `trigger` + `schedule`.
+
+---
+
+## 7. Adding a Probe (health / business metric)
+
+A **Probe** answers a question about current system state (health,
+business metric, capacity). Probes run on the brain daemon side and
+emit Prometheus metrics consumed by Grafana + Alertmanager.
+
+```python
+from prometheus_client import Gauge
+
+MY_PROBE_GAUGE = Gauge("my_probe_value", "What this probe measures")
+
+
+class MyProbe:
+    name = "my_probe"
+    interval_seconds = 60
+
+    async def probe(self) -> None:
+        value = await measure_something()
+        MY_PROBE_GAUGE.set(value)
+```
+
+Register in `brain/probe_registry.py`.
+
+---
+
+## Anti-patterns — please don't
+
+- **Don't import across stages.** Stages communicate through the
+  context dict, never by importing each other. If stage B needs data
+  from stage A, stage A writes it to context; stage B reads from context.
+- **Don't bypass `site_config`.** Services should not call `os.getenv()`
+  directly. Read config through `site_config.get()` so DB values win
+  over env, and post-Phase-H dependency injection works.
+- **Don't hardcode model names.** Writer / critic / research model
+  identifiers live in `app_settings` (`pipeline_writer_model`, etc.).
+  Even for experiments, use the DB.
+- **Don't write secrets to stdout / audit log.** Use the `is_secret=true`
+  flag on the setting row — `SiteConfig.get_secret()` redacts values
+  from the in-memory cache and logs.
+- **Don't skip tests.** Every Stage / Reviewer / Adapter / Tap / Job /
+  Probe has a unit test. The repo's 5,000+ test suite is the moat
+  against drift between what the docs promise and what the code does.
+
+---
+
+## See also
+
+- [Plugin architecture](../architecture/plugin-architecture.md) —
+  full roadmap + rationale
+- [Services reference](../reference/services.md) — catalog of every
+  service in the worker
+- [Content pipeline](../architecture/content-pipeline.md) — how the
+  Stage chain fits together
+- [App settings reference](../reference/app-settings.md) — every
+  DB-backed config key

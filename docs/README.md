@@ -27,9 +27,10 @@ in 30 minutes without any of the reading below.
   12-stage `Stage` plugin chain, how `StageRunner` orders and
   times them, and how cross-model QA short-circuits the pipeline
   when content is rejected.
-- **[Multi-agent pipeline](architecture/multi-agent-pipeline.md)** —
-  writer / reviewer / adversarial model orchestration and the
-  multi-model QA veto flow.
+- **[Multi-model QA](architecture/content-pipeline.md#stage-chain)** —
+  writer / critic / gate-reviewer orchestration and the veto flow.
+  Same document as the pipeline above; the QA stages (`cross_model_qa`
+  with its rewrite loop) live in the middle of the chain.
 - **[Plugin architecture](architecture/plugin-architecture.md)** —
   the six plugin Protocols (Tap, Probe, Job, Stage, Pack,
   LLMProvider) and the phased refactor that's consolidating
@@ -50,6 +51,9 @@ in 30 minutes without any of the reading below.
   startup, and how to verify each layer came up correctly.
 - **[CLI reference](operations/cli-reference.md)** — every `poindexter`
   subcommand with flags, examples, and JSON output mode.
+- **[Extending Poindexter](operations/extending-poindexter.md)** —
+  how to add Stages, Reviewers, Adapters, Providers, Taps, Probes,
+  and Jobs. Step-by-step per extension type with code templates.
 - **[Environment variables](operations/environment-variables.md)** —
   the small set of env vars needed for Docker bootstrap. Most
   configuration lives in the `app_settings` Postgres table and

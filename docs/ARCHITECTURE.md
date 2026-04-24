@@ -533,7 +533,7 @@ The roadmap is tracked via GitHub milestones at
 
 ## Related Documentation
 
-- **[Multi-Agent Pipeline](architecture/multi-agent-pipeline.md)** — content pipeline + cross-model QA
+- **[Content Pipeline](architecture/content-pipeline.md)** — the 12-stage Stage plugin chain + cross-model QA
 - **[Database Schema](architecture/database-schema.md)** — every table + migration system
 - **[API Reference](api/README.md)** — REST endpoints
 - **[Local Development](operations/local-development-setup.md)** — setup walkthrough
