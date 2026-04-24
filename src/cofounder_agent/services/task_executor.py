@@ -33,14 +33,84 @@ from .webhook_delivery_service import emit_webhook_event
 # Telegram notifications now routed through OpenClaw gateway (no direct bot token needed)
 
 
+async def _try_outbound_deliver(
+    row_name: str, message: str, site_config: Any
+) -> bool:
+    """Attempt to route a notification through the declarative integrations
+    framework.
+
+    Returns ``True`` if the framework handled it (success or silent skip
+    because the row isn't enabled yet isn't a success — that returns
+    ``False`` so the caller falls back). Returns ``False`` if the
+    framework isn't available, the row doesn't exist/isn't enabled, or
+    the handler raised.
+
+    Success path: framework took ownership, counters bumped on the row,
+    Integration Health dashboard reflects it.
+
+    Fallback path: caller proceeds with direct-API behavior.
+    """
+    from services.integrations.outbound_dispatcher import (
+        OutboundWebhookError,
+        deliver,
+    )
+    from services.integrations.shared_context import get_database_service
+
+    db_service = get_database_service()
+    if db_service is None or db_service.pool is None:
+        return False
+
+    try:
+        await deliver(row_name, message, db_service=db_service, site_config=site_config)
+        return True
+    except OutboundWebhookError:
+        # Row missing or disabled — the two cases where the legacy path
+        # is the right fallback. Don't log loudly; the legacy path will
+        # log its own outcome.
+        return False
+    except Exception as exc:
+        # Handler raised after we got past the enabled check — this is
+        # a real delivery failure. Log it, but still fall back to the
+        # legacy path so the notification isn't lost while the operator
+        # debugs the framework-side configuration.
+        _logger = get_logger(__name__)
+        _logger.warning(
+            "[NOTIFY:%s] declarative deliver() failed (%s) — falling back to direct API",
+            row_name, exc,
+        )
+        return False
+
+
 async def _notify_discord(message: str, site_config: Any) -> None:
-    """Send ops notification to Discord #ops channel via webhook (direct API call)."""
+    """Send ops notification to Discord #ops channel.
+
+    Routing preference:
+
+    1. If the ``discord_ops`` row in ``webhook_endpoints`` is enabled AND
+       the integrations framework has a registered DB service, go through
+       :func:`services.integrations.outbound_dispatcher.deliver`. This
+       bumps the row's counters, surfaces failures on the Integration
+       Health dashboard, and uses the row's URL (which may differ from
+       ``discord_ops_webhook_url`` if the operator wants to point at a
+       different channel).
+    2. Otherwise fall back to the direct-API path: load the webhook URL
+       from ``app_settings.discord_ops_webhook_url`` and POST.
+
+    The fallback stays in place so that (a) early-boot paths before the
+    integrations framework is registered still send notifications, and
+    (b) operators who haven't enabled the declarative row see no change.
+    """
     _logger = get_logger(__name__)
     if site_config is None:
         _logger.debug("[NOTIFY:discord] site_config is None — skipping")
         return
+
+    # (1) Try the declarative path first.
+    if await _try_outbound_deliver("discord_ops", message, site_config):
+        return
+
+    # (2) Direct-API fallback.
     try:
-        # Load webhook URL from app_settings (DB-first config)
         webhook_url = site_config.get("discord_ops_webhook_url", "")
         if not webhook_url:
             _logger.debug("[NOTIFY:discord] No discord_ops_webhook_url configured — skipping")
@@ -70,6 +140,10 @@ async def _notify_telegram(message: str, site_config: Any) -> None:
     _logger = get_logger(__name__)
     if site_config is None:
         _logger.debug("[NOTIFY:telegram] site_config is None — skipping")
+        return
+
+    # Try the declarative path first (same pattern as _notify_discord).
+    if await _try_outbound_deliver("telegram_ops", message, site_config):
         return
 
     # The bot token is a secret — stored encrypted in app_settings with
