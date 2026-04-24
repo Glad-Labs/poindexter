@@ -917,7 +917,9 @@ class TaskExecutor:
                     if preview_url:
                         msg += f"Preview: {preview_url}\n"
                     msg += f"Approve: /approve-post {task_id[:8]}"
-                    await _notify_openclaw(msg, self.site_config, critical=True)
+                    # Routine pipeline event — Discord-only per operator policy.
+                    # Telegram is reserved for severity=critical infra alerts.
+                    await _notify_openclaw(msg, self.site_config, critical=False)
 
                 return
 
@@ -1024,7 +1026,7 @@ class TaskExecutor:
                     logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
                 await _notify_openclaw(
                     f"Failed: \"{topic}\" - {str(error_msg)[:100]}",
-                    self.site_config, critical=True,
+                    self.site_config, critical=False,
                 )
             else:
                 logger.info(
