@@ -37,4 +37,9 @@ def load_all() -> None:
     from services.integrations.handlers import webhook_revenue  # noqa: F401
     from services.integrations.handlers import webhook_subscriber  # noqa: F401
 
+    # outbound.*
+    from services.integrations.handlers import outbound_discord  # noqa: F401
+    from services.integrations.handlers import outbound_telegram  # noqa: F401
+    from services.integrations.handlers import outbound_vercel_isr  # noqa: F401
+
     logger.info("integrations.handlers.load_all: handler modules imported")
