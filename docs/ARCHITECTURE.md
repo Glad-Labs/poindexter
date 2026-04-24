@@ -85,9 +85,11 @@ content with human oversight**, not "AI content factory" and not
 │         POINDEXTER WORKER (Central Brain)                        │
 │                     FastAPI + Python                             │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │  Model Router (Ollama-only pipeline; HF emergency fallback)│ │
-│  │  Multi-Agent Orchestrator & Task Distribution             │ │
-│  │  Memory System & Context Management                       │ │
+│  │  UnifiedOrchestrator  →  ContentRouterService              │ │
+│  │     → StageRunner (12 sequential Stage plugins)            │ │
+│  │  Provider Protocol (Ollama primary, cloud providers        │ │
+│  │     pluggable for fallback — GH-104)                       │ │
+│  │  Semantic Memory (pgvector, writer-segregated)             │ │
 │  └────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
                               ↕️ Internal APIs
@@ -110,7 +112,7 @@ execution and multi-agent orchestration.
 1. **POST `/api/tasks`**: User creates a task (e.g., `task_type="blog_post"`).
 2. **PostgreSQL**: Task is stored as `pending`.
 3. **TaskExecutor**: Background polling picks up the task and calls `UnifiedOrchestrator`.
-4. **UnifiedOrchestrator**: Parses intent and routes to the correct Agent Pipeline.
+4. **UnifiedOrchestrator**: Routes by `task_type` to the right pipeline (e.g. `ContentRouterService` → `StageRunner` for blog posts).
 
 ### Data Architecture
 
@@ -127,25 +129,25 @@ execution and multi-agent orchestration.
 ### Request Flow
 
 ```text
-1. User Action (API call or scheduled task)
+1. User Action (POST /api/tasks or scheduled task)
    ↓
-2. REST API call to the Poindexter worker
+2. FastAPI route handler validates payload, writes task row (status=pending)
    ↓
-3. Request Processing & Routing
+3. TaskExecutor polling loop claims the row (SELECT ... FOR UPDATE SKIP LOCKED)
    ↓
-4. Multi-Agent Orchestrator selects agents
+4. UnifiedOrchestrator routes by task_type → ContentRouterService
    ↓
-5. Agents execute tasks (in parallel when possible)
+5. StageRunner runs the 12-stage pipeline (generate → self-review → QA → ...)
    ↓
-6. Model Router selects best AI model
+6. Each stage picks its own model via app_settings (writer, critic, research)
    ↓
-7. LLM call (Ollama local inference)
+7. Provider Protocol invokes the configured LLM (Ollama by default)
    ↓
-8. Response aggregation
+8. cross_model_qa aggregates reviewer scores; rewrite loop if below threshold
    ↓
-9. Result stored in PostgreSQL
+9. finalize_task writes content_tasks (status=awaiting_approval)
    ↓
-10. Response sent back to UI
+10. Human operator approves via /api/tasks/{id}/approve → published
 ```
 
 ---
@@ -175,14 +177,14 @@ execution and multi-agent orchestration.
 
 **Backend Features:**
 
-- RESTful API (160+ endpoints)
+- RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- Multi-agent orchestration
-- Model routing and fallback
-- Memory system with context awareness
-- Async task processing
-- Error handling and recovery
-- Comprehensive logging
+- Stage-plugin pipeline (12 sequential stages with halt semantics)
+- Provider Protocol abstraction (Ollama primary; cloud providers pluggable per GH-104)
+- Semantic memory via pgvector (writer-segregated)
+- Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`
+- Domain-typed errors via `services/error_handler.py`
+- Structured logging via `structlog` and audit-log sidecar
 
 ### Infrastructure & Services
 
@@ -363,10 +365,10 @@ As of the Phase F+G refactor, the pipeline runs through `StageRunner` and 12 seq
 #### Main API (`main.py`)
 
 - FastAPI application
-- 50+ REST endpoints
+- ~70 REST endpoints (see [API reference](../api/README.md) for the inventory)
 - Error handling and logging
 - CORS middleware
-- Request/response validation
+- Request/response validation via Pydantic models
 
 #### Model Router (`services/model_router.py`)
 
