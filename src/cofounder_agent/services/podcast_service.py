@@ -39,7 +39,30 @@ logger = get_logger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-PODCAST_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
+def _poindexter_data_root() -> Path:
+    """Locate the .poindexter data root that's bind-mounted to the host.
+
+    The worker container's bind mount lives at ``/root/.poindexter`` regardless
+    of which user the process runs as (the worker runs as ``appuser`` but the
+    mount target is owned by root). ``~`` expands to ``/home/appuser`` which
+    is NOT bind-mounted — writes there are invisible to the host, so the
+    video-server-on-host can't find audio files produced inside the worker.
+
+    Order of preference:
+    1. ``POINDEXTER_DATA_ROOT`` env var — explicit override
+    2. ``/root/.poindexter`` if it exists (standard docker-compose layout)
+    3. ``~/.poindexter`` as a last-resort fallback (tests, dev outside Docker)
+    """
+    override = os.environ.get("POINDEXTER_DATA_ROOT")
+    if override:
+        return Path(override)
+    root_mount = Path("/root/.poindexter")
+    if root_mount.is_dir():
+        return root_mount
+    return Path(os.path.expanduser("~")) / ".poindexter"
+
+
+PODCAST_DIR = _poindexter_data_root() / "podcast"
 
 # Voice rotation pool — cycle through for variety across episodes
 VOICE_POOL = [
