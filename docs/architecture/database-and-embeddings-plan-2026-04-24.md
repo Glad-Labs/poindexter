@@ -1,18 +1,18 @@
 # Database + Embeddings Plan
 
 **Date:** 2026-04-24
-**Status:** Approved with scope adjustment on Phase 4 — see decisions log
+**Status:** Phase 4 framework split to [GH-110](https://github.com/Glad-Labs/poindexter/issues/110) and deferred. Phases 1/3/5 proceeding.
 **Covers:** GH-27 (feedback-loop tables), GH-57 (schema audit), GH-106 (embedding retention)
 **Scope:** Everything in the PostgreSQL database that needs attention before we add more features
 
 ## Operator decisions (2026-04-24)
 
-| Decision                     | Choice                                                                                                                                                                   |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| TTL values (30 / 90 / 180 d) | Approved as proposed                                                                                                                                                     |
-| Temporal summarization       | On-demand + threshold trigger (not weekly batch)                                                                                                                         |
-| `gpu_metrics` specifically   | **Rescoped:** don't ship a one-off prune job. Build a standardized retention-job framework so every new tap/source gets retention enable/disable by config, not by code. |
-| `experiments` table          | Leave dormant (GH-96)                                                                                                                                                    |
+| Decision                     | Choice                                                                                                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TTL values (30 / 90 / 180 d) | Approved as proposed                                                                                                                                       |
+| Temporal summarization       | On-demand + threshold trigger (not weekly batch)                                                                                                           |
+| `gpu_metrics` specifically   | **Deferred:** standardized retention-job framework split to [GH-110](https://github.com/Glad-Labs/poindexter/issues/110). Not blocking embeddings cleanup. |
+| `experiments` table          | Leave dormant (GH-96)                                                                                                                                      |
 
 ---
 
@@ -219,7 +219,13 @@ After Phase 2: 40% reduction in embeddings rows. Primarily targets claude_sessio
 
 After Phase 3: 7,095 → ~500 claude_sessions rows (approx). The 6,369-row Apr 20 backfill dump becomes 3 summaries.
 
-### Phase 4 — Standardized retention-job framework (1-2 days)
+### Phase 4 — Standardized retention-job framework (deferred, tracked in [GH-110](https://github.com/Glad-Labs/poindexter/issues/110))
+
+**Split to its own issue on 2026-04-24.** Not blocking embeddings cleanup — proceed with Phase 1 and Phase 5 independently.
+
+The rest of this section is retained for reference but execution is deferred.
+
+---
 
 **Rescoped from "add a gpu_metrics prune job" to "build the framework so every tap/source declares retention as data, not code."**
 
@@ -299,11 +305,16 @@ After Phase 5: 5 of 7 feedback-loop tables populating. Only `external_metrics` a
 
 ---
 
-## Execution order (post-approval)
+## Execution order
 
-1. Phase 1 (indexes + seeded policy table rows, all `enabled=false`) — low-risk, ~1 hour
-2. Phase 4 framework first, then flip each policy on as we're ready to verify — this _replaces_ the one-shot prune in Phase 2
-3. Phase 3 temporal summarization plugged into the Phase 4 runner as `claude_sessions_temporal` handler
-4. Phase 5 (webhook handlers) independent of the above, can ship in parallel
+**Proceeding now:**
 
-Phase 2 as originally written (one-shot manual prune) is superseded by Phase 4's declarative runner — pruning happens when the policy is flipped on, not as a one-time operation.
+1. **Phase 1** — drop dead index + add `idx_embeddings_created_at`. ~1 hour. No data touched; safe.
+2. **Phase 5** — Lemon Squeezy + Resend webhook handlers. Independent of retention work. ~half day.
+
+**Deferred:**
+
+3. **Phase 4** — standardized retention-job framework → [GH-110](https://github.com/Glad-Labs/poindexter/issues/110). When this lands it will replace what was originally drafted as Phases 2 and 3 (one-shot prune + bespoke summarizer) with declarative policies.
+4. **Phase 2 / Phase 3 (embedding cleanup itself)** — deferred until Phase 4 ships. 13k rows / 126 MB is not urgent; the right move is to wait for the framework rather than hand-roll a prune now that we know we'd throw it away.
+
+**Rationale:** storage isn't the pain. Repeated one-off scripts are the pain. Do the low-risk index work now, build the feedback-loop webhook handlers, and let the retention runner be the first (and only) retention job we write.
