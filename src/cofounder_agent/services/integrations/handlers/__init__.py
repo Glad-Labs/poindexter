@@ -1,8 +1,8 @@
 """Handler modules for each integration surface.
 
 Import side-effects register handlers via
-``integrations.handlers.register_handler`` decorators. Adding a new
-handler = add a new module here and import it in :func:`load_all`.
+``integrations.registry.register_handler`` decorators. Adding a new
+handler = add a new module here and add an import line in :func:`load_all`.
 
 We do eager imports rather than entry_point discovery because:
 
@@ -29,7 +29,12 @@ def load_all() -> None:
     registry enforces single-registration.
     """
     # Import inside the function so module import doesn't load handlers
-    # during test collection unless load_all() is called.
-    # Phase 1 handlers land in follow-up commits.
-    # Keep this list alphabetized.
-    pass
+    # during test collection unless load_all() is called. Keep this
+    # list alphabetized by surface then handler name.
+
+    # webhook.*
+    from services.integrations.handlers import webhook_alertmanager  # noqa: F401
+    from services.integrations.handlers import webhook_revenue  # noqa: F401
+    from services.integrations.handlers import webhook_subscriber  # noqa: F401
+
+    logger.info("integrations.handlers.load_all: handler modules imported")
