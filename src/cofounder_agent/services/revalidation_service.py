@@ -36,6 +36,41 @@ async def trigger_nextjs_revalidation(
     if tags is None:
         tags = ["posts", "post-index"]
 
+    # (1) Try the declarative integrations path first. If the vercel_isr
+    # row in webhook_endpoints is enabled, the outbound dispatcher owns
+    # the delivery — counters get updated on the row and failures show
+    # up on the Integration Health dashboard. Falls back to the legacy
+    # direct-POST below if the row is disabled, missing, or the
+    # framework isn't registered (early boot, CLI one-shots).
+    try:
+        from services.integrations.outbound_dispatcher import (
+            OutboundWebhookError,
+            deliver,
+        )
+        from services.integrations.shared_context import get_database_service
+
+        _db = get_database_service()
+        if _db is not None and _db.pool is not None:
+            try:
+                await deliver(
+                    "vercel_isr",
+                    {"paths": paths, "tags": tags},
+                    db_service=_db,
+                    site_config=site_config,
+                )
+                logger.info("ISR revalidation via declarative framework")
+                return True
+            except OutboundWebhookError:
+                # Row missing or disabled — fall through to legacy.
+                pass
+            except Exception as exc:
+                logger.warning(
+                    "ISR declarative deliver failed (%s); falling back to direct POST",
+                    exc,
+                )
+    except ImportError:
+        pass
+
     from services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
     nextjs_url = (
         site_config.get("public_site_url")

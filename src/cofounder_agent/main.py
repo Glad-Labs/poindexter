@@ -94,6 +94,15 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.startup_complete = True
         logger.debug("[LIFESPAN] ✅ All services injected into app.state")
 
+        # Register the DatabaseService with the integrations framework so
+        # legacy helper functions (task_executor._notify_*,
+        # revalidation_service.trigger_nextjs_revalidation) can
+        # opportunistically route through outbound_dispatcher.deliver()
+        # when the corresponding webhook_endpoints row is enabled.
+        from services.integrations.shared_context import set_database_service
+        set_database_service(services["database"])
+        logger.debug("[LIFESPAN] integrations.shared_context registered")
+
         # Capability system removed (dead code, no consumers)
 
         # Initialize settings service (DB-backed key-value config)
