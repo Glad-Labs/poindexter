@@ -29,11 +29,10 @@ Usage (post Phase H, GH#95):
     * **Image providers / taps / topic sources** — read
       ``config.get("_site_config")``. The dispatcher/runner seeds it.
 
-    There is NO module-level ``site_config`` singleton any more. Doing
-    ``from services.site_config import site_config`` raises
-    ``ImportError`` — that's intentional. New code accepts the instance
-    as a parameter; legacy code that still needs migration should do
-    the same.
+    The module-level ``site_config`` singleton is in the process of
+    being removed (GH-117). Until every call site migrates to DI, it
+    still exists as a transitional shim. All new code MUST accept the
+    instance as a parameter / read it from its DI seam.
 
 Testing:
     Tests should construct their own ``SiteConfig(initial_config=...)``
@@ -236,16 +235,20 @@ class SiteConfig:
         return dict(self._config)
 
 
-# Transitional module-level instance kept alive during Phase H (GH#95)
-# migration. `main.py`'s lifespan rebinds this attribute to the
-# DB-loaded instance it puts on `app.state.site_config`, so function-body
-# lazy-imports (~40 remaining production call sites) see the right values.
+# ---------------------------------------------------------------------------
+# Phase H cleanup status (2026-04-24)
+# ---------------------------------------------------------------------------
 #
-# DO NOT import this in NEW code — accept `site_config` as a ctor/kwarg
-# param or read it from `request.app.state.site_config` / `context["site_config"]`
-# (stages) / `self._site_config` (services) instead. See commits under
-# issue #95 for the established DI patterns.
+# Many call sites have been migrated to accept a SiteConfig instance via
+# DI (TopicDiscovery, plan_images, _plan_and_inject_placeholders,
+# DatabaseService.initialize, ContentDatabase.get_metrics,
+# services/taps/runner). The remaining importers are enumerated in
+# GH-117 — until that issue closes, this module-level singleton stays
+# as a transitional shim so those call sites still work.
 #
-# This attribute disappears in the step 5 follow-up once every lazy
-# importer has been migrated.
+# DO NOT import this singleton in NEW code. Accept ``site_config`` as
+# a parameter, read it from ``app.state.site_config`` (routes),
+# ``context["site_config"]`` (stages), or ``self._site_config``
+# (services). See commits under GH-95 and GH-117 for the established DI
+# patterns.
 site_config = SiteConfig()

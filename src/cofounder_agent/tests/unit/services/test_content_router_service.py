@@ -376,8 +376,11 @@ class TestScrubFabricatedLinks:
     """
 
     def _sc(self):
-        from services.site_config import site_config as _sc_mod
-        return _sc_mod
+        # Dedicated SiteConfig per test class — phase-H cleanup removed
+        # the module-level singleton. Pass a minimal config; tests that
+        # need specific keys construct inline.
+        from services.site_config import SiteConfig
+        return SiteConfig(initial_config={"site_domain": "test-site.example.com"})
 
     def test_keeps_trusted_markdown_links(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
@@ -404,8 +407,9 @@ class TestScrubFabricatedLinks:
         assert "arxiv.org" in result
 
     def test_keeps_own_domain_links(self):
-        from services.site_config import site_config
+        from services.site_config import SiteConfig
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
+        site_config = SiteConfig(initial_config={"site_domain": "test-site.example.com"})
         domain = site_config.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
         assert domain in _scrub_fabricated_links(content, site_config=site_config)
@@ -621,8 +625,11 @@ class TestCheckTitleOriginality:
 
 class TestScrubFabricatedLinksEdgeCases:
     def _sc(self):
-        from services.site_config import site_config as _sc_mod
-        return _sc_mod
+        # Dedicated SiteConfig per test class — phase-H cleanup removed
+        # the module-level singleton. Pass a minimal config; tests that
+        # need specific keys construct inline.
+        from services.site_config import SiteConfig
+        return SiteConfig(initial_config={"site_domain": "test-site.example.com"})
 
     def test_subdomain_of_trusted_domain_kept(self):
         content = "[Wiki article](https://en.wikipedia.org/wiki/Python)"
@@ -638,10 +645,9 @@ class TestScrubFabricatedLinksEdgeCases:
 
     def test_internal_post_link_with_no_slug_cache_kept(self):
         """Without a populated slug cache, internal /posts/ links pass through."""
-        from services.site_config import site_config
+        from services.site_config import SiteConfig
+        site_config = SiteConfig(initial_config={"site_domain": "test-site.example.com"})
         domain = site_config.get("site_domain", "")
-        if not domain:
-            return  # skip if no domain configured
         content = f"[older post](https://{domain}/posts/some-old-post)"
         result = _scrub_fabricated_links(content, site_config=site_config)
         assert "/posts/some-old-post" in result

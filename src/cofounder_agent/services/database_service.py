@@ -133,16 +133,20 @@ class DatabaseService:
                 "dev",
                 "local",
             )
-            from services.site_config import site_config
+            # Pool sizing is the one bootstrap config that has to resolve
+            # BEFORE the pool exists (chicken-and-egg with site_config which
+            # loads from that pool). Read env vars directly — these are the
+            # same uppercase keys site_config would have fallen through to.
             # GH-92: keep ``min_size`` small in every environment. Pools that
             # pre-warm 20 connections reserve them against ``max_connections``
             # even when the worker is idle — a direct contributor to the
             # TooManyConnectionsError stress test that motivated GH-92.
-            # ``max_size`` stays higher so bursts can grow the pool on demand.
-            # Reads from app_settings (no silent env-var drift); defaults
-            # preserve backward compat for max_size.
-            min_size = int(site_config.get("database_pool_min_size", "2" if is_dev else "5"))
-            max_size = int(site_config.get("database_pool_max_size", "20" if is_dev else "50"))
+            min_size = int(
+                os.getenv("DATABASE_POOL_MIN_SIZE") or ("2" if is_dev else "5")
+            )
+            max_size = int(
+                os.getenv("DATABASE_POOL_MAX_SIZE") or ("20" if is_dev else "50")
+            )
 
             self.pool = await asyncpg.create_pool(
                 self.database_url,

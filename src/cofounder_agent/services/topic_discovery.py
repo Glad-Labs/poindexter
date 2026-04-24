@@ -128,24 +128,21 @@ def _word_overlap_match(
 class TopicDiscovery:
     """Discover trending topics from free web sources."""
 
-    def __init__(self, pool, site_config: Any = None):
+    def __init__(self, pool, *, site_config: Any):
         """Initialize the topic discovery dispatcher.
 
         Args:
             pool: asyncpg pool for reading published posts / app_settings.
-            site_config: SiteConfig instance (DI — Phase H, GH#95).
-                Optional with transitional fallback to the module
-                singleton — removed once all callers migrate. Tests
-                should pass an explicit mock via
+            site_config: SiteConfig instance — required (keyword-only).
+                Tests should pass an explicit instance via
                 ``SiteConfig(initial_config={...})``.
         """
-        self.pool = pool
         if site_config is None:
-            # Transitional fallback — removed in a follow-up once all
-            # callers (idle_worker, routes/task_routes) thread the
-            # instance through explicitly.
-            from services.site_config import site_config as _singleton
-            site_config = _singleton
+            raise ValueError(
+                "TopicDiscovery: site_config is required "
+                "(no module singleton fallback)"
+            )
+        self.pool = pool
         self._site_config = site_config
 
     async def discover(self, max_topics: int = 10, categories: list[str] | None = None) -> list[DiscoveredTopic]:

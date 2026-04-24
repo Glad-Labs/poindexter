@@ -132,9 +132,13 @@ class ReplaceInlineImagesStage:
         if not placeholders:
             # Phase H step 5 (GH#95): thread site_config to the image
             # decision agent. Stages receive site_config via the pipeline
-            # context dict (seeded by content_router_service step 4.1);
-            # fall back to the module singleton for legacy callers.
+            # context dict (seeded by content_router_service step 4.1).
             _sc = context.get("site_config")
+            if _sc is None:
+                raise RuntimeError(
+                    "replace_inline_images stage requires site_config in context — "
+                    "context_router_service must seed it under 'site_config'"
+                )
             content_text, plan = await _plan_and_inject_placeholders(
                 content_text, topic, category, site_config=_sc,
             )
@@ -216,7 +220,8 @@ async def _plan_and_inject_placeholders(
     content_text: str,
     topic: str,
     category: str,
-    site_config: Any = None,
+    *,
+    site_config: Any,
 ) -> tuple[str, dict[str, Any] | None]:
     """Ask the Image Decision Agent to decide + inject [IMAGE-N] placeholders.
 
@@ -226,8 +231,7 @@ async def _plan_and_inject_placeholders(
 
     Args:
         site_config: SiteConfig instance threaded to ``plan_images``.
-            ``None`` means ``plan_images`` will fall back to the module
-            singleton (transitional — Phase H step 5, GH#95).
+            Required — no module singleton fallback.
     """
     try:
         from services.image_decision_agent import plan_images
