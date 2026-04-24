@@ -1,7 +1,7 @@
 # Database + Embeddings Plan
 
 **Date:** 2026-04-24
-**Status:** Phase 4 framework split to [GH-110](https://github.com/Glad-Labs/poindexter/issues/110) and deferred. Phases 1/3/5 proceeding.
+**Status:** Phase 1 shipped (migration 0082). Phase 4 → [GH-110](https://github.com/Glad-Labs/poindexter/issues/110) (deferred). Phase 5 → [GH-111](https://github.com/Glad-Labs/poindexter/issues/111) (deferred). Phases 2/3 deferred pending GH-110.
 **Covers:** GH-27 (feedback-loop tables), GH-57 (schema audit), GH-106 (embedding retention)
 **Scope:** Everything in the PostgreSQL database that needs attention before we add more features
 
@@ -272,14 +272,15 @@ All seeded as `enabled=false`. Flip them on individually via `UPDATE retention_p
 
 After Phase 4: one runner, one policy table, N sources all declared as data. Phase 2's one-shot TTL prune is retired in favor of the runner's declarative version.
 
-### Phase 5 — Feedback-loop webhook handlers (half day)
+### Phase 5 — Feedback-loop webhook handlers (deferred, tracked in [GH-111](https://github.com/Glad-Labs/poindexter/issues/111))
 
-- [ ] Lemon Squeezy webhook → `revenue_events`
-- [ ] Resend webhook → `subscriber_events`
-- [ ] Verify webhook signing for both (HMAC-SHA256)
-- [ ] Grafana panels: daily revenue, monthly recurring, newsletter open rate
+**Split to its own issue on 2026-04-24.** The LS + Resend handlers already exist in `routes/external_webhooks.py` (gitea#271 Phase 3.B), but:
 
-After Phase 5: 5 of 7 feedback-loop tables populating. Only `external_metrics` and `experiments` left, both with external dependencies.
+1. The `lemon_squeezy_webhook_secret` and `resend_webhook_secret` app_settings rows don't exist yet.
+2. The handlers use raw `site_config.get()` instead of `get_secret()` — if the secret is stored encrypted (matching the `enc:v1:` pattern), signature verification fails silently. Same bug class as GH-107.
+3. Matt wants runtime CRUD for webhooks — add/remove/toggle without a deploy — so a one-off wiring now would be thrown away when GH-111 lands.
+
+GH-111 will replace the current hardcoded routes with a declarative `webhooks` table + catch-all dispatcher + handler registry. LS and Resend become two of several seeded rows, not bespoke code.
 
 ---
 
@@ -307,14 +308,14 @@ After Phase 5: 5 of 7 feedback-loop tables populating. Only `external_metrics` a
 
 ## Execution order
 
-**Proceeding now:**
+**Shipped:**
 
-1. **Phase 1** — drop dead index + add `idx_embeddings_created_at`. ~1 hour. No data touched; safe.
-2. **Phase 5** — Lemon Squeezy + Resend webhook handlers. Independent of retention work. ~half day.
+1. **Phase 1** — migration 0082 applied 2026-04-24. Dead `idx_embeddings_collapse_candidates` dropped; `idx_embeddings_created_at` added.
 
-**Deferred:**
+**Deferred pending framework issues:**
 
-3. **Phase 4** — standardized retention-job framework → [GH-110](https://github.com/Glad-Labs/poindexter/issues/110). When this lands it will replace what was originally drafted as Phases 2 and 3 (one-shot prune + bespoke summarizer) with declarative policies.
-4. **Phase 2 / Phase 3 (embedding cleanup itself)** — deferred until Phase 4 ships. 13k rows / 126 MB is not urgent; the right move is to wait for the framework rather than hand-roll a prune now that we know we'd throw it away.
+2. **Phase 4** — standardized retention-job framework → [GH-110](https://github.com/Glad-Labs/poindexter/issues/110). Replaces what was originally drafted as Phases 2 and 3.
+3. **Phase 5** — webhook handlers → [GH-111](https://github.com/Glad-Labs/poindexter/issues/111). Replaces the bespoke LS/Resend wiring with a declarative webhooks table.
+4. **Phase 2 / Phase 3 (embedding cleanup itself)** — deferred until GH-110 ships. 13k rows / 126 MB is not urgent.
 
-**Rationale:** storage isn't the pain. Repeated one-off scripts are the pain. Do the low-risk index work now, build the feedback-loop webhook handlers, and let the retention runner be the first (and only) retention job we write.
+**Rationale:** storage and one-off webhooks aren't the pain. Repeated one-off scripts and hardcoded integration routes are the pain. Ship the low-risk index work now, then put the framework issues through the design+build path before adding more one-offs.
