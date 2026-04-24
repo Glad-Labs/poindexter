@@ -26,7 +26,20 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-VIDEO_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "video"
+def _poindexter_data_root() -> Path:
+    """Same layout as podcast_service._poindexter_data_root. See there for the
+    full rationale — tl;dr the worker container's bind mount lives at
+    /root/.poindexter regardless of which user the process runs as."""
+    override = os.environ.get("POINDEXTER_DATA_ROOT")
+    if override:
+        return Path(override)
+    root_mount = Path("/root/.poindexter")
+    if root_mount.is_dir():
+        return root_mount
+    return Path(os.path.expanduser("~")) / ".poindexter"
+
+
+VIDEO_DIR = _poindexter_data_root() / "video"
 
 
 def _write_bytes(path: str, content: bytes) -> None:
@@ -337,11 +350,19 @@ async def generate_video_for_post(
     if not image_paths:
         return VideoResult(success=False, error="No images could be generated")
 
-    # Convert container paths to host paths for the video server
-    # Container mount: /root/.poindexter → C:/Users/mattm/.poindexter (bind mount)
+    # Convert container paths to host paths for the video server.
+    # Two container users are in play:
+    #   SDXL container runs as root     → /root/.poindexter/...
+    #   Worker container runs as appuser → /home/appuser/.poindexter/...
+    # Both bind-mount into the host's .poindexter/ directory. Any path
+    # containing ".poindexter/..." is normalized to the host path.
     host_home = site_config.get("host_home", "C:/Users/mattm")
     def _to_host_path(container_path: str) -> str:
-        return container_path.replace("/root/.poindexter", f"{host_home}/.poindexter")
+        return (
+            container_path
+            .replace("/root/.poindexter", f"{host_home}/.poindexter")
+            .replace("/home/appuser/.poindexter", f"{host_home}/.poindexter")
+        )
 
     host_image_paths = [_to_host_path(p) for p in image_paths]
     host_audio_path = _to_host_path(podcast_path)
