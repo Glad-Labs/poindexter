@@ -1,6 +1,6 @@
 # Plugin Architecture
 
-**Last Updated:** April 19, 2026
+**Last Updated:** 2026-04-19
 **Status:** 📐 Design — umbrella [#64](https://github.com/Glad-Labs/poindexter/issues/64) v3 locked; child phases [#65-#72](https://github.com/Glad-Labs/poindexter/issues/64#issuecomment-4276031164) rewritten to match
 **Scope:** Canonical in-repo reference for how Poindexter is evolving from a handful of god-files into a plugin-shaped system.
 
