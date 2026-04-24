@@ -705,9 +705,14 @@ async def go_live(
         try:
             from services.task_executor import _notify_openclaw
             _site_url = site_config_dep.require("site_url")
+            # Discord-only per operator policy. Post-publish announcement
+            # is routine, not a critical alert. Was previously silently
+            # broken (missing site_config arg); fixed here in the same
+            # pass.
             await _notify_openclaw(
                 f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}",
-                critical=True,
+                site_config_dep,
+                critical=False,
             )
         except Exception:
             logger.warning("[GO-LIVE] Openclaw notification failed (non-fatal)", exc_info=True)

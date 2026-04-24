@@ -952,9 +952,13 @@ async def publish_post_from_task(
         from services.task_executor import _notify_openclaw
 
         _q_score = task.get("quality_score") or merged.get("quality_score") or "N/A"
+        # Discord-only per operator policy — publish announcements are
+        # routine, not critical alerts. Was previously silently broken
+        # (missing site_config arg); fixed in the same pass.
         await _notify_openclaw(
             f"Published: {post_title}\n/posts/{slug}\nScore: {_q_score}",
-            critical=True,
+            site_config,
+            critical=False,
         )
     except Exception:
         logger.debug("[publish_service] Notification failed (non-fatal)", exc_info=True)
