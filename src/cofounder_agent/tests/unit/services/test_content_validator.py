@@ -1010,6 +1010,37 @@ class TestHallucinatedReferenceDetection:
             f"{[h.matched_text for h in hallucinated]}"
         )
 
+    def test_common_tech_names_not_flagged_as_hallucinated(self):
+        """Regression: AI/ML acronyms, database extensions, and infra tools
+        (pgvector, LoRA, PostgreSQL, REST, transformers, Kubernetes, etc.) are
+        real but not in the PyPI top-500 list. Without an explicit whitelist
+        they trip the unknown-library detector and drag scores below threshold.
+
+        Surfaced during the 2026-04-23 stress-testing session — see
+        docs/experiments/pipeline-tuning.md batches B and F.
+        """
+        # Each case: (content, topic, tags) — topic and tags set to cover
+        # both the "unknown library" check and the topic-coherence check.
+        cases = [
+            ("Install the `pgvector` extension and run SELECT pgvector.version();", "database", ["database"]),
+            ("LoRA adapters are a parameter-efficient fine-tuning approach.", "ai-ml", ["ai-ml"]),
+            ("We run PostgreSQL 16 with asyncpg for best throughput.", "backend", ["backend"]),
+            ("Design your REST API around resources, not verbs.", "backend", ["backend", "api"]),
+            ("Hugging Face `transformers` makes this a one-liner.", "ai-ml", ["ai-ml"]),
+            ("Kubernetes with Docker and Podman runtimes.", "infra", ["infra"]),
+            ("Prometheus plus Grafana plus Loki is the default LGTM stack.", "observability", ["observability"]),
+            ("Cloudflare R2 or MinIO both work as S3-compatible targets.", "infra", ["infra"]),
+            ("FastAPI + Uvicorn + asyncpg is the Python async trifecta.", "backend", ["backend", "python"]),
+            ("vLLM and TensorRT beat Ollama on throughput for 70B models.", "ai-ml", ["ai-ml"]),
+        ]
+        for content, topic, tags in cases:
+            result = validate_content("Whitelist test", content, topic, tags=tags)
+            hallucinated = self._hallucinated_issues(result)
+            assert not hallucinated, (
+                f"Tech-name whitelist regression for {content!r}: "
+                f"{[h.matched_text for h in hallucinated]}"
+            )
+
     def test_plain_titlecase_english_words_after_verbs_not_flagged(self):
         """Regression: narrative verb-pattern captured English words as libraries.
 
