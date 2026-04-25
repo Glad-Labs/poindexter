@@ -137,6 +137,7 @@ PROBE_SCHEDULES = {
     "public_site": 300,          # 5 min
     "scheduled_tasks": 3600,     # 1 hour
     "disk_space": 3600,          # 1 hour
+    "gpu_temperature": 60,       # 1 min — RTX 5090 thermal coverage (replaces retired Grafana "GPU Temperature High" alert)
     # P0 — pipeline health
     "stuck_tasks": 1800,         # 30 min
     "approval_queue": 3600,      # 1 hour
@@ -1015,6 +1016,74 @@ async def probe_pipeline_throughput(pool) -> dict:
         return {"ok": False, "detail": str(e)[:200]}
 
 
+async def probe_gpu_temperature(_pool) -> dict:
+    """Probe: GPU core temperature via the nvidia-smi-exporter Prom metric.
+
+    Closes the only direct-alert coverage gap left when Grafana alert
+    rules were retired (2026-04-25): nothing else watches RTX 5090
+    thermals. Threshold tunable via
+    ``app_settings.gpu_temperature_high_threshold_c`` (default 85). The
+    RTX 5090 hard-throttles around 90 C, so 85 is the "phone Matt"
+    line — anything north of that and the GPU is silently dropping
+    boost clocks.
+    """
+    threshold = 85
+    if _pool is not None:
+        try:
+            row = await _pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = "
+                "'gpu_temperature_high_threshold_c'"
+            )
+            if row and row["value"]:
+                threshold = int(str(row["value"]).strip())
+        except Exception:  # pragma: no cover — defaults are fine
+            pass
+
+    prom = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
+    try:
+        ok, data = _http_json(
+            f"{prom}/api/v1/query?query=nvidia_gpu_temperature_celsius",
+            timeout=5,
+        )
+    except Exception as exc:
+        return {"ok": True, "detail": f"prometheus unreachable, skipping: {exc}"}
+    if not ok:
+        return {"ok": True, "detail": f"prometheus query failed: {data.get('error', 'unknown')}"}
+
+    series = (data.get("data") or {}).get("result") or []
+    if not series:
+        # No data point — exporter probably down; not this probe's job to alarm.
+        return {"ok": True, "detail": "no nvidia_gpu_temperature_celsius series (exporter down?)"}
+
+    hottest = -1.0
+    hottest_gpu = ""
+    for s in series:
+        val_pair = s.get("value")
+        if not val_pair or len(val_pair) < 2:
+            continue
+        try:
+            t = float(val_pair[1])
+        except (TypeError, ValueError):
+            continue
+        if t > hottest:
+            hottest = t
+            hottest_gpu = s.get("metric", {}).get("gpu", "?")
+
+    if hottest < 0:
+        return {"ok": True, "detail": "no parseable temperature samples"}
+    healthy = hottest < threshold
+    return {
+        "ok": healthy,
+        "max_temp_c": hottest,
+        "threshold_c": threshold,
+        "gpu": hottest_gpu,
+        "detail": (
+            f"GPU{hottest_gpu} {hottest:.0f}C (threshold {threshold}C)"
+            + ("" if healthy else " — over threshold, may be throttling")
+        ),
+    }
+
+
 # All probes in execution order
 PROBES = {
     # Infrastructure
@@ -1026,6 +1095,7 @@ PROBES = {
     "scheduled_tasks": probe_scheduled_tasks,
     "disk_space": probe_disk_space,
     "r2_connectivity": probe_r2_connectivity,
+    "gpu_temperature": probe_gpu_temperature,
     # Pipeline health (P0)
     "stuck_tasks": probe_stuck_tasks,
     "approval_queue": probe_approval_queue,
