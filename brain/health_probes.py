@@ -174,10 +174,21 @@ def _mark_run(probe_name: str):
 
 def _http_json(url: str, method: str = "GET", data: dict | None = None,
                timeout: int = 15) -> tuple[bool, dict]:
-    """Make an HTTP request and parse JSON response. Returns (ok, data_or_error)."""
+    """Make an HTTP request and parse JSON response. Returns (ok, data_or_error).
+
+    Sets a descriptive User-Agent so Cloudflare's bot fight mode (which
+    rejects the urllib default ``Python-urllib/X.Y`` with 403) doesn't
+    misclassify probes. Without it, ``probe_public_site`` against
+    gladlabs.io fails every cycle even though the site is healthy.
+    """
     try:
         body = json.dumps(data).encode() if data else None
-        req = urllib.request.Request(url, data=body, method=method)
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method=method,
+            headers={"User-Agent": "Poindexter-Brain-Daemon/1.0 (+https://www.gladlabs.io)"},
+        )
         if body:
             req.add_header("Content-Type", "application/json")
         resp = urllib.request.urlopen(req, timeout=timeout)

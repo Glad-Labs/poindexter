@@ -169,11 +169,23 @@ CYCLE_SECONDS = 300  # 5 minutes between full cycles
 _alert_sync_cycle_counter = 0
 
 
+# Identifying User-Agent for every outbound brain probe. Cloudflare's bot
+# fight mode (and most modern WAFs) reject the urllib default
+# `Python-urllib/X.Y`, surfacing as 403 Forbidden — that's how the persistent
+# `service: site, code: 403, critical: true` issues in brain_decisions slipped
+# in despite the public site being healthy. A descriptive UA with a contact
+# URL passes Cloudflare while making the request source obvious in logs.
+_PROBE_UA = "Poindexter-Brain-Daemon/1.0 (+https://www.gladlabs.io)"
+
+
+def _probe_request(url: str) -> "urllib.request.Request":
+    return urllib.request.Request(url, headers={"User-Agent": _PROBE_UA})
+
+
 def check_http(url: str, timeout: int = 10) -> tuple:
     """Check if an HTTP endpoint responds. Returns (ok, status_code, detail)."""
     try:
-        req = urllib.request.Request(url)
-        resp = urllib.request.urlopen(req, timeout=timeout)
+        resp = urllib.request.urlopen(_probe_request(url), timeout=timeout)
         return True, resp.status, "ok"
     except urllib.error.HTTPError as e:
         return False, e.code, str(e.reason)[:100]
@@ -184,7 +196,7 @@ def check_http(url: str, timeout: int = 10) -> tuple:
 def check_statuspage(url: str, timeout: int = 10) -> tuple:
     """Check an Atlassian Statuspage API. Returns (ok, indicator, description)."""
     try:
-        resp = urllib.request.urlopen(url, timeout=timeout)
+        resp = urllib.request.urlopen(_probe_request(url), timeout=timeout)
         data = json.loads(resp.read())
         indicator = data.get("status", {}).get("indicator", "unknown")
         description = data.get("status", {}).get("description", "unknown")
@@ -197,7 +209,7 @@ def check_statuspage(url: str, timeout: int = 10) -> tuple:
 def check_instatus(url: str, timeout: int = 10) -> tuple:
     """Check an Instatus summary endpoint. Returns (ok, status, description)."""
     try:
-        resp = urllib.request.urlopen(url, timeout=timeout)
+        resp = urllib.request.urlopen(_probe_request(url), timeout=timeout)
         data = json.loads(resp.read())
         status = data.get("page", {}).get("status", "UNKNOWN")
         ok = status in ("UP", "HASISSUES")  # UP = good, HASISSUES = degraded but alive
@@ -209,7 +221,7 @@ def check_instatus(url: str, timeout: int = 10) -> tuple:
 def check_json_status(url: str, timeout: int = 10) -> tuple:
     """Check a JSON health endpoint. Returns (ok, status, detail)."""
     try:
-        resp = urllib.request.urlopen(url, timeout=timeout)
+        resp = urllib.request.urlopen(_probe_request(url), timeout=timeout)
         data = json.loads(resp.read())
         status = data.get("status", "unknown")
         ok = status in ("healthy", "degraded", "ok")
