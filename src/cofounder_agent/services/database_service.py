@@ -163,8 +163,20 @@ class DatabaseService:
             if self.local_database_url:
                 # GH-92: local pool min stays at 2 — rarely-called paths
                 # (tasks, writing_style, embeddings) shouldn't hoard.
-                local_min = int(site_config.get("local_database_pool_min_size", "2" if is_dev else "2"))
-                local_max = int(site_config.get("local_database_pool_max_size", "10" if is_dev else "20"))
+                # Same chicken-and-egg constraint as the cloud pool above:
+                # site_config can't be consulted here because it loads FROM
+                # the pool we're about to create. Read env vars directly.
+                # Phase H follow-up: the previous code referenced a bare
+                # `site_config` name (no import) and would raise NameError
+                # whenever LOCAL_DATABASE_URL was set, crashing every worker
+                # boot. Surfaced by tests skipped in PR#281.
+                local_min = int(
+                    os.getenv("LOCAL_DATABASE_POOL_MIN_SIZE") or "2"
+                )
+                local_max = int(
+                    os.getenv("LOCAL_DATABASE_POOL_MAX_SIZE")
+                    or ("10" if is_dev else "20")
+                )
                 self.local_pool = await asyncpg.create_pool(
                     self.local_database_url,
                     min_size=local_min,
