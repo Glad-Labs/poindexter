@@ -208,6 +208,66 @@ class TestDeduplicate:
         result = await d._deduplicate(topics)
         assert result[0].is_duplicate is False  # Graceful fallback
 
+    @pytest.mark.asyncio
+    async def test_distinct_events_share_keywords_but_not_dups(self):
+        """gitea#279: 'Join our DEV Weekend Challenge — $1,000' and
+        'Join the OpenClaw Challenge: $1,200 Prizes' share Challenge / 1 / Join
+        but reference different events. The previous hardcoded 0.4 threshold
+        flagged them as dups; the 0.7 default does not."""
+        pool = _make_pool(published_titles=["Join our DEV Weekend Challenge $1,000"])
+        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        topics = [
+            DiscoveredTopic(
+                title="Join the OpenClaw Challenge: $1,200 Prizes",
+                category="technology", source="devto", source_url="",
+            ),
+        ]
+        result = await d._deduplicate(topics)
+        assert result[0].is_duplicate is False
+
+    @pytest.mark.asyncio
+    async def test_existing_threshold_is_tunable(self):
+        """Override `topic_dedup_existing_threshold` so an unrelated pair
+        falls below the (now lower) threshold and gets flagged. Proves the
+        site_config plumbing reads the live value."""
+        sc = SiteConfig(initial_config={"topic_dedup_existing_threshold": "0.3"})
+        pool = _make_pool(published_titles=["Join our DEV Weekend Challenge $1,000"])
+        d = TopicDiscovery(pool, site_config=sc)
+        topics = [
+            DiscoveredTopic(
+                title="Join the OpenClaw Challenge: $1,200 Prizes",
+                category="technology", source="devto", source_url="",
+            ),
+        ]
+        result = await d._deduplicate(topics)
+        assert result[0].is_duplicate is True
+
+    @pytest.mark.asyncio
+    async def test_intra_batch_threshold_is_tunable(self):
+        """Two distinct candidates from the same batch share keywords. At the
+        loose default they're not flagged; lowering the intra-batch threshold
+        to 0.3 should mark the second as a dup of the first."""
+        sc_loose = SiteConfig(initial_config={})
+        sc_tight = SiteConfig(initial_config={"topic_dedup_intra_batch_threshold": "0.3"})
+        topics_loose = [
+            DiscoveredTopic(title="Top 7 Featured DEV Posts of the Week",
+                            category="business", source="devto", source_url=""),
+            DiscoveredTopic(title="What was your win this week?",
+                            category="business", source="devto", source_url=""),
+        ]
+        topics_tight = [
+            DiscoveredTopic(title="Top 7 Featured DEV Posts of the Week",
+                            category="business", source="devto", source_url=""),
+            DiscoveredTopic(title="What was your win this week?",
+                            category="business", source="devto", source_url=""),
+        ]
+        d_loose = TopicDiscovery(_make_pool(), site_config=sc_loose)
+        d_tight = TopicDiscovery(_make_pool(), site_config=sc_tight)
+        await d_loose._deduplicate(topics_loose)
+        await d_tight._deduplicate(topics_tight)
+        assert topics_loose[1].is_duplicate is False
+        assert topics_tight[1].is_duplicate is True
+
 
 # ===========================================================================
 # queue_topics
