@@ -150,20 +150,14 @@ const FREE_INCLUDED = [
   '7 Grafana monitoring dashboards',
 ];
 
-const SEED_INCLUDED = [
+const PREMIUM_INCLUDED = [
   'Everything in Free',
   'Production-tuned config (200+ settings)',
   'Anti-hallucination rules database',
   'Curated writing style samples',
   '2 premium Grafana dashboards',
-  'Quick Start Guide (first post in 30 min)',
-];
-
-const PREMIUM_INCLUDED = [
-  'Everything in Seed Package',
   'Monthly updated seeds from live production',
   'Private repo with prompt iterations',
-  'New fact-check rules and topic sources',
   'Premium Discord — direct access to Matt',
   'AI Content Pipeline book (chapters as they ship)',
 ];
@@ -408,7 +402,7 @@ export default function ProductPage() {
             </h2>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 items-stretch">
+          <div className="grid md:grid-cols-2 gap-6 items-stretch max-w-3xl mx-auto">
             {/* Free */}
             <Card className="flex flex-col">
               <Card.Meta>OPEN SOURCE</Card.Meta>
@@ -431,39 +425,8 @@ export default function ProductPage() {
               </div>
             </Card>
 
-            {/* Seed — amber accent tick, "POPULAR" badge */}
-            <Card accent="amber" className="flex flex-col relative">
-              <span
-                className="absolute -top-3 left-1/2 -translate-x-1/2 gl-mono gl-mono--upper px-3 py-1"
-                style={{
-                  background: 'var(--gl-amber)',
-                  color: '#0a0a0a',
-                  fontSize: '0.6875rem',
-                  letterSpacing: 'var(--gl-tracking-wide)',
-                }}
-              >
-                POPULAR
-              </span>
-              <Card.Meta>SEED PACKAGE</Card.Meta>
-              <p className="gl-display mt-3 text-4xl">$29</p>
-              <p className="gl-mono gl-mono--upper opacity-50 text-xs">
-                one-time
-              </p>
-              <PricingList items={SEED_INCLUDED} />
-              <div className="mt-auto">
-                <Button
-                  as="a"
-                  href="https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52?embed=1"
-                  variant="primary"
-                  className="w-full lemonsqueezy-button"
-                >
-                  Buy guide — $29
-                </Button>
-              </div>
-            </Card>
-
-            {/* Premium */}
-            <Card className="flex flex-col">
+            {/* Premium — amber accent tick */}
+            <Card accent="amber" className="flex flex-col">
               <Card.Meta>PREMIUM</Card.Meta>
               <p className="gl-display mt-3 text-4xl">
                 $9.99
@@ -478,8 +441,8 @@ export default function ProductPage() {
               <div className="mt-auto">
                 <Button
                   as="a"
-                  href="https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9?embed=1"
-                  variant="secondary"
+                  href="https://gladlabs.lemonsqueezy.com/checkout/buy/a47cbc0a-e129-45c3-a99f-7e67e7c7de23?embed=1"
+                  variant="primary"
                   className="w-full lemonsqueezy-button"
                 >
                   Subscribe — $9.99/mo
