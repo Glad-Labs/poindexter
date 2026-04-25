@@ -62,9 +62,15 @@ _WORKER_ROUTES = [
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
     ("routes.pipeline_events_routes", "router", "pipeline_events_router", "pipeline events observability (/api/pipeline, /pipeline)"),
     ("routes.memory_dashboard_routes", "router", "memory_dashboard_router", "shared-memory observability (/api/memory/*, /memory)"),
-    ("routes.alertmanager_webhook_routes", "router", "alertmanager_webhook_router", "Alertmanager webhook consumer (Phase D4)"),
-    ("routes.external_webhooks", "external_webhooks_router", "external_webhooks_router", "Lemon Squeezy + Resend webhook sinks (gitea#271 Phase 3.B)"),
+    # The declarative catch-all MUST register BEFORE the legacy routes
+    # so that /api/webhooks/{name} matches first. Legacy routes
+    # (alertmanager_webhook_routes, external_webhooks) stay registered
+    # as a back-compat shim — once every external service has been
+    # repointed at the catch-all (and verified working), the legacy
+    # files can be deleted.
     ("routes.webhooks", "webhooks_router", "webhooks_router", "Declarative catch-all webhook dispatcher (/api/webhooks/{name}) — Phase 1 of declarative data plane"),
+    ("routes.alertmanager_webhook_routes", "router", "alertmanager_webhook_router", "Alertmanager webhook consumer (Phase D4) — legacy, will be retired"),
+    ("routes.external_webhooks", "external_webhooks_router", "external_webhooks_router", "Lemon Squeezy + Resend webhook sinks (gitea#271 Phase 3.B) — legacy, will be retired"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest

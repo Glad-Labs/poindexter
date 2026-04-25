@@ -134,12 +134,36 @@ def _verify_signature(
         return hmac.compare_digest(expected, provided)
 
     if algorithm == "svix":
-        provided = headers.get("svix-signature")
-        if not provided:
+        # Svix protocol — used by Resend, Clerk, others. The signing
+        # input is "<msg_id>.<timestamp>.<body>" (NOT just the body),
+        # the secret carries a "whsec_" prefix whose remainder is
+        # base64-encoded raw key bytes, and the expected signature is
+        # base64 (NOT hex). Header carries multiple "v1,<base64>" pairs
+        # space-separated for key rotation. See
+        # https://docs.svix.com/receiving/verifying-payloads/how-manual
+        import base64
+        sig_header = headers.get("svix-signature")
+        msg_id = headers.get("svix-id")
+        timestamp = headers.get("svix-timestamp")
+        if not sig_header or not msg_id or not timestamp:
             return False
-        expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-        parts = [s.strip().split(",")[-1] for s in provided.split(" ")]
-        return any(hmac.compare_digest(expected, p) for p in parts)
+        key_b64 = secret[len("whsec_"):] if secret.startswith("whsec_") else secret
+        try:
+            key_bytes = base64.b64decode(key_b64)
+        except Exception:
+            return False
+        signed = f"{msg_id}.{timestamp}.{body.decode('utf-8', errors='replace')}".encode("utf-8")
+        expected = base64.b64encode(
+            hmac.new(key_bytes, signed, hashlib.sha256).digest()
+        ).decode("utf-8")
+        for pair in sig_header.split(" "):
+            pair = pair.strip()
+            if "," not in pair:
+                continue
+            version, sig = pair.split(",", 1)
+            if version == "v1" and hmac.compare_digest(expected, sig):
+                return True
+        return False
 
     if algorithm == "bearer":
         provided = headers.get("authorization", "")
