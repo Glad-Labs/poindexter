@@ -81,7 +81,7 @@ class TestRouteManifestStructure:
             assert entry[2] in worker_keys, f"Coordinator route {entry[2]} not in worker"
 
     def test_worker_manifest_has_expected_routes(self):
-        """Worker manifest should have exactly 13 route entries.
+        """Worker manifest should have exactly 15 route entries.
 
         Updated 2026-04-12: added pipeline_events (observability) +
         memory_dashboard (shared-memory stats/search) routes.
@@ -90,8 +90,10 @@ class TestRouteManifestStructure:
         for the Prometheus/Alertmanager consumer.
         Updated 2026-04-21 (gitea#271 Phase 3.B): added external_webhooks_router
         for Lemon Squeezy + Resend webhook sinks.
+        Updated 2026-04-25: added webhooks_router (declarative catch-all
+        webhook dispatcher, Phase 1 of declarative data plane).
         """
-        assert len(_WORKER_ROUTES) == 14
+        assert len(_WORKER_ROUTES) == 15
 
     def test_worker_approval_router_is_first(self):
         """Approval router should be first in the worker manifest."""
