@@ -229,7 +229,7 @@ class TestProbeTopicQuality:
             "total": total, "rejected": rejected, "low_quality": low_quality,
         }
         driver_rows = [
-            {"event": k, "n": v}
+            {"event_type": k, "n": v}
             for k, v in (drivers or {}).items()
         ]
         p.fetch.return_value = driver_rows

@@ -926,22 +926,27 @@ async def probe_topic_quality(pool) -> dict:
         # rejection-category audit events in the same 7d window. If a
         # task hits multiple gates, the first-written event wins — that
         # matches the operator-facing reality (what stopped it first).
+        # Schema reminder: audit_log columns are ``event_type`` (not
+        # ``event``) and ``timestamp`` (not ``created_at``); the probe
+        # had been failing every cycle with
+        # ``column "event" does not exist`` ever since the audit_log
+        # rename.
         driver_rows = await pool.fetch("""
-            SELECT event, COUNT(*) AS n
+            SELECT event_type, COUNT(*) AS n
             FROM audit_log
-            WHERE event IN (
+            WHERE event_type IN (
                 'semantic_dedup_rejected',
                 'qa_rejected',
                 'topic_rejected',
                 'title_not_original',
                 'content_validation_rejected'
             )
-              AND created_at > NOW() - INTERVAL '7 days'
-            GROUP BY event
+              AND timestamp > NOW() - INTERVAL '7 days'
+            GROUP BY event_type
             ORDER BY n DESC
             LIMIT 3
         """)
-        drivers = {r["event"]: r["n"] for r in driver_rows}
+        drivers = {r["event_type"]: r["n"] for r in driver_rows}
         top_driver = next(iter(drivers), None)
 
         healthy = rejection_rate <= 30
