@@ -89,8 +89,12 @@ def _isolation():
 
 
 @pytest.mark.asyncio
-async def test_singer_subprocess_is_a_stub():
-    with pytest.raises(NotImplementedError, match="GH-103"):
+async def test_singer_subprocess_validates_required_config():
+    """The handler is no longer a stub (shipped 2026-04-25, GH-103);
+    it now ships a real subprocess runner. End-to-end tests live in
+    tests/unit/services/test_tap_singer_subprocess.py. This test just
+    confirms the handler validates required config up-front."""
+    with pytest.raises(ValueError, match="command"):
         await tap_singer_subprocess.singer_subprocess(
             None, site_config=None, row=_tap_row(), pool=_FakePool(),
         )
