@@ -79,6 +79,34 @@ def _parse_date(value: Any) -> _dt.date | None:
     return None
 
 
+def _extract_slug_from_url_or_path(value: str) -> str | None:
+    """Best-effort extraction of a post slug from a Singer-emitted URL or path.
+
+    Handles common shapes:
+      https://www.gladlabs.io/posts/the-engine-room-...   -> the-engine-room-...
+      /posts/some-slug                                    -> some-slug
+      /posts/some-slug/                                   -> some-slug
+
+    Returns None when the value doesn't look like a /posts/<slug> URL.
+    """
+    if not value:
+        return None
+    # Strip schema + host if present.
+    after_path = value
+    if value.startswith(("http://", "https://")):
+        try:
+            from urllib.parse import urlparse
+            after_path = urlparse(value).path
+        except Exception:
+            return None
+    # Look for /posts/<slug> pattern.
+    after_path = after_path.strip("/")
+    parts = after_path.split("/")
+    if len(parts) >= 2 and parts[0] == "posts":
+        return parts[1] or None
+    return None
+
+
 def _parse_numeric(value: Any) -> float | None:
     if value is None:
         return None
@@ -116,6 +144,12 @@ async def external_metrics_writer(
         return {"inserted": 0, "skipped": 1, "reason": "no stream/record"}
 
     config = row.get("config") or {}
+    # asyncpg returns jsonb as a raw string unless a codec is registered.
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except json.JSONDecodeError:
+            return {"inserted": 0, "skipped": 1, "reason": "row.config not parseable JSON"}
     if not isinstance(config, dict):
         return {"inserted": 0, "skipped": 1, "reason": "row.config invalid"}
 
@@ -145,9 +179,14 @@ async def external_metrics_writer(
         )
         return {"inserted": 0, "skipped": 1, "reason": "bad date"}
 
-    # Resolve post_id / slug. If the operator pointed post_field at "slug",
-    # we look up the post by slug to fill post_id (FK-friendly). If pointed
-    # at "post_id" we trust the value.
+    # Resolve post_id / slug from whatever the tap emits. Three shapes:
+    #   1. post_field = "slug" — value is a clean slug; look up posts.id.
+    #   2. post_field = "post_id" — value is already a UUID; trust it.
+    #   3. post_field = anything else (e.g. "page" for GSC, "pagePath"
+    #      for GA4) — value is typically a URL or path. We try to
+    #      extract the slug from a "/posts/<slug>" pattern and look up
+    #      posts.id; if we can't extract, we just stash whatever string
+    #      we have in the slug column (text) and leave post_id NULL.
     post_id: Any = None
     slug: Any = None
     if post_field:
@@ -161,9 +200,26 @@ async def external_metrics_writer(
                     )
                 if found:
                     post_id = found
-            else:
-                # post_id directly — operator's responsibility to provide a uuid string
+            elif post_field == "post_id":
+                # Operator's responsibility to provide a UUID string.
+                # If it's not a UUID we'd rather skip the FK than crash;
+                # let asyncpg validate at INSERT time.
                 post_id = raw_ref
+            else:
+                # URL or path — try to extract a slug.
+                extracted = _extract_slug_from_url_or_path(raw_ref)
+                if extracted:
+                    slug = extracted[:255]
+                    async with pool.acquire() as conn:
+                        found = await conn.fetchval(
+                            "SELECT id FROM posts WHERE slug = $1", slug,
+                        )
+                    if found:
+                        post_id = found
+                else:
+                    # Stash the raw value in the slug text column so we
+                    # at least preserve it for analytics. post_id stays NULL.
+                    slug = raw_ref[:255]
 
     # Build dimensions jsonb from non-metric, non-date fields.
     dimensions: dict[str, Any] = {}
