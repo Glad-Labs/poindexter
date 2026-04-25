@@ -2,10 +2,14 @@ import logging
 import os
 from typing import Any
 
-# Try to import OpenTelemetry - it's optional for development
+# Try to import OpenTelemetry - it's optional for development.
+# Uses the gRPC OTLP exporter (port 4317) — Tempo accepts both gRPC and
+# HTTP, but gRPC is the default Otel collector convention and the
+# exporter package is what we ship in the worker pyproject. The HTTP
+# variant (proto.http) is intentionally NOT a dependency.
 try:
     from opentelemetry import trace  # type: ignore[import-untyped]
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore
         OTLPSpanExporter,
     )
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore
@@ -148,8 +152,21 @@ def setup_telemetry(app, site_config: Any, service_name: str = "cofounder-agent"
                 exc_info=True,
             )
 
-        # Instrument the FastAPI app
+        # Instrument the FastAPI app. FastAPI 0.110+ finalizes the
+        # middleware stack early (specifically when the OpenAPI schema
+        # is generated for /docs, when the app is first invoked, or
+        # when certain mount() / sub-app operations run). Once the
+        # stack is built, ``add_middleware`` raises ``Cannot add
+        # middleware after an application has started``. Setting
+        # ``app.middleware_stack = None`` invalidates the cached stack
+        # so the instrumenter's add_middleware call rebuilds it
+        # cleanly. Documented Otel-Python escape hatch — see
+        # opentelemetry-python/issues/2727.
         try:
+            try:
+                app.middleware_stack = None  # type: ignore[attr-defined]
+            except Exception:
+                pass
             FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
         except Exception as e:
             logging.error(f"[setup_telemetry] Failed to instrument FastAPI: {e}", exc_info=True)

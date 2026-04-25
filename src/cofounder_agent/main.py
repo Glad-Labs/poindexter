@@ -241,12 +241,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             setup_pyroscope(_site_cfg)
         except Exception as e:
             logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
-        try:
-            from services.tracing import instrument_fastapi, setup_tracing
-            if setup_tracing(_site_cfg, service_name="cofounder-agent"):
-                instrument_fastapi(app)
-        except Exception as e:
-            logger.warning("[LIFESPAN] OTel tracing init failed: %s", e)
 
         # Load prompt templates from DB (overrides YAML files). Pass
         # site_config so the Pro tier (gitea#225) can read
@@ -522,6 +516,15 @@ Admin panel at `/admin`.
     swagger_ui_parameters={"defaultModelsExpandDepth": 1},
 )
 
+# Initialize OpenTelemetry tracing FIRST — before any other code path
+# touches the middleware stack. SQLAdmin / setup_admin below mounts a
+# Starlette sub-app, which forces FastAPI to finalize its middleware
+# stack; once finalized, FastAPIInstrumentor.instrument_app fails with
+# "Cannot add middleware after an application has started". Putting
+# the OTel hookup here keeps the stack mutable when the instrumenter
+# wraps it.
+setup_telemetry(app, _site_cfg)
+
 # Initialize SQLAdmin panel at /admin
 try:
     from admin import setup_admin
@@ -530,9 +533,6 @@ try:
     logger.info("[ADMIN] SQLAdmin panel mounted at /admin")
 except Exception as e:
     logger.warning(f"[ADMIN] SQLAdmin not available: {e}")
-
-# Initialize OpenTelemetry tracing
-setup_telemetry(app, _site_cfg)
 
 # Initialize Pyroscope continuous profiling (opt-in via
 # app_settings.enable_pyroscope). LGTM+P stack, GH #75.
