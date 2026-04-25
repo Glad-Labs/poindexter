@@ -416,6 +416,13 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      # Symmetric key for pgcrypto-encrypted app_settings rows
+      # (discord_bot_token + discord_voice_bot_token both use is_secret=true).
+      # Without this, the bot reads the raw `enc:v1:<base64>` ciphertext as
+      # the Discord token and discord.py rejects it for containing
+      # newlines/control bytes — a crash-loop that hid behind unhelpful
+      # "Newline in headers" tracebacks.
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
       - ./scripts/discord-voice-bot.py:/app/discord-voice-bot.py:ro
       - ./brain:/brain:ro

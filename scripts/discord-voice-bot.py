@@ -61,16 +61,48 @@ def _load_config_from_db() -> dict:
         print("ERROR: No database URL found. Run `poindexter setup` first.")
         sys.exit(1)
 
+    secret_key = os.getenv("POINDEXTER_SECRET_KEY", "")
+    enc_prefix = "enc:v1:"
+
     async def _fetch():
         conn = await asyncpg.connect(db_url)
         try:
             rows = await conn.fetch(
-                "SELECT key, value FROM app_settings WHERE key IN "
+                "SELECT key, value, is_secret FROM app_settings WHERE key IN "
                 "('discord_bot_token', 'discord_voice_bot_token', "
                 "'discord_voice_channel_id', 'discord_guild_id', "
                 "'whisper_model', 'tts_voice', 'api_token', 'ollama_base_url')"
             )
-            return {r["key"]: r["value"] for r in rows}
+            cfg: dict = {}
+            for r in rows:
+                value = r["value"] or ""
+                # Decrypt is_secret rows whose value uses the standard
+                # ``enc:v1:<base64>`` envelope. Without this, callers like
+                # discord.py reject the bot token because the raw ciphertext
+                # contains characters not allowed in HTTP headers — the
+                # crash that surfaced this fix (GH-107 pattern).
+                if r["is_secret"] and value.startswith(enc_prefix):
+                    if not secret_key:
+                        print(
+                            "ERROR: POINDEXTER_SECRET_KEY is not set; "
+                            "cannot decrypt is_secret app_settings.",
+                            file=sys.stderr,
+                        )
+                        sys.exit(2)
+                    try:
+                        value = await conn.fetchval(
+                            "SELECT pgp_sym_decrypt(decode($1, 'base64'), $2)::text",
+                            value[len(enc_prefix):],
+                            secret_key,
+                        )
+                    except Exception as exc:  # pragma: no cover
+                        print(
+                            f"ERROR: failed to decrypt {r['key']}: {exc}",
+                            file=sys.stderr,
+                        )
+                        sys.exit(2)
+                cfg[r["key"]] = (value or "").strip()
+            return cfg
         finally:
             await conn.close()
 
