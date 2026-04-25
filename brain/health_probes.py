@@ -529,14 +529,32 @@ async def probe_stuck_tasks(pool) -> dict:
 
 
 async def probe_approval_queue(pool) -> dict:
-    """Probe: Alert if approval queue backs up beyond threshold."""
+    """Probe: Alert if approval queue backs up beyond threshold.
+
+    Threshold is tunable via ``app_settings.approval_queue_alert_threshold``
+    (default 15). Was hardcoded to 5 historically — a number from before
+    the throttle gate was introduced. With ``max_approval_queue`` defaulting
+    to 20, a static 5 fires constantly during normal pacing. The default
+    here is high enough that you only see the alert when the queue is
+    actively stalled (close to the throttle ceiling).
+    """
     try:
+        threshold = 15
+        try:
+            row = await pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = "
+                "'approval_queue_alert_threshold'"
+            )
+            if row and row["value"]:
+                threshold = int(str(row["value"]).strip())
+        except Exception:  # pragma: no cover — defaults are fine
+            pass
+
         row = await pool.fetchrow("""
             SELECT COUNT(*) as c FROM pipeline_tasks_view
             WHERE status = 'awaiting_approval'
         """)
         count = row["c"] if row else 0
-        threshold = 5
         return {
             "ok": count <= threshold,
             "queue_size": count,
