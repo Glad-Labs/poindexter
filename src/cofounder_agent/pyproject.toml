@@ -99,11 +99,10 @@ prometheus-client = "^0.25.0"
 # installed in the running container even with `enable_pyroscope=true`
 # in app_settings — agent silently no-op'd. Default-include keeps
 # the contract simple (DB flag is the single source of truth).
-pyroscope-io = "^0.8.5"
+pyroscope-io = "^1.0.6"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
-profiling = ["pyroscope-io"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing

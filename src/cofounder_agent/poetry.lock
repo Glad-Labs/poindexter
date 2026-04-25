@@ -580,7 +580,6 @@ description = "Foreign Function Interface for Python calling C code."
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "platform_python_implementation != \"PyPy\" or extra == \"profiling\""
 files = [
     {file = "cffi-2.0.0-cp310-cp310-macosx_10_13_x86_64.whl", hash = "sha256:0cf2d91ecc3fcc0625c2c530fe004f82c110405f101548512cce44322fa8ac44"},
     {file = "cffi-2.0.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f73b96c41e3b2adedc34a7356e64c8eb96e03a3782b535e043a986276ce12a49"},
@@ -3956,7 +3955,7 @@ description = "C parser in Python"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "implementation_name != \"PyPy\" and (platform_python_implementation != \"PyPy\" or extra == \"profiling\")"
+markers = "implementation_name != \"PyPy\""
 files = [
     {file = "pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"},
     {file = "pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29"},
@@ -4242,21 +4241,23 @@ testutils = ["gitpython (>3)"]
 
 [[package]]
 name = "pyroscope-io"
-version = "0.8.16"
+version = "1.0.6"
 description = "Pyroscope Python integration"
 optional = false
-python-versions = "*"
+python-versions = ">=3.10"
 groups = ["main"]
-markers = "extra == \"profiling\""
 files = [
-    {file = "pyroscope_io-0.8.16-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:e07edcfd59f5bdce42948b92c9b118c824edbd551730305f095a6b9af401a9e8"},
-    {file = "pyroscope_io-0.8.16-py2.py3-none-macosx_11_0_x86_64.whl", hash = "sha256:dc98355e27c0b7b61f27066500fe1045b70e9459bb8b9a3082bc4755cb6392b6"},
-    {file = "pyroscope_io-0.8.16-py2.py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:86f0f047554ff62bd92c3e5a26bc2809ccd467d11fbacb9fef898ba299dbda59"},
-    {file = "pyroscope_io-0.8.16-py2.py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:6b91ce5b240f8de756c16a17022ca8e25ef8a4eed461c7d074b8a0841cf7b445"},
+    {file = "pyroscope_io-1.0.6-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:9cba2e3be45412d15e0e5725675c28ddbc270cccb305525cdd2acd7e8f9c4f8c"},
+    {file = "pyroscope_io-1.0.6-cp310-abi3-macosx_11_0_x86_64.whl", hash = "sha256:ea62d35269b82e333e94a7bb02df0765185750743a6a6b0c216417bd7db84c72"},
+    {file = "pyroscope_io-1.0.6-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2a577eff1302c8ac7cd73505e385707eb3ed97d7c0e840c834b1b86ce94c320c"},
+    {file = "pyroscope_io-1.0.6-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b30e1796d2ab517015aa242bce1ea3433439f6723d6012bb9997727e7bb4c822"},
+    {file = "pyroscope_io-1.0.6-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:57de53da60797da15eb7477475b2b81f2e9f200ea45efa135f6bcaff780b997e"},
+    {file = "pyroscope_io-1.0.6-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c14a07195d8a171f20d11a34af9ba8c19985a6c3b0f1d49b6f976d8a04fd4f8c"},
+    {file = "pyroscope_io-1.0.6.tar.gz", hash = "sha256:bf6b37cb0639fc07c325d000fc6ff649bb19a8a61ef9633dfb5945054ec54084"},
 ]
 
 [package.dependencies]
-cffi = ">=1.6.0"
+cffi = ">=2.0.0,<3.0.0"
 
 [[package]]
 name = "pytest"
@@ -6330,9 +6331,8 @@ type = ["pytest-mypy"]
 
 [extras]
 ml = ["diffusers", "torch", "transformers"]
-profiling = ["pyroscope-io"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "b1898b8e0deb99731476c40ac145d54d538271d1dbc0479b45da18bc841d9d7e"
+content-hash = "90b051763a07fecfa01888fb22a8672573acc3993fcba3aa94cdef73f1b16555"
