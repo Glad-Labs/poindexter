@@ -421,3 +421,5 @@ Register in `brain/probe_registry.py`.
   Stage chain fits together
 - [App settings reference](../reference/app-settings.md) — every
   DB-backed config key
+
+<!-- DOC-SYNC 2026-04-25: stale references — brain/probe_registry.py (use brain/probe_interface.py), services/social_publisher.py, and threads.py adapter no longer exist. Extension-point docs may be out of date. -->
