@@ -242,12 +242,15 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
 
-        # Load prompt templates from DB (overrides YAML files)
+        # Load prompt templates from DB (overrides YAML files). Pass
+        # site_config so the Pro tier (gitea#225) can read
+        # ``premium_active`` live on every ``get_prompt`` call without
+        # restarting the worker after license activation.
         try:
             from services.prompt_manager import get_prompt_manager
             pm = get_prompt_manager()
             db_pool = services["database"].pool
-            loaded = await pm.load_from_db(db_pool)
+            loaded = await pm.load_from_db(db_pool, site_config=_site_cfg)
             logger.info("[LIFESPAN] Prompt templates loaded from DB: %d", loaded)
         except Exception as e:
             logger.warning("[LIFESPAN] Prompt DB load failed (using YAML fallback): %s", e)
