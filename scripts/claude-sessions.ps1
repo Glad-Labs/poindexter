@@ -1,8 +1,8 @@
-<#
+﻿<#
 .SYNOPSIS
     Scheduled autonomous Claude Code sessions for continuous improvement.
     Each session gets a focused prompt, works in the repo, and exits.
-    All changes go to branches — never commits directly to main.
+    All changes go to branches - never commits directly to main.
 
 .PARAMETER Session
     Which session to run: test-health, test-expansion, issue-resolver,
@@ -37,12 +37,12 @@ $WorkDir  = "C:\Users\mattm\glad-labs-website"
 $LogDir   = "$env:USERPROFILE\.poindexter\logs\claude-sessions"
 $Claude   = "$env:USERPROFILE\.local\bin\claude.exe"
 $TaskPrefix = "Claude Session"
-$RepoPreamble = "Your working directory on launch is C:\Users\mattm. Before running ANY shell commands, cd into C:\Users\mattm\glad-labs-website — that is where the repo lives. All relative paths below are relative to the repo root. "
+$RepoPreamble = "Your working directory on launch is C:\Users\mattm. Before running ANY shell commands, cd into C:\Users\mattm\glad-labs-website - that is where the repo lives. All relative paths below are relative to the repo root. "
 
 # Session definitions: name, prompt, schedule, max duration
 $Sessions = @{
     "test-health" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Run the full Python test suite: cd src/cofounder_agent && python -m pytest tests/unit/ -q --tb=short -p no:cacheprovider. If tests pass, exit with no changes. If tests fail, analyze whether they are simple bugs (wrong mocks, stale assertions, missing imports). Fix the simple ones only. For complex failures, add a # FIXME comment. Use the forgejo MCP tools for Gitea. Create branch auto/test-fixes-{date}, commit, push via git, and create a Gitea PR against main. Do NOT modify production code (only files in tests/). Do NOT push to main directly. Do NOT merge the PR yourself — Matt reviews. Keep output minimal."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Run the full Python test suite: cd src/cofounder_agent && python -m pytest tests/unit/ -q --tb=short -p no:cacheprovider. If tests pass, exit with no changes. If tests fail, analyze whether they are simple bugs (wrong mocks, stale assertions, missing imports). Fix the simple ones only. For complex failures, add a # FIXME comment. Use the forgejo MCP tools for Gitea. Create branch auto/test-fixes-{date}, commit, push via git, and create a Gitea PR against main. Do NOT modify production code (only files in tests/). Do NOT push to main directly. Do NOT merge the PR yourself - Matt reviews. Keep output minimal."
         Cron = "0 3 * * *"
         TimeHH = "03"
         TimeMM = "00"
@@ -58,7 +58,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "issue-resolver" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Use the forgejo MCP tools to list open issues (owner=gladlabs, repo=glad-labs-codebase, state=open, sort=oldest). Pick ONE issue that is clearly scoped, not marked Backlog, and fixable without architectural decisions. Skip anything involving Lemon Squeezy, DNS, secret rotation, or 'Matt decides' clauses. Read the code, understand the bug, make a targeted fix. Commit to branch auto/fix-issue-{number}, push via git, create a Gitea PR referencing the issue. Do NOT close the issue — let Matt merge the PR. Do NOT push to main. If no suitable issue exists, add an analysis comment to ONE issue explaining what you found. Keep output minimal."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Use the forgejo MCP tools to list open issues (owner=gladlabs, repo=glad-labs-codebase, state=open, sort=oldest). Pick ONE issue that is clearly scoped, not marked Backlog, and fixable without architectural decisions. Skip anything involving Lemon Squeezy, DNS, secret rotation, or 'Matt decides' clauses. Read the code, understand the bug, make a targeted fix. Commit to branch auto/fix-issue-{number}, push via git, create a Gitea PR referencing the issue. Do NOT close the issue - let Matt merge the PR. Do NOT push to main. If no suitable issue exists, add an analysis comment to ONE issue explaining what you found. Keep output minimal."
         Cron = "0 5 * * *"
         TimeHH = "05"
         TimeMM = "00"
@@ -74,12 +74,12 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "doc-sync" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Check CLAUDE.md for stale numbers: count tests (python -m pytest tests/unit/ --co -q 2>&1 | tail -1), count services (ls src/cofounder_agent/services/*.py | wc -l), count Grafana dashboards (ls infrastructure/grafana/dashboards/*.json | wc -l). If any CLAUDE.md number is off by >10%, update it. Also verify any referenced file paths in CLAUDE.md still exist. Commit fixes to auto/doc-sync-{date}, push, create a Gitea PR. Do NOT push to main. Keep output minimal."
-        Cron = "0 5 * * 5"
-        TimeHH = "05"
+        Prompt = "You are in the glad-labs-website repo running autonomously for an overnight documentation review pass. Work through this checklist in order, stopping early when out of budget. CHECKLIST: 1) CLAUDE.md numbers - count Python unit tests (cd src/cofounder_agent && python -m pytest tests/unit/ --co -q 2>&1 | tail -1), services (ls src/cofounder_agent/services/*.py | wc -l), grafana dashboards (ls infrastructure/grafana/dashboards/*.json | wc -l), published posts (psql via brain.bootstrap if available, else skip). Fix any number off by >10 percent. 2) CLAUDE.md file paths - verify every file path mentioned actually exists; fix or remove dead refs. 3) docs/ tree - for each *.md file, check that any code paths or commands it references still exist; flag the file (don't rewrite content) by appending a single line at the bottom in HTML comment form noting what's stale. 4) Retired terminology sweep - grep the repo for stale terms: 'Woodpecker' (retired 2026-04-24, replaced by Gitea Actions), '$29 guide' or 'Quick Start Guide' product references (the $29 SKU was killed 2026-04-24, only the $9.99/89.99 Pro tier remains). For each hit in docs/ or README.md, update the wording or open a Gitea issue if the change is non-mechanical. 5) ~/.claude/projects/C--Users-mattm/memory - flag any memory file with a date older than 21 days in a HTML comment at the top. Do NOT rewrite memory content. ONLY commit if the diff is non-empty. Branch auto/doc-sync-{date}, push via git, open a Gitea PR (owner=gladlabs, repo=glad-labs-codebase) titled 'docs: overnight sync {date}' with a summary of what changed. Do NOT push to main directly. Keep output minimal - concise step-by-step log only."
+        Cron = "0 6 * * *"
+        TimeHH = "06"
         TimeMM = "00"
-        Days = "FRI"
-        MaxMinutes = 20
+        Days = "daily"
+        MaxMinutes = 30
     }
 }
 
