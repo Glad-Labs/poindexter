@@ -29,18 +29,18 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 | Service       | URL                                             |
 | ------------- | ----------------------------------------------- |
 | Public site   | https://gladlabs.io (→ www.gladlabs.io)         |
-| Backend API   | http://localhost:8002                           |
+| Backend API   | http://localhost:8000                           |
 | Brain daemon  | Local process (brain/)                          |
 | Grafana       | https://gladlabs.grafana.net                    |
 | GitHub        | https://github.com/Glad-Labs/glad-labs-codebase |
 | Project board | https://github.com/orgs/Glad-Labs/projects/2    |
 
-### Key Numbers (as of April 16, 2026)
+### Key Numbers (as of April 25, 2026)
 
-- 34+ published posts on gladlabs.io
-- 16 custom services built
-- 7 Grafana dashboards, 90+ panels, 5 alert rules
-- 5,097+ Python unit tests passing
+- 43+ published posts on gladlabs.io
+- 100+ services in `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
+- 14 Grafana dashboards, 5 alert rules
+- 6,100+ Python unit tests passing
 - 200+ app_settings keys (roughly 60 added in the #198 hardening sweep)
 - 1,900+ embeddings across posts / issues / audit / memory / brain
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
@@ -53,12 +53,6 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 npm run dev                  # Start both services concurrently (primary command)
 npm run dev:cofounder        # Backend only (FastAPI + uvicorn)
 npm run dev:public           # Next.js only
-```
-
-### Worker (local GPU content generation)
-
-```powershell
-.\scripts\start-worker.ps1   # Start worker connected to production DB
 ```
 
 ### Testing
@@ -237,7 +231,7 @@ target any S3-compatible provider (R2, S3, B2, MinIO). The old
 
 ## Monitoring
 
-- **Grafana Cloud:** gladlabs.grafana.net — 7 dashboards, 90+ panels
+- **Grafana Cloud:** gladlabs.grafana.net — 14 dashboards
 - **Dashboards:** Ops (home), Performance, Hardware, Pipeline, Cost, Quality, plus built-in
 - **Alerts → Telegram + Discord:** stuck tasks, failure rate, worker offline, GPU temp, VRAM usage
 - **Playlist:** "Glad Labs Command Center" cycles all dashboards every 30s
@@ -251,8 +245,7 @@ Code quality agent: every 4h at :37 — security/dead code/error handling scans
 
 ## Reference Documentation
 
-- **Operations runbook:** `docs/operations/runbook.md` (current as of March 30)
-- **Session handoff:** `~/.claude/projects/.../memory/session_45_handoff.md`
-- **Architecture vision:** `~/.claude/projects/.../memory/project_brain_architecture.md`
-- **Revenue model:** `~/.claude/projects/.../memory/project_revenue_model.md`
-- **Marketing drafts:** `docs/marketing/hacker-news-post.md`, `docs/marketing/twitter-thread.md`
+- **Operations docs:** `docs/operations/` (troubleshooting, local-development-setup, disaster-recovery, ci-deploy-chain, etc.)
+- **Latest session handoff:** `~/.claude/projects/C--Users-mattm/memory/session_62_handoff.md`
+- **Architecture vision:** `~/.claude/projects/C--Users-mattm/memory/project_brain_architecture.md`
+- **Revenue model:** `~/.claude/projects/C--Users-mattm/memory/project_revenue_model.md`
