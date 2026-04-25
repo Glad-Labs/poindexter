@@ -475,9 +475,36 @@ class TopicDiscovery:
             return []
 
     async def _deduplicate(self, topics: list[DiscoveredTopic]) -> list[DiscoveredTopic]:
-        """Mark topics that duplicate existing published posts."""
+        """Mark topics that duplicate existing published posts.
+
+        Two thresholds, both tunable via app_settings (gitea#279):
+
+        - ``topic_dedup_existing_threshold`` (default 0.7) — match against
+          published posts + in-flight tasks. Should be permissive because
+          coincidental keyword overlap with the ~hundreds-of-titles corpus
+          is common (e.g. "Challenge" and "Week" recur across distinct
+          events with different sponsors / dollar amounts / platforms).
+
+        - ``topic_dedup_intra_batch_threshold`` (default 0.65) — match
+          between candidates in the same scrape. Slightly tighter, since
+          a single source dropping two near-identical headlines usually
+          *is* a duplicate.
+
+        Both replace the previous hardcoded 0.4, which was filtering
+        14/14 candidates against the corpus (gitea#279, "topic intra-batch
+        dedup is too aggressive — distinct-event titles flagged as
+        duplicates"). Lowering either knob will block more topics; raising
+        will let more through.
+        """
         if not self.pool:
             return topics
+
+        existing_threshold = self._site_config.get_float(
+            "topic_dedup_existing_threshold", 0.7
+        )
+        intra_threshold = self._site_config.get_float(
+            "topic_dedup_intra_batch_threshold", 0.65
+        )
 
         try:
             # Get all published post titles for fuzzy matching
@@ -531,12 +558,16 @@ class TopicDiscovery:
                     existing_words = _content_words(existing_title)
                     if len(existing_words) < 2:
                         continue
-                    is_dup, score = _word_overlap_match(topic_words, existing_words)
+                    is_dup, score = _word_overlap_match(
+                        topic_words, existing_words, threshold=existing_threshold,
+                    )
                     if is_dup:
                         topic.is_duplicate = True
-                        logger.debug(
-                            "[DEDUP] '%s' matches '%s' (overlap=%.2f)",
-                            topic.title[:40], existing_title[:40], score,
+                        logger.info(
+                            "[DEDUP] vs-existing: '%s' ≈ '%s' "
+                            "(overlap=%.2f, threshold=%.2f)",
+                            topic.title[:40], existing_title[:40],
+                            score, existing_threshold,
                         )
                         break
 
@@ -555,12 +586,16 @@ class TopicDiscovery:
                 t2_words = _content_words(t2.title.lower())
                 if len(t2_words) < 2:
                     continue
-                is_dup, score = _word_overlap_match(t1_words, t2_words)
+                is_dup, score = _word_overlap_match(
+                    t1_words, t2_words, threshold=intra_threshold,
+                )
                 if is_dup:
                     t2.is_duplicate = True
                     logger.info(
-                        "[DEDUP] Intra-batch: '%s' ≈ '%s' (overlap=%.2f)",
-                        t2.title[:40], t1.title[:40], score,
+                        "[DEDUP] Intra-batch: '%s' ≈ '%s' "
+                        "(overlap=%.2f, threshold=%.2f)",
+                        t2.title[:40], t1.title[:40],
+                        score, intra_threshold,
                     )
 
         return topics
