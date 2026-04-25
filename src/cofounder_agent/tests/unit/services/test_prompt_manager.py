@@ -321,3 +321,126 @@ class TestPromptVersionEnum:
 
     def test_v1_1_exists(self):
         assert PromptVersion.V1_1.value == "v1.1"
+
+
+# ---------------------------------------------------------------------------
+# Premium gating (gitea#225)
+# ---------------------------------------------------------------------------
+
+
+class _FakeRow(dict):
+    """asyncpg.Record stand-in that supports both dict + ``row[key]`` access."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+
+
+class _FakePool:
+    """Minimal pool stub for ``load_from_db`` — returns the prompt rows
+    we hand it and a single ``premium_active`` value when needed."""
+
+    def __init__(self, rows, premium_active_value=None):
+        self._rows = [_FakeRow(**r) for r in rows]
+        self._premium_active = premium_active_value
+
+    async def fetch(self, _query):
+        return self._rows
+
+    async def fetchrow(self, _query):
+        if self._premium_active is None:
+            return None
+        return _FakeRow(value=self._premium_active)
+
+
+class _FakeSiteConfig:
+    def __init__(self, **kv):
+        self._kv = kv
+
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        v = self._kv.get(key)
+        if v is None:
+            return default
+        return str(v).strip().lower() in ("true", "1", "yes", "on")
+
+
+@pytest.mark.unit
+class TestPremiumGating:
+    @pytest.fixture
+    def rows_default_only(self):
+        return [
+            {"key": "seo_title", "template": "FREE TITLE: {topic}", "source": "default"},
+        ]
+
+    @pytest.fixture
+    def rows_default_and_premium(self):
+        return [
+            {"key": "seo_title", "template": "FREE TITLE: {topic}", "source": "default"},
+            {"key": "seo_title", "template": "PRO TITLE for {topic}", "source": "premium"},
+            {"key": "blog_intro", "template": "PRO INTRO: {topic}", "source": "premium"},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_default_only_returns_default(self, pm, rows_default_only):
+        pool = _FakePool(rows_default_only)
+        await pm.load_from_db(pool, site_config=_FakeSiteConfig(premium_active=True))
+        # Premium flag is true but no premium row exists — fall back to default
+        out = pm.get_prompt("seo_title", topic="x")
+        assert out == "FREE TITLE: x"
+
+    @pytest.mark.asyncio
+    async def test_premium_active_uses_premium_override(
+        self, pm, rows_default_and_premium,
+    ):
+        pool = _FakePool(rows_default_and_premium)
+        await pm.load_from_db(pool, site_config=_FakeSiteConfig(premium_active=True))
+        assert pm.get_prompt("seo_title", topic="x") == "PRO TITLE for x"
+
+    @pytest.mark.asyncio
+    async def test_premium_inactive_uses_default(self, pm, rows_default_and_premium):
+        pool = _FakePool(rows_default_and_premium)
+        await pm.load_from_db(pool, site_config=_FakeSiteConfig(premium_active=False))
+        # Premium row exists but flag is off — must use default
+        assert pm.get_prompt("seo_title", topic="x") == "FREE TITLE: x"
+
+    @pytest.mark.asyncio
+    async def test_premium_only_key_falls_back_to_yaml_when_inactive(
+        self, pm, rows_default_and_premium,
+    ):
+        """Premium has 'blog_intro' but no default — when inactive, YAML
+        fallback or KeyError. (No YAML key by this name exists.)"""
+        pool = _FakePool(rows_default_and_premium)
+        await pm.load_from_db(pool, site_config=_FakeSiteConfig(premium_active=False))
+        with pytest.raises(KeyError):
+            pm.get_prompt("blog_intro", topic="x")
+
+    @pytest.mark.asyncio
+    async def test_live_flag_flip_takes_effect_without_reload(
+        self, pm, rows_default_and_premium,
+    ):
+        """The whole point of passing site_config to load_from_db: flipping
+        ``premium_active`` should change ``get_prompt`` output without a
+        second ``load_from_db`` call (no worker restart on activate)."""
+        sc = _FakeSiteConfig(premium_active=False)
+        pool = _FakePool(rows_default_and_premium)
+        await pm.load_from_db(pool, site_config=sc)
+
+        assert pm.get_prompt("seo_title", topic="x") == "FREE TITLE: x"
+
+        # Operator activates Pro tier — site_config now reports True.
+        sc._kv["premium_active"] = True
+        assert pm.get_prompt("seo_title", topic="x") == "PRO TITLE for x"
+
+        # …and back to free if they cancel.
+        sc._kv["premium_active"] = False
+        assert pm.get_prompt("seo_title", topic="x") == "FREE TITLE: x"
+
+    @pytest.mark.asyncio
+    async def test_no_site_config_falls_back_to_db_snapshot(
+        self, pm, rows_default_and_premium,
+    ):
+        """Without site_config, the loader takes a one-shot DB read of
+        ``premium_active``. Useful for tests + REPL but won't pick up
+        later activations."""
+        pool = _FakePool(rows_default_and_premium, premium_active_value="true")
+        await pm.load_from_db(pool, site_config=None)
+        assert pm.get_prompt("seo_title", topic="x") == "PRO TITLE for x"

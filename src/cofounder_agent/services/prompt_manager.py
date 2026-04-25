@@ -98,7 +98,14 @@ class UnifiedPromptManager:
     def __init__(self):
         self.prompts: dict[str, dict[str, Any]] = {}
         self.metadata: dict[str, PromptMetadata] = {}
-        self._db_overrides: dict[str, str] = {}  # DB prompt overrides (loaded async)
+        # DB prompt overrides loaded by ``load_from_db``. Kept in two
+        # buckets so the Pro tier (gitea#225) can layer over defaults
+        # without losing them — toggling ``premium_active`` flips the
+        # pipeline cleanly.
+        self._db_overrides: dict[str, str] = {}
+        self._db_overrides_premium: dict[str, str] = {}
+        self._site_config: Any = None
+        self._premium_active_static: bool = False
         self._initialize_prompts()
 
     def _initialize_prompts(self):
@@ -166,33 +173,100 @@ class UnifiedPromptManager:
         )
         logger.debug("Registered prompt: %s (%s)", key, category.value)
 
-    async def load_from_db(self, pool) -> int:
-        """Load prompt overrides from the prompt_templates database table.
+    async def load_from_db(self, pool, site_config: Any = None) -> int:
+        """Load prompt overrides from the ``prompt_templates`` database table.
 
-        Call this once at app startup (after DB pool is ready).
-        DB prompts take priority over YAML prompts — enabling runtime editing.
+        Call this once at app startup (after DB pool is ready). DB prompts
+        take priority over YAML prompts so operators can tune at runtime
+        without a redeploy.
 
-        Returns number of prompts loaded from DB.
+        Two layers:
+        - ``source='default'`` rows — free baseline, always loaded.
+        - ``source='premium'`` rows — Pro-tier pack, also loaded but only
+          consulted by ``get_prompt`` when ``premium_active='true'`` in
+          ``app_settings`` (gitea#225). The premium pack overrides defaults
+          for matching keys without deleting the defaults — toggling the
+          flag flips the whole pipeline cleanly.
+
+        ``site_config`` is optional but recommended. When provided,
+        ``get_prompt`` reads ``premium_active`` through it on every lookup
+        (fast in-memory cache hit) so license activation takes effect
+        without restarting the worker. Without it, premium gating falls
+        back to a one-shot DB read at load time and won't notice a later
+        activation until the next ``load_from_db`` call.
+
+        Returns the total number of rows loaded (default + premium).
         """
         if pool is None:
             return 0
         try:
             rows = await pool.fetch(
-                "SELECT key, template FROM prompt_templates WHERE is_active = true"
+                "SELECT key, template, source "
+                "FROM prompt_templates WHERE is_active = true"
             )
+            self._db_overrides.clear()
+            self._db_overrides_premium.clear()
             for row in rows:
-                self._db_overrides[row["key"]] = row["template"]
-            logger.info("Loaded %d prompt templates from database", len(rows))
-            return len(rows)
+                # Tolerate pre-migration rows (no source column) by treating
+                # them as default. The migration backfills 'default', so
+                # this only matters for unit tests against a freshly-built
+                # in-memory schema.
+                source = (row.get("source") or "default") if hasattr(row, "get") else (
+                    row["source"] if "source" in row.keys() else "default"
+                )
+                if source == "premium":
+                    self._db_overrides_premium[row["key"]] = row["template"]
+                else:
+                    self._db_overrides[row["key"]] = row["template"]
+
+            # Site config gives us a live read of premium_active per call.
+            # Fall back to a one-shot DB read so the loader still works
+            # without DI plumbing (tests, REPL).
+            self._site_config = site_config
+            if site_config is None:
+                try:
+                    flag_row = await pool.fetchrow(
+                        "SELECT value FROM app_settings "
+                        "WHERE key = 'premium_active'"
+                    )
+                    self._premium_active_static = bool(
+                        flag_row and str(flag_row["value"]).strip().lower()
+                        in ("true", "1", "yes", "on")
+                    )
+                except Exception:
+                    self._premium_active_static = False
+
+            logger.info(
+                "Loaded %d default + %d premium prompts (premium_active=%s)",
+                len(self._db_overrides),
+                len(self._db_overrides_premium),
+                self._is_premium_active(),
+            )
+            return len(self._db_overrides) + len(self._db_overrides_premium)
         except Exception as e:
             logger.warning("Could not load prompts from DB (using YAML fallback): %s", e)
             return 0
+
+    def _is_premium_active(self) -> bool:
+        """Live-read ``premium_active`` if site_config was provided, else
+        use the snapshot from ``load_from_db``.
+
+        Kept off the public surface — callers should go through
+        ``get_prompt`` and let it route. Exposed only for the load log line
+        and tests."""
+        if self._site_config is not None:
+            try:
+                return bool(self._site_config.get_bool("premium_active", False))
+            except Exception:
+                pass
+        return getattr(self, "_premium_active_static", False)
 
     def get_prompt(self, key: str, **kwargs) -> str:
         """
         Get a prompt by key and format with provided kwargs.
 
-        Priority: DB override > YAML file > KeyError
+        Priority: premium DB override (when ``premium_active``) > default
+        DB override > YAML file > KeyError.
 
         Args:
             key: Prompt key (e.g., "blog_generation.initial_draft")
@@ -204,8 +278,16 @@ class UnifiedPromptManager:
         Raises:
             KeyError: If prompt key not found
         """
-        # DB overrides take priority (editable at runtime, no redeploy)
-        template = self._db_overrides.get(key)
+        # Premium overrides win when the operator's license is active.
+        # Otherwise (no license, expired, or pre-activation), we silently
+        # use the same default the free tier sees. Toggling the flag
+        # flips the pipeline immediately on the next prompt lookup —
+        # no redeploy and no reload required.
+        template = None
+        if self._is_premium_active():
+            template = self._db_overrides_premium.get(key)
+        if template is None:
+            template = self._db_overrides.get(key)
 
         # Fall back to YAML-loaded prompts
         if template is None:
