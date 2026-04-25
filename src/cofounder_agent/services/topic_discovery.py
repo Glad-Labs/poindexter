@@ -202,6 +202,19 @@ class TopicDiscovery:
         # Filter to brand-relevant topics
         all_topics = [t for t in all_topics if self._is_brand_relevant(t.title)]
 
+        # Reject news / merch / personal-anecdote / truncated / emoji-led junk.
+        # Brand-relevance alone passes single-word "Cybersecurity" (matches
+        # brand keyword) and emoji-led devto clickbait (matches "AI") — the
+        # junk filter catches what brand-relevance can't. Without this, the
+        # gitea#279 dedup loosening lets noise through to the approval queue.
+        before_junk = len(all_topics)
+        all_topics = [t for t in all_topics if not self._is_news_or_junk(t.title)]
+        if before_junk != len(all_topics):
+            logger.info(
+                "[TOPIC_DISCOVERY] Junk filter rejected %d titles (%d -> %d)",
+                before_junk - len(all_topics), before_junk, len(all_topics),
+            )
+
         # Score and rank
         all_topics.sort(key=lambda t: t.relevance_score, reverse=True)
 
@@ -694,14 +707,18 @@ class TopicDiscovery:
 
     @staticmethod
     def _is_news_or_junk(title: str) -> bool:
-        """Reject breaking news, current events, personal anecdotes, and merch."""
-        for pattern in TopicDiscovery._NEWS_RE:
-            if pattern.search(title):
-                return True
-        # Too short to be a real topic
-        if len(title.split()) < 4:
-            return True
-        return False
+        """Reject breaking news, current events, personal anecdotes, merch,
+        truncated mid-phrase titles, and emoji-led clickbait.
+
+        Delegates to the canonical implementation in
+        ``services.topic_sources._filters`` so the dispatcher and the
+        per-source plugins stay in sync. The local class-level
+        ``_NEWS_RE`` constants are kept around for back-compat with any
+        code that still references them directly, but new patterns go
+        in ``_filters.py``.
+        """
+        from services.topic_sources._filters import is_news_or_junk
+        return is_news_or_junk(title)
 
     def _rewrite_as_blog_topic(self, title: str) -> str:
         """Clean up a scraped title into a good blog topic.
