@@ -224,22 +224,38 @@ async def test_bearer_auth_valid():
 
 @pytest.mark.asyncio
 async def test_svix_signature_with_v1_prefix():
+    """Real Svix protocol: HMAC of '<msg_id>.<timestamp>.<body>' using
+    a base64-decoded secret (whsec_ prefix stripped), result is
+    base64-encoded. Header carries 'v1,<sig>' pairs space-separated."""
+    import base64
+
     @registry_module.register_handler("webhook", "echo")
     async def echo(payload, *, site_config, row, pool):
         return {}
 
-    secret = "svix_secret"
+    # The whsec_ secret is base64 of raw key bytes.
+    raw_key = b"super-secret-key-bytes"
+    whsec = "whsec_" + base64.b64encode(raw_key).decode()
     body = b'{"type":"email.opened"}'
-    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    msg_id = "msg_2abc"
+    timestamp = "1735689600"
+    signed = f"{msg_id}.{timestamp}.{body.decode()}".encode()
+    sig = base64.b64encode(
+        hmac.new(raw_key, signed, hashlib.sha256).digest()
+    ).decode()
 
     pool = _FakePool()
     pool.set_row(_row(signing_algorithm="svix", secret_key_ref="resend_secret"))
     db = _FakeDBService(pool)
-    req = _FakeRequest(body, {"Svix-Signature": f"v1,{digest}"})
+    req = _FakeRequest(body, {
+        "Svix-Signature": f"v1,{sig}",
+        "Svix-Id": msg_id,
+        "Svix-Timestamp": timestamp,
+    })
     result = await webhook_dispatcher.dispatch_inbound(
         "test_hook", req,
         db_service=db,
-        site_config=_FakeSiteConfig({"resend_secret": secret}),
+        site_config=_FakeSiteConfig({"resend_secret": whsec}),
     )
     assert result["ok"] is True
 
