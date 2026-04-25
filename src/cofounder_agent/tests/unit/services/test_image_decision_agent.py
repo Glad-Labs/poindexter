@@ -147,7 +147,9 @@ class TestPlanImagesShortCircuits:
     @pytest.mark.asyncio
     async def test_no_sections_returns_empty(self):
         # Content with no h2/h3 headings should skip planning entirely
-        result = await plan_images("Just a paragraph with no headings.", "topic")
+        result = await plan_images(
+            "Just a paragraph with no headings.", "topic", site_config=_mock_sc()
+        )
         assert isinstance(result, ImagePlanResult)
         assert result.images == []
         assert result.featured_image is None
