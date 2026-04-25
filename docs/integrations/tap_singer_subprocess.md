@@ -1,55 +1,153 @@
-# Handler: `tap.singer_subprocess` (stub — full impl pending)
+# Handler: `tap.singer_subprocess`
 
-**Status:** v1 ships as a stub that raises `NotImplementedError`. Enabling a row with `handler_name='singer_subprocess'` will fail loudly at dispatch time — the row itself is valid, the handler just isn't built yet. No operator should hit this in normal use because the seeded rows all target `builtin_topic_source`.
+Run a Singer-protocol tap binary as a subprocess, parse its stdout (SCHEMA / RECORD / STATE messages), and route each record through a registered record-handler that writes to a target table. State persists back to the row's `state` column on a clean exit so the next run resumes from the last bookmark.
 
-## Intended behavior (follow-up work)
+The Singer protocol (https://github.com/singer-io/getting-started) is the de-facto standard for stdout-based ETL — 600+ taps already exist for Stripe, Google Search Console, GA4, HubSpot, MySQL, Postgres, Salesforce, etc. With this handler, Poindexter consumes any of them without per-source code on our side.
 
-When implemented, this handler will:
-
-1. Read `row.config.command` — the path to (or PEP 723 spec for) a Singer-spec tap binary.
-2. Read `row.config.tap_config` JSONB — written to a temp `config.json`.
-3. Read `row.state` JSONB — written to a temp `state.json` for incremental sync.
-4. Spawn the tap binary: `<command> --config config.json --state state.json`.
-5. Parse the tap's stdout as Singer messages (one JSON object per line):
-   - `SCHEMA` — validate against the operator's declared schema in `row.config.schema`.
-   - `RECORD` — dispatch to `row.record_handler` (a registered handler under any surface) which knows how to INSERT into `row.target_table`. This is how a Singer tap can feed into the same handlers as inbound webhooks (e.g. Lemon Squeezy via tap OR webhook, both using `revenue_event_writer`).
-   - `STATE` — remember the latest state; persist back to `row.state` on successful completion so the next run resumes from here.
-6. Wait for the subprocess to exit. On exit code 0, commit the new state. On non-zero, record `last_error` with stderr tail and leave state unchanged.
-7. Return `{"records": N}` for the runner's total count.
-
-### Required row configuration (future)
+## Row configuration
 
 ```
-name:             operator-chosen slug, e.g. "stripe_charges"
+name:             operator-chosen slug, e.g. "gsc_main", "stripe_charges"
 handler_name:     singer_subprocess
-tap_type:         Singer package ID, e.g. "singer-io/tap-stripe"
-target_table:     e.g. "revenue_events"
-record_handler:   e.g. "revenue_event_writer"  (registered in any surface)
-schedule:         "every 1 hour"
+tap_type:         informational, e.g. "tap-google-search-console"
+target_table:     where the record_handler writes (e.g. "external_metrics")
+record_handler:   registered handler under "tap" surface that consumes RECORDs
+                  (e.g. "external_metrics_writer")
+state:            JSONB; tap-managed, written back on success
 config:           {
-                    "command": "tap-stripe",
-                    "tap_config": {
-                      "client_secret_ref": "stripe_api_key",
-                      "account_id": "acct_..."
-                    },
-                    "credentials_ref": "stripe_api_key"
+                    "command": "tap-google-search-console",        # or "python -m tap_csv"
+                    "tap_config": { ... tap-specific JSON ... },
+                    "streams": ["page_metrics"],                    # optional whitelist
+                    "max_records": 50000,                           # safety cap, default 50k
+                    "timeout_seconds": 600,                         # SIGTERM after this; SIGKILL +5s
+                    "metrics_mapping": { ... }                      # consumed by record_handler
                   }
-state:            {}    (populated by the runner after each successful run)
 enabled:          false until operator flips on
 ```
 
-### Open design questions for the follow-up
+## What happens at run time
 
-- Subprocess timeout handling — taps that hang indefinitely vs. long-but-progressing-slowly syncs.
-- Back-pressure when `target_table` is slow — buffer on disk? Drop records with a warning?
-- `record_handler` contract — does it receive one record at a time, or batched? Batched inserts are much faster but complicate ordering for STATE.
-- State persistence atomicity — write state only after the last record for the batch is confirmed persisted, to prevent lost records on mid-stream failure.
+1. Read `config.command` (shlex-split — no shell expansion, no injection vectors).
+2. Read `config.tap_config` — written to a temp `config.json`.
+3. Read `row.state` — written to a temp `state.json` (incremental bookmark resumption).
+4. Spawn `<command> --config config.json --state state.json`.
+5. Parse stdout line-by-line:
+   - **SCHEMA** — register the schema for the named stream (RECORDs without a preceding SCHEMA fail).
+   - **RECORD** — dispatch to the registered `record_handler` with `{stream, record, schema, time_extracted}`.
+   - **STATE** — buffer the latest STATE.value; persist to the row only on a clean run.
+6. Wait for the subprocess. On exit 0 → commit state. On non-zero → record `last_error` with stderr tail (last 200 lines, capped 2 KB), do not advance state.
 
-Tracked as future work under GH-103. When an operator wants to wire a concrete Singer tap, that's when we finalize the design against the real use case instead of an imagined one.
+## Safety + limits
+
+- **No shell expansion.** `shlex.split` cannot interpret `;`, `&&`, backticks, or `$(...)`. The `command` field is operator-supplied but cannot escape into shell execution.
+- **Timeout.** `config.timeout_seconds` (default 600s). On expiry, SIGTERM, then SIGKILL after 5s. The next run starts fresh from the unchanged state.
+- **Max records cap.** `config.max_records` (default 50k) — prevents a runaway tap from filling the target table.
+- **Stderr cap.** Last 200 lines kept, drained concurrently so a chatty tap can't fill the OS pipe and block.
+- **State atomicity.** STATE only commits on exit 0. A failed mid-stream run leaves the bookmark unchanged, so the next run re-fetches the same window.
+
+## Operator runbook
+
+### First-time setup for a Singer tap (e.g. GSC)
+
+1. Install the tap into Poindexter's Python environment:
+
+   ```
+   pip install singer-tap-google-search-console
+   ```
+
+   Or use any Singer-spec tap regardless of language — only `command` matters.
+
+2. Build a `tap_config.json` per the tap's documentation. For GSC that's an OAuth token + a list of properties to query.
+
+3. Insert a row:
+
+   ```sql
+   INSERT INTO external_taps
+     (name, handler_name, tap_type, target_table, record_handler,
+      schedule, config, enabled, metadata)
+   VALUES (
+     'gsc_main',
+     'singer_subprocess',
+     'tap-google-search-console',
+     'external_metrics',
+     'external_metrics_writer',
+     'every 6 hours',
+     jsonb_build_object(
+       'command', 'tap-google-search-console',
+       'tap_config', '{
+         "client_id": "...",
+         "client_secret": "...",
+         "refresh_token": "...",
+         "site_urls": ["https://www.gladlabs.io"],
+         "start_date": "2026-04-01"
+       }'::jsonb,
+       'streams', jsonb_build_array('performance_report_date'),
+       'metrics_mapping', '{
+         "performance_report_date": {
+           "source": "google_search_console",
+           "date_field": "date",
+           "post_field": "slug",
+           "metric_fields": ["impressions", "clicks", "ctr", "position"],
+           "dimension_fields": ["country", "device", "query"]
+         }
+       }'::jsonb,
+       'max_records', 50000,
+       'timeout_seconds', 1800
+     ),
+     FALSE,
+     jsonb_build_object('description', 'Google Search Console performance metrics')
+   );
+   ```
+
+4. Test on demand:
+
+   ```
+   poindexter taps run gsc_main
+   ```
+
+5. Flip on:
+   ```
+   poindexter taps enable gsc_main
+   ```
+
+### Common failure modes
+
+| Symptom                                         | Likely cause                                       | Fix                                                                      |
+| ----------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
+| `tap exited 1` with auth-related stderr         | OAuth token expired                                | refresh `tap_config.refresh_token`, re-run                               |
+| `RECORD for stream X arrived before its SCHEMA` | tap is non-compliant; emits records before schemas | report upstream; use a different tap                                     |
+| `tap timed out after 600s`                      | tap is slow or stuck                               | bump `timeout_seconds`; consider narrower date range in tap_config       |
+| Records inserted to wrong table                 | `record_handler` mismatch                          | verify the row's `record_handler` matches what your taps' streams expect |
+
+### Multi-stream taps
+
+Some taps emit many streams (page_metrics, query_metrics, device_metrics). Use:
+
+- `config.streams` — whitelist; records on streams not listed are dropped.
+- `config.metrics_mapping` — one mapping per stream the operator wants persisted; unmapped streams are silently skipped by `external_metrics_writer`.
+
+### Adding a brand-new record_handler
+
+Register a handler under the `tap` surface:
+
+```python
+from services.integrations.registry import register_handler
+
+@register_handler("tap", "stripe_charge_writer")
+async def stripe_charge_writer(payload, *, site_config, row, pool):
+    record = payload["record"]
+    # INSERT into your target table...
+```
+
+Then point an `external_taps.record_handler` row at `stripe_charge_writer`. The `tap.singer_subprocess` dispatcher resolves the handler by name and routes RECORD messages to it.
+
+## Companion handler
+
+`tap.external_metrics_writer` is the default record consumer for analytics-shaped taps. See `docs/integrations/tap_external_metrics_writer.md` for its mapping config.
 
 ## Related
 
 - RFC: `docs/architecture/declarative-data-plane-rfc-2026-04-24.md`
-- Sibling (working) handler: `tap.builtin_topic_source`
-- GH-103 (external Singer tap support issue)
-- Singer spec: https://github.com/singer-io/getting-started
+- GH-103 (Singer tap support — closes when this handler is in production use)
+- GH-27 (feedback-loop tables — `external_metrics` is the target for analytics taps)
+- Singer spec: https://github.com/singer-io/getting-started/blob/master/docs/SPEC.md
