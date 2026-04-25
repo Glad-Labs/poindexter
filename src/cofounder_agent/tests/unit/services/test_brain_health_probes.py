@@ -265,11 +265,11 @@ class TestProbeTopicQuality:
     async def test_blames_qa_when_that_is_the_driver(self):
         r = await self._run_with_counts(
             total=50, rejected=25, low_quality=25,
-            drivers={"qa_rejected": 25, "semantic_dedup_rejected": 3},
+            drivers={"qa_failed": 25, "semantic_dedup_rejected": 3},
         )
         assert r["ok"] is False
-        assert "QA threshold" in r["detail"]
-        assert r["top_driver"] == "qa_rejected"
+        assert "multi-model QA failed" in r["detail"]
+        assert r["top_driver"] == "qa_failed"
 
     async def test_detail_says_cause_unknown_when_no_drivers(self):
         r = await self._run_with_counts(total=100, rejected=80, low_quality=0)
@@ -281,10 +281,8 @@ class TestProbeTopicQuality:
             total=100, rejected=60, low_quality=5,
             drivers={
                 "semantic_dedup_rejected": 40,
-                "qa_rejected": 15,
-                "title_not_original": 5,
+                "qa_failed": 15,
             },
         )
         assert r["drivers"]["semantic_dedup_rejected"] == 40
-        assert r["drivers"]["qa_rejected"] == 15
-        assert r["drivers"]["title_not_original"] == 5
+        assert r["drivers"]["qa_failed"] == 15

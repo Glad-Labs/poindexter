@@ -945,20 +945,24 @@ async def probe_topic_quality(pool) -> dict:
         # rejection-category audit events in the same 7d window. If a
         # task hits multiple gates, the first-written event wins — that
         # matches the operator-facing reality (what stopped it first).
-        # Schema reminder: audit_log columns are ``event_type`` (not
-        # ``event``) and ``timestamp`` (not ``created_at``); the probe
-        # had been failing every cycle with
-        # ``column "event" does not exist`` ever since the audit_log
-        # rename.
+        #
+        # Filter list audited 2026-04-25: ``qa_rejected``,
+        # ``topic_rejected``, ``title_not_original``,
+        # ``content_validation_rejected`` were aspirational names that
+        # never made it into the production audit log. The actual
+        # event_types written today are ``qa_failed`` (multi-model QA
+        # fail), ``semantic_dedup_rejected``, and the generic ``error``
+        # event. Filtering on the right names so attribution is
+        # correct — previously the probe said "duplicate topics" was
+        # the only driver because that was the one event it could see,
+        # while ``qa_failed`` (~9x more common) was invisible to the
+        # query.
         driver_rows = await pool.fetch("""
             SELECT event_type, COUNT(*) AS n
             FROM audit_log
             WHERE event_type IN (
-                'semantic_dedup_rejected',
-                'qa_rejected',
-                'topic_rejected',
-                'title_not_original',
-                'content_validation_rejected'
+                'qa_failed',
+                'semantic_dedup_rejected'
             )
               AND timestamp > NOW() - INTERVAL '7 days'
             GROUP BY event_type
@@ -976,10 +980,7 @@ async def probe_topic_quality(pool) -> dict:
             # generic "low quality" claim when quality wasn't the issue.
             label = {
                 "semantic_dedup_rejected": "duplicate topics (feeds re-surfacing covered ground)",
-                "qa_rejected": "QA threshold (tighten writer or loosen gate)",
-                "topic_rejected": "topic selector rejecting (filters too strict)",
-                "title_not_original": "titles colliding with web content",
-                "content_validation_rejected": "content validator failing",
+                "qa_failed": "multi-model QA failed (writer output below score gate)",
             }.get(top_driver, top_driver)
             suffix = f" — driver: {label} ({drivers[top_driver]}/{rejected})"
         else:

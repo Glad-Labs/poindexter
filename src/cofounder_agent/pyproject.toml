@@ -93,7 +93,13 @@ apscheduler = "^3.11.2"
 prometheus-client = "^0.25.0"
 # Continuous profiling — LGTM+P stack (GH #75). Opt-in via app_settings
 # enable_pyroscope; services/profiling.py configures the agent.
-pyroscope-io = { version = "^0.8.5", optional = true }
+# Promoted out of `extras = profiling` 2026-04-25: the worker
+# image's `poetry install --no-root --no-dev` doesn't pass
+# `--extras profiling`, so the optional dep was never actually
+# installed in the running container even with `enable_pyroscope=true`
+# in app_settings — agent silently no-op'd. Default-include keeps
+# the contract simple (DB flag is the single source of truth).
+pyroscope-io = "^0.8.5"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]

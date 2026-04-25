@@ -40,14 +40,19 @@ except (ImportError, AttributeError) as e:
 # WARNING so that genuine export failures are visible (reverted from CRITICAL — see Issue #430).
 logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 
-# Try to import OpenAI instrumentation if available
-try:
-    from opentelemetry.instrumentation.openai import OpenAIInstrumentor  # type: ignore
-except ImportError:
-    try:
-        from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor  # type: ignore
-    except ImportError:
-        OpenAIInstrumentor = None  # type: ignore[assignment,misc]
+# OpenAIInstrumentor lived here historically but we don't use the
+# `openai` SDK — the worker talks to Ollama (OpenAI-compat) via plain
+# httpx and to Claude via the `anthropic` SDK. The instrumentor only
+# patches `openai.*` calls, so it had nothing to wrap. LLM-level
+# tracing is provided directly by ``services/llm_providers/dispatcher.py``,
+# which creates explicit spans (`llm.dispatch_complete`,
+# `llm.dispatch_embed`, `llm.get_provider`) for every LLM call regardless
+# of provider — those flow into Tempo via the FastAPI-level
+# TracerProvider configured below.
+#
+# Adding finer-grained HTTP timing spans (httpx-level) is a future
+# step; the instrumentor exists in `opentelemetry-instrumentation-httpx`
+# but is intentionally not wired here yet to keep span volume bounded.
 
 
 def setup_telemetry(app, site_config: Any, service_name: str = "cofounder-agent"):
@@ -170,16 +175,6 @@ def setup_telemetry(app, site_config: Any, service_name: str = "cofounder-agent"
             FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
         except Exception as e:
             logging.error(f"[setup_telemetry] Failed to instrument FastAPI: {e}", exc_info=True)
-
-        # Instrument OpenAI SDK (if available)
-        if OpenAIInstrumentor is not None:
-            try:
-                OpenAIInstrumentor().instrument()
-                logging.debug("[TELEMETRY] OpenAI SDK instrumented successfully")
-            except Exception as e:
-                logging.error(
-                    f"[setup_telemetry] Failed to instrument OpenAI SDK: {e}", exc_info=True
-                )
 
     except Exception as e:
         # If telemetry setup fails entirely, just log and continue
