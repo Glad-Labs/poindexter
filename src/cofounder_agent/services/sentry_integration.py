@@ -132,6 +132,12 @@ class SentryIntegration:
             if SqlAlchemyIntegration is not None:
                 integrations.append(SqlAlchemyIntegration())  # type: ignore[misc]
 
+            # Debug mode floods stdout with `[sentry] DEBUG:` lines for
+            # every traced request — useful when first wiring up the
+            # SDK, painful as steady-state log noise. Default off,
+            # tunable via app_settings.sentry_debug for the rare cases
+            # we want it back.
+            sentry_debug = site_config.get_bool("sentry_debug", False)
             sentry_sdk.init(
                 dsn=sentry_dsn,
                 integrations=integrations,
@@ -151,9 +157,17 @@ class SentryIntegration:
                 include_local_variables=True,
                 # Error attachment configurations
                 max_value_length=4096,  # Max value length for variable inspection
-                # Enable debug logging in development
-                debug=environment == "development",
+                debug=sentry_debug,
             )
+
+            # Belt and suspenders: even with debug=False the SDK's
+            # internal logger occasionally emits at DEBUG (e.g. when
+            # samplers reject a transaction). Cap at WARNING so log
+            # streams stay readable.
+            for _name in ("sentry_sdk", "sentry_sdk.errors"):
+                logging.getLogger(_name).setLevel(
+                    logging.DEBUG if sentry_debug else logging.WARNING
+                )
 
             # Set user context for authenticated requests (if available)
             sentry_sdk.set_tag("service", service_name)

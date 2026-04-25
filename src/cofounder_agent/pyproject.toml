@@ -43,6 +43,14 @@ setuptools = "<81"  # Pin to avoid pkg_resources deprecation (see: setuptools#39
 # app_settings.sentry_dsn, error tracking is active for the cofounder-agent
 # project. [fastapi] extra wires the ASGI + Starlette middleware.
 sentry-sdk = { version = "^2.18.0", extras = ["fastapi"] }
+# OpenTelemetry → Tempo (gitea#225 follow-up). Worker pushes spans via
+# OTLP gRPC to tempo:4317. FastAPI auto-instrumentation gives free
+# request traces; the dispatcher in services/llm_providers/ already
+# creates custom spans that this finally has somewhere to land.
+opentelemetry-api = "^1.27"
+opentelemetry-sdk = "^1.27"
+opentelemetry-exporter-otlp-proto-grpc = "^1.27"
+opentelemetry-instrumentation-fastapi = "^0.48b0"
 
 # Storage & Files
 python-multipart = ">=0.0.26"
