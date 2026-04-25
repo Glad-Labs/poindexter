@@ -697,12 +697,9 @@ class TestGenerateImageDispatcher:
         fake_provider.name = "sdxl"
         fake_provider.fetch = AsyncMock(return_value=[])
 
-        with (
-            patch(
-                "services.image_service._resolve_image_provider",
-                return_value=fake_provider,
-            ),
-            patch("services.site_config.site_config.get", return_value="sdxl"),
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
         ):
             result = await svc.generate_image(
                 prompt="x",
@@ -720,12 +717,9 @@ class TestGenerateImageDispatcher:
         fake_provider.name = "sdxl"
         fake_provider.fetch = AsyncMock(return_value=[MagicMock()])
 
-        with (
-            patch(
-                "services.image_service._resolve_image_provider",
-                return_value=fake_provider,
-            ),
-            patch("services.site_config.site_config.get", return_value="sdxl"),
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
         ):
             result = await svc.generate_image(
                 prompt="x",
@@ -740,12 +734,9 @@ class TestGenerateImageDispatcher:
         fake_provider.name = "sdxl"
         fake_provider.fetch = AsyncMock(side_effect=RuntimeError("GPU OOM"))
 
-        with (
-            patch(
-                "services.image_service._resolve_image_provider",
-                return_value=fake_provider,
-            ),
-            patch("services.site_config.site_config.get", return_value="sdxl"),
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake_provider,
         ):
             result = await svc.generate_image(
                 prompt="x",
