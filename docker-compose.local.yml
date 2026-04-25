@@ -73,14 +73,7 @@ services:
     # can drop dynamic.yml into it. Fresh Docker volumes come owned by
     # root with 0755 perms, which would lock the worker out otherwise.
     user: root
-    entrypoint: >
-      sh -c "chmod 0777 /etc/prometheus/rules &&
-             exec /bin/prometheus
-               --config.file=/etc/prometheus/prometheus.yml
-               --storage.tsdb.path=/prometheus
-               --web.console.libraries=/usr/share/prometheus/console_libraries
-               --web.console.templates=/usr/share/prometheus/consoles
-               --web.enable-lifecycle"
+    entrypoint: ["sh", "-c", "chmod 0777 /etc/prometheus/rules && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles --web.enable-lifecycle --web.enable-remote-write-receiver"]
     ports:
       - "9091:9090"
     volumes:

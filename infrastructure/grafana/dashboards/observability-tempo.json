@@ -13,12 +13,13 @@
       "id": 1,
       "targets": [
         {
-          "expr": "sum by (service_name) (rate(traces_spanmetrics_calls_total[5m]))",
-          "legendFormat": "{{service_name}}",
+          "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\"}[5m]))",
+          "legendFormat": "{{service}}",
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "description": "Server-side request rate per service (Tempo metrics-generator → Prometheus). Excludes client/internal sub-spans so the count matches actual HTTP requests."
     },
     {
       "type": "timeseries",
@@ -28,8 +29,8 @@
       "id": 2,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(traces_spanmetrics_latency_bucket[5m])))",
-          "legendFormat": "p95 {{service_name}}",
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(traces_spanmetrics_latency_bucket{span_kind=\"SPAN_KIND_SERVER\"}[5m])))",
+          "legendFormat": "p95 {{service}}",
           "refId": "A"
         }
       ],
@@ -37,24 +38,56 @@
     },
     {
       "type": "timeseries",
-      "title": "Error rate by service",
+      "title": "Error rate by service (% of requests)",
       "datasource": { "type": "prometheus", "uid": "local-prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "id": 3,
       "targets": [
         {
-          "expr": "sum by (service_name) (rate(traces_spanmetrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[5m])) / sum by (service_name) (rate(traces_spanmetrics_calls_total[5m]))",
-          "legendFormat": "err% {{service_name}}",
+          "expr": "sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\",status_code=\"STATUS_CODE_ERROR\"}[5m])) / clamp_min(sum by (service) (rate(traces_spanmetrics_calls_total{span_kind=\"SPAN_KIND_SERVER\"}[5m])), 0.001)",
+          "legendFormat": "err% {{service}}",
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "table",
+      "title": "Top spans by call volume (last 5m)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 8 },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "topk(20, sum by (service, span_name, status_code) (rate(traces_spanmetrics_calls_total[5m])))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Time" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [{ "id": "displayName", "value": "rate" }]
+          }
+        ]
+      },
+      "transformations": [{ "id": "merge" }]
     },
     {
       "type": "nodeGraph",
-      "title": "Service graph",
+      "title": "Service graph (Tempo metrics-generator)",
       "datasource": { "type": "tempo", "uid": "local-tempo" },
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 8 },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 18 },
       "id": 4,
       "targets": [
         {
@@ -64,14 +97,88 @@
       ]
     },
     {
+      "type": "stat",
+      "title": "Spans ingested (last 5m)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 18 },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "sum(rate(tempo_distributor_spans_received_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "decimals": 1 },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Spans discarded (last 5m)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 18 },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum(rate(tempo_discarded_spans_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.001 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active series (metrics-generator)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 23 },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "sum(tempo_metrics_generator_registry_active_series)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] }
+    },
+    {
       "type": "traces",
-      "title": "Recent errors (TraceQL)",
+      "title": "Recent error traces (TraceQL)",
       "datasource": { "type": "tempo", "uid": "local-tempo" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 18 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 28 },
       "id": 5,
       "targets": [
         {
           "query": "{ status = error }",
+          "queryType": "traceql",
+          "refId": "A",
+          "tableType": "traces",
+          "limit": 50
+        }
+      ]
+    },
+    {
+      "type": "traces",
+      "title": "Slow requests (>1s, TraceQL)",
+      "datasource": { "type": "tempo", "uid": "local-tempo" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 38 },
+      "id": 10,
+      "targets": [
+        {
+          "query": "{ kind = server && duration > 1s }",
           "queryType": "traceql",
           "refId": "A",
           "tableType": "traces",
@@ -89,6 +196,6 @@
   "timezone": "browser",
   "title": "Tracing — Tempo",
   "uid": "obs-tempo",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
