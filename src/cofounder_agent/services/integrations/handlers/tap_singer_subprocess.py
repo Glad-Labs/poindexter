@@ -102,9 +102,27 @@ async def singer_subprocess(
     if pool is None:
         raise RuntimeError("tap.singer_subprocess: pool unavailable")
 
+    # asyncpg returns jsonb columns as raw strings unless a codec is
+    # registered on the pool — accept either form so the handler works
+    # against any pool the caller hands us.
     config = row.get("config") or {}
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"tap.singer_subprocess: row.config not parseable JSON: {exc}"
+            ) from exc
     if not isinstance(config, dict):
         raise ValueError("tap.singer_subprocess: row.config must be an object")
+
+    state = row.get("state") or {}
+    if isinstance(state, str):
+        try:
+            state = json.loads(state) or {}
+        except json.JSONDecodeError:
+            state = {}
+    row = {**row, "config": config, "state": state}
 
     command = config.get("command")
     if not command or not isinstance(command, str):
@@ -132,7 +150,7 @@ async def singer_subprocess(
     record_handler_surface = "tap"
     record_handler = registry.lookup(record_handler_surface, record_handler_name)
 
-    starting_state = row.get("state") or {}
+    starting_state = state
 
     with tempfile.TemporaryDirectory(prefix="singer-tap-") as tmpdir:
         config_path = os.path.join(tmpdir, "config.json")
@@ -142,10 +160,26 @@ async def singer_subprocess(
         with open(state_path, "w", encoding="utf-8") as fh:
             json.dump(starting_state, fh)
 
+        # Many Singer taps require a --catalog file with selected streams
+        # to run a sync (--config alone only runs discovery). When
+        # ``config.streams`` is non-empty we generate a catalog inline:
+        # run the tap with --discover, mark the configured streams as
+        # selected via the standard Singer metadata mechanism, then pass
+        # the resulting catalog to the actual sync invocation. This way
+        # operators don't have to pre-generate / hand-edit catalog files.
+        catalog_path: str | None = None
+        if streams_filter:
+            catalog_path = os.path.join(tmpdir, "catalog.json")
+            await _generate_selected_catalog(
+                command, config_path, streams_filter, catalog_path,
+            )
+
         argv = shlex.split(command) + [
             "--config", config_path,
             "--state", state_path,
         ]
+        if catalog_path:
+            argv.extend(["--catalog", catalog_path])
 
         logger.info(
             "[tap.singer_subprocess] %s: spawning %s",
@@ -251,6 +285,69 @@ async def singer_subprocess(
 # ---------------------------------------------------------------------------
 # stdout consumer — split out for testability
 # ---------------------------------------------------------------------------
+
+
+async def _generate_selected_catalog(
+    command: str,
+    config_path: str,
+    selected_streams: list[str],
+    output_path: str,
+) -> None:
+    """Run the tap with ``--discover`` to get its catalog, mark the
+    configured streams as selected, and write the modified catalog to
+    ``output_path``.
+
+    Singer's catalog metadata format: each stream has a ``metadata``
+    list of ``{"breadcrumb": [], "metadata": {...}}`` blocks. Setting
+    ``metadata.selected = True`` on the empty-breadcrumb entry tells
+    the tap to sync that stream. Some taps additionally require
+    ``forced-replication-method`` to be set when no replication-key is
+    available.
+    """
+    argv = shlex.split(command) + ["--config", config_path, "--discover"]
+    proc = await asyncio.create_subprocess_exec(
+        *argv,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        stdin=asyncio.subprocess.DEVNULL,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"tap discovery failed (exit {proc.returncode}): "
+            f"{stderr.decode('utf-8', errors='replace')[-1000:]!r}"
+        )
+
+    try:
+        catalog = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"tap --discover output not valid JSON: {exc}"
+        ) from exc
+
+    selected_set = set(selected_streams)
+    for stream in catalog.get("streams", []):
+        if stream.get("tap_stream_id") not in selected_set:
+            continue
+        # Mark selected on the table-level metadata entry
+        # (breadcrumb=[]). Add it if the tap didn't emit one.
+        md_list = stream.setdefault("metadata", [])
+        table_md = next(
+            (m for m in md_list if m.get("breadcrumb") == []),
+            None,
+        )
+        if table_md is None:
+            table_md = {"breadcrumb": [], "metadata": {}}
+            md_list.append(table_md)
+        table_md["metadata"]["selected"] = True
+        # FULL_TABLE is the safest default; taps that prefer INCREMENTAL
+        # will override based on the stream's replication-key.
+        table_md["metadata"].setdefault(
+            "forced-replication-method", "FULL_TABLE",
+        )
+
+    with open(output_path, "w", encoding="utf-8") as fh:
+        json.dump(catalog, fh)
 
 
 async def _consume_stdout(
