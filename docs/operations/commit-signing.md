@@ -100,7 +100,7 @@ Two workflows create commits automatically:
   whatever `commit.gpgsign` is set to in the clone. Running
   `scripts/setup-git-signing.sh` once is enough.
 
-There is currently no Woodpecker/Gitea-Actions workflow that commits back to
+There is currently no Gitea Actions workflow that commits back to
 the repo, so nothing to configure on that side. If one is added later, it
 must either use the Gitea API (server-signed) or import a bot key and set
 `GPG_KEY` + `commit.gpgsign=true` in the job.

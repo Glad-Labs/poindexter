@@ -159,3 +159,5 @@ for the `Stage` protocol itself.
 - **Decisions are logged** via `decision_service.log_decision()` for the ML loop.
 - **Never import from `stages/*`**. Stages are plugged into `StageRunner`; they
   don't call each other. Cross-stage data flows through the pipeline context dict.
+
+<!-- DOC-SYNC 2026-04-25: stale references — many *_database.py modules listed here have been renamed to *_db.py (admin_db.py, content_db.py, tasks_db.py, users_db.py, etc.); html_sanitizer.py / vector_similarity_search.py / quality_checker.py / rag_embeddings_service.py / image_generation_runner.py / stateless_decision_handler.py / transcription_service.py / writing_style_database.py / embeddings_database.py not found in src/cofounder_agent/services/. Catalog needs regeneration. -->
