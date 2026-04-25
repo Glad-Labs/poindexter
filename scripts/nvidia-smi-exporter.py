@@ -87,6 +87,19 @@ def get_cpu_power_metrics():
     """
     if sys.platform != "win32":
         return ""
+    # 2026-04-25: this function used to shell out to
+    # ``powershell.exe Get-Counter '\Energy Meter(*)\Power'`` every
+    # scrape. Despite passing CREATE_NO_WINDOW + STARTUPINFO with
+    # SW_HIDE, the powershell.exe child still flashed a brief black
+    # console window in the top-left of the screen on every Prometheus
+    # scrape (~15s). Confirmed via process monitoring:
+    # ``powershell.exe parent=pythonw.exe`` was the only repeating
+    # offender. The CPU energy-meter readout is useful but not
+    # critical, and a long-lived ``Get-Counter`` over a separate
+    # background pipe would be more code than this earns. Disabled
+    # for now; revisit by reading RAPL counters via PDH/pywin32 if
+    # we want them back without the popup tax.
+    return "# cpu power: disabled (see comment in nvidia-smi-exporter.py)\n"
     try:
         ps_script = (
             "Get-Counter '\\Energy Meter(*)\\Power' -ErrorAction Stop | "
