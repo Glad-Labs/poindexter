@@ -27,6 +27,23 @@ _NEWS_PATTERNS = [
 ]
 _NEWS_RE = [re.compile(p, re.IGNORECASE) for p in _NEWS_PATTERNS]
 
+# Titles ending with a preposition / conjunction / article are almost always
+# truncated mid-phrase by the source-side scraper. Real evergreen titles
+# never end with these. Reject before they propagate into the queue.
+# Surfaced 2026-04-24 by "Top Cybersecurity Threats in" leaking into queue.
+_TRAILING_FRAGMENT_RE = re.compile(
+    r"\s+(?:in|on|at|of|for|with|to|from|by|the|a|an|and|or|but|"
+    r"after|before|during|under|over|into|onto|that|when|while|using|via)\b\W*$",
+    re.IGNORECASE,
+)
+
+# Titles that lead with a non-letter (emoji, symbol) are usually devto/medium
+# clickbait — reject before brand-relevance can let them through on a
+# coincidental keyword match. Surfaced 2026-04-24 by
+# "🦸Let Superheroes Cheer You Up (AI Avatar v6: ...)" matching the "ai"
+# brand keyword and queueing.
+_LEADING_NON_LETTER_RE = re.compile(r"^[^A-Za-z\"'\[]")
+
 
 def classify_category(title: str) -> str:
     """Classify a title into a category by keyword overlap.
@@ -46,12 +63,19 @@ def classify_category(title: str) -> str:
 
 
 def is_news_or_junk(title: str) -> bool:
-    """Reject breaking news, current events, personal anecdotes, and merch."""
+    """Reject breaking news, current events, personal anecdotes, merch,
+    truncated mid-phrase titles, and emoji-led clickbait."""
     for pattern in _NEWS_RE:
         if pattern.search(title):
             return True
     # Too short to be a real topic
     if len(title.split()) < 4:
+        return True
+    # Truncated mid-phrase ("Top Cybersecurity Threats in")
+    if _TRAILING_FRAGMENT_RE.search(title):
+        return True
+    # Leading emoji / symbol clickbait ("🦸Let Superheroes Cheer You Up ...")
+    if _LEADING_NON_LETTER_RE.match(title):
         return True
     return False
 

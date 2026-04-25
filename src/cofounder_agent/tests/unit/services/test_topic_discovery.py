@@ -495,6 +495,41 @@ class TestIsNewsOrJunk:
             "Limited Edition Tech Merch and Sticker Pack"
         ) is True
 
+    def test_truncated_trailing_preposition_rejected(self):
+        """gitea#279 follow-up: scrape-truncated titles like
+        'Top Cybersecurity Threats in' must be rejected — the trailing
+        preposition is a strong signal the source cut off mid-phrase.
+        Real evergreen titles never end with these tokens."""
+        assert TopicDiscovery._is_news_or_junk("Top Cybersecurity Threats in") is True
+        assert TopicDiscovery._is_news_or_junk("Different Language Models Learn") is False  # ends with verb, not preposition
+        assert TopicDiscovery._is_news_or_junk("Best Practices for") is True
+        assert TopicDiscovery._is_news_or_junk("How to Deploy Apps with") is True
+        assert TopicDiscovery._is_news_or_junk("Choosing Frameworks Using") is True
+
+    def test_leading_emoji_rejected(self):
+        """gitea#279 follow-up: emoji-led devto/medium clickbait
+        ('🦸Let Superheroes Cheer You Up...') is junk that previously
+        slipped past brand-relevance on a coincidental 'AI' match."""
+        assert TopicDiscovery._is_news_or_junk(
+            "🦸Let Superheroes Cheer You Up (AI Avatar v6: Chrome Extension)"
+        ) is True
+        assert TopicDiscovery._is_news_or_junk(
+            "🚀Rocket-fast Startup Strategies for AI Founders"
+        ) is True
+
+    def test_bracket_prefix_not_rejected(self):
+        """[Show HN] / [Ask HN] prefixes are legitimate — those go through
+        the rewrite path, not the leading-emoji reject."""
+        assert TopicDiscovery._is_news_or_junk(
+            "[Show HN] My open-source tool for content automation"
+        ) is False
+
+    def test_normal_title_not_rejected(self):
+        """Sanity check: a perfectly normal title still passes."""
+        assert TopicDiscovery._is_news_or_junk(
+            "Building Production-Ready Microservices with Go"
+        ) is False
+
 
 # ===========================================================================
 # _search_by_category
