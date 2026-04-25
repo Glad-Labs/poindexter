@@ -241,6 +241,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             setup_pyroscope(_site_cfg)
         except Exception as e:
             logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
+        try:
+            from services.tracing import instrument_fastapi, setup_tracing
+            if setup_tracing(_site_cfg, service_name="cofounder-agent"):
+                instrument_fastapi(app)
+        except Exception as e:
+            logger.warning("[LIFESPAN] OTel tracing init failed: %s", e)
 
         # Load prompt templates from DB (overrides YAML files). Pass
         # site_config so the Pro tier (gitea#225) can read
