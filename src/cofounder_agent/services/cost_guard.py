@@ -50,6 +50,11 @@ logger = logging.getLogger(__name__)
 # OpenRouter / Together model doesn't slip through under-budgeted.
 _FALLBACK_RATE_PER_1K = {"input": 0.0005, "output": 0.0015}
 
+# Providers that have a real cloud-rate column. Unknown providers
+# (e.g. ``ollama``) report zero so a misclassified self-hosted call
+# can't accidentally trip the budget.
+_KNOWN_CLOUD_PROVIDERS = frozenset({"gemini", "openai", "anthropic", "openrouter"})
+
 
 # Local backends report zero dollars regardless of model. Match by host
 # substring rather than full equality so ``http://host.docker.internal:8080/v1``
@@ -79,12 +84,16 @@ class CostGuardExhausted(RuntimeError):
         scope: str = "daily",
         spent_usd: float = 0.0,
         limit_usd: float = 0.0,
+        provider: str | None = None,
+        model: str | None = None,
     ):
         super().__init__(reason)
         self.reason = reason
         self.scope = scope
         self.spent_usd = spent_usd
         self.limit_usd = limit_usd
+        self.provider = provider
+        self.model = model
 
 
 @dataclass
@@ -310,3 +319,199 @@ class CostGuard:
             )
         except Exception as e:
             logger.warning("[COST_GUARD] cost_logs insert failed: %s", e)
+
+    # ------------------------------------------------------------------
+    # High-level helpers used by LLM provider plugins
+    # ------------------------------------------------------------------
+    #
+    # The ``estimate`` / ``preflight`` / ``record`` triplet above is the
+    # low-level surface — it takes a ``base_url`` and a caller-supplied
+    # ``rate_table``, which is the right shape for the OpenAI-compat
+    # provider where the same code targets vLLM (free) and OpenRouter
+    # (cloud) interchangeably.
+    #
+    # Native cloud providers (Gemini, Anthropic) don't have a meaningful
+    # ``base_url`` and source their rates from app_settings, not a
+    # caller-built dict. The methods below paper over that — same
+    # plugin-side ergonomics, same DB writes, just resolved differently.
+    # New plugins that target a single cloud provider should use these.
+
+    def _get_rate(self, provider: str, model: str, direction: str) -> float:
+        """Resolve cost-per-1K-tokens for a provider/model/direction.
+
+        Lookup order:
+        1. Per-model override:
+           ``plugin.llm_provider.<provider>.model.<model>.cost_per_1k_<direction>_usd``
+        2. Provider default:
+           ``plugin.llm_provider.<provider>.cost_per_1k_<direction>_usd``
+        3. Built-in fallback (``_FALLBACK_RATE_PER_1K``) for known cloud
+           providers; ``0.0`` for unknown ones.
+
+        Returning ``0.0`` for unknown providers is intentional —
+        misclassifying a local backend (e.g. an Ollama call routed via
+        a stale provider name) shouldn't trip the budget guard. Real
+        cloud providers must be in ``_KNOWN_CLOUD_PROVIDERS``.
+        """
+        if direction not in ("input", "output"):
+            return 0.0
+
+        per_model_key = (
+            f"plugin.llm_provider.{provider}.model.{model}"
+            f".cost_per_1k_{direction}_usd"
+        )
+        provider_key = (
+            f"plugin.llm_provider.{provider}.cost_per_1k_{direction}_usd"
+        )
+
+        if self._site_config is not None:
+            for key in (per_model_key, provider_key):
+                try:
+                    raw = self._site_config.get(key, "")
+                except Exception:
+                    raw = ""
+                if raw:
+                    try:
+                        return float(raw)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "[COST_GUARD] non-numeric rate setting %r — skipping",
+                            key,
+                        )
+
+        if provider in _KNOWN_CLOUD_PROVIDERS:
+            return float(_FALLBACK_RATE_PER_1K.get(direction, 0.0))
+        return 0.0
+
+    async def estimate_cost(
+        self,
+        *,
+        provider: str,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> float:
+        """Compute the dollar cost of a hypothetical call from token counts.
+
+        Pure function over ``_get_rate`` — async only so plugins can
+        ``await`` it uniformly with the budget check that follows.
+        """
+        in_rate = self._get_rate(provider, model, "input")
+        out_rate = self._get_rate(provider, model, "output")
+        in_cost = (max(0, int(prompt_tokens)) / 1000.0) * in_rate
+        out_cost = (max(0, int(completion_tokens)) / 1000.0) * out_rate
+        return in_cost + out_cost
+
+    async def check_budget(
+        self,
+        *,
+        provider: str,
+        model: str,
+        estimated_cost_usd: float,
+    ) -> None:
+        """Raise :class:`CostGuardExhausted` if a call at this cost would
+        exceed the daily or monthly cap.
+
+        Three checks, in order — the first that trips wins:
+        - ``daily_estimate``: the estimate alone > daily limit
+          (a single call this expensive can't ever fit).
+        - ``daily``: current daily spend + estimate > daily limit.
+        - ``monthly``: current monthly spend + estimate > monthly limit.
+
+        The exception carries ``provider`` and ``model`` so the
+        dispatcher's fallback logic can attribute the block to a
+        specific paid provider and route to a free one without
+        re-parsing the message.
+        """
+        estimated = float(estimated_cost_usd or 0.0)
+        if estimated <= 0.0:
+            return
+
+        daily_limit = self._limit("daily_spend_limit_usd", 2.0)
+        monthly_limit = self._limit("monthly_spend_limit_usd", 100.0)
+
+        if daily_limit > 0 and estimated > daily_limit:
+            raise CostGuardExhausted(
+                f"Estimated call cost ${estimated:.4f} exceeds daily cap "
+                f"${daily_limit:.2f} on its own — refusing.",
+                scope="daily_estimate",
+                spent_usd=0.0,
+                limit_usd=daily_limit,
+                provider=provider,
+                model=model,
+            )
+
+        daily = await self.get_daily_spend()
+        if daily_limit > 0 and (daily + estimated) > daily_limit:
+            raise CostGuardExhausted(
+                f"Daily spend cap reached: ${daily:.4f} + ${estimated:.4f} "
+                f"> ${daily_limit:.2f}",
+                scope="daily",
+                spent_usd=daily,
+                limit_usd=daily_limit,
+                provider=provider,
+                model=model,
+            )
+
+        monthly = await self.get_monthly_spend()
+        if monthly_limit > 0 and (monthly + estimated) > monthly_limit:
+            raise CostGuardExhausted(
+                f"Monthly spend cap reached: ${monthly:.4f} + "
+                f"${estimated:.4f} > ${monthly_limit:.2f}",
+                scope="monthly",
+                spent_usd=monthly,
+                limit_usd=monthly_limit,
+                provider=provider,
+                model=model,
+            )
+
+        # Soft alert path — log only, don't block.
+        alert_pct = self._limit("cost_alert_threshold_pct", 80.0) / 100.0
+        if daily_limit > 0 and (daily + estimated) >= daily_limit * alert_pct:
+            logger.warning(
+                "[COST_GUARD] approaching daily cap (%.1f%%): "
+                "$%.4f + $%.4f vs $%.2f (provider=%s model=%s)",
+                100.0 * (daily + estimated) / daily_limit,
+                daily, estimated, daily_limit, provider, model,
+            )
+
+    async def record_usage(
+        self,
+        *,
+        provider: str,
+        model: str,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cost_usd: float | None = None,
+        phase: str = "llm_call",
+        task_id: str | None = None,
+        success: bool = True,
+        duration_ms: int | None = None,
+    ) -> float:
+        """Plugin-friendly wrapper around :meth:`record`.
+
+        Differs from ``record`` in two ways:
+        - ``cost_usd`` is optional. When ``None``, the cost is
+          back-computed from the actual usage tokens so plugins don't
+          have to redo the rate lookup.
+        - Returns the persisted cost so callers can log it without
+          re-querying.
+        """
+        if cost_usd is None:
+            cost_usd = await self.estimate_cost(
+                provider=provider,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+        await self.record(
+            provider=provider,
+            model=model,
+            cost_usd=float(cost_usd),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            phase=phase,
+            task_id=task_id,
+            success=success,
+            duration_ms=duration_ms,
+        )
+        return float(cost_usd)
