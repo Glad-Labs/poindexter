@@ -494,7 +494,7 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": ["sum"],
           "fields": "",
           "values": false
         },
@@ -506,9 +506,9 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "format": "table",
+          "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Tasks (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS \"Tasks (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -557,16 +557,15 @@
       },
       "id": 8,
       "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
       "targets": [
         {
@@ -581,20 +580,22 @@
         }
       ],
       "title": "Approval queue fill",
-      "type": "stat"
+      "type": "gauge"
     },
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Hours since the most recent publish. Green if <48h, yellow 48h-7d, red >7d.",
+      "description": "Hours since the most recent publish. Green if <48h, yellow 48h-7d, red >7d. Bargauge fills toward 168h (1 week).",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
           "mappings": [],
+          "max": 168,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -623,16 +624,16 @@
       },
       "id": 9,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
+        "displayMode": "gradient",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name"
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
       },
       "targets": [
         {
@@ -647,7 +648,7 @@
         }
       ],
       "title": "Hours since last publish",
-      "type": "stat"
+      "type": "bargauge"
     },
     {
       "datasource": {
@@ -694,7 +695,7 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": ["sum"],
           "fields": "",
           "values": false
         },
@@ -706,9 +707,9 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "format": "table",
+          "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Firing (1h)\" FROM alert_events WHERE status='firing' AND received_at > NOW() - INTERVAL '1 hour';",
+          "rawSql": "SELECT date_trunc('minute', received_at) AS time, COUNT(*) AS \"Firing (1h)\" FROM alert_events WHERE status='firing' AND received_at > NOW() - INTERVAL '1 hour' GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -822,7 +823,7 @@
         "justifyMode": "center",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": ["sum"],
           "fields": "",
           "values": false
         },
@@ -834,9 +835,9 @@
             "type": "grafana-postgresql-datasource",
             "uid": "local-brain-db"
           },
-          "format": "table",
+          "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Hard rejects (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' AND status = 'rejected' AND (error_message ILIKE '%veto: programmatic_validator%' OR error_message ILIKE '%veto: citation_verifier%' OR error_message ILIKE '%veto: topic_delivery%');",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, COUNT(*) AS \"Hard rejects (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' AND status = 'rejected' AND (error_message ILIKE '%veto: programmatic_validator%' OR error_message ILIKE '%veto: citation_verifier%' OR error_message ILIKE '%veto: topic_delivery%') GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -855,7 +856,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Pipeline** \u2014 `/d/pipeline-merged` &nbsp; \u00b7 &nbsp; **System Health** \u2014 `/d/system-health-merged` &nbsp; \u00b7 &nbsp; **Observability** \u2014 `/d/observability-merged` &nbsp; \u00b7 &nbsp; **Cost & Analytics** \u2014 `/d/cost-analytics` &nbsp; \u00b7 &nbsp; **Integrations & Admin** \u2014 `/d/integrations-admin`"
+        "content": "## Drill into\n\n[**\u25b6 Pipeline**](/d/pipeline-merged) &nbsp; \u00b7 &nbsp; [**\u25b6 System Health**](/d/system-health-merged) &nbsp; \u00b7 &nbsp; [**\u25b6 Observability**](/d/observability-merged) &nbsp; \u00b7 &nbsp; [**\u25b6 Cost & Analytics**](/d/cost-analytics) &nbsp; \u00b7 &nbsp; [**\u25b6 Integrations & Admin**](/d/integrations-admin)"
       }
     }
   ],
