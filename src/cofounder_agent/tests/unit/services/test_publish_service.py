@@ -793,3 +793,171 @@ class TestRevalidation:
 
         assert result.success is True
         assert result.revalidation_success is False
+
+
+# ---------------------------------------------------------------------------
+# gitea#118 — fail-loud on schema drift in update_task_status
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUpdateTaskStatusFailureSurfacing:
+    """publish_post_from_task must not silently swallow schema-drift errors.
+
+    Before gitea#118 the call to ``db_service.update_task_status`` was
+    wrapped in a broad ``except Exception`` that logged at WARNING and
+    returned. The result was that an UndefinedColumnError raised by the
+    underlying SQL (the _VIEW_COLUMNS allowlist had columns that no
+    longer existed on the public.content_tasks view) got buried —
+    publish appeared to succeed but content_tasks.status stayed on
+    'approved' forever, breaking dashboards and downstream consumers.
+
+    These tests pin the new contract:
+      - asyncpg.UndefinedColumnError → re-raise
+      - update_task_status returning None → log ERROR, do not raise (the
+        post is created; the route-level _finalize_publish defense-in-
+        depth retries the status write)
+      - Other DB errors → log ERROR with traceback, continue (route shim
+        retries)
+    """
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    async def test_undefined_column_error_propagates(
+        self, mock_sched, mock_ping, mock_hooks,
+    ):
+        """asyncpg.UndefinedColumnError MUST propagate — it's a real schema bug."""
+        import asyncpg
+
+        db = _make_db()
+        task = _make_task()
+        # Simulate schema drift: tasks_db raises UndefinedColumnError.
+        db.update_task_status.side_effect = asyncpg.exceptions.UndefinedColumnError(
+            'column "featured_image_data" of relation "content_tasks" does not exist',
+        )
+
+        with _LazyImportContext():
+            with pytest.raises(asyncpg.exceptions.UndefinedColumnError):
+                await publish_post_from_task(
+                    site_config=_mock_sc(),
+                    db_service=db, task=task, task_id="tid-schema-drift",
+                    queue_social=False,
+                )
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    async def test_none_return_logs_error_but_does_not_raise(
+        self, mock_sched, mock_ping, mock_hooks, caplog,
+    ):
+        """update_task_status returning None logs at ERROR; publish still succeeds."""
+        import logging
+
+        db = _make_db()
+        task = _make_task()
+        # Simulate the no-row-matched path — common when task_id resolution
+        # races a row deletion or task_id mismatch.
+        db.update_task_status.return_value = None
+
+        with _LazyImportContext(), caplog.at_level(logging.ERROR, logger="services.publish_service"):
+            result = await publish_post_from_task(
+                site_config=_mock_sc(),
+                db_service=db, task=task, task_id="tid-no-row",
+                queue_social=False,
+            )
+
+        # The post is created; we don't abort publish on a status-payload
+        # write failure (route-level _finalize_publish handles that).
+        assert result.success is True
+        # But the failure WAS logged at ERROR (was WARNING before #118).
+        assert any(
+            "update_task_status returned None" in rec.getMessage()
+            for rec in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    async def test_generic_db_error_logs_error_and_continues(
+        self, mock_sched, mock_ping, mock_hooks, caplog,
+    ):
+        """Generic DB errors (deadlock, conn drop) log at ERROR and continue."""
+        import logging
+
+        db = _make_db()
+        task = _make_task()
+        db.update_task_status.side_effect = ConnectionResetError("transient")
+
+        with _LazyImportContext(), caplog.at_level(logging.ERROR, logger="services.publish_service"):
+            result = await publish_post_from_task(
+                site_config=_mock_sc(),
+                db_service=db, task=task, task_id="tid-transient",
+                queue_social=False,
+            )
+
+        assert result.success is True
+        # Was WARNING before #118 — must be ERROR now so it reaches Sentry.
+        assert any(
+            rec.levelno == logging.ERROR
+            and "update_task_status raised" in rec.getMessage()
+            for rec in caplog.records
+        )
+
+
+@pytest.mark.unit
+class TestViewColumnsAllowlistMatchesView:
+    """The _VIEW_COLUMNS allowlist in tasks_db.update_task must be a subset
+    of the actual public.content_tasks view columns.
+
+    gitea#118 root cause: ``featured_image_data``, ``actual_cost``, and
+    ``cost_breakdown`` were in the allowlist but no longer existed on
+    the view (relics from the pre-pipeline_tasks schema). Any caller
+    that promoted those keys from task_metadata into a top-level update
+    triggered a column-doesn't-exist SQL error, which the inner
+    try/except swallowed — leaving the row stuck.
+
+    This test reads the current allowlist from source and pins the
+    column set so future migrations that drop a column also have to
+    update the allowlist (or this test fires).
+    """
+
+    # Mirror of the public.content_tasks view as of the gitea#118 fix.
+    # Sourced from `\d content_tasks` against poindexter_brain.
+    EXPECTED_VIEW_COLUMNS = frozenset({
+        "id", "task_id", "task_type", "content_type", "title", "topic",
+        "status", "stage", "style", "tone", "target_length", "category",
+        "primary_keyword", "target_audience", "content", "excerpt",
+        "featured_image_url", "quality_score", "qa_feedback",
+        "seo_title", "seo_description", "seo_keywords",
+        "percentage", "message", "model_used", "error_message",
+        "models_used_by_phase", "metadata", "result", "task_metadata",
+        "site_id", "created_at", "updated_at", "started_at", "completed_at",
+        "approval_status", "approved_by", "human_feedback",
+        "post_id", "post_slug", "published_at",
+    })
+
+    def test_allowlist_is_subset_of_view_columns(self):
+        """Every name in the _VIEW_COLUMNS allowlist must exist on the view."""
+        import re as _re
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parents[3] / "services" / "tasks_db.py"
+        text = src.read_text(encoding="utf-8")
+        # Grab the literal _VIEW_COLUMNS = { ... } block.
+        m = _re.search(r"_VIEW_COLUMNS\s*=\s*\{([^}]+)\}", text, _re.DOTALL)
+        assert m, "could not locate _VIEW_COLUMNS literal in tasks_db.py"
+        # Pull every quoted identifier inside the block.
+        names = set(_re.findall(r'"([a-zA-Z_][a-zA-Z0-9_]*)"', m.group(1)))
+        assert names, "_VIEW_COLUMNS literal had no quoted entries"
+
+        unknown = names - self.EXPECTED_VIEW_COLUMNS
+        assert not unknown, (
+            "_VIEW_COLUMNS contains names that are not on the actual "
+            f"content_tasks view: {sorted(unknown)}. UPDATEs that promote "
+            "these keys from task_metadata silently fail with "
+            "UndefinedColumnError — see gitea#118."
+        )
