@@ -45,15 +45,17 @@ grep api_token ~/.poindexter/bootstrap.toml | cut -d'"' -f2
 
 ### Development Bypass
 
-When `development_mode` is `true` in `app_settings`, the token
-`dev-token` is accepted:
+When `development_mode` is `true` in `app_settings`, the literal
+token `dev-token` is accepted as a Bearer credential:
 
 ```bash
 curl -H "Authorization: Bearer dev-token" \
      http://localhost:8002/api/tasks
 ```
 
-**Never enable development_mode in production.**
+**Never enable development_mode in production.** As of the
+2026-04-25 rotation, `development_mode=false` by default — the
+bypass is dormant unless an operator explicitly flips the flag.
 
 ### Public Endpoints (no auth required)
 
