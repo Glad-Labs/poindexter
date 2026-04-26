@@ -87,13 +87,28 @@ jobs:
         run: syft packages dir:. -o cyclonedx-json=sbom.cdx.json
       - name: Scan SBOM with grype (fail on HIGH/CRITICAL)
         run: grype sbom:sbom.cdx.json --fail-on high --only-fixed
-      # upload-artifact@v4 uses the new @actions/artifact v2 API which isn't
-      # supported on Gitea Actions (GHES-compatible runner). Pin to v3 which
-      # uses the older API Gitea does implement. GitHub's .github/ security.yml
-      # can stay on v4 — that runs on real GitHub Actions.
-      - uses: actions/upload-artifact@v3
+      # Inline the SBOM summary into the job logs. Gitea Actions'
+      # actions/upload-artifact@v3 path is broken on this runner: Gitea
+      # advertises the artifact endpoint as ROOT_URL (http://localhost:3001),
+      # but the act-spawned job container runs in the docker network where
+      # 127.0.0.1:3001 is unreachable, so the upload retries 5x then fails
+      # with `ECONNREFUSED 127.0.0.1:3001` (Glad-Labs/poindexter#131).
+      # LOCAL_ROOT_URL doesn't redirect the artifact URL — Gitea uses
+      # setting.AppURL (ROOT_URL) directly. Until act_runner / Gitea grow
+      # a knob to override the artifact endpoint, the SBOM lives in the
+      # logs. GitHub's .github/security.yml still uploads to real GitHub
+      # Actions. Run `syft packages dir:. -o cyclonedx-json` locally to
+      # reproduce the SBOM offline.
+      - name: Print SBOM summary (artifact upload disabled — see comment)
         if: always()
-        with:
-          name: sbom-cyclonedx
-          path: sbom.cdx.json
-          retention-days: 30
+        run: |
+          echo "=== SBOM (CycloneDX JSON) — first 200 lines ==="
+          if [ -f sbom.cdx.json ]; then
+            head -200 sbom.cdx.json
+            echo ""
+            echo "=== SBOM stats ==="
+            echo "Total bytes: $(wc -c < sbom.cdx.json)"
+            echo "Component count: $(grep -c '"bom-ref"' sbom.cdx.json || echo 'unknown')"
+          else
+            echo "sbom.cdx.json not generated (earlier step failed)"
+          fi
