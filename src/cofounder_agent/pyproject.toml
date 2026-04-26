@@ -47,10 +47,17 @@ sentry-sdk = { version = "^2.18.0", extras = ["fastapi"] }
 # OTLP gRPC to tempo:4317. FastAPI auto-instrumentation gives free
 # request traces; the dispatcher in services/llm_providers/ already
 # creates custom spans that this finally has somewhere to land.
-opentelemetry-api = "^1.27"
-opentelemetry-sdk = "^1.27"
-opentelemetry-exporter-otlp-proto-grpc = "^1.27"
-opentelemetry-instrumentation-fastapi = "^0.48b0"
+# OpenTelemetry stack pinned to 1.28+ / 0.49b0+ — earlier 1.27 line locked
+# protobuf to <5.0 via opentelemetry-proto, blocking the protobuf 5.29.6
+# CVE-2026-0994 fix. 1.28.0 is the first OTel release that allows protobuf 5.x.
+opentelemetry-api = "^1.28"
+opentelemetry-sdk = "^1.28"
+opentelemetry-exporter-otlp-proto-grpc = "^1.28"
+opentelemetry-instrumentation-fastapi = "^0.49b0"
+# Direct pin to ensure CVE-2026-0994 (HIGH) fix is picked up. Without this
+# the resolver is free to land on any ^4.x release that satisfies the
+# transitive constraints.
+protobuf = "^5.29.6"
 
 # Storage & Files
 python-multipart = ">=0.0.26"
