@@ -56,6 +56,49 @@ _FALLBACK_RATE_PER_1K = {"input": 0.0005, "output": 0.0015}
 _KNOWN_CLOUD_PROVIDERS = frozenset({"gemini", "openai", "anthropic", "openrouter"})
 
 
+# Data-center inference energy per 1K tokens, in watt-hours. These are
+# rough estimates synthesized from public research (Patterson et al.,
+# Hugging Face efficiency benchmarks, vendor sustainability reports)
+# plus parameter-count scaling — vendors don't publish per-call energy.
+# Operators can override per-model via app_settings:
+#   plugin.llm_provider.<provider>.model.<model>.energy_per_1k_wh
+# or per-provider:
+#   plugin.llm_provider.<provider>.energy_per_1k_wh
+#
+# Used to power the "is Ollama actually cheaper *and* greener than this
+# cloud SKU?" comparison Matt watches on the cost dashboard.
+_FALLBACK_ENERGY_WH_PER_1K = 1.0  # generic small/medium model
+_DEFAULT_CLOUD_ENERGY_WH_PER_1K: dict[str, dict[str, float]] = {
+    "gemini": {
+        "gemini-2.5-flash": 0.3,
+        "gemini-2.5-flash-lite": 0.15,
+        "gemini-2.5-pro": 2.0,
+        "text-embedding-004": 0.1,
+        "gemini-embedding-2-preview": 0.15,
+    },
+    "anthropic": {
+        # Numbers track Anthropic's published model size hierarchy.
+        "claude-haiku-4-5": 0.4,
+        "claude-3-5-haiku": 0.4,
+        "claude-sonnet-4-6": 1.5,
+        "claude-3-5-sonnet": 1.5,
+        "claude-opus-4-7": 4.0,
+        "claude-opus-4-6": 4.0,
+        "claude-3-opus": 4.0,
+    },
+    "openai": {
+        "gpt-4o-mini": 0.4,
+        "gpt-4o": 2.0,
+        "gpt-4-turbo": 3.0,
+        "gpt-3.5-turbo": 0.3,
+        "text-embedding-3-small": 0.1,
+        "text-embedding-3-large": 0.2,
+        "text-embedding-ada-002": 0.15,
+    },
+    "openrouter": {},  # routed; per-model lookup falls through to fallback
+}
+
+
 # Local backends report zero dollars regardless of model. Match by host
 # substring rather than full equality so ``http://host.docker.internal:8080/v1``
 # and ``http://127.0.0.1:11434`` both resolve correctly.
@@ -86,6 +129,7 @@ class CostGuardExhausted(RuntimeError):
         limit_usd: float = 0.0,
         provider: str | None = None,
         model: str | None = None,
+        estimated_cost_usd: float | None = None,
     ):
         super().__init__(reason)
         self.reason = reason
@@ -94,6 +138,14 @@ class CostGuardExhausted(RuntimeError):
         self.limit_usd = limit_usd
         self.provider = provider
         self.model = model
+        # ``estimated_cost_usd`` is the cost of the call that would
+        # have been made if the guard hadn't refused. Surfaced for
+        # alerting / logging — callers historically expected this on
+        # the per-provider exception variants, so promote it to the
+        # canonical class.
+        self.estimated_cost_usd = (
+            float(estimated_cost_usd) if estimated_cost_usd is not None else 0.0
+        )
 
 
 @dataclass
@@ -193,6 +245,14 @@ class CostGuard:
     # ------------------------------------------------------------------
     # Estimation
     # ------------------------------------------------------------------
+    #
+    # The ``estimate / preflight / record`` triplet below predates the
+    # ``estimate_cost / check_budget / record_usage`` helpers further
+    # down. All four production LLM providers now use the helpers — the
+    # triplet stays as the lowest-level surface (caller-supplied
+    # base_url + rate_table) for ad-hoc callers and as the unit-test
+    # baseline for budget arithmetic. Don't add new production callers
+    # without a strong reason.
 
     def estimate(
         self,
@@ -288,6 +348,7 @@ class CostGuard:
         task_id: str | None = None,
         success: bool = True,
         duration_ms: int | None = None,
+        electricity_kwh: float | None = None,
     ) -> None:
         """Persist the actual cost of a completed LLM call.
 
@@ -296,6 +357,10 @@ class CostGuard:
         higher layers; this method is the cheap-path for plugins that
         want to record cost without taking a dependency on the admin
         service.
+
+        ``electricity_kwh`` lets callers attribute energy alongside
+        dollars on the same cost_logs row — kept nullable so older
+        callers and dollar-only paths keep working unchanged.
         """
         if self._pool is None:
             return
@@ -306,16 +371,18 @@ class CostGuard:
                     task_id, phase, model, provider,
                     input_tokens, output_tokens, total_tokens,
                     cost_usd, duration_ms, success,
+                    electricity_kwh,
                     created_at, updated_at
                 )
                 VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
                 )
                 """,
                 task_id, phase, model, provider,
                 int(prompt_tokens), int(completion_tokens),
                 int(prompt_tokens + completion_tokens),
                 float(cost_usd), duration_ms, success,
+                float(electricity_kwh) if electricity_kwh is not None else None,
             )
         except Exception as e:
             logger.warning("[COST_GUARD] cost_logs insert failed: %s", e)
@@ -400,6 +467,109 @@ class CostGuard:
         in_cost = (max(0, int(prompt_tokens)) / 1000.0) * in_rate
         out_cost = (max(0, int(completion_tokens)) / 1000.0) * out_rate
         return in_cost + out_cost
+
+    # ------------------------------------------------------------------
+    # Electricity tracking — eco / grid-impact axis
+    # ------------------------------------------------------------------
+    #
+    # Two tracks:
+    #
+    # - **Local providers (Ollama):** measure GPU power × call duration.
+    #   ``estimate_local_kwh`` returns the kWh consumed by THIS call, and
+    #   ``record_usage`` converts kWh → dollars via electricity_rate_kwh
+    #   so the dashboard shows comparable $ for both axes.
+    #
+    # - **Cloud providers (Gemini, Anthropic, OpenAI*):** estimate
+    #   data-center inference energy from per-model Wh/1K-token figures
+    #   (``_DEFAULT_CLOUD_ENERGY_WH_PER_1K`` + app_settings overrides).
+    #   The dollar cost is the API spend, not the electricity — but the
+    #   kWh column lets us compare "Ollama on the 5090 vs Anthropic in
+    #   us-east-1" on energy as well as dollars.
+
+    def _get_energy_per_1k_wh(self, provider: str, model: str) -> float:
+        """Resolve data-center inference energy in Wh per 1K tokens.
+
+        Lookup order:
+        1. Per-model override:
+           ``plugin.llm_provider.<provider>.model.<model>.energy_per_1k_wh``
+        2. Provider default override:
+           ``plugin.llm_provider.<provider>.energy_per_1k_wh``
+        3. Built-in default for the (provider, model) pair.
+        4. ``_FALLBACK_ENERGY_WH_PER_1K`` for known cloud providers; 0.0
+           for everything else (local backends pay zero on this axis).
+        """
+        per_model_key = (
+            f"plugin.llm_provider.{provider}.model.{model}.energy_per_1k_wh"
+        )
+        provider_key = f"plugin.llm_provider.{provider}.energy_per_1k_wh"
+
+        if self._site_config is not None:
+            for key in (per_model_key, provider_key):
+                try:
+                    raw = self._site_config.get(key, "")
+                except Exception:
+                    raw = ""
+                if raw:
+                    try:
+                        return float(raw)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "[COST_GUARD] non-numeric energy setting %r — skipping",
+                            key,
+                        )
+
+        provider_defaults = _DEFAULT_CLOUD_ENERGY_WH_PER_1K.get(provider, {})
+        if model in provider_defaults:
+            return float(provider_defaults[model])
+
+        if provider in _KNOWN_CLOUD_PROVIDERS:
+            return _FALLBACK_ENERGY_WH_PER_1K
+        return 0.0
+
+    async def estimate_cloud_kwh(
+        self,
+        *,
+        provider: str,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> float:
+        """Cloud-side energy estimate in kWh for an LLM call.
+
+        Treats input and output tokens as equivalent on the energy
+        axis — most published research collapses them, and the
+        compute split (prefill vs decode) is provider-internal.
+        """
+        wh_per_1k = self._get_energy_per_1k_wh(provider, model)
+        total_tokens = max(0, int(prompt_tokens)) + max(0, int(completion_tokens))
+        return (total_tokens / 1000.0) * wh_per_1k / 1000.0
+
+    def estimate_local_kwh(self, *, duration_ms: int | None) -> float:
+        """Local-side energy estimate in kWh from GPU power × duration.
+
+        Reads ``gpu_power_watts`` from app_settings (auto-refreshed
+        daily by ``UpdateUtilityRatesJob`` from nvidia-smi). Defaults
+        to 450 W if unset — conservative for an RTX 5090 under load.
+        Returns 0.0 when duration is unknown rather than guessing.
+        """
+        if not duration_ms or duration_ms <= 0:
+            return 0.0
+        watts = self._limit("gpu_power_watts", 450.0)
+        seconds = float(duration_ms) / 1000.0
+        return (watts * seconds) / 3_600_000.0
+
+    def _electricity_rate_kwh(self) -> float:
+        """Read ``electricity_rate_kwh`` from app_settings (USD/kWh).
+
+        Defaults to the EIA 2024 residential US average ($0.16/kWh)
+        when the value hasn't been refreshed yet. ``UpdateUtilityRatesJob``
+        keeps this current via the EIA API on a 24h cadence.
+        """
+        return self._limit("electricity_rate_kwh", 0.16)
+
+    def kwh_to_usd(self, kwh: float) -> float:
+        """Convert energy to dollar cost at the current electricity rate."""
+        return float(kwh) * self._electricity_rate_kwh()
 
     async def check_budget(
         self,
@@ -486,23 +656,47 @@ class CostGuard:
         task_id: str | None = None,
         success: bool = True,
         duration_ms: int | None = None,
+        electricity_kwh: float | None = None,
+        is_local: bool = False,
     ) -> float:
         """Plugin-friendly wrapper around :meth:`record`.
 
-        Differs from ``record`` in two ways:
-        - ``cost_usd`` is optional. When ``None``, the cost is
-          back-computed from the actual usage tokens so plugins don't
-          have to redo the rate lookup.
-        - Returns the persisted cost so callers can log it without
-          re-querying.
+        Differs from ``record`` in three ways:
+        - ``cost_usd`` is optional. When ``None``, it is filled in by
+          :meth:`estimate_cost` for cloud providers or by
+          ``kwh_to_usd(electricity_kwh)`` for local providers — every
+          row in cost_logs gets a real dollar figure.
+        - ``electricity_kwh`` is optional. When ``None``, it is filled
+          in by :meth:`estimate_cloud_kwh` for cloud providers or
+          :meth:`estimate_local_kwh` for local ones. Either axis can
+          be supplied if the caller has measured numbers.
+        - ``is_local=True`` switches the auto-estimate to the
+          power×duration path. Cloud providers leave it ``False``.
+        - Returns the persisted dollar cost so callers can log it
+          without re-querying.
         """
+        if electricity_kwh is None:
+            if is_local:
+                electricity_kwh = self.estimate_local_kwh(duration_ms=duration_ms)
+            else:
+                electricity_kwh = await self.estimate_cloud_kwh(
+                    provider=provider,
+                    model=model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
+
         if cost_usd is None:
-            cost_usd = await self.estimate_cost(
-                provider=provider,
-                model=model,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
+            if is_local:
+                # Local cost is the electricity bill, not a token rate.
+                cost_usd = self.kwh_to_usd(electricity_kwh)
+            else:
+                cost_usd = await self.estimate_cost(
+                    provider=provider,
+                    model=model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
         await self.record(
             provider=provider,
             model=model,
@@ -513,5 +707,6 @@ class CostGuard:
             task_id=task_id,
             success=success,
             duration_ms=duration_ms,
+            electricity_kwh=electricity_kwh,
         )
         return float(cost_usd)

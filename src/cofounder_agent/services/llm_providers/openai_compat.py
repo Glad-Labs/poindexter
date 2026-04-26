@@ -47,11 +47,39 @@ import httpx
 
 from plugins.llm_provider import Completion, Token
 from services.cost_guard import (
-    CostEstimate,
     CostGuard,
     CostGuardExhausted,
     is_local_base_url,
 )
+
+
+def _compute_cost(
+    cfg: dict[str, Any],
+    *,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+) -> float:
+    """Compute USD cost for an OAI-compat call from the cfg's rate_table.
+
+    Returns 0.0 when the configured base_url is local (vLLM, llama.cpp,
+    LocalAI, Ollama-on-host) — the dollar axis isn't meaningful there.
+    Electricity is recorded separately via ``record_usage(is_local=True)``.
+
+    Cloud calls look the model up in ``cfg["rate_table"]`` (operator-
+    supplied per-config) and fall back to ``_FALLBACK_RATE_PER_1K`` if
+    the model is unknown — matching the legacy ``CostGuard.estimate``
+    semantics exactly so existing fixture rates still apply.
+    """
+    if is_local_base_url(cfg.get("base_url")):
+        return 0.0
+    rates = (cfg.get("rate_table") or {}).get(model) or {
+        "input": 0.0005,
+        "output": 0.0015,
+    }
+    in_cost = (max(0, int(prompt_tokens)) / 1000.0) * float(rates.get("input", 0.0))
+    out_cost = (max(0, int(completion_tokens)) / 1000.0) * float(rates.get("output", 0.0))
+    return in_cost + out_cost
 
 logger = logging.getLogger(__name__)
 
@@ -237,17 +265,20 @@ class OpenAICompatProvider:
         prompt_chars = sum(len((m or {}).get("content", "")) for m in messages)
         prompt_tokens_est = max(1, math.ceil(prompt_chars / 4))
         max_tokens = int(kwargs.get("max_tokens") or 1024)
+        is_local = is_local_base_url(cfg["base_url"])
 
-        estimate: CostEstimate = guard.estimate(
-            provider=self.name,
+        estimated_cost_usd = _compute_cost(
+            cfg,
             model=target_model,
-            base_url=cfg["base_url"],
             prompt_tokens=prompt_tokens_est,
             completion_tokens=max_tokens,
-            rate_table=cfg["rate_table"],
         )
         # Always raises on exhaustion — never silently falls through.
-        await guard.preflight(estimate)
+        await guard.check_budget(
+            provider=self.name,
+            model=target_model,
+            estimated_cost_usd=estimated_cost_usd,
+        )
 
         sdk_kwargs: dict[str, Any] = {
             "model": target_model,
@@ -290,22 +321,21 @@ class OpenAICompatProvider:
 
         # Recompute actual cost from real token counts (the estimate was
         # a lower-bound on input + max_tokens cap on output) and record.
-        actual_estimate = guard.estimate(
-            provider=self.name,
+        actual_cost = _compute_cost(
+            cfg,
             model=target_model,
-            base_url=cfg["base_url"],
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
-            rate_table=cfg["rate_table"],
         )
-        await guard.record(
+        await guard.record_usage(
             provider=self.name,
             model=target_model,
-            cost_usd=actual_estimate.estimated_usd,
+            cost_usd=actual_cost,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             phase="openai_compat.complete",
             success=True,
+            is_local=is_local,
         )
 
         return Completion(
@@ -352,15 +382,18 @@ class OpenAICompatProvider:
         prompt_chars = sum(len((m or {}).get("content", "")) for m in messages)
         prompt_tokens_est = max(1, math.ceil(prompt_chars / 4))
         max_tokens = int(kwargs.get("max_tokens") or 1024)
-        estimate = guard.estimate(
-            provider=self.name,
+        is_local = is_local_base_url(cfg["base_url"])
+        estimated_cost_usd = _compute_cost(
+            cfg,
             model=target_model,
-            base_url=cfg["base_url"],
             prompt_tokens=prompt_tokens_est,
             completion_tokens=max_tokens,
-            rate_table=cfg["rate_table"],
         )
-        await guard.preflight(estimate)
+        await guard.check_budget(
+            provider=self.name,
+            model=target_model,
+            estimated_cost_usd=estimated_cost_usd,
+        )
 
         payload: dict[str, Any] = {
             "model": target_model,
@@ -391,12 +424,16 @@ class OpenAICompatProvider:
                         raw_line = raw_line[len("data: "):]
                     if raw_line.strip() == "[DONE]":
                         yield Token(text="", finish_reason="stop")
-                        await guard.record(
+                        # Streamed responses don't carry usage. We record the
+                        # preflight estimate as a lower bound; if a backend
+                        # ever does emit usage in [DONE], wire it in here.
+                        await guard.record_usage(
                             provider=self.name,
                             model=target_model,
-                            cost_usd=estimate.estimated_usd,
+                            cost_usd=estimated_cost_usd,
                             phase="openai_compat.stream",
                             success=True,
+                            is_local=is_local,
                         )
                         return
                     try:
@@ -443,15 +480,18 @@ class OpenAICompatProvider:
         guard = self._cost_guard(kwargs)
         # Embedding cost depends almost entirely on input tokens.
         input_tokens_est = max(1, math.ceil(len(text or "") / 4))
-        estimate = guard.estimate(
-            provider=self.name,
+        is_local = is_local_base_url(cfg["base_url"])
+        estimated_cost_usd = _compute_cost(
+            cfg,
             model=target_model,
-            base_url=cfg["base_url"],
             prompt_tokens=input_tokens_est,
             completion_tokens=0,
-            rate_table=cfg["rate_table"],
         )
-        await guard.preflight(estimate)
+        await guard.check_budget(
+            provider=self.name,
+            model=target_model,
+            estimated_cost_usd=estimated_cost_usd,
+        )
 
         client = self._build_sdk_client(cfg)
         try:
@@ -477,22 +517,21 @@ class OpenAICompatProvider:
         usage = data.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or input_tokens_est)
 
-        actual = guard.estimate(
-            provider=self.name,
+        actual_cost = _compute_cost(
+            cfg,
             model=target_model,
-            base_url=cfg["base_url"],
             prompt_tokens=prompt_tokens,
             completion_tokens=0,
-            rate_table=cfg["rate_table"],
         )
-        await guard.record(
+        await guard.record_usage(
             provider=self.name,
             model=target_model,
-            cost_usd=actual.estimated_usd,
+            cost_usd=actual_cost,
             prompt_tokens=prompt_tokens,
             completion_tokens=0,
             phase="openai_compat.embed",
             success=True,
+            is_local=is_local,
         )
 
         embedding = items[0].get("embedding")

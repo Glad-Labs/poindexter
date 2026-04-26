@@ -241,7 +241,14 @@ class TestOpenAICompatComplete:
 
 
 class _RecordingCostGuard(CostGuard):
-    """CostGuard test double that captures every preflight + record call."""
+    """CostGuard test double capturing the unified surface.
+
+    ``preflighted`` now mirrors :meth:`check_budget` calls (the
+    legacy ``preflight`` no longer fires from production providers
+    after the unification — keeping the attribute name for test
+    readability). Each entry exposes ``is_local`` and
+    ``estimated_usd`` for assertion ergonomics.
+    """
 
     def __init__(self, *, daily_spend: float = 0.0, monthly_spend: float = 0.0):
         super().__init__(site_config=None, pool=None)
@@ -259,10 +266,37 @@ class _RecordingCostGuard(CostGuard):
     async def get_monthly_spend(self) -> float:
         return self._monthly_spend
 
-    async def preflight(self, estimate):
-        self.preflighted.append(estimate)
-        await super().preflight(estimate)
+    async def check_budget(self, *, provider, model, estimated_cost_usd):
+        # Lightweight stand-in object exposing the legacy
+        # ``CostEstimate`` shape so test assertions keep reading
+        # ``.is_local`` / ``.estimated_usd``.
+        self.preflighted.append(
+            type(
+                "RecordedBudgetCheck",
+                (),
+                {
+                    "provider": provider,
+                    "model": model,
+                    "estimated_usd": estimated_cost_usd,
+                    "is_local": estimated_cost_usd == 0.0,
+                },
+            )()
+        )
+        await super().check_budget(
+            provider=provider,
+            model=model,
+            estimated_cost_usd=estimated_cost_usd,
+        )
 
+    async def record_usage(self, **kwargs):
+        # Drop the synthesized electricity_kwh / is_local kwargs so
+        # the recorded shape stays the legacy assertion shape.
+        kwargs.pop("electricity_kwh", None)
+        kwargs.pop("is_local", None)
+        self.recorded.append(kwargs)
+        return float(kwargs.get("cost_usd", 0.0))
+
+    # Legacy compatibility — keep `record` intercepts working too.
     async def record(self, **kwargs):
         self.recorded.append(kwargs)
 

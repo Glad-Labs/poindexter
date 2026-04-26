@@ -151,12 +151,18 @@ def _calc_cost_usd(
 # ---------------------------------------------------------------------------
 
 
-class CostGuardExhausted(RuntimeError):
-    """Raised when the cost-guard refuses a paid LLM call.
+from services.cost_guard import CostGuardExhausted as _BaseCostGuardExhausted
 
-    Distinct exception type so callers can ``except CostGuardExhausted``
-    without sweeping up unrelated SDK / network errors. Carries enough
-    context for the alerting layer to render a useful message.
+
+class CostGuardExhausted(_BaseCostGuardExhausted):
+    """Anthropic-specific :class:`CostGuardExhausted`.
+
+    Subclasses the canonical ``services.cost_guard.CostGuardExhausted``
+    so ``except CostGuardExhausted`` from either path catches the same
+    exception family. The only behavioral difference is a default
+    ``provider="anthropic"`` so call sites that pre-date the unified
+    exception (and the tests asserting against them) keep working
+    without explicitly setting it.
     """
 
     def __init__(
@@ -167,10 +173,12 @@ class CostGuardExhausted(RuntimeError):
         model: str = "",
         estimated_cost_usd: float = 0.0,
     ) -> None:
-        super().__init__(message)
-        self.provider = provider
-        self.model = model
-        self.estimated_cost_usd = estimated_cost_usd
+        super().__init__(
+            message,
+            provider=provider,
+            model=model,
+            estimated_cost_usd=estimated_cost_usd,
+        )
 
 
 class AnthropicProviderDisabled(RuntimeError):
@@ -438,36 +446,35 @@ class AnthropicProvider:
     ) -> None:
         """Post-call ``log_cost`` write. Best-effort — never raises.
 
-        Mirrors the existing pipeline pattern (``cross_model_qa.py``,
-        ``generate_content.py``): the cost row is the source of truth
-        for the budget rollups, so this is the gate that ALWAYS fires
-        even when the pre-flight check was skipped.
+        Routes through the unified :meth:`CostGuard.record_usage` so
+        Anthropic calls land in ``cost_logs`` next to Gemini, OpenAI,
+        and Ollama with the same shape — including the
+        ``electricity_kwh`` column populated from the data-center
+        Wh/1K-token estimate. Tests still monkey-patch this method
+        as the seam.
         """
+        from services.cost_guard import CostGuard  # noqa: PLC0415 — avoid circular at import time
         sc = self._site_config
-        db_service = None
+        pool = None
         if sc is not None:
-            db_service = getattr(sc, "_db_service", None)
-        if db_service is None:
-            return
-
-        cost_log = {
-            "task_id": task_id or "anthropic-direct",
-            "phase": "anthropic_complete",
-            "model": model,
-            "provider": self.name,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-            "cost_usd": actual_cost_usd,
-            "duration_ms": duration_ms,
-            "success": True,
-        }
+            pool = getattr(sc, "_pool", None)
+        guard = CostGuard(site_config=sc, pool=pool)
         try:
-            await db_service.log_cost(cost_log)
+            await guard.record_usage(
+                provider=self.name,
+                model=model,
+                cost_usd=actual_cost_usd,
+                prompt_tokens=input_tokens,
+                completion_tokens=output_tokens,
+                phase="anthropic_complete",
+                task_id=task_id,
+                success=True,
+                duration_ms=duration_ms,
+                is_local=False,
+            )
         except Exception as e:
             logger.warning(
-                "[AnthropicProvider] log_cost write failed (cost not "
-                "recorded for task=%s, $%.4f): %s",
+                "[AnthropicProvider] cost record failed (task=%s, $%.4f): %s",
                 task_id, actual_cost_usd, e,
             )
 
