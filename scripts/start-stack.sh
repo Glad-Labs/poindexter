@@ -46,6 +46,18 @@ while IFS= read -r line; do
     fi
 done < "$BOOTSTRAP"
 
+# Materialize secret-only files for containers that read secrets from disk
+# (Prometheus uses basic_auth.password_file for the Uptime Kuma scrape job).
+# Mirrors the alertmanager-webhook-token pattern — kept out of prometheus.yml
+# so the literal value never lands in a tracked file. See poindexter#136.
+BOOTSTRAP_DIR="$(dirname "$BOOTSTRAP")"
+if [ -n "${UPTIME_KUMA_API_KEY:-}" ]; then
+    UK_KEY_FILE="$BOOTSTRAP_DIR/uptime-kuma-api-key"
+    # -n to avoid trailing newline; basic_auth password is taken verbatim.
+    printf '%s' "$UPTIME_KUMA_API_KEY" > "$UK_KEY_FILE"
+    chmod 0600 "$UK_KEY_FILE" 2>/dev/null || true
+fi
+
 # Default docker compose action
 ACTION="${1:-up}"
 shift 2>/dev/null || true
