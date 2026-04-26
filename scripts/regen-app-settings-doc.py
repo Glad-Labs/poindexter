@@ -33,9 +33,20 @@ _SECRET_PATTERNS = [
 ]
 _SECRET_KEY_HINTS = re.compile(r"_(key|token|secret|password|dsn)(_|$)", re.IGNORECASE)
 
+# Keys whose values match a secret-shaped pattern but are public identifiers,
+# not credentials. Cloudflare account IDs, for example, appear in dashboard
+# URLs and API paths (https://api.cloudflare.com/client/v4/accounts/{id}/...).
+# Listing them here suppresses the look-secret redaction so the preview stays
+# focused on values that genuinely need rotation.
+_NOT_SECRET_KEYS: frozenset[str] = frozenset({
+    "cloudflare_account_id",
+})
+
 
 def looks_secret(key: str, value: str) -> bool:
     if not value:
+        return False
+    if key in _NOT_SECRET_KEYS:
         return False
     if (
         _SECRET_KEY_HINTS.search(key)
