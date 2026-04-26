@@ -21,7 +21,6 @@ import logging
 import os
 import subprocess
 import urllib.error
-import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any
@@ -134,7 +133,13 @@ Search before asking the user — the answer may already be in memory.
 
 
 def _api(method: str, path: str, data: dict | None = None) -> dict:
-    """Call the Poindexter API."""
+    """Call the Poindexter API. Raises RuntimeError on non-2xx or network errors.
+
+    Previously this returned ``{"error": ...}`` on failure, which several
+    callers swallowed as a fake-success status string (e.g. "Rejected: HTTP
+    401 — <reason>" when auth failed). Failures must propagate so the MCP
+    framework surfaces them to the client.
+    """
     url = f"{API_URL}{path}"
     headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
     body = json.dumps(data).encode() if data else None
@@ -143,14 +148,14 @@ def _api(method: str, path: str, data: dict | None = None) -> dict:
         resp = urllib.request.urlopen(req, timeout=15)
         return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        # Capture the response body — it contains the actual error details
         try:
-            error_body = json.loads(e.read())
-            return {"error": f"HTTP {e.code}", **error_body}
+            err_body = json.loads(e.read())
+            detail = err_body.get("detail") or json.dumps(err_body)
         except Exception:
-            return {"error": f"HTTP {e.code}: {str(e)[:200]}"}
-    except Exception as e:
-        return {"error": str(e)[:200]}
+            detail = str(e)[:200]
+        raise RuntimeError(f"API {method} {path} failed: HTTP {e.code} {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"API {method} {path} unreachable: {e.reason}") from e
 
 
 # ============================================================================
@@ -225,7 +230,7 @@ async def approve_post(task_id: str) -> str:
     """Approve a content task for publishing."""
     full_id = await _resolve_task_id(task_id)
     result = _api("POST", f"/api/tasks/{full_id}/approve")
-    return f"Status: {result.get('status', result.get('error', '?'))}"
+    return f"Status: {result.get('status', '?')}"
 
 
 @mcp.tool()
@@ -237,8 +242,7 @@ async def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str
         "feedback": reason,
         "allow_revisions": False,
     })
-    status = result.get("status", result.get("error", "?"))
-    return f"Rejected: {status} — {reason}"
+    return f"Rejected: {result.get('status', '?')} — {reason}"
 
 
 @mcp.tool()
@@ -246,7 +250,7 @@ async def publish_post(task_id: str) -> str:
     """Publish an approved content task to the configured site."""
     full_id = await _resolve_task_id(task_id)
     result = _api("POST", f"/api/tasks/{full_id}/publish")
-    return f"Status: {result.get('status', result.get('error', '?'))}"
+    return f"Status: {result.get('status', '?')}"
 
 
 @mcp.tool()
