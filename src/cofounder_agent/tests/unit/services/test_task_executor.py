@@ -579,8 +579,13 @@ class TestProcessLoop:
     async def test_idle_alert_fires_when_pending_tasks_not_started_for_too_long(self, caplog):
         """
         Regression test for issue #841: a CRITICAL log must be emitted when
-        pending tasks exist but _last_task_started_at is older than
-        _IDLE_ALERT_THRESHOLD_S.
+        pending tasks have been visible to the executor for longer than
+        _IDLE_ALERT_THRESHOLD_S without any of them being picked up.
+
+        The trigger is now "pending queue has been non-empty for too long
+        without progress" (#119) — measuring time-since-last-task started
+        produced false positives every time a new batch arrived after a
+        natural idle gap.
         """
         import time
 
@@ -599,13 +604,25 @@ class TestProcessLoop:
         db.get_pending_tasks = AsyncMock(side_effect=get_pending_once)
         executor = _make_executor(db=db, poll_interval=0)
         executor.running = True
-        # Simulate executor that started tasks long ago and is now stalling.
-        executor._last_task_started_at = time.monotonic() - (executor._IDLE_ALERT_THRESHOLD_S + 10)
+        # Simulate executor that has been observing pending tasks for longer
+        # than the idle threshold without picking any up — i.e. a real stall.
+        executor._pending_visible_since = (
+            time.monotonic() - (executor._IDLE_ALERT_THRESHOLD_S + 10)
+        )
 
         import logging
 
+        async def stall_processing(task):
+            # Simulate executor unable to make progress on the picked-up
+            # task. The stall check runs before this, so we don't actually
+            # need to block — but we still need _process_single_task to
+            # exist and not raise so the loop completes naturally.
+            return None
+
         with (
-            patch.object(executor, "_process_single_task", new_callable=AsyncMock),
+            patch.object(
+                executor, "_process_single_task", side_effect=stall_processing,
+            ),
             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
             caplog.at_level(logging.CRITICAL, logger="services.task_executor"),
@@ -619,7 +636,7 @@ class TestProcessLoop:
 
     @pytest.mark.asyncio
     async def test_idle_alert_not_fired_when_no_prior_tasks(self, caplog):
-        """No idle alert fires when _last_task_started_at is None (executor just started)."""
+        """No idle alert fires when _pending_visible_since is None (fresh executor / first cycle)."""
         task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
         db = _make_db()
         call_count = 0
@@ -693,9 +710,127 @@ class TestProcessLoop:
         stats = executor.get_stats()
         assert "last_task_started_age_s" in stats
         assert "idle_alert_threshold_s" in stats
+        assert "pending_visible_age_s" in stats
         assert stats["idle_alert_threshold_s"] == executor._IDLE_ALERT_THRESHOLD_S
         # No tasks started yet — age should be None
         assert stats["last_task_started_age_s"] is None
+        # Empty queue, no poll yet — pending visibility window is None
+        assert stats["pending_visible_age_s"] is None
+
+    @pytest.mark.asyncio
+    async def test_idle_alert_not_fired_after_natural_idle_gap_when_fresh_batch_arrives(
+        self, caplog
+    ):
+        """
+        Regression test for issue #119: the stall alert must NOT fire when
+        the executor processed a batch, sat through a long natural idle
+        gap (no pending tasks), and then a NEW batch arrives. Before this
+        fix, the trigger was time-since-last-task-started, which grows
+        unbounded across idle gaps and produced a guaranteed false-positive
+        CRITICAL the moment any new batch arrived after threshold seconds
+        of empty queue (the inter-batch interval is 30 min and the default
+        threshold was tuned to 1800s — collision was deterministic).
+        """
+        import time
+
+        task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
+        task_b = _make_task("bbbbbbbb-cccc-dddd-eeee-222222222222")
+        db = _make_db()
+        call_count = 0
+
+        # Simulate: batch 1 -> empty queue (idle gap) -> batch 2.
+        async def get_pending_sequence(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [task_a]
+            if call_count == 2:
+                return []
+            if call_count == 3:
+                return [task_b]
+            executor.running = False
+            return []
+
+        db.get_pending_tasks = AsyncMock(side_effect=get_pending_sequence)
+        executor = _make_executor(db=db, poll_interval=0)
+        executor.running = True
+
+        import logging
+
+        async def fake_process(task):
+            # Simulate that processing the first batch took longer than
+            # the idle alert threshold. After this point _last_task_started_at
+            # is well past the threshold — the OLD logic would have fired
+            # CRITICAL on every subsequent batch arrival forever.
+            executor._last_task_started_at = (
+                time.monotonic() - (executor._IDLE_ALERT_THRESHOLD_S + 600)
+            )
+
+        with (
+            patch.object(executor, "_process_single_task", side_effect=fake_process),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+            caplog.at_level(logging.CRITICAL, logger="services.task_executor"),
+        ):
+            await executor._process_loop()
+
+        critical_msgs = [r.message for r in caplog.records if r.levelno == logging.CRITICAL]
+        false_alerts = [
+            m for m in critical_msgs
+            if "possible stall" in m or "Executor has not" in m
+        ]
+        assert not false_alerts, (
+            "Stall alert fired on a healthy executor that just processed a batch, "
+            f"sat through an idle gap, and saw a fresh batch arrive: {false_alerts}"
+        )
+
+    def test_idle_alert_threshold_is_db_configurable(self):
+        """
+        _IDLE_ALERT_THRESHOLD_S must read from app_settings via SiteConfig
+        so operators can tune the stall detection without a redeploy.
+        """
+        from services.site_config import SiteConfig
+
+        custom_threshold = 4242
+        db = _make_db()
+        site_cfg = SiteConfig(
+            initial_config={"task_executor_idle_alert_threshold_seconds": custom_threshold}
+        )
+        executor = _make_executor(db=db, site_config=site_cfg)
+        assert executor._IDLE_ALERT_THRESHOLD_S == custom_threshold
+        assert executor.get_stats()["idle_alert_threshold_s"] == custom_threshold
+
+    @pytest.mark.asyncio
+    async def test_pending_visible_since_resets_on_empty_queue(self, caplog):
+        """
+        After the queue empties, _pending_visible_since must reset to None
+        so the next batch starts a fresh stall window.
+        """
+        task_a = _make_task("aaaaaaaa-bbbb-cccc-dddd-111111111111")
+        db = _make_db()
+        call_count = 0
+
+        async def get_pending_sequence(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [task_a]
+            executor.running = False
+            return []
+
+        db.get_pending_tasks = AsyncMock(side_effect=get_pending_sequence)
+        executor = _make_executor(db=db, poll_interval=0)
+        executor.running = True
+
+        with (
+            patch.object(executor, "_process_single_task", new_callable=AsyncMock),
+            patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
+            patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            await executor._process_loop()
+
+        # Last observed state is the empty-queue branch — window must be cleared.
+        assert executor._pending_visible_since is None
 
 
 # ---------------------------------------------------------------------------
