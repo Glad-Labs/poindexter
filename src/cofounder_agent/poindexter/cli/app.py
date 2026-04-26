@@ -14,6 +14,7 @@ from .qa_gates import qa_gates_group
 from .settings import settings_group
 from .setup import setup_command
 from .sprint import sprint_group
+from .stores import stores_group
 from .tasks import tasks_group
 from .vercel import vercel_group
 from .retention import retention_group
@@ -55,6 +56,7 @@ main.add_command(webhooks_group, name="webhooks")
 main.add_command(retention_group, name="retention")
 main.add_command(taps_group, name="taps")
 main.add_command(qa_gates_group, name="qa-gates")
+main.add_command(stores_group, name="stores")
 
 
 if __name__ == "__main__":

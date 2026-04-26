@@ -10,25 +10,42 @@ site_config import. Callers pass site_config via kwarg; tests build a
 MagicMock SiteConfig per case via _mock_sc().
 """
 
+import json
 import os
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.r2_upload_service import (
     _CONTENT_TYPES,
+    _apply_cache_busting,
     upload_podcast_episode,
     upload_to_r2,
+    upload_to_store,
     upload_video_episode,
 )
 
 
-def _mock_sc(values: dict[str, str] | None = None) -> MagicMock:
+def _mock_sc(
+    values: dict[str, str] | None = None,
+    *,
+    object_stores_row: dict[str, Any] | None = None,
+) -> MagicMock:
     """Return a MagicMock shaped like SiteConfig.
 
     .get() is sync (values dict with default); .get_secret() is async
     (reads from the same dict). Supports both new ``storage_*`` keys and
     legacy ``cloudflare_r2_*`` fallbacks.
+
+    By default ``_pool`` is set to ``None`` so the new declarative
+    ``object_stores`` lookup short-circuits and falls back to the
+    legacy ``storage_*`` settings — that's how every pre-#113 test
+    case behaves.
+
+    Pass ``object_stores_row`` to simulate a real row coming back from
+    the ``object_stores`` table; the helper builds an asyncpg-shaped
+    pool mock that returns the row from ``conn.fetchrow``.
     """
     values = values or {}
     mock = MagicMock()
@@ -38,6 +55,22 @@ def _mock_sc(values: dict[str, str] | None = None) -> MagicMock:
         return values.get(k, d)
 
     mock.get_secret = AsyncMock(side_effect=_get_secret)
+
+    if object_stores_row is None:
+        # Legacy / no-row case — pool is None so the dispatcher skips
+        # the SELECT and falls into the storage_* fallback path.
+        mock._pool = None
+    else:
+        # Build a minimal asyncpg pool mock that returns the row.
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value=object_stores_row)
+        conn.execute = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock._pool = pool
+
     return mock
 
 
@@ -269,3 +302,200 @@ class TestUploadVideoEpisode:
             "nonexistent-video-id-000", site_config=_mock_sc(),
         )
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# upload_to_store — declarative path (GH-113)
+# ---------------------------------------------------------------------------
+
+
+def _store_row(**overrides: Any) -> dict[str, Any]:
+    """Build a fake ``object_stores`` row dict with sensible defaults.
+
+    Tests override only the fields they care about — keeps each test
+    focused on one behavior (enabled/disabled, credentials shape,
+    cache busting).
+    """
+    base = {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "name": "primary",
+        "provider": "cloudflare_r2",
+        "endpoint_url": "https://test.r2.dev",
+        "bucket": "test-bucket",
+        "public_url": "https://pub-test.r2.dev",
+        "credentials_ref": "storage_credentials",
+        "cache_busting_strategy": "none",
+        "cache_busting_config": {},
+        "enabled": True,
+    }
+    base.update(overrides)
+    return base
+
+
+class TestUploadToStore:
+    """Declarative ``upload_to_store(name, ...)`` dispatcher."""
+
+    @pytest.mark.asyncio
+    async def test_uploads_via_object_stores_row(self, tmp_path):
+        """Happy path — row exists, enabled, JSON credentials present."""
+        mp3 = tmp_path / "podcast.mp3"
+        mp3.write_bytes(b"data")
+
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+
+        # JSON-blob credentials at the row's credentials_ref pointer
+        creds_json = json.dumps({
+            "access_key": "row_key",
+            "secret_key": "row_secret",
+        })
+        sc = _mock_sc(
+            {"storage_credentials": creds_json},
+            object_stores_row=_store_row(),
+        )
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await upload_to_store(
+                "primary", str(mp3), "podcast/abc.mp3", site_config=sc,
+            )
+
+        assert result == "https://pub-test.r2.dev/podcast/abc.mp3"
+        mock_s3.upload_file.assert_called_once()
+        call_args = mock_s3.upload_file.call_args
+        assert call_args[0][1] == "test-bucket"
+        assert call_args[0][2] == "podcast/abc.mp3"
+
+    @pytest.mark.asyncio
+    async def test_disabled_row_returns_none(self, tmp_path):
+        """Disabled row short-circuits — no upload attempted."""
+        mp3 = tmp_path / "x.mp3"
+        mp3.write_bytes(b"data")
+        sc = _mock_sc(
+            {"storage_credentials": json.dumps({"access_key": "k", "secret_key": "s"})},
+            object_stores_row=_store_row(enabled=False),
+        )
+        result = await upload_to_store(
+            "primary", str(mp3), "x.mp3", site_config=sc,
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_missing_credentials_returns_none(self, tmp_path):
+        """Row exists but credentials_ref points to nothing — no-op."""
+        mp3 = tmp_path / "x.mp3"
+        mp3.write_bytes(b"data")
+        # No storage_credentials value, no legacy keys either
+        sc = _mock_sc({}, object_stores_row=_store_row())
+        result = await upload_to_store(
+            "primary", str(mp3), "x.mp3", site_config=sc,
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_named_store_without_row_returns_none(self, tmp_path):
+        """Non-'primary' name with no row — explicit config bug, no fallback."""
+        mp3 = tmp_path / "x.mp3"
+        mp3.write_bytes(b"data")
+        # _pool is None → _lookup_store returns None → for a non-primary
+        # name, that's a hard skip (no legacy fallback path).
+        sc = _mock_sc({"storage_credentials": json.dumps({"access_key": "k", "secret_key": "s"})})
+        result = await upload_to_store(
+            "podcast_cdn", str(mp3), "podcast/x.mp3", site_config=sc,
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_primary_falls_back_to_legacy_when_no_row(self, tmp_path):
+        """Pre-migration deployments: ``primary`` lookup yields no row,
+        but the storage_* settings still wire up a working upload."""
+        mp3 = tmp_path / "legacy.mp3"
+        mp3.write_bytes(b"data")
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        sc = _mock_sc({
+            "storage_access_key": "k",
+            "storage_secret_key": "s",
+            "storage_endpoint": "https://x.r2.dev",
+            "storage_bucket": "b",
+            "storage_public_url": "https://pub.r2.dev",
+        })
+        # _pool is None — _lookup_store returns None — fallback fires.
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await upload_to_store(
+                "primary", str(mp3), "podcast/legacy.mp3", site_config=sc,
+            )
+        assert result == "https://pub.r2.dev/podcast/legacy.mp3"
+
+    @pytest.mark.asyncio
+    async def test_back_compat_shim_delegates_to_store(self, tmp_path):
+        """``upload_to_r2`` is a thin shim over ``upload_to_store('primary')``."""
+        mp3 = tmp_path / "shim.mp3"
+        mp3.write_bytes(b"data")
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        sc = _mock_sc(
+            {"storage_credentials": json.dumps({"access_key": "k", "secret_key": "s"})},
+            object_stores_row=_store_row(bucket="shim-bucket", public_url="https://shim.pub"),
+        )
+        with patch.dict("sys.modules", {"boto3": mock_boto3}):
+            result = await upload_to_r2(
+                str(mp3), "podcast/shim.mp3", site_config=sc,
+            )
+        # Same outcome as calling upload_to_store("primary", ...) directly.
+        assert result == "https://shim.pub/podcast/shim.mp3"
+        call_args = mock_s3.upload_file.call_args
+        assert call_args[0][1] == "shim-bucket"
+
+
+class TestCacheBusting:
+    """``_apply_cache_busting`` — strategy-driven key mutation."""
+
+    def test_none_strategy_passes_through(self):
+        assert _apply_cache_busting("podcast/abc.mp3", "none", {}) == "podcast/abc.mp3"
+
+    def test_version_prefix_inserts_segment(self):
+        # ``podcast/abc.mp3`` + version_prefix v2 → ``podcast/v2/abc.mp3``
+        out = _apply_cache_busting(
+            "podcast/abc.mp3", "version_prefix", {"version": "v2"},
+        )
+        assert out == "podcast/v2/abc.mp3"
+
+    def test_version_prefix_default_v1(self):
+        out = _apply_cache_busting("podcast/abc.mp3", "version_prefix", {})
+        assert out == "podcast/v1/abc.mp3"
+
+    def test_unknown_strategy_passes_through(self):
+        # Forward-compat — new strategies in the DB don't crash old workers.
+        assert _apply_cache_busting("k", "future_strategy", {}) == "k"
+
+
+class TestUploadPodcastEpisodeNamedLookup:
+    """``upload_podcast_episode`` prefers the ``podcast_cdn`` row when present."""
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_primary_without_podcast_cdn_row(self, tmp_path, monkeypatch):
+        """No podcast_cdn row → falls back to primary with legacy version prefix."""
+        # Stub PODCAST_DIR by monkeypatching expanduser.
+        post_id = "post-123"
+        podcast_dir = tmp_path / ".poindexter" / "podcast"
+        podcast_dir.mkdir(parents=True)
+        (podcast_dir / f"{post_id}.mp3").write_bytes(b"data")
+
+        monkeypatch.setattr(os.path, "expanduser", lambda p: str(tmp_path) if p == "~" else p)
+
+        captured: dict[str, Any] = {}
+
+        async def fake_upload(name, local_path, key, content_type=None, *, site_config):
+            captured["name"] = name
+            captured["key"] = key
+            return f"https://example.com/{key}"
+
+        with patch("services.r2_upload_service.upload_to_store", side_effect=fake_upload):
+            sc = _mock_sc({"podcast_cdn_version": "v3"})  # _pool=None → no rows
+            url = await upload_podcast_episode(post_id, site_config=sc)
+
+        assert url == f"https://example.com/podcast/v3/{post_id}.mp3"
+        assert captured["name"] == "primary"
+        assert captured["key"] == f"podcast/v3/{post_id}.mp3"
