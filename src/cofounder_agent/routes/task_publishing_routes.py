@@ -122,6 +122,52 @@ def _should_run_post_publish_hooks() -> bool:
     return bool(os.getenv("LOCAL_DATABASE_URL"))
 
 
+async def _finalize_publish(
+    db_service: DatabaseService,
+    task_id: str,
+    post_slug: str,
+    site_config: Any,
+) -> None:
+    """Belt-and-suspenders post-publish finalization.
+
+    Two failure modes have been observed in the wild despite
+    publish_service already attempting both of these:
+
+    1. content_tasks.status stays on 'approved' instead of moving to
+       'published' (the underlying status update inside publish_service
+       silently failed or was skipped on a code path).
+    2. The Next.js cache holds a null post.json fetched before R2 had
+       the file, so /posts/<slug> serves "Post Not Found" until TTL.
+
+    Both ops are non-blocking — failures are logged and swallowed so
+    the publish response is never gated on this finalization.
+    """
+    try:
+        await db_service.pool.execute(
+            "UPDATE content_tasks SET status='published', updated_at=NOW() WHERE task_id=$1::uuid",
+            task_id,
+        )
+    except Exception as e:
+        logger.warning(
+            "[publish_finalize] content_tasks status update failed for %s: %s",
+            task_id, e,
+        )
+
+    try:
+        from services.revalidation_service import trigger_nextjs_revalidation
+
+        await trigger_nextjs_revalidation(
+            paths=["/", "/archive", "/posts", f"/posts/{post_slug}"],
+            tags=["posts", "post-index", f"post:{post_slug}"],
+            site_config=site_config,
+        )
+    except Exception as e:
+        logger.warning(
+            "[publish_finalize] Next.js revalidation failed for %s: %s",
+            post_slug, e,
+        )
+
+
 # ============================================================================
 # CONTENT CLEANING UTILITIES
 # ============================================================================
@@ -447,6 +493,10 @@ async def approve_task(
                             "[approve_task] mark_model_performance_outcome publish flip failed: %s",
                             mp_err,
                         )
+                    if pub_result.post_slug:
+                        await _finalize_publish(
+                            db_service, task_id, pub_result.post_slug, site_config_dep,
+                        )
                 else:
                     logger.warning(
                         "[approve_task] Publish failed: %s", pub_result.error
@@ -599,6 +649,11 @@ async def publish_task(
                 logger.warning(
                     "[publish_task] pipeline_distributions write failed for %s: %s",
                     task_id, dist_err,
+                )
+
+            if pub_result.post_slug:
+                await _finalize_publish(
+                    db_service, task_id, pub_result.post_slug, site_config_dep,
                 )
 
         # Fetch updated task
