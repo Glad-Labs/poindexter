@@ -387,7 +387,11 @@ class TestNotify:
 
     @pytest.mark.asyncio
     @patch("services.social_poster.httpx.AsyncClient")
-    async def test_sends_telegram_and_discord(self, mock_client_cls):
+    async def test_sends_to_discord_only_not_telegram(self, mock_client_cls):
+        """Social-post-ready notifications go to Discord (operator review
+        channel), NOT to Telegram (incident-alert channel). Both used to
+        fire; Telegram leg was removed 2026-04-26 to cut phone-noise.
+        """
         from services.social_poster import _notify
 
         mock_client = AsyncMock()
@@ -397,14 +401,34 @@ class TestNotify:
 
         await _notify("Test notification message", _mock_sc())
 
-        assert mock_client.post.call_count == 2
-        # First call: Telegram
-        telegram_call = mock_client.post.call_args_list[0]
-        assert "api.telegram.org" in telegram_call.args[0]
-        assert telegram_call.kwargs["json"]["text"] == "Test notification message"
-        # Second call: Discord via OpenClaw
-        discord_call = mock_client.post.call_args_list[1]
-        assert "/hooks/agent" in discord_call.args[0]
+        assert mock_client.post.call_count == 1, (
+            f"Expected exactly one call (Discord only), got {mock_client.post.call_count} "
+            f"calls: {[c.args[0] for c in mock_client.post.call_args_list]}"
+        )
+        only_call = mock_client.post.call_args_list[0]
+        assert "/hooks/agent" in only_call.args[0], (
+            "Sole call must be Discord via OpenClaw, not Telegram"
+        )
+        # Defense-in-depth: assert no Telegram URL in any call
+        for c in mock_client.post.call_args_list:
+            assert "api.telegram.org" not in c.args[0], (
+                "Social-post notifications must not hit Telegram"
+            )
+
+    @pytest.mark.asyncio
+    @patch("services.social_poster.httpx.AsyncClient")
+    async def test_skips_when_no_discord_channel_configured(self, mock_client_cls):
+        """When site_config has no discord_ops_channel_id, _notify logs and
+        returns rather than firing a half-broken request."""
+        from services.social_poster import _notify
+
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        # site_config=None branch sets discord_channel=None
+        await _notify("Test", site_config=None)
+        assert mock_client.post.call_count == 0
 
     @pytest.mark.asyncio
     @patch("services.social_poster.httpx.AsyncClient")

@@ -32,7 +32,6 @@ import httpx
 
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.logger_config import get_logger
-from services.telegram_config import get_telegram_chat_id
 
 from .ollama_client import OllamaClient
 
@@ -182,68 +181,57 @@ async def _generate_social_text(
 
 
 async def _notify(message: str, site_config: Any | None = None) -> None:
-    """Send social post notifications to Telegram and Discord.
+    """Send social-post notifications to Discord only.
+
+    Telegram used to be a parallel sink here, but social-post-ready
+    notifications are operator-side review prompts that belong in the
+    Discord ops channel — Telegram is reserved for incident alerts and
+    cross-device pings. Routing them to both was creating notification
+    noise on Matt's phone. See Glad-Labs/poindexter follow-up filed
+    2026-04-26.
 
     site_config is optional for tests that call _notify directly with a
     mocked httpx client. When None, OpenClaw URL/token fall back to the
     defaults SiteConfig.get would have returned for an unpopulated
-    config, and the Discord leg is skipped (``site_config.require()`` on
-    the channel id can't run without a real config source). Telegram
-    bot token + chat id also come from site_config; when unset they
-    fall through as empty strings (matches legacy behavior where the
-    module-level constants were "" without a populated config).
+    config, and the Discord leg is skipped (``site_config.require()``
+    on the channel id can't run without a real config source).
     """
     try:
         if site_config is not None:
             openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
-            # openclaw_webhook_token and telegram_bot_token are
-            # is_secret=true in app_settings — they must go through
-            # get_secret() for decryption, otherwise we ship
-            # enc:v1:<ciphertext> as the auth header / bot route and
-            # the receiving service 401s us (GH-107, prod incident
-            # 2026-04-23). The bot token is fetched directly here
-            # rather than via get_telegram_bot_token() because that
-            # helper is still sync — see telegram_config.py async
-            # follow-up in the GH-107 audit doc.
+            # openclaw_webhook_token is is_secret=true in app_settings —
+            # must go through get_secret() for decryption, otherwise we
+            # ship enc:v1:<ciphertext> as the auth header and OpenClaw
+            # 401s us (GH-107, prod incident 2026-04-23).
             openclaw_token = await site_config.get_secret(
                 "openclaw_webhook_token", "hooks-gladlabs"
             )
             discord_channel: str | None = site_config.require("discord_ops_channel_id")
-            # telegram_bot_token is encrypted in app_settings — must go
-            # through get_secret() for decryption (GH-107). .strip()
-            # because pgAdmin paste tends to carry trailing whitespace
-            # that breaks the bot-API URL.
-            telegram_bot_token = (await site_config.get_secret("telegram_bot_token") or "").strip()
-            telegram_chat_id = (get_telegram_chat_id(site_config) or "").strip()
         else:
             openclaw_url = DEFAULT_OPENCLAW_URL
             openclaw_token = "hooks-gladlabs"
             discord_channel = None
-            telegram_bot_token = ""
-            telegram_chat_id = ""
+
+        if discord_channel is None:
+            logger.info(
+                "[social_poster] No discord_ops_channel_id configured — skipping notification"
+            )
+            return
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0)
         ) as client:
-            logger.info("[social_poster] Notifying: %s", message[:80])
-            # Telegram — direct bot API
+            logger.info("[social_poster] Notifying Discord: %s", message[:80])
             await client.post(
-                f"https://api.telegram.org/bot{telegram_bot_token}/sendMessage",
-                json={"chat_id": telegram_chat_id, "text": message},
+                f"{openclaw_url}/hooks/agent",
+                headers={"Authorization": f"Bearer {openclaw_token}"},
+                json={
+                    "message": f"Post this to the #ops channel in Discord: {message}",
+                    "channel": "discord",
+                    "target": discord_channel,
+                },
                 timeout=10,
             )
-            # Discord — via OpenClaw hooks
-            if discord_channel is not None:
-                await client.post(
-                    f"{openclaw_url}/hooks/agent",
-                    headers={"Authorization": f"Bearer {openclaw_token}"},
-                    json={
-                        "message": f"Post this to the #ops channel in Discord: {message}",
-                        "channel": "discord",
-                        "target": discord_channel,
-                    },
-                    timeout=10,
-                )
     except Exception as e:
         logger.warning("[social_poster] Notification failed: %s", e)
 
@@ -379,7 +367,7 @@ async def generate_and_distribute_social_posts(
         )
         await _notify(notification, site_config)
         logger.info(
-            "[social_poster] Distributed %s post to Telegram + Discord", post.platform
+            "[social_poster] Distributed %s post notification to Discord", post.platform
         )
 
     # Post to enabled social platforms via adapters
