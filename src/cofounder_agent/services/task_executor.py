@@ -293,8 +293,24 @@ class TaskExecutor:
         self.last_poll_at: float | None = None  # monotonic timestamp of last poll
         self._poll_cycle: int = 0  # incremented each loop iteration
         # Monotonic timestamp of the last time a task was picked up for processing.
-        # Used to detect executor stalls (issue #841).
+        # Exposed via get_stats() for external health monitors (issue #841).
         self._last_task_started_at: float | None = None
+        # Monotonic timestamp of when the executor FIRST observed pending
+        # tasks in the current "non-empty queue" window. Reset to None
+        # whenever the executor either picks up a task or observes an empty
+        # queue. The stall alert fires when this window exceeds
+        # _IDLE_ALERT_THRESHOLD_S — i.e. pending tasks have been visible
+        # for that long without ANY of them being claimed.
+        #
+        # Why not just `now - _last_task_started_at`? That measures
+        # "wall-clock time since the executor last did work" which grows
+        # unbounded across natural idle gaps (no scheduler activity at
+        # night, between batch arrivals, etc). With the threshold tuned
+        # below the inter-batch arrival interval, every newly-arrived
+        # batch would trip a false-positive CRITICAL on the very first
+        # poll cycle that sees it, even though the executor is healthy
+        # and is about to claim the task in this same cycle (issue #119).
+        self._pending_visible_since: float | None = None
         # How long (seconds) the queue may have pending tasks without any being
         # picked up before we fire a CRITICAL alert. Tunable via
         # app_settings.task_executor_idle_alert_threshold_seconds (#198).
@@ -436,16 +452,26 @@ class TaskExecutor:
                             idx, task.get("id"), task.get("task_name"), task.get("status"),
                         )
 
-                    # Check whether this executor has been sitting on pending tasks
-                    # without starting any for longer than the idle threshold (#841).
-                    if self._last_task_started_at is not None:
-                        idle_s = time.monotonic() - self._last_task_started_at
-                        if idle_s > self._IDLE_ALERT_THRESHOLD_S:
+                    # Stall detection (#841, fixed in #119): the alert must
+                    # measure how long THIS batch of pending tasks has been
+                    # visible without any of them being picked up. Wall-clock
+                    # time since the executor last did work is the wrong
+                    # signal — that grows unbounded across natural idle gaps
+                    # and produces false positives the moment a new batch
+                    # lands after threshold seconds of empty queue.
+                    now_mono = time.monotonic()
+                    if self._pending_visible_since is None:
+                        # First poll where this contiguous run of pending
+                        # tasks is visible — start the clock.
+                        self._pending_visible_since = now_mono
+                    else:
+                        pending_visible_s = now_mono - self._pending_visible_since
+                        if pending_visible_s > self._IDLE_ALERT_THRESHOLD_S:
                             logger.critical(
                                 "[task_executor] Executor has not started a task in "
                                 "%.0fs with %s pending task(s) "
                                 "in the queue — possible stall or hang",
-                                idle_s, len(pending_tasks),
+                                pending_visible_s, len(pending_tasks),
                             )
 
                     # Process each task
@@ -459,6 +485,10 @@ class TaskExecutor:
                         try:
                             logger.info("[TASK_EXEC_LOOP] Starting to process task: %s", task_id)
                             self._last_task_started_at = time.monotonic()
+                            # Progress made — reset the stall window so the
+                            # next contiguous run of pending tasks gets a
+                            # fresh clock (#119).
+                            self._pending_visible_since = None
                             await self._process_single_task(task)
                             self.success_count += 1
                             logger.info(
@@ -504,6 +534,10 @@ class TaskExecutor:
                     logger.debug(
                         "[TASK_EXEC_LOOP] No pending tasks - running idle work"
                     )
+                    # Empty queue is positive evidence that the executor is
+                    # alive and not stalling — clear the stall window so the
+                    # next batch's clock starts fresh when it arrives (#119).
+                    self._pending_visible_since = None
                     # Run background maintenance when pipeline is idle
                     try:
                         from services.idle_worker import IdleWorker
@@ -1494,6 +1528,13 @@ class TaskExecutor:
         last_task_age: float | None = None
         if self._last_task_started_at is not None:
             last_task_age = time.monotonic() - self._last_task_started_at
+        # How long the current contiguous run of pending tasks has been
+        # visible to the executor. None when the queue is empty or the
+        # executor has not yet completed a poll cycle. This is the value
+        # the stall alert is gated on (#119, refines #841).
+        pending_visible_age: float | None = None
+        if self._pending_visible_since is not None:
+            pending_visible_age = time.monotonic() - self._pending_visible_since
         return {
             "running": self.running,
             "task_count": self.task_count,
@@ -1507,6 +1548,7 @@ class TaskExecutor:
             # Time since last task was picked up; None if no tasks have run yet.
             # Exposed for external health monitors (issue #841).
             "last_task_started_age_s": last_task_age,
+            "pending_visible_age_s": pending_visible_age,
             "idle_alert_threshold_s": self._IDLE_ALERT_THRESHOLD_S,
             "critique_stats": self.critique_loop.get_stats() if self.critique_loop else {},
         }
