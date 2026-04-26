@@ -27,6 +27,7 @@ from typing import Any
 from services.content_validator import ValidationResult, validate_content
 from services.logger_config import get_logger
 from services.model_router import get_model_router
+from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
 
 logger = get_logger(__name__)
 
@@ -317,6 +318,51 @@ class MultiModelQA:
         """
         reviews: list[ReviewerResult] = []
 
+        # Load the declarative QA gate chain from ``qa_gates`` (GH-115).
+        # Empty list = no DB, table missing, or unset; in that case we
+        # fall back to the legacy hardcoded enable-flag behaviour
+        # downstream so existing tests + deployments without the
+        # migration applied keep working.
+        gate_chain = await load_qa_gate_chain(self.pool, stage_name="qa")
+        gate_index: dict[str, QAGateSpec] = {g.name: g for g in gate_chain}
+        # ``advisory_overrides`` flips the ReviewerResult.approved bit
+        # to True for any gate whose ``required_to_pass`` is False —
+        # the gate's score still feeds the weighted average, but it
+        # doesn't veto. Keyed by reviewer name (matches
+        # ReviewerResult.reviewer).
+        advisory_overrides: set[str] = {
+            g.reviewer for g in gate_chain if not g.required_to_pass
+        }
+
+        def _gate_enabled(name: str, *, default: bool) -> bool:
+            """Resolve whether a gate runs, honoring the qa_gates table.
+
+            When the table is empty (fresh DB / tests / fallback path),
+            ``default`` decides — preserving legacy behaviour. When the
+            table has rows, only those marked enabled run.
+            """
+            if not gate_index:
+                return default
+            spec = gate_index.get(name)
+            if spec is None:
+                return False  # Operator deleted the row → gate is off.
+            return spec.enabled
+
+        def _apply_advisory(review: ReviewerResult) -> ReviewerResult:
+            """Honor required_to_pass=False from the qa_gates row.
+
+            If the matching row is advisory and the reviewer reported
+            approved=False, flip approved to True so the veto logic
+            doesn't reject. The score still flows into the weighted
+            average so a chronic failer still drags the final score.
+            """
+            if review.reviewer in advisory_overrides and not review.approved:
+                review.approved = True
+                review.feedback = (
+                    f"[advisory — gate not required_to_pass] {review.feedback}"
+                )[:500]
+            return review
+
         # 1. Programmatic validation (always runs, fast, deterministic)
         validation = validate_content(
             title, content, topic, site_config=self._site_config,
@@ -328,6 +374,10 @@ class MultiModelQA:
             feedback="; ".join(i.description[:60] for i in validation.issues[:3]) or "No issues found",
             provider="programmatic",
         )
+        # Honor qa_gates row's required_to_pass — operator can mark the
+        # programmatic validator advisory if their niche has a high
+        # false-positive rate.
+        validator_review = _apply_advisory(validator_review)
         reviews.append(validator_review)
 
         # If programmatic validator finds critical issues, check whether they
@@ -364,22 +414,34 @@ class MultiModelQA:
 
         # 2. Cross-model review using a DIFFERENT provider than the writer
         # Model is configurable via app_settings (pipeline_critic_model)
+        # qa_gates row name: ``llm_critic`` (reviewer="llm_critic" matches
+        # ReviewerResult.reviewer="ollama_critic" via the advisory map below).
         critic_model = None
         if self.settings:
             critic_model = await self.settings.get("pipeline_critic_model")
         qa_cost_log = None
-        cross_result = await self._review_with_cloud_model(
-            title, content, topic,
-            model_override=critic_model,
-            research_sources=research_sources,
-        )
         critic_skipped = False
-        if cross_result:
-            cross_review, qa_cost_log = cross_result
-            reviews.append(cross_review)
-        else:
+        if not _gate_enabled("llm_critic", default=True):
+            logger.info("[MULTI_QA] llm_critic gate disabled via qa_gates")
             critic_skipped = True
-            logger.warning("[MULTI_QA] Cross-model review skipped — score will reflect validator only")
+        else:
+            cross_result = await self._review_with_cloud_model(
+                title, content, topic,
+                model_override=critic_model,
+                research_sources=research_sources,
+            )
+            if cross_result:
+                cross_review, qa_cost_log = cross_result
+                # The reviewer name in legacy ReviewerResult is
+                # ``ollama_critic``; the qa_gates row uses ``llm_critic``.
+                # Normalize the advisory check by matching either.
+                if "llm_critic" in advisory_overrides:
+                    advisory_overrides.add("ollama_critic")
+                cross_review = _apply_advisory(cross_review)
+                reviews.append(cross_review)
+            else:
+                critic_skipped = True
+                logger.warning("[MULTI_QA] Cross-model review skipped — score will reflect validator only")
 
         # 2b. Topic-delivery gate — catches bait-and-switch titles where the
         # body doesn't deliver what the topic promised. Binary gate: if the
@@ -399,91 +461,116 @@ class MultiModelQA:
         # When the consistency gate fires, the content_router_service
         # rewrite loop intercepts and retries the draft with targeted
         # fixes before finalizing the reject/approve decision.
-        consistency_review = await self._check_internal_consistency(content)
-        if consistency_review is not None:
-            reviews.append(consistency_review)
+        # qa_gates row name: ``consistency`` (reviewer="internal_consistency").
+        if _gate_enabled("consistency", default=True):
+            # Map advisory flag from ``consistency`` row → reviewer name.
+            if "consistency" in advisory_overrides:
+                advisory_overrides.add("internal_consistency")
+            consistency_review = await self._check_internal_consistency(content)
+            if consistency_review is not None:
+                consistency_review = _apply_advisory(consistency_review)
+                reviews.append(consistency_review)
 
         # 2d. Image relevance gate — checks whether inline images
         # actually match the content they're next to. Catches the
         # "a close-up image of a busy server room" stock-photo-for-a-
         # FastAPI-post pattern Matt flagged on 2026-04-11. Behind a
         # flag because it requires a vision-capable Ollama model.
-        image_review = await self._check_image_relevance(title, topic, content)
-        if image_review is not None:
-            reviews.append(image_review)
+        # qa_gates row name: ``vision_gate`` (reviewer="image_relevance").
+        # Default off when no qa_gates row exists — _check_image_relevance
+        # respects qa_vision_check_enabled internally for the legacy path.
+        if _gate_enabled("vision_gate", default=True):
+            if "vision_gate" in advisory_overrides:
+                advisory_overrides.add("image_relevance")
+                advisory_overrides.add("rendered_preview")
+            image_review = await self._check_image_relevance(title, topic, content)
+            if image_review is not None:
+                image_review = _apply_advisory(image_review)
+                reviews.append(image_review)
 
         # 2e. Web fact-check gate — uses DuckDuckGo to verify claims
         # that the LLM critic or validator flagged. Catches training-
         # cutoff false positives: if the web confirms a claim about a
         # post-cutoff product, the gate overrides the rejection.
-        web_fc_enabled = True
-        if self.settings:
-            web_fc_enabled = (await self.settings.get("qa_web_factcheck_enabled") or "true").lower() != "false"
+        # qa_gates row name: ``web_factcheck`` (reviewer="web_factcheck").
+        # When the qa_gates row exists it is authoritative; the legacy
+        # ``qa_web_factcheck_enabled`` setting is only consulted as a
+        # fallback default when no row is present.
+        if gate_index:
+            web_fc_enabled = _gate_enabled("web_factcheck", default=True)
+        else:
+            web_fc_enabled = True
+            if self.settings:
+                web_fc_enabled = (await self.settings.get("qa_web_factcheck_enabled") or "true").lower() != "false"
         if web_fc_enabled:
             web_review = await self._web_fact_check(title, topic, content, reviews)
             if web_review is not None:
+                web_review = _apply_advisory(web_review)
                 reviews.append(web_review)
 
         # 2f. URL verification gate — checks cited links actually resolve (#214)
         # Not a hard gate — dead links are critical (block), but having good
         # citations is rewarded with a score bonus (carrot, not stick).
-        try:
-            from services.content_validator import verify_content_urls
-            url_issues = await verify_content_urls(
-                content, site_config=self._site_config,
-            )
-            dead_links = [i for i in url_issues if i.category == "dead_link"]
+        # qa_gates row name: ``url_verifier``.
+        if _gate_enabled("url_verifier", default=True):
+            try:
+                from services.content_validator import verify_content_urls
+                url_issues = await verify_content_urls(
+                    content, site_config=self._site_config,
+                )
+                dead_links = [i for i in url_issues if i.category == "dead_link"]
 
-            if dead_links:
-                # Dead links block publish — this is a fabricated/hallucinated URL
-                url_review = ReviewerResult(
-                    reviewer="url_verifier",
-                    approved=False,
-                    score=max(0, 100 - len(dead_links) * 20),
-                    feedback="; ".join(i.description[:60] for i in dead_links[:3]),
-                    provider="programmatic",
-                )
-                reviews.append(url_review)
-                logger.warning("[MULTI_QA] URL verifier: %d dead links found", len(dead_links))
-            else:
-                # Count verified external citations — bonus scoring.
-                # "Internal" domains (the operator's own site) are excluded
-                # from the citation count. Read site_domain from site_config
-                # so forked Poindexter installs filter their own domain, not
-                # Glad Labs' — prevents a fork's self-links from being
-                # counted as "external citations" and inflating the score.
-                import re as _re
-                from urllib.parse import urlparse as _urlparse
-                _internal_domains: set[str] = {"localhost"}
-                try:
-                    _site_domain = (
-                        self._site_config.get("site_domain", "") or ""
-                    ).lower().strip()
-                    if _site_domain:
-                        _internal_domains.add(_site_domain)
-                        _internal_domains.add(f"www.{_site_domain}")
-                except Exception:
-                    pass
-                _ext_urls = [
-                    m.group(2) for m in _re.finditer(r'\[([^\]]*)\]\((https?://[^)]+)\)', content)
-                    if _urlparse(m.group(2)).netloc.lower() not in _internal_domains
-                ]
-                citation_count = len(_ext_urls)
-                # Reward: +5 per verified citation, max +15
-                citation_bonus = min(15, citation_count * 5)
-                url_score = min(100, 80 + citation_bonus)
-                url_review = ReviewerResult(
-                    reviewer="url_verifier",
-                    approved=True,
-                    score=url_score,
-                    feedback=f"{citation_count} verified external citations (+{citation_bonus} bonus)" if citation_count else "No external citations (no penalty, but citations encouraged)",
-                    provider="programmatic",
-                )
-                reviews.append(url_review)
-                if citation_count:
-                    logger.info("[MULTI_QA] URL verifier: %d verified citations (+%d bonus)", citation_count, citation_bonus)
-        except Exception as e:
-            logger.debug("[MULTI_QA] URL verification skipped: %s", e)
+                if dead_links:
+                    # Dead links block publish — this is a fabricated/hallucinated URL
+                    url_review = ReviewerResult(
+                        reviewer="url_verifier",
+                        approved=False,
+                        score=max(0, 100 - len(dead_links) * 20),
+                        feedback="; ".join(i.description[:60] for i in dead_links[:3]),
+                        provider="programmatic",
+                    )
+                    url_review = _apply_advisory(url_review)
+                    reviews.append(url_review)
+                    logger.warning("[MULTI_QA] URL verifier: %d dead links found", len(dead_links))
+                else:
+                    # Count verified external citations — bonus scoring.
+                    # "Internal" domains (the operator's own site) are excluded
+                    # from the citation count. Read site_domain from site_config
+                    # so forked Poindexter installs filter their own domain, not
+                    # Glad Labs' — prevents a fork's self-links from being
+                    # counted as "external citations" and inflating the score.
+                    import re as _re
+                    from urllib.parse import urlparse as _urlparse
+                    _internal_domains: set[str] = {"localhost"}
+                    try:
+                        _site_domain = (
+                            self._site_config.get("site_domain", "") or ""
+                        ).lower().strip()
+                        if _site_domain:
+                            _internal_domains.add(_site_domain)
+                            _internal_domains.add(f"www.{_site_domain}")
+                    except Exception:
+                        pass
+                    _ext_urls = [
+                        m.group(2) for m in _re.finditer(r'\[([^\]]*)\]\((https?://[^)]+)\)', content)
+                        if _urlparse(m.group(2)).netloc.lower() not in _internal_domains
+                    ]
+                    citation_count = len(_ext_urls)
+                    # Reward: +5 per verified citation, max +15
+                    citation_bonus = min(15, citation_count * 5)
+                    url_score = min(100, 80 + citation_bonus)
+                    url_review = ReviewerResult(
+                        reviewer="url_verifier",
+                        approved=True,
+                        score=url_score,
+                        feedback=f"{citation_count} verified external citations (+{citation_bonus} bonus)" if citation_count else "No external citations (no penalty, but citations encouraged)",
+                        provider="programmatic",
+                    )
+                    reviews.append(url_review)
+                    if citation_count:
+                        logger.info("[MULTI_QA] URL verifier: %d verified citations (+%d bonus)", citation_count, citation_bonus)
+            except Exception as e:
+                logger.debug("[MULTI_QA] URL verification skipped: %s", e)
 
         # 2g. Rendered-preview gate — the final "yup looks good"
         # sanity check. Screenshots the post's /preview/{hash} URL
@@ -492,11 +579,13 @@ class MultiModelQA:
         # tables, broken images, mangled HTML — the stuff that no
         # text-only QA can see. Opt-in via qa_preview_screenshot_enabled.
         # Skipped entirely if preview_url is None.
-        if preview_url:
+        # qa_gates row name: ``vision_gate`` (shared with image_relevance).
+        if preview_url and _gate_enabled("vision_gate", default=True):
             preview_review = await self._check_rendered_preview(
                 title, topic, preview_url
             )
             if preview_review is not None:
+                preview_review = _apply_advisory(preview_review)
                 reviews.append(preview_review)
 
         # 3. Aggregate scores — weights configurable via app_settings

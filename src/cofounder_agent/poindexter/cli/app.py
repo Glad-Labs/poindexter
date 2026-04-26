@@ -10,6 +10,7 @@ from .costs import costs_group
 from .memory import memory_group
 from .posts import posts_group
 from .premium import premium_group
+from .qa_gates import qa_gates_group
 from .settings import settings_group
 from .setup import setup_command
 from .sprint import sprint_group
@@ -53,6 +54,7 @@ main.add_command(premium_group, name="premium")
 main.add_command(webhooks_group, name="webhooks")
 main.add_command(retention_group, name="retention")
 main.add_command(taps_group, name="taps")
+main.add_command(qa_gates_group, name="qa-gates")
 
 
 if __name__ == "__main__":
