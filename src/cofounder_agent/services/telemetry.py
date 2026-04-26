@@ -40,19 +40,38 @@ except (ImportError, AttributeError) as e:
 # WARNING so that genuine export failures are visible (reverted from CRITICAL — see Issue #430).
 logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 
-# OpenAIInstrumentor lived here historically but we don't use the
-# `openai` SDK — the worker talks to Ollama (OpenAI-compat) via plain
-# httpx and to Claude via the `anthropic` SDK. The instrumentor only
-# patches `openai.*` calls, so it had nothing to wrap. LLM-level
-# tracing is provided directly by ``services/llm_providers/dispatcher.py``,
-# which creates explicit spans (`llm.dispatch_complete`,
-# `llm.dispatch_embed`, `llm.get_provider`) for every LLM call regardless
-# of provider — those flow into Tempo via the FastAPI-level
-# TracerProvider configured below.
+# OpenAIInstrumentor wiring — restored 2026-04-25 for
+# Glad-Labs/poindexter#132.
 #
-# Adding finer-grained HTTP timing spans (httpx-level) is a future
-# step; the instrumentor exists in `opentelemetry-instrumentation-httpx`
-# but is intentionally not wired here yet to keep span volume bounded.
+# Historical note: this import + call was deliberately removed in
+# commit 68563f45 because nothing in the worker actually called the
+# ``openai`` SDK — the rationale was "the instrumentor has nothing to
+# wrap". With the OpenAICompatProvider plugin landing on top of
+# ``openai.AsyncOpenAI``, that's no longer true: every cost-guarded
+# OpenAI-compat call now flows through the SDK and benefits from the
+# instrumentor's automatic span creation (chat.completions.create /
+# embeddings.create / etc.). The dispatcher in
+# ``services/llm_providers/dispatcher.py`` still emits its own
+# higher-level ``llm.dispatch_complete`` spans; the SDK instrumentor
+# adds the per-HTTP-request child spans inside that envelope.
+#
+# Both the legacy (``opentelemetry.instrumentation.openai``) and the
+# v2 (``opentelemetry.instrumentation.openai_v2``) packages publish an
+# ``OpenAIInstrumentor`` class. We try v2 first (newer, supports
+# OpenTelemetry 1.28+), fall back to the legacy package, and finally
+# accept ``None`` so dev shells without either installed don't fail
+# import. The wiring code below short-circuits when the symbol is None.
+try:
+    from opentelemetry.instrumentation.openai_v2 import (  # type: ignore
+        OpenAIInstrumentor,
+    )
+except ImportError:
+    try:
+        from opentelemetry.instrumentation.openai import (  # type: ignore
+            OpenAIInstrumentor,
+        )
+    except ImportError:
+        OpenAIInstrumentor = None  # type: ignore[assignment,misc]
 
 # Idempotency latch — main.py calls setup_telemetry twice (once at
 # module import time so the middleware stack is still mutable, and
@@ -223,6 +242,25 @@ def setup_telemetry(app, site_config: Any, service_name: str = "cofounder-agent"
             _initialized = True
         except Exception as e:
             logging.error(f"[setup_telemetry] Failed to instrument FastAPI: {e}", exc_info=True)
+
+        # Instrument the openai SDK if the instrumentor package is
+        # installed. This is a no-op when OpenAIInstrumentor is None
+        # (dev shells without opentelemetry-instrumentation-openai_v2).
+        # The OpenAICompatProvider plugin (Glad-Labs/poindexter#132)
+        # routes through ``openai.AsyncOpenAI``, so any chat/embed
+        # call there gets automatic per-HTTP-request spans below the
+        # dispatcher's ``llm.dispatch_*`` envelope.
+        if OpenAIInstrumentor is not None:
+            try:
+                OpenAIInstrumentor().instrument(tracer_provider=provider)
+                logging.debug(
+                    "[setup_telemetry] OpenAI SDK instrumented for %s", service_name,
+                )
+            except Exception as e:
+                logging.error(
+                    "[setup_telemetry] Failed to instrument OpenAI SDK: %s", e,
+                    exc_info=True,
+                )
 
     except Exception as e:
         # If telemetry setup fails entirely, just log and continue
