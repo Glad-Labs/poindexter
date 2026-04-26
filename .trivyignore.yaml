@@ -1,0 +1,24 @@
+# Trivy structured ignore rules — preferred over .trivyignore for the
+# `misconfigurations` section. Trivy 0.69.x parses this directly.
+#
+# Each entry should explain WHY the finding is acceptable. Adding to this
+# file means we're choosing not to fix; new files of the same kind still
+# get scanned because suppressions are path-scoped, not blanket.
+
+misconfigurations:
+  # DS-0002 — "Specify at least 1 USER command in Dockerfile"
+  #
+  # These three are local-only utility containers running on Matt's PC
+  # behind a Tailscale tunnel — no internet exposure, no multi-tenant
+  # surface, no attacker-reachable network from inside the docker-compose
+  # network. Two of them (gpu-exporter, voice-bot) need device access
+  # (/dev/nvidia*, ALSA) that's awkward to acquire as a non-root user.
+  # The auto-embed worker doesn't strictly need root, but adding USER
+  # would be a separate behavioral change worth its own commit.
+  #
+  # Re-evaluate if any of these grow inbound network exposure.
+  - id: DS-0002
+    paths:
+      - "scripts/Dockerfile.auto-embed"
+      - "scripts/Dockerfile.gpu-exporter"
+      - "scripts/Dockerfile.voice-bot"

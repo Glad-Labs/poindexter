@@ -69,11 +69,15 @@ jobs:
             --skip-files '.gitleaks-baseline.json' \
             --skip-dirs '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
       - name: Scan Dockerfiles / compose for misconfig
+        # Path-scoped suppressions live in `.trivyignore.yaml` — the
+        # plain `.trivyignore` `<id>:<path>` syntax wasn't honored by
+        # `trivy config` in v0.69.x for misconfig IDs.
         run: |
           ./trivy config . \
             --severity HIGH,CRITICAL \
             --exit-code 1 \
             --format table \
+            --ignorefile .trivyignore.yaml \
             --skip-dirs '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
 
   sbom-grype:
