@@ -47,7 +47,7 @@ POINDEXTER_API_URL = (
 )
 POINDEXTER_API_TOKEN = (
     os.getenv("POINDEXTER_API_TOKEN")
-    or os.getenv("GLADLABS_API_TOKEN", "dev-token")
+    or os.getenv("GLADLABS_API_TOKEN", "")
 )
 
 # OpenClaw Gateway — tools/invoke HTTP API. Default Gateway port is 18789.

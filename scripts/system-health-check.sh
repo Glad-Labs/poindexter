@@ -107,7 +107,15 @@ psql_exec() {
 }
 
 worker_api() {
-  curl -s -m 5 -H "Authorization: Bearer dev-token" "$@"
+  # Read the rotated bearer token from app_settings (encrypted at rest;
+  # decrypted via plugins.secrets through the worker's get_secret path).
+  # We bypass that here by reading bootstrap.toml's api_token, which the
+  # rotation script keeps in sync. Falls back to empty so missing config
+  # produces a 401 we can flag instead of silently using a stale literal.
+  local _tok
+  _tok=$(grep -E '^api_token\s*=' "$HOME/.poindexter/bootstrap.toml" 2>/dev/null \
+    | head -1 | sed -E 's/^api_token\s*=\s*"(.*)"$/\1/')
+  curl -s -m 5 -H "Authorization: Bearer ${_tok}" "$@"
 }
 
 # ---------------------------------------------------------------------------
