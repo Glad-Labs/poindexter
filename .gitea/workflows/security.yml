@@ -55,12 +55,18 @@ jobs:
           chmod +x trivy
           ./trivy --version
       - name: Scan filesystem (fail on HIGH/CRITICAL)
+        # .gitleaks-baseline.json is a curated record of *known false-positive*
+        # secret patterns. Trivy's secret scanner re-flags those strings as
+        # CRITICAL OAuth tokens — exactly what the baseline exists to suppress.
+        # Skipping the baseline file (not the whole secrets check) keeps Trivy
+        # honest on real findings while letting gitleaks own its own state.
         run: |
           ./trivy fs . \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
             --exit-code 1 \
             --format table \
+            --skip-files '.gitleaks-baseline.json' \
             --skip-dirs '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
       - name: Scan Dockerfiles / compose for misconfig
         run: |
