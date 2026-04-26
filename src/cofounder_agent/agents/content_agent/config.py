@@ -66,10 +66,18 @@ class Config:
     live in the ``app_settings`` DB table and are read via
     ``services.site_config``. This class only holds bootstrap values that
     have to exist *before* the DB is reachable.
+
+    Phase H DI (GH-128): ``site_config`` may be passed in by callers that
+    have already constructed the canonical ``SiteConfig`` instance; when
+    provided, settings that have migrated to ``app_settings`` (currently
+    only ``llm_provider``) are sourced through it. When omitted, a
+    transient ``SiteConfig`` is constructed for env-fallback so we never
+    call ``os.getenv`` directly for migrated keys.
     """
 
-    def __init__(self):
+    def __init__(self, site_config=None):
         from brain.bootstrap import resolve_database_url
+        from services.site_config import SiteConfig
 
         # --- Core Application Paths ---
         self.BASE_DIR = BASE_DIR
@@ -105,8 +113,16 @@ class Config:
         # Only 'ollama' / 'local' are accepted — paid-API providers (OpenAI,
         # Anthropic, Gemini) were removed in v2.8 per the no-paid-APIs policy.
         # LLMClient enforces this at runtime; this default just avoids a
-        # KeyError if the env var is unset.
-        self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
+        # KeyError if the key is unset.
+        #
+        # GH-128: source from app_settings via the injected SiteConfig.
+        # When a caller hasn't passed one in (e.g. the module-level
+        # ``config = Config()`` singleton below, evaluated at import time
+        # before the canonical SiteConfig exists) we build a transient
+        # SiteConfig — its ``get()`` honors the DB > env > default chain
+        # without us touching os.getenv directly here.
+        _llm_provider_cfg = site_config or SiteConfig()
+        self.LLM_PROVIDER = _llm_provider_cfg.get("llm_provider", "ollama")
 
         # --- Local LLM (Ollama) Configuration ---
         # #198: no hardcoded localhost default. An empty string means

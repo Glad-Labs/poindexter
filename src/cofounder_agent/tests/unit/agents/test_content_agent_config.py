@@ -88,6 +88,51 @@ class TestConfig:
             cfg = Config()
         assert cfg.LLM_PROVIDER == "local"
 
+    # -----------------------------------------------------------------
+    # GH-128: LLM_PROVIDER sourced from SiteConfig (app_settings),
+    # not os.getenv. Two tests:
+    #   - test_llm_provider_sourced_from_site_config — DI path takes
+    #     precedence over the env var.
+    #   - test_llm_provider_default_when_unset — default fallback when
+    #     neither site_config nor env has it.
+    # -----------------------------------------------------------------
+
+    def test_llm_provider_sourced_from_site_config(self):
+        """When a SiteConfig is injected, LLM_PROVIDER comes from
+        app_settings (via the in-memory cache), not the env var. Setting
+        LLM_PROVIDER=ollama in the env while site_config has 'local'
+        proves DB > env priority — the assertion would fail if Config
+        still read the env directly."""
+        from services.site_config import SiteConfig
+
+        env = {
+            "DATABASE_URL": "postgresql://user:pass@localhost/test",
+            "LLM_PROVIDER": "ollama",  # env says ollama
+        }
+        with patch.dict("os.environ", env, clear=False):
+            from agents.content_agent.config import Config
+
+            site_cfg = SiteConfig(initial_config={"llm_provider": "local"})
+            cfg = Config(site_config=site_cfg)
+
+        assert cfg.LLM_PROVIDER == "local"
+
+    def test_llm_provider_default_when_unset(self):
+        """With no site_config override AND no env var, Config falls
+        back to the documented default 'ollama'."""
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k != "LLM_PROVIDER"
+        }
+        env["DATABASE_URL"] = "postgresql://user:pass@localhost/test"
+        with patch.dict("os.environ", env, clear=True):
+            from agents.content_agent.config import Config
+
+            cfg = Config()  # no site_config — transient SiteConfig used
+
+        assert cfg.LLM_PROVIDER == "ollama"
+
     def test_database_host_default(self):
         with patch.dict(
             "os.environ",
