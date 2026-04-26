@@ -58,6 +58,7 @@ from .registry import (
     ENTRY_POINT_GROUPS,
     get_adapters,
     get_core_samples,
+    get_image_providers,
     get_jobs,
     get_llm_providers,
     get_packs,
@@ -66,6 +67,8 @@ from .registry import (
     get_reviewers,
     get_stages,
     get_taps,
+    get_topic_sources,
+    get_video_providers,
 )
 from .scheduler import PluginScheduler
 from .secrets import (
@@ -79,6 +82,7 @@ from .secrets import (
     set_secret,
 )
 from .stage import Adapter, Provider, Reviewer, Stage, StageResult
+from .video_provider import VideoProvider, VideoResult
 from .stage_runner import (
     DEFAULT_STAGE_ORDER,
     StageRunner,
@@ -133,5 +137,11 @@ __all__ = [
     "get_providers",
     "get_packs",
     "get_llm_providers",
+    "get_topic_sources",
+    "get_image_providers",
+    "get_video_providers",
     "get_core_samples",
+    # VideoProvider (GH #124)
+    "VideoProvider",
+    "VideoResult",
 ]
