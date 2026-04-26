@@ -201,6 +201,7 @@ codebase = "cofounder_agent.services.topic_sources.codebase:CodebaseSource"
 pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
 sdxl = "cofounder_agent.services.image_providers.sdxl:SdxlProvider"
 ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenerationProvider"
+flux_schnell = "cofounder_agent.services.image_providers.flux_schnell:FluxSchnellProvider"
 
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"

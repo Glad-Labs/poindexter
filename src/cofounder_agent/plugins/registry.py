@@ -249,6 +249,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
         ("image_providers", "services.image_providers.sdxl", "SdxlProvider"),
         ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
+        ("image_providers", "services.image_providers.flux_schnell", "FluxSchnellProvider"),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
