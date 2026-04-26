@@ -329,3 +329,65 @@ class TestGenerateContentStageExecute:
         finally:
             for p in reversed(patches):
                 p.stop()
+
+    async def test_all_models_failed_does_not_publish_template(self):
+        """Glad-Labs/poindexter#121.
+
+        When every model in the chain raises ``AllModelsFailedError``,
+        the stage MUST NOT swallow the error or persist a stub. It must
+        let the exception propagate so the stage runner halts the task
+        and ``content_router_service`` transitions it to ``failed`` —
+        never ``published``.
+
+        Regression guard: previously the generator returned a hardcoded
+        markdown template and the task was published as if generation
+        succeeded, bypassing every QA gate downstream.
+        """
+        from services.ai_content_generator import AllModelsFailedError
+
+        db = _FakeDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t-models-failed",
+            "topic": "Asyncio in Python",
+            "style": "tech", "tone": "neutral", "target_length": 1200,
+            "tags": [], "models_by_phase": {},
+            "database_service": db,
+            "site_config": _FAKE_SITE_CONFIG,
+        }
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            # Make the content generator simulate every model failing
+            with patch(
+                "services.ai_content_generator.get_content_generator",
+                return_value=SimpleNamespace(
+                    _internal_links_cache=[],
+                    generate_blog_post=AsyncMock(
+                        side_effect=AllModelsFailedError(
+                            "All AI models failed for topic 'x'. Attempts: ollama: connection refused",
+                            attempts=[("ollama", "connection refused")],
+                            topic="Asyncio in Python",
+                        ),
+                    ),
+                ),
+            ):
+                # The exception MUST propagate — no template, no
+                # silently-published stub, no status='in_progress' write
+                # with stub content.
+                with pytest.raises(AllModelsFailedError):
+                    await GenerateContentStage().execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        # Defense-in-depth: even if the stage were ever changed to
+        # catch+continue, it must not have written a 'published' or
+        # 'in_progress' status row with stub content. Assert nothing
+        # was persisted at all on the failure path.
+        published = [u for u in db.updates if u.get("status") in ("published", "in_progress")]
+        assert published == [], (
+            "Stage persisted a status update during all-models-failed path. "
+            "This re-introduces the #121 regression where the template stub "
+            "was published as a successful task."
+        )

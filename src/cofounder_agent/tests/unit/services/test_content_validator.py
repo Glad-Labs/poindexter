@@ -675,6 +675,93 @@ class TestFillerPhrases:
 
 
 # ============================================================================
+# Glad-Labs/poindexter#121: defense-in-depth against fallback-template publish
+# ============================================================================
+
+
+class TestFallbackTemplateRejection:
+    """Belt-and-suspenders for #121.
+
+    The generation chain now raises ``AllModelsFailedError`` instead of
+    returning a stub, so this code path should never execute in
+    production. But if it ever does — regression, copy-paste from an
+    old branch, model echoing the prompt, etc. — the validator must
+    refuse the content rather than letting it onto the public site.
+
+    Phrases here come from ``AIContentGenerator._generate_fallback_content``
+    (the legacy template). They are uniquely shaped and don't appear in
+    real human or model-generated technical writing.
+    """
+
+    def test_template_content_never_passes_qa(self):
+        """The exact stub the legacy fallback used to publish."""
+        # Reconstruct the stub by importing the legacy template helper.
+        # We pull from the live function instead of duplicating the
+        # string here so the test stays in sync if the template's
+        # phrasing ever drifts (and the validator pattern follows).
+        from services.ai_content_generator import AIContentGenerator
+        from services.site_config import SiteConfig
+
+        gen = AIContentGenerator(quality_threshold=7.5, site_config=SiteConfig())
+        template = gen._generate_fallback_content(
+            topic="JavaScript Frameworks 2026",
+            style="technical",
+            tone="professional",
+            tags=["js", "frontend"],
+        )
+
+        result = validate_content(
+            title="JavaScript Frameworks 2026: The Ultimate Guide",
+            content=template,
+            topic="JavaScript Frameworks 2026",
+        )
+
+        # MUST be rejected — even one fingerprint match is critical.
+        assert result.passed is False, (
+            "Validator approved the legacy fallback template. This is the "
+            "#121 quality-floor breach: a stub published as if it were a "
+            "real post, bypassing every QA gate downstream."
+        )
+        template_issues = [
+            i for i in result.issues if i.category == "fallback_template"
+        ]
+        assert len(template_issues) >= 1
+        # Every fingerprint hit should be critical (no warning grace).
+        assert all(i.severity == "critical" for i in template_issues)
+
+    def test_individual_template_phrases_flagged(self):
+        """Single-phrase test — even a partial echo triggers rejection."""
+        content = (
+            "# Async I/O\n\n"
+            "## Introduction\n\n"
+            "Async I/O is an important area that deserves careful attention "
+            "and exploration. We will discuss the topic.\n\n"
+            "## Background\n\n"
+            "Some real prose follows that talks about coroutines and event loops."
+        )
+        result = validate_content("Async I/O", content, "Async I/O")
+        template_issues = [
+            i for i in result.issues if i.category == "fallback_template"
+        ]
+        assert len(template_issues) >= 1
+        assert result.passed is False  # critical → reject
+
+    def test_normal_prose_not_flagged_as_template(self):
+        """Defense-in-depth shouldn't false-positive on real writing."""
+        content = (
+            "Async I/O matters because most servers spend 90% of wall time "
+            "waiting on the network. Switching to coroutines lets the "
+            "event loop schedule thousands of in-flight requests on a "
+            "single thread. Here's how it works in practice."
+        )
+        result = validate_content("Async I/O", content, "Async I/O")
+        template_issues = [
+            i for i in result.issues if i.category == "fallback_template"
+        ]
+        assert template_issues == []
+
+
+# ============================================================================
 # GH-91: Warning → critical promotion + Prometheus counter
 # ============================================================================
 
