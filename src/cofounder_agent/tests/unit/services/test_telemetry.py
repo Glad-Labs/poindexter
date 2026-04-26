@@ -19,7 +19,6 @@ deleted in commit 68563f45 (drop dead OpenAI instrumentor). See the
 inline note where the classes used to live for the full rationale.
 """
 
-import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -204,33 +203,82 @@ def _apply_mocks(monkeypatch, mocks):
 
 
 # ---------------------------------------------------------------------------
-# NOTE: Three test classes were removed in commit on
-# `test/fix-stale-openai-instrumentor-tests` (Glad-Labs/poindexter#129):
+# OpenAIInstrumentor wiring — restored in Glad-Labs/poindexter#132.
 #
-#   - TestSetupTelemetryWithOtlpEndpoint  (8 tests)
-#   - TestSetupTelemetryWithOpenAiInstrumentor  (3 tests)
-#   - TestSetupTelemetryOtlpCaptureEnvVar  (1 test)
+# Historical context: an earlier version of this file held three test
+# classes that monkeypatched the OpenAIInstrumentor symbol. They were
+# deleted on `test/fix-stale-openai-instrumentor-tests`
+# (Glad-Labs/poindexter#129) when commit 68563f45 dropped the
+# instrumentor entirely — the worker had no callers of the openai SDK,
+# so the instrumentor had nothing to wrap and the integration was dead
+# code.
 #
-# Every test in those classes called
-# ``monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", ...)``,
-# which raised ``AttributeError`` because the ``OpenAIInstrumentor``
-# symbol was deliberately removed from ``services/telemetry.py`` in
-# commit 68563f45 ("fix(observability): pyroscope-io as core dep, drop
-# dead OpenAI instrumentor, ..."). The integration was dead code — the
-# worker uses Ollama (HTTP/OpenAI-compat via httpx) and the Anthropic
-# SDK, never the ``openai`` SDK, so the instrumentor had nothing to
-# wrap. LLM-level tracing is provided directly by
-# ``services/llm_providers/dispatcher.py`` via explicit
-# ``llm.dispatch_complete`` / ``llm.dispatch_embed`` /
-# ``llm.get_provider`` spans, regardless of provider.
-#
-# Per the ticket directive ("If deliberately removed: delete the 3
-# affected test classes wholesale. Don't try to be clever — they
-# reference a feature that no longer exists."), the classes were
-# dropped rather than re-pointed at the new tracing surface. New
-# coverage of the OTLP endpoint and FastAPI instrumentation paths
-# is a separate ticket.
+# With Glad-Labs/poindexter#132 landing OpenAICompatProvider on top of
+# the openai AsyncOpenAI SDK, the instrumentor wiring is meaningful
+# again. The block below re-establishes test coverage for the new
+# wiring without re-introducing the old patterns. We patch
+# ``OpenAIInstrumentor`` to a Mock so we can assert ``.instrument()``
+# was called with the right tracer_provider, and so we can verify the
+# graceful no-op path when the symbol is None (dev shells without
+# ``opentelemetry-instrumentation-openai_v2``).
 # ---------------------------------------------------------------------------
+
+
+class TestSetupTelemetryOpenAIInstrumentor:
+    def test_openai_instrumentor_called_when_available(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+
+        instrumentor_instance = MagicMock()
+        instrumentor_instance.instrument = MagicMock()
+        instrumentor_cls = MagicMock(return_value=instrumentor_instance)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", instrumentor_cls)
+
+        app = MagicMock()
+        setup_telemetry(app, _sc(), service_name="svc")
+
+        # Class should be instantiated once and instrument() invoked
+        # with the provider produced upstream.
+        instrumentor_cls.assert_called_once_with()
+        instrumentor_instance.instrument.assert_called_once()
+        kwargs = instrumentor_instance.instrument.call_args.kwargs
+        assert kwargs.get("tracer_provider") is mocks["_provider"]
+
+    def test_no_op_when_instrumentor_missing(self, monkeypatch):
+        """When the optional package isn't installed the symbol is None
+        and setup_telemetry must not raise — the rest of the wiring
+        (FastAPI instrumentation, OTLP exporter) still runs."""
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
+
+        app = MagicMock()
+        setup_telemetry(app, _sc(), service_name="svc")
+
+        # FastAPI instrumentation still happens even without the openai
+        # instrumentor — the two are independent.
+        mocks["FastAPIInstrumentor"].instrument_app.assert_called_once()
+
+    def test_instrumentor_failure_does_not_break_setup(self, monkeypatch):
+        """A failing instrument() call must not crash app startup."""
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+
+        instrumentor_instance = MagicMock()
+        instrumentor_instance.instrument = MagicMock(side_effect=RuntimeError("boom"))
+        instrumentor_cls = MagicMock(return_value=instrumentor_instance)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", instrumentor_cls)
+
+        app = MagicMock()
+        # Should not raise — failure is logged and swallowed so a broken
+        # optional instrumentor can never take down the worker.
+        setup_telemetry(app, _sc(), service_name="svc")
 
 
 # ---------------------------------------------------------------------------
