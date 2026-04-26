@@ -165,6 +165,13 @@ services:
       GITEA__database__USER: ${LOCAL_POSTGRES_USER:-poindexter}
       GITEA__database__PASSWD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
       GITEA__server__ROOT_URL: http://localhost:3001
+      # LOCAL_ROOT_URL is the URL Gitea advertises to internal callers
+      # (Actions runners, OAuth, etc.). It must be reachable from the
+      # runner's network namespace. localhost:3001 is host-only; the runner
+      # is on the docker network and can only reach gitea via the service
+      # name. Without this, actions/upload-artifact fails with
+      # ECONNREFUSED 127.0.0.1:3001 (Glad-Labs/poindexter#131).
+      GITEA__server__LOCAL_ROOT_URL: http://gitea:3000/
       GITEA__server__SSH_DOMAIN: localhost
       GITEA__server__SSH_PORT: 2222
     extra_hosts:
