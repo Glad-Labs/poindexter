@@ -10,6 +10,7 @@ import pytest
 
 from agents.content_agent.agents.postgres_image_agent import PostgreSQLImageAgent
 from agents.content_agent.utils.data_models import BlogPost, ImageDetails
+from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
 
 # ---------------------------------------------------------------------------
 # Defaults / helpers
@@ -28,7 +29,13 @@ def _make_post(**kwargs) -> BlogPost:
     return BlogPost(**data)  # type: ignore[arg-type]
 
 
-def _make_agent():
+def _make_agent(api_url: str | None = "http://test.invalid"):
+    """Build a PostgreSQLImageAgent with patched config + filesystem.
+
+    The default ``api_url`` is an explicit sentinel so tests don't accidentally
+    rely on the bootstrap-resolved default. Pass ``api_url=None`` to exercise
+    the bootstrap-fallback path explicitly.
+    """
     mock_llm = AsyncMock()
     mock_llm.generate_text = AsyncMock(
         return_value='[{"query": "AI technology", "alt_text": "AI tech image"}]'
@@ -53,7 +60,7 @@ def _make_agent():
         agent = PostgreSQLImageAgent(
             llm_client=mock_llm,
             pexels_client=mock_pexels,
-            api_url="http://localhost:8000",
+            api_url=api_url,
         )
 
     return agent, mock_llm, mock_pexels
@@ -74,8 +81,25 @@ class TestPostgreSQLImageAgentInit:
         assert agent.pexels_client is mock_pexels
 
     def test_stores_api_url(self):
-        agent, _, _ = _make_agent()
-        assert agent.api_url == "http://localhost:8000"
+        agent, _, _ = _make_agent(api_url="http://explicit.example.com")
+        assert agent.api_url == "http://explicit.example.com"
+
+    def test_default_api_url_falls_back_to_bootstrap(self):
+        # When api_url is omitted (None), the agent pulls
+        # DEFAULT_WORKER_API_URL from services.bootstrap_defaults rather
+        # than carrying its own hardcoded localhost literal.
+        agent, _, _ = _make_agent(api_url=None)
+        assert agent.api_url == DEFAULT_WORKER_API_URL
+
+    def test_default_api_url_tracks_module_constant(self):
+        # If bootstrap_defaults changes, the agent default tracks it.
+        sentinel = "http://sentinel-img.invalid:9876"
+        with patch(
+            "agents.content_agent.agents.postgres_image_agent.DEFAULT_WORKER_API_URL",
+            sentinel,
+        ):
+            agent, _, _ = _make_agent(api_url=None)
+        assert agent.api_url == sentinel
 
     def test_prompts_loaded_or_defaulted(self):
         agent, _, _ = _make_agent()
