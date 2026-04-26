@@ -203,6 +203,10 @@ sdxl = "cofounder_agent.services.image_providers.sdxl:SdxlProvider"
 ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenerationProvider"
 flux_schnell = "cofounder_agent.services.image_providers.flux_schnell:FluxSchnellProvider"
 
+[tool.poetry.plugins."poindexter.video_providers"]
+ken_burns_slideshow = "cofounder_agent.services.video_providers.ken_burns_slideshow:KenBurnsSlideshowProvider"
+"wan2.1-1.3b" = "cofounder_agent.services.video_providers.wan2_1:Wan21Provider"
+
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"

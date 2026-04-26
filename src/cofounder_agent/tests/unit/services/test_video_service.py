@@ -549,33 +549,58 @@ class TestGenerateImagesForVideo:
 # ---------------------------------------------------------------------------
 
 class TestGenerateVideoEpisode:
-    """Fire-and-forget wrapper."""
+    """Fire-and-forget wrapper.
+
+    Post-GH#124: dispatches through ``dispatch_video_generation`` rather
+    than calling ``generate_video_for_post`` directly. The dispatcher
+    selects a VideoProvider based on ``app_settings.video_engine``
+    (default ``ken_burns_slideshow`` — preserves the legacy pipeline).
+    """
 
     @pytest.mark.asyncio
-    async def test_calls_generate_video_for_post(self):
-        """Should delegate to generate_video_for_post."""
+    async def test_calls_dispatch_video_generation(self):
+        """Should delegate to dispatch_video_generation (the
+        VideoProvider selector)."""
         sc = _mock_sc()
-        with patch("services.video_service.generate_video_for_post", new_callable=AsyncMock) as mock_gen:
-            mock_gen.return_value = VideoResult(success=True, file_path="/tmp/v.mp4")
+        with patch(
+            "services.video_service.dispatch_video_generation",
+            new_callable=AsyncMock,
+        ) as mock_dispatch:
+            mock_dispatch.return_value = VideoResult(
+                success=True, file_path="/tmp/v.mp4",
+            )
             await generate_video_episode("post1", "Title", "Content", site_config=sc)
 
-        mock_gen.assert_awaited_once_with(
-            "post1", "Title", "Content", pre_generated_scenes=None, site_config=sc,
+        mock_dispatch.assert_awaited_once_with(
+            post_id="post1",
+            title="Title",
+            content="Content",
+            short=False,
+            site_config=sc,
+            pre_generated_scenes=None,
         )
 
     @pytest.mark.asyncio
     async def test_logs_failure_without_raising(self):
         """Failed result should be logged, not raised."""
-        with patch("services.video_service.generate_video_for_post", new_callable=AsyncMock) as mock_gen:
-            mock_gen.return_value = VideoResult(success=False, error="no images")
+        with patch(
+            "services.video_service.dispatch_video_generation",
+            new_callable=AsyncMock,
+        ) as mock_dispatch:
+            mock_dispatch.return_value = VideoResult(
+                success=False, error="no images",
+            )
             # Should not raise
             await generate_video_episode("post1", "Title", "Content", site_config=_mock_sc())
 
     @pytest.mark.asyncio
     async def test_catches_unexpected_exception(self):
         """Unexpected exception should be caught, not propagated."""
-        with patch("services.video_service.generate_video_for_post", new_callable=AsyncMock) as mock_gen:
-            mock_gen.side_effect = RuntimeError("unexpected crash")
+        with patch(
+            "services.video_service.dispatch_video_generation",
+            new_callable=AsyncMock,
+        ) as mock_dispatch:
+            mock_dispatch.side_effect = RuntimeError("unexpected crash")
             # Should not raise
             await generate_video_episode("post1", "Title", "Content", site_config=_mock_sc())
 
@@ -1233,3 +1258,259 @@ class TestGenerateShortVideoForPost:
         # The audio path passed to the video server should be the full podcast
         payload = mock_client.post.call_args.kwargs.get("json")
         assert "p1.mp3" in payload["audio_path"]
+
+
+# ---------------------------------------------------------------------------
+# dispatch_video_generation — VideoProvider selector (GH#124)
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchVideoGeneration:
+    """Selects a VideoProvider based on ``app_settings.video_engine``.
+
+    The dispatcher is the integration seam between the existing
+    publish_service / backfill_videos callers and the new
+    VideoProvider plugin Protocol. Default = ``ken_burns_slideshow``
+    (legacy pipeline preserved); flip to ``wan2.1-1.3b`` to opt in to
+    the new T2V engine.
+    """
+
+    @pytest.mark.asyncio
+    async def test_default_engine_is_ken_burns_slideshow(self):
+        from plugins.video_provider import VideoResult as PluginVideoResult
+        from services.video_service import dispatch_video_generation
+
+        sc = _mock_sc()  # No video_engine setting → default
+
+        fake_provider = MagicMock()
+        fake_provider.name = "ken_burns_slideshow"
+        fake_provider.fetch = AsyncMock(
+            return_value=[
+                PluginVideoResult(
+                    file_url="file:///tmp/v.mp4",
+                    file_path="/tmp/v.mp4",
+                    duration_s=120,
+                    source="ken_burns_slideshow",
+                    metadata={"file_size_bytes": 4096, "images_used": 8},
+                ),
+            ],
+        )
+
+        with patch(
+            "services.video_service._resolve_video_provider",
+            return_value=fake_provider,
+        ) as mock_resolve:
+            result = await dispatch_video_generation(
+                post_id="p1", title="T", content="body", site_config=sc,
+            )
+
+        # Default engine name was looked up
+        mock_resolve.assert_called_with("ken_burns_slideshow")
+        # Returns adapted legacy VideoResult
+        assert result.success is True
+        assert result.file_path == "/tmp/v.mp4"
+        assert result.duration_seconds == 120
+        assert result.file_size_bytes == 4096
+        assert result.images_used == 8
+
+    @pytest.mark.asyncio
+    async def test_engine_setting_picks_wan21(self):
+        from plugins.video_provider import VideoResult as PluginVideoResult
+        from services.video_service import dispatch_video_generation
+
+        sc = _mock_sc({"video_engine": "wan2.1-1.3b"})
+
+        fake_provider = MagicMock()
+        fake_provider.name = "wan2.1-1.3b"
+        fake_provider.fetch = AsyncMock(
+            return_value=[
+                PluginVideoResult(
+                    file_url="file:///tmp/wan.mp4",
+                    file_path="/tmp/wan.mp4",
+                    duration_s=5,
+                    source="wan2.1-1.3b",
+                    metadata={"file_size_bytes": 2048},
+                ),
+            ],
+        )
+
+        with patch(
+            "services.video_service._resolve_video_provider",
+            return_value=fake_provider,
+        ) as mock_resolve:
+            result = await dispatch_video_generation(
+                post_id="p1", title="a robot", content="", site_config=sc,
+            )
+
+        mock_resolve.assert_called_with("wan2.1-1.3b")
+        # Provider received the title as the prompt + the dispatch
+        # config seeded with _site_config + post_id.
+        call_args = fake_provider.fetch.await_args
+        assert call_args.args[0] == "a robot"
+        cfg = call_args.args[1]
+        assert cfg["post_id"] == "p1"
+        assert cfg["_site_config"] is sc
+        assert result.success is True
+        assert result.file_path == "/tmp/wan.mp4"
+
+    @pytest.mark.asyncio
+    async def test_unknown_engine_falls_back_to_default(self):
+        from plugins.video_provider import VideoResult as PluginVideoResult
+        from services.video_service import dispatch_video_generation
+
+        sc = _mock_sc({"video_engine": "nonexistent-engine"})
+
+        default_provider = MagicMock()
+        default_provider.name = "ken_burns_slideshow"
+        default_provider.fetch = AsyncMock(
+            return_value=[
+                PluginVideoResult(
+                    file_url="file:///tmp/v.mp4",
+                    file_path="/tmp/v.mp4",
+                    source="ken_burns_slideshow",
+                ),
+            ],
+        )
+
+        # First lookup returns None (engine not registered), second
+        # returns the default provider.
+        def resolve(name):
+            if name == "nonexistent-engine":
+                return None
+            return default_provider
+
+        with patch(
+            "services.video_service._resolve_video_provider",
+            side_effect=resolve,
+        ):
+            result = await dispatch_video_generation(
+                post_id="p1", title="T", content="", site_config=sc,
+            )
+
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_empty_results_fall_back_to_default(self):
+        """When the configured engine returns ``[]`` (e.g., Wan server
+        unreachable), the dispatcher falls back to ken_burns_slideshow
+        so the video pipeline never silently drops a post."""
+        from plugins.video_provider import VideoResult as PluginVideoResult
+        from services.video_service import dispatch_video_generation
+
+        sc = _mock_sc({"video_engine": "wan2.1-1.3b"})
+
+        wan_provider = MagicMock()
+        wan_provider.name = "wan2.1-1.3b"
+        wan_provider.fetch = AsyncMock(return_value=[])  # server down
+
+        ken_burns = MagicMock()
+        ken_burns.name = "ken_burns_slideshow"
+        ken_burns.fetch = AsyncMock(
+            return_value=[
+                PluginVideoResult(
+                    file_url="file:///tmp/v.mp4",
+                    file_path="/tmp/v.mp4",
+                    source="ken_burns_slideshow",
+                ),
+            ],
+        )
+
+        def resolve(name):
+            if name == "wan2.1-1.3b":
+                return wan_provider
+            return ken_burns
+
+        with patch(
+            "services.video_service._resolve_video_provider",
+            side_effect=resolve,
+        ):
+            result = await dispatch_video_generation(
+                post_id="p1", title="T", content="", site_config=sc,
+            )
+
+        # Both providers were tried; the Ken Burns fallback wrote the file.
+        wan_provider.fetch.assert_awaited_once()
+        ken_burns.fetch.assert_awaited_once()
+        assert result.success is True
+        assert result.file_path == "/tmp/v.mp4"
+
+    @pytest.mark.asyncio
+    async def test_no_provider_registered_returns_failure(self):
+        from services.video_service import dispatch_video_generation
+
+        sc = _mock_sc()
+        with patch(
+            "services.video_service._resolve_video_provider",
+            return_value=None,
+        ):
+            result = await dispatch_video_generation(
+                post_id="p1", title="T", content="", site_config=sc,
+            )
+
+        assert result.success is False
+        assert result.error and "No VideoProvider" in result.error
+
+    @pytest.mark.asyncio
+    async def test_short_flag_seeds_portrait_dimensions(self):
+        from plugins.video_provider import VideoResult as PluginVideoResult
+        from services.video_service import dispatch_video_generation
+
+        sc = _mock_sc({"video_engine": "wan2.1-1.3b"})
+
+        fake_provider = MagicMock()
+        fake_provider.name = "wan2.1-1.3b"
+        fake_provider.fetch = AsyncMock(
+            return_value=[
+                PluginVideoResult(
+                    file_url="file:///tmp/short.mp4",
+                    file_path="/tmp/short.mp4",
+                    source="wan2.1-1.3b",
+                ),
+            ],
+        )
+
+        with patch(
+            "services.video_service._resolve_video_provider",
+            return_value=fake_provider,
+        ):
+            await dispatch_video_generation(
+                post_id="p1", title="T", content="", short=True, site_config=sc,
+            )
+
+        cfg = fake_provider.fetch.await_args.args[1]
+        # Vertical Shorts dimensions
+        assert cfg["width"] == 1080
+        assert cfg["height"] == 1920
+        assert cfg["short"] is True
+
+    @pytest.mark.asyncio
+    async def test_landscape_dimensions_default(self):
+        from plugins.video_provider import VideoResult as PluginVideoResult
+        from services.video_service import dispatch_video_generation
+
+        sc = _mock_sc({"video_engine": "wan2.1-1.3b"})
+
+        fake_provider = MagicMock()
+        fake_provider.name = "wan2.1-1.3b"
+        fake_provider.fetch = AsyncMock(
+            return_value=[
+                PluginVideoResult(
+                    file_url="file:///tmp/v.mp4",
+                    file_path="/tmp/v.mp4",
+                    source="wan2.1-1.3b",
+                ),
+            ],
+        )
+
+        with patch(
+            "services.video_service._resolve_video_provider",
+            return_value=fake_provider,
+        ):
+            await dispatch_video_generation(
+                post_id="p1", title="T", content="", site_config=sc,
+            )
+
+        cfg = fake_provider.fetch.await_args.args[1]
+        assert cfg["width"] == 1920
+        assert cfg["height"] == 1080
+        assert cfg["short"] is False

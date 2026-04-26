@@ -623,6 +623,11 @@ async def generate_video_episode(
 ) -> None:
     """Fire-and-forget full-length video generation. Logs errors but never raises.
 
+    Dispatches through :func:`dispatch_video_generation` so the active
+    engine is selected by ``app_settings.video_engine`` (default
+    ``ken_burns_slideshow``; flip to ``wan2.1-1.3b`` to opt in to true
+    text-to-video per GH#124).
+
     Args:
         post_id: Post identifier.
         title: Post title.
@@ -631,12 +636,200 @@ async def generate_video_episode(
         pre_generated_scenes: Optional pre-generated SDXL prompts.
     """
     try:
-        result = await generate_video_for_post(
-            post_id, title, content,
-            pre_generated_scenes=pre_generated_scenes,
+        result = await dispatch_video_generation(
+            post_id=post_id,
+            title=title,
+            content=content,
+            short=False,
             site_config=site_config,
+            pre_generated_scenes=pre_generated_scenes,
         )
         if not result.success:
             logger.warning("[VIDEO] Failed for post %s: %s", post_id, result.error)
     except Exception as e:
         logger.warning("[VIDEO] Unexpected error for post %s: %s", post_id, e)
+
+
+# ---------------------------------------------------------------------------
+# VideoProvider dispatch (GH#124)
+#
+# A thin selector that reads ``app_settings.video_engine``, looks up the
+# matching VideoProvider via ``plugins.registry``, and forwards through
+# the provider's ``fetch()`` method. Default = ``ken_burns_slideshow``
+# (the legacy pipeline) so existing behavior is preserved; flipping the
+# setting to ``wan2.1-1.3b`` opts in to the new T2V engine without any
+# code change. ``[]`` from the active provider falls back to the legacy
+# pipeline so a misconfigured/unreachable Wan server doesn't break the
+# video feed.
+# ---------------------------------------------------------------------------
+
+
+_DEFAULT_VIDEO_ENGINE = "ken_burns_slideshow"
+
+
+def _resolve_video_provider(name: str) -> Any | None:
+    """Look up a registered VideoProvider by name.
+
+    Mirrors :func:`services.image_service._resolve_image_provider`.
+    Core providers ship via ``plugins.registry.get_core_samples()``
+    while third-party providers register through entry_points and are
+    exposed via ``get_video_providers()``. Check both sources so a
+    community plugin can override a core provider by name.
+    """
+    try:
+        from plugins.registry import get_core_samples, get_video_providers
+    except Exception as e:
+        logger.warning("video provider registry unavailable: %s", e)
+        return None
+
+    providers: list[Any] = []
+    try:
+        providers.extend(get_video_providers())
+    except Exception as e:
+        logger.debug("get_video_providers failed: %s", e)
+    try:
+        providers.extend(get_core_samples().get("video_providers", []))
+    except Exception as e:
+        logger.debug("get_core_samples failed: %s", e)
+
+    for provider in providers:
+        if getattr(provider, "name", None) == name:
+            return provider
+    return None
+
+
+async def dispatch_video_generation(
+    *,
+    post_id: str,
+    title: str,
+    content: str = "",
+    short: bool = False,
+    site_config: Any,
+    podcast_path: str | None = None,
+    pre_generated_scenes: list[str] | None = None,
+    pre_generated_summary: str | None = None,
+    force: bool = False,
+) -> VideoResult:
+    """Generate a video using the engine selected in app_settings.
+
+    Reads ``app_settings.video_engine`` (default
+    ``ken_burns_slideshow``). When the configured engine is missing or
+    returns an empty result, falls back to ``ken_burns_slideshow`` so
+    the pipeline never silently drops a video.
+
+    Args:
+        post_id: Post identifier (filename stem).
+        title: Post title (also used as the T2V prompt for generation
+            providers).
+        content: Post body — used by composition providers for image
+            mining + by generation providers as additional prompt
+            context.
+        short: When True, render the 1080x1920 vertical Shorts variant.
+            Composition providers honor this directly; generation
+            providers render at portrait dimensions when set.
+        site_config: SiteConfig instance (DI).
+        podcast_path: Optional pre-rendered narration MP3.
+        pre_generated_scenes: Optional pre-rendered SDXL prompts.
+        pre_generated_summary: Optional pre-rendered Shorts summary
+            script. Composition-provider only.
+        force: Regenerate even if the file already exists.
+
+    Returns:
+        :class:`VideoResult` (legacy dataclass) so existing callers keep
+        their field names. The plugin
+        :class:`VideoResult <plugins.video_provider.VideoResult>`
+        returned by the active provider is adapted via
+        :func:`_adapt_plugin_result`.
+    """
+    engine = str(
+        site_config.get("video_engine", _DEFAULT_VIDEO_ENGINE)
+        or _DEFAULT_VIDEO_ENGINE,
+    )
+    logger.info("[VIDEO] dispatch engine=%s post_id=%s short=%s", engine, post_id, short)
+
+    provider = _resolve_video_provider(engine)
+    if provider is None:
+        logger.warning(
+            "[VIDEO] engine=%r not registered; falling back to %s",
+            engine, _DEFAULT_VIDEO_ENGINE,
+        )
+        provider = _resolve_video_provider(_DEFAULT_VIDEO_ENGINE)
+        engine = _DEFAULT_VIDEO_ENGINE
+
+    if provider is None:
+        # No registered provider at all — surface a clear failure so the
+        # operator knows the registry isn't loading.
+        return VideoResult(
+            success=False,
+            error="No VideoProvider registered (registry empty?)",
+        )
+
+    config: dict[str, Any] = {
+        "post_id": post_id,
+        "content": content,
+        "podcast_path": podcast_path,
+        "pre_generated_scenes": pre_generated_scenes,
+        "pre_generated_summary": pre_generated_summary,
+        "force": force,
+        "short": short,
+        "_site_config": site_config,
+    }
+
+    # Generation providers honor ``width``/``height``/``duration_s`` —
+    # composition providers ignore them. Pass through always; the
+    # provider documents what it consumes.
+    if short:
+        config.setdefault("width", 1080)
+        config.setdefault("height", 1920)
+    else:
+        config.setdefault("width", 1920)
+        config.setdefault("height", 1080)
+
+    try:
+        results = await provider.fetch(title, config)
+    except Exception as e:
+        logger.exception("[VIDEO] provider %r raised: %s", engine, e)
+        results = []
+
+    if not results and engine != _DEFAULT_VIDEO_ENGINE:
+        logger.warning(
+            "[VIDEO] engine=%r returned no results; falling back to %s",
+            engine, _DEFAULT_VIDEO_ENGINE,
+        )
+        fallback = _resolve_video_provider(_DEFAULT_VIDEO_ENGINE)
+        if fallback is not None:
+            try:
+                results = await fallback.fetch(title, config)
+            except Exception as e:
+                logger.exception(
+                    "[VIDEO] fallback provider raised: %s", e,
+                )
+
+    if not results:
+        return VideoResult(
+            success=False,
+            error=f"VideoProvider {engine!r} returned no results",
+        )
+
+    return _adapt_plugin_result(results[0])
+
+
+def _adapt_plugin_result(plugin_result: Any) -> VideoResult:
+    """Translate a plugin :class:`VideoResult` into the legacy
+    ``video_service.VideoResult`` so existing callers
+    (``publish_service``, ``backfill_videos``, the routes layer) don't
+    have to change. New callers SHOULD prefer the plugin VideoResult
+    directly via the provider.
+    """
+    metadata = getattr(plugin_result, "metadata", {}) or {}
+    return VideoResult(
+        success=bool(
+            getattr(plugin_result, "file_path", None)
+            or getattr(plugin_result, "file_url", None),
+        ),
+        file_path=getattr(plugin_result, "file_path", None),
+        duration_seconds=int(getattr(plugin_result, "duration_s", 0) or 0),
+        file_size_bytes=int(metadata.get("file_size_bytes", 0) or 0),
+        images_used=int(metadata.get("images_used", 0) or 0),
+        error=None,
+    )
