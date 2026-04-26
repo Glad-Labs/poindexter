@@ -24,7 +24,13 @@ pydantic-settings = "^2.0"
 asyncpg = "^0.31"
 # sqlalchemy, psycopg2-binary, sqladmin removed — admin panel unused, all DB via asyncpg
 # anthropic, openai removed — zero imports, pipeline uses Ollama via httpx
-# google-genai removed — only in legacy llm_client.py (dead code)
+# google-genai re-added 2026-04-25 (GH#134) — backs the GeminiProvider LLM
+# plugin under cofounder_agent.plugins.llm_providers.gemini. Ships under
+# the optional `gemini` poetry extra so default `poetry install` doesn't
+# pay the dependency cost when the operator hasn't enabled the plugin.
+# The provider's `enabled` setting defaults to false; nothing imports the
+# SDK until an operator flips it on.
+google-genai = { version = "^1.0", optional = true }
 
 # Async/Concurrency
 aiohttp = "^3.9"
@@ -110,6 +116,12 @@ pyroscope-io = "^1.0.6"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
+# Optional cloud-LLM provider plugins. Install one or more like:
+#   poetry install --extras gemini
+# When the extra isn't installed and an operator enables the
+# corresponding plugin, the provider raises GeminiProviderError on
+# the first call with a clear "pip install" hint.
+gemini = ["google-genai"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing
@@ -220,6 +232,10 @@ cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQASta
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
 openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"
+# Gemini Developer API (Google AI Studio mode). Ships disabled by default —
+# operator must set plugin.llm_provider.gemini.enabled=true and configure
+# the api_key secret before any call goes out. See GH#134.
+gemini = "cofounder_agent.plugins.llm_providers.gemini:GeminiProvider"
 
 [build-system]
 requires = ["poetry-core"]
