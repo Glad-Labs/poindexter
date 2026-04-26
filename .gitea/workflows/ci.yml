@@ -25,6 +25,16 @@ jobs:
           clean: true
           fetch-depth: 1
 
+      - name: Verify poetry.lock matches pyproject.toml
+        # Fast-fails (1-2s) with a clear actionable message when pyproject
+        # was edited without re-running `poetry lock`. Without this guard
+        # the failure surfaces 30+ seconds later mid-`poetry install` with a
+        # less obvious "lock file is not consistent" line buried in install
+        # output — and historically cost a full overnight of red CI.
+        run: |
+          cd src/cofounder_agent
+          poetry check --lock
+
       - name: Install Python dependencies
         run: |
           cd src/cofounder_agent
