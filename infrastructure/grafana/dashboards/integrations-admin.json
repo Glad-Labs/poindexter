@@ -1,32 +1,24 @@
 {
   "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
+    "list": []
   },
-  "description": "Declarative integrations framework health. Every row in webhook_endpoints, retention_policies (GH-110), external_taps (GH-103), etc. shows up here with last-seen + counters + enabled state. See docs/architecture/declarative-data-plane-rfc-2026-04-24.md.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": null,
   "links": [],
-  "liveNow": false,
   "panels": [
     {
+      "type": "row",
+      "title": "Integration Health (Webhooks / Taps / Outbound)",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-      "id": 100,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "panels": [],
-      "title": "Webhook endpoints",
-      "type": "row"
+      "id": 1
     },
     {
       "datasource": {
@@ -36,19 +28,35 @@
       "description": "Number of enabled webhook endpoints. Zero = framework landed but operator hasn't flipped anything on yet.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "green", "value": 3 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 3
+              }
             ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
-      "id": 101,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -80,23 +88,37 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Inbound rows — endpoints that receive webhooks from third-party services (Lemon Squeezy, Resend, Alertmanager, ...).",
+      "description": "Inbound rows \u2014 endpoints that receive webhooks from third-party services (Lemon Squeezy, Resend, Alertmanager, ...).",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "text", "value": null }]
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
-      "id": 102,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -119,23 +141,37 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Outbound rows — destinations Poindexter pushes events to (Discord, Telegram, Vercel ISR, ...).",
+      "description": "Outbound rows \u2014 destinations Poindexter pushes events to (Discord, Telegram, Vercel ISR, ...).",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "text", "value": null }]
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
-      "id": 103,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -161,20 +197,34 @@
       "description": "Deliveries (inbound + outbound) recorded in the last 24 hours across all rows.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "text", "value": null }]
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
-      "id": 104,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 5,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -200,24 +250,42 @@
       "description": "Rows with a last_failure_at newer than their last_success_at. These are the endpoints currently in a failing state.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 },
-              { "color": "red", "value": 3 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
             ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
-      "id": 105,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 6,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -243,23 +311,38 @@
       "description": "Enabled rows that reference a secret_key_ref but where the referenced app_settings row is missing. Signature verification would 503 on these.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
-      "id": 106,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 7,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -287,16 +370,24 @@
         "defaults": {
           "custom": {
             "align": "left",
-            "cellOptions": { "type": "auto" }
+            "cellOptions": {
+              "type": "auto"
+            }
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Enabled" },
+            "matcher": {
+              "id": "byName",
+              "options": "Enabled"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "basic" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
               },
               {
                 "id": "mappings",
@@ -304,8 +395,14 @@
                   {
                     "type": "value",
                     "options": {
-                      "true": { "text": "enabled", "color": "green" },
-                      "false": { "text": "disabled", "color": "yellow" }
+                      "true": {
+                        "text": "enabled",
+                        "color": "green"
+                      },
+                      "false": {
+                        "text": "disabled",
+                        "color": "yellow"
+                      }
                     }
                   }
                 ]
@@ -313,7 +410,10 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Secret?" },
+            "matcher": {
+              "id": "byName",
+              "options": "Secret?"
+            },
             "properties": [
               {
                 "id": "mappings",
@@ -321,9 +421,18 @@
                   {
                     "type": "value",
                     "options": {
-                      "0": { "text": "—", "color": "text" },
-                      "1": { "text": "yes", "color": "green" },
-                      "2": { "text": "missing", "color": "red" }
+                      "0": {
+                        "text": "\u2014",
+                        "color": "text"
+                      },
+                      "1": {
+                        "text": "yes",
+                        "color": "green"
+                      },
+                      "2": {
+                        "text": "missing",
+                        "color": "red"
+                      }
                     }
                   }
                 ]
@@ -332,8 +441,13 @@
           }
         ]
       },
-      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 5 },
-      "id": 107,
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 8,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -360,14 +474,6 @@
       "type": "table"
     },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
-      "id": 200,
-      "panels": [],
-      "title": "Retention policies",
-      "type": "row"
-    },
-    {
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -375,19 +481,35 @@
       "description": "Number of enabled retention policies. Zero = table seeded but no retention running yet.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "green", "value": 3 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 3
+              }
             ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 20 },
-      "id": 201,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 20
+      },
+      "id": 9,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -422,20 +544,34 @@
       "description": "Sum of total_deleted across all retention policies. Grows over time as enabled policies run and prune rows.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "text", "value": null }]
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 20 },
-      "id": 202,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 20
+      },
+      "id": 10,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -458,27 +594,45 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Policies whose most recent run recorded a non-null last_error. Orange/red here means a retention policy is failing — check `last_error`.",
+      "description": "Policies whose most recent run recorded a non-null last_error. Orange/red here means a retention policy is failing \u2014 check `last_error`.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 },
-              { "color": "red", "value": 2 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
             ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 20 },
-      "id": 203,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 20
+      },
+      "id": 11,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -501,18 +655,29 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Every retention_policies row. Handler = ttl_prune (simple age-based delete), downsample (rollup to coarser table), or temporal_summarize (deferred — LLM summarization). Enabled rows run daily via the retention_runner scheduled job.",
+      "description": "Every retention_policies row. Handler = ttl_prune (simple age-based delete), downsample (rollup to coarser table), or temporal_summarize (deferred \u2014 LLM summarization). Enabled rows run daily via the retention_runner scheduled job.",
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "left", "cellOptions": { "type": "auto" } }
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Enabled" },
+            "matcher": {
+              "id": "byName",
+              "options": "Enabled"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "basic" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
               },
               {
                 "id": "mappings",
@@ -520,8 +685,14 @@
                   {
                     "type": "value",
                     "options": {
-                      "true": { "text": "enabled", "color": "green" },
-                      "false": { "text": "disabled", "color": "yellow" }
+                      "true": {
+                        "text": "enabled",
+                        "color": "green"
+                      },
+                      "false": {
+                        "text": "disabled",
+                        "color": "yellow"
+                      }
                     }
                   }
                 ]
@@ -530,8 +701,13 @@
           }
         ]
       },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 24 },
-      "id": 204,
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 12,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -558,14 +734,6 @@
       "type": "table"
     },
     {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
-      "id": 300,
-      "panels": [],
-      "title": "External taps (GH-103)",
-      "type": "row"
-    },
-    {
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -573,19 +741,35 @@
       "description": "Number of enabled taps. Zero = taps framework in place but no ingestion running yet.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "green", "value": 3 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 3
+              }
             ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 37 },
-      "id": 301,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 37
+      },
+      "id": 13,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -617,23 +801,37 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Sum of total_records across taps — lifetime count of records ingested.",
+      "description": "Sum of total_records across taps \u2014 lifetime count of records ingested.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "text", "value": null }]
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 37 },
-      "id": 302,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 37
+      },
+      "id": 14,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -659,24 +857,42 @@
       "description": "Taps whose last run ended in 'failed' state. Check last_error for each.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 },
-              { "color": "red", "value": 2 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
             ]
           }
         }
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 37 },
-      "id": 303,
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 37
+      },
+      "id": 15,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "textMode": "value_and_name"
       },
       "targets": [
@@ -702,15 +918,26 @@
       "description": "Every external_taps row. Handler builtin_topic_source adapts an in-repo scraper; singer_subprocess (stub) will run external Singer-protocol binaries.",
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "left", "cellOptions": { "type": "auto" } }
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Enabled" },
+            "matcher": {
+              "id": "byName",
+              "options": "Enabled"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "basic" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
               },
               {
                 "id": "mappings",
@@ -718,8 +945,14 @@
                   {
                     "type": "value",
                     "options": {
-                      "true": { "text": "enabled", "color": "green" },
-                      "false": { "text": "disabled", "color": "yellow" }
+                      "true": {
+                        "text": "enabled",
+                        "color": "green"
+                      },
+                      "false": {
+                        "text": "disabled",
+                        "color": "yellow"
+                      }
                     }
                   }
                 ]
@@ -728,8 +961,13 @@
           }
         ]
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 41 },
-      "id": 304,
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "id": 16,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -754,18 +992,188 @@
       ],
       "title": "All external taps",
       "type": "table"
+    },
+    {
+      "type": "row",
+      "title": "Link Registry & Admin Reference",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "panels": [],
+      "id": 17
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "id": 18,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "# Grafana Dashboards",
+        "mode": "markdown"
+      },
+      "type": "text",
+      "transparent": true
+    },
+    {
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
+      "id": 19,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "| Dashboard | Description |\n|---|---|\n| [Approval Queue](http://100.81.93.12:3000/d/approval-queue) | Review and approve AI-generated content |\n| [Pipeline Operations](http://100.81.93.12:3000/d/pipeline-operations) | Task status, throughput, stuck task detection |\n| [Quality & Content](http://100.81.93.12:3000/d/quality-content) | Quality score trends, pass rates, topic quality |\n| [Cost & Analytics](http://100.81.93.12:3000/d/cost-analytics) | LLM spend, electricity costs, budget tracking |\n| [Infrastructure & Data](http://100.81.93.12:3000/d/infrastructure-data) | Hardware metrics, audit log, raw DB tables |",
+        "mode": "markdown"
+      },
+      "type": "text",
+      "transparent": true
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "id": 20,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "# Local Infrastructure",
+        "mode": "markdown"
+      },
+      "type": "text",
+      "transparent": true
+    },
+    {
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      },
+      "id": 21,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "| Service | URL | Purpose |\n|---|---|---|\n| Grafana | [localhost:3000](http://100.81.93.12:3000) | Dashboards, alerts, monitoring |\n| Prometheus | [localhost:9091](http://100.81.93.12:9091) | Metrics scraping (GPU, system, worker) |\n| Gitea | [localhost:3001](http://100.81.93.12:3001) | Self-hosted Git repos |\n| Woodpecker CI | [localhost:8280](http://100.81.93.12:8280) | CI/CD pipelines |\n| pgAdmin | [localhost:5480](http://100.81.93.12:5480) | PostgreSQL web UI |\n| Worker API | [localhost:8002](http://100.81.93.12:8002/api/health) | Pipeline backend (FastAPI) |",
+        "mode": "markdown"
+      },
+      "type": "text",
+      "transparent": true
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 63
+      },
+      "id": 22,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "# Worker API Endpoints",
+        "mode": "markdown"
+      },
+      "type": "text",
+      "transparent": true
+    },
+    {
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      },
+      "id": 23,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "| Endpoint | URL | Auth | Purpose |\n|---|---|---|---|\n| Health | [/api/health](http://100.81.93.12:8002/api/health) | No | Full service status |\n| Metrics | [/api/metrics](http://100.81.93.12:8002/api/metrics) | No | Task counts, success rate, avg time |\n| Operational | [/api/metrics/operational](http://100.81.93.12:8002/api/metrics/operational) | Token | Queue depth, executor stats, uptime |\n| Budget | [/api/metrics/costs/budget](http://100.81.93.12:8002/api/metrics/costs/budget) | Token | Monthly spend vs budget |\n| Prometheus | [/api/prometheus](http://100.81.93.12:8002/api/prometheus) | No | Prometheus-format metrics |\n| Settings | [/api/settings](http://100.81.93.12:8002/api/settings) | Token | All pipeline settings |\n| Pipeline Events | [/api/pipeline/events](http://100.81.93.12:8002/api/pipeline/events) | Token | Pipeline event log |\n| Pipeline Dashboard | [/pipeline](http://100.81.93.12:8002/pipeline) | No | HTML pipeline overview |\n| Memory Dashboard | [/memory](http://100.81.93.12:8002/memory) | No | HTML memory/knowledge overview |",
+        "mode": "markdown"
+      },
+      "type": "text",
+      "transparent": true
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 71
+      },
+      "id": 24,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "# Production",
+        "mode": "markdown"
+      },
+      "type": "text",
+      "transparent": true
+    },
+    {
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 73
+      },
+      "id": 25,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false
+        },
+        "content": "| Service | URL | Purpose |\n|---|---|---|\n| Public Site | [gladlabs.io](https://www.gladlabs.io) | Production Next.js frontend |\n| Vercel Dashboard | [vercel.com/dashboard](https://vercel.com/dashboard) | Deployments, env vars, logs |\n| RSS Feed | [gladlabs.io/feed.xml](https://www.gladlabs.io/feed.xml) | JSON Feed 1.1 + feed.xml. Direct Bluesky + Mastodon adapters (GH-36). dlvr.it subscription is paused; X/Twitter is manual until it resumes. |\n| Static CDN | [R2 bucket](https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static/manifest.json) | Static JSON export manifest |",
+        "mode": "markdown"
+      },
+      "type": "text",
+      "transparent": true
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "style": "dark",
-  "tags": ["integrations", "webhooks", "declarative-data-plane"],
-  "templating": { "list": [] },
-  "time": { "from": "now-24h", "to": "now" },
+  "tags": ["integrations", "webhooks", "admin", "links", "reference"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
-  "timezone": "",
-  "title": "Integration Health",
-  "uid": "integration-health",
+  "timezone": "browser",
+  "title": "Integrations & Admin",
+  "uid": "integrations-admin",
   "version": 1,
-  "weekStart": ""
+  "weekStart": "",
+  "description": "Webhook framework health + admin reference (link registry). Replaces integration-health / link-registry as separate dashboards."
 }
