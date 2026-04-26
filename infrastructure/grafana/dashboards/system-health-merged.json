@@ -1,57 +1,1605 @@
 {
-  "uid": "infrastructure-data",
-  "title": "Infrastructure & Data",
-  "description": "Hardware metrics, audit log, raw DB tables, system settings \u2014 the deep ops view",
-  "tags": [
-    "infrastructure",
-    "hardware",
-    "data",
-    "admin",
-    "premium"
-  ],
-  "timezone": "browser",
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
-  "time": {
-    "from": "now-7d",
-    "to": "now"
-  },
-  "timepicker": {
-    "refresh_intervals": [
-      "10s",
-      "30s",
-      "1m",
-      "5m",
-      "15m"
-    ],
-    "time_options": [
-      "5m",
-      "15m",
-      "30m",
-      "1h",
-      "3h",
-      "6h",
-      "12h",
-      "24h"
-    ]
-  },
-  "refresh": "30s",
-  "schemaVersion": 39,
-  "version": 1,
   "annotations": {
     "list": []
   },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
   "panels": [
     {
-      "id": 100,
+      "type": "row",
+      "title": "Core Services & Pipeline Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": [],
+      "id": 1
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Worker FastAPI service responding to /metrics. If 0, the content pipeline is offline.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "up{job=\"poindexter-worker\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Worker",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail \u2014 this is a belt+suspenders sanity check.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 1 AS \"Postgres\";",
+          "refId": "A"
+        }
+      ],
+      "title": "Postgres",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "nvidia-smi exporter. Missing = GPU not detected, degraded, or exporter down.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "up{job=\"nvidia-smi\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "GPU exporter",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Pyroscope profiling server. Non-critical (profiling is best-effort).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "yellow"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "up{job=\"pyroscope\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pyroscope",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Tempo traces backend.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "yellow"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "up{job=\"tempo\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Tempo",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Uptime-kuma external health monitor.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "yellow"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "up{job=\"uptime-kuma\"}",
+          "refId": "A"
+        }
+      ],
+      "title": "Uptime-kuma",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Content tasks created in the last 24h. Zero for extended periods means autonomous topic generation has stalled.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 6
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Tasks (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Tasks in 24h",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline \u2014 bump to 40% green once topic-discovery dedup (GH-101) ships.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 35
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 6
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published'))::numeric / NULLIF(COUNT(*) FILTER (WHERE status IN ('rejected','awaiting_approval','approved','published')), 0), 1) AS \"Approval %\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Approval rate (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Approval queue fill % vs max_approval_queue setting. When this hits 100, new generation throttles until you review.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 6
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(100.0 * (SELECT COUNT(*) FROM content_tasks WHERE status='awaiting_approval')::numeric / NULLIF((SELECT value::int FROM app_settings WHERE key='max_approval_queue'), 0), 0) AS \"Queue % of cap\";",
+          "refId": "A"
+        }
+      ],
+      "title": "Approval queue fill",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything >0 means a stage hung \u2014 see docs/operations/troubleshooting.md.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 6
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Stuck tasks\" FROM content_tasks WHERE status='in_progress' AND started_at < NOW() - INTERVAL '30 minutes';",
+          "refId": "A"
+        }
+      ],
+      "title": "Stuck in_progress >30m",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Posts published in the last 7 days. Healthy cadence is 1-3 per day.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 7
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 12
+      },
+      "id": 12,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Published (7d)\" FROM posts WHERE status='published' AND published_at > NOW() - INTERVAL '7 days';",
+          "refId": "A"
+        }
+      ],
+      "title": "Published (7d)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Hours since the most recent publish. Green if <48h, yellow 48h-7d, red >7d.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 48
+              },
+              {
+                "color": "red",
+                "value": 168
+              }
+            ]
+          },
+          "unit": "h"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 12
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(published_at)))/3600 AS \"Hours since publish\" FROM posts WHERE status='published';",
+          "refId": "A"
+        }
+      ],
+      "title": "Hours since last publish",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Hours since the backfill_podcasts job last ran. The scheduler runs it every 4 hours \u2014 green <6h, yellow <24h, red >24h (scheduler may be stuck). media_assets-backed coverage % was removed because backfill jobs write to R2 directly, not that table.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 24
+              }
+            ]
+          },
+          "unit": "h"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 12
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key = 'idle_last_run_podcast_backfill';",
+          "refId": "A"
+        }
+      ],
+      "title": "Podcast backfill last run",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Hours since the backfill_videos job last ran. Scheduler runs every 6 hours \u2014 green <8h, yellow <24h, red >24h.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 8
+              },
+              {
+                "color": "red",
+                "value": 24
+              }
+            ]
+          },
+          "unit": "h"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 12
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key = 'idle_last_run_video_backfill';",
+          "refId": "A"
+        }
+      ],
+      "title": "Video backfill last run",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job \u2014 see GH-106.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50000
+              },
+              {
+                "color": "red",
+                "value": 100000
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 18
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Embeddings\" FROM embeddings;",
+          "refId": "A"
+        }
+      ],
+      "title": "Embeddings rows",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Total embeddings table size in MB.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          },
+          "unit": "decmbytes"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 18
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (pg_total_relation_size('embeddings') / 1024.0 / 1024.0) AS \"MB\";",
+          "refId": "A"
+        }
+      ],
+      "title": "Embeddings size",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Age of the oldest embedding in days. Extremely old rows may be candidates for retention-policy pruning.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 90
+              },
+              {
+                "color": "orange",
+                "value": 180
+              }
+            ]
+          },
+          "unit": "d"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 18
+      },
+      "id": 18,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MIN(created_at)))/86400 AS \"Days\" FROM embeddings;",
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest embedding (days)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "24h cost across cost_logs \u2014 electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 18
+      },
+      "id": 19,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(cost_usd), 0) AS \"Cost 24h\" FROM cost_logs WHERE created_at > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Ops cost (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Alerts firing (not resolved) in the last hour. Each row in alert_events with status='firing' is one Alertmanager fire event.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 24
+      },
+      "id": 20,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Firing (1h)\" FROM alert_events WHERE status='firing' AND received_at > NOW() - INTERVAL '1 hour';",
+          "refId": "A"
+        }
+      ],
+      "title": "Alerts firing (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "description": "Rate of validator hallucination warnings per minute. High-rate spikes indicate a writer-model regression or a new edge-case class.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 24
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "sum(rate(content_validator_warnings_total[15m]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Validator warnings (15m rate)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 \u2014 any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 24
+      },
+      "id": 22,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Plaintext secrets\" FROM app_settings WHERE is_secret = true AND value != '' AND value NOT LIKE 'enc:v1:%';",
+          "refId": "A"
+        }
+      ],
+      "title": "Plaintext secrets (should be 0)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline \u2014 expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 24
+      },
+      "id": 23,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Hard rejects (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' AND status = 'rejected' AND (error_message ILIKE '%veto: programmatic_validator%' OR error_message ILIKE '%veto: citation_verifier%' OR error_message ILIKE '%veto: topic_delivery%');",
+          "refId": "A"
+        }
+      ],
+      "title": "Hard rejects (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Last-run timestamp (age in hours) for each idle-tracked background job. Red = overdue given its interval; investigate the scheduler.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 24,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT key AS \"Job\", value::float8 AS \"Last-run (unix ts)\", to_timestamp(value::float8)::timestamptz AS \"Last-run\", ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key LIKE 'idle_last_run_%' ORDER BY value::float8 ASC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Scheduled jobs \u2014 last run times",
+      "type": "table"
+    },
+    {
+      "type": "row",
+      "title": "Infrastructure Detail (Postgres / Hardware / Audit / Data / Settings)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "panels": [],
+      "id": 25
+    },
+    {
+      "id": 26,
       "title": "Postgres Database",
       "type": "text",
       "gridPos": {
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 41
       },
       "options": {
         "mode": "markdown",
@@ -59,14 +1607,14 @@
       }
     },
     {
-      "id": 1,
+      "id": 27,
       "title": "Database Size",
       "type": "stat",
       "gridPos": {
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 2
+        "y": 43
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -104,9 +1652,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -130,14 +1676,14 @@
       ]
     },
     {
-      "id": 2,
+      "id": 28,
       "title": "Active Connections",
       "type": "stat",
       "gridPos": {
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 2
+        "y": 43
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -175,9 +1721,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -201,14 +1745,14 @@
       ]
     },
     {
-      "id": 3,
+      "id": 29,
       "title": "Connection States",
       "type": "piechart",
       "gridPos": {
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 2
+        "y": 43
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -277,9 +1821,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -291,10 +1833,7 @@
         "legend": {
           "displayMode": "table",
           "placement": "right",
-          "values": [
-            "value",
-            "percent"
-          ]
+          "values": ["value", "percent"]
         }
       },
       "targets": [
@@ -311,14 +1850,14 @@
       ]
     },
     {
-      "id": 4,
+      "id": 30,
       "title": "Max Connection Age",
       "type": "stat",
       "gridPos": {
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 2
+        "y": 43
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -357,9 +1896,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -383,14 +1920,14 @@
       ]
     },
     {
-      "id": 200,
+      "id": 31,
       "title": "Table Statistics",
       "type": "text",
       "gridPos": {
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 49
       },
       "options": {
         "mode": "markdown",
@@ -398,14 +1935,14 @@
       }
     },
     {
-      "id": 5,
+      "id": 32,
       "title": "Table Row Counts",
       "type": "table",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 10
+        "y": 51
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -458,12 +1995,8 @@
         ],
         "footer": {
           "show": true,
-          "reducer": [
-            "sum"
-          ],
-          "fields": [
-            "estimated_rows"
-          ]
+          "reducer": ["sum"],
+          "fields": ["estimated_rows"]
         }
       },
       "targets": [
@@ -480,14 +2013,14 @@
       ]
     },
     {
-      "id": 6,
+      "id": 33,
       "title": "Table Sizes",
       "type": "barchart",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 10
+        "y": 51
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -542,14 +2075,14 @@
       ]
     },
     {
-      "id": 7,
+      "id": 34,
       "title": "Index Usage",
       "type": "table",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 18
+        "y": 59
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -636,14 +2169,14 @@
       ]
     },
     {
-      "id": 8,
+      "id": 35,
       "title": "Active Queries",
       "type": "table",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 18
+        "y": 59
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -734,14 +2267,14 @@
       ]
     },
     {
-      "id": 9,
+      "id": 36,
       "title": "Cache Hit Ratio",
       "type": "gauge",
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 26
+        "y": 67
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -782,9 +2315,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -806,14 +2337,14 @@
       ]
     },
     {
-      "id": 10,
+      "id": 37,
       "title": "Transactions (Committed vs Rolled Back)",
       "type": "stat",
       "gridPos": {
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 26
+        "y": 67
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -861,9 +2392,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -887,14 +2416,14 @@
       ]
     },
     {
-      "id": 11,
+      "id": 38,
       "title": "Dead Tuples (Vacuum Needed)",
       "type": "barchart",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 16,
-        "y": 26
+        "y": 67
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -970,14 +2499,14 @@
       ]
     },
     {
-      "id": 300,
+      "id": 39,
       "title": "Prometheus GPU & System Metrics (Live)",
       "type": "text",
       "gridPos": {
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 73
       },
       "options": {
         "content": "**Real-time metrics from nvidia-smi exporter + Poindexter worker.**",
@@ -985,14 +2514,14 @@
       }
     },
     {
-      "id": 12,
+      "id": 40,
       "title": "GPU Utilization & Temperature",
       "type": "timeseries",
       "gridPos": {
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 34
+        "y": 75
       },
       "datasource": {
         "type": "prometheus",
@@ -1037,14 +2566,14 @@
       }
     },
     {
-      "id": 13,
+      "id": 41,
       "title": "VRAM Usage & Power Draw",
       "type": "timeseries",
       "gridPos": {
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 34
+        "y": 75
       },
       "datasource": {
         "type": "prometheus",
@@ -1087,14 +2616,14 @@
       }
     },
     {
-      "id": 14,
+      "id": 42,
       "title": "Pipeline & Worker Status",
       "type": "stat",
       "gridPos": {
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 34
+        "y": 75
       },
       "datasource": {
         "type": "prometheus",
@@ -1134,20 +2663,7 @@
       }
     },
     {
-      "type": "row",
-      "id": 301,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 38
-      },
-      "title": "Hardware \u2014 GPU & Power",
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "id": 302,
+      "id": 43,
       "type": "gauge",
       "title": "GPU Util %",
       "datasource": {
@@ -1156,7 +2672,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 39,
+        "y": 80,
         "w": 6,
         "h": 5
       },
@@ -1187,9 +2703,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -1208,7 +2722,7 @@
       ]
     },
     {
-      "id": 303,
+      "id": 44,
       "type": "gauge",
       "title": "GPU Temp",
       "datasource": {
@@ -1217,7 +2731,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 39,
+        "y": 80,
         "w": 6,
         "h": 5
       },
@@ -1248,9 +2762,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -1269,7 +2781,7 @@
       ]
     },
     {
-      "id": 304,
+      "id": 45,
       "type": "gauge",
       "title": "GPU Power",
       "datasource": {
@@ -1278,7 +2790,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 39,
+        "y": 80,
         "w": 6,
         "h": 5
       },
@@ -1309,9 +2821,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -1330,7 +2840,7 @@
       ]
     },
     {
-      "id": 305,
+      "id": 46,
       "type": "gauge",
       "title": "VRAM %",
       "datasource": {
@@ -1339,7 +2849,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 39,
+        "y": 80,
         "w": 6,
         "h": 5
       },
@@ -1370,9 +2880,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -1391,7 +2899,7 @@
       ]
     },
     {
-      "id": 306,
+      "id": 47,
       "type": "gauge",
       "title": "Wall Power (HX1500i)",
       "datasource": {
@@ -1400,7 +2908,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 85,
         "w": 8,
         "h": 5
       },
@@ -1435,9 +2943,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -1454,7 +2960,7 @@
       ]
     },
     {
-      "id": 307,
+      "id": 48,
       "type": "gauge",
       "title": "DC Output (HX1500i)",
       "datasource": {
@@ -1463,7 +2969,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 44,
+        "y": 85,
         "w": 8,
         "h": 5
       },
@@ -1498,9 +3004,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -1517,7 +3021,7 @@
       ]
     },
     {
-      "id": 308,
+      "id": 49,
       "type": "gauge",
       "title": "CPU Package Power",
       "datasource": {
@@ -1526,7 +3030,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 44,
+        "y": 85,
         "w": 8,
         "h": 5
       },
@@ -1557,9 +3061,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         }
@@ -1576,7 +3078,7 @@
       ]
     },
     {
-      "id": 309,
+      "id": 50,
       "type": "timeseries",
       "title": "Power Over Time",
       "datasource": {
@@ -1585,7 +3087,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 90,
         "w": 24,
         "h": 8
       },
@@ -1667,11 +3169,7 @@
       },
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "lastNotNull"
-          ],
+          "calcs": ["mean", "max", "lastNotNull"],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1719,7 +3217,7 @@
       ]
     },
     {
-      "id": 310,
+      "id": 51,
       "type": "timeseries",
       "title": "Electricity Cost (EIA rate)",
       "datasource": {
@@ -1728,7 +3226,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 57,
+        "y": 98,
         "w": 12,
         "h": 6
       },
@@ -1750,10 +3248,7 @@
       },
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "lastNotNull"
-          ],
+          "calcs": ["mean", "lastNotNull"],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1774,7 +3269,7 @@
       ]
     },
     {
-      "id": 311,
+      "id": 52,
       "type": "timeseries",
       "title": "PSU Temperatures",
       "datasource": {
@@ -1783,7 +3278,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 57,
+        "y": 98,
         "w": 12,
         "h": 6
       },
@@ -1834,11 +3329,7 @@
       },
       "options": {
         "legend": {
-          "calcs": [
-            "mean",
-            "max",
-            "lastNotNull"
-          ],
+          "calcs": ["mean", "max", "lastNotNull"],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1868,7 +3359,7 @@
       ]
     },
     {
-      "id": 312,
+      "id": 53,
       "type": "table",
       "title": "Recent GPU Samples",
       "datasource": {
@@ -1877,7 +3368,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 63,
+        "y": 104,
         "w": 24,
         "h": 8
       },
@@ -1908,7 +3399,7 @@
       ]
     },
     {
-      "id": 313,
+      "id": 54,
       "type": "table",
       "title": "Daily GPU Avg",
       "datasource": {
@@ -1917,7 +3408,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 71,
+        "y": 112,
         "w": 24,
         "h": 7
       },
@@ -1948,7 +3439,7 @@
       ]
     },
     {
-      "id": 314,
+      "id": 55,
       "type": "stat",
       "title": "Gaming Detected",
       "description": "Pipeline pauses automatically when external GPU workload (gaming) is detected",
@@ -1958,7 +3449,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 78,
+        "y": 119,
         "w": 6,
         "h": 5
       },
@@ -2011,7 +3502,7 @@
       ]
     },
     {
-      "id": 315,
+      "id": 56,
       "type": "stat",
       "title": "Gaming Pause Duration",
       "datasource": {
@@ -2020,7 +3511,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 78,
+        "y": 119,
         "w": 6,
         "h": 5
       },
@@ -2058,7 +3549,7 @@
       ]
     },
     {
-      "id": 316,
+      "id": 57,
       "type": "timeseries",
       "title": "Gaming Detection & Pipeline Status",
       "description": "Shows when gaming pauses the pipeline vs active GPU usage",
@@ -2068,7 +3559,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 78,
+        "y": 119,
         "w": 12,
         "h": 6
       },
@@ -2158,7 +3649,7 @@
       ]
     },
     {
-      "id": 317,
+      "id": 58,
       "type": "stat",
       "title": "Total Gaming Pause",
       "description": "Cumulative time pipeline has been paused for gaming since worker start",
@@ -2168,7 +3659,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 84,
+        "y": 125,
         "w": 6,
         "h": 5
       },
@@ -2189,7 +3680,7 @@
       ]
     },
     {
-      "id": 318,
+      "id": 59,
       "type": "stat",
       "title": "Pipeline Tasks",
       "datasource": {
@@ -2198,7 +3689,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 84,
+        "y": 125,
         "w": 6,
         "h": 5
       },
@@ -2245,20 +3736,7 @@
       ]
     },
     {
-      "type": "row",
-      "id": 319,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 89
-      },
-      "title": "Audit Log",
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "id": 320,
+      "id": 60,
       "type": "stat",
       "title": "Events",
       "datasource": {
@@ -2267,7 +3745,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 90,
+        "y": 131,
         "w": 6,
         "h": 3
       },
@@ -2284,9 +3762,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2309,7 +3785,7 @@
       ]
     },
     {
-      "id": 321,
+      "id": 61,
       "type": "stat",
       "title": "Errors",
       "datasource": {
@@ -2318,7 +3794,7 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 90,
+        "y": 131,
         "w": 6,
         "h": 3
       },
@@ -2335,9 +3811,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2360,7 +3834,7 @@
       ]
     },
     {
-      "id": 322,
+      "id": 62,
       "type": "stat",
       "title": "Sources",
       "datasource": {
@@ -2369,7 +3843,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 90,
+        "y": 131,
         "w": 6,
         "h": 3
       },
@@ -2386,9 +3860,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2411,7 +3883,7 @@
       ]
     },
     {
-      "id": 323,
+      "id": 63,
       "type": "stat",
       "title": "Tasks",
       "datasource": {
@@ -2420,7 +3892,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 90,
+        "y": 131,
         "w": 6,
         "h": 3
       },
@@ -2437,9 +3909,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -2462,7 +3932,7 @@
       ]
     },
     {
-      "id": 324,
+      "id": 64,
       "type": "bargauge",
       "title": "By Severity",
       "datasource": {
@@ -2471,7 +3941,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 93,
+        "y": 134,
         "w": 8,
         "h": 5
       },
@@ -2494,9 +3964,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": true
         },
@@ -2518,7 +3986,7 @@
       ]
     },
     {
-      "id": 325,
+      "id": 65,
       "type": "bargauge",
       "title": "By Source",
       "datasource": {
@@ -2527,7 +3995,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 93,
+        "y": 134,
         "w": 8,
         "h": 5
       },
@@ -2550,9 +4018,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": true
         },
@@ -2574,7 +4040,7 @@
       ]
     },
     {
-      "id": 326,
+      "id": 66,
       "type": "bargauge",
       "title": "By Event",
       "datasource": {
@@ -2583,7 +4049,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 93,
+        "y": 134,
         "w": 8,
         "h": 5
       },
@@ -2606,9 +4072,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": true
         },
@@ -2630,7 +4094,7 @@
       ]
     },
     {
-      "id": 327,
+      "id": 67,
       "type": "table",
       "title": "Full Audit Log",
       "datasource": {
@@ -2639,7 +4103,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 98,
+        "y": 139,
         "w": 24,
         "h": 10
       },
@@ -2670,7 +4134,7 @@
       ]
     },
     {
-      "id": 328,
+      "id": 68,
       "type": "table",
       "title": "Errors Only",
       "datasource": {
@@ -2679,7 +4143,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 108,
+        "y": 149,
         "w": 24,
         "h": 7
       },
@@ -2708,19 +4172,6 @@
           "refId": "A"
         }
       ]
-    },
-    {
-      "type": "row",
-      "id": 329,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 115
-      },
-      "title": "Data Explorer \u2014 Raw DB Tables",
-      "collapsed": false,
-      "panels": []
     },
     {
       "datasource": {
@@ -2784,11 +4235,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 116,
+        "y": 157,
         "w": 12,
         "h": 8
       },
-      "id": 330,
+      "id": 69,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -2831,11 +4282,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 124,
+        "y": 165,
         "w": 24,
         "h": 8
       },
-      "id": 331,
+      "id": 70,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -2878,11 +4329,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 132,
+        "y": 173,
         "w": 24,
         "h": 8
       },
-      "id": 332,
+      "id": 71,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -2925,11 +4376,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 140,
+        "y": 181,
         "w": 24,
         "h": 8
       },
-      "id": 333,
+      "id": 72,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -2972,11 +4423,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 148,
+        "y": 189,
         "w": 24,
         "h": 8
       },
-      "id": 334,
+      "id": 73,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -3019,11 +4470,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 164,
+        "y": 205,
         "w": 24,
         "h": 8
       },
-      "id": 336,
+      "id": 74,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -3066,11 +4517,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 172,
+        "y": 213,
         "w": 24,
         "h": 8
       },
-      "id": 337,
+      "id": 75,
       "options": {
         "cellHeight": "sm",
         "footer": {
@@ -3099,11 +4550,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 180,
+        "y": 221,
         "w": 24,
         "h": 8
       },
-      "id": 338,
+      "id": 76,
       "targets": [
         {
           "format": "table",
@@ -3121,11 +4572,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 188,
+        "y": 229,
         "w": 12,
         "h": 6
       },
-      "id": 339,
+      "id": 77,
       "targets": [
         {
           "format": "table",
@@ -3143,11 +4594,11 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 188,
+        "y": 229,
         "w": 12,
         "h": 6
       },
-      "id": 340,
+      "id": 78,
       "targets": [
         {
           "format": "table",
@@ -3165,11 +4616,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 194,
+        "y": 235,
         "w": 24,
         "h": 8
       },
-      "id": 341,
+      "id": 79,
       "targets": [
         {
           "format": "table",
@@ -3187,11 +4638,11 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 202,
+        "y": 243,
         "w": 24,
         "h": 6
       },
-      "id": 342,
+      "id": 80,
       "targets": [
         {
           "format": "table",
@@ -3210,11 +4661,11 @@
       "description": "Tasks waiting for human review",
       "gridPos": {
         "x": 0,
-        "y": 218,
+        "y": 259,
         "w": 24,
         "h": 8
       },
-      "id": 345,
+      "id": 81,
       "targets": [
         {
           "format": "table",
@@ -3226,20 +4677,7 @@
       "type": "table"
     },
     {
-      "type": "row",
-      "id": 346,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 226
-      },
-      "title": "System Settings",
-      "collapsed": false,
-      "panels": []
-    },
-    {
-      "id": 347,
+      "id": 82,
       "type": "stat",
       "title": "Settings",
       "datasource": {
@@ -3248,7 +4686,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 227,
+        "y": 268,
         "w": 4,
         "h": 3
       },
@@ -3265,9 +4703,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -3290,7 +4726,7 @@
       ]
     },
     {
-      "id": 348,
+      "id": 83,
       "type": "stat",
       "title": "Prompts",
       "datasource": {
@@ -3299,7 +4735,7 @@
       },
       "gridPos": {
         "x": 4,
-        "y": 227,
+        "y": 268,
         "w": 4,
         "h": 3
       },
@@ -3316,9 +4752,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -3341,7 +4775,7 @@
       ]
     },
     {
-      "id": 349,
+      "id": 84,
       "type": "stat",
       "title": "Stages",
       "datasource": {
@@ -3350,7 +4784,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 227,
+        "y": 268,
         "w": 4,
         "h": 3
       },
@@ -3367,9 +4801,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -3392,7 +4824,7 @@
       ]
     },
     {
-      "id": 350,
+      "id": 85,
       "type": "stat",
       "title": "Agents",
       "datasource": {
@@ -3401,7 +4833,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 227,
+        "y": 268,
         "w": 4,
         "h": 3
       },
@@ -3418,9 +4850,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -3443,7 +4873,7 @@
       ]
     },
     {
-      "id": 351,
+      "id": 86,
       "type": "stat",
       "title": "Perms",
       "datasource": {
@@ -3452,7 +4882,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 227,
+        "y": 268,
         "w": 4,
         "h": 3
       },
@@ -3469,9 +4899,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -3494,7 +4922,7 @@
       ]
     },
     {
-      "id": 352,
+      "id": 87,
       "type": "stat",
       "title": "Alerts",
       "datasource": {
@@ -3503,7 +4931,7 @@
       },
       "gridPos": {
         "x": 20,
-        "y": 227,
+        "y": 268,
         "w": 4,
         "h": 3
       },
@@ -3520,9 +4948,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -3545,7 +4971,7 @@
       ]
     },
     {
-      "id": 354,
+      "id": 88,
       "type": "table",
       "title": "Prompts",
       "datasource": {
@@ -3554,7 +4980,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 230,
+        "y": 271,
         "w": 12,
         "h": 8
       },
@@ -3585,7 +5011,7 @@
       ]
     },
     {
-      "id": 355,
+      "id": 89,
       "type": "table",
       "title": "Permissions",
       "datasource": {
@@ -3594,7 +5020,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 238,
+        "y": 279,
         "w": 12,
         "h": 8
       },
@@ -3625,7 +5051,7 @@
       ]
     },
     {
-      "id": 356,
+      "id": 90,
       "type": "table",
       "title": "Agents",
       "datasource": {
@@ -3634,7 +5060,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 238,
+        "y": 279,
         "w": 12,
         "h": 8
       },
@@ -3664,5 +5090,22 @@
         }
       ]
     }
-  ]
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["system-health", "infrastructure", "hardware", "data", "admin"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "System Health",
+  "uid": "system-health-merged",
+  "version": 1,
+  "weekStart": "",
+  "description": "Merged system-health + infrastructure-data. Top section gives core service status + pipeline-level signals; bottom section is the full infrastructure detail (DB tables, hardware metrics, audit log, raw data explorer, system settings)."
 }
