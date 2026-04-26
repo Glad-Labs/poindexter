@@ -54,6 +54,7 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "llm_providers": "poindexter.llm_providers",
     "topic_sources": "poindexter.topic_sources",
     "image_providers": "poindexter.image_providers",
+    "tts_providers": "poindexter.tts_providers",
 }
 
 
@@ -160,6 +161,11 @@ def get_image_providers() -> list[Any]:
     return list(_cached(ENTRY_POINT_GROUPS["image_providers"]))
 
 
+def get_tts_providers() -> list[Any]:
+    """Return all registered TTSProvider instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["tts_providers"]))
+
+
 # ---------------------------------------------------------------------------
 # Core sample plugins — registered imperatively as a workaround for this
 # project's poetry packaging config (see pyproject.toml note). Third-party
@@ -250,6 +256,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("image_providers", "services.image_providers.sdxl", "SdxlProvider"),
         ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
         ("image_providers", "services.image_providers.flux_schnell", "FluxSchnellProvider"),
+        # Core TTSProviders — GH-122. edge_tts wraps the existing podcast
+        # engine; kokoro is the new Apache-2.0 local model. Selection is
+        # via ``app_settings.podcast_tts_engine`` (default: edge_tts).
+        ("tts_providers", "services.tts_providers.edge_tts", "EdgeTTSProvider"),
+        ("tts_providers", "services.tts_providers.kokoro", "KokoroTTSProvider"),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),

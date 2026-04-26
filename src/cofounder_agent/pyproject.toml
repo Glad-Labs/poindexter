@@ -203,6 +203,13 @@ sdxl = "cofounder_agent.services.image_providers.sdxl:SdxlProvider"
 ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenerationProvider"
 flux_schnell = "cofounder_agent.services.image_providers.flux_schnell:FluxSchnellProvider"
 
+# GH-122: TTS plugin contract. ``edge_tts`` wraps the original podcast
+# engine for backward compat (the default — flip the setting to opt
+# into another provider). ``kokoro`` is the Apache-2.0 82M local model.
+[tool.poetry.plugins."poindexter.tts_providers"]
+edge_tts = "cofounder_agent.services.tts_providers.edge_tts:EdgeTTSProvider"
+kokoro = "cofounder_agent.services.tts_providers.kokoro:KokoroTTSProvider"
+
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"

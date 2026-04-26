@@ -58,6 +58,7 @@ from .registry import (
     ENTRY_POINT_GROUPS,
     get_adapters,
     get_core_samples,
+    get_image_providers,
     get_jobs,
     get_llm_providers,
     get_packs,
@@ -66,6 +67,8 @@ from .registry import (
     get_reviewers,
     get_stages,
     get_taps,
+    get_topic_sources,
+    get_tts_providers,
 )
 from .scheduler import PluginScheduler
 from .secrets import (
@@ -87,6 +90,7 @@ from .stage_runner import (
     load_stage_order,
 )
 from .tap import Document, Tap
+from .tts_provider import TTSProvider, TTSResult
 
 __all__ = [
     # Protocols
@@ -99,6 +103,7 @@ __all__ = [
     "Provider",
     "Pack",
     "LLMProvider",
+    "TTSProvider",
     # Dataclasses
     "Document",
     "ProbeResult",
@@ -106,6 +111,7 @@ __all__ = [
     "StageResult",
     "Completion",
     "Token",
+    "TTSResult",
     # Config + registry
     "PluginConfig",
     "PluginScheduler",
@@ -133,5 +139,8 @@ __all__ = [
     "get_providers",
     "get_packs",
     "get_llm_providers",
+    "get_topic_sources",
+    "get_image_providers",
+    "get_tts_providers",
     "get_core_samples",
 ]

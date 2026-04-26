@@ -33,6 +33,12 @@ from typing import Any
 
 from services.logger_config import get_logger
 
+# Default engine name. Matches the entry_point key registered for the
+# legacy edge-tts wrapper so existing installs keep working when
+# ``app_settings.podcast_tts_engine`` is unset (DB-first config — flip
+# the setting to opt into ``kokoro`` or any future provider).
+DEFAULT_TTS_ENGINE = "edge_tts"
+
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -624,42 +630,120 @@ class PodcastService:
         logger.error("[PODCAST] %s", error_msg)
         return EpisodeResult(success=False, error=error_msg)
 
-    async def _generate_with_voice(
-        self, script: str, voice: str, output_path: Path
-    ) -> EpisodeResult:
-        """Generate audio using edge-tts with a specific voice."""
+    def _resolve_tts_provider(self, engine: str) -> Any | None:
+        """Look up a registered ``TTSProvider`` by name.
+
+        Mirrors ``services.image_service._resolve_image_provider`` —
+        check both the entry_point-discovered third-party plugins and
+        the imperatively-registered core samples. A community plugin
+        can override a core provider by registering under the same name.
+        """
         try:
-            import edge_tts
-        except ImportError:
+            from plugins.registry import get_core_samples, get_tts_providers
+        except Exception as e:
+            logger.warning("[PODCAST] tts provider registry unavailable: %s", e)
+            return None
+
+        candidates: list[Any] = []
+        try:
+            candidates.extend(get_tts_providers())
+        except Exception as e:
+            logger.debug("[PODCAST] get_tts_providers failed: %s", e)
+        try:
+            candidates.extend(get_core_samples().get("tts_providers", []))
+        except Exception as e:
+            logger.debug("[PODCAST] get_core_samples failed: %s", e)
+
+        for provider in candidates:
+            if getattr(provider, "name", None) == engine:
+                return provider
+        return None
+
+    def _tts_provider_config(self, engine: str) -> dict[str, Any]:
+        """Read per-provider config from ``app_settings``.
+
+        Settings live under ``plugin.tts_provider.<name>`` per the
+        plugin convention (matches ImageProvider). Returns an empty
+        dict on any read error so a provider's own defaults take over.
+        """
+        if self._site_config is None:
+            return {}
+        try:
+            import json as _json
+
+            raw = self._site_config.get(f"plugin.tts_provider.{engine}", "")
+            if not raw:
+                return {}
+            parsed = _json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception as e:
+            logger.debug("[PODCAST] tts provider config read failed for %s: %s", engine, e)
+            return {}
+
+    async def _generate_with_voice(
+        self, script: str, voice: str, output_path: Path,
+    ) -> EpisodeResult:
+        """Render ``script`` through the configured TTSProvider.
+
+        Selection is by name from ``app_settings.podcast_tts_engine``
+        (default: ``edge_tts``). Existing pronunciation / acronym
+        preprocessing already ran upstream — the provider only renders.
+        """
+        engine = DEFAULT_TTS_ENGINE
+        if self._site_config is not None:
+            try:
+                engine = (
+                    self._site_config.get("podcast_tts_engine", DEFAULT_TTS_ENGINE)
+                    or DEFAULT_TTS_ENGINE
+                )
+            except Exception:
+                engine = DEFAULT_TTS_ENGINE
+
+        provider = self._resolve_tts_provider(engine)
+        if provider is None:
+            # Operator misconfigured the engine name. Fall back to the
+            # default so the pipeline keeps producing episodes; loud log
+            # so the bad setting is visible.
+            logger.warning(
+                "[PODCAST] tts engine %r not registered; falling back to %r",
+                engine, DEFAULT_TTS_ENGINE,
+            )
+            engine = DEFAULT_TTS_ENGINE
+            provider = self._resolve_tts_provider(engine)
+        if provider is None:
             return EpisodeResult(
                 success=False,
-                error="edge-tts not installed. Run: pip install edge-tts",
+                error=f"No TTSProvider registered (tried {engine!r})",
             )
+
+        cfg = self._tts_provider_config(engine)
 
         try:
-            communicate = edge_tts.Communicate(script, voice)
-            await communicate.save(str(output_path))
-
-            if not output_path.exists() or output_path.stat().st_size == 0:
-                return EpisodeResult(
-                    success=False,
-                    error=f"edge-tts produced empty file with voice {voice}",
-                )
-
-            size = output_path.stat().st_size
-            duration = _estimate_duration_from_text(script)
-
-            return EpisodeResult(
-                success=True,
-                file_path=str(output_path),
-                duration_seconds=duration,
-                file_size_bytes=size,
+            tts_result = await provider.synthesize(
+                script, output_path, voice=voice, config=cfg,
             )
         except Exception as e:
-            # Clean up partial file
             if output_path.exists():
                 output_path.unlink(missing_ok=True)
             return EpisodeResult(success=False, error=f"{type(e).__name__}: {e}")
+
+        rendered_path = (
+            tts_result.audio_path if tts_result.audio_path is not None else output_path
+        )
+        if not rendered_path.exists() or rendered_path.stat().st_size == 0:
+            return EpisodeResult(
+                success=False,
+                error=f"{engine} produced empty file with voice {voice}",
+            )
+
+        return EpisodeResult(
+            success=True,
+            file_path=str(rendered_path),
+            duration_seconds=(
+                tts_result.duration_seconds or _estimate_duration_from_text(script)
+            ),
+            file_size_bytes=tts_result.file_size_bytes or rendered_path.stat().st_size,
+        )
 
 
 # ---------------------------------------------------------------------------
