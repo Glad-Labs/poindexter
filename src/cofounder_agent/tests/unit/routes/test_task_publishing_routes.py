@@ -586,6 +586,149 @@ class TestPublishTask:
 
 
 # ===========================================================================
+# Publish finalization — content_tasks status flip + Next.js revalidate
+# (gitea: publish-flow-finalize-and-revalidate)
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestPublishFinalization:
+    """The /publish endpoint must defensively transition content_tasks to
+    'published' and revalidate the Next.js cache (paths + post:<slug> tag)
+    after a successful publish, regardless of whether publish_service
+    already attempted those steps. Failures in either are non-blocking."""
+
+    def _post_publish(self, client, task_id=VALID_TASK_ID):
+        return client.post(f"/{task_id}/publish")
+
+    def _make_pub_result(self, slug="great-post"):
+        return MagicMock(
+            success=True,
+            post_id="post-xyz",
+            post_slug=slug,
+            published_url=f"/posts/{slug}",
+            post_title="Great Post",
+            revalidation_success=True,
+        )
+
+    def _build_publish_app(self, slug="great-post"):
+        mock_db = make_mock_db()
+        task = _make_task(status="approved", content="Some content.")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        # pool.execute is the call we're asserting on
+        mock_db.pool = MagicMock()
+        mock_db.pool.execute = AsyncMock(return_value=None)
+        return mock_db, task
+
+    def test_publish_flips_content_tasks_status_to_published(self):
+        """On successful publish the route must explicitly UPDATE
+        content_tasks SET status='published' (belt-and-suspenders for
+        the silent failure observed in production)."""
+        mock_db, _ = self._build_publish_app()
+        app = _build_app(mock_db)
+        with (
+            _mock_model_converter() as mc,
+            patch(
+                "services.publish_service.publish_post_from_task",
+                new_callable=AsyncMock,
+                return_value=self._make_pub_result("happy-slug"),
+            ),
+            patch(
+                "services.revalidation_service.trigger_nextjs_revalidation",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            mc.to_task_response.return_value = MagicMock()
+            mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
+            client = TestClient(app)
+            resp = self._post_publish(client)
+
+        assert resp.status_code == 200
+        # At least one pool.execute call must be the content_tasks status flip.
+        calls = mock_db.pool.execute.await_args_list
+        flips = [
+            c for c in calls
+            if "content_tasks" in c.args[0]
+            and "status='published'" in c.args[0].replace(" ", "").replace('"', "'")
+        ]
+        assert flips, (
+            "Expected an UPDATE on content_tasks setting status='published'; "
+            f"got executes: {[c.args[0] for c in calls]}"
+        )
+        # Task ID must be the bound parameter.
+        assert any(VALID_TASK_ID in str(c.args) for c in flips)
+
+    def test_publish_triggers_revalidation_with_post_slug_tag(self):
+        """Revalidation must include the post:<slug> tag and /posts/<slug>
+        path — that is the cache key the public site uses, and
+        path-only revalidation alone would not have fixed the 404
+        incident on 2026-04-26."""
+        mock_db, _ = self._build_publish_app()
+        app = _build_app(mock_db)
+
+        revalidate_mock = AsyncMock(return_value=True)
+        with (
+            _mock_model_converter() as mc,
+            patch(
+                "services.publish_service.publish_post_from_task",
+                new_callable=AsyncMock,
+                return_value=self._make_pub_result("breaking-the-memory-wall"),
+            ),
+            patch(
+                "services.revalidation_service.trigger_nextjs_revalidation",
+                revalidate_mock,
+            ),
+        ):
+            mc.to_task_response.return_value = MagicMock()
+            mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
+            client = TestClient(app)
+            resp = self._post_publish(client)
+
+        assert resp.status_code == 200
+        revalidate_mock.assert_awaited()
+        # Inspect the kwargs from at least one call — _finalize_publish uses kwargs.
+        finalize_calls = [
+            c for c in revalidate_mock.await_args_list
+            if "post:breaking-the-memory-wall" in (c.kwargs.get("tags") or [])
+        ]
+        assert finalize_calls, (
+            "Expected revalidation called with tag 'post:breaking-the-memory-wall'; "
+            f"got calls: {revalidate_mock.await_args_list}"
+        )
+        c = finalize_calls[0]
+        assert "/posts/breaking-the-memory-wall" in (c.kwargs.get("paths") or [])
+        assert "posts" in (c.kwargs.get("tags") or [])
+
+    def test_publish_succeeds_when_revalidation_raises(self):
+        """If trigger_nextjs_revalidation raises (e.g. public site
+        unreachable), the publish endpoint must still return 200 —
+        cache revalidation is a non-blocking post-hook."""
+        mock_db, _ = self._build_publish_app()
+        app = _build_app(mock_db)
+
+        with (
+            _mock_model_converter() as mc,
+            patch(
+                "services.publish_service.publish_post_from_task",
+                new_callable=AsyncMock,
+                return_value=self._make_pub_result("resilient-slug"),
+            ),
+            patch(
+                "services.revalidation_service.trigger_nextjs_revalidation",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("public site down"),
+            ),
+        ):
+            mc.to_task_response.return_value = MagicMock()
+            mc.task_response_to_unified.return_value = _unified_response_dict(status="published")
+            client = TestClient(app)
+            resp = self._post_publish(client)
+
+        assert resp.status_code == 200
+
+
+# ===========================================================================
 # POST /{task_id}/reject
 # ===========================================================================
 
