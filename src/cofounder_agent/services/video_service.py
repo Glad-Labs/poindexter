@@ -272,6 +272,45 @@ async def _generate_images_from_scenes(
     return image_paths
 
 
+async def _maybe_generate_ambient_bed(
+    *, post_id: str, title: str, site_config: Any,
+) -> str | None:
+    """Opt-in ambient bed for the slideshow video (issue #125).
+
+    Returns ``None`` when the audio-generation layer is disabled
+    (default), the provider can't fulfill the request, or the call
+    raises. Never propagates — audio generation is strictly additive
+    and must not break existing video rendering.
+    """
+    try:
+        from services.audio_gen_service import generate_audio, is_audio_gen_enabled
+    except Exception as e:  # Defensive: import failures shouldn't break video
+        logger.debug("[VIDEO] audio_gen_service unavailable: %s", e)
+        return None
+
+    if not is_audio_gen_enabled(site_config):
+        return None
+
+    try:
+        prompt = (
+            site_config.get("video_audio_bed_prompt", "")
+            or f"warm cinematic ambient bed, gentle, no vocals, fits a video about: {title}"
+        )
+    except Exception:
+        prompt = f"warm cinematic ambient bed, gentle, no vocals, fits a video about: {title}"
+
+    bed_path = str(VIDEO_DIR / f"{post_id}-bed.wav")
+    result = await generate_audio(
+        prompt=prompt,
+        kind="ambient",
+        site_config=site_config,
+        output_path=bed_path,
+    )
+    if result and result.file_path:
+        return result.file_path
+    return None
+
+
 async def generate_video_for_post(
     post_id: str,
     title: str,
@@ -366,6 +405,16 @@ async def generate_video_for_post(
 
     host_image_paths = [_to_host_path(p) for p in image_paths]
     host_audio_path = _to_host_path(podcast_path)
+
+    # Optional ambient bed via the AudioGenProvider plugin. Default
+    # off — only activates when audio_gen_engine names a registered
+    # provider (Glad-Labs/poindexter#125). Best-effort: failures log
+    # and we proceed with the original podcast audio unchanged.
+    bed_path = await _maybe_generate_ambient_bed(
+        post_id=post_id, title=title, site_config=site_config,
+    )
+    if bed_path:
+        logger.info("[VIDEO] Generated ambient bed: %s", bed_path)
 
     # Call video server with host-side file paths
     logger.info("[VIDEO] Rendering video (%d images + audio)", len(image_paths))

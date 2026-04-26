@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from plugins import Document, get_llm_providers, get_taps
-from plugins.registry import clear_registry_cache
+from plugins import Document, get_audio_gen_providers, get_llm_providers, get_taps
+from plugins.registry import ENTRY_POINT_GROUPS, clear_registry_cache
 
 
 class _FakeTap:
@@ -163,6 +163,23 @@ def test_cache_reuses_load_result(monkeypatch):
     get_taps()
     get_taps()
     assert call_count == 1, "registry should cache entry_points() calls"
+
+
+def test_audio_gen_providers_group_registered():
+    """The ``audio_gen_providers`` entry-point group is exposed via the
+    canonical mapping AND has a dedicated ``get_*`` accessor.
+
+    Locks down the contract added in Glad-Labs/poindexter#125 — third-
+    party packages register against ``poindexter.audio_gen_providers``
+    knowing the registry will read it.
+    """
+    assert ENTRY_POINT_GROUPS["audio_gen_providers"] == (
+        "poindexter.audio_gen_providers"
+    )
+    # Smoke-call the accessor — should return a list (may be empty when
+    # no third-party plugin installed; core sample is loaded through
+    # get_core_samples instead).
+    assert isinstance(get_audio_gen_providers(), list)
 
 
 def test_clear_cache_forces_rediscovery(monkeypatch):
