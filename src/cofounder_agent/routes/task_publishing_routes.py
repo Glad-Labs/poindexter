@@ -143,8 +143,14 @@ async def _finalize_publish(
     the publish response is never gated on this finalization.
     """
     try:
+        # task_id column is character varying (see tasks_db.py canonical
+        # pattern: `WHERE task_id = $1`). The original ::uuid cast in this
+        # shim raised "operator does not exist: character varying = uuid"
+        # and was silently swallowed by the broad except below — meaning
+        # this defense-in-depth was a no-op until #299 fixed publish_service
+        # itself. Drop the cast.
         await db_service.pool.execute(
-            "UPDATE content_tasks SET status='published', updated_at=NOW() WHERE task_id=$1::uuid",
+            "UPDATE content_tasks SET status='published', updated_at=NOW() WHERE task_id = $1",
             task_id,
         )
     except Exception as e:
