@@ -23,19 +23,18 @@ pydantic-settings = "^2.0"
 # Database
 asyncpg = "^0.31"
 # sqlalchemy, psycopg2-binary, sqladmin removed — admin panel unused, all DB via asyncpg
-# google-genai removed — only in legacy llm_client.py (dead code)
 # openai re-added 2026-04-25 — required by OpenAICompatProvider plugin
 # (Glad-Labs/poindexter#132). Single SDK covers every OAI-compat
 # backend (vLLM, llama.cpp, LocalAI, OpenRouter, Together, Groq,
-# DeepInfra, api.openai.com). Provider ships disabled-by-default;
-# import cost is paid only when an operator opts in via app_settings.
+# DeepInfra, api.openai.com). Provider ships disabled-by-default.
 openai = "^1.109"
 # anthropic re-added 2026-04-26 for the AnthropicProvider plugin (gh #133).
-# Plugin ships disabled by default (app_settings.plugin.llm_provider.anthropic.enabled
-# = false) — operators opt in. Kept on the latest 0.97 SDK so Claude 4.x
-# (Opus 4.7, Sonnet 4.6, Haiku 4.5) and prompt-caching / extended-thinking
-# features work without surgery.
+# Disabled by default. Latest 0.97 SDK for Claude 4.x + prompt caching.
 anthropic = "^0.97.0"
+# google-genai re-added 2026-04-26 (GH#134) for the GeminiProvider plugin.
+# Optional poetry extra so default install stays slim — operators install
+# `poetry install --extras gemini` when enabling the plugin.
+google-genai = { version = "^1.0", optional = true }
 
 # Async/Concurrency
 aiohttp = "^3.9"
@@ -121,6 +120,12 @@ pyroscope-io = "^1.0.6"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
+# Optional cloud-LLM provider plugins. Install one or more like:
+#   poetry install --extras gemini
+# When the extra isn't installed and an operator enables the
+# corresponding plugin, the provider raises GeminiProviderError on
+# the first call with a clear "pip install" hint.
+gemini = ["google-genai"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing
@@ -239,6 +244,10 @@ cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQASta
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
 openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"
 anthropic = "cofounder_agent.plugins.llm_providers.anthropic:AnthropicProvider"
+# Gemini Developer API (Google AI Studio mode). Ships disabled by default —
+# operator must set plugin.llm_provider.gemini.enabled=true and configure
+# the api_key secret before any call goes out. See GH#134.
+gemini = "cofounder_agent.plugins.llm_providers.gemini:GeminiProvider"
 
 [build-system]
 requires = ["poetry-core"]

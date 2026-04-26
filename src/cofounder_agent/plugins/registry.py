@@ -264,6 +264,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
+        # Gemini (Google AI Studio). Ships disabled by default — see
+        # `plugin.llm_provider.gemini.enabled` in app_settings. GH#134.
+        ("llm_providers", "plugins.llm_providers.gemini", "GeminiProvider"),
         # Core Stages (Phase E migration — one per file, unblocks tearing
         # down content_router_service.py over a handful of commits).
         ("stages", "services.stages.verify_task", "VerifyTaskStage"),

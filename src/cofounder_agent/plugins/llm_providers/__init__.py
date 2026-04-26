@@ -12,7 +12,14 @@ image-providers architecture:
   one has its own ``app_settings.plugin.llm_provider.<name>.enabled``
   flag the operator must flip to use it.
 
-The plugin pattern keeps paid-vendor SDKs (Anthropic, OpenAI direct,
-Groq, etc.) out of the hot path until an operator explicitly opts in,
-which keeps the core install free, fast, and self-hostable.
+The plugin pattern keeps paid-vendor SDKs (Anthropic, Gemini, future
+Bedrock/Vertex/Groq) out of the hot path until an operator explicitly
+opts in, which keeps the core install free, fast, and self-hostable.
+
+First-class, non-OpenAI-compat providers live here because their APIs
+expose features the OAI-compat shim discards — Anthropic prompt
+caching + extended thinking, Gemini long context + native search
+grounding + future video input.
 """
+
+from __future__ import annotations
