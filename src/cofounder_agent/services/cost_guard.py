@@ -228,7 +228,7 @@ class CostGuard:
                 SELECT COALESCE(SUM(cost_usd), 0.0) AS total
                 FROM cost_logs
                 WHERE created_at >= {window_sql}
-                  AND provider NOT IN ('electricity', 'ollama')
+                  AND provider NOT IN ('electricity', 'ollama', 'ollama_native')
                 """,
             )
             return float(row["total"]) if row else 0.0

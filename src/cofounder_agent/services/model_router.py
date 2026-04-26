@@ -258,7 +258,7 @@ class ModelRouter:
                 "SELECT COALESCE(SUM(cost_usd), 0) AS total "
                 "FROM cost_logs "
                 "WHERE created_at >= date_trunc('month', NOW()) "
-                "  AND provider NOT IN ('electricity', 'ollama')"
+                "  AND provider NOT IN ('electricity', 'ollama', 'ollama_native')"
             )
             if row:
                 self._session_cloud_spend = float(row["total"])
