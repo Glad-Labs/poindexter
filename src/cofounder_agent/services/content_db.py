@@ -153,13 +153,22 @@ class ContentDatabase(DatabaseServiceMixin):
                 # Also write to the post_tags junction table (authoritative source per migration 014).
                 # tag_ids on posts is kept in sync for backward compat but post_tags is canonical.
                 # Single INSERT with unnest() replaces N per-tag round-trips (issue #703).
+                # tag_id is a uuid column — cast unnest to uuid[] so postgres
+                # coerces the str list. ``::text[]`` was a leftover from when
+                # tag_ids lived in a text[] column on posts (pre-#703); after
+                # the post_tags split (migration 0037) the type stopped
+                # matching, and any approve-with-tags publish 500'd with
+                # ``column "tag_id" is of type uuid but expression is of
+                # type text``. Caught 2026-04-25 when the mem0 article was
+                # the first post to hit the publish path with non-empty
+                # tag_ids since the schema change.
                 if tag_ids:
                     clean_ids = [str(tid) for tid in tag_ids if tid]
                     if clean_ids:
                         await conn.execute(
                             """
                             INSERT INTO post_tags (post_id, tag_id)
-                            SELECT $1, unnest($2::text[])
+                            SELECT $1, unnest($2::uuid[])
                             ON CONFLICT (post_id, tag_id) DO NOTHING
                             """,
                             post_id,
