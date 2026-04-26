@@ -65,6 +65,14 @@ classifiers = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Plugin discovery — setuptools entry_points groups discovered at runtime
+# via importlib.metadata.entry_points(). Mirrored in
+# src/cofounder_agent/pyproject.toml (poetry-style) so both packaging
+# layouts surface the same providers. See
+# docs/architecture/plugin-architecture.md for the full design.
+[project.entry-points."poindexter.audio_gen_providers"]
+"stable-audio-open-1.0" = "cofounder_agent.services.audio_gen_providers.stable_audio_open:StableAudioOpenProvider"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "src", "src/cofounder_agent"]

@@ -221,6 +221,13 @@ cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQASta
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
 openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"
 
+[tool.poetry.plugins."poindexter.audio_gen_providers"]
+# Stable Audio Open 1.0 — Stability AI Community License (free for
+# commercial use under $1M revenue). Operators above that threshold
+# must swap to MusicGen (Meta, MIT) or get a Stability commercial
+# license. See Glad-Labs/poindexter#125.
+"stable-audio-open-1.0" = "cofounder_agent.services.audio_gen_providers.stable_audio_open:StableAudioOpenProvider"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
