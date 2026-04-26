@@ -256,6 +256,13 @@ anthropic = "cofounder_agent.plugins.llm_providers.anthropic:AnthropicProvider"
 # the api_key secret before any call goes out. See GH#134.
 gemini = "cofounder_agent.plugins.llm_providers.gemini:GeminiProvider"
 
+[tool.poetry.plugins."poindexter.audio_gen_providers"]
+# Stable Audio Open 1.0 — Stability AI Community License (free for
+# commercial use under $1M revenue). Operators above that threshold
+# must swap to MusicGen (Meta, MIT) or get a Stability commercial
+# license. See Glad-Labs/poindexter#125.
+"stable-audio-open-1.0" = "cofounder_agent.services.audio_gen_providers.stable_audio_open:StableAudioOpenProvider"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

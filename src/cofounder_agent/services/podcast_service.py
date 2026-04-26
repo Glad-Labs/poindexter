@@ -620,6 +620,14 @@ class PodcastService:
                         result.duration_seconds,
                         voice,
                     )
+                    # Opt-in intro / outro stings via AudioGenProvider plugin.
+                    # Default off — only fires when audio_gen_engine names a
+                    # registered provider (Glad-Labs/poindexter#125).
+                    # Best-effort: failures log and the episode ships
+                    # without stings.
+                    await self._maybe_generate_stings(
+                        post_id=post_id, title=title,
+                    )
                     return result
                 last_error = result.error
             except Exception as e:
@@ -629,6 +637,78 @@ class PodcastService:
         error_msg = f"All voices failed. Last error: {last_error}"
         logger.error("[PODCAST] %s", error_msg)
         return EpisodeResult(success=False, error=error_msg)
+
+    async def _maybe_generate_stings(
+        self, *, post_id: str, title: str,
+    ) -> None:
+        """Opt-in intro / outro stings via the AudioGenProvider plugin
+        (Glad-Labs/poindexter#125).
+
+        Renders two short clips next to the episode MP3:
+
+        - ``{post_id}-intro.wav`` — opener sting
+        - ``{post_id}-outro.wav`` — closer sting
+
+        Default OFF: ``app_settings.audio_gen_engine`` must name a
+        registered provider. Until then this method is a no-op so the
+        existing voice-only podcasts continue shipping unchanged.
+
+        Never raises. Stings are additive — a failure here must not
+        invalidate the successfully-rendered episode.
+        """
+        if self._site_config is None:
+            return
+        try:
+            from services.audio_gen_service import (
+                generate_audio,
+                is_audio_gen_enabled,
+            )
+        except Exception as e:  # Defensive: import failures don't break podcast
+            logger.debug(
+                "[PODCAST] audio_gen_service unavailable: %s", e,
+            )
+            return
+
+        if not is_audio_gen_enabled(self._site_config):
+            return
+
+        try:
+            intro_prompt = (
+                self._site_config.get("podcast_intro_sting_prompt", "")
+                or f"3-second podcast intro sting, energetic, no vocals, "
+                f"intro for an episode about: {title}"
+            )
+            outro_prompt = (
+                self._site_config.get("podcast_outro_sting_prompt", "")
+                or f"3-second podcast outro sting, gentle fade, no vocals, "
+                f"outro for an episode about: {title}"
+            )
+        except Exception:
+            intro_prompt = (
+                f"3-second podcast intro sting, energetic, no vocals, "
+                f"intro for an episode about: {title}"
+            )
+            outro_prompt = (
+                f"3-second podcast outro sting, gentle fade, no vocals, "
+                f"outro for an episode about: {title}"
+            )
+
+        intro_path = str(self.output_dir / f"{post_id}-intro.wav")
+        outro_path = str(self.output_dir / f"{post_id}-outro.wav")
+
+        try:
+            await generate_audio(
+                prompt=intro_prompt, kind="intro",
+                site_config=self._site_config,
+                output_path=intro_path, duration_s=3.0,
+            )
+            await generate_audio(
+                prompt=outro_prompt, kind="outro",
+                site_config=self._site_config,
+                output_path=outro_path, duration_s=3.0,
+            )
+        except Exception as e:
+            logger.warning("[PODCAST] sting generation failed: %s", e)
 
     def _resolve_tts_provider(self, engine: str) -> Any | None:
         """Look up a registered ``TTSProvider`` by name.

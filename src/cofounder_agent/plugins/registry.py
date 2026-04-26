@@ -56,6 +56,7 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "image_providers": "poindexter.image_providers",
     "tts_providers": "poindexter.tts_providers",
     "video_providers": "poindexter.video_providers",
+    "audio_gen_providers": "poindexter.audio_gen_providers",
 }
 
 
@@ -176,6 +177,9 @@ def get_video_providers() -> list[Any]:
     settings flip can swap engines without code changes.
     """
     return list(_cached(ENTRY_POINT_GROUPS["video_providers"]))
+def get_audio_gen_providers() -> list[Any]:
+    """Return all registered AudioGenProvider instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["audio_gen_providers"]))
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +283,15 @@ def get_core_samples() -> dict[str, list[Any]]:
         # flip (``app_settings.video_engine``).
         ("video_providers", "services.video_providers.ken_burns_slideshow", "KenBurnsSlideshowProvider"),
         ("video_providers", "services.video_providers.wan2_1", "Wan21Provider"),
+        # Core AudioGenProviders — Stable Audio Open 1.0 (Glad-Labs/poindexter#125).
+        # Stability AI Community License: free for commercial use under $1M
+        # revenue. Operators above that threshold should swap to MusicGen
+        # (Meta, MIT) or get a Stability commercial license.
+        (
+            "audio_gen_providers",
+            "services.audio_gen_providers.stable_audio_open",
+            "StableAudioOpenProvider",
+        ),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
