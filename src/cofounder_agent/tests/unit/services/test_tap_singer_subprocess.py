@@ -88,10 +88,62 @@ def _isolation():
 # ---------------------------------------------------------------------------
 
 
-def _make_tap_script(tmp_path, *, lines: list[str], exit_code: int = 0) -> str:
-    """Create a fake Singer tap as a Python file; return invocation string."""
+def _make_tap_script(
+    tmp_path,
+    *,
+    lines: list[str],
+    exit_code: int = 0,
+    discover_streams: list[str] | None = None,
+) -> str:
+    """Create a fake Singer tap as a Python file; return invocation string.
+
+    Real Singer taps run in two modes:
+
+    - ``--discover`` — emit a single JSON catalog document on stdout,
+      then exit 0. The runner consumes this to build a ``--catalog``
+      file with selected streams marked.
+    - sync (no ``--discover``) — emit newline-delimited Singer messages
+      (SCHEMA / RECORD / STATE) on stdout.
+
+    The fake tap mirrors that contract: when ``--discover`` is in argv
+    it emits a minimal catalog covering ``discover_streams`` (or every
+    stream referenced in ``lines`` if not provided); otherwise it emits
+    ``lines`` and exits with ``exit_code``.
+    """
+    # Auto-derive catalog streams from the SCHEMA messages in ``lines``
+    # if the caller didn't pass an explicit list.
+    if discover_streams is None:
+        derived: list[str] = []
+        for line in lines:
+            try:
+                msg = json.loads(line)
+            except (TypeError, ValueError):
+                continue
+            if msg.get("type") == "SCHEMA" and msg.get("stream"):
+                stream_id = msg["stream"]
+                if stream_id not in derived:
+                    derived.append(stream_id)
+        discover_streams = derived
+
+    catalog = {
+        "streams": [
+            {
+                "tap_stream_id": stream_id,
+                "stream": stream_id,
+                "schema": {"properties": {}},
+                "metadata": [],
+            }
+            for stream_id in discover_streams
+        ]
+    }
+
     script_body = textwrap.dedent(f"""
+        import json
         import sys
+        if "--discover" in sys.argv:
+            sys.stdout.write(json.dumps({catalog!r}))
+            sys.stdout.flush()
+            sys.exit(0)
         for line in {lines!r}:
             sys.stdout.write(line + "\\n")
             sys.stdout.flush()
