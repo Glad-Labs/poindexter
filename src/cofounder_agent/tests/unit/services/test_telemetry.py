@@ -6,14 +6,17 @@ Tests cover:
 - Function returns early when ENABLE_TRACING is not "true"
 - Function returns early when ENABLE_TRACING=true but components are None
 - Module-level constants and guard variables
-- OTLP endpoint configured — span processor added, FastAPI instrumented
 - OTLP endpoint not configured — no-op provider, no span processor
-- OTLP exporter setup failure is caught and logged
-- set_tracer_provider RuntimeError is caught when provider already set
-- FastAPIInstrumentor error is caught and logged
-- OpenAIInstrumentor instrumentation (available / unavailable)
 - Idempotency latch (_initialized) — second call short-circuits
 - No-op early returns DO NOT set the latch (so lifespan re-init can retry)
+
+NOTE: 12 tests covering the OTLP endpoint, FastAPIInstrumentor, and
+OpenAIInstrumentor paths were removed in commit on
+``test/fix-stale-openai-instrumentor-tests`` (Glad-Labs/poindexter#129)
+because every one called ``monkeypatch.setattr(telemetry_mod,
+"OpenAIInstrumentor", ...)`` against a symbol that was deliberately
+deleted in commit 68563f45 (drop dead OpenAI instrumentor). See the
+inline note where the classes used to live for the full rationale.
 """
 
 import os
@@ -200,160 +203,34 @@ def _apply_mocks(monkeypatch, mocks):
         monkeypatch.setattr(telemetry_mod, key, mocks[key])
 
 
-class TestSetupTelemetryWithOtlpEndpoint:
-    def test_span_processor_added_when_endpoint_set(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-
-        setup_telemetry(MagicMock(), _sc(), service_name="test-svc")
-
-        mocks["_provider"].add_span_processor.assert_called_once()
-
-    def test_fastapi_instrumented_when_endpoint_set(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-
-        app = MagicMock()
-        setup_telemetry(app, _sc(), service_name="test-svc")
-
-        mocks["FastAPIInstrumentor"].instrument_app.assert_called_once()
-
-    def test_tracer_provider_set_globally(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-
-        setup_telemetry(MagicMock(), _sc())
-
-        mocks["trace"].set_tracer_provider.assert_called_once_with(mocks["_provider"])
-
-    def test_service_name_passed_to_resource(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-
-        setup_telemetry(MagicMock(), _sc(), service_name="my-custom-service")
-
-        call_kwargs = mocks["Resource"].create.call_args
-        attrs = call_kwargs[1].get("attributes") or (call_kwargs[0][0] if call_kwargs[0] else {})
-        assert attrs.get("service.name") == "my-custom-service"
-
-    def test_otlp_exporter_setup_failure_is_caught(self, monkeypatch):
-        """If OTLPSpanExporter(...) raises, setup should not propagate the exception."""
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        mocks["OTLPSpanExporter"].side_effect = RuntimeError("connection refused")
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-
-        # Should not raise
-        setup_telemetry(MagicMock(), _sc())
-
-    def test_set_tracer_provider_runtime_error_is_caught(self, monkeypatch):
-        """If set_tracer_provider raises RuntimeError about 'current TracerProvider', continue."""
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-        mocks["trace"].set_tracer_provider.side_effect = RuntimeError(
-            "current TracerProvider already set"
-        )
-
-        # Should not raise
-        setup_telemetry(MagicMock(), _sc())
-
-    def test_set_tracer_provider_other_runtime_error_is_not_caught(self, monkeypatch):
-        """RuntimeErrors about something else should propagate (caught by outer try/except)."""
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-        mocks["trace"].set_tracer_provider.side_effect = RuntimeError("unrelated error")
-
-        # The outer except Exception catches this and logs — should not propagate
-        setup_telemetry(MagicMock(), _sc())
-
-    def test_fastapi_instrumentor_failure_is_caught(self, monkeypatch):
-        """Failure in FastAPIInstrumentor.instrument_app should not crash setup."""
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-        mocks["FastAPIInstrumentor"].instrument_app.side_effect = RuntimeError(
-            "instrumentation failed"
-        )
-
-        # Should not raise
-        setup_telemetry(MagicMock(), _sc())
-
-
-class TestSetupTelemetryWithOpenAiInstrumentor:
-    def test_openai_instrumentor_called_when_available(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-
-        mock_oai_instance = MagicMock()
-        mock_oai_cls = MagicMock(return_value=mock_oai_instance)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", mock_oai_cls)
-
-        setup_telemetry(MagicMock(), _sc())
-
-        mock_oai_instance.instrument.assert_called_once()
-
-    def test_openai_instrumentor_failure_is_caught(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-
-        mock_oai_instance = MagicMock()
-        mock_oai_instance.instrument.side_effect = RuntimeError("openai instrument failed")
-        mock_oai_cls = MagicMock(return_value=mock_oai_instance)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", mock_oai_cls)
-
-        # Should not raise
-        setup_telemetry(MagicMock(), _sc())
-
-    def test_openai_instrumentor_skipped_when_none(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-
-        # No exception expected
-        setup_telemetry(MagicMock(), _sc())
-
-
-class TestSetupTelemetryOtlpCaptureEnvVar:
-    def test_genai_capture_env_var_set_when_tracing_enabled(self, monkeypatch):
-        """OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT should be set to 'true'."""
-        monkeypatch.setenv("ENABLE_TRACING", "true")
-        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
-        monkeypatch.delenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", raising=False)
-        mocks = _make_mock_components()
-        _apply_mocks(monkeypatch, mocks)
-        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
-
-        setup_telemetry(MagicMock(), _sc())
-
-        assert os.getenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT") == "true"
+# ---------------------------------------------------------------------------
+# NOTE: Three test classes were removed in commit on
+# `test/fix-stale-openai-instrumentor-tests` (Glad-Labs/poindexter#129):
+#
+#   - TestSetupTelemetryWithOtlpEndpoint  (8 tests)
+#   - TestSetupTelemetryWithOpenAiInstrumentor  (3 tests)
+#   - TestSetupTelemetryOtlpCaptureEnvVar  (1 test)
+#
+# Every test in those classes called
+# ``monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", ...)``,
+# which raised ``AttributeError`` because the ``OpenAIInstrumentor``
+# symbol was deliberately removed from ``services/telemetry.py`` in
+# commit 68563f45 ("fix(observability): pyroscope-io as core dep, drop
+# dead OpenAI instrumentor, ..."). The integration was dead code — the
+# worker uses Ollama (HTTP/OpenAI-compat via httpx) and the Anthropic
+# SDK, never the ``openai`` SDK, so the instrumentor had nothing to
+# wrap. LLM-level tracing is provided directly by
+# ``services/llm_providers/dispatcher.py`` via explicit
+# ``llm.dispatch_complete`` / ``llm.dispatch_embed`` /
+# ``llm.get_provider`` spans, regardless of provider.
+#
+# Per the ticket directive ("If deliberately removed: delete the 3
+# affected test classes wholesale. Don't try to be clever — they
+# reference a feature that no longer exists."), the classes were
+# dropped rather than re-pointed at the new tracing surface. New
+# coverage of the OTLP endpoint and FastAPI instrumentation paths
+# is a separate ticket.
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
