@@ -21,11 +21,36 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 """
 
 import logging
+import re
 from typing import Any
 
 from fastapi import FastAPI
 
 from services.logger_config import get_logger
+
+# structlog's ConsoleRenderer prefixes every record with a colorized ISO
+# timestamp. When the record propagates to stdlib logging and Sentry's
+# LoggingIntegration captures it, the rendered string (timestamp + ANSI +
+# message) becomes the event's `message` and `logentry.message`. Sentry's
+# default fingerprint hashes the message, so identical errors get a unique
+# fingerprint per timestamp — GlitchTip then creates a brand-new "issue"
+# every occurrence instead of grouping them. Normalizing here lets the
+# default fingerprint do its job. See gitea #290.
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+_LEADING_ISO_TS_RE = re.compile(
+    r"^\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+"
+)
+
+
+def _strip_log_prefix(text: str) -> str:
+    """Remove ANSI color codes and a leading ISO-8601 timestamp from a
+    structlog-rendered message so the same logical error fingerprints
+    consistently across occurrences. Callers must pre-check the value is
+    actually a str.
+    """
+    cleaned = _ANSI_ESCAPE_RE.sub("", text)
+    cleaned = _LEADING_ISO_TS_RE.sub("", cleaned)
+    return cleaned
 
 try:
     import sentry_sdk
@@ -192,17 +217,20 @@ class SentryIntegration:
             return False
 
     @staticmethod
-    def _before_send(event: dict, hint: dict) -> dict | None:
+    def _before_send(event: dict, hint: dict) -> dict:
         """
         Filter events before sending to Sentry.
-        Remove sensitive data (passwords, tokens, etc.)
+        Remove sensitive data (passwords, tokens, etc.) and normalize
+        message-shaped fields so recurring errors fingerprint together.
 
         Args:
             event: The event dictionary
             hint: Additional hint information with exception details
 
         Returns:
-            Modified event dict, or None to drop the event
+            The event dict (mutated in place). We never drop events here —
+            sampling lives in sentry_sdk.init's traces_sample_rate / event
+            quotas, not in this hook.
         """
         # Check if this is an error event we should capture
         if event.get("level") == "error" or (hint and "exc_info" in hint):
@@ -221,6 +249,22 @@ class SentryIntegration:
                     event["request"]["url"] = url.replace(
                         url[url.find("api_key=") :], "api_key=[REDACTED]"
                     )
+
+        # Strip structlog's ANSI prefix + ISO timestamp from any message-shaped
+        # field BEFORE Sentry hashes it for fingerprinting. Without this, the
+        # same recurring error spawns a new GlitchTip "issue" every occurrence.
+        # Applied to every event (not just errors) so manual capture_message
+        # calls also benefit. See gitea #290.
+        logentry = event.get("logentry")
+        if isinstance(logentry, dict):
+            for key in ("message", "formatted"):
+                value = logentry.get(key)
+                if isinstance(value, str):
+                    logentry[key] = _strip_log_prefix(value)
+
+        top_message = event.get("message")
+        if isinstance(top_message, str):
+            event["message"] = _strip_log_prefix(top_message)
 
         return event
 
