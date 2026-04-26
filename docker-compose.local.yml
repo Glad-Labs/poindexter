@@ -81,6 +81,10 @@ services:
       - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus-rules:/etc/prometheus/rules
       - prometheus-data:/prometheus
+      # Uptime Kuma metrics API key, sourced from ~/.poindexter/bootstrap.toml
+      # by scripts/start-stack.sh. Read by basic_auth.password_file in
+      # prometheus.yml. See poindexter#136.
+      - ${USERPROFILE:-.}/.poindexter/uptime-kuma-api-key:/etc/prometheus/secrets/uptime-kuma-api-key:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

@@ -40,13 +40,16 @@ scrape_configs:
 
   # Uptime Kuma — HTTP / TCP monitor response times & up/down status.
   # Auth via API key (password-only basic auth). Key lives in
-  # ~/.poindexter/bootstrap.toml as uptime_kuma_api_key.
+  # ~/.poindexter/bootstrap.toml as uptime_kuma_api_key. start-stack.sh
+  # materializes it into ~/.poindexter/uptime-kuma-api-key, which the
+  # docker-compose prometheus service mounts at /etc/prometheus/secrets/.
+  # See poindexter#136.
   - job_name: uptime-kuma
     scrape_interval: 30s
     metrics_path: /metrics
     basic_auth:
       username: ""
-      password: "uk1_3Q6UA_-CzuydfWqNPxKXtZTTjg1vRU9NUNqnkXvp"
+      password_file: /etc/prometheus/secrets/uptime-kuma-api-key
     static_configs:
       - targets: ["uptime-kuma:3001"]
 
