@@ -55,6 +55,7 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "topic_sources": "poindexter.topic_sources",
     "image_providers": "poindexter.image_providers",
     "tts_providers": "poindexter.tts_providers",
+    "video_providers": "poindexter.video_providers",
 }
 
 
@@ -166,6 +167,17 @@ def get_tts_providers() -> list[Any]:
     return list(_cached(ENTRY_POINT_GROUPS["tts_providers"]))
 
 
+def get_video_providers() -> list[Any]:
+    """Return all registered VideoProvider instances.
+
+    Mirrors :func:`get_image_providers`. Tracks GitHub #124 — Wan 2.1
+    T2V 1.3B as the first generation provider; the legacy Ken Burns
+    slideshow pipeline ships as a sibling ``compose`` provider so a
+    settings flip can swap engines without code changes.
+    """
+    return list(_cached(ENTRY_POINT_GROUPS["video_providers"]))
+
+
 # ---------------------------------------------------------------------------
 # Core sample plugins — registered imperatively as a workaround for this
 # project's poetry packaging config (see pyproject.toml note). Third-party
@@ -261,6 +273,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # via ``app_settings.podcast_tts_engine`` (default: edge_tts).
         ("tts_providers", "services.tts_providers.edge_tts", "EdgeTTSProvider"),
         ("tts_providers", "services.tts_providers.kokoro", "KokoroTTSProvider"),
+        # Core VideoProviders — GH #124. Wan 2.1 T2V 1.3B (Apache-2.0)
+        # as the first generation provider; ken_burns_slideshow wraps
+        # the legacy video-server pipeline so the swap is a settings
+        # flip (``app_settings.video_engine``).
+        ("video_providers", "services.video_providers.ken_burns_slideshow", "KenBurnsSlideshowProvider"),
+        ("video_providers", "services.video_providers.wan2_1", "Wan21Provider"),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),

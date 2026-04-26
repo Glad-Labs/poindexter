@@ -226,6 +226,13 @@ flux_schnell = "cofounder_agent.services.image_providers.flux_schnell:FluxSchnel
 edge_tts = "cofounder_agent.services.tts_providers.edge_tts:EdgeTTSProvider"
 kokoro = "cofounder_agent.services.tts_providers.kokoro:KokoroTTSProvider"
 
+# GH-124: Video plugin contract. ``ken_burns_slideshow`` wraps the
+# legacy video-server pipeline; ``wan2.1-1.3b`` is the Apache-2.0
+# generation provider. Selection via ``app_settings.video_engine``.
+[tool.poetry.plugins."poindexter.video_providers"]
+ken_burns_slideshow = "cofounder_agent.services.video_providers.ken_burns_slideshow:KenBurnsSlideshowProvider"
+"wan2.1-1.3b" = "cofounder_agent.services.video_providers.wan2_1:Wan21Provider"
+
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"

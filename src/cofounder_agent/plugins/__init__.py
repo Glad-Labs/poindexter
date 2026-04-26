@@ -69,6 +69,7 @@ from .registry import (
     get_taps,
     get_topic_sources,
     get_tts_providers,
+    get_video_providers,
 )
 from .scheduler import PluginScheduler
 from .secrets import (
@@ -82,6 +83,7 @@ from .secrets import (
     set_secret,
 )
 from .stage import Adapter, Provider, Reviewer, Stage, StageResult
+from .video_provider import VideoProvider, VideoResult
 from .stage_runner import (
     DEFAULT_STAGE_ORDER,
     StageRunner,
@@ -142,5 +144,9 @@ __all__ = [
     "get_topic_sources",
     "get_image_providers",
     "get_tts_providers",
+    "get_video_providers",
     "get_core_samples",
+    # VideoProvider (GH #124)
+    "VideoProvider",
+    "VideoResult",
 ]
