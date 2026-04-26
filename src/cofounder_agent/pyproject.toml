@@ -23,8 +23,14 @@ pydantic-settings = "^2.0"
 # Database
 asyncpg = "^0.31"
 # sqlalchemy, psycopg2-binary, sqladmin removed — admin panel unused, all DB via asyncpg
-# anthropic, openai removed — zero imports, pipeline uses Ollama via httpx
+# anthropic removed — zero imports, pipeline uses Ollama via httpx
 # google-genai removed — only in legacy llm_client.py (dead code)
+# openai re-added 2026-04-25 — required by OpenAICompatProvider plugin
+# (Glad-Labs/poindexter#132). Single SDK covers every OAI-compat
+# backend (vLLM, llama.cpp, LocalAI, OpenRouter, Together, Groq,
+# DeepInfra, api.openai.com). Provider ships disabled-by-default;
+# import cost is paid only when an operator opts in via app_settings.
+openai = "^1.109"
 
 # Async/Concurrency
 aiohttp = "^3.9"
