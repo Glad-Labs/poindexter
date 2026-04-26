@@ -427,3 +427,5 @@ No code runs without a green light on each.
 4. Per-handler markdown docs under `docs/integrations/` added alongside each handler.
 
 No pause for review between phases. Report on Telegram when Phase 1 is live.
+
+<!-- DOC-SYNC 2026-04-26: section 3.2 references `services/integrations/handlers.py`; current impl uses a `services/integrations/handlers/` package directory instead. RFC text still describes the originally proposed shape. -->

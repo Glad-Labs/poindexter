@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 If this is a new session, read these in order:
 
-1. `~/.claude/projects/C--users-mattm-glad-labs-website/memory/matts_voice.md` — How Matt thinks and communicates
-2. `~/.claude/projects/C--users-mattm-glad-labs-website/memory/decision_log.md` — Key decisions and WHY
+1. `~/.claude/projects/C--Users-mattm/memory/matts_voice.md` — How Matt thinks and communicates
+2. `~/.claude/projects/C--Users-mattm/memory/decision_log.md` — Key decisions and WHY
 3. The latest `session_*_handoff.md` — What was built and what's pending
 
 ## Project Overview
@@ -35,11 +35,11 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 | GitHub        | https://github.com/Glad-Labs/glad-labs-codebase |
 | Project board | https://github.com/orgs/Glad-Labs/projects/2    |
 
-### Key Numbers (as of April 25, 2026)
+### Key Numbers (as of April 26, 2026)
 
-- 43+ published posts on gladlabs.io
+- 45+ published posts on gladlabs.io
 - 100+ services in `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
-- 14 Grafana dashboards, 5 alert rules
+- 6 Grafana dashboards (post-merge consolidation), 4 alert rules
 - 6,100+ Python unit tests passing
 - 200+ app_settings keys (roughly 60 added in the #198 hardening sweep)
 - 1,900+ embeddings across posts / issues / audit / memory / brain
@@ -231,7 +231,7 @@ target any S3-compatible provider (R2, S3, B2, MinIO). The old
 
 ## Monitoring
 
-- **Grafana Cloud:** gladlabs.grafana.net — 14 dashboards
+- **Grafana Cloud:** gladlabs.grafana.net — 6 dashboards (merged set)
 - **Dashboards:** Ops (home), Performance, Hardware, Pipeline, Cost, Quality, plus built-in
 - **Alerts → Telegram + Discord:** stuck tasks, failure rate, worker offline, GPU temp, VRAM usage
 - **Playlist:** "Glad Labs Command Center" cycles all dashboards every 30s
