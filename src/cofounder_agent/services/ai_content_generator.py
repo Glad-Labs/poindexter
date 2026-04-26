@@ -1,11 +1,11 @@
 """
 Unified AI Content Generator Service
 
-Handles blog post generation on local Ollama with a fallback template
-when the model is unreachable. This is the legacy Ollama-native
-orchestrator — the stages-based pipeline in services/stages/* is the
-plugin-aware replacement and will eventually delete this file
-wholesale.
+Handles blog post generation on local Ollama. When every model in the
+configured chain fails, raises ``AllModelsFailedError`` — there is NO
+silent fallback to template content (Glad-Labs/poindexter#121). The
+stages-based pipeline in services/stages/* is the plugin-aware
+replacement and will eventually delete this file wholesale.
 
 Features:
 - Ollama model discovery + retry across installed models
@@ -13,6 +13,7 @@ Features:
 - Quality assurance with refinement loops
 - Content metrics and performance tracking
 - Electricity cost tracking from the Ollama result dict
+- Fail-loud when models exhaust — never publish a stub
 
 ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 
@@ -40,6 +41,37 @@ from services.logger_config import get_logger
 from .prompt_manager import get_prompt_manager
 
 logger = get_logger(__name__)
+
+
+class AllModelsFailedError(RuntimeError):
+    """Raised when every model in the configured chain fails.
+
+    Replaces the old "fall back to a hardcoded markdown template" behavior
+    (Glad-Labs/poindexter#121). Serving template content as a successful
+    publish was a quality-floor breach: it bypassed the QA gates the
+    pipeline depends on, was treated as ``status='success'`` by callers,
+    and masked transient Ollama outages as "the writer is fine, just
+    boring." The new contract is: if the chain exhausts, surface it.
+
+    The pipeline runner (``plugins/stage_runner.py``) catches this,
+    halts the stage, and ``content_router_service`` propagates the halt
+    into ``status='failed'`` with a ``task.failed`` webhook so the
+    operator sees the real failure mode instead of a published stub.
+
+    Attributes mirror the old ``_handle_all_providers_failed`` log so
+    Sentry still has the same per-attempt detail for fingerprinting.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        attempts: list[tuple[str, str]] | None = None,
+        topic: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.attempts = list(attempts) if attempts else []
+        self.topic = topic
 
 
 class ContentValidationResult:
@@ -874,54 +906,75 @@ class AIContentGenerator:
         return None
 
     # v2.8 removed _try_huggingface + all paid-provider fallback methods.
-    # Only the Ollama path + fallback template remain.
+    # Glad-Labs/poindexter#121 (this commit) removed the silent
+    # template-fallback that ran when every Ollama model failed —
+    # serving canned content as ``status='success'`` was a quality-floor
+    # breach. The chain is now Ollama-only and fail-loud.
+    # ``_generate_fallback_content`` is retained ONLY as the
+    # signature-source for the validator's defense-in-depth pattern and
+    # MUST NOT be called from the generation path.
 
     def _handle_all_providers_failed(self, ctx: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
-        """Handle the case where all AI providers failed. Returns fallback content."""
+        """Raise ``AllModelsFailedError`` — never return template content.
+
+        Glad-Labs/poindexter#121: previously returned a hardcoded markdown
+        stub which was then treated as ``status='success'`` by every
+        downstream stage, polluting the public site with generic "Topic is
+        an important area..." filler. The new behavior is fail-loud: log,
+        capture to Sentry, then raise so the stage runner halts and the
+        task transitions to ``failed`` (not ``published``).
+        """
         metrics = ctx["metrics"]
         attempts = ctx["attempts"]
         start_time = ctx["start_time"]
         use_ollama = ctx["use_ollama"]
         topic = ctx["topic"]
-        style = ctx["style"]
-        tone = ctx["tone"]
-        tags = ctx["tags"]
 
-        # If all models fail, use fallback
-        logger.warning("\n%s", "=" * 80)
-        logger.warning("[FAIL] ALL AI MODELS FAILED - Using fallback template")
-        logger.warning("%s", "=" * 80)
-        logger.warning("Attempts made: %d", len(attempts))
+        logger.error("\n%s", "=" * 80)
+        logger.error("[FAIL] ALL AI MODELS FAILED — failing task (no template fallback)")
+        logger.error("%s", "=" * 80)
+        logger.error("Attempts made: %d", len(attempts))
         for provider, error in attempts:
-            logger.warning("   [FAIL] %s: %s", provider, error)
-        logger.warning("Provider summary:")
-        logger.warning("   - Ollama:      %s (tried/available)", use_ollama)
-        logger.warning("%s\n", "=" * 80)
+            logger.error("   [FAIL] %s: %s", provider, error)
+        logger.error("Provider summary:")
+        logger.error("   - Ollama:      %s (tried/available)", use_ollama)
+        logger.error("%s\n", "=" * 80)
 
         # Capture in Sentry as a distinct message so alert rules can target it.
-        # Generated content will be a stub template, not AI output (issue #556).
+        # Behavior change vs. pre-#121: we now raise immediately after
+        # capturing — no stub content, no published placeholder.
         try:
             import sentry_sdk  # pylint: disable=import-outside-toplevel
 
             if sentry_sdk.is_initialized():  # type: ignore[attr-defined]
                 sentry_sdk.capture_message(  # type: ignore[attr-defined]
-                    "ALL AI MODELS FAILED — serving fallback template content",
+                    "ALL AI MODELS FAILED — task will be marked failed",
                     level="error",
-                    extras={"attempts": [{"provider": p, "error": e} for p, e in attempts]},
+                    extras={
+                        "attempts": [{"provider": p, "error": e} for p, e in attempts],
+                        "topic": topic,
+                        "use_ollama": use_ollama,
+                    },
                 )
         except Exception:  # pylint: disable=broad-except
-            # Never let Sentry integration block content delivery, but do log the failure
             logger.error(
                 "[ai_content_generator] Failed to capture all-models-failed event in Sentry",
                 exc_info=True,
             )
 
-        fallback_content = self._generate_fallback_content(topic, style, tone, tags)
-        metrics["model_used"] = "Fallback (no AI models available)"
-        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
+        # Best-effort metrics update for any caller that catches the
+        # exception and inspects partial state. Not used in the success
+        # path because we never return.
+        metrics["model_used"] = None
         metrics["final_quality_score"] = 0.0
         metrics["generation_time_seconds"] = time.time() - start_time
-        return fallback_content, metrics["model_used"], metrics
+
+        attempts_summary = "; ".join(f"{p}: {e}" for p, e in attempts) or "no attempts recorded"
+        raise AllModelsFailedError(
+            f"All AI models failed for topic {topic!r}. Attempts: {attempts_summary}",
+            attempts=attempts,
+            topic=topic,
+        )
 
     async def generate_blog_post(
         self,
@@ -940,7 +993,7 @@ class AIContentGenerator:
 
         Features:
         - User-selected model support (respects frontend UI choices)
-        - Ollama-only generation with fallback template if unreachable
+        - Ollama-only generation; raises when every model fails (#121)
         - Self-validation and quality checking
         - Refinement loop for rejected content
         - Full metrics tracking
@@ -953,12 +1006,23 @@ class AIContentGenerator:
             tags: Content tags
             preferred_model: User-selected model (e.g., 'qwen3.5:35b')
             preferred_provider: User-selected provider (accepts 'ollama';
-                any other value routes straight to the fallback template)
+                any other value short-circuits to the all-models-failed
+                path, which now raises ``AllModelsFailedError`` rather
+                than returning template content)
             writing_style_context: Optional writing style excerpts to include in the prompt
                 for voice/tone matching
 
         Returns:
             Tuple of (content, model_used, metrics_dict)
+
+        Raises:
+            AllModelsFailedError: every configured Ollama model failed
+                or the provider was skipped entirely. Callers should let
+                this propagate — the stage runner halts the pipeline and
+                ``content_router_service`` marks the task as ``failed``.
+                This is the fix for Glad-Labs/poindexter#121: serving a
+                hardcoded template as a successful publish was a quality-
+                floor breach. No silent defaults.
         """
         # Populate internal links cache so the prompt includes real links to our posts
         await self._populate_internal_links_cache()
@@ -974,8 +1038,14 @@ class AIContentGenerator:
         if result:
             return result
 
-        # Ollama failed — return fallback template. (HF path removed v2.8.)
-        return self._handle_all_providers_failed(ctx)
+        # Glad-Labs/poindexter#121: chain exhausted — fail loud. Does not
+        # return; raises ``AllModelsFailedError`` which the stage runner
+        # turns into ``status='failed'`` on the content_task.
+        self._handle_all_providers_failed(ctx)
+        raise AssertionError(
+            "_handle_all_providers_failed must raise; reaching this line "
+            "indicates someone re-introduced a silent template fallback."
+        )
 
     def _generate_fallback_content(
         self,
@@ -984,7 +1054,15 @@ class AIContentGenerator:
         tone: str,
         tags: list[str],
     ) -> str:
-        """Generate fallback content when AI models are unavailable"""
+        """Render the legacy template stub.
+
+        Glad-Labs/poindexter#121: NOT used in the generation path
+        anymore. Retained as a signature reference for the
+        ``content_validator`` defense-in-depth check that refuses
+        template-shaped content if it ever leaks into the pipeline (e.g.
+        someone re-introduces a template fallback by mistake, or a model
+        echoes the prompt-leaked phrases). Do not call from new code.
+        """
 
         tag_str = ", ".join(tags) if tags else "general"
 

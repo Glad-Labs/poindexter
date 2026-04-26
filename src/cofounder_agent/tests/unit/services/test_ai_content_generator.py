@@ -594,7 +594,13 @@ class TestPopulateInternalLinksCache:
 
 
 class TestHandleAllProvidersFailed:
-    def test_returns_fallback_tuple(self):
+    """Glad-Labs/poindexter#121: this method now RAISES instead of
+    returning template content. Serving a stub as a successful publish
+    bypassed every QA gate downstream — the new contract is fail-loud."""
+
+    def test_raises_all_models_failed_error(self):
+        from services.ai_content_generator import AllModelsFailedError
+
         gen = _make_generator()
         ctx = {
             "metrics": {
@@ -613,17 +619,17 @@ class TestHandleAllProvidersFailed:
             "tone": "professional",
             "tags": ["python", "fastapi"],
         }
-        content, model_used, metrics = gen._handle_all_providers_failed(ctx)
+        with pytest.raises(AllModelsFailedError) as exc_info:
+            gen._handle_all_providers_failed(ctx)
 
-        assert isinstance(content, str)
-        assert "FastAPI" in content
-        assert "Fallback" in model_used
-        assert metrics["model_used"] == model_used
-        assert metrics["models_used_by_phase"]["draft"] == model_used
-        assert metrics["final_quality_score"] == 0.0
-        assert metrics["generation_time_seconds"] >= 0
+        # Per-attempt detail preserved for Sentry/operator visibility.
+        assert exc_info.value.attempts == [("ollama", "connection refused")]
+        assert exc_info.value.topic == "FastAPI"
+        assert "FastAPI" in str(exc_info.value)
 
-    def test_no_attempts_handled(self):
+    def test_raises_with_no_attempts(self):
+        from services.ai_content_generator import AllModelsFailedError
+
         gen = _make_generator()
         ctx = {
             "metrics": {
@@ -640,9 +646,8 @@ class TestHandleAllProvidersFailed:
             "tone": "casual",
             "tags": [],
         }
-        content, model_used, metrics = gen._handle_all_providers_failed(ctx)
-        assert "Topic" in content
-        assert "Fallback" in model_used
+        with pytest.raises(AllModelsFailedError):
+            gen._handle_all_providers_failed(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -677,25 +682,45 @@ class TestGenerateBlogPost:
         gen._handle_all_providers_failed.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_falls_through_to_fallback_when_ollama_fails(self):
-        """Post-v2.8: no HF path, so Ollama failure → fallback template."""
+    async def test_raises_when_ollama_chain_exhausts(self):
+        """Glad-Labs/poindexter#121: Ollama exhaustion now raises rather
+        than returning template content. The pipeline runner catches the
+        exception, halts the stage, and ``content_router_service`` marks
+        the task ``failed`` (not ``published``)."""
+        from services.ai_content_generator import AllModelsFailedError
+
         gen = _make_generator()
         gen._populate_internal_links_cache = AsyncMock()
-        gen._prepare_generation_context = AsyncMock(return_value={"some": "ctx"})
+        # Provide a realistic ctx so _handle_all_providers_failed can read
+        # the keys it needs (metrics, attempts, start_time, use_ollama, topic).
+        gen._prepare_generation_context = AsyncMock(return_value={
+            "metrics": {
+                "model_used": None,
+                "models_used_by_phase": {},
+                "final_quality_score": 0.0,
+                "generation_time_seconds": 0,
+            },
+            "attempts": [("ollama", "connection refused")],
+            "start_time": 0.0,
+            "use_ollama": False,
+            "topic": "x",
+            "style": "technical",
+            "tone": "professional",
+            "tags": [],
+            "effective_provider": "ollama",
+            "skip_ollama": False,
+        })
         gen._try_ollama = AsyncMock(return_value=None)
-        gen._handle_all_providers_failed = MagicMock(return_value=(
-            "fallback content", "Fallback (no AI)", {"final_quality_score": 0.0},
-        ))
+        # Real implementation now raises; this test exercises the live
+        # method (no longer mocked) so a regression where someone re-adds
+        # template-return behavior is caught.
 
-        content, model, metrics = await gen.generate_blog_post(
-            topic="x", style="technical", tone="professional",
-            target_length=1000, tags=[],
-        )
-        assert content == "fallback content"
-        assert "Fallback" in model
-        assert metrics["final_quality_score"] == 0.0
+        with pytest.raises(AllModelsFailedError):
+            await gen.generate_blog_post(
+                topic="x", style="technical", tone="professional",
+                target_length=1000, tags=[],
+            )
         gen._try_ollama.assert_awaited_once()
-        gen._handle_all_providers_failed.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

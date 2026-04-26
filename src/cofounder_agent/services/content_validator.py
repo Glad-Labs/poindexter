@@ -330,6 +330,28 @@ FILLER_PHRASE_PATTERNS = [
     r"\bunlock the (?:full )?potential of\b",
 ]
 
+# Template-fallback fingerprint patterns — Glad-Labs/poindexter#121.
+#
+# The legacy ``_generate_fallback_content`` helper used to render a
+# canned markdown stub when every Ollama model failed. That path was
+# removed (the generator now raises ``AllModelsFailedError`` and the
+# task is marked ``failed``), but this pattern set acts as
+# defense-in-depth: if a regression re-introduces template publishing,
+# or a model echoes the template phrases verbatim, the validator
+# refuses the content rather than letting it onto the public site.
+#
+# The phrases are uniquely shaped — not normal author prose — so they
+# can be flagged ``critical`` without false positives.
+FALLBACK_TEMPLATE_PATTERNS = [
+    r"\bis an important area that deserves careful attention\b",
+    r"\bThis article provides insights and practical considerations\b",
+    r"\bTake action today[—–\-]+the insights you gain will compound over time\b",
+    r"\bStrategic Implementation\s*\*\*\s*:\s*How to apply these concepts in practice\b",
+    r"\bLooking ahead,\s+\S.+?\s+continues to evolve\b",
+    r"\bUnderstanding the foundational concepts.+?ensures clarity and depth\b",
+]
+
+
 # LLM image placeholder artifacts — [IMAGE-1: description], [IMAGE: ...], etc.
 IMAGE_PLACEHOLDER_PATTERNS = [
     r"\[IMAGE(?:-\d+)?:\s*[^\]]+\]",  # [IMAGE-1: description] or [IMAGE: description]
@@ -964,6 +986,18 @@ def validate_content(
     issues.extend(_check_patterns(
         full_text, FILLER_PHRASE_PATTERNS, "warning", "filler_phrase",
         "Filler phrase: '{matched}' — replace with a specific, concrete claim"
+    ))
+
+    # 7d-bis. Glad-Labs/poindexter#121: defense-in-depth against the
+    # legacy template-fallback path. The generation chain now raises
+    # ``AllModelsFailedError`` when all models fail (no template
+    # publish), but ANY content matching the canned stub phrases must be
+    # refused outright — even one match is critical because real authors
+    # don't write "is an important area that deserves careful attention".
+    issues.extend(_check_patterns(
+        full_text, FALLBACK_TEMPLATE_PATTERNS, "critical", "fallback_template",
+        "Fallback template signature detected (#121): '{matched}'. Generation likely "
+        "fell through to the legacy stub — refusing publication."
     ))
 
     # 8. Check title for impossible claims (numeric and written-out years)
