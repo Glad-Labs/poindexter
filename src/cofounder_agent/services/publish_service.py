@@ -19,6 +19,8 @@ from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import asyncpg
+
 from services.logger_config import get_logger
 from utils.text_utils import extract_title_from_content
 
@@ -577,12 +579,64 @@ async def publish_post_from_task(
         publish_meta["scheduled_publish_at"] = scheduled_at.isoformat()
     merged["publish_metadata"] = publish_meta
 
+    # gitea#118: this used to be wrapped in a broad try/except that
+    # logged at WARNING and swallowed every exception. The result was a
+    # silent failure mode: the post got created, social/sync/podcast
+    # background tasks were queued, but content_tasks.status stayed on
+    # 'approved' (or 'in_progress') forever — confusing dashboards and
+    # leaving downstream consumers blind to the publish event. The
+    # underlying schema-drift bug (UndefinedColumnError on a stale
+    # _VIEW_COLUMNS allowlist entry) was masked by the inner try/except
+    # in tasks_db.update_task_status, then masked again here.
+    #
+    # New contract:
+    #   - asyncpg.UndefinedColumnError → re-raise (real schema bug; fix it)
+    #   - update_task_status returns None → log ERROR + raise (no row
+    #     matched, the task row is gone or the task_id is wrong)
+    #   - any other DB error → log ERROR (not WARNING) with full traceback
+    #     so it shows up in Sentry/GlitchTip, then continue. The route's
+    #     _finalize_publish shim will re-run the status update; failures
+    #     of the result-payload write are not worth aborting publish for.
     try:
-        await db_service.update_task_status(
+        update_result = await db_service.update_task_status(
             task_id, "published", result=safe_json_dumps(convert_decimals(merged))
         )
-    except Exception as e:
-        logger.warning("[publish_service] Failed to update task result: %s", e)
+    except asyncpg.exceptions.UndefinedColumnError:
+        logger.exception(
+            "[publish_service] schema drift updating task %s — content_tasks "
+            "view is missing a column update_task_status tried to write. "
+            "This is a real bug; fix the SQL or migrate the schema rather "
+            "than catching the exception.",
+            task_id,
+        )
+        raise
+    except Exception:
+        # Non-schema errors (deadlock, conn drop, etc.) are real but
+        # transient — don't kill the publish, just surface them at ERROR
+        # so they hit Sentry instead of getting buried at WARNING.
+        logger.exception(
+            "[publish_service] update_task_status raised for task %s — post "
+            "is created but task row may be stuck. Route-level "
+            "_finalize_publish will retry status='published' write.",
+            task_id,
+        )
+        update_result = None
+
+    if update_result is None:
+        # The post is already in the posts table at this point; we just
+        # couldn't reflect that in content_tasks. The route-level
+        # _finalize_publish defense-in-depth runs an idempotent
+        # ``UPDATE content_tasks SET status='published'`` after this
+        # function returns successfully, so the operator sees a clean
+        # final state even when the result-payload write failed. Log
+        # loud so the underlying issue (transient failure or no-match
+        # WHERE) is visible in monitoring.
+        logger.error(
+            "[publish_service] update_task_status returned None for task %s "
+            "after post creation — route-level _finalize_publish will "
+            "retry the status transition",
+            task_id,
+        )
 
     # ---------------------------------------------------------------
     # 7. Emit webhook
