@@ -224,6 +224,14 @@ async def _prune_one_source(
     plus heavy churn is concentrated on a handful of source_tables, so
     even without a dedicated ``(source_table, created_at)`` index the
     delete is bounded by source-table partition.
+
+    **Summary rows are exempt.** ``CollapseOldEmbeddingsJob`` writes
+    ``is_summary = TRUE`` rows that distill clusters of old raw rows.
+    Pruning those by TTL would defeat the point — the whole reason to
+    summarize is to keep the semantic context after the originals age
+    out. The ``is_summary = FALSE`` filter below means TTL only ever
+    touches raw rows; summaries live until they themselves age out (at
+    which point they'll match a higher-tier collapse).
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     async with pool.acquire() as conn:
@@ -232,6 +240,7 @@ async def _prune_one_source(
             DELETE FROM embeddings
              WHERE source_table = $1
                AND created_at < $2
+               AND COALESCE(is_summary, FALSE) = FALSE
             """,
             source_table, cutoff,
         )

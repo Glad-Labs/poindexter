@@ -41,11 +41,14 @@ class FakeConnection:
             if self._store.boom_on_source == source_table:
                 raise RuntimeError("simulated DB error")
             before = len(self._store.embeddings)
+            # SQL filters out is_summary=TRUE rows so the prune never
+            # removes a CollapseOldEmbeddingsJob-written summary.
             self._store.embeddings = [
                 e for e in self._store.embeddings
                 if not (
                     e["source_table"] == source_table
                     and e["created_at"] < cutoff
+                    and not e.get("is_summary", False)
                 )
             ]
             deleted = before - len(self._store.embeddings)
@@ -216,6 +219,28 @@ class TestRun:
         assert m["total_pruned"] == 2
         assert m["ttl_days"] == {"audit": 30, "brain": 365}
         assert m["skipped"] == ["posts"]
+
+    async def test_summary_rows_protected_from_ttl(self, fake_pool):
+        """Summary rows (is_summary=TRUE) must survive TTL pruning.
+
+        CollapseOldEmbeddingsJob writes summaries that distill old
+        raw rows. The whole point is to preserve semantic context
+        after the originals age out — pruning summaries by TTL would
+        defeat that. Both raw and summary rows of the same age must
+        coexist when only raw is targeted.
+        """
+        fake_pool.store.app_settings = {
+            "embedding_retention_days.audit": "30",
+        }
+        fake_pool.store.embeddings = [
+            _embed("audit", "raw_old", age_days=400),
+            {**_embed("audit", "summary_old", age_days=400), "is_summary": True},
+        ]
+        result = await PruneStaleEmbeddingsJob().run(pool=fake_pool, config={})
+        # Only the raw row dropped; the summary row survived.
+        assert result.changes_made == 1
+        survivors = sorted(e["source_id"] for e in fake_pool.store.embeddings)
+        assert survivors == ["summary_old"]
 
     async def test_invalid_ttl_treated_as_no_ttl(self, fake_pool):
         fake_pool.store.app_settings = {
