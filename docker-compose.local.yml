@@ -378,6 +378,42 @@ services:
       retries: 3
 
   # ===========================================
+  # Wan 2.1 1.3B Video Server — GPU-accelerated text-to-video
+  # Sidecar mate of sdxl-server. Listens on 9840; the
+  # ``Wan21Provider`` plugin POSTs to it via host.docker.internal:9840.
+  # Idle timeout (~120s) auto-unloads the model so SDXL / Ollama can
+  # reclaim VRAM when no video work is queued.
+  # ===========================================
+  wan-server:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.wan
+    container_name: poindexter-wan-server
+    restart: unless-stopped
+    ports:
+      - "9840:9840"
+    environment:
+      WAN_MODEL_ID: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+      WAN_IDLE_TIMEOUT_S: "120"
+    volumes:
+      - ${USERPROFILE:-.}/.poindexter/generated-videos:/root/.poindexter/generated-videos
+      - ${USERPROFILE:-.}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9840/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
   # pgAdmin — PostgreSQL web UI
   # ===========================================
   pgadmin:

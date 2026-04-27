@@ -1,0 +1,49 @@
+# Wan 2.1 1.3B Text-to-Video Server — GPU-accelerated container
+# Mirrors Dockerfile.sdxl in shape; CMD launches scripts/wan-server.py.
+#
+# Base image: PyTorch 2.8 / CUDA 12.8. Required for Blackwell (sm_120,
+# RTX 5090 family) — earlier PyTorch builds don't ship the matching
+# CUDA kernels and inference fails with "no kernel image is available
+# for execution on the device" on the UMT5 text-encoder pass.
+# sdxl-server stays on the older 2.5.1/12.4 image because SDXL doesn't
+# hit the offending kernels; Wan's text encoder does.
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+
+WORKDIR /app
+
+# System deps — ffmpeg for export_to_video, libgl/libglib for image
+# decoding inside diffusers's frame export path.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg libgl1 libglib2.0-0 wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps. ``imageio[ffmpeg]`` is what diffusers's export_to_video
+# actually shells out to; pinning here is more reliable than relying
+# on the host's ffmpeg-binary lookup.
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
+    fastapi \
+    uvicorn[standard] \
+    diffusers>=0.36.0 \
+    "transformers>=4.44,<5.0" \
+    accelerate \
+    safetensors \
+    pydantic \
+    httpx \
+    "imageio[ffmpeg]" \
+    sentencepiece
+
+COPY wan-server.py /app/server.py
+
+# Non-root user — GPU access is via cgroup, doesn't need root.
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
+    mkdir -p /home/appuser/.poindexter/generated-videos && \
+    chown -R appuser:appgroup /app /home/appuser
+USER appuser
+
+EXPOSE 9840
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD wget -qO /dev/null http://localhost:9840/health || exit 1
+
+CMD ["python", "server.py", "--host", "0.0.0.0", "--port", "9840"]
