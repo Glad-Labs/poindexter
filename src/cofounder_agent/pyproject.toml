@@ -218,6 +218,8 @@ detect_anomalies = "cofounder_agent.services.jobs.detect_anomalies:DetectAnomali
 check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
 regenerate_stock_images = "cofounder_agent.services.jobs.regenerate_stock_images:RegenerateStockImagesJob"
 collapse_old_embeddings = "cofounder_agent.services.jobs.collapse_old_embeddings:CollapseOldEmbeddingsJob"
+prune_stale_embeddings = "cofounder_agent.services.jobs.prune_stale_embeddings:PruneStaleEmbeddingsJob"
+prune_orphan_embeddings = "cofounder_agent.services.jobs.prune_orphan_embeddings:PruneOrphanEmbeddingsJob"
 
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
