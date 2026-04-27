@@ -10,6 +10,14 @@ Tables:
     pipeline_versions      — generated content with version history
     pipeline_reviews       — multi-reviewer approval workflow
     pipeline_distributions — per-target publish tracking
+
+Failure handling: every write is wrapped in try/except so a transient
+DB error never breaks the primary content_tasks write upstream. BUT —
+silent swallowing was a real-incident pattern (gitea#322 finding 2).
+Each failure now emits an ``audit_log_bg`` row at severity=error so
+the alert pipeline can fire when the mirror starts drifting from the
+source of truth. Once the cutover to pipeline_* as the primary store
+lands, these methods should switch to raising.
 """
 
 import json
@@ -20,6 +28,37 @@ from typing import Any
 from asyncpg import Pool
 
 logger = logging.getLogger(__name__)
+
+
+def _audit_pipeline_db_failure(
+    method: str,
+    task_id: str,
+    exc: BaseException,
+) -> None:
+    """Emit a typed audit row when a pipeline_* mirror write fails.
+
+    Importing audit_log_bg lazily because pipeline_db is loaded very
+    early in startup and audit_log relies on the global logger having
+    been initialised — best-effort emission with debug-level fallback.
+    """
+    try:
+        from services.audit_log import audit_log_bg  # noqa: PLC0415
+        audit_log_bg(
+            "pipeline_db_write_failed",
+            "pipeline_db",
+            {
+                "method": method,
+                "error": str(exc)[:300],
+                "error_type": type(exc).__name__,
+            },
+            task_id=task_id,
+            severity="error",
+        )
+    except Exception as audit_exc:
+        logger.debug(
+            "audit_log_bg(pipeline_db_write_failed) emit failed: %s",
+            audit_exc,
+        )
 
 
 class PipelineDB:
@@ -77,6 +116,7 @@ class PipelineDB:
             )
         except Exception as e:
             logger.warning("[pipeline_db] upsert_task failed for %s: %s", task_id, e)
+            _audit_pipeline_db_failure("upsert_task", task_id, e)
 
     async def update_task_status(
         self, task_id: str, status: str, **kwargs: Any
@@ -106,6 +146,7 @@ class PipelineDB:
             )
         except Exception as e:
             logger.warning("[pipeline_db] update_task_status failed for %s: %s", task_id, e)
+            _audit_pipeline_db_failure("update_task_status", task_id, e)
 
     # ------------------------------------------------------------------
     # pipeline_versions
@@ -157,6 +198,7 @@ class PipelineDB:
             )
         except Exception as e:
             logger.warning("[pipeline_db] upsert_version failed for %s: %s", task_id, e)
+            _audit_pipeline_db_failure("upsert_version", task_id, e)
 
     # ------------------------------------------------------------------
     # pipeline_reviews
@@ -177,6 +219,7 @@ class PipelineDB:
             )
         except Exception as e:
             logger.warning("[pipeline_db] add_review failed for %s: %s", task_id, e)
+            _audit_pipeline_db_failure("add_review", task_id, e)
 
     # ------------------------------------------------------------------
     # pipeline_distributions
@@ -207,3 +250,4 @@ class PipelineDB:
             )
         except Exception as e:
             logger.warning("[pipeline_db] add_distribution failed for %s: %s", task_id, e)
+            _audit_pipeline_db_failure("add_distribution", task_id, e)
