@@ -26,6 +26,39 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
+# OpenTelemetry tracing — optional, with a graceful no-op fallback so the
+# client works in dev environments that don't ship OTel. Same shape as
+# services/llm_providers/dispatcher.py so a single global TracerProvider
+# (configured in services/telemetry.py at app startup) drives both. Spans
+# are emitted under name ``ollama.<method>`` with semantic attributes
+# (llm.model, llm.tokens.completion, llm.duration_s, llm.cost_usd) so the
+# Tempo→Grafana view groups by model and shows cost-per-trace.
+try:
+    from opentelemetry import trace as _otel_trace  # type: ignore[import-untyped]
+
+    _tracer = _otel_trace.get_tracer("poindexter.ollama_client")
+except ImportError:  # pragma: no cover — exercised in minimal dev envs
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _noop_span(_name: str, **_kwargs: Any):
+        class _NoopSpan:
+            def set_attribute(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+            def record_exception(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+            def set_status(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+        yield _NoopSpan()
+
+    class _NoopTracer:
+        start_as_current_span = staticmethod(_noop_span)
+
+    _tracer = _NoopTracer()  # type: ignore[assignment]
+
 # Phase H finish (GH#95): the module-level
 # ``from services.site_config import site_config as _site_config`` is
 # gone. That import bound a stale reference to the empty singleton
@@ -438,71 +471,88 @@ class OllamaClient:
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/api/chat", json=payload, timeout=call_timeout
-            )
-            response.raise_for_status()
-            result = response.json()
-
-            # Extract text from chat response format
-            msg = result.get("message") or {}
-            # Ollama occasionally returns "content": null (not missing)
-            # on thinking-model empty-response failures. The .get default
-            # only triggers when the key is absent, so we coalesce None
-            # to "" here so every downstream caller can assume text is a
-            # plain string and not have to defensively (result.get("text")
-            # or "").
-            text = msg.get("content") or ""
-            # Thinking models (qwen3, qwen3.5, glm-4.7) split output into
-            # `message.content` (final answer) and `message.thinking`
-            # (reasoning trace). When num_predict is too small, the thinking
-            # phase eats the entire budget and content comes back empty.
-            _thinking = msg.get("thinking") or ""
-            if not text and _thinking:
-                logger.warning(
-                    "Ollama thinking-model returned empty content with %d-char thinking trace — extracting last paragraph from thinking as fallback",
-                    len(_thinking),
+        with _tracer.start_as_current_span("ollama.generate") as span:
+            span.set_attribute("llm.model", model)
+            span.set_attribute("llm.prompt_chars", len(prompt))
+            span.set_attribute("llm.system_chars", len(system) if system else 0)
+            span.set_attribute("llm.temperature", temperature)
+            span.set_attribute("llm.max_tokens", max_tokens or 0)
+            span.set_attribute("llm.stream", stream)
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}/api/chat", json=payload, timeout=call_timeout
                 )
-                # Try to salvage the answer from the thinking trace.
-                # Thinking models often reach their conclusion in the final
-                # lines before the budget runs out.
-                lines = [ln.strip() for ln in _thinking.strip().splitlines() if ln.strip()]
-                if lines:
-                    # Take the last non-empty line as the likely answer
-                    text = lines[-1]
-                    logger.info("Salvaged %d-char answer from thinking trace", len(text))
+                response.raise_for_status()
+                result = response.json()
 
-            duration_s = result.get("total_duration", 0) / 1e9
-            electricity_cost = calculate_electricity_cost(
-                duration_s,
-                gpu_power_watts=self._gpu_power_watts,
-                electricity_rate_kwh=self._electricity_rate_kwh,
-            )
+                # Extract text from chat response format
+                msg = result.get("message") or {}
+                # Ollama occasionally returns "content": null (not missing)
+                # on thinking-model empty-response failures. The .get default
+                # only triggers when the key is absent, so we coalesce None
+                # to "" here so every downstream caller can assume text is a
+                # plain string and not have to defensively (result.get("text")
+                # or "").
+                text = msg.get("content") or ""
+                # Thinking models (qwen3, qwen3.5, glm-4.7) split output into
+                # `message.content` (final answer) and `message.thinking`
+                # (reasoning trace). When num_predict is too small, the thinking
+                # phase eats the entire budget and content comes back empty.
+                _thinking = msg.get("thinking") or ""
+                if not text and _thinking:
+                    logger.warning(
+                        "Ollama thinking-model returned empty content with %d-char thinking trace — extracting last paragraph from thinking as fallback",
+                        len(_thinking),
+                    )
+                    # Try to salvage the answer from the thinking trace.
+                    # Thinking models often reach their conclusion in the final
+                    # lines before the budget runs out.
+                    lines = [ln.strip() for ln in _thinking.strip().splitlines() if ln.strip()]
+                    if lines:
+                        # Take the last non-empty line as the likely answer
+                        text = lines[-1]
+                        logger.info("Salvaged %d-char answer from thinking trace", len(text))
 
-            logger.info(
-                "Ollama generation complete",
-                model=model,
-                tokens=result.get("eval_count", 0),
-                duration=duration_s,
-                electricity_cost_usd=electricity_cost,
-            )
+                duration_s = result.get("total_duration", 0) / 1e9
+                electricity_cost = calculate_electricity_cost(
+                    duration_s,
+                    gpu_power_watts=self._gpu_power_watts,
+                    electricity_rate_kwh=self._electricity_rate_kwh,
+                )
 
-            return {
-                "text": text,
-                "response": text,  # Legacy key for callers using response.get("response")
-                "model": model,
-                "tokens": result.get("eval_count", 0),
-                "prompt_tokens": result.get("prompt_eval_count", 0),
-                "total_tokens": result.get("eval_count", 0) + result.get("prompt_eval_count", 0),
-                "duration_seconds": duration_s,
-                "cost": electricity_cost,
-                "done": result.get("done", False),
-            }
+                eval_count = result.get("eval_count", 0)
+                prompt_eval = result.get("prompt_eval_count", 0)
+                span.set_attribute("llm.tokens.completion", eval_count)
+                span.set_attribute("llm.tokens.prompt", prompt_eval)
+                span.set_attribute("llm.tokens.total", eval_count + prompt_eval)
+                span.set_attribute("llm.duration_s", duration_s)
+                span.set_attribute("llm.cost_usd", electricity_cost)
+                span.set_attribute("llm.response_chars", len(text))
 
-        except httpx.HTTPError as e:
-            logger.error("[generate] Ollama generation failed: %s", e, exc_info=True, model=model)
-            raise
+                logger.info(
+                    "Ollama generation complete",
+                    model=model,
+                    tokens=eval_count,
+                    duration=duration_s,
+                    electricity_cost_usd=electricity_cost,
+                )
+
+                return {
+                    "text": text,
+                    "response": text,  # Legacy key for callers using response.get("response")
+                    "model": model,
+                    "tokens": eval_count,
+                    "prompt_tokens": prompt_eval,
+                    "total_tokens": eval_count + prompt_eval,
+                    "duration_seconds": duration_s,
+                    "cost": electricity_cost,
+                    "done": result.get("done", False),
+                }
+
+            except httpx.HTTPError as e:
+                span.record_exception(e)
+                logger.error("[generate] Ollama generation failed: %s", e, exc_info=True, model=model)
+                raise
 
     async def chat(
         self,
@@ -527,44 +577,58 @@ class OllamaClient:
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
-            )
-            response.raise_for_status()
-            result = response.json()
+        with _tracer.start_as_current_span("ollama.chat") as span:
+            span.set_attribute("llm.model", model)
+            span.set_attribute("llm.messages_count", len(messages))
+            span.set_attribute("llm.temperature", temperature)
+            span.set_attribute("llm.max_tokens", max_tokens or 0)
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
+                )
+                response.raise_for_status()
+                result = response.json()
 
-            msg = result.get("message", {})
+                msg = result.get("message", {})
 
-            duration_s = result.get("total_duration", 0) / 1e9
-            electricity_cost = calculate_electricity_cost(
-                duration_s,
-                gpu_power_watts=self._gpu_power_watts,
-                electricity_rate_kwh=self._electricity_rate_kwh,
-            )
+                duration_s = result.get("total_duration", 0) / 1e9
+                electricity_cost = calculate_electricity_cost(
+                    duration_s,
+                    gpu_power_watts=self._gpu_power_watts,
+                    electricity_rate_kwh=self._electricity_rate_kwh,
+                )
 
-            logger.info(
-                "Ollama chat complete",
-                model=model,
-                tokens=result.get("eval_count", 0),
-                electricity_cost_usd=electricity_cost,
-            )
+                eval_count = result.get("eval_count", 0)
+                prompt_eval = result.get("prompt_eval_count", 0)
+                span.set_attribute("llm.tokens.completion", eval_count)
+                span.set_attribute("llm.tokens.prompt", prompt_eval)
+                span.set_attribute("llm.tokens.total", eval_count + prompt_eval)
+                span.set_attribute("llm.duration_s", duration_s)
+                span.set_attribute("llm.cost_usd", electricity_cost)
 
-            return {
-                "role": msg.get("role", "assistant"),
-                "content": msg.get("content", ""),
-                "model": model,
-                "tokens": result.get("eval_count", 0),
-                "prompt_tokens": result.get("prompt_eval_count", 0),
-                "total_tokens": result.get("eval_count", 0) + result.get("prompt_eval_count", 0),
-                "duration_seconds": duration_s,
-                "cost": electricity_cost,
-                "done": result.get("done", False),
-            }
+                logger.info(
+                    "Ollama chat complete",
+                    model=model,
+                    tokens=eval_count,
+                    electricity_cost_usd=electricity_cost,
+                )
 
-        except httpx.HTTPError as e:
-            logger.error("[chat] Ollama chat failed: %s", e, exc_info=True, model=model)
-            raise
+                return {
+                    "role": msg.get("role", "assistant"),
+                    "content": msg.get("content", ""),
+                    "model": model,
+                    "tokens": eval_count,
+                    "prompt_tokens": prompt_eval,
+                    "total_tokens": eval_count + prompt_eval,
+                    "duration_seconds": duration_s,
+                    "cost": electricity_cost,
+                    "done": result.get("done", False),
+                }
+
+            except httpx.HTTPError as e:
+                span.record_exception(e)
+                logger.error("[chat] Ollama chat failed: %s", e, exc_info=True, model=model)
+                raise
 
     # ========================================================================
     # Model Management
@@ -718,29 +782,35 @@ class OllamaClient:
         Returns:
             Embedding vector as list of floats.
         """
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/api/embed",
-                json={"model": model, "input": text},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            result = response.json()
+        with _tracer.start_as_current_span("ollama.embed") as span:
+            span.set_attribute("llm.model", model)
+            span.set_attribute("llm.input_chars", len(text))
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}/api/embed",
+                    json={"model": model, "input": text},
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                result = response.json()
 
-            embeddings = result.get("embeddings", [])
-            if not embeddings:
-                raise OllamaError("No embeddings returned from Ollama")
+                embeddings = result.get("embeddings", [])
+                if not embeddings:
+                    raise OllamaError("No embeddings returned from Ollama")
 
-            logger.info(
-                "Ollama embedding complete",
-                model=model,
-                dimensions=len(embeddings[0]),
-            )
-            return embeddings[0]
+                span.set_attribute("llm.embedding.dimensions", len(embeddings[0]))
 
-        except httpx.HTTPError as e:
-            logger.error("[embed] Ollama embedding failed: %s", e, exc_info=True, model=model)
-            raise
+                logger.info(
+                    "Ollama embedding complete",
+                    model=model,
+                    dimensions=len(embeddings[0]),
+                )
+                return embeddings[0]
+
+            except httpx.HTTPError as e:
+                span.record_exception(e)
+                logger.error("[embed] Ollama embedding failed: %s", e, exc_info=True, model=model)
+                raise
 
     async def embed_batch(
         self, texts: list[str], model: str = "nomic-embed-text"
