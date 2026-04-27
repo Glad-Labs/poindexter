@@ -342,6 +342,12 @@ class CrossModelQAStage:
                 task_id=task_id,
                 severity="info" if r.approved else "warning",
             )
+        # ``failed_reviewers`` are reviewers that ran and voted reject;
+        # ``errored_reviewers`` are reviewers that *threw* and were
+        # silently skipped — distinct, both surfaced (gitea#322 #1).
+        # If everything errored, score the aggregate as worth-looking-at
+        # even when the surviving reviewers happened to vote pass.
+        errored = list(getattr(qa_result, "errored_reviewers", []) or [])
         audit_log_bg(
             "qa_aggregate", "multi_model_qa",
             {
@@ -351,10 +357,15 @@ class CrossModelQAStage:
                 "failed_reviewers": [
                     r.reviewer for r in qa_result.reviews if not r.approved
                 ],
+                "errored_reviewers": errored,
+                "errored_count": len(errored),
                 "rewrite_attempts": rewrite_attempts,
             },
             task_id=task_id,
-            severity="info" if qa_result.approved else "warning",
+            severity=(
+                "error" if errored
+                else ("info" if qa_result.approved else "warning")
+            ),
         )
 
         # Cost logging.

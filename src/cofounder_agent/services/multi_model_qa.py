@@ -50,6 +50,13 @@ class MultiModelResult:
     reviews: list[ReviewerResult] = field(default_factory=list)
     validation: ValidationResult | None = None
     cost_log: dict | None = None
+    # Reviewers that *errored* — distinct from reviewers that ran and
+    # voted reject. A name appearing here means the reviewer threw an
+    # exception and was skipped silently; the aggregate's score was
+    # computed without its vote. Surfaced so the qa_aggregate audit row
+    # can show "5 reviewers ran, 2 errored" instead of pretending the
+    # gate ran cleanly.
+    errored_reviewers: list[str] = field(default_factory=list)
 
     @property
     def summary(self) -> str:
@@ -285,6 +292,51 @@ class MultiModelQA:
         self.settings = settings_service
         self._site_config = site_config
         self.router = get_model_router()
+        # Tracks reviewers that errored during the current review() call.
+        # Reset at the start of every review() so two reviews in a row
+        # don't bleed into each other. Concurrent review() calls on the
+        # same instance would mix — the pipeline serializes per task, so
+        # this is fine in practice. If concurrency lands, switch to a
+        # contextvars-backed list.
+        self._errored_reviewers: list[str] = []
+
+    def _record_reviewer_error(
+        self,
+        reviewer_name: str,
+        exc: BaseException,
+        *,
+        task_id: str | None = None,
+    ) -> None:
+        """Surface a reviewer that threw + was silently dropped.
+
+        Replaces the previous pattern of ``logger.warning + return None``,
+        which left no breadcrumb that the gate had failed. This emits an
+        audit_log row so the qa_aggregate dashboard can show error
+        counts per reviewer, AND records the reviewer name so the
+        aggregate audit row carries the full ``errored_reviewers`` list.
+
+        Severity is ``error`` (not ``warning``) — a thrown reviewer is
+        a bug or infra fault, not normal operating noise.
+        """
+        logger.warning("[MULTI_QA] %s reviewer errored: %s", reviewer_name, exc)
+        try:
+            self._errored_reviewers.append(reviewer_name)
+            from services.audit_log import audit_log_bg  # noqa: PLC0415 — avoid cycle
+            audit_log_bg(
+                "qa_reviewer_error",
+                "multi_model_qa",
+                {
+                    "reviewer": reviewer_name,
+                    "error": str(exc)[:300],
+                    "error_type": type(exc).__name__,
+                },
+                task_id=task_id,
+                severity="error",
+            )
+        except Exception as _audit_exc:
+            # Audit-log failure must never break QA. Log at debug because
+            # the original error is already in logger.warning above.
+            logger.debug("audit_log_bg(qa_reviewer_error) failed: %s", _audit_exc)
 
     async def review(
         self,
@@ -316,6 +368,13 @@ class MultiModelQA:
 
         Returns MultiModelResult with approval decision and individual reviews.
         """
+        # Reset per-call error tracker. Reviewer try/except sites call
+        # ``self._record_reviewer_error`` to populate this; the populated
+        # list is plumbed onto MultiModelResult so the qa_aggregate audit
+        # row can show "N reviewers errored" instead of pretending the
+        # gate ran cleanly. See gitea#322 finding 1.
+        self._errored_reviewers = []
+
         reviews: list[ReviewerResult] = []
 
         # Load the declarative QA gate chain from ``qa_gates`` (GH-115).
@@ -690,7 +749,15 @@ class MultiModelQA:
             reviews=reviews,
             validation=validation,
             cost_log=qa_cost_log,
+            errored_reviewers=list(self._errored_reviewers),
         )
+
+        if result.errored_reviewers:
+            logger.warning(
+                "[MULTI_QA] %d reviewer(s) errored during review: %s",
+                len(result.errored_reviewers),
+                ", ".join(result.errored_reviewers),
+            )
 
         logger.info("[MULTI_QA] %s — %s", title[:50], result.summary.split("\n")[0])
         return result
@@ -916,7 +983,7 @@ class MultiModelQA:
             return review, cost_log
 
         except Exception as e:
-            logger.warning("[MULTI_QA] Ollama review failed (non-critical): %s", e)
+            self._record_reviewer_error("ollama_critic", e)
             return None
 
     async def _run_gate_prompt(
@@ -1045,7 +1112,7 @@ class MultiModelQA:
                 provider="consistency_gate",
             )
         except Exception as e:
-            logger.warning("[MULTI_QA] %s gate failed (non-critical): %s", reviewer_name, e)
+            self._record_reviewer_error(reviewer_name, e)
             return None
 
     async def _check_citations(self, content: str) -> ReviewerResult | None:
@@ -1108,9 +1175,7 @@ class MultiModelQA:
                 concurrency=concurrency,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[MULTI_QA] citation_verifier raised (non-fatal): %s", exc,
-            )
+            self._record_reviewer_error("citation_verifier", exc)
             return None
 
         passed, reason = await verdict_from_report(
@@ -1320,7 +1385,7 @@ class MultiModelQA:
                 data = resp.json()
                 text = data.get("message", {}).get("content", "")
         except Exception as e:
-            logger.warning("[VISION_QA] ollama call failed (non-critical): %s", e)
+            self._record_reviewer_error("vision_gate", e)
             return None
 
         if not text:
@@ -1509,7 +1574,7 @@ class MultiModelQA:
                 data = resp.json()
                 text = data.get("message", {}).get("content", "")
         except Exception as e:
-            logger.warning("[PREVIEW_QA] ollama call failed (non-critical): %s", e)
+            self._record_reviewer_error("preview_gate", e)
             return None
 
         if not text:
@@ -1683,7 +1748,7 @@ class MultiModelQA:
             )
 
         except Exception as e:
-            logger.warning("[WEB_FACTCHECK] Failed (non-fatal): %s", e)
+            self._record_reviewer_error("web_factcheck", e)
             return None
 
     # _review_with_gemini removed — Ollama-only policy
