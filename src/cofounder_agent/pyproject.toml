@@ -270,6 +270,7 @@ cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQASta
 # own commit so it can be reviewed / disabled independently.
 "video.script" = "cofounder_agent.services.stages.script_for_video:ScriptForVideoStage"
 "video.scene_visuals" = "cofounder_agent.services.stages.scene_visuals:SceneVisualsStage"
+"video.tts" = "cofounder_agent.services.stages.tts_for_video:TtsForVideoStage"
 
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
