@@ -852,6 +852,209 @@
       ],
       "title": "LLM Spend",
       "type": "stat"
+    },
+    {
+      "type": "row",
+      "id": 60,
+      "title": "Cost vs Electricity \u2014 local Ollama vs cloud APIs",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 60
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "table",
+      "id": 61,
+      "title": "Provider economics \u2014 $ vs kWh per call (last 30d)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "$ / call"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 6
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kWh / call"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              },
+              {
+                "id": "decimals",
+                "value": 8
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total $"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 4
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total kWh"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              },
+              {
+                "id": "decimals",
+                "value": 6
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT provider AS \"Provider\", COUNT(*) AS \"Calls\", SUM(input_tokens + output_tokens) AS \"Tokens\", ROUND(SUM(cost_usd)::numeric, 6) AS \"Total $\", ROUND(SUM(electricity_kwh)::numeric, 8) AS \"Total kWh\", ROUND((SUM(cost_usd) / NULLIF(COUNT(*), 0))::numeric, 8) AS \"$ / call\", ROUND((SUM(electricity_kwh) / NULLIF(COUNT(*), 0))::numeric, 10) AS \"kWh / call\" FROM cost_logs WHERE created_at >= NOW() - INTERVAL '30 days'   AND provider <> 'electricity' GROUP BY provider ORDER BY \"Total $\" DESC NULLS LAST",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 62,
+      "title": "Electricity drawn by provider (kWh, hourly)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "decimals": 6
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, provider AS metric, SUM(electricity_kwh) AS value FROM cost_logs WHERE $__timeFilter(created_at)   AND electricity_kwh IS NOT NULL   AND provider <> 'electricity' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 63,
+      "title": "Cost by provider ($ USD, hourly)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, provider AS metric, SUM(cost_usd) AS value FROM cost_logs WHERE $__timeFilter(created_at)   AND provider <> 'electricity' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "5m",
