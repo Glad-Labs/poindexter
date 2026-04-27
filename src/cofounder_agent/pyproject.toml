@@ -233,6 +233,12 @@ kokoro = "cofounder_agent.services.tts_providers.kokoro:KokoroTTSProvider"
 ken_burns_slideshow = "cofounder_agent.services.video_providers.ken_burns_slideshow:KenBurnsSlideshowProvider"
 "wan2.1-1.3b" = "cofounder_agent.services.video_providers.wan2_1:Wan21Provider"
 
+# Glad-Labs/poindexter#143: caption transcription plugin contract.
+# ``whisper_local`` wraps whisper.cpp; cloud captioners (AssemblyAI,
+# Deepgram) register here as they ship.
+[tool.poetry.plugins."poindexter.caption_providers"]
+whisper_local = "cofounder_agent.services.caption_providers.whisper_local:WhisperLocalCaptionProvider"
+
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"
