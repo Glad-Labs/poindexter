@@ -34,11 +34,15 @@ from click.testing import CliRunner
 # ---------------------------------------------------------------------------
 
 
-def _install_secrets_stub() -> tuple[AsyncMock, AsyncMock]:
+def _install_secrets_stub(monkeypatch: pytest.MonkeyPatch) -> tuple[AsyncMock, AsyncMock]:
     """Install a fake ``plugins.secrets`` module with two AsyncMock funcs.
 
     Returns ``(set_secret_mock, ensure_pgcrypto_mock)`` so each test can
-    assert against them directly.
+    assert against them directly. Uses ``monkeypatch.setitem`` so the
+    real ``plugins`` and ``plugins.secrets`` modules are restored at
+    test teardown — without this, the fake ``plugins`` module (which
+    has no ``registry`` attribute) leaks into later tests and breaks
+    ``monkeypatch.setattr("plugins.registry.entry_points", ...)``.
     """
     set_secret_mock = AsyncMock(return_value=None)
     ensure_pgcrypto_mock = AsyncMock(return_value=None)
@@ -46,8 +50,8 @@ def _install_secrets_stub() -> tuple[AsyncMock, AsyncMock]:
     fake_secrets = types.ModuleType("plugins.secrets")
     fake_secrets.set_secret = set_secret_mock
     fake_secrets.ensure_pgcrypto = ensure_pgcrypto_mock
-    sys.modules["plugins"] = fake_plugins
-    sys.modules["plugins.secrets"] = fake_secrets
+    monkeypatch.setitem(sys.modules, "plugins", fake_plugins)
+    monkeypatch.setitem(sys.modules, "plugins.secrets", fake_secrets)
     return set_secret_mock, ensure_pgcrypto_mock
 
 
@@ -204,7 +208,7 @@ class TestStoresEnableDisable:
 
 
 class TestStoresSetSecret:
-    def test_stdin_json_round_trip(self, cli_runner):
+    def test_stdin_json_round_trip(self, cli_runner, monkeypatch):
         """``--from-stdin`` reads JSON, encrypts, writes to credentials_ref."""
         from poindexter.cli.stores import stores_group
         conn = MagicMock()
@@ -212,7 +216,7 @@ class TestStoresSetSecret:
         conn.fetchval = AsyncMock(return_value="storage_credentials")
         conn.close = AsyncMock(return_value=None)
 
-        async_set_secret, _ = _install_secrets_stub()
+        async_set_secret, _ = _install_secrets_stub(monkeypatch)
 
         payload = json.dumps({
             "access_key": "AKIA...",
@@ -237,14 +241,14 @@ class TestStoresSetSecret:
         stored_blob = json.loads(call_args.args[2])
         assert stored_blob == {"access_key": "AKIA...", "secret_key": "supersecret"}
 
-    def test_inline_args(self, cli_runner):
+    def test_inline_args(self, cli_runner, monkeypatch):
         """``--access-key`` + ``--secret-key`` skip the prompts entirely."""
         from poindexter.cli.stores import stores_group
         conn = MagicMock()
         conn.fetchval = AsyncMock(return_value="storage_credentials")
         conn.close = AsyncMock(return_value=None)
 
-        async_set_secret, _ = _install_secrets_stub()
+        async_set_secret, _ = _install_secrets_stub(monkeypatch)
 
         with _patch_connect(conn):
             result = cli_runner.invoke(
