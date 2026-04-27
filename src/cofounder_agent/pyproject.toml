@@ -266,6 +266,10 @@ capture_training_data = "cofounder_agent.services.stages.capture_training_data:C
 finalize_task = "cofounder_agent.services.stages.finalize_task:FinalizeTaskStage"
 cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQAStage"
 
+# Glad-Labs/poindexter#143: video pipeline Stages. Each Stage is its
+# own commit so it can be reviewed / disabled independently.
+"video.script" = "cofounder_agent.services.stages.script_for_video:ScriptForVideoStage"
+
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
 openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"
