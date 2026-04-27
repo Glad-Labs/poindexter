@@ -219,6 +219,89 @@ class TestBuildScenes:
         scenes = build_scenes(visuals=visuals, tts_scenes=tts, fallback_duration_s=30)
         assert isinstance(scenes[0], CompositionScene)
 
+    def test_bookend_uses_dedicated_intro_clip_when_supplied(self):
+        # Multiple body scenes + dedicated intro_clip_path → intro
+        # uses the dedicated clip, not a body visual.
+        visuals = [
+            {"scene_idx": 0, "clip_path": "/body0.jpg"},
+            {"scene_idx": 1, "clip_path": "/body1.jpg"},
+        ]
+        tts = [
+            {"scene_idx": 0, "audio_path": "/a0.mp3", "duration_s": 5.0, "text": "a"},
+            {"scene_idx": 1, "audio_path": "/a1.mp3", "duration_s": 5.0, "text": "b"},
+        ]
+        scenes = build_scenes(
+            visuals=visuals, tts_scenes=tts, fallback_duration_s=30,
+            intro_audio_path="/intro.mp3", intro_duration_s=2.0,
+            intro_clip_path="/dedicated_intro.jpg",
+        )
+        # Intro prepended → 2 body + 1 intro = 3 scenes total
+        assert len(scenes) == 3
+        # First scene = intro with dedicated clip
+        assert scenes[0].clip_path == "/dedicated_intro.jpg"
+        assert scenes[0].narration_path == "/intro.mp3"
+        # Body order preserved
+        assert scenes[1].clip_path == "/body0.jpg"
+        assert scenes[2].clip_path == "/body1.jpg"
+
+    def test_bookend_falls_back_to_non_adjacent_body_visual(self):
+        # No intro_clip_path supplied → intro reuses body_visuals[1]
+        # (non-adjacent to first body scene).
+        visuals = [
+            {"scene_idx": 0, "clip_path": "/body0.jpg"},
+            {"scene_idx": 1, "clip_path": "/body1.jpg"},
+            {"scene_idx": 2, "clip_path": "/body2.jpg"},
+        ]
+        tts = [
+            {"scene_idx": i, "audio_path": f"/a{i}.mp3", "duration_s": 5.0, "text": str(i)}
+            for i in range(3)
+        ]
+        scenes = build_scenes(
+            visuals=visuals, tts_scenes=tts, fallback_duration_s=30,
+            intro_audio_path="/intro.mp3", intro_duration_s=2.0,
+            outro_audio_path="/outro.mp3", outro_duration_s=2.0,
+        )
+        # Intro + 3 body + outro = 5 scenes
+        assert len(scenes) == 5
+        # Intro fallback: body_visuals[1] = /body1.jpg
+        assert scenes[0].clip_path == "/body1.jpg"
+        # Outro fallback: body_visuals[-2] = /body1.jpg
+        assert scenes[-1].clip_path == "/body1.jpg"
+
+    def test_bookend_skipped_when_audio_path_empty(self):
+        # No intro_audio_path → no intro bookend prepended.
+        visuals = [{"scene_idx": 0, "clip_path": "/body0.jpg"}]
+        tts = [{"scene_idx": 0, "audio_path": "/a.mp3", "duration_s": 5.0, "text": "x"}]
+        scenes = build_scenes(
+            visuals=visuals, tts_scenes=tts, fallback_duration_s=30,
+            intro_audio_path="", intro_duration_s=2.0,
+            intro_clip_path="/dedicated.jpg",
+        )
+        assert len(scenes) == 1
+        # Body only, no intro
+        assert scenes[0].clip_path == "/body0.jpg"
+
+    def test_bookend_skipped_when_duration_zero(self):
+        visuals = [{"scene_idx": 0, "clip_path": "/body0.jpg"}]
+        tts = [{"scene_idx": 0, "audio_path": "/a.mp3", "duration_s": 5.0, "text": "x"}]
+        scenes = build_scenes(
+            visuals=visuals, tts_scenes=tts, fallback_duration_s=30,
+            intro_audio_path="/intro.mp3", intro_duration_s=0.0,
+            intro_clip_path="/d.jpg",
+        )
+        assert len(scenes) == 1
+        # No intro because duration was 0
+
+    def test_returns_empty_when_no_body_scenes(self):
+        # No body scenes → empty list, even if intro audio supplied.
+        scenes = build_scenes(
+            visuals=[], tts_scenes=[],
+            fallback_duration_s=30,
+            intro_audio_path="/intro.mp3", intro_duration_s=2.0,
+            intro_clip_path="/d.jpg",
+        )
+        assert scenes == []
+
 
 # ---------------------------------------------------------------------------
 # write_srt_sidecar
