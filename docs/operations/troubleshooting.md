@@ -179,6 +179,36 @@ curl http://localhost:9836/health  # should show "status":"idle"
 
 ---
 
+## Wan video server fails on RTX 5090 (Blackwell) with "no kernel image is available"
+
+**Symptom.** `docker logs poindexter-wan-server` shows the model loaded successfully ("Wan 2.1 1.3B ready on NVIDIA GeForce RTX 5090") but the first `/generate` call fails with:
+
+```
+RuntimeError: CUDA error: no kernel image is available for execution on the device
+```
+
+The error originates in the UMT5 text encoder forward pass.
+
+**Root cause.** PyTorch base images <2.6 don't ship CUDA kernels for sm_120 (Blackwell, the RTX 5090 family). The SDXL sidecar happens to dodge those kernels but Wan's UMT5 hits them. CUDA 12.8 is the first version with sm_120 support, so the base image needs PyTorch 2.7+ on CUDA 12.8.
+
+**Fix.** Already applied in `scripts/Dockerfile.wan` — base image is `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime`. If you see this on a fresh `docker build`, confirm the Dockerfile hasn't been reverted to an older base.
+
+**Prevention.** When adding new GPU-bound containers, check the model's required CUDA capability against your hardware before picking a PyTorch base. Blackwell is sm_120; Ada Lovelace (RTX 4090) is sm_89; Hopper (H100) is sm_90.
+
+---
+
+## Wan video server hangs on first `/generate` after WSL restart
+
+**Symptom.** `curl http://localhost:9840/health` returns `"status":"idle"` but a `/generate` POST seems to hang for 5-10 minutes. CPU is high, VRAM stays at 0 the whole time.
+
+**Root cause.** WSL2 page cache is cold. The Wan model lives at `~/.cache/huggingface/hub/models--Wan-AI--Wan2.1-T2V-1.3B-Diffusers/` (~10 GB on disk) and is bind-mounted into the container. After `wsl --shutdown`, every read has to hit physical disk through the WSL FUSE layer, which is slow. Subsequent loads (within the same WSL session) read from page cache and finish in ~30 s.
+
+**Fix.** Wait it out — the load eventually completes. To pre-warm: `docker exec poindexter-wan-server cat /root/.cache/huggingface/hub/models--Wan-AI--Wan2.1-T2V-1.3B-Diffusers/snapshots/*/model_index.json > /dev/null` after a restart, before the first real `/generate`.
+
+**Prevention.** Don't `wsl --shutdown` while a render is in flight. The 900 s idle-unload timeout on `wan-server` is intentionally large enough that a 14-scene render keeps the model warm; only an explicit shutdown breaks the cache.
+
+---
+
 ## OpenClaw MCP tools fail — "tool execution failed" from Discord
 
 **Symptom.** Using `#reject_post` or other MCP tools from Discord via OpenClaw reports success in the chat message but the action didn't actually happen (e.g., tasks still show `awaiting_approval` in the DB). The LLM fabricates a success response.
