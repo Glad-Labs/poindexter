@@ -57,6 +57,7 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "tts_providers": "poindexter.tts_providers",
     "video_providers": "poindexter.video_providers",
     "audio_gen_providers": "poindexter.audio_gen_providers",
+    "publish_adapters": "poindexter.publish_adapters",
 }
 
 
@@ -180,6 +181,17 @@ def get_video_providers() -> list[Any]:
 def get_audio_gen_providers() -> list[Any]:
     """Return all registered AudioGenProvider instances."""
     return list(_cached(ENTRY_POINT_GROUPS["audio_gen_providers"]))
+
+
+def get_publish_adapters() -> list[Any]:
+    """Return all registered PublishAdapter instances.
+
+    Tracks Glad-Labs/poindexter#143 (video pipeline upload Stage) and
+    Glad-Labs/poindexter#40 (OAuth seed flow). Adapters ship inert
+    until the operator opts in — the registry just discovers them; per-
+    adapter ``enabled`` + secret gating is each adapter's discipline.
+    """
+    return list(_cached(ENTRY_POINT_GROUPS["publish_adapters"]))
 
 
 # ---------------------------------------------------------------------------

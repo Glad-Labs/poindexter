@@ -273,6 +273,7 @@ cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQASta
 "video.tts" = "cofounder_agent.services.stages.tts_for_video:TtsForVideoStage"
 "video.stitch_long_form" = "cofounder_agent.services.stages.stitch_long_form:StitchLongFormStage"
 "video.stitch_short_form" = "cofounder_agent.services.stages.stitch_short_form:StitchShortFormStage"
+"video.upload" = "cofounder_agent.services.stages.upload_to_platform:UploadToPlatformStage"
 
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
