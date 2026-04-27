@@ -239,6 +239,13 @@ ken_burns_slideshow = "cofounder_agent.services.video_providers.ken_burns_slides
 [tool.poetry.plugins."poindexter.caption_providers"]
 whisper_local = "cofounder_agent.services.caption_providers.whisper_local:WhisperLocalCaptionProvider"
 
+# Glad-Labs/poindexter#143: media compositor plugin contract.
+# ``ffmpeg_local`` is the V0 default — local subprocess that stitches
+# scenes / narration / soundtrack / captions into a finished MP4.
+# Cloud encoders (Mux, Cloudinary, MediaConvert) register here later.
+[tool.poetry.plugins."poindexter.media_compositors"]
+ffmpeg_local = "cofounder_agent.services.media_compositors.ffmpeg_local:FFmpegLocalCompositor"
+
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"
