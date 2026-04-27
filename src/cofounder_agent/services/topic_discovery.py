@@ -88,41 +88,17 @@ CATEGORY_SEARCHES = {
 }
 
 
-_STOP_WORDS = frozenset(
-    "a an the in on of to for and or but is are was were be been by with from "
-    "at as it its that this these those not no nor do does did will would "
-    "should could can may might shall into your you we they how what why when "
-    "where who which have has had here there their about just also than more "
-    "most some any all every without actually really need don t s re ve ll "
-    "new top best way beyond".split()
+# Stop-word + content-word + overlap helpers moved to services.topic_dedup
+# in #151 so other ingest paths (manual topic injection, RSS, future
+# topic sources) can reuse them without importing the full dispatcher.
+# Re-exported here so existing imports of these names from
+# ``services.topic_discovery`` keep working — public API surface
+# preserved, implementation moved.
+from services.topic_dedup import (  # noqa: F401  (re-exports for back-compat)
+    _STOP_WORDS,
+    _content_words,
+    _word_overlap_match,
 )
-
-
-def _content_words(title: str) -> set[str]:
-    """Extract meaningful words from a title, stripping stop words and punctuation."""
-    import re
-    words = set(re.findall(r"[a-z0-9]+", title.lower()))
-    return words - _STOP_WORDS
-
-
-def _word_overlap_match(
-    words_a: set[str], words_b: set[str], threshold: float = 0.4,
-) -> tuple[bool, float]:
-    """Return (is_duplicate, max_overlap_ratio).
-
-    Content-word overlap > threshold in either direction = duplicate. Both the
-    boolean and the ratio are returned so callers can log the actual score for
-    tuning (gitea#279) — previously this only returned bool and the log line
-    said 'X ≈ Y' with no numeric evidence, making the 0.4 default untunable
-    without instrumentation.
-    """
-    if not words_a or not words_b:
-        return False, 0.0
-    overlap = len(words_a & words_b)
-    ratio_a = overlap / len(words_a)
-    ratio_b = overlap / len(words_b)
-    max_ratio = max(ratio_a, ratio_b)
-    return max_ratio >= threshold, max_ratio
 
 
 class TopicDiscovery:
@@ -537,109 +513,13 @@ class TopicDiscovery:
         duplicates"). Lowering either knob will block more topics; raising
         will let more through.
         """
-        if not self.pool:
-            return topics
+        # Implementation moved to services.topic_dedup.TopicDeduplicator
+        # in #151. This method stays as the public surface so existing
+        # callers don't break; it just delegates to the helper now.
+        from services.topic_dedup import TopicDeduplicator
 
-        existing_threshold = self._site_config.get_float(
-            "topic_dedup_existing_threshold", 0.7
-        )
-        intra_threshold = self._site_config.get_float(
-            "topic_dedup_intra_batch_threshold", 0.65
-        )
-
-        try:
-            # Get all published post titles for fuzzy matching
-            rows = await self.pool.fetch(
-                "SELECT title FROM posts WHERE status = 'published'"
-            )
-            published_titles = {r["title"].lower() for r in rows}
-
-            # Also check in-flight tasks (pending/in_progress/awaiting_approval)
-            # and recently-published-but-not-yet-in-posts rows — prevents the
-            # scheduler from queueing the same topic twice while one copy is
-            # mid-generation, and keeps fresh published posts in the exclude
-            # list even before the `posts.status='published'` snapshot catches up.
-            #
-            # Rejected topics are EXPLICITLY NOT in this set (Matt 2026-04-22):
-            # rejecting a bad draft shouldn't permanently block the topic itself.
-            # If gemma3:27b wrote a bad post about Kubernetes and QA killed it,
-            # glm-4.7 writing a different, better post about Kubernetes is still
-            # worth attempting.
-            # Window is tunable via app_settings key: qa_topic_dedup_hours (default 48).
-            try:
-                dedup_hours = self._site_config.get_int("qa_topic_dedup_hours", 48)
-            except Exception:
-                dedup_hours = 48
-            task_rows = await self.pool.fetch(
-                """
-                SELECT topic, title FROM content_tasks
-                WHERE created_at > NOW() - ($1 || ' hours')::interval
-                  AND status IN ('pending', 'in_progress', 'awaiting_approval', 'published')
-                """,
-                str(dedup_hours),
-            )
-            pending_topics = set()
-            for r in task_rows:
-                if r.get("topic"):
-                    pending_topics.add(r["topic"].lower())
-                if r.get("title"):
-                    pending_topics.add(r["title"].lower())
-
-            all_existing = published_titles | pending_topics
-
-            for topic in topics:
-                title_lower = topic.title.lower()
-                if title_lower in all_existing:
-                    topic.is_duplicate = True
-                    continue
-                topic_words = _content_words(title_lower)
-                if len(topic_words) < 2:
-                    continue
-                for existing_title in all_existing:
-                    existing_words = _content_words(existing_title)
-                    if len(existing_words) < 2:
-                        continue
-                    is_dup, score = _word_overlap_match(
-                        topic_words, existing_words, threshold=existing_threshold,
-                    )
-                    if is_dup:
-                        topic.is_duplicate = True
-                        logger.info(
-                            "[DEDUP] vs-existing: '%s' ≈ '%s' "
-                            "(overlap=%.2f, threshold=%.2f)",
-                            topic.title[:40], existing_title[:40],
-                            score, existing_threshold,
-                        )
-                        break
-
-        except Exception as e:
-            logger.warning("[TOPIC_DISCOVERY] Dedup failed: %s", e)
-
-        for i, t1 in enumerate(topics):
-            if t1.is_duplicate:
-                continue
-            t1_words = _content_words(t1.title.lower())
-            if len(t1_words) < 2:
-                continue
-            for t2 in topics[i + 1:]:
-                if t2.is_duplicate:
-                    continue
-                t2_words = _content_words(t2.title.lower())
-                if len(t2_words) < 2:
-                    continue
-                is_dup, score = _word_overlap_match(
-                    t1_words, t2_words, threshold=intra_threshold,
-                )
-                if is_dup:
-                    t2.is_duplicate = True
-                    logger.info(
-                        "[DEDUP] Intra-batch: '%s' ≈ '%s' "
-                        "(overlap=%.2f, threshold=%.2f)",
-                        t2.title[:40], t1.title[:40],
-                        score, intra_threshold,
-                    )
-
-        return topics
+        deduper = TopicDeduplicator(self.pool, site_config=self._site_config)
+        return await deduper.mark_duplicates(topics)
 
     # Keywords that indicate a topic is relevant to this site's niche.
     # KEEP THIS TIGHT — overly broad terms like "software", "code", "data",
