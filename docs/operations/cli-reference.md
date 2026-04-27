@@ -25,6 +25,8 @@ consolidated reference.
 | `sprint`      | Gitea issues dashboard (Glad Labs internal)                      |
 | `vercel`      | Vercel deployment status via the REST API                        |
 | `premium`     | Manage Poindexter Pro subscription license                       |
+| `schedule`    | Queue scheduled publishes (batch, list, shift, clear)            |
+| `publish-at`  | Schedule a single approved post for a specific time              |
 
 Run `poindexter --help` for the top-level list and
 `poindexter <group> --help` for subcommands.
@@ -337,6 +339,131 @@ Shows the current license state, expiration, and activation count.
 ```bash
 poindexter premium status
 ```
+
+---
+
+## `schedule` and `publish-at`
+
+Operator interface for the scheduled-publishing queue
+([Glad-Labs/poindexter#147][issue-147]). Poindexter already has a
+background loop (`services/scheduled_publisher.py`) that publishes
+posts whose `posts.published_at` slot has arrived and whose
+`status='scheduled'`. These commands populate, inspect, and rewrite
+that queue.
+
+[issue-147]: https://github.com/Glad-Labs/poindexter/issues/147
+
+A post becomes eligible for batch scheduling once it has been
+approved (`status IN ('approved', 'awaiting_approval')`) and has no
+publish slot yet (`published_at IS NULL`). The batch command pulls
+the oldest-approved-first by default; pass `--ordered-by` to change
+the source ordering.
+
+### `publish-at <post_id> <when>`
+
+Schedule a single post.
+
+```bash
+poindexter publish-at 0fe7… "2026-04-28 09:00"
+poindexter publish-at 0fe7… --in 2h
+poindexter publish-at 0fe7… --in 7d
+poindexter publish-at 0fe7… "tomorrow 9am"
+poindexter publish-at 0fe7… "next monday 14:00"
+```
+
+Flags:
+
+- `--in DUR` — relative scheduling (`30m`, `2h`, `1d`, `1h30m`).
+- `--force` — overwrite an existing schedule.
+- `--json` — machine-readable output.
+
+### `schedule batch`
+
+Bulk-assign slots to the approved queue.
+
+```bash
+poindexter schedule batch \
+  --count 20 --interval 30m --start "tomorrow 9am" \
+  --quiet-hours 22:00-07:00
+```
+
+Flags:
+
+- `--count N` (required) — how many posts to schedule.
+- `--interval DUR` (required) — slot spacing (`30m`, `1h`, `1h30m`, `1d`).
+- `--start TIME` (required) — first slot. ISO 8601, `now`,
+  `tomorrow 9am`, or `next monday 14:00`.
+- `--quiet-hours HH:MM-HH:MM` — slots inside the window are skipped
+  to the next allowed time. Falls back to the `publish_quiet_hours`
+  app_setting when omitted.
+- `--ordered-by` — `approved_at` (default) | `created_at` | `id` |
+  `title`.
+- `--force` — re-schedule posts that already have a slot.
+- `--json` — machine-readable output.
+
+If no posts are eligible the command exits non-zero with an
+informative message — no silent no-op.
+
+### `schedule list [--all] [--json]`
+
+Print the upcoming queue in publish-time order. Pass `--all` to
+include past schedules.
+
+### `schedule show <post_id> [--json]`
+
+Schedule + status detail for a single post.
+
+### `schedule shift <post_id> --by DUR` / `schedule shift --all --by DUR`
+
+Push one schedule (or every still-future scheduled post with `--all`)
+back by `DUR`. Past slots are intentionally untouched — shifting an
+already-published post does not un-publish it.
+
+### `schedule clear <post_id>` / `schedule clear --all`
+
+Drop the schedule on a single post (or every still-future scheduled
+post). Clearing rolls the row back to `status='approved'` so it can
+be re-scheduled.
+
+### Worked examples
+
+**1. Schedule 20 approved posts to publish every 30m starting tomorrow
+at 9am, skipping 22:00-07:00 quiet hours**
+
+```bash
+poindexter schedule batch \
+  --count 20 \
+  --interval 30m \
+  --start "tomorrow 9am" \
+  --quiet-hours 22:00-07:00
+```
+
+Slots that would land between 22:00 and 07:00 jump forward to the
+next 07:00; subsequent slots step from there. So if the 11th slot
+would be 02:00, it becomes 07:00 the next morning, and slots 12, 13…
+continue at 07:30, 08:00, …
+
+**2. Show what's scheduled in the next 7 days**
+
+```bash
+poindexter schedule list --json | jq '
+  .rows
+  | map(select(.published_at <= (now + 7*86400 | strftime("%Y-%m-%dT%H:%M:%S+00:00"))))
+'
+```
+
+For a quick human-readable view, plain `poindexter schedule list`
+prints publish-time-ordered rows.
+
+**3. Push the entire queue back by 1 hour**
+
+```bash
+poindexter schedule shift --all --by 1h
+```
+
+Every post still in the future has its `published_at` advanced by
+one hour. The audit trail records the operation as a single
+`schedule.shifted` event with the post-id list in the payload.
 
 ---
 

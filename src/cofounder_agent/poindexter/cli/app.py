@@ -11,6 +11,7 @@ from .memory import memory_group
 from .posts import posts_group
 from .premium import premium_group
 from .qa_gates import qa_gates_group
+from .schedule import publish_at_command, schedule_group
 from .settings import settings_group
 from .setup import setup_command
 from .sprint import sprint_group
@@ -57,6 +58,8 @@ main.add_command(retention_group, name="retention")
 main.add_command(taps_group, name="taps")
 main.add_command(qa_gates_group, name="qa-gates")
 main.add_command(stores_group, name="stores")
+main.add_command(schedule_group, name="schedule")
+main.add_command(publish_at_command, name="publish-at")
 
 
 if __name__ == "__main__":

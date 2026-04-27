@@ -262,5 +262,226 @@ async def operator_status() -> str:
     return "\n".join(lines)
 
 
+# ============================================================================
+# SCHEDULED PUBLISHING TOOLS (Glad-Labs/poindexter#147)
+#
+# Thin wrappers over services/scheduling_service.py. Mirrors the
+# `poindexter schedule ...` CLI commands so an operator chatting with
+# Claude can queue up a batch of approved posts the same way.
+# ============================================================================
+
+import json as _schedule_json  # noqa: E402
+import os as _schedule_os  # noqa: E402
+import sys as _schedule_sys  # noqa: E402
+
+
+def _schedule_ensure_path() -> None:
+    """Add the cofounder_agent source root to ``sys.path`` so we can import
+    ``services.scheduling_service`` from this private MCP server.
+
+    This server runs via ``uv --directory mcp-server-gladlabs run server.py``
+    so the poindexter package isn't installed in its venv. Resolve relative
+    to this file so it works regardless of cwd.
+    """
+    here = _schedule_os.path.dirname(_schedule_os.path.abspath(__file__))
+    candidate = _schedule_os.path.normpath(
+        _schedule_os.path.join(here, "..", "src", "cofounder_agent")
+    )
+    if candidate not in _schedule_sys.path:
+        _schedule_sys.path.insert(0, candidate)
+
+
+async def _schedule_make_site_config(pool):
+    """Construct a SiteConfig the scheduling-service helpers can consume."""
+    _schedule_ensure_path()
+    from services.site_config import SiteConfig  # type: ignore[import-not-found]
+
+    cfg = SiteConfig(pool=pool)
+    try:
+        await cfg.load(pool)
+    except Exception as exc:  # pragma: no cover — best-effort load
+        logger.warning("Failed to load SiteConfig in schedule MCP wrapper: %s", exc)
+    return cfg
+
+
+def _schedule_result_to_jsonable(result) -> dict:
+    """Serialise a ScheduleResult dataclass into a plain dict."""
+    return {
+        "ok": result.ok,
+        "detail": result.detail,
+        "count": result.count,
+        "rows": result.rows,
+    }
+
+
+@mcp.tool()
+async def schedule_batch(
+    count: int,
+    interval: str,
+    start: str,
+    quiet_hours: str = "",
+    ordered_by: str = "approved_at",
+    force: bool = False,
+) -> str:
+    """Bulk-assign publish slots to the approved-post queue.
+
+    Reads up to ``count`` approved posts in ``ordered_by`` order and walks the
+    slot calendar starting from ``start`` stepping by ``interval``. Slots
+    inside the quiet-hours window are skipped to the next allowed time. Same
+    behaviour as ``poindexter schedule batch`` on the CLI.
+
+    Args:
+        count: Number of approved posts to schedule.
+        interval: Slot spacing — ``30m``, ``1h``, ``1h30m``, ``1d``…
+        start: First slot — ISO 8601, ``now``, ``tomorrow 9am``,
+            ``next monday 14:00``.
+        quiet_hours: ``HH:MM-HH:MM``; empty falls back to the
+            ``publish_quiet_hours`` app_setting.
+        ordered_by: ``approved_at`` (default) | ``created_at`` |
+            ``id`` | ``title``.
+        force: Re-schedule posts even if they already have a slot.
+    """
+    _schedule_ensure_path()
+    from services.scheduling_service import (  # type: ignore[import-not-found]
+        assign_batch as assign_batch_service,
+    )
+
+    try:
+        pool = await _get_pool()
+        site_config = await _schedule_make_site_config(pool)
+        result = await assign_batch_service(
+            count=count,
+            interval=interval,
+            start=start,
+            quiet_hours=quiet_hours or None,
+            ordered_by=ordered_by,
+            pool=pool,
+            site_config=site_config,
+            force=force,
+        )
+        return _schedule_json.dumps(
+            _schedule_result_to_jsonable(result), default=str
+        )
+    except Exception as e:
+        return f"schedule_batch failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def schedule_list(upcoming_only: bool = True) -> str:
+    """List every post with a populated publish schedule."""
+    _schedule_ensure_path()
+    from services.scheduling_service import (  # type: ignore[import-not-found]
+        list_scheduled,
+    )
+
+    try:
+        pool = await _get_pool()
+        result = await list_scheduled(pool=pool, upcoming_only=upcoming_only)
+        return _schedule_json.dumps(
+            _schedule_result_to_jsonable(result), default=str
+        )
+    except Exception as e:
+        return f"schedule_list failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def schedule_show(post_id: str) -> str:
+    """Return the schedule detail for a single post."""
+    _schedule_ensure_path()
+    from services.scheduling_service import (  # type: ignore[import-not-found]
+        show_scheduled,
+    )
+
+    try:
+        pool = await _get_pool()
+        result = await show_scheduled(post_id, pool=pool)
+        return _schedule_json.dumps(
+            _schedule_result_to_jsonable(result), default=str
+        )
+    except Exception as e:
+        return f"schedule_show failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def schedule_clear(post_id: str = "", clear_all: bool = False) -> str:
+    """Drop the schedule on one post or every still-future scheduled post.
+
+    Pass ``post_id`` for a single post, or ``clear_all=True`` for the whole
+    upcoming queue. Refuses both at once.
+    """
+    if (not post_id and not clear_all) or (post_id and clear_all):
+        return (
+            "schedule_clear: provide either post_id OR clear_all=True, "
+            "not both / neither."
+        )
+
+    _schedule_ensure_path()
+    from services.scheduling_service import (  # type: ignore[import-not-found]
+        clear as clear_service,
+    )
+
+    try:
+        pool = await _get_pool()
+        site_config = await _schedule_make_site_config(pool)
+        ids = None if clear_all else [post_id]
+        result = await clear_service(
+            post_ids=ids, pool=pool, site_config=site_config,
+        )
+        return _schedule_json.dumps(
+            _schedule_result_to_jsonable(result), default=str
+        )
+    except Exception as e:
+        return f"schedule_clear failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def publish_at(
+    post_id: str,
+    when: str = "",
+    in_delta: str = "",
+    force: bool = False,
+) -> str:
+    """Schedule a single post at a specific time.
+
+    Provide ``when`` (ISO 8601, ``now``, ``tomorrow 9am``, ``next monday
+    14:00``) OR ``in_delta`` (``2h``, ``7d``, ``1h30m``) — exactly one.
+    """
+    if (not when and not in_delta) or (when and in_delta):
+        return (
+            "publish_at: provide either when=... OR in_delta=..., "
+            "not both / neither."
+        )
+
+    _schedule_ensure_path()
+    from datetime import datetime, timezone  # type: ignore[import-not-found]
+
+    from services.scheduling_service import (  # type: ignore[import-not-found]
+        assign_slot,
+        parse_duration,
+        parse_when,
+    )
+
+    try:
+        target = (
+            parse_when(when)
+            if when
+            else datetime.now(timezone.utc) + parse_duration(in_delta)
+        )
+    except ValueError as e:
+        return f"publish_at parse error: {e}"
+
+    try:
+        pool = await _get_pool()
+        site_config = await _schedule_make_site_config(pool)
+        result = await assign_slot(
+            post_id, target, pool=pool, site_config=site_config, force=force,
+        )
+        return _schedule_json.dumps(
+            _schedule_result_to_jsonable(result), default=str
+        )
+    except Exception as e:
+        return f"publish_at failed: {type(e).__name__}: {e}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
