@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.join(_REPO, "src", "cofounder_agent"))
 
 _DATABASE_URL = (
     "postgresql://poindexter:poindexter-brain-local"
-    "@localhost:15432/poindexter_brain"
+    "@127.0.0.1:15432/poindexter_brain"
 )
 
 

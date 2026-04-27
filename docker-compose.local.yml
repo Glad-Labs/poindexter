@@ -394,7 +394,7 @@ services:
       - "9840:9840"
     environment:
       WAN_MODEL_ID: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
-      WAN_IDLE_TIMEOUT_S: "120"
+      WAN_IDLE_TIMEOUT_S: "900"
     volumes:
       - ${USERPROFILE:-.}/.poindexter/generated-videos:/root/.poindexter/generated-videos
       - ${USERPROFILE:-.}/.cache/huggingface:/root/.cache/huggingface
