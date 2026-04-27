@@ -659,6 +659,18 @@ _HALLUCINATION_WHITELIST = {
     # OS / kernel terms that look like package names
     "linux", "ubuntu", "debian", "alpine", "arch", "fedora", "centos",
     "systemd", "cron", "crontab", "bash", "zsh", "powershell",
+    # Programming languages — names get backticked or capitalized in
+    # tech posts. They aren't libraries; flagging them as "hallucinated
+    # library/API reference" was rejecting otherwise-passing posts
+    # (gitea#cost-elec-unify follow-up — score-87 task 9bc0002b
+    # rejected solely because "JavaScript" hit this code path).
+    "javascript", "typescript", "java", "kotlin", "swift", "ruby",
+    "golang", "rust", "scala", "elixir", "erlang", "haskell", "ocaml",
+    "clojure", "fsharp", "csharp", "cpp", "perl", "lua", "dart",
+    "groovy", "julia", "matlab", "r-lang", "objc",
+    "html", "css", "sass", "scss", "less",
+    "sql", "plpgsql", "tsql", "pgsql",
+    "wasm", "webassembly", "regex", "regexp",
 }
 
 
