@@ -97,12 +97,17 @@ async def _run_stages(
 ) -> dict[str, Any]:
     """Execute the six video Stages in order, propagating context_updates.
 
-    ``skip_long_form=True`` skips the StitchLongFormStage. Short-form
-    sample runs benefit from this when the upstream Wan/SDXL/TTS work
-    is already slow — long-form would double the wall-clock cost.
-    The script + scene_visuals + tts Stages still produce both
-    long_form and short_form outputs in their context (they're cheap
-    once running); only the long-form stitch is skipped.
+    ``skip_long_form=True`` strips the long-form scene list from
+    ``video_script`` after script_for_video produces it, BEFORE
+    scene_visuals runs. The downstream Stages (scene_visuals, tts,
+    stitch_long_form) gracefully no-op when long_form has no scenes —
+    no long-form Wan/SDXL/Pexels work runs, no long-form TTS, no
+    long-form stitch. Real wall-clock saving: 10 Wan scenes × ~3min
+    each = ~30min on a Wan-strategy run.
+
+    The original implementation only skipped the long_form stitch
+    Stage, which left all the upstream long-form generation running —
+    a 30-min waste on Wan. Caught by Matt during the b6ekoqn5t run.
     """
     from services.stages.script_for_video import ScriptForVideoStage
     from services.stages.scene_visuals import SceneVisualsStage
@@ -113,9 +118,14 @@ async def _run_stages(
 
     stages: list[Any] = [
         ScriptForVideoStage(),
-        SceneVisualsStage(),
-        TtsForVideoStage(),
+        # Strip long-form scenes when --short-only is set. Inserted as
+        # an inline async lambda-equivalent: a tiny in-script "Stage"
+        # that mutates context. Using a real class would be overkill.
     ]
+    if skip_long_form:
+        stages.append(_StripLongFormSceneList())
+    stages.append(SceneVisualsStage())
+    stages.append(TtsForVideoStage())
     if not skip_long_form:
         stages.append(StitchLongFormStage())
     stages.extend([
@@ -137,8 +147,45 @@ async def _run_stages(
         if not result.ok and getattr(stage, "halts_on_failure", False):
             print(f"  halting: stage marked halts_on_failure=True")
             break
-
     return context
+
+
+class _StripLongFormSceneList:
+    """Tiny pseudo-Stage: removes long_form scenes from video_script.
+
+    Used by --short-only sample runs to make scene_visuals + tts +
+    stitch_long_form all gracefully skip the long-form path. Each of
+    those Stages already returns ok=False / no-op when long_form has
+    no scenes, so we just empty the list and they take the early-out
+    branches naturally.
+
+    Lives in the runner script (not in services/stages/) because it's
+    a sample-only utility — production never wants to skip long-form.
+    """
+
+    name = "video.strip_long_form (sample-only)"
+    description = "Empty out video_script.long_form so downstream skips it"
+    halts_on_failure = False
+
+    async def execute(self, context: dict[str, Any], config: dict[str, Any]):
+        from plugins.stage import StageResult
+        script = context.get("video_script") or {}
+        if isinstance(script, dict) and "long_form" in script:
+            long_form = script.get("long_form") or {}
+            scene_count = len(long_form.get("scenes") or [])
+            # Replace with an empty long_form so downstream Stages
+            # see "no scenes" and gracefully no-op.
+            script["long_form"] = {
+                "intro_hook": "",
+                "outro_cta": "",
+                "scenes": [],
+            }
+            return StageResult(
+                ok=True,
+                detail=f"stripped {scene_count} long-form scene(s) for --short-only run",
+                context_updates={"video_script": script},
+            )
+        return StageResult(ok=True, detail="no long-form scenes to strip")
 
 
 class _FakeDatabaseService:
