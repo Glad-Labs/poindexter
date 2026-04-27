@@ -147,6 +147,32 @@ export async function getAllPublishedPosts(): Promise<Post[]> {
 }
 
 /**
+ * Fetch posts by author. The autonomous content site has one
+ * primary byline (poindexter-ai); this still goes through the same
+ * filter so /author/<id> can render a real list instead of a
+ * "Coming soon" placeholder. Pages this with the same POSTS_PER_PAGE
+ * cap as getPosts/getPostsByCategory so all listing pages feel the
+ * same to the reader.
+ */
+export async function getPostsByAuthor(
+  authorId: string,
+  page: number = 1,
+): Promise<PostsResponse> {
+  const allPosts = await fetchPostIndex();
+  const filtered = allPosts.filter((p) => p.author_id === authorId);
+  const offset = (page - 1) * POSTS_PER_PAGE;
+  const paged = filtered.slice(offset, offset + POSTS_PER_PAGE);
+
+  return {
+    posts: paged,
+    total: filtered.length,
+    page,
+    pageSize: POSTS_PER_PAGE,
+    totalPages: Math.ceil(filtered.length / POSTS_PER_PAGE),
+  };
+}
+
+/**
  * Get both the previous and next posts in a single fetch.
  */
 export async function getAdjacentPosts(currentSlug: string): Promise<{
