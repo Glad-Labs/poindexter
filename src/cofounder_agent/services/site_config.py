@@ -96,6 +96,16 @@ class SiteConfig:
             logger.warning("[SITE_CONFIG] No DB pool — using env var fallbacks only")
             return 0
 
+        # Attach the pool BEFORE attempting the SELECT so a transient
+        # load failure doesn't leave the SiteConfig pool-less for the
+        # rest of the session (gitea#322 follow-up). Downstream
+        # consumers — CostGuard.record_usage, SiteConfig.get_secret,
+        # the LLM provider plugins' _build_cost_guard — all silently
+        # no-op when ``_pool`` is None. Losing the pool here was the
+        # silent-disabled-cost-tracking class of bug Matt asked us to
+        # hunt.
+        self._pool = pool
+
         try:
             rows = await pool.fetch(
                 "SELECT key, value FROM app_settings WHERE is_secret = false"
@@ -105,11 +115,13 @@ class SiteConfig:
                     self._config[row["key"]] = row["value"]
 
             self._loaded = True
-            self._pool = pool  # Retain for on-demand get_secret() lookups
             logger.info("[SITE_CONFIG] Loaded %d settings from database", len(self._config))
             return len(self._config)
         except Exception as e:
             logger.warning("[SITE_CONFIG] Failed to load from DB: %s — using env fallbacks", e)
+            # Pool is still attached above, so get_secret() and CostGuard
+            # writes keep working even though the in-memory cache is
+            # incomplete.
             return 0
 
     async def reload(self, pool) -> int:
