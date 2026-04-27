@@ -50,8 +50,27 @@ NVIDIA_EXPORTER_URL = _DEFAULT_NVIDIA_EXPORTER_URL
 # Models under this VRAM threshold (in GB) skip the lock — they can coexist.
 SMALL_MODEL_THRESHOLD_GB = 2.0
 
-# Gaming detection defaults — all overridable via app_settings (DB-first config)
-_DEFAULT_GPU_BUSY_THRESHOLD = 30  # GPU utilization % to consider "in use"
+# Gaming detection defaults — all overridable via app_settings (DB-first config).
+#
+# Mode dispatch (`gpu_gaming_detection_mode`):
+#
+# - ``"off"`` (default) — no detection. The pipeline trusts that
+#   ollama / wan-server / sdxl-server manage their own VRAM, and that
+#   the in-process GPU lock serializes our own workloads. Picked as
+#   default after Glad-Labs/poindexter#144: the original threshold-based
+#   detector tripped on our own sidecars' idle VRAM and on ollama's
+#   model-loading bursts, blocking pipeline runs while wan-server was
+#   up. The Windows-host nvidia-smi can't see Docker/WSL2 process
+#   names cleanly, so per-process whitelisting isn't viable.
+# - ``"manual"`` — reads ``pipeline_paused_for_gaming`` (bool). Operator
+#   flips it on before a long game session, off after. Reliable, no
+#   guessing.
+# - ``"auto"`` — the legacy threshold-based detector. Default threshold
+#   bumped 30%→90% so brief inference bursts (which sustain ~70-80%
+#   for seconds) don't trigger; only real gaming (sustained 90%+ for
+#   minutes) does.
+_DEFAULT_GAMING_MODE = "off"
+_DEFAULT_GPU_BUSY_THRESHOLD = 90  # GPU utilization % to consider "in use" (auto mode)
 _DEFAULT_GAMING_CHECK_INTERVAL = 15  # seconds between checks while waiting
 _DEFAULT_GAMING_CONFIRM_CHECKS = 2  # consecutive checks above threshold to confirm
 _DEFAULT_GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
@@ -77,6 +96,30 @@ def _cfg_float(site_config: Any, key: str, default: float) -> float:
     if site_config is None:
         return default
     return site_config.get_float(key, default)
+
+
+def _cfg_str(site_config: Any, key: str, default: str) -> str:
+    """Read a str from the injected site_config (Phase H DI seam)."""
+    if site_config is None:
+        return default
+    value = site_config.get(key, default)
+    return str(value) if value is not None else default
+
+
+def _cfg_bool(site_config: Any, key: str, default: bool) -> bool:
+    """Read a bool from the injected site_config (Phase H DI seam).
+
+    Tolerates string-shaped values ("true"/"false"/"1"/"0") since
+    operators set settings via SQL where everything's text.
+    """
+    if site_config is None:
+        return default
+    value = site_config.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return bool(value)
 
 
 class GPUScheduler:
@@ -302,9 +345,56 @@ class GPUScheduler:
     async def _wait_for_gaming_clear(self):
         """Block until GPU is not being used by an external workload (gaming).
 
-        Uses consecutive checks to avoid false positives from brief GPU spikes.
-        All thresholds are DB-configurable via app_settings.
+        Mode-dispatch on ``gpu_gaming_detection_mode``:
+
+        - ``"off"`` (default): no-op. We trust the in-process GPU lock
+          to serialize our own workloads and the model-loaders
+          (ollama, wan, sdxl) to manage their own VRAM. See
+          Glad-Labs/poindexter#144 for the rationale.
+        - ``"manual"``: pause iff ``pipeline_paused_for_gaming``
+          (operator-controlled flag) is true.
+        - ``"auto"``: legacy threshold-based detector. Default
+          threshold raised to 90% so only sustained real-game load
+          trips it; brief inference bursts don't.
         """
+        mode = _cfg_str(self._site_config, "gpu_gaming_detection_mode", _DEFAULT_GAMING_MODE).lower()
+
+        if mode == "off":
+            return
+
+        if mode == "manual":
+            paused = _cfg_bool(self._site_config, "pipeline_paused_for_gaming", False)
+            if not paused:
+                if self._gaming_detected:
+                    pause_duration = time.monotonic() - self._gaming_paused_since
+                    self._total_gaming_paused_s += pause_duration
+                    logger.info(
+                        "[GPU] Manual gaming flag cleared — resuming pipeline (paused %.0fs)",
+                        pause_duration,
+                    )
+                    self._gaming_detected = False
+                return
+            # Operator says "I'm gaming, hold off." Poll the flag at
+            # the same cadence the auto-mode polls util.
+            check_interval = _cfg_int(self._site_config, "gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL)
+            if not self._gaming_detected:
+                self._gaming_detected = True
+                self._gaming_paused_since = time.monotonic()
+                logger.info("[GPU] Manual gaming flag set — pausing pipeline")
+            while True:
+                await asyncio.sleep(check_interval)
+                if not _cfg_bool(self._site_config, "pipeline_paused_for_gaming", False):
+                    break
+            pause_duration = time.monotonic() - self._gaming_paused_since
+            self._total_gaming_paused_s += pause_duration
+            logger.info(
+                "[GPU] Manual gaming flag cleared — resuming pipeline (paused %.0fs)",
+                pause_duration,
+            )
+            self._gaming_detected = False
+            return
+
+        # mode == "auto" — legacy threshold-based check.
         threshold = _cfg_int(self._site_config, "gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD)
         check_interval = _cfg_int(self._site_config, "gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL)
         confirm_checks = _cfg_int(self._site_config, "gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS)
