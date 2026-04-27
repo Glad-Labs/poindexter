@@ -69,6 +69,19 @@ _DEFAULT_PRESET = "medium"
 _DEFAULT_CRF = 20
 _DEFAULT_AUDIO_BITRATE = "192k"
 _DEFAULT_LOGLEVEL = "error"
+_DEFAULT_KEN_BURNS_ENABLED = True
+_DEFAULT_KEN_BURNS_ZOOM = 1.20  # 20% slow zoom over scene duration
+
+# Per-scene Ken Burns motion presets — rotated by scene_idx so adjacent
+# scenes aren't all zooming the same way. Each entry is a (start_x_expr,
+# start_y_expr) tuple in zoompan's coordinate space (the upscaled frame).
+# Center is iw/2, ih/2; corners are 0,0 / iw,0 / 0,ih / iw,ih.
+_KEN_BURNS_VARIANTS: tuple[tuple[str, str], ...] = (
+    ("iw/2-(iw/zoom/2)",    "ih/2-(ih/zoom/2)"),     # zoom-in to center
+    ("0",                   "0"),                     # zoom-in from top-left
+    ("iw-(iw/zoom)",        "0"),                     # zoom-in from top-right
+    ("iw/2-(iw/zoom/2)",    "ih-(ih/zoom)"),         # zoom-in from bottom-center
+)
 
 # Container → codec compatibility. Used by ``supports()`` so the
 # dispatch layer can refuse impossible combinations before we hand
@@ -154,6 +167,42 @@ def _is_still_image(path: str) -> bool:
     return os.path.splitext(path)[1].lower() in _STILL_IMAGE_EXTS
 
 
+def _build_ken_burns_filter(
+    *,
+    width: int,
+    height: int,
+    fps: int,
+    duration_s: float,
+    zoom_factor: float,
+    variant_idx: int,
+) -> str:
+    """Build the Ken Burns ``zoompan``-based filtergraph for a still scene.
+
+    Up-samples 2× before zoompan to dodge the integer-pixel banding the
+    filter exhibits at native resolution, then crops back to a clean
+    2×W × 2×H plate. zoom progresses from 1.0 → ``zoom_factor`` linearly
+    over the scene duration; the start position rotates per scene to
+    keep adjacent zooms visually distinct.
+    """
+    duration_frames = max(1, int(round(duration_s * fps)))
+    delta = max(0.0, zoom_factor - 1.0)
+    # Linear zoom: zoom = 1 + (delta * frame_idx / total_frames)
+    zoom_expr = f"1+({delta:.4f}/{duration_frames})*on"
+    start_x, start_y = _KEN_BURNS_VARIANTS[
+        variant_idx % len(_KEN_BURNS_VARIANTS)
+    ]
+    return (
+        # 2× upsample for zoompan headroom; preserve aspect by
+        # increasing then crop to fit.
+        f"scale=w={width * 2}:h={height * 2}:force_original_aspect_ratio=increase,"
+        f"crop=w={width * 2}:h={height * 2},"
+        # zoompan operates on the 2× plate; output at target dimensions.
+        f"zoompan=z='{zoom_expr}':"
+        f"x='{start_x}':y='{start_y}':"
+        f"d={duration_frames}:s={width}x{height}:fps={fps}"
+    )
+
+
 def _build_normalize_cmd(
     *,
     binary: str,
@@ -168,6 +217,9 @@ def _build_normalize_cmd(
     audio_bitrate: str,
     loglevel: str,
     hwaccel: str,
+    ken_burns_enabled: bool = False,
+    ken_burns_zoom: float = _DEFAULT_KEN_BURNS_ZOOM,
+    scene_idx: int = 0,
 ) -> list[str]:
     """Build the per-scene normalization argv.
 
@@ -207,17 +259,30 @@ def _build_normalize_cmd(
     else:
         cmd.extend(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"])
 
-    # Video filtergraph — scale to fit, pad to fill, normalize fps.
-    vf = (
-        f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
-        f"pad=w={width}:h={height}:x=(ow-iw)/2:y=(oh-ih)/2,"
-        f"fps={fps}"
-    )
-    cmd.extend(["-vf", vf])
-
     # Duration is now the authoritative scene length. Always set it —
     # 0 collapses to a frame which is never what we want here.
     duration_s = scene.duration_s if scene.duration_s and scene.duration_s > 0 else 5.0
+
+    # Video filtergraph. For still images with Ken Burns enabled, swap
+    # the static scale+pad for a zoompan that produces motion. Real
+    # video clips and stills with Ken Burns disabled keep the original
+    # static-fit graph.
+    if ken_burns_enabled and _is_still_image(scene.clip_path):
+        vf = _build_ken_burns_filter(
+            width=width,
+            height=height,
+            fps=fps,
+            duration_s=duration_s,
+            zoom_factor=ken_burns_zoom,
+            variant_idx=scene_idx,
+        )
+    else:
+        vf = (
+            f"scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
+            f"pad=w={width}:h={height}:x=(ow-iw)/2:y=(oh-ih)/2,"
+            f"fps={fps}"
+        )
+    cmd.extend(["-vf", vf])
     cmd.extend(["-t", f"{duration_s:.3f}"])
 
     # Map streams so the AAC track always wins even if the input clip
@@ -514,6 +579,16 @@ class FFmpegLocalCompositor:
         audio_bitrate = str(self._get("audio_bitrate", _DEFAULT_AUDIO_BITRATE) or _DEFAULT_AUDIO_BITRATE)
         loglevel = str(self._get("loglevel", _DEFAULT_LOGLEVEL) or _DEFAULT_LOGLEVEL)
         hwaccel = str(self._get("hwaccel", "") or "")
+        ken_burns_enabled = bool(
+            self._get("ken_burns_enabled", _DEFAULT_KEN_BURNS_ENABLED),
+        )
+        try:
+            ken_burns_zoom = float(
+                self._get("ken_burns_zoom", _DEFAULT_KEN_BURNS_ZOOM)
+                or _DEFAULT_KEN_BURNS_ZOOM,
+            )
+        except (TypeError, ValueError):
+            ken_burns_zoom = _DEFAULT_KEN_BURNS_ZOOM
         encoder = _ENCODER_FOR_CODEC[request.codec]
 
         cost_guard = self._build_cost_guard(kwargs)
@@ -544,6 +619,9 @@ class FFmpegLocalCompositor:
                         audio_bitrate=audio_bitrate,
                         loglevel=loglevel,
                         hwaccel=hwaccel,
+                        ken_burns_enabled=ken_burns_enabled,
+                        ken_burns_zoom=ken_burns_zoom,
+                        scene_idx=idx,
                     )
                     rc, _, err = await asyncio.to_thread(_run_blocking, cmd)
                     if rc != 0:
