@@ -1143,7 +1143,7 @@ version = "5.2.1"
 description = "Decorators for Humans"
 optional = false
 python-versions = ">=3.8"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "decorator-5.2.1-py3-none-any.whl", hash = "sha256:d316bb415a2d9e2d2b3abcc4084c6502fc09240e292cd76a76afc106a1c8e04a"},
     {file = "decorator-5.2.1.tar.gz", hash = "sha256:65f266143752f734b0a7cc83c46f4618af75b8c5911b00ccb61d0ac9b6da0360"},
@@ -2935,6 +2935,32 @@ files = [
     {file = "markupsafe-3.0.3-cp39-cp39-win_arm64.whl", hash = "sha256:38664109c14ffc9e7437e86b4dceb442b0096dfe3541d7864d9cbe1da4cf36c8"},
     {file = "markupsafe-3.0.3.tar.gz", hash = "sha256:722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698"},
 ]
+
+[[package]]
+name = "mastodon-py"
+version = "2.2.1"
+description = "Python wrapper for the Mastodon API"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "mastodon_py-2.2.1-py3-none-any.whl", hash = "sha256:eb2a815ccc0c4b62417c531e07c02414e000c419abd319326843eb6370b772b3"},
+    {file = "mastodon_py-2.2.1.tar.gz", hash = "sha256:b52c85850272b4ff7a666b87c62432c5059f25c29fb485ffa1f608938744d8a4"},
+]
+
+[package.dependencies]
+decorator = ">=4.0.0"
+python-dateutil = "*"
+requests = ">=2.4.2"
+
+[package.extras]
+blurhash = ["blurhash (>=1.1.4)"]
+docs = ["sphinx-rtd-theme"]
+grapheme = ["graphemeu (>=0.7.2)"]
+magic = ["python-magic ; platform_system != \"Windows\"", "python-magic-bin ; platform_system == \"Windows\""]
+test = ["pytest", "pytest-cov", "pytest-mock", "pytest-recording", "pytest-retry", "pytz", "requests-mock", "vcrpy"]
+test-old = ["pytest", "pytest-cov", "pytest-mock", "pytest-recording", "pytz", "requests-mock", "vcrpy"]
+webpush = ["cryptography (>=1.6.0)", "http_ece (>=1.0.5)"]
 
 [[package]]
 name = "matplotlib-inline"
@@ -6775,4 +6801,4 @@ ml = ["diffusers", "torch", "transformers"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "b8f7f25caea35516305a10d7d8de49503de2f6f89dfd2c757287a2d1dcf2ed07"
+content-hash = "be93e68d6cd62da4c41405a9a26cd0e2d1eaa1dd17b2a50a1feb6a89cc160da7"
