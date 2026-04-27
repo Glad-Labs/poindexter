@@ -70,7 +70,10 @@ _DEFAULT_CRF = 20
 _DEFAULT_AUDIO_BITRATE = "192k"
 _DEFAULT_LOGLEVEL = "error"
 _DEFAULT_KEN_BURNS_ENABLED = True
-_DEFAULT_KEN_BURNS_ZOOM = 1.20  # 20% slow zoom over scene duration
+_DEFAULT_KEN_BURNS_ZOOM = 1.10  # 10% zoom over scene duration — slow,
+# gentle motion. Matt called the original 20% too fast; settled here
+# after one A/B sample. Operators can override per-install via
+# plugin.media_compositor.ffmpeg_local.ken_burns_zoom.
 
 # Per-scene Ken Burns motion presets — rotated by scene_idx so adjacent
 # scenes aren't all zooming the same way. Each entry is a (start_x_expr,

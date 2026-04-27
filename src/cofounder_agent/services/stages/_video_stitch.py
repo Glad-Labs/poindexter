@@ -173,11 +173,21 @@ def build_scenes(
     if not body_scenes:
         return []
 
+    # Bookend visual selection — when we have multiple body visuals,
+    # pick a NON-ADJACENT one for the bookend so the intro and the
+    # following scene aren't the same image back-to-back. Matt caught
+    # this on the V0 sample: intro used body_visuals[0] for the same
+    # duration as body scene 0, which itself used body_visuals[0],
+    # producing 9s of the same Pexels photo with different Ken Burns
+    # variants — still read as a static repeat to viewers.
+    intro_visual = body_visuals[1] if len(body_visuals) > 1 else body_visuals[0]
+    outro_visual = body_visuals[-2] if len(body_visuals) > 1 else body_visuals[-1]
+
     scenes: list[CompositionScene] = []
     if intro_audio_path and intro_duration_s > 0:
         scenes.append(
             CompositionScene(
-                clip_path=body_visuals[0],
+                clip_path=intro_visual,
                 narration_path=intro_audio_path,
                 duration_s=intro_duration_s,
                 caption_text="",
@@ -187,7 +197,7 @@ def build_scenes(
     if outro_audio_path and outro_duration_s > 0:
         scenes.append(
             CompositionScene(
-                clip_path=body_visuals[-1],
+                clip_path=outro_visual,
                 narration_path=outro_audio_path,
                 duration_s=outro_duration_s,
                 caption_text="",
