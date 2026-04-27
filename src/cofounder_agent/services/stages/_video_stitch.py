@@ -112,6 +112,8 @@ def build_scenes(
     intro_duration_s: float = 0.0,
     outro_audio_path: str = "",
     outro_duration_s: float = 0.0,
+    intro_clip_path: str = "",
+    outro_clip_path: str = "",
 ) -> list[Any]:
     """Zip per-scene visuals + audio into ``CompositionScene`` objects.
 
@@ -173,15 +175,21 @@ def build_scenes(
     if not body_scenes:
         return []
 
-    # Bookend visual selection — when we have multiple body visuals,
-    # pick a NON-ADJACENT one for the bookend so the intro and the
-    # following scene aren't the same image back-to-back. Matt caught
-    # this on the V0 sample: intro used body_visuals[0] for the same
-    # duration as body scene 0, which itself used body_visuals[0],
-    # producing 9s of the same Pexels photo with different Ken Burns
-    # variants — still read as a static repeat to viewers.
-    intro_visual = body_visuals[1] if len(body_visuals) > 1 else body_visuals[0]
-    outro_visual = body_visuals[-2] if len(body_visuals) > 1 else body_visuals[-1]
+    # Bookend visual selection. Prefer dedicated intro/outro images
+    # supplied by the SceneVisualsStage (fetched via separate Pexels
+    # queries keyed off intro_hook / outro_cta) so the bookend is
+    # topically related to the hook but never duplicates a body
+    # scene's image. Falls back to non-adjacent body visuals when
+    # the dedicated lookup didn't return anything — better than
+    # nothing and at least separates the dupe by a full body scene.
+    intro_visual = (
+        intro_clip_path
+        or (body_visuals[1] if len(body_visuals) > 1 else body_visuals[0])
+    )
+    outro_visual = (
+        outro_clip_path
+        or (body_visuals[-2] if len(body_visuals) > 1 else body_visuals[-1])
+    )
 
     scenes: list[CompositionScene] = []
     if intro_audio_path and intro_duration_s > 0:

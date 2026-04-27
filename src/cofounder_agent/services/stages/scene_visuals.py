@@ -83,9 +83,18 @@ _STOP_WORDS = frozenset({
 })
 
 
-def _default_visuals() -> dict[str, list[dict[str, Any]]]:
+def _default_visuals() -> dict[str, Any]:
     """Empty/default shape returned when there's no work to do."""
-    return {"long_form": [], "short_form": []}
+    return {
+        "long_form": [],
+        "short_form": [],
+        # Dedicated hero visuals for the intro / outro bookends.
+        # Always Pexels stock photos for V0 — keyed off post title /
+        # intro_hook / outro_cta. Never reused for body scenes, so the
+        # bookend doesn't dupe an image that plays moments later.
+        "intro_clip_path": "",
+        "outro_clip_path": "",
+    }
 
 
 def _tokenize(text: str) -> set[str]:
@@ -162,7 +171,7 @@ class SceneVisualsStage:
         post_id = context.get("post_id")
         pool = getattr(site_config, "_pool", None)
 
-        visuals: dict[str, list[dict[str, Any]]] = _default_visuals()
+        visuals: dict[str, Any] = _default_visuals()
         counts: dict[str, int] = {
             "media_assets": 0, "pexels": 0, "sdxl": 0, "miss": 0,
         }
@@ -188,6 +197,29 @@ class SceneVisualsStage:
                 visuals[kind].append(resolution)
                 source = resolution.get("source") or "miss"
                 counts[source] = counts.get(source, 0) + 1
+
+        # Dedicated bookend visuals — fetched separately so the intro
+        # and outro never reuse a body scene's image. Keyed off the
+        # script's hook / CTA text (or the post title as a fallback)
+        # so they're topically related but visually distinct from the
+        # body imagery.
+        long_form = script.get("long_form") or {}
+        intro_query = (
+            str(long_form.get("intro_hook") or "")
+            or str(context.get("title") or "")
+        )
+        outro_query = (
+            str(long_form.get("outro_cta") or "")
+            or str(context.get("title") or "")
+        )
+        intro_clip = await _try_pexels(intro_query, site_config) if intro_query else None
+        outro_clip = await _try_pexels(outro_query, site_config) if outro_query else None
+        if intro_clip:
+            visuals["intro_clip_path"] = intro_clip["clip_path"]
+            counts["pexels"] += 1
+        if outro_clip:
+            visuals["outro_clip_path"] = outro_clip["clip_path"]
+            counts["pexels"] += 1
 
         stages = context.setdefault("stages", {})
         long_count = sum(

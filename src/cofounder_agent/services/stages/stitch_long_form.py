@@ -113,6 +113,7 @@ class StitchLongFormStage:
         post_id = context.get("post_id")
         output_dir, output_path = output_paths(_LONG_FORM_SPEC, task_id)
 
+        full_visuals = context.get("video_scene_visuals") or {}
         scenes = build_scenes(
             visuals=visuals,
             tts_scenes=tts.get("scenes") or [],
@@ -121,6 +122,8 @@ class StitchLongFormStage:
             intro_duration_s=float(tts.get("intro_duration_s") or 0.0),
             outro_audio_path=str(tts.get("outro_audio_path") or ""),
             outro_duration_s=float(tts.get("outro_duration_s") or 0.0),
+            intro_clip_path=str(full_visuals.get("intro_clip_path") or ""),
+            outro_clip_path=str(full_visuals.get("outro_clip_path") or ""),
         )
         if not scenes:
             return StageResult(

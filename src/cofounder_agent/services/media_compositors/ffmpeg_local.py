@@ -75,6 +75,21 @@ _DEFAULT_KEN_BURNS_ZOOM = 1.10  # 10% zoom over scene duration — slow,
 # after one A/B sample. Operators can override per-install via
 # plugin.media_compositor.ffmpeg_local.ken_burns_zoom.
 
+# Caption styling. ffmpeg's ``subtitles`` filter accepts ASS-style
+# overrides via ``force_style``. Defaults match what Matt wanted on
+# the V0 sample: vertically centered, large enough to read at thumb-
+# scrolling distance on mobile.
+_DEFAULT_CAPTION_POSITION = "middle"  # "top" | "middle" | "bottom"
+_DEFAULT_CAPTION_FONT_SIZE = 28
+# libass alignment numpad: 1=bottom-left, 2=bottom-center, 3=bottom-right,
+# 4=middle-left, 5=middle-center, 6=middle-right,
+# 7=top-left, 8=top-center, 9=top-right
+_CAPTION_ALIGNMENT: dict[str, int] = {
+    "top": 8,
+    "middle": 5,
+    "bottom": 2,
+}
+
 # Per-scene Ken Burns motion presets — rotated by scene_idx so adjacent
 # scenes aren't all zooming the same way. Each entry is a (start_x_expr,
 # start_y_expr) tuple in zoompan's coordinate space (the upscaled frame).
@@ -387,6 +402,8 @@ def _build_burn_captions_cmd(
     loglevel: str,
     hwaccel: str,
     output_path: str,
+    caption_position: str = _DEFAULT_CAPTION_POSITION,
+    caption_font_size: int = _DEFAULT_CAPTION_FONT_SIZE,
 ) -> list[str]:
     """Burn an .srt/.vtt sidecar into the visual stream.
 
@@ -394,18 +411,38 @@ def _build_burn_captions_cmd(
     audio. Caption file path is escaped: backslashes and colons inside
     the filter graph need doubling, which is why we substitute via
     %s/%c rather than f-string interpolation of an unsanitized path.
+
+    Styling — ``force_style`` injects ASS overrides. ``Alignment``
+    controls vertical/horizontal placement (numpad layout); a thick
+    outline + drop shadow keeps captions readable over busy stock
+    photos and Ken Burns motion.
     """
     # ``subtitles`` filter requires forward slashes and backslash-escaped
     # colons even on Windows — and the path itself goes inside a
     # filtergraph string, so single quotes wrapping it disable the
     # outer comma parser.
     safe = caption_path.replace("\\", "/").replace(":", r"\:")
+    alignment = _CAPTION_ALIGNMENT.get(caption_position, _CAPTION_ALIGNMENT["middle"])
+    # ASS force_style is a comma-list of ``Key=Value`` pairs; backslash
+    # in front of commas inside the value is unnecessary because we
+    # only set scalar values.
+    force_style = (
+        f"Alignment={alignment},"
+        f"FontSize={caption_font_size},"
+        f"PrimaryColour=&H00FFFFFF,"   # white
+        f"OutlineColour=&H00000000,"   # black outline
+        f"BackColour=&H80000000,"      # 50% black box behind text
+        f"Outline=2,"
+        f"Shadow=1,"
+        f"BorderStyle=1,"              # 1=outline+shadow, 3=opaque box
+        f"MarginV=40"
+    )
     cmd: list[str] = [binary, "-loglevel", loglevel, "-y"]
     if hwaccel:
         cmd.extend(["-hwaccel", hwaccel])
     cmd.extend([
         "-i", video_in,
-        "-vf", f"subtitles='{safe}'",
+        "-vf", f"subtitles='{safe}':force_style='{force_style}'",
         "-c:v", encoder,
         "-pix_fmt", "yuv420p",
         "-preset", preset,
@@ -592,6 +629,19 @@ class FFmpegLocalCompositor:
             )
         except (TypeError, ValueError):
             ken_burns_zoom = _DEFAULT_KEN_BURNS_ZOOM
+        caption_position = str(
+            self._get("caption_position", _DEFAULT_CAPTION_POSITION)
+            or _DEFAULT_CAPTION_POSITION,
+        ).lower()
+        if caption_position not in _CAPTION_ALIGNMENT:
+            caption_position = _DEFAULT_CAPTION_POSITION
+        try:
+            caption_font_size = int(
+                self._get("caption_font_size", _DEFAULT_CAPTION_FONT_SIZE)
+                or _DEFAULT_CAPTION_FONT_SIZE,
+            )
+        except (TypeError, ValueError):
+            caption_font_size = _DEFAULT_CAPTION_FONT_SIZE
         encoder = _ENCODER_FOR_CODEC[request.codec]
 
         cost_guard = self._build_cost_guard(kwargs)
@@ -698,6 +748,8 @@ class FFmpegLocalCompositor:
                             loglevel=loglevel,
                             hwaccel=hwaccel,
                             output_path=request.output_path,
+                            caption_position=caption_position,
+                            caption_font_size=caption_font_size,
                         )
                         rc, _, err = await asyncio.to_thread(_run_blocking, cmd)
                         if rc != 0:
