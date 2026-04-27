@@ -532,25 +532,22 @@ class TaskExecutor:
                             self.task_count += 1
                 else:
                     logger.debug(
-                        "[TASK_EXEC_LOOP] No pending tasks - running idle work"
+                        "[TASK_EXEC_LOOP] No pending tasks"
                     )
                     # Empty queue is positive evidence that the executor is
                     # alive and not stalling — clear the stall window so the
                     # next batch's clock starts fresh when it arrives (#119).
                     self._pending_visible_since = None
-                    # Run background maintenance when pipeline is idle
-                    try:
-                        from services.idle_worker import IdleWorker
-                        if self.database_service and self.database_service.pool:
-                            if not hasattr(self, '_idle_worker'):
-                                # Resolve site_config: ctor → app.state → module
-                                self._idle_worker = IdleWorker(
-                                    self.database_service.pool,
-                                    site_config=self.site_config,
-                                )
-                            await self._idle_worker.run_cycle()
-                    except Exception as idle_err:
-                        logger.debug("[TASK_EXEC_LOOP] Idle worker error (non-critical): %s", idle_err)
+                    # Background maintenance lives entirely on apscheduler
+                    # via PluginScheduler now (Phase C, #67). The legacy
+                    # IdleWorker fallback was deleted in #151 once every
+                    # task it owned had a services/jobs/ counterpart:
+                    # topic_discovery_signals (port of the discovery
+                    # signals), the prune_*_embeddings jobs (TTL +
+                    # orphan), scheduled_publisher (post-level publish
+                    # slot polling). Empty pending queue here is now
+                    # just a "no pending work" signal — apscheduler
+                    # decides what runs next.
 
                 # Sweep stale tasks on a schedule (every SWEEP_INTERVAL_SECONDS)
                 if time.time() - self._last_sweep > SWEEP_INTERVAL_SECONDS:
