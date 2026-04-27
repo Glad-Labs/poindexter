@@ -21,13 +21,15 @@ export default function Loading() {
         </div>
         {/* Featured image skeleton */}
         <div className="w-full aspect-video bg-slate-700 rounded-xl mb-12"></div>
-        {/* Content skeleton */}
+        {/* Content skeleton — fixed widths to avoid hydration mismatch.
+            Math.random() at render time produces different markup on
+            server vs client and React 18 throws a hydration warning. */}
         <div className="space-y-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {[92, 88, 95, 86, 91, 97, 89, 94].map((widthPercent, i) => (
             <div
               key={i}
               className="h-4 bg-slate-700 rounded"
-              style={{ width: `${85 + Math.random() * 15}%` }}
+              style={{ width: `${widthPercent}%` }}
             ></div>
           ))}
         </div>

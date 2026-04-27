@@ -5,7 +5,7 @@ import logger from '@/lib/logger';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 
 import { getAllPublishedPosts } from '@/lib/posts';
-import { SITE_NAME } from '@/lib/site.config';
+import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 
 interface Post {
   id: string;
@@ -71,7 +71,27 @@ export async function generateMetadata({
   return {
     title,
     description,
-    openGraph: { title, description },
+    alternates: { canonical: `${SITE_URL}/tag/${slug}` },
+    openGraph: {
+      title,
+      description,
+      type: 'website',
+      url: `${SITE_URL}/tag/${slug}`,
+      images: [
+        {
+          url: '/og-image.jpg',
+          width: 1200,
+          height: 630,
+          alt: `Articles tagged ${tag} on ${SITE_NAME}`,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: ['/og-image.jpg'],
+    },
   };
 }
 
