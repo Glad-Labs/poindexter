@@ -91,15 +91,46 @@ class AdminDatabase(DatabaseServiceMixin):
         blocks the cost_logs insert, so the primary accounting path is
         unaffected.
         """
+        # Back-fill electricity_kwh for callers that haven't started
+        # supplying it yet (pipeline stages still build their own
+        # cost_log dicts via this path). Local providers compute kWh
+        # from the recorded duration × gpu_power_watts; cloud providers
+        # estimate from per-model Wh-per-1K-token figures. Result lands
+        # in the same column the cost-vs-electricity dashboard reads.
+        electricity_kwh = cost_log.get("electricity_kwh")
+        if electricity_kwh is None:
+            try:
+                from services.cost_guard import CostGuard  # noqa: PLC0415 — avoid cycle
+                guard = CostGuard(pool=self.pool)
+                provider = (cost_log.get("provider") or "").lower()
+                if provider in ("ollama", "ollama_native"):
+                    electricity_kwh = guard.estimate_local_kwh(
+                        duration_ms=cost_log.get("duration_ms"),
+                    )
+                elif provider and provider != "electricity":
+                    electricity_kwh = await guard.estimate_cloud_kwh(
+                        provider=provider,
+                        model=cost_log.get("model") or "",
+                        prompt_tokens=int(cost_log.get("input_tokens") or 0),
+                        completion_tokens=int(cost_log.get("output_tokens") or 0),
+                    )
+            except Exception as e:
+                logger.warning("[admin_db] electricity_kwh derivation failed: %s", e)
+                electricity_kwh = None
+
         try:
             sql = """
                 INSERT INTO cost_logs (
                     task_id, user_id, phase, model, provider,
                     input_tokens, output_tokens, total_tokens,
                     cost_usd, quality_score, duration_ms, success, error_message,
+                    electricity_kwh,
                     created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+                    NOW(), NOW()
+                )
                 RETURNING *
             """
             params = [
@@ -116,6 +147,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 cost_log.get("duration_ms"),
                 cost_log.get("success", True),
                 cost_log.get("error_message"),
+                float(electricity_kwh) if electricity_kwh is not None else None,
             ]
 
             async with self.pool.acquire() as conn:
