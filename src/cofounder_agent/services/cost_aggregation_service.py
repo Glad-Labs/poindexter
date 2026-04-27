@@ -159,6 +159,7 @@ class CostAggregationService:
                     """
                     SELECT phase,
                            COALESCE(SUM(cost_usd), 0) as total_cost,
+                           COALESCE(SUM(electricity_kwh), 0) as total_kwh,
                            COUNT(*) as task_count
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
@@ -168,12 +169,14 @@ class CostAggregationService:
                     date_filter,
                 )
 
-                # Compute total cost from GROUP BY results (no redundant query)
+                # Compute totals from GROUP BY results (no redundant query)
                 total_cost = sum(float(row["total_cost"] or 0.0) for row in rows)
+                total_kwh = sum(float(row["total_kwh"] or 0.0) for row in rows)
 
                 phases = []
                 for row in rows:
                     cost = float(row["total_cost"] or 0.0)
+                    kwh = float(row["total_kwh"] or 0.0)
                     count = int(row["task_count"] or 0)
                     percent = (cost / total_cost * 100) if total_cost > 0 else 0
 
@@ -181,8 +184,10 @@ class CostAggregationService:
                         {
                             "phase": row["phase"],
                             "total_cost": round(cost, 4),
+                            "total_kwh": round(kwh, 8),
                             "task_count": count,
                             "avg_cost": round(cost / count, 4) if count > 0 else 0,
+                            "avg_kwh": round(kwh / count, 10) if count > 0 else 0,
                             "percent_of_total": round(percent, 2),
                         }
                     )
@@ -191,6 +196,7 @@ class CostAggregationService:
                     "period": period,
                     "phases": phases,
                     "total_cost": round(total_cost, 4),
+                    "total_kwh": round(total_kwh, 8),
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
@@ -313,6 +319,7 @@ class CostAggregationService:
                     """
                     SELECT DATE(created_at AT TIME ZONE 'UTC') as date,
                            COALESCE(SUM(cost_usd), 0) as total_cost,
+                           COALESCE(SUM(electricity_kwh), 0) as total_kwh,
                            COUNT(DISTINCT task_id) as task_count
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
@@ -324,27 +331,33 @@ class CostAggregationService:
 
                 daily_data = []
                 total_cost = 0.0
+                total_kwh = 0.0
                 task_count = 0
 
                 for row in rows:
                     cost = float(row["total_cost"] or 0.0)
+                    kwh = float(row["total_kwh"] or 0.0)
                     tasks = int(row["task_count"] or 0)
 
                     daily_data.append(
                         {
                             "date": str(row["date"]),
                             "cost": round(cost, 4),
+                            "kwh": round(kwh, 8),
                             "tasks": tasks,
                             "avg_cost": round(cost / tasks, 4) if tasks > 0 else 0,
+                            "avg_kwh": round(kwh / tasks, 10) if tasks > 0 else 0,
                         }
                     )
 
                     total_cost += cost
+                    total_kwh += kwh
                     task_count += tasks
 
                 # Calculate weekly average
                 weeks = max(1, days // 7)
                 weekly_avg = total_cost / weeks
+                weekly_kwh_avg = total_kwh / weeks
 
                 # Determine trend: compare first half vs second half
                 midpoint = len(daily_data) // 2
@@ -367,6 +380,8 @@ class CostAggregationService:
                     "period": period,
                     "daily_data": daily_data,
                     "weekly_average": round(weekly_avg, 4),
+                    "weekly_kwh_average": round(weekly_kwh_avg, 8),
+                    "total_kwh": round(total_kwh, 8),
                     "trend": trend,
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
