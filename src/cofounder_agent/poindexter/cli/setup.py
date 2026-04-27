@@ -393,8 +393,14 @@ def _auto_provision() -> str:
                     "(the password stays what it was)", fg="green",
                 )
                 return existing_dsn
-        except Exception:
-            pass
+        except Exception as e:
+            # Surface the underlying reason so the operator can tell a
+            # genuinely-missing bootstrap.toml apart from a malformed one.
+            click.secho(
+                f"  could not read existing bootstrap.toml ({type(e).__name__}: {e}); "
+                "falling back to fresh-credential path",
+                fg="yellow",
+            )
         raise click.ClickException(
             f"Container '{_AUTO_CONTAINER}' already exists but the password "
             "isn't recoverable from bootstrap.toml. Either remove it "

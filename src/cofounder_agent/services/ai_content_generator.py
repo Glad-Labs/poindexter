@@ -729,8 +729,11 @@ class AIContentGenerator:
                         db_fallback = db_fallback.removeprefix("ollama/")
                         if db_fallback != resolved:
                             model_list.append(db_fallback)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(
+                        "[ai_content_generator] reading pipeline_fallback_model "
+                        "from site_config failed: %s", e,
+                    )
 
                 # Add other installed models as fallbacks (smaller first for speed)
                 try:

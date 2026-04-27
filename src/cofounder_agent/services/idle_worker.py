@@ -362,8 +362,12 @@ class IdleWorker:
             )
             if row and row["value"]:
                 return row["value"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "[idle_worker] app_settings read for %r failed; "
+                "using default %r: %s",
+                key, default, e,
+            )
         return default
 
 

@@ -257,8 +257,12 @@ class UnifiedPromptManager:
         if self._site_config is not None:
             try:
                 return bool(self._site_config.get_bool("premium_active", False))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "[prompt_manager] live premium_active read from "
+                    "site_config failed; falling back to startup snapshot: %s",
+                    e,
+                )
         return getattr(self, "_premium_active_static", False)
 
     def get_prompt(self, key: str, **kwargs) -> str:

@@ -608,8 +608,11 @@ class MultiModelQA:
                         if _site_domain:
                             _internal_domains.add(_site_domain)
                             _internal_domains.add(f"www.{_site_domain}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(
+                            "[multi_model_qa] site_domain lookup for "
+                            "external-citation filter failed: %s", e,
+                        )
                     _ext_urls = [
                         m.group(2) for m in _re.finditer(r'\[([^\]]*)\]\((https?://[^)]+)\)', content)
                         if _urlparse(m.group(2)).netloc.lower() not in _internal_domains
@@ -786,8 +789,12 @@ class MultiModelQA:
                 _fb = await self.settings.get("qa_fallback_critic_model")
                 if _fb:
                     fallback_model = _fb.removeprefix("ollama/")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "[multi_model_qa] reading qa_fallback_critic_model from "
+                    "settings failed; using default %r: %s",
+                    fallback_model, e,
+                )
         if model_override != fallback_model:
             logger.warning(
                 "[MULTI_QA] Primary critic %s failed (empty response or error), falling back to %s",
@@ -1282,8 +1289,11 @@ class MultiModelQA:
                 pass_threshold = int(
                     await self.settings.get("qa_vision_pass_threshold") or 60
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "[multi_model_qa] reading qa_vision_* settings failed; "
+                    "vision QA falling back to defaults: %s", e,
+                )
 
         if not enabled:
             return None
@@ -1494,8 +1504,11 @@ class MultiModelQA:
                 viewport_height = int(
                     await self.settings.get("qa_preview_viewport_height") or 1024
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "[multi_model_qa] reading qa_preview_* settings failed; "
+                    "preview-screenshot QA falling back to defaults: %s", e,
+                )
 
         if not enabled or not preview_url:
             return None

@@ -195,8 +195,11 @@ class DevToCrossPostService:
             )
             if row and row["value"].lower() in ("false", "0", "no"):
                 auto_publish = False
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "[devto] reading devto_publish_immediately from app_settings "
+                "failed; defaulting to immediate publish: %s", e,
+            )
 
         payload = {
             "article": {

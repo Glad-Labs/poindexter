@@ -754,8 +754,12 @@ class TaskExecutor:
             try:
                 _tts = await self._get_setting("task_timeout_seconds", "900")
                 TASK_TIMEOUT_SECONDS = int(_tts)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "[task_executor] reading task_timeout_seconds from "
+                    "settings failed; using default %ds: %s",
+                    TASK_TIMEOUT_SECONDS, e,
+                )
 
             # 1. Update task status to 'in_progress'
             logger.info("[TASK_SINGLE] Marking task as in_progress...")
@@ -1256,8 +1260,13 @@ class TaskExecutor:
                     )
                     if row and row["slug"]:
                         slug = row["slug"]
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(
+                        "[task_executor] dedup-match slug lookup for "
+                        "source_id=%r failed; rejection reason will show "
+                        "raw post id: %s",
+                        source_id, e,
+                    )
             url = f"/posts/{slug}" if slug else f"(post id: {source_id})"
             match_lines.append(f"  - {sim:.3f}  {title[:80]}  {url}")
 
@@ -1283,8 +1292,13 @@ class TaskExecutor:
             if row and row["model_selections"]:
                 ms = row["model_selections"]
                 return _json.loads(ms) if isinstance(ms, str) else ms
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "[task_executor] reading model_selections for task_id=%s "
+                "failed; downstream stages will see no per-stage model "
+                "overrides: %s",
+                task_id[:8], e,
+            )
         return {}
 
     async def _heartbeat_loop(self, task_id: str) -> None:

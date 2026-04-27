@@ -545,8 +545,11 @@ class GeminiProvider:
                     part_text = getattr(part, "text", None)
                     if isinstance(part_text, str) and part_text:
                         return part_text
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "[gemini] walking candidates/content/parts to extract "
+                "text failed; returning empty string: %s", e,
+            )
         return ""
 
     @staticmethod

@@ -221,8 +221,12 @@ class GenerateContentStage:
                     slug = link_line.split("/posts/")[-1].strip().strip('"')
                     if slug:
                         real_slug_set.add(slug)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(
+                "[generate_content] building real-slug allowlist from "
+                "_internal_links_cache failed; scrub will treat all "
+                "/posts/ links as fabricated: %s", e,
+            )
         content_text = scrub_fabricated_links(
             content_text, known_slugs=real_slug_set, site_config=_sc,
         )
@@ -323,8 +327,12 @@ class GenerateContentStage:
                         task_id=task_id,
                         severity="error",
                     )
-                except Exception:
-                    pass
+                except Exception as audit_err:
+                    logger.debug(
+                        "[generate_content] audit_log_bg for "
+                        "cost_log_write_failed itself failed: %s",
+                        audit_err,
+                    )
 
         # Snapshot the initial draft into content_revisions so the feedback
         # loop can later diff this against the QA-revised + finalized

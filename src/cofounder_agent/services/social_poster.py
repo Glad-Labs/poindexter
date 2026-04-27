@@ -471,8 +471,11 @@ def _bump_metric(name: str, **labels: str) -> None:
             counter.labels(**labels).inc()
         else:
             counter.inc()
-    except Exception:
-        pass  # metrics are best-effort — never break posting
+    except Exception as e:
+        # Metrics are best-effort — never break posting. Surface at debug
+        # so prom outages are still recoverable from logs without
+        # spamming WARN on every post.
+        logger.debug("[social_poster] prom counter inc failed (%s): %s", name, e)
 
 
 # Counter singletons — prometheus_client refuses duplicate registration.

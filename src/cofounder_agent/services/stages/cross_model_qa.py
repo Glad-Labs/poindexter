@@ -119,8 +119,11 @@ def aggregate_issues_to_fix(qa_result: Any) -> tuple[str, bool]:
                 lines.append(f"[{issue.severity}] {issue.category}: {issue.description}")
                 if issue.severity == "critical":
                     has_blocking = True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(
+            "[cross_model_qa] reading qa_result.validation for rejection "
+            "summary failed: %s", e,
+        )
 
     # Reviewers — a non-approving reviewer blocks; borderline approvals
     # (score < 75) are advisory.
@@ -406,8 +409,12 @@ class CrossModelQAStage:
                         task_id=task_id,
                         severity="error",
                     )
-                except Exception:
-                    pass
+                except Exception as audit_err:
+                    logger.debug(
+                        "[cross_model_qa] audit_log_bg for "
+                        "cost_log_write_failed itself failed: %s",
+                        audit_err,
+                    )
 
         # Rejection short-circuit.
         if not qa_result.approved:
@@ -431,8 +438,13 @@ class CrossModelQAStage:
                     _raw = await settings_service.get("qa_consistency_veto_threshold")
                     if _raw is not None:
                         _consistency_threshold = float(_raw)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(
+                        "[cross_model_qa] reading "
+                        "qa_consistency_veto_threshold from settings "
+                        "failed; using default %.2f: %s",
+                        _consistency_threshold, e,
+                    )
             reason = _build_rejection_reason(qa_result, _consistency_threshold)
             await database_service.update_task(task_id, {
                 "status": "rejected",
@@ -520,8 +532,12 @@ async def _resolve_max_rewrites(settings_service: Any, default: int) -> int:
         )
         if raw is not None:
             return int(raw)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(
+            "[cross_model_qa] reading qa_max_rewrites from settings "
+            "failed; using default %d: %s",
+            default, e,
+        )
     return default
 
 

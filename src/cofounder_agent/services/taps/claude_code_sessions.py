@@ -271,8 +271,12 @@ def _resolve_projects_dir(config: dict[str, Any]) -> Path:
             sc_val = _sc.get("claude_projects_dir", "")
             if sc_val:
                 return Path(sc_val)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(
+                "[claude_code_sessions] reading claude_projects_dir from "
+                "site_config failed; falling back to home-dir default: %s",
+                e,
+            )
     return Path.home() / ".claude" / "projects"
 
 

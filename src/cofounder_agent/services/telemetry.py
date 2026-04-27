@@ -232,8 +232,12 @@ def setup_telemetry(app, site_config: Any, service_name: str = "cofounder-agent"
         try:
             try:
                 app.middleware_stack = None  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            except Exception as e:
+                logging.debug(
+                    "[telemetry] middleware_stack invalidate failed "
+                    "(non-fatal — instrument_app will surface a real "
+                    "error if the rebuild fails): %s", e,
+                )
             FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
             # Latch ONLY after middleware was actually registered.
             # Subsequent calls (the lifespan re-init) will short-circuit

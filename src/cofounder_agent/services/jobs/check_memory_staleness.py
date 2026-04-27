@@ -44,8 +44,12 @@ async def _get_setting(pool: Any, key: str, default: str) -> str:
         )
         if row and row["value"]:
             return str(row["value"])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(
+            "[check_memory_staleness] app_settings read for %r failed; "
+            "using default %r: %s",
+            key, default, e,
+        )
     return default
 
 
