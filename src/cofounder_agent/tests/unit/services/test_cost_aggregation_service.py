@@ -221,6 +221,7 @@ class TestGetBreakdownByModel:
                 "model": "claude-3-haiku",
                 "provider": "anthropic",
                 "total_cost": "1.50",
+                "total_kwh": "0.0006",  # ~0.6 mWh — cloud inference estimate
                 "task_count": "5",
             },
         ]
@@ -232,6 +233,9 @@ class TestGetBreakdownByModel:
 
         assert len(result["models"]) == 1
         assert result["models"][0]["model"] == "claude-3-haiku"
+        # Energy axis flows through alongside dollars.
+        assert result["models"][0]["total_kwh"] == pytest.approx(0.0006, rel=1e-3)
+        assert result["total_kwh"] == pytest.approx(0.0006, rel=1e-3)
 
     @pytest.mark.asyncio
     async def test_db_error_returns_empty(self):

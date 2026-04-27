@@ -237,6 +237,7 @@ class CostAggregationService:
                     """
                     SELECT model, provider,
                            COALESCE(SUM(cost_usd), 0) as total_cost,
+                           COALESCE(SUM(electricity_kwh), 0) as total_kwh,
                            COUNT(*) as task_count
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
@@ -246,12 +247,14 @@ class CostAggregationService:
                     date_filter,
                 )
 
-                # Compute total cost from GROUP BY results (no redundant query)
+                # Compute totals from GROUP BY results (no redundant query)
                 total_cost = sum(float(row["total_cost"] or 0.0) for row in rows)
+                total_kwh = sum(float(row["total_kwh"] or 0.0) for row in rows)
 
                 models = []
                 for row in rows:
                     cost = float(row["total_cost"] or 0.0)
+                    kwh = float(row["total_kwh"] or 0.0)
                     count = int(row["task_count"] or 0)
                     percent = (cost / total_cost * 100) if total_cost > 0 else 0
 
@@ -259,8 +262,10 @@ class CostAggregationService:
                         {
                             "model": row["model"],
                             "total_cost": round(cost, 4),
+                            "total_kwh": round(kwh, 8),
                             "task_count": count,
                             "avg_cost_per_task": round(cost / count, 4) if count > 0 else 0,
+                            "avg_kwh_per_task": round(kwh / count, 10) if count > 0 else 0,
                             "provider": row["provider"],
                             "percent_of_total": round(percent, 2),
                         }
@@ -270,6 +275,7 @@ class CostAggregationService:
                     "period": period,
                     "models": models,
                     "total_cost": round(total_cost, 4),
+                    "total_kwh": round(total_kwh, 8),
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
