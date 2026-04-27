@@ -173,7 +173,7 @@ class SceneVisualsStage:
 
         visuals: dict[str, Any] = _default_visuals()
         counts: dict[str, int] = {
-            "media_assets": 0, "pexels": 0, "sdxl": 0, "miss": 0,
+            "media_assets": 0, "pexels": 0, "sdxl": 0, "wan": 0, "miss": 0,
         }
 
         # Process long-form, then short-form. Sequential to bound
@@ -309,25 +309,42 @@ class SceneVisualsStage:
                     },
                 }
 
-        # Pick the fresh source. The mixed strategy rotates across
-        # [pexels, sdxl] so adjacent scenes get different aesthetics.
+        # Pick the fresh source. The ``mixed`` strategy rotates so
+        # adjacent scenes get different aesthetics. ``wan`` produces
+        # actual generative video (5s clips); the others produce
+        # stills that the compositor renders with Ken Burns motion.
         if strategy == "pexels":
             order: tuple[str, ...] = ("pexels", "sdxl")
         elif strategy == "sdxl":
             order = ("sdxl", "pexels")
+        elif strategy == "wan":
+            # Wan-only strategy. Falls back to SDXL stills then Pexels
+            # if the inference server is unreachable / OOM.
+            order = ("wan", "sdxl", "pexels")
         elif strategy == "mixed":
-            order = ("pexels", "sdxl") if rotation_idx % 2 == 0 else ("sdxl", "pexels")
+            # Three-way rotation: pexels → sdxl → wan → repeat. Wan
+            # gets every third scene so the wall-clock cost is bounded.
+            mixed_orders = (
+                ("pexels", "sdxl", "wan"),
+                ("sdxl", "wan", "pexels"),
+                ("wan", "pexels", "sdxl"),
+            )
+            order = mixed_orders[rotation_idx % len(mixed_orders)]
         else:
-            # reuse_first miss → default to pexels (cheap, fast),
-            # SDXL on Pexels miss.
+            # ``reuse_first`` miss → default to pexels (cheap, fast),
+            # SDXL on Pexels miss. Wan is opt-in via explicit strategy.
             order = ("pexels", "sdxl")
 
         for source in order:
             try:
                 if source == "pexels":
                     res = await _try_pexels(visual_prompt, site_config)
-                else:
+                elif source == "sdxl":
                     res = await _try_sdxl(visual_prompt, site_config, is_short)
+                elif source == "wan":
+                    res = await _try_wan(visual_prompt, site_config, is_short)
+                else:
+                    continue
                 if res is not None:
                     return {
                         "scene_idx": scene_idx,
@@ -480,6 +497,94 @@ async def _try_sdxl(
             "steps": chosen.metadata.get("num_inference_steps"),
             "width": chosen.width,
             "height": chosen.height,
+        },
+    }
+
+
+_WAN_MOTION_SUFFIX = (
+    "dynamic camera motion, shallow depth of field, subtle parallax, "
+    "smooth panning, motion blur on moving subjects, cinematic, "
+    "high frame rate, fluid action"
+)
+
+
+def _adapt_prompt_for_wan(visual_prompt: str) -> str:
+    """Reshape an SDXL-style still prompt for a video model.
+
+    The script Stage was written for stills (SDXL/Pexels), so prompts
+    end with "cinematic lighting, no people, no text, 4k" — none of
+    which encourages motion. Wan 2.1 1.3B in particular tends toward
+    near-static output without explicit motion verbs (Matt caught this
+    on the first smoke clip). Append a motion-emphasizing tail so the
+    same script can drive both still and video sources without script
+    changes.
+    """
+    base = (visual_prompt or "").strip()
+    if not base:
+        return ""
+    # Avoid double-tagging if the prompt already mentions motion.
+    motion_words = ("motion", "moving", "flowing", "spinning", "panning")
+    if any(w in base.lower() for w in motion_words):
+        return base
+    return f"{base}, {_WAN_MOTION_SUFFIX}"
+
+
+async def _try_wan(
+    visual_prompt: str,
+    site_config: Any,
+    is_short: bool,
+) -> dict[str, Any] | None:
+    """Generate a 5s clip via Wan 2.1 1.3B (real text-to-video).
+
+    Routes through the existing Wan21Provider plugin, which POSTs the
+    prompt to the wan-server sidecar (port 9840) and writes the
+    resulting MP4 to a tempfile. The provider already handles
+    fall-through on unreachable server / non-200 — returning empty
+    list — so we just translate that into ``None`` for the strategy
+    loop to fall through to the next source.
+    """
+    from services.video_providers.wan2_1 import Wan21Provider
+
+    provider = Wan21Provider()
+    width, height = (480, 832) if is_short else (832, 480)
+    out_path = os.path.join(
+        tempfile.gettempdir(),
+        f"{_TMP_PREFIX}{uuid4().hex}.mp4",
+    )
+    config = {
+        "_site_config": site_config,
+        "output_path": out_path,
+        "width": width,
+        "height": height,
+        # 5s clips are the documented sweet spot for Wan 2.1 1.3B —
+        # longer ones don't add coherence and cost a lot more wall-
+        # clock. The downstream stitch Stage stretches scenes via TTS
+        # narration timing, so a 5s clip works for ~5-15s scenes too
+        # (it loops). Anything longer should be a real video model
+        # like Wan 2.1 14B (future plugin).
+        "duration_s": 5,
+    }
+    adapted = _adapt_prompt_for_wan(visual_prompt)
+    try:
+        results = await provider.fetch(adapted, config)
+    except Exception as exc:
+        logger.warning("[video.scene_visuals] Wan raised: %s", exc)
+        return None
+    if not results:
+        return None
+
+    chosen = results[0]
+    if not os.path.exists(out_path):
+        return None
+    return {
+        "clip_path": out_path,
+        "url": chosen.file_url,
+        "metadata": {
+            "model": "wan2.1-1.3b",
+            "duration_s": chosen.duration_s,
+            "width": chosen.width,
+            "height": chosen.height,
+            "fps": chosen.fps,
         },
     }
 

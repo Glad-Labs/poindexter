@@ -142,7 +142,7 @@ class _FakeDatabaseService:
         self.pool = pool
 
 
-async def main(slug: str) -> None:
+async def main(slug: str, strategy: str = "pexels") -> None:
     pool = await asyncpg.create_pool(_DATABASE_URL, min_size=1, max_size=4)
     try:
         # Populate the module-level service container so providers that
@@ -161,7 +161,7 @@ async def main(slug: str) -> None:
         site_config = _OverrideConfig(
             real_config,
             overrides={
-                "video_scene_visuals_strategy": "pexels",
+                "video_scene_visuals_strategy": strategy,
                 # Force-set the writer model in case the auto path
                 # would pick something slow. Strip the ollama/ prefix
                 # — script_for_video does this itself but being
@@ -178,9 +178,11 @@ async def main(slug: str) -> None:
                 # itself; rewrite to localhost so the bare-host process
                 # can reach Ollama.
                 "ollama_base_url": "http://localhost:11434",
-                # SDXL server is also addressed via host.docker.internal
-                # in production. Map to localhost for the host runner.
+                # SDXL / Wan / video sidecars are also addressed via
+                # host.docker.internal in production. Map all of them
+                # to localhost for the host runner.
                 "sdxl_server_url": "http://localhost:9836",
+                "plugin.video_provider.wan2.1-1.3b.server_url": "http://localhost:9840",
             },
         )
 
@@ -226,6 +228,11 @@ async def main(slug: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("usage: run_video_pipeline_sample.py <post_slug>")
+        print(
+            "usage: run_video_pipeline_sample.py <post_slug> "
+            "[strategy=pexels|sdxl|wan|mixed|reuse_first]"
+        )
         sys.exit(1)
-    asyncio.run(main(sys.argv[1]))
+    _slug = sys.argv[1]
+    _strategy = sys.argv[2] if len(sys.argv) >= 3 else "pexels"
+    asyncio.run(main(_slug, _strategy))
