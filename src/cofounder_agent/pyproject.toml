@@ -100,6 +100,12 @@ resend = "^2.27.0"
 ddgs = "^9.0"
 beautifulsoup4 = "^4.12"
 edge-tts = "^7.2.8"
+# AT Protocol SDK for the Bluesky social adapter (services/social_adapters/bluesky.py).
+# MIT-licensed. Lazy-imported at the call site so the adapter only fails
+# loudly when an operator enables Bluesky cross-posting without the
+# package installed. Pinning a recent stable line — atproto's API
+# stabilized around 0.0.50; 0.0.46+ has the send_post signature we use.
+atproto = "^0.0.65"
 boto3 = "^1.42.84"
 cloudinary = "^1.41"
 playwright = "^1.47"
