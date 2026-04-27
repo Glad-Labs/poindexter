@@ -157,10 +157,34 @@ async def process_content_generation_task(
         logger.debug("[BG-TASK] database_service = %s", database_service)
 
         # ---------------------------------------------------------------
-        # Chunk 1: verify_task → generate_content
+        # Chunk 1: topic_decision_gate → verify_task → generate_content
         # ---------------------------------------------------------------
+        # The topic-decision gate is inert by default (controlled by
+        # pipeline_gate_topic_decision in app_settings, default off). When
+        # the operator flips it on, this Stage halts the workflow with a
+        # gate_artifact for review BEFORE any LLM cycles burn (Glad-Labs/
+        # poindexter#146). The runner returns halted_at="topic_decision_gate"
+        # in that case; we early-return cleanly so the task lingers at
+        # status='in_progress' / awaiting_gate='topic_decision' until the
+        # operator approves or rejects via the CLI / MCP.
         audit_log_bg("task_started", "content_router", {"topic": topic[:100]}, task_id=task_id)
-        _summary1 = await _runner.run_all(result, order=["verify_task", "generate_content"])
+        _summary1 = await _runner.run_all(
+            result,
+            order=["topic_decision_gate", "verify_task", "generate_content"],
+        )
+        if _summary1.halted_at == "topic_decision_gate":
+            # Gate tripped — pipeline pauses, operator drives next move.
+            # Return early with the context-update markers the gate left
+            # behind so any caller inspecting the result dict sees the
+            # paused state (matches the pattern cross_model_qa uses for
+            # a clean rejection).
+            logger.info(
+                "[BG-TASK] topic_decision_gate paused task %s — awaiting operator approval",
+                task_id[:8],
+            )
+            result.setdefault("status", "in_progress")
+            result["awaiting_gate"] = "topic_decision"
+            return result
         if _summary1.halted_at == "generate_content":
             raise RuntimeError(
                 f"Stage 'generate_content' halted — cannot continue without content "

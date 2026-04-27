@@ -24,6 +24,7 @@ from .setup import setup_command
 from .sprint import sprint_group
 from .stores import stores_group
 from .tasks import tasks_group
+from .topics import topics_group
 from .vercel import vercel_group
 from .retention import retention_group
 from .taps import taps_group
@@ -74,6 +75,10 @@ main.add_command(reject_command, name="reject")
 main.add_command(list_pending_command, name="list-pending")
 main.add_command(show_pending_command, name="show-pending")
 main.add_command(gates_group, name="gates")
+
+# Topic-decision approval queue (#146) — scoped wrapper over the generic
+# approval CLI plus a manual ``topics propose`` injection path.
+main.add_command(topics_group, name="topics")
 
 
 if __name__ == "__main__":

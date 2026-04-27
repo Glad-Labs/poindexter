@@ -312,6 +312,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("llm_providers", "plugins.llm_providers.gemini", "GeminiProvider"),
         # Core Stages (Phase E migration — one per file, unblocks tearing
         # down content_router_service.py over a handful of commits).
+        # Topic-decision HITL gate (#146). Inert by default — the Stage
+        # is a passthrough until pipeline_gate_topic_decision = on in
+        # app_settings. Lives at position 0 of the order so anticipation-
+        # engine and manual proposals both clear it before any LLM cycles
+        # burn.
+        ("stages", "services.stages.topic_decision_gate", "TopicDecisionGateStage"),
         ("stages", "services.stages.verify_task", "VerifyTaskStage"),
         ("stages", "services.stages.generate_content", "GenerateContentStage"),
         ("stages", "services.stages.writer_self_review", "WriterSelfReviewStage"),

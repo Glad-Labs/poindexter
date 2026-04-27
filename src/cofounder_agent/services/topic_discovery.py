@@ -268,9 +268,37 @@ class TopicDiscovery:
             return set(default.split(","))
 
     async def queue_topics(self, topics: list[DiscoveredTopic]) -> int:
-        """Queue discovered topics as content tasks."""
+        """Queue discovered topics as content tasks.
+
+        Respects the topic-decision queue cap (#146): when the
+        ``topic_decision`` gate is enabled and the awaiting-approval
+        queue is at ``topic_discovery_max_pending``, this skips the
+        propose call so the operator can drain before more lands.
+        """
         import json as _json
         import random
+
+        # Queue-cap check — respected only when the topic-decision gate
+        # is on (default off). Keeps anticipation_engine from filling
+        # Telegram with hundreds of pending topics. When the cap can't
+        # be read (DB outage, malformed value), helper logs WARNING and
+        # falls back to the default — never silently lets the queue
+        # grow unbounded.
+        try:
+            from services.topic_proposal_service import queue_at_capacity
+            if await queue_at_capacity(pool=self.pool, site_config=self._site_config):
+                logger.info(
+                    "[TOPIC_DISCOVERY] topic_decision queue at capacity; "
+                    "skipping queue_topics for %d candidates",
+                    len(topics),
+                )
+                return 0
+        except Exception as _exc:
+            # The cap helper bails loudly itself; fall through here so a
+            # broken cap check doesn't block the legacy auto-queue path.
+            logger.warning(
+                "[TOPIC_DISCOVERY] queue_at_capacity check failed: %s", _exc,
+            )
 
         # Vary post lengths: default 60% short / 30% medium / 10% deep dive.
         # Customers tune the mix via app_settings.topic_discovery_length_distribution

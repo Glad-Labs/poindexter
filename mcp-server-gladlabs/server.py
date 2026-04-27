@@ -475,6 +475,198 @@ async def gates_set(gate_name: str, enabled: bool) -> str:
 
 
 # ============================================================================
+# TOPIC-DECISION QUEUE TOOLS (Glad-Labs/poindexter#146)
+# ============================================================================
+#
+# Thin wrappers around services.approval_service (read/approve/reject paths)
+# and services.topic_proposal_service (manual injection). Mirrors the
+# `poindexter topics ...` CLI so an operator on Claude Desktop / Claude Code
+# can drive the same queue. CLI is canonical; these are convenience.
+#
+
+
+@mcp.tool()
+async def topics_list(source: str = "", limit: int = 100) -> str:
+    """List every topic currently paused at the topic_decision gate.
+
+    Args:
+        source: Optional filter — match ``artifact->>'source'``
+            (e.g. ``"manual"`` or ``"anticipation_engine"``).
+        limit: Max rows (default 100).
+
+    Returns:
+        JSON-encoded list of pending topic rows.
+    """
+    _ensure_poindexter_on_path()
+    from services.approval_service import (  # type: ignore[import-not-found]
+        list_pending,
+    )
+
+    try:
+        pool = await _get_pool()
+        rows = await list_pending(
+            pool=pool, gate_name="topic_decision", limit=limit,
+        )
+        if source:
+            rows = [
+                r for r in rows
+                if (r.get("artifact") or {}).get("source") == source
+            ]
+        return json.dumps(rows, default=str)
+    except Exception as e:
+        return f"topics_list failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def topics_show(task_id: str) -> str:
+    """Pretty-print the artifact for a single queued topic.
+
+    Returns the same dict shape as ``poindexter topics show --json``.
+    """
+    _ensure_poindexter_on_path()
+    from services.approval_service import (  # type: ignore[import-not-found]
+        ApprovalServiceError,
+        show_pending,
+    )
+
+    try:
+        pool = await _get_pool()
+        row = await show_pending(pool=pool, task_id=task_id)
+        if row.get("gate_name") and row["gate_name"] != "topic_decision":
+            return (
+                f"topics_show: task {task_id} is paused at gate "
+                f"{row['gate_name']!r}, not 'topic_decision'."
+            )
+        return json.dumps(row, default=str)
+    except ApprovalServiceError as e:
+        return f"topics_show failed: {e}"
+    except Exception as e:
+        return f"topics_show unexpected: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def topics_approve(task_id: str, feedback: str = "") -> str:
+    """Approve a queued topic — flips it to ``pending`` so the pipeline resumes.
+
+    Equivalent to ``poindexter topics approve <task_id>`` on the CLI.
+    """
+    _ensure_poindexter_on_path()
+    from services.approval_service import (  # type: ignore[import-not-found]
+        ApprovalServiceError,
+        approve as approve_service,
+    )
+
+    try:
+        pool = await _get_pool()
+        site_config = await _make_site_config(pool)
+        result = await approve_service(
+            task_id=task_id,
+            gate_name="topic_decision",
+            feedback=feedback or None,
+            site_config=site_config,
+            pool=pool,
+        )
+        return json.dumps(result, default=str)
+    except ApprovalServiceError as e:
+        return f"topics_approve failed: {e}"
+    except Exception as e:
+        return f"topics_approve unexpected: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def topics_reject(task_id: str, reason: str = "") -> str:
+    """Reject a queued topic — flips it to ``dismissed`` and ends the task.
+
+    Equivalent to ``poindexter topics reject <task_id>`` on the CLI.
+    """
+    _ensure_poindexter_on_path()
+    from services.approval_service import (  # type: ignore[import-not-found]
+        ApprovalServiceError,
+        reject as reject_service,
+    )
+
+    try:
+        pool = await _get_pool()
+        site_config = await _make_site_config(pool)
+        result = await reject_service(
+            task_id=task_id,
+            gate_name="topic_decision",
+            reason=reason or None,
+            site_config=site_config,
+            pool=pool,
+        )
+        return json.dumps(result, default=str)
+    except ApprovalServiceError as e:
+        return f"topics_reject failed: {e}"
+    except Exception as e:
+        return f"topics_reject unexpected: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def topics_propose(
+    topic: str,
+    keyword: str = "",
+    tags: str = "",
+    category: str = "",
+    source: str = "manual",
+    target_length: int = 1500,
+    style: str = "technical",
+    tone: str = "professional",
+) -> str:
+    """Manually inject a topic into the topic-decision queue.
+
+    Creates a ``pipeline_tasks`` row and routes it through the gate so
+    it lands at ``awaiting_gate='topic_decision'`` (when the gate is
+    enabled). Manual proposals share the operator's queue with the
+    anticipation engine's auto-proposals.
+
+    Args:
+        topic: The topic to inject (required, non-empty).
+        keyword: Optional primary keyword. Falls back to first tag.
+        tags: Comma-separated tag list (``"ai,llm,local-inference"``).
+        category: Optional category slug.
+        source: Origin label recorded on the artifact (default ``"manual"``).
+        target_length: Word-count target for the eventual draft.
+        style: ``technical`` | ``narrative`` | ``listicle`` | ``educational``.
+        tone: ``professional`` | ``casual``.
+
+    Returns:
+        JSON-encoded result dict — task_id, awaiting_gate, status,
+        gate_enabled, queue_full.
+    """
+    _ensure_poindexter_on_path()
+    from services.topic_proposal_service import (  # type: ignore[import-not-found]
+        propose_topic,
+    )
+
+    if not topic or not topic.strip():
+        return "topics_propose failed: topic must be a non-empty string"
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    try:
+        pool = await _get_pool()
+        site_config = await _make_site_config(pool)
+        result = await propose_topic(
+            topic=topic,
+            primary_keyword=keyword or None,
+            tags=tag_list,
+            category=category or None,
+            source=source or "manual",
+            target_length=int(target_length),
+            style=style,
+            tone=tone,
+            site_config=site_config,
+            pool=pool,
+        )
+        return json.dumps(result, default=str)
+    except ValueError as e:
+        return f"topics_propose failed: {e}"
+    except Exception as e:
+        return f"topics_propose unexpected: {type(e).__name__}: {e}"
+
+
+# ============================================================================
 # SCHEDULED PUBLISHING TOOLS (Glad-Labs/poindexter#147)
 # ============================================================================
 #

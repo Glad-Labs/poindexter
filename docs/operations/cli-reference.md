@@ -27,6 +27,10 @@ consolidated reference.
 | `premium`     | Manage Poindexter Pro subscription license                       |
 | `schedule`    | Queue scheduled publishes (batch, list, shift, clear)            |
 | `publish-at`  | Schedule a single approved post for a specific time              |
+| `topics`      | Topic-decision approval queue (list/show/approve/reject/propose) |
+| `approve`     | Clear any HITL gate by task id                                   |
+| `reject`      | Reject any HITL gate by task id                                  |
+| `gates`       | List + toggle HITL approval gates                                |
 
 Run `poindexter --help` for the top-level list and
 `poindexter <group> --help` for subcommands.
@@ -339,6 +343,172 @@ Shows the current license state, expiration, and activation count.
 ```bash
 poindexter premium status
 ```
+
+---
+
+## `topics`
+
+Operator interface for the topic-decision approval queue
+([Glad-Labs/poindexter#146][issue-146]). When
+`pipeline_gate_topic_decision = on`, anticipation_engine output and
+manual proposals both land in the same queue rather than auto-running.
+Drain the queue at your own pace.
+
+[issue-146]: https://github.com/Glad-Labs/poindexter/issues/146
+
+The gate is **opt-in**. Enable it with:
+
+```bash
+poindexter gates set topic_decision on
+```
+
+`poindexter gates list` shows the current state and pending count.
+With the gate off, manual `topics propose` calls land at
+`status='pending'` and the worker runs them end-to-end exactly like
+auto-discovered topics — the gate is purely additive.
+
+### `topics list [--source NAME] [--json]`
+
+Show every topic currently paused at `topic_decision`. Oldest-first so
+you work the queue chronologically.
+
+```bash
+poindexter topics list                      # all pending
+poindexter topics list --source manual      # only your hand-typed ones
+poindexter topics list --source anticipation_engine
+poindexter topics list --json | jq '.[].task_id'
+```
+
+Output columns: `TASK_ID` (first 8 chars of UUID), `AGE` (relative —
+`5m`, `2h`, `1d`), `SOURCE`, `TOPIC`. Empty queues exit zero with a
+friendly message — that's a normal state, not an error.
+
+### `topics show <task_id> [--json]`
+
+Pretty-print the full artifact for one queued topic. The artifact
+shape:
+
+```json
+{
+  "topic": "...",
+  "primary_keyword": "...",
+  "tags": ["...", ...],
+  "category_suggestion": "...",
+  "source": "anticipation_engine" | "manual" | "...",
+  "research_summary": "<= ~200 words, omitted if research hasn't run yet>",
+  "score_signals": {
+    "novelty": <float|null>,
+    "internal_link_potential": <float|null>,
+    "category_balance": <string|float|null>
+  }
+}
+```
+
+### `topics approve <task_id> [--feedback TEXT] [--json]`
+
+Approve a queued topic — flips it to `pending` and resumes the
+pipeline.
+
+```bash
+poindexter topics approve abcd1234-5678-...
+poindexter topics approve abcd1234 --feedback "great angle for hardware niche"
+```
+
+Alias for `poindexter approve <task_id> --gate topic_decision` with
+the gate name asserted explicitly so a misrouted task fails loudly.
+
+### `topics reject <task_id> [--reason TEXT] [--json]`
+
+Reject a queued topic — flips it to `dismissed` (the topic-decision
+gate's reject status) and ends the task.
+
+```bash
+poindexter topics reject abcd1234 --reason "off-brand for the gaming category"
+```
+
+### `topics propose --topic "..." [flags]`
+
+Manually inject a topic into the queue. Lands the same way an
+anticipation_engine auto-proposal would — at
+`awaiting_gate='topic_decision'` when the gate is on, otherwise at
+`status='pending'`.
+
+```bash
+poindexter topics propose --topic "Why custom water cooling beats AIOs in 2026" \
+  --keyword "custom water cooling" \
+  --tags pc-hardware,cooling \
+  --category hardware
+```
+
+Flags:
+
+- `--topic TEXT` (required) — non-empty topic string.
+- `--keyword TEXT` — primary SEO keyword. Falls back to the first tag.
+- `--tags A,B,C` — comma-separated tag list.
+- `--category SLUG` — category hint (`hardware`, `ai-ml`, `gaming`).
+- `--source LABEL` — origin label recorded on the artifact (default
+  `manual`); use this to tag queue items by sub-source if you've got
+  several injection paths feeding `topics propose`.
+- `--target-length N` — target word count for the eventual draft
+  (default `1500`).
+- `--style` / `--tone` — pipeline parameters (defaults
+  `technical` / `professional`).
+- `--json` — machine-readable output.
+
+Refuses to propose past `topic_discovery_max_pending` (default `50`)
+when the gate is enabled — drain pending topics first. Empty topic
+text exits non-zero rather than silently inserting a junk row.
+
+### Worked example — drain the queue
+
+```bash
+$ poindexter topics list
+Topic-decision queue (4 pending):
+
+  TASK_ID    AGE    SOURCE                 TOPIC
+  abcd1234   2h     anticipation_engine    Why local LLMs won 2026
+  bcde2345   1h     manual                 Liquid cooling for inference rigs
+  cdef3456   30m    anticipation_engine    AMD Ryzen X3D vs Threadripper
+  defa4567   5m     manual                 Off-brand merchandise news
+
+$ poindexter topics show defa4567
+Task defa4567-...
+  paused_at      2026-04-26T12:00:00+00:00
+  age            5m
+  status         in_progress
+
+  topic              Off-brand merchandise news
+  primary_keyword    merchandise
+  tags               news, merch
+  source             manual
+  ...
+
+$ poindexter topics approve abcd1234 --feedback "good angle"
+Approved topic for task abcd1234 — pipeline resumed.
+
+$ poindexter topics approve bcde2345
+Approved topic for task bcde2345 — pipeline resumed.
+
+$ poindexter topics approve cdef3456
+Approved topic for task cdef3456 — pipeline resumed.
+
+$ poindexter topics reject defa4567 --reason "off-brand, news/merch"
+Rejected topic for task defa4567 → status='dismissed'.
+```
+
+### Telegram-side flow
+
+When a topic lands in the queue, the operator gets a Telegram message
+(if `telegram_ops` is configured in `webhook_endpoints`) with the
+artifact summary. The reply path mirrors the CLI:
+
+- `/approve_topic <task_id>` — equivalent to `topics approve`.
+- `/reject_topic <task_id> [reason]` — equivalent to `topics reject`.
+
+The Telegram bot is OpenClaw, which calls into the same
+`mcp-server-gladlabs` `topics_approve` / `topics_reject` tools the
+CLI uses. Single source of truth: `services.approval_service` /
+`services.topic_proposal_service`.
 
 ---
 
