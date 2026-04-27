@@ -35,14 +35,14 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 | GitHub        | https://github.com/Glad-Labs/glad-labs-codebase |
 | Project board | https://github.com/orgs/Glad-Labs/projects/2    |
 
-### Key Numbers (as of April 26, 2026)
+### Key Numbers (as of April 27, 2026)
 
-- 46+ published posts on gladlabs.io
-- 100+ services in `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
+- 46 published posts on gladlabs.io (212 total tasks in the pipeline including drafts)
+- 299 Python files under `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
 - 6 Grafana dashboards (post-merge consolidation), 4 alert rules
 - 6,100+ Python unit tests passing
-- 200+ app_settings keys (roughly 60 added in the #198 hardening sweep)
-- 1,900+ embeddings across posts / issues / audit / memory / brain
+- 310 app_settings keys (roughly 60 added in the #198 hardening sweep, plus ongoing per-feature additions)
+- 15,300+ embeddings across posts / issues / audit / memory / brain (8× growth since the prior count was logged)
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
@@ -106,7 +106,7 @@ npm run type:check            # Python mypy
 | `multi_model_qa.py`         | Adversarial review (different LLMs check each other) |
 | `qa_registry.py`            | Composable QA workflows (dynamic from DB)            |
 | `process_composer.py`       | Intent → plan → approve → execute orchestration      |
-| `settings_service.py`       | DB-backed config (app_settings, 33+ keys)            |
+| `settings_service.py`       | DB-backed config (app_settings, 310 active keys)     |
 | `cost_guard.py`             | Daily/monthly spend limits                           |
 | `revenue_engine.py`         | Content performance analysis + topic suggestions     |
 | `anticipation_engine.py`    | Observe gaps → propose proactive actions             |
