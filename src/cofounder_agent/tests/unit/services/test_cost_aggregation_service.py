@@ -335,7 +335,7 @@ class TestGetBudgetStatus:
         # Spent $50 of $150 budget = 33% — status is healthy
         # Note: projection alerts may still fire if daily spend extrapolates
         # over budget, but the STATUS should be "healthy" based on actual spend
-        conn = _make_conn(fetchval_values=[50.0])
+        conn = _make_conn(fetchrow_value={"total_cost": 50.0, "total_kwh": 0.0001})
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
         result = await svc.get_budget_status(monthly_budget=150.0)
@@ -347,7 +347,7 @@ class TestGetBudgetStatus:
     @pytest.mark.asyncio
     async def test_warning_at_80_percent(self):
         # Spent $120 of $150 = 80%
-        conn = _make_conn(fetchval_values=[120.0])
+        conn = _make_conn(fetchrow_value={"total_cost": 120.0, "total_kwh": 0.0001})
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
         result = await svc.get_budget_status(monthly_budget=150.0)
@@ -357,7 +357,7 @@ class TestGetBudgetStatus:
     @pytest.mark.asyncio
     async def test_critical_at_100_percent(self):
         # Spent $150 of $150 = 100%
-        conn = _make_conn(fetchval_values=[150.0])
+        conn = _make_conn(fetchrow_value={"total_cost": 150.0, "total_kwh": 0.0001})
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
         result = await svc.get_budget_status(monthly_budget=150.0)
@@ -367,7 +367,7 @@ class TestGetBudgetStatus:
 
     @pytest.mark.asyncio
     async def test_required_fields_present(self):
-        conn = _make_conn(fetchval_values=[10.0])
+        conn = _make_conn(fetchrow_value={"total_cost": 10.0, "total_kwh": 0.0001})
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
         result = await svc.get_budget_status(monthly_budget=150.0)
@@ -603,9 +603,8 @@ class TestGetBudgetStatusProjection:
     async def test_projection_over_110_percent_adds_alert(self):
         """If projected cost > 110% of budget, a projection alert is added."""
         from unittest.mock import patch
-        conn = MagicMock()
         # amount_spent is high enough that daily_burn_rate * 30 > monthly_budget * 1.1
-        conn.fetchval = AsyncMock(return_value=50.0)
+        conn = _make_conn(fetchrow_value={"total_cost": 50.0, "total_kwh": 0.0001})
         db = _make_db(conn)
         svc = _make_service(db)
 

@@ -419,15 +419,18 @@ class CostAggregationService:
             )
 
             async with self.db.pool.acquire() as conn:
-                cost_row = await conn.fetchval(
+                row = await conn.fetchrow(
                     """
-                    SELECT COALESCE(SUM(cost_usd), 0)
+                    SELECT
+                        COALESCE(SUM(cost_usd), 0) AS total_cost,
+                        COALESCE(SUM(electricity_kwh), 0) AS total_kwh
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
                     """,
                     month_start,
                 )
-                amount_spent = float(cost_row or 0.0)
+                amount_spent = float(row["total_cost"] if row else 0.0)
+                kwh_spent = float(row["total_kwh"] if row else 0.0)
 
             # Calculate days
             now = datetime.now(timezone.utc)
@@ -498,6 +501,12 @@ class CostAggregationService:
                     }
                 )
 
+            # Energy spent track the same window — handy for the
+            # "$ vs kWh" eco-comparison surface even though the budget
+            # gate itself only enforces dollars.
+            daily_kwh_burn = kwh_spent / days_elapsed if days_elapsed > 0 else 0
+            projected_kwh = daily_kwh_burn * days_in_month
+
             return {
                 "monthly_budget": monthly_budget,
                 "amount_spent": round(amount_spent, 2),
@@ -507,6 +516,9 @@ class CostAggregationService:
                 "days_remaining": days_remaining,
                 "daily_burn_rate": round(daily_burn_rate, 4),
                 "projected_final_cost": round(projected_final_cost, 2),
+                "kwh_spent": round(kwh_spent, 8),
+                "daily_kwh_burn": round(daily_kwh_burn, 8),
+                "projected_kwh": round(projected_kwh, 6),
                 "alerts": alerts,
                 "status": status,
                 "last_updated": datetime.now(timezone.utc).isoformat(),
