@@ -386,6 +386,32 @@ class CostGuard:
             )
         except Exception as e:
             logger.warning("[COST_GUARD] cost_logs insert failed: %s", e)
+            # Mirror the failure into audit_log so the alert pipeline
+            # can fire when the budget tracker (and now also the
+            # electricity_kwh dashboard) starts undercounting. Best-
+            # effort emission — never let an audit-log error mask the
+            # original cost-write failure (gitea#322 finding 3).
+            try:
+                from services.audit_log import audit_log_bg  # noqa: PLC0415
+                audit_log_bg(
+                    "cost_log_write_failed",
+                    "cost_guard",
+                    {
+                        "provider": provider,
+                        "model": model,
+                        "phase": phase,
+                        "cost_usd": float(cost_usd),
+                        "error": str(e)[:300],
+                        "error_type": type(e).__name__,
+                    },
+                    task_id=task_id,
+                    severity="error",
+                )
+            except Exception as audit_exc:
+                logger.debug(
+                    "audit_log_bg(cost_log_write_failed) emit failed: %s",
+                    audit_exc,
+                )
 
     # ------------------------------------------------------------------
     # High-level helpers used by LLM provider plugins
