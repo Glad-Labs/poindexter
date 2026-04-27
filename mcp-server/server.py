@@ -1419,5 +1419,153 @@ async def publish_at(
         return f"publish_at failed: {type(e).__name__}: {e}"
 
 
+# ============================================================================
+# FINAL-PUBLISH-APPROVAL GATE TOOLS (Matt's 2026-04-27 ask)
+#
+# Operates on the ``posts`` table — fires when a scheduled post hits its
+# publish slot but BEFORE the publisher flips it to ``published``. Mirrors
+# the mid-pipeline approve/reject tools above; routed to a separate service
+# module because ``posts`` and ``pipeline_tasks`` are different tables.
+#
+# Enable the gate with:
+#     poindexter gates set final_publish_approval on
+# (the existing gates_set MCP tool also works — it writes the same
+# ``pipeline_gate_*`` app_settings key both gate kinds use.)
+# ============================================================================
+
+
+@mcp.tool()
+async def approve_publish(
+    post_id: str,
+    gate_name: str = "",
+    feedback: str = "",
+) -> str:
+    """Approve a scheduled post at the final-publish-approval gate.
+
+    Clears the publish-gate columns; the next ``scheduled_publisher``
+    tick flips the post to ``status='published'``. Same behavior as
+    ``poindexter approve-publish <post_id>`` on the CLI.
+
+    Args:
+        post_id: UUID of the ``posts`` row.
+        gate_name: Optional — assert which publish gate is being
+            approved. When empty, the active gate is cleared.
+        feedback: Optional operator note recorded in audit_log.
+
+    Returns:
+        JSON-encoded result dict, or a human-readable error string.
+    """
+    _ensure_poindexter_on_path()
+    from services.posts_approval_service import (  # type: ignore[import-not-found]
+        PostsApprovalServiceError,
+        approve_publish as approve_publish_service,
+    )
+
+    try:
+        pool = await _get_pool()
+        site_config = await _make_site_config(pool)
+        result = await approve_publish_service(
+            post_id=post_id,
+            gate_name=gate_name or None,
+            feedback=feedback or None,
+            site_config=site_config,
+            pool=pool,
+        )
+        return json.dumps(_result_to_jsonable(result), default=str)
+    except PostsApprovalServiceError as e:
+        return f"approve_publish failed: {e}"
+    except Exception as e:
+        return f"approve_publish unexpected: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def reject_publish(
+    post_id: str,
+    gate_name: str = "",
+    reason: str = "",
+) -> str:
+    """Reject a scheduled post at the final-publish-approval gate.
+
+    Moves the row to the gate's reject status (``rejected`` by default).
+    Same behavior as ``poindexter reject-publish <post_id>`` on the CLI.
+
+    Args:
+        post_id: UUID of the ``posts`` row.
+        gate_name: Optional — assert which publish gate is being
+            rejected.
+        reason: Optional operator-supplied veto reason recorded in
+            audit_log.
+
+    Returns:
+        JSON-encoded result dict, or a human-readable error string.
+    """
+    _ensure_poindexter_on_path()
+    from services.posts_approval_service import (  # type: ignore[import-not-found]
+        PostsApprovalServiceError,
+        reject_publish as reject_publish_service,
+    )
+
+    try:
+        pool = await _get_pool()
+        site_config = await _make_site_config(pool)
+        result = await reject_publish_service(
+            post_id=post_id,
+            gate_name=gate_name or None,
+            reason=reason or None,
+            site_config=site_config,
+            pool=pool,
+        )
+        return json.dumps(_result_to_jsonable(result), default=str)
+    except PostsApprovalServiceError as e:
+        return f"reject_publish failed: {e}"
+    except Exception as e:
+        return f"reject_publish unexpected: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def list_pending_publish(gate_name: str = "", limit: int = 100) -> str:
+    """List every scheduled post currently paused at any publish gate.
+
+    Same data as ``poindexter list-pending-publish``. Ordered
+    oldest-first.
+
+    Args:
+        gate_name: Optional gate-name filter.
+        limit: Max rows to return.
+    """
+    _ensure_poindexter_on_path()
+    from services.posts_approval_service import (  # type: ignore[import-not-found]
+        list_pending_publish as list_pending_publish_service,
+    )
+
+    try:
+        pool = await _get_pool()
+        rows = await list_pending_publish_service(
+            pool=pool, gate_name=gate_name or None, limit=limit,
+        )
+        return json.dumps([_result_to_jsonable(r) for r in rows], default=str)
+    except Exception as e:
+        return f"list_pending_publish failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def show_pending_publish(post_id: str) -> str:
+    """Show the publish-gate state + full artifact for one post."""
+    _ensure_poindexter_on_path()
+    from services.posts_approval_service import (  # type: ignore[import-not-found]
+        PostsApprovalServiceError,
+        show_pending_publish as show_pending_publish_service,
+    )
+
+    try:
+        pool = await _get_pool()
+        row = await show_pending_publish_service(pool=pool, post_id=post_id)
+        return json.dumps(_result_to_jsonable(row), default=str)
+    except PostsApprovalServiceError as e:
+        return f"show_pending_publish failed: {e}"
+    except Exception as e:
+        return f"show_pending_publish unexpected: {type(e).__name__}: {e}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

@@ -13,6 +13,12 @@ from .approval import (
     reject_command,
     show_pending_command,
 )
+from .publish_approval import (
+    approve_publish_command,
+    list_pending_publish_command,
+    reject_publish_command,
+    show_pending_publish_command,
+)
 from .costs import costs_group
 from .memory import memory_group
 from .posts import posts_group
@@ -75,6 +81,13 @@ main.add_command(reject_command, name="reject")
 main.add_command(list_pending_command, name="list-pending")
 main.add_command(show_pending_command, name="show-pending")
 main.add_command(gates_group, name="gates")
+
+# Final-publish-approval gate commands (Matt's 2026-04-27 ask) — operates
+# on the posts table after scheduling, not on pipeline_tasks.
+main.add_command(approve_publish_command, name="approve-publish")
+main.add_command(reject_publish_command, name="reject-publish")
+main.add_command(list_pending_publish_command, name="list-pending-publish")
+main.add_command(show_pending_publish_command, name="show-pending-publish")
 
 # Topic-decision approval queue (#146) — scoped wrapper over the generic
 # approval CLI plus a manual ``topics propose`` injection path.

@@ -1,0 +1,338 @@
+"""``poindexter approve-publish`` / ``reject-publish`` /
+``list-pending-publish`` / ``show-pending-publish`` — operator
+interface for the final-publish-approval gate.
+
+Sister CLI to :mod:`poindexter.cli.approval`. The mid-pipeline gates
+operate on ``pipeline_tasks`` (CLI: ``approve`` / ``reject`` /
+``list-pending``); this module operates on the ``posts`` table for
+the publish-time gate that fires *after* scheduling.
+
+Single source of truth: :mod:`services.posts_approval_service`. The
+helpers here resolve a DSN, open a tiny pool, and call straight in.
+
+Examples
+--------
+
+    poindexter list-pending-publish
+    poindexter show-pending-publish <post_id>
+    poindexter approve-publish <post_id>
+    poindexter approve-publish <post_id> --feedback "ship it"
+    poindexter reject-publish  <post_id> --reason "off-brand"
+
+The gate is enabled the same way every other gate is:
+
+    poindexter gates set final_publish_approval on
+    poindexter gates list
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+from typing import Any
+
+import click
+
+
+def _dsn() -> str:
+    dsn = (
+        os.getenv("POINDEXTER_MEMORY_DSN")
+        or os.getenv("LOCAL_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
+        or ""
+    )
+    if not dsn:
+        raise RuntimeError(
+            "No DSN — set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, or DATABASE_URL."
+        )
+    return dsn
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+async def _make_pool():
+    import asyncpg
+    return await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+
+
+async def _make_site_config(pool):
+    from services.site_config import SiteConfig
+
+    cfg = SiteConfig(pool=pool)
+    try:
+        await cfg.load(pool)
+    except Exception:
+        pass
+    return cfg
+
+
+def _exit_error(msg: str, code: int = 1) -> None:
+    click.echo(f"Error: {msg}", err=True)
+    sys.exit(code)
+
+
+def _print_pending_row(row: dict[str, Any]) -> None:
+    pid = (row.get("post_id") or "")[:8]
+    gate = row.get("gate_name") or "?"
+    paused = row.get("gate_paused_at") or "-"
+    title = row.get("title") or row.get("slug") or "(no title)"
+    artifact = row.get("artifact") or {}
+    summary_keys = sorted(artifact.keys())[:5]
+    summary = ", ".join(summary_keys) if summary_keys else "(empty)"
+
+    click.secho(f"  {pid}  {gate:<24} {title[:50]}", fg="yellow")
+    click.secho(
+        f"    paused_at={paused}  artifact_keys=[{summary}]", fg="bright_black"
+    )
+
+
+# ---------------------------------------------------------------------------
+# approve-publish
+# ---------------------------------------------------------------------------
+
+
+@click.command("approve-publish")
+@click.argument("post_id")
+@click.option(
+    "--gate", "gate_name", default=None,
+    help="Optional gate name to assert. Default: clear whatever gate is currently active.",
+)
+@click.option(
+    "--feedback", default=None,
+    help="Optional operator note (recorded in audit_log).",
+)
+@click.option("--json", "json_output", is_flag=True)
+def approve_publish_command(
+    post_id: str,
+    gate_name: str | None,
+    feedback: str | None,
+    json_output: bool,
+) -> None:
+    """Approve a scheduled post at the final-publish-approval gate.
+
+    Clears the gate columns; the next ``scheduled_publisher`` tick
+    flips the row to ``status='published'``.
+    """
+    from services.posts_approval_service import (
+        PostsApprovalServiceError,
+        approve_publish,
+    )
+
+    async def _impl():
+        pool = await _make_pool()
+        try:
+            site_config = await _make_site_config(pool)
+            return await approve_publish(
+                post_id=post_id,
+                gate_name=gate_name,
+                feedback=feedback,
+                site_config=site_config,
+                pool=pool,
+            )
+        finally:
+            await pool.close()
+
+    try:
+        result = _run(_impl())
+    except PostsApprovalServiceError as e:
+        _exit_error(str(e))
+        return
+    except Exception as e:
+        _exit_error(f"unexpected: {type(e).__name__}: {e}")
+        return
+
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    click.secho(
+        f"Approved post {post_id} at gate {result.get('gate_name')!r}.",
+        fg="green",
+    )
+    if feedback:
+        click.echo(f"  feedback: {feedback}")
+
+
+# ---------------------------------------------------------------------------
+# reject-publish
+# ---------------------------------------------------------------------------
+
+
+@click.command("reject-publish")
+@click.argument("post_id")
+@click.option(
+    "--gate", "gate_name", default=None,
+    help="Optional gate name to assert.",
+)
+@click.option(
+    "--reason", default=None,
+    help="Operator-supplied veto reason (recorded in audit_log).",
+)
+@click.option("--json", "json_output", is_flag=True)
+def reject_publish_command(
+    post_id: str,
+    gate_name: str | None,
+    reason: str | None,
+    json_output: bool,
+) -> None:
+    """Reject a scheduled post at the final-publish-approval gate.
+
+    Moves the row to the gate's reject status (``rejected`` by default;
+    overridable via ``approval_gate_<gate>_reject_status`` in
+    app_settings — set to ``draft`` to bounce the post back into the
+    draft pool for re-work).
+    """
+    from services.posts_approval_service import (
+        PostsApprovalServiceError,
+        reject_publish,
+    )
+
+    async def _impl():
+        pool = await _make_pool()
+        try:
+            site_config = await _make_site_config(pool)
+            return await reject_publish(
+                post_id=post_id,
+                gate_name=gate_name,
+                reason=reason,
+                site_config=site_config,
+                pool=pool,
+            )
+        finally:
+            await pool.close()
+
+    try:
+        result = _run(_impl())
+    except PostsApprovalServiceError as e:
+        _exit_error(str(e))
+        return
+    except Exception as e:
+        _exit_error(f"unexpected: {type(e).__name__}: {e}")
+        return
+
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    click.secho(
+        f"Rejected post {post_id} at gate {result.get('gate_name')!r} "
+        f"→ status={result.get('new_status')!r}.",
+        fg="yellow",
+    )
+    if reason:
+        click.echo(f"  reason: {reason}")
+
+
+# ---------------------------------------------------------------------------
+# list-pending-publish
+# ---------------------------------------------------------------------------
+
+
+@click.command("list-pending-publish")
+@click.option(
+    "--gate", "gate_name", default=None,
+    help="Filter by gate name.",
+)
+@click.option("--limit", type=int, default=100, show_default=True)
+@click.option("--json", "json_output", is_flag=True)
+def list_pending_publish_command(
+    gate_name: str | None, limit: int, json_output: bool,
+) -> None:
+    """List every scheduled post currently paused at any publish gate."""
+    from services.posts_approval_service import list_pending_publish
+
+    async def _impl():
+        pool = await _make_pool()
+        try:
+            return await list_pending_publish(
+                pool=pool, gate_name=gate_name, limit=limit,
+            )
+        finally:
+            await pool.close()
+
+    try:
+        rows = _run(_impl())
+    except Exception as e:
+        _exit_error(f"{type(e).__name__}: {e}")
+        return
+
+    if json_output:
+        click.echo(json.dumps(rows, indent=2, default=str))
+        return
+
+    if not rows:
+        click.echo("(no pending publish gates)")
+        return
+
+    label = f"gate={gate_name!r}" if gate_name else "all publish gates"
+    click.secho(f"Pending publish gates ({label}): {len(rows)}", fg="cyan")
+    click.echo()
+    for row in rows:
+        _print_pending_row(row)
+
+
+# ---------------------------------------------------------------------------
+# show-pending-publish
+# ---------------------------------------------------------------------------
+
+
+@click.command("show-pending-publish")
+@click.argument("post_id")
+@click.option("--json", "json_output", is_flag=True)
+def show_pending_publish_command(post_id: str, json_output: bool) -> None:
+    """Show the publish-gate state + full artifact for one post."""
+    from services.posts_approval_service import (
+        PostsApprovalServiceError,
+        show_pending_publish,
+    )
+
+    async def _impl():
+        pool = await _make_pool()
+        try:
+            return await show_pending_publish(pool=pool, post_id=post_id)
+        finally:
+            await pool.close()
+
+    try:
+        row = _run(_impl())
+    except PostsApprovalServiceError as e:
+        _exit_error(str(e))
+        return
+    except Exception as e:
+        _exit_error(f"unexpected: {type(e).__name__}: {e}")
+        return
+
+    if json_output:
+        click.echo(json.dumps(row, indent=2, default=str))
+        return
+
+    click.secho(f"Post {row['post_id']}", fg="cyan", bold=True)
+    click.echo(f"  gate          {row.get('gate_name')!r}")
+    click.echo(f"  paused_at     {row.get('gate_paused_at')}")
+    click.echo(f"  status        {row.get('status')}")
+    click.echo(f"  scheduled_for {row.get('published_at')}")
+    click.echo(f"  slug          {row.get('slug')}")
+    click.echo(f"  title         {row.get('title')}")
+    click.echo()
+    click.secho("  artifact:", fg="bright_black")
+    artifact = row.get("artifact") or {}
+    if not artifact:
+        click.echo("    (empty)")
+    else:
+        for k, v in artifact.items():
+            v_str = json.dumps(v, default=str) if not isinstance(v, str) else v
+            if len(v_str) > 200:
+                v_str = v_str[:197] + "..."
+            click.echo(f"    {k}: {v_str}")
+
+
+__all__ = [
+    "approve_publish_command",
+    "reject_publish_command",
+    "list_pending_publish_command",
+    "show_pending_publish_command",
+]
