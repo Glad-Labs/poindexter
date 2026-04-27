@@ -37,7 +37,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 ### Key Numbers (as of April 26, 2026)
 
-- 45+ published posts on gladlabs.io
+- 46+ published posts on gladlabs.io
 - 100+ services in `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
 - 6 Grafana dashboards (post-merge consolidation), 4 alert rules
 - 6,100+ Python unit tests passing
