@@ -37,10 +37,10 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 ### Key Numbers (as of April 27, 2026)
 
-- 46 published posts on gladlabs.io (212 total tasks in the pipeline including drafts)
-- 299 Python files under `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
+- 180 published posts on gladlabs.io (1,050+ total tasks in the pipeline including drafts)
+- 313 Python files under `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
 - 6 Grafana dashboards (post-merge consolidation), 4 alert rules
-- 6,100+ Python unit tests passing
+- 6,800+ Python unit tests passing
 - 310 app_settings keys (roughly 60 added in the #198 hardening sweep, plus ongoing per-feature additions)
 - 15,300+ embeddings across posts / issues / audit / memory / brain (8× growth since the prior count was logged)
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
@@ -97,26 +97,26 @@ npm run type:check            # Python mypy
 - `DEPLOYMENT_MODE=coordinator` — minimal read-only API (intended for future cloud host; currently unused)
 - `DEPLOYMENT_MODE=worker` (local PC) — claims tasks, runs content pipeline via Ollama
 
-**Key services (16 custom-built):**
+**Key services (16 load-bearing):**
 
-| Service                     | Purpose                                              |
-| --------------------------- | ---------------------------------------------------- |
-| `content_router_service.py` | 6-stage content pipeline with cross-model QA         |
-| `content_validator.py`      | Anti-hallucination rules (programmatic, no LLM)      |
-| `multi_model_qa.py`         | Adversarial review (different LLMs check each other) |
-| `qa_registry.py`            | Composable QA workflows (dynamic from DB)            |
-| `process_composer.py`       | Intent → plan → approve → execute orchestration      |
-| `settings_service.py`       | DB-backed config (app_settings, 310 active keys)     |
-| `cost_guard.py`             | Daily/monthly spend limits                           |
-| `revenue_engine.py`         | Content performance analysis + topic suggestions     |
-| `anticipation_engine.py`    | Observe gaps → propose proactive actions             |
-| `big_brain.py`              | Self-maintaining knowledge graph                     |
-| `internal_linker.py`        | Auto-adds related post links                         |
-| `affiliate_linker.py`       | Auto-injects affiliate links (DB-backed)             |
-| `social_poster.py`          | Generates X/LinkedIn posts via Ollama                |
-| `newsletter_service.py`     | Weekly digest generator                              |
-| `finance_service.py`        | Mercury banking integration + P&L reports            |
-| `business_report.py`        | Daily/weekly metrics summaries                       |
+| Service                                   | Purpose                                                    |
+| ----------------------------------------- | ---------------------------------------------------------- |
+| `content_router_service.py`               | 6-stage content pipeline with cross-model QA               |
+| `content_validator.py`                    | Anti-hallucination rules (programmatic, no LLM)            |
+| `multi_model_qa.py`                       | Adversarial review (different LLMs check each other)       |
+| `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                |
+| `workflow_executor.py`                    | Step-based workflow orchestration                          |
+| `unified_orchestrator.py`                 | Cross-pipeline coordinator                                 |
+| `settings_service.py`                     | DB-backed config (app_settings, 310 active keys)           |
+| `site_config.py`                          | DI seam over settings (Phase H singleton replacement)      |
+| `cost_guard.py`                           | Daily/monthly spend limits                                 |
+| `model_router.py`                         | Cost-tiered model selection (free/budget/standard/premium) |
+| `research_service.py` / `web_research.py` | Topic research + web fact-check                            |
+| `publish_service.py`                      | Final publish + scheduled_publisher integration            |
+| `quality_service.py`                      | Quality scoring orchestration                              |
+| `internal_link_coherence.py`              | Auto-adds related post links                               |
+| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama                      |
+| `newsletter_service.py`                   | Weekly digest generator                                    |
 
 **Content pipeline stages:**
 
