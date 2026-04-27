@@ -92,8 +92,18 @@ async def _build_site_config(pool: Any) -> Any:
     return sc
 
 
-async def _run_stages(context: dict[str, Any]) -> dict[str, Any]:
-    """Execute the six video Stages in order, propagating context_updates."""
+async def _run_stages(
+    context: dict[str, Any], skip_long_form: bool = False,
+) -> dict[str, Any]:
+    """Execute the six video Stages in order, propagating context_updates.
+
+    ``skip_long_form=True`` skips the StitchLongFormStage. Short-form
+    sample runs benefit from this when the upstream Wan/SDXL/TTS work
+    is already slow — long-form would double the wall-clock cost.
+    The script + scene_visuals + tts Stages still produce both
+    long_form and short_form outputs in their context (they're cheap
+    once running); only the long-form stitch is skipped.
+    """
     from services.stages.script_for_video import ScriptForVideoStage
     from services.stages.scene_visuals import SceneVisualsStage
     from services.stages.tts_for_video import TtsForVideoStage
@@ -101,14 +111,17 @@ async def _run_stages(context: dict[str, Any]) -> dict[str, Any]:
     from services.stages.stitch_short_form import StitchShortFormStage
     from services.stages.upload_to_platform import UploadToPlatformStage
 
-    stages = [
+    stages: list[Any] = [
         ScriptForVideoStage(),
         SceneVisualsStage(),
         TtsForVideoStage(),
-        StitchLongFormStage(),
+    ]
+    if not skip_long_form:
+        stages.append(StitchLongFormStage())
+    stages.extend([
         StitchShortFormStage(),
         UploadToPlatformStage(),
-    ]
+    ])
 
     for stage in stages:
         print(f"\n=== {stage.name} ===")
@@ -142,7 +155,9 @@ class _FakeDatabaseService:
         self.pool = pool
 
 
-async def main(slug: str, strategy: str = "pexels") -> None:
+async def main(
+    slug: str, strategy: str = "pexels", skip_long_form: bool = False,
+) -> None:
     pool = await asyncpg.create_pool(_DATABASE_URL, min_size=1, max_size=4)
     try:
         # Populate the module-level service container so providers that
@@ -206,7 +221,7 @@ async def main(slug: str, strategy: str = "pexels") -> None:
             "site_config": site_config,
         }
 
-        await _run_stages(context)
+        await _run_stages(context, skip_long_form=skip_long_form)
 
         print("\n=== final video_outputs ===")
         outputs = context.get("video_outputs") or {}
@@ -230,9 +245,13 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(
             "usage: run_video_pipeline_sample.py <post_slug> "
-            "[strategy=pexels|sdxl|wan|mixed|reuse_first]"
+            "[strategy=pexels|sdxl|wan|mixed|reuse_first] "
+            "[--short-only]"
         )
         sys.exit(1)
-    _slug = sys.argv[1]
-    _strategy = sys.argv[2] if len(sys.argv) >= 3 else "pexels"
-    asyncio.run(main(_slug, _strategy))
+    _argv = sys.argv[1:]
+    _skip_long = "--short-only" in _argv
+    _argv = [a for a in _argv if a != "--short-only"]
+    _slug = _argv[0]
+    _strategy = _argv[1] if len(_argv) >= 2 else "pexels"
+    asyncio.run(main(_slug, _strategy, _skip_long))

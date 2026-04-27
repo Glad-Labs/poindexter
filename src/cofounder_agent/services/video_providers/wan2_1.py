@@ -71,10 +71,16 @@ _DEFAULT_WIDTH = 832
 _DEFAULT_HEIGHT = 480
 _DEFAULT_FPS = 16
 
-# Per-call HTTP cap. Wan 2.1 1.3B renders ~5s of video in ~30-60s on a
-# 5090; allow generous headroom for cold-start (~30-60s) + retries.
-# Five minutes is the documented ceiling per GH#124.
-_HTTP_TIMEOUT = httpx.Timeout(300.0, connect=5.0)
+# Per-call HTTP cap. Wan 2.1 1.3B at 50 inference steps renders 5s of
+# video in ~3min on a 5090 (warm). Cold-start adds another 30-60s
+# under normal conditions, but if the page cache is cold (post WSL
+# restart, etc.) the model checkpoints take 5-10min to read off disk.
+# Set the timeout well above that worst case so the first call doesn't
+# silently time out and force the strategy to fall through to a
+# different provider for the rest of the run. Real ceiling is wall-
+# clock-budget concern, not a hung server — wan-server's own GPU lock
+# guarantees only one /generate runs at a time.
+_HTTP_TIMEOUT = httpx.Timeout(900.0, connect=10.0)
 
 
 def _write_video_bytes(path: str, content: bytes) -> None:
