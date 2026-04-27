@@ -22,42 +22,17 @@ from typing import Any
 
 import httpx
 
+from plugins.tracing import get_tracer
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-# OpenTelemetry tracing — optional, with a graceful no-op fallback so the
-# client works in dev environments that don't ship OTel. Same shape as
-# services/llm_providers/dispatcher.py so a single global TracerProvider
-# (configured in services/telemetry.py at app startup) drives both. Spans
-# are emitted under name ``ollama.<method>`` with semantic attributes
-# (llm.model, llm.tokens.completion, llm.duration_s, llm.cost_usd) so the
-# Tempo→Grafana view groups by model and shows cost-per-trace.
-try:
-    from opentelemetry import trace as _otel_trace  # type: ignore[import-untyped]
-
-    _tracer = _otel_trace.get_tracer("poindexter.ollama_client")
-except ImportError:  # pragma: no cover — exercised in minimal dev envs
-    from contextlib import contextmanager
-
-    @contextmanager
-    def _noop_span(_name: str, **_kwargs: Any):
-        class _NoopSpan:
-            def set_attribute(self, *_a: Any, **_k: Any) -> None:
-                pass
-
-            def record_exception(self, *_a: Any, **_k: Any) -> None:
-                pass
-
-            def set_status(self, *_a: Any, **_k: Any) -> None:
-                pass
-
-        yield _NoopSpan()
-
-    class _NoopTracer:
-        start_as_current_span = staticmethod(_noop_span)
-
-    _tracer = _NoopTracer()  # type: ignore[assignment]
+# Tracer for Ollama HTTP-call spans. Spans land under name
+# ``ollama.<method>`` (generate / chat / embed) with semantic
+# attributes (llm.model, llm.tokens.*, llm.duration_s, llm.cost_usd)
+# the Tempo→Grafana view groups by. See plugins/tracing.py for the
+# import-or-noop rationale.
+_tracer = get_tracer("poindexter.ollama_client")
 
 # Phase H finish (GH#95): the module-level
 # ``from services.site_config import site_config as _site_config`` is
