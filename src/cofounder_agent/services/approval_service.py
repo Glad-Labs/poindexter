@@ -537,6 +537,32 @@ async def reject(
         severity="warning",
     )
 
+    # Per-gate rejection handler — turns the rejection into a learning
+    # signal (#148). Topic decisions weight-down the brain; preview
+    # rejections enqueue a draft regen with the reason as steering.
+    # Failures inside the handler are logged + swallowed so this never
+    # makes a successful rejection look like a CLI error.
+    try:
+        from services.rejection_handlers import (
+            RejectionContext,
+            dispatch_rejection,
+        )
+
+        ctx = RejectionContext(
+            gate_name=rejected_gate,
+            task_id=str(task_id),
+            post_id=None,
+            reason=reason,
+            artifact=_coerce_artifact(row.get("gate_artifact")),
+            pool=pool,
+            site_config=site_config,
+        )
+        await dispatch_rejection(ctx)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning(
+            "[approval_service] rejection handler dispatch failed: %s", exc,
+        )
+
     return {
         "ok": True,
         "task_id": str(task_id),

@@ -473,6 +473,33 @@ async def reject_publish(
         severity="warning",
     )
 
+    # Per-gate rejection handler (#148). For final_publish_approval
+    # this enqueues task.regen_media so the upload Stage rebuilds the
+    # media without redoing the writing pipeline. Wrapped in
+    # try/except so handler failure never makes a successful
+    # rejection return non-zero from the CLI.
+    try:
+        from services.rejection_handlers import (
+            RejectionContext,
+            dispatch_rejection,
+        )
+
+        ctx = RejectionContext(
+            gate_name=rejected_gate,
+            task_id=None,
+            post_id=str(post_id),
+            reason=reason,
+            artifact=_coerce_artifact(row.get("gate_artifact")),
+            pool=pool,
+            site_config=site_config,
+        )
+        await dispatch_rejection(ctx)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning(
+            "[posts_approval_service] rejection handler dispatch failed: %s",
+            exc,
+        )
+
     return {
         "ok": True,
         "post_id": str(post_id),
