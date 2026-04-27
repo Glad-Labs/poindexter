@@ -239,6 +239,13 @@ class ModelRouter:
         # Runtime provider failure tracking.
         self._provider_consecutive_failures: dict[str, int] = {}
         self._FAILURE_ALERT_THRESHOLD = 5
+        # Set true by ``seed_spend_from_db`` when the cost_logs query
+        # fails. ``_session_cloud_spend`` then represents "unknown,
+        # not zero" for downstream consumers (status endpoints,
+        # dashboards). Real budget enforcement still happens in
+        # CostGuard via fresh DB queries, so this flag is purely
+        # observability.
+        self._spend_seed_failed: bool = False
 
         logger.info(
             "Model router initialized", default_model=default_model, use_ollama=self.use_ollama
@@ -274,12 +281,36 @@ class ModelRouter:
                         self._monthly_spend_limit,
                     )
                     self._budget_exceeded_logged = True
-        except Exception:
+        except Exception as e:
             logger.error(
                 "[BUDGET] Failed to seed spend from cost_logs — "
-                "starting with $0.00 (spend cap may be inaccurate)",
+                "starting with $0.00. Live preflight (CostGuard) is "
+                "still authoritative; the in-memory counter is for "
+                "monitoring only. Audit log fires so the alert "
+                "pipeline can surface stuck DB queries.",
                 exc_info=True,
             )
+            # Mark the in-memory counter unreliable so callers that
+            # surface it (status endpoints, dashboards) can show
+            # "unknown" instead of $0. Per-call budget caps are still
+            # enforced at the CostGuard preflight layer, which queries
+            # cost_logs directly on every call — this counter is purely
+            # a startup snapshot.
+            self._spend_seed_failed = True
+            try:
+                from services.audit_log import audit_log_bg  # noqa: PLC0415
+                audit_log_bg(
+                    "budget_seed_failed",
+                    "model_router",
+                    {
+                        "error": str(e)[:300],
+                        "error_type": type(e).__name__,
+                        "monthly_limit": self._monthly_spend_limit,
+                    },
+                    severity="error",
+                )
+            except Exception as _audit_exc:
+                logger.debug("budget_seed_failed audit emit failed: %s", _audit_exc)
 
     def record_provider_failure(self, provider: str) -> None:
         """Record a runtime LLM call failure. Emits critical log at threshold."""
