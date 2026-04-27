@@ -246,6 +246,12 @@ whisper_local = "cofounder_agent.services.caption_providers.whisper_local:Whispe
 [tool.poetry.plugins."poindexter.media_compositors"]
 ffmpeg_local = "cofounder_agent.services.media_compositors.ffmpeg_local:FFmpegLocalCompositor"
 
+# Glad-Labs/poindexter#143: publish adapter plugin contract. Each
+# adapter ships inert until the operator seeds the platform's OAuth
+# secrets — gated on Glad-Labs/poindexter#40.
+[tool.poetry.plugins."poindexter.publish_adapters"]
+youtube = "cofounder_agent.services.publish_adapters.youtube:YouTubePublishAdapter"
+
 [tool.poetry.plugins."poindexter.stages"]
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"
