@@ -278,6 +278,10 @@ generate_media_scripts = "cofounder_agent.services.stages.generate_media_scripts
 capture_training_data = "cofounder_agent.services.stages.capture_training_data:CaptureTrainingDataStage"
 finalize_task = "cofounder_agent.services.stages.finalize_task:FinalizeTaskStage"
 cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQAStage"
+# Generic HITL pause-and-wait gate (#145). Drop into any pipeline at any
+# boundary; gate identity comes from config["gate_name"]. Default-off via
+# pipeline_gate_<gate_name> in app_settings.
+approval_gate = "cofounder_agent.services.stages.approval_gate:ApprovalGateStage"
 
 # Glad-Labs/poindexter#143: video pipeline Stages. Each Stage is its
 # own commit so it can be reviewed / disabled independently.

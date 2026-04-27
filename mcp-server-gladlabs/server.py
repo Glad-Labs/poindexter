@@ -263,48 +263,228 @@ async def operator_status() -> str:
 
 
 # ============================================================================
-# SCHEDULED PUBLISHING TOOLS (Glad-Labs/poindexter#147)
+# HITL APPROVAL GATE TOOLS (Glad-Labs/poindexter#145)
 #
-# Thin wrappers over services/scheduling_service.py. Mirrors the
-# `poindexter schedule ...` CLI commands so an operator chatting with
-# Claude can queue up a batch of approved posts the same way.
+# Thin wrappers around services.approval_service. The CLI is the canonical
+# operator interface; these MCP tools are convenience wrappers so an operator
+# in a Claude Code / Claude Desktop session can drive the same flow without
+# dropping to a shell.
+#
+# Each tool resolves the asyncpg pool the rest of this server uses, opens a
+# SiteConfig instance loaded from the DB, and calls the service module.
 # ============================================================================
 
-import json as _schedule_json  # noqa: E402
-import os as _schedule_os  # noqa: E402
-import sys as _schedule_sys  # noqa: E402
+import asyncio  # noqa: E402  — late import keeps the original deps block clean
+import json     # noqa: E402
+import os       # noqa: E402  (already imported above; kept for clarity)
+import sys      # noqa: E402
 
 
-def _schedule_ensure_path() -> None:
+def _ensure_poindexter_on_path() -> None:
     """Add the cofounder_agent source root to ``sys.path`` so we can import
-    ``services.scheduling_service`` from this private MCP server.
+    ``services.approval_service`` from this private MCP server.
 
-    This server runs via ``uv --directory mcp-server-gladlabs run server.py``
-    so the poindexter package isn't installed in its venv. Resolve relative
-    to this file so it works regardless of cwd.
+    The poindexter package isn't installed into this server's venv (we run
+    via ``uv --directory mcp-server-gladlabs run server.py``), so we rely on
+    the side-by-side checkout layout: ``mcp-server-gladlabs/server.py`` and
+    ``src/cofounder_agent/`` live in the same repo. Resolve relative to this
+    file so it works regardless of cwd.
     """
-    here = _schedule_os.path.dirname(_schedule_os.path.abspath(__file__))
-    candidate = _schedule_os.path.normpath(
-        _schedule_os.path.join(here, "..", "src", "cofounder_agent")
-    )
-    if candidate not in _schedule_sys.path:
-        _schedule_sys.path.insert(0, candidate)
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.normpath(os.path.join(here, "..", "src", "cofounder_agent"))
+    if candidate not in sys.path:
+        sys.path.insert(0, candidate)
 
 
-async def _schedule_make_site_config(pool):
-    """Construct a SiteConfig the scheduling-service helpers can consume."""
-    _schedule_ensure_path()
+async def _make_site_config(pool):
+    """Construct a SiteConfig the approval-service helpers can consume."""
+    _ensure_poindexter_on_path()
     from services.site_config import SiteConfig  # type: ignore[import-not-found]
 
     cfg = SiteConfig(pool=pool)
     try:
         await cfg.load(pool)
     except Exception as exc:  # pragma: no cover — best-effort load
-        logger.warning("Failed to load SiteConfig in schedule MCP wrapper: %s", exc)
+        logger.warning("Failed to load SiteConfig in MCP wrapper: %s", exc)
     return cfg
 
 
-def _schedule_result_to_jsonable(result) -> dict:
+async def _approval_pool():
+    """Reuse the shared pool from this server."""
+    return await _get_pool()
+
+
+@mcp.tool()
+async def approve(
+    task_id: str,
+    gate_name: str = "",
+    feedback: str = "",
+) -> str:
+    """Approve a content_tasks row at its current (or named) HITL gate.
+
+    Clears the gate and re-queues the pipeline. Same behavior as
+    ``poindexter approve <task_id>`` on the CLI.
+
+    Args:
+        task_id: UUID of the content_tasks row.
+        gate_name: Optional — assert which gate is being approved.
+            When empty, the active gate is cleared.
+        feedback: Optional operator note recorded in audit_log.
+
+    Returns:
+        JSON-encoded result dict, or a human-readable error string.
+    """
+    _ensure_poindexter_on_path()
+    from services.approval_service import (  # type: ignore[import-not-found]
+        ApprovalServiceError,
+        approve as approve_service,
+    )
+
+    try:
+        pool = await _approval_pool()
+        site_config = await _make_site_config(pool)
+        result = await approve_service(
+            task_id=task_id,
+            gate_name=gate_name or None,
+            feedback=feedback or None,
+            site_config=site_config,
+            pool=pool,
+        )
+        return json.dumps(result, default=str)
+    except ApprovalServiceError as e:
+        return f"approve failed: {e}"
+    except Exception as e:
+        return f"approve unexpected: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def reject(
+    task_id: str,
+    gate_name: str = "",
+    reason: str = "",
+) -> str:
+    """Reject a content_tasks row at its current (or named) HITL gate.
+
+    Sets the task to the gate's reject status (default: ``rejected``).
+    Same behavior as ``poindexter reject <task_id>`` on the CLI.
+    """
+    _ensure_poindexter_on_path()
+    from services.approval_service import (  # type: ignore[import-not-found]
+        ApprovalServiceError,
+        reject as reject_service,
+    )
+
+    try:
+        pool = await _approval_pool()
+        site_config = await _make_site_config(pool)
+        result = await reject_service(
+            task_id=task_id,
+            gate_name=gate_name or None,
+            reason=reason or None,
+            site_config=site_config,
+            pool=pool,
+        )
+        return json.dumps(result, default=str)
+    except ApprovalServiceError as e:
+        return f"reject failed: {e}"
+    except Exception as e:
+        return f"reject unexpected: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def list_pending(gate_name: str = "", limit: int = 100) -> str:
+    """List every task currently paused at any HITL approval gate.
+
+    Args:
+        gate_name: Optional filter to a single gate.
+        limit: Max rows (default 100).
+
+    Returns:
+        JSON-encoded list of pending rows.
+    """
+    _ensure_poindexter_on_path()
+    from services.approval_service import list_pending as list_pending_service  # type: ignore[import-not-found]
+
+    try:
+        pool = await _approval_pool()
+        rows = await list_pending_service(
+            pool=pool, gate_name=gate_name or None, limit=limit,
+        )
+        return json.dumps(rows, default=str)
+    except Exception as e:
+        return f"list_pending failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def show_pending(task_id: str) -> str:
+    """Return the full gate state + artifact for one paused task."""
+    _ensure_poindexter_on_path()
+    from services.approval_service import (  # type: ignore[import-not-found]
+        ApprovalServiceError,
+        show_pending as show_pending_service,
+    )
+
+    try:
+        pool = await _approval_pool()
+        row = await show_pending_service(pool=pool, task_id=task_id)
+        return json.dumps(row, default=str)
+    except ApprovalServiceError as e:
+        return f"show_pending failed: {e}"
+    except Exception as e:
+        return f"show_pending unexpected: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def gates_list() -> str:
+    """List every known HITL gate + enabled state + pending count."""
+    _ensure_poindexter_on_path()
+    from services.approval_service import list_gates  # type: ignore[import-not-found]
+
+    try:
+        pool = await _approval_pool()
+        site_config = await _make_site_config(pool)
+        rows = await list_gates(pool=pool, site_config=site_config)
+        return json.dumps(rows, default=str)
+    except Exception as e:
+        return f"gates_list failed: {type(e).__name__}: {e}"
+
+
+@mcp.tool()
+async def gates_set(gate_name: str, enabled: bool) -> str:
+    """Toggle a HITL gate on or off. Writes ``app_settings``.
+
+    Args:
+        gate_name: Stable slug, e.g. ``"topic_decision"``.
+        enabled: True → ``"on"``, False → ``"off"``.
+    """
+    _ensure_poindexter_on_path()
+    from services.approval_service import set_gate_enabled  # type: ignore[import-not-found]
+
+    try:
+        pool = await _approval_pool()
+        site_config = await _make_site_config(pool)
+        result = await set_gate_enabled(
+            gate_name=gate_name,
+            enabled=bool(enabled),
+            pool=pool,
+            site_config=site_config,
+        )
+        return json.dumps(result, default=str)
+    except Exception as e:
+        return f"gates_set failed: {type(e).__name__}: {e}"
+
+
+# ============================================================================
+# SCHEDULED PUBLISHING TOOLS (Glad-Labs/poindexter#147)
+# ============================================================================
+#
+# Thin wrappers over services/scheduling_service.py. Mirrors the
+# `poindexter schedule ...` CLI commands so an operator chatting with
+# Claude can queue up a batch of approved posts the same way.
+#
+
+
+def _result_to_jsonable(result) -> dict:
     """Serialise a ScheduleResult dataclass into a plain dict."""
     return {
         "ok": result.ok,
@@ -325,10 +505,11 @@ async def schedule_batch(
 ) -> str:
     """Bulk-assign publish slots to the approved-post queue.
 
-    Reads up to ``count`` approved posts in ``ordered_by`` order and walks the
-    slot calendar starting from ``start`` stepping by ``interval``. Slots
-    inside the quiet-hours window are skipped to the next allowed time. Same
-    behaviour as ``poindexter schedule batch`` on the CLI.
+    Reads up to ``count`` approved posts in ``ordered_by`` order and
+    walks the slot calendar starting from ``start`` stepping by
+    ``interval``. Slots inside the quiet-hours window are skipped to
+    the next allowed time. Same behaviour as
+    ``poindexter schedule batch`` on the CLI.
 
     Args:
         count: Number of approved posts to schedule.
@@ -340,15 +521,18 @@ async def schedule_batch(
         ordered_by: ``approved_at`` (default) | ``created_at`` |
             ``id`` | ``title``.
         force: Re-schedule posts even if they already have a slot.
+
+    Returns:
+        JSON-encoded result envelope.
     """
-    _schedule_ensure_path()
+    _ensure_poindexter_on_path()
     from services.scheduling_service import (  # type: ignore[import-not-found]
         assign_batch as assign_batch_service,
     )
 
     try:
         pool = await _get_pool()
-        site_config = await _schedule_make_site_config(pool)
+        site_config = await _make_site_config(pool)
         result = await assign_batch_service(
             count=count,
             interval=interval,
@@ -359,9 +543,7 @@ async def schedule_batch(
             site_config=site_config,
             force=force,
         )
-        return _schedule_json.dumps(
-            _schedule_result_to_jsonable(result), default=str
-        )
+        return json.dumps(_result_to_jsonable(result), default=str)
     except Exception as e:
         return f"schedule_batch failed: {type(e).__name__}: {e}"
 
@@ -369,17 +551,17 @@ async def schedule_batch(
 @mcp.tool()
 async def schedule_list(upcoming_only: bool = True) -> str:
     """List every post with a populated publish schedule."""
-    _schedule_ensure_path()
+    _ensure_poindexter_on_path()
     from services.scheduling_service import (  # type: ignore[import-not-found]
         list_scheduled,
     )
 
     try:
         pool = await _get_pool()
-        result = await list_scheduled(pool=pool, upcoming_only=upcoming_only)
-        return _schedule_json.dumps(
-            _schedule_result_to_jsonable(result), default=str
+        result = await list_scheduled(
+            pool=pool, upcoming_only=upcoming_only,
         )
+        return json.dumps(_result_to_jsonable(result), default=str)
     except Exception as e:
         return f"schedule_list failed: {type(e).__name__}: {e}"
 
@@ -387,7 +569,7 @@ async def schedule_list(upcoming_only: bool = True) -> str:
 @mcp.tool()
 async def schedule_show(post_id: str) -> str:
     """Return the schedule detail for a single post."""
-    _schedule_ensure_path()
+    _ensure_poindexter_on_path()
     from services.scheduling_service import (  # type: ignore[import-not-found]
         show_scheduled,
     )
@@ -395,9 +577,7 @@ async def schedule_show(post_id: str) -> str:
     try:
         pool = await _get_pool()
         result = await show_scheduled(post_id, pool=pool)
-        return _schedule_json.dumps(
-            _schedule_result_to_jsonable(result), default=str
-        )
+        return json.dumps(_result_to_jsonable(result), default=str)
     except Exception as e:
         return f"schedule_show failed: {type(e).__name__}: {e}"
 
@@ -406,8 +586,8 @@ async def schedule_show(post_id: str) -> str:
 async def schedule_clear(post_id: str = "", clear_all: bool = False) -> str:
     """Drop the schedule on one post or every still-future scheduled post.
 
-    Pass ``post_id`` for a single post, or ``clear_all=True`` for the whole
-    upcoming queue. Refuses both at once.
+    Pass ``post_id`` for a single post, or ``clear_all=True`` for the
+    whole upcoming queue. Refuses both at once.
     """
     if (not post_id and not clear_all) or (post_id and clear_all):
         return (
@@ -415,21 +595,19 @@ async def schedule_clear(post_id: str = "", clear_all: bool = False) -> str:
             "not both / neither."
         )
 
-    _schedule_ensure_path()
+    _ensure_poindexter_on_path()
     from services.scheduling_service import (  # type: ignore[import-not-found]
         clear as clear_service,
     )
 
     try:
         pool = await _get_pool()
-        site_config = await _schedule_make_site_config(pool)
+        site_config = await _make_site_config(pool)
         ids = None if clear_all else [post_id]
         result = await clear_service(
             post_ids=ids, pool=pool, site_config=site_config,
         )
-        return _schedule_json.dumps(
-            _schedule_result_to_jsonable(result), default=str
-        )
+        return json.dumps(_result_to_jsonable(result), default=str)
     except Exception as e:
         return f"schedule_clear failed: {type(e).__name__}: {e}"
 
@@ -452,7 +630,7 @@ async def publish_at(
             "not both / neither."
         )
 
-    _schedule_ensure_path()
+    _ensure_poindexter_on_path()
     from datetime import datetime, timezone  # type: ignore[import-not-found]
 
     from services.scheduling_service import (  # type: ignore[import-not-found]
@@ -472,15 +650,17 @@ async def publish_at(
 
     try:
         pool = await _get_pool()
-        site_config = await _schedule_make_site_config(pool)
+        site_config = await _make_site_config(pool)
         result = await assign_slot(
             post_id, target, pool=pool, site_config=site_config, force=force,
         )
-        return _schedule_json.dumps(
-            _schedule_result_to_jsonable(result), default=str
-        )
+        return json.dumps(_result_to_jsonable(result), default=str)
     except Exception as e:
         return f"publish_at failed: {type(e).__name__}: {e}"
+
+
+# Silence the "imported but unused" warning if asyncio isn't otherwise used.
+_ = asyncio
 
 
 if __name__ == "__main__":

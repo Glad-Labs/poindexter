@@ -6,6 +6,13 @@ import logging
 
 import click
 
+from .approval import (
+    approve_command,
+    gates_group,
+    list_pending_command,
+    reject_command,
+    show_pending_command,
+)
 from .costs import costs_group
 from .memory import memory_group
 from .posts import posts_group
@@ -60,6 +67,13 @@ main.add_command(qa_gates_group, name="qa-gates")
 main.add_command(stores_group, name="stores")
 main.add_command(schedule_group, name="schedule")
 main.add_command(publish_at_command, name="publish-at")
+
+# HITL approval gate commands (#145).
+main.add_command(approve_command, name="approve")
+main.add_command(reject_command, name="reject")
+main.add_command(list_pending_command, name="list-pending")
+main.add_command(show_pending_command, name="show-pending")
+main.add_command(gates_group, name="gates")
 
 
 if __name__ == "__main__":

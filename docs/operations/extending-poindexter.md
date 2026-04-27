@@ -391,6 +391,123 @@ Register in `brain/probe_registry.py`.
 
 ---
 
+## 8. Adding a HITL approval gate (#145)
+
+A **HITL gate** is a configurable pause-and-wait point in any pipeline
+where the worker stops and asks a human to approve / reject before
+moving on. Gates are config-driven — the same `ApprovalGateStage`
+ships with the worker; you "add a gate" by registering the Stage in
+the chain with a new `gate_name` and an `artifact_fn`.
+
+The single source of truth for the operator interface is
+`services/approval_service.py`. The CLI is the canonical surface;
+MCP and any future REST endpoints are thin wrappers.
+
+### Wire the Stage into your chain
+
+Wherever your pipeline registers Stages (declarative `qa_gates` table
+for QA chains, or the legacy hard-coded list in
+`content_router_service`), drop in `ApprovalGateStage` with config:
+
+```python
+from services.stages.approval_gate import ApprovalGateStage
+
+approval_gate = ApprovalGateStage()
+
+# When your runner walks the chain, call:
+result = await approval_gate.execute(
+    context=context,           # pipeline context dict
+    config={
+        "gate_name": "topic_decision",
+        "artifact_fn": lambda ctx: {
+            "topic": ctx.get("topic", ""),
+            "rationale": ctx.get("topic_rationale", ""),
+        },
+        # optional: skip this gate when a flag is set globally.
+        "skip_if_setting": "automated_test_mode",
+        # optional: status to leave on the row while paused.
+        "halt_status": "in_progress",
+    },
+)
+```
+
+The Stage:
+
+1. Reads `pipeline_gate_<gate_name>` from `app_settings`. If unset or
+   `off`, returns `StageResult(ok=True)` and is a no-op — adding the
+   Stage to the chain doesn't accidentally start blocking until the
+   operator opts in.
+2. Calls `artifact_fn(context)` to build the JSON the operator will
+   review.
+3. Persists `awaiting_gate`, `gate_artifact`, `gate_paused_at` on the
+   `content_tasks` row.
+4. Fires a Discord + Telegram notification through the existing
+   `_notify_alert` plumbing.
+5. Returns `StageResult(ok=True, continue_workflow=False)` — the
+   runner halts.
+
+### Enable the gate
+
+Default-off. Flip it on with the CLI:
+
+```bash
+poindexter gates set topic_decision on
+poindexter gates list
+```
+
+### Operator workflow
+
+When the gate trips, the operator sees a Telegram / Discord message
+with the artifact summary and the exact CLI command to approve /
+reject. Day-to-day flow:
+
+```bash
+# What's pending?
+poindexter list-pending
+
+# What does THIS task look like?
+poindexter show-pending <task_id>
+
+# Approve — clears the gate and re-queues the pipeline.
+poindexter approve <task_id>
+poindexter approve <task_id> --gate topic_decision --feedback "good angle"
+
+# Reject — sets status=rejected (or the gate's custom reject status)
+# and clears the gate.
+poindexter reject <task_id> --reason "off-brand"
+```
+
+Every command takes `--json` for piping. MCP tools exposed by the
+`gladlabs` server (`approve`, `reject`, `list_pending`, `show_pending`,
+`gates_list`, `gates_set`) wrap the same service module so an
+operator can drive everything from a Claude Code session too.
+
+### Per-gate reject status
+
+Default reject status is `rejected`. Override per gate by setting
+`approval_gate_<gate_name>_reject_status` in `app_settings` — useful
+when a gate's "reject" should be a soft `dismissed` (so retry logic
+doesn't kick in) instead of a hard veto.
+
+### Why default-off
+
+A new gate ships inert so registering it in the chain doesn't break
+existing pipelines. The operator opts in by flipping the
+`pipeline_gate_<gate_name>` setting. Add a row to
+`bootstrap_defaults` if you want the gate enabled out of the box for
+fresh installs.
+
+### Tests
+
+Every new gate gets a unit test that drives `ApprovalGateStage` with
+its specific `artifact_fn`. See
+`tests/unit/test_approval_gate_stage.py` for the canonical patterns:
+gate-disabled passthrough, skip_if_setting passthrough, enabled-halt
+
+- artifact persistence.
+
+---
+
 ## Anti-patterns — please don't
 
 - **Don't import across stages.** Stages communicate through the
