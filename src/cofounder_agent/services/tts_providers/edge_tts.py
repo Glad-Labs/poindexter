@@ -46,11 +46,53 @@ def _estimate_duration_from_text(text: str) -> int:
     """Rough duration estimate: ~150 words per minute for TTS.
 
     Mirrors the legacy ``services.podcast_service._estimate_duration_from_text``
-    helper so episodes generated through this provider report durations
-    that match what the pipeline previously logged.
+    helper. Used as a fallback when ffprobe can't read the rendered
+    file (no binary on PATH, broken file). NOTE: clamps to 30s minimum
+    for legacy podcast-rate-limit reasons — DO NOT use this for video
+    pipeline scene timing where short scenes are normal. Prefer
+    :func:`_actual_duration_from_file` first.
     """
     word_count = len(text.split())
     return max(30, int(word_count / 150 * 60))
+
+
+def _actual_duration_from_file(output_path: Path) -> int | None:
+    """Read the rendered audio's actual duration via ffprobe.
+
+    Returns ``None`` when ffprobe is unavailable or fails — caller
+    falls back to the text-based estimate. Local subprocess; cheap
+    (~30ms per call).
+    """
+    import json
+    import shutil
+    import subprocess  # noqa: S404 — local ffprobe binary, argv list
+
+    binary = shutil.which("ffprobe")
+    if not binary:
+        return None
+    try:
+        proc = subprocess.run(  # noqa: S603 — argv list, no shell
+            [
+                binary,
+                "-v", "quiet",
+                "-print_format", "json",
+                "-show_format",
+                str(output_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0 or not proc.stdout:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+        return int(round(float(data["format"]["duration"])))
+    except (ValueError, KeyError, TypeError):
+        return None
 
 
 class EdgeTTSProvider:
@@ -102,7 +144,13 @@ class EdgeTTSProvider:
             )
 
         size = output_path.stat().st_size
-        duration = _estimate_duration_from_text(text)
+        # Prefer the rendered file's actual duration (ffprobe). Fall
+        # back to the text-based estimate only when ffprobe isn't
+        # available — its 30s floor isn't suitable for short
+        # video-pipeline scenes that the upstream podcast service
+        # never had to handle.
+        probed = _actual_duration_from_file(output_path)
+        duration = probed if probed is not None else _estimate_duration_from_text(text)
         logger.info(
             "EdgeTTSProvider: rendered %s (%d bytes, ~%ds, voice=%s)",
             output_path.name, size, duration, chosen_voice,

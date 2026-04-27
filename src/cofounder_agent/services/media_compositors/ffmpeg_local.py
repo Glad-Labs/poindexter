@@ -141,6 +141,19 @@ def _validate_inputs(request: CompositionRequest) -> str | None:
     return None
 
 
+_STILL_IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"})
+
+
+def _is_still_image(path: str) -> bool:
+    """Heuristic: does ``path`` point at a still image vs a video clip.
+
+    Used by the normalize step to decide whether ``-loop 1 -framerate``
+    is needed before ``-i``. Cheap extension check covers every
+    format the SDXL / Pexels / media_assets reuse paths produce.
+    """
+    return os.path.splitext(path)[1].lower() in _STILL_IMAGE_EXTS
+
+
 def _build_normalize_cmd(
     *,
     binary: str,
@@ -160,21 +173,32 @@ def _build_normalize_cmd(
 
     Pads/scales to ``width × height`` (preserving aspect via
     ``force_original_aspect_ratio=decrease`` + black bars), pins fps,
-    encodes video with ``encoder``, encodes audio as AAC, trims to
-    ``scene.duration_s`` if non-zero. Stills become videos via
-    ``-loop 1`` semantics.
+    encodes video with ``encoder``, encodes audio as AAC, runs the
+    visual for ``scene.duration_s`` (driven by narration timing
+    upstream).
 
-    A scene with no narration gets silent AAC of its own duration so
-    every intermediate has a uniform A/V track (concat demuxer
-    requires this).
+    Loop handling — ffmpeg needs explicit ``-loop 1 -framerate``
+    BEFORE ``-i`` for still inputs; without it the input is a single
+    frame and ``-t`` does nothing. Short videos that are shorter than
+    the requested duration get ``-stream_loop -1`` to repeat. Real
+    videos longer than ``duration_s`` are simply trimmed by ``-t``.
+
+    Audio handling — narration drives the scene length. With no
+    narration we generate silent AAC. We do NOT pass ``-shortest``;
+    the explicit ``-t`` is the source of truth so a long-narration
+    short-still pair runs as long as the operator asked.
     """
     cmd: list[str] = [binary, "-loglevel", loglevel, "-y"]
     if hwaccel:
         cmd.extend(["-hwaccel", hwaccel])
 
-    # Treat any clip ffmpeg can decode uniformly — if it's a still,
-    # ffmpeg picks up that stream is single-frame and the scale+fps
-    # filters expand it into a video at the requested fps.
+    # Pre-input loop flags — order matters, must precede the matching
+    # ``-i``. Stills use ``image2`` demuxer behaviour with -loop 1;
+    # videos use the input-side stream-looper.
+    if _is_still_image(scene.clip_path):
+        cmd.extend(["-loop", "1", "-framerate", str(fps)])
+    else:
+        cmd.extend(["-stream_loop", "-1"])
     cmd.extend(["-i", scene.clip_path])
 
     # Audio source: narration if provided, else generated silence.
@@ -191,10 +215,10 @@ def _build_normalize_cmd(
     )
     cmd.extend(["-vf", vf])
 
-    # Duration handling. duration_s=0 means "use the clip's native
-    # duration"; otherwise pin to the requested value.
-    if scene.duration_s and scene.duration_s > 0:
-        cmd.extend(["-t", f"{scene.duration_s:.3f}"])
+    # Duration is now the authoritative scene length. Always set it —
+    # 0 collapses to a frame which is never what we want here.
+    duration_s = scene.duration_s if scene.duration_s and scene.duration_s > 0 else 5.0
+    cmd.extend(["-t", f"{duration_s:.3f}"])
 
     # Map streams so the AAC track always wins even if the input clip
     # has its own audio (we don't want lipsync surprises).
@@ -208,7 +232,6 @@ def _build_normalize_cmd(
         "-c:a", "aac",
         "-b:a", audio_bitrate,
         "-ar", "48000",
-        "-shortest",
         output_path,
     ])
     return cmd
