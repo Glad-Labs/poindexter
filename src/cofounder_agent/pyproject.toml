@@ -208,8 +208,12 @@ tune_publish_threshold = "cofounder_agent.services.jobs.tune_publish_threshold:T
 verify_published_posts = "cofounder_agent.services.jobs.verify_published_posts:VerifyPublishedPostsJob"
 crosspost_to_devto = "cofounder_agent.services.jobs.crosspost_to_devto:CrosspostToDevtoJob"
 update_utility_rates = "cofounder_agent.services.jobs.update_utility_rates:UpdateUtilityRatesJob"
-sync_shared_context = "cofounder_agent.services.jobs.sync_shared_context:SyncSharedContextJob"
+# sync_shared_context disabled 2026-04-21: scripts/sync-shared-context.py
+# doesn't exist in the tree. Re-enable when (and if) the script lands.
+# sync_shared_context = "cofounder_agent.services.jobs.sync_shared_context:SyncSharedContextJob"
 auto_embed_posts = "cofounder_agent.services.jobs.auto_embed_posts:AutoEmbedPostsJob"
+rollup_post_performance = "cofounder_agent.services.jobs.rollup_post_performance:RollupPostPerformanceJob"
+reload_site_config = "cofounder_agent.services.jobs.reload_site_config:ReloadSiteConfigJob"
 analyze_topic_gaps = "cofounder_agent.services.jobs.analyze_topic_gaps:AnalyzeTopicGapsJob"
 sync_newsletter_subscribers = "cofounder_agent.services.jobs.sync_newsletter_subscribers:SyncNewsletterSubscribersJob"
 backfill_videos = "cofounder_agent.services.jobs.backfill_videos:BackfillVideosJob"
@@ -269,6 +273,11 @@ ffmpeg_local = "cofounder_agent.services.media_compositors.ffmpeg_local:FFmpegLo
 youtube = "cofounder_agent.services.publish_adapters.youtube:YouTubePublishAdapter"
 
 [tool.poetry.plugins."poindexter.stages"]
+# Topic-decision HITL gate (#146). Inert by default — passthrough until
+# pipeline_gate_topic_decision = on in app_settings. First in the order
+# so anticipation-engine and manual proposals both clear it before any
+# LLM cycles burn.
+topic_decision_gate = "cofounder_agent.services.stages.topic_decision_gate:TopicDecisionGateStage"
 verify_task = "cofounder_agent.services.stages.verify_task:VerifyTaskStage"
 generate_content = "cofounder_agent.services.stages.generate_content:GenerateContentStage"
 writer_self_review = "cofounder_agent.services.stages.writer_self_review:WriterSelfReviewStage"

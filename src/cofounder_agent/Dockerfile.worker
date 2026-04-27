@@ -39,10 +39,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install poetry
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir poetry
 
-# Copy dependency files first (cache layer)
+# Install dependencies first as a cache layer — pyproject.toml + poetry.lock
+# only. The actual project ("poindexter-backend") is installed in a later
+# step AFTER application code is copied, because installing the project
+# creates dist-info entry_points which the plugin registry consults at
+# runtime (gh#152). Pulling that into the same layer as the source means
+# every code change re-resolves dependencies; splitting keeps the
+# heavy dep-resolution layer cached.
 COPY pyproject.toml poetry.lock ./
-
-# Install Python deps (no dev deps, no virtualenv)
 RUN poetry config virtualenvs.create false && \
     poetry install --no-root --no-dev --no-interaction 2>/dev/null || \
     poetry install --no-root --no-interaction
@@ -55,6 +59,38 @@ RUN python -m playwright install chromium && \
 
 # Copy application code
 COPY . .
+
+# Now install the project itself so its [tool.poetry.plugins."poindexter.*"]
+# entry_points land in dist-info. WITHOUT this step, the runtime's
+# importlib.metadata.entry_points(group="poindexter.jobs") returns
+# empty and PluginScheduler quietly skips every job declared only in
+# pyproject.toml — caught and fixed in commit 5e421c6d, properly
+# resolved here per gh#152.
+#
+# Layout note: pyproject.toml's `packages = [{include="cofounder_agent",
+# from=".."}]` expects the package to live at <pyproject_dir>/../cofounder_agent.
+# In the host that's src/cofounder_agent/ (relative to src/cofounder_agent/
+# the pyproject.toml lives in). In the container with WORKDIR=/app and
+# `COPY . .`, the package files land directly in /app/, so /app/.. = /
+# wouldn't have cofounder_agent. Symlink /cofounder_agent -> /app/ so
+# the wheel builder can resolve the include without changing pyproject.toml
+# (which would break the host's local poetry install).
+RUN ln -s /app /cofounder_agent && \
+    pip install --no-deps --no-cache-dir . && \
+    rm /cofounder_agent
+
+# Runtime layout fixup. The wheel built above ships entry_points whose
+# targets are ``cofounder_agent.services.jobs.X`` (matches pyproject.toml's
+# ``packages`` config), but the container runs with WORKDIR=/app where
+# Python imports are flat — ``services.jobs.X`` works, but
+# ``cofounder_agent.services.jobs.X`` doesn't unless something on sys.path
+# exposes a ``cofounder_agent`` package whose contents are /app/.
+#
+# Symlinking /app under site-packages/ makes ``import cofounder_agent.<x>``
+# resolve to ``/app/<x>``. Same files, two import names — the existing
+# flat-import code paths keep working AND the dist-info entry_points
+# resolve cleanly.
+RUN ln -s /app /usr/local/lib/python3.12/site-packages/cofounder_agent
 
 # Non-root user. chmod 0711 on /root so appuser can *traverse* it to reach
 # SDXL-generated images under /root/.poindexter/generated-images/ (via the
