@@ -148,3 +148,191 @@ scope per the task constraints.
 - 1 TODO comment (stale, low priority)
 - 0 traceback-losing re-raises
 - 11 control-flow swallow sites left intentionally as-is
+
+---
+
+## Sweep 3 — brain daemon
+
+Continuation of the audit. Scope: `brain/` (the standalone Brainstem
+daemon — independent of FastAPI, only depends on Python stdlib + asyncpg).
+The daemon writes its own log via `logging.getLogger("brain")` (and
+sub-loggers `brain.probes`, `brain.alert_sync`, `brain.business_probes`)
+— it does NOT use `services.logger_config`, by design (the brain has
+to keep working when the rest of the stack is broken).
+
+### 1. Silent `except: pass` swallows fixed
+
+| File                       | Line(s)   | What was swallowed                                           | Now logs                                                      |
+| -------------------------- | --------- | ------------------------------------------------------------ | ------------------------------------------------------------- |
+| `brain/brain_daemon.py`    | 119–132   | `_setting_int` — DB read OR `int()` parse failure            | WARNING                                                       |
+| `brain/brain_daemon.py`    | 789–791   | `digest.last_sent` date string parse                         | DEBUG                                                         |
+| `brain/brain_daemon.py`    | 918–921   | nvidia-smi-exporter probe (control flow — exporter optional) | DEBUG                                                         |
+| `brain/brain_daemon.py`    | 933–940   | `electricity_rate_kwh` app_settings read                     | WARNING                                                       |
+| `brain/brain_daemon.py`    | 993–996   | PSU watchdog `brain_knowledge` write                         | DEBUG                                                         |
+| `brain/health_probes.py`   | 550–557   | `approval_queue_alert_threshold` app_settings read           | WARNING                                                       |
+| `brain/health_probes.py`   | 1058–1066 | `gpu_temperature_high_threshold_c` app_settings read         | WARNING                                                       |
+| `brain/business_probes.py` | 81        | API health check (already records DOWN; preserve why)        | DEBUG                                                         |
+| `brain/business_probes.py` | 89        | site health check                                            | DEBUG                                                         |
+| `brain/business_probes.py` | 97        | OpenClaw health check                                        | DEBUG                                                         |
+| `brain/bootstrap.py`       | 207–215   | bootstrap.toml chmod (Windows always raises)                 | WARNING on POSIX, silent on Windows (stdlib-only — no logger) |
+
+Total: **11 sites converted**, across 4 files.
+
+The earlier `_setting_int` swallow was particularly concerning — it
+caught `(ValueError, TypeError, Exception)` (where `Exception` shadows
+the others) and silently fell back to the default for ANY error. A
+DB outage during the brain's reasoning queue, auto-remediation
+sweepers, or digest cadence reads would have shown up as "everything
+quietly using defaults" rather than as a logged warning. Now split
+into two distinct paths: DB error → WARNING ("real outage worth
+seeing"), parse error → WARNING ("real misconfig worth seeing").
+
+### 2. Heartbeat path — gaps found and fixed
+
+The brain daemon writes a heartbeat file (`~/.poindexter/heartbeat`
+
+- `/tmp/brain_heartbeat` in Docker) after each cycle for the OS-level
+  watchdog. CLAUDE.md describes a separate `brain_decisions` write at
+  the end of each cycle. Three gaps surfaced:
+
+**Gap 1 — heartbeat fields were always 0/True regardless of cycle health.**
+The `_touch_heartbeat()` helper accepted `cycle_issues` and
+`probe_failures` parameters, but the call sites never passed them
+in. Result: the heartbeat JSON always reported `cycle_ok=true` even
+when the cycle had logged dozens of issues. **Fixed:** `run_cycle`
+now returns a stats dict (`issues`, `probe_failures`, `step_failed`)
+and the main loop feeds it into `_touch_heartbeat`. A watchdog reading
+the JSON can now decide whether stale-but-failing warrants action.
+
+**Gap 2 — when `run_cycle` raised, no heartbeat was written.**
+The `try/except` in `main()` logged the error but skipped the
+heartbeat update. The OS watchdog would eventually restart on
+file-age, but the heartbeat itself never reflected the crash so an
+operator scraping the JSON couldn't distinguish "brain is alive but
+crashing every cycle" from "brain is genuinely dead". **Fixed:** the
+exception path now calls `_touch_heartbeat(cycle_crashed=...)` with
+the exception type + message so a Grafana panel reading the JSON
+sees `cycle_ok=false` immediately.
+
+**Gap 3 — a sub-step crash skipped the brain_decisions log.**
+`run_cycle` was a flat sequence of `await monitor_services(pool)`
+through `await run_business_probes(pool)` followed by the
+`brain_decisions` INSERT. If `auto_remediate` (or any other step)
+raised, control jumped to `main()`'s outer except and the
+`brain_decisions` row never got written — losing the audit trail
+for that cycle. **Fixed:** every step now runs through a `_step()`
+wrapper that catches+logs at WARNING and keeps going. The first
+step name to crash gets recorded in `step_failed` and lands in
+both the `brain_decisions` row (with `confidence=0.5` so a query
+can filter degraded cycles) AND the heartbeat JSON.
+
+The "next-action" / queue-handler decision logging path is intact
+— `process_queue` already logs each handler invocation at INFO and
+the `_QUEUE_HANDLERS` dispatch updates the `brain_queue.result`
+column. No change needed there.
+
+### 3. Telegram alert path — verified
+
+- **Wiring.** `send_telegram` hits the Telegram Bot API directly
+  (no OpenClaw dependency). This is intentional and correct: the
+  brain daemon is the watchdog FOR OpenClaw, so it can't depend on
+  OpenClaw to deliver alerts. The `feedback_telegram_ownership`
+  rule says "OpenClaw handles polling; backends SEND via webhook"
+  — the brain daemon is sending, just via the bot API rather than
+  an OpenClaw webhook. Both are write-only; the rule is preserved.
+- **Rate-limit / dedup.** Three independent rate-limiters exist:
+  1. `monitor_services` consults `alert_actions.cooldown_minutes`
+     before notifying, with `consecutive_failures` and
+     `escalate_after_failures` for tiered escalation.
+  2. `monitor_external_services` only notifies on indicator
+     **transitions** (prev != current), so a 1-hour Vercel outage
+     fires at most one alert + one recovery.
+  3. `run_health_probes` notifies once when `_failure_counts[name] ==
+ALERT_AFTER_FAILURES` (3) — strictly equal, so subsequent
+     failures past the threshold do not re-spam.
+- **No additional dedup needed.** The audit specifically checked
+  whether a 1-hour outage produces 12 identical alerts. It does not:
+  monitor_services would emit at most 1 (cooldown), external
+  services 1 (transition), probes 1 (`==` not `>=`).
+
+No fixes needed in this area — the path is sound.
+
+### 4. Auto-restart logic — gap found and fixed
+
+**Gap 4 — `restart_service` had no backoff.**
+`monitor_services` calls `restart_service(name)` every cycle (every
+5 minutes) for as long as the worker / OpenClaw is detected DOWN.
+For a transient blip that's fine; for a configuration error
+preventing startup it would respawn the process every 5 minutes
+forever. The Docker path in `restart_service` already used
+`docker restart` + `notify(...)` per call so the Telegram channel
+would also fill with restart messages. There WAS a separate
+`REMEDIATION_COOLDOWN = 900` for probe-driven restarts in
+`health_probes.py`, but the direct `monitor_services → restart_service`
+path bypassed it entirely.
+
+**Fixed.** Added a module-level `_RESTART_COOLDOWN_SECONDS = 15 * 60`
+
+- `_last_restart_attempt` dict at the top of `restart_service`. First
+  restart attempt logs + runs; further attempts inside the cooldown
+  window log at INFO ("suppressed — cooldown Xs remaining") and bail.
+  15 minutes was chosen to match `REMEDIATION_COOLDOWN` so the two
+  restart-paths share the same envelope. Tunable via app_settings
+  would be nice but adding a DB read here means the cooldown itself
+  fails when the DB is broken — and "DB broken" is exactly when this
+  code runs. Hardcoded floor is the safer choice for a watchdog.
+
+**"Am I on Matt's PC vs cloud" detection.** Uses
+`IS_DOCKER = bool(os.getenv("IN_DOCKER"))` (set in
+`docker-compose.local.yml`). Sane: when running via the local
+Docker stack, restart paths use `docker restart <container>` against
+the mounted Docker socket; when running as a host-side process on
+Matt's PC (the documented mode in CLAUDE.md), restart paths use
+`subprocess.Popen` against `start-worker.ps1` / `openclaw gateway
+restart`. The Windows-host path hardcodes the absolute PowerShell
+script path (`C:\Users\mattm\glad-labs-website\scripts\start-worker.ps1`)
+which is fine for Matt's setup but would need to come from
+app_settings for a SaaS / multi-operator world. **Noted, not fixed**
+— the brain daemon's whole purpose is "run on Matt's PC, manage Matt's
+PC", and a DB-driven path here would re-introduce the
+"DB broken at the moment we want to restart" failure mode the
+hardcoded cooldown above avoids.
+
+### Sweep 3 totals
+
+- 11 swallow sites converted, across 4 files (8 WARNING, 3 DEBUG)
+- 4 substantive gaps fixed (heartbeat fields not populated, no
+  heartbeat on crash, sub-step crashes skipped audit log, no restart
+  backoff)
+- 1 gap noted but not fixed (hardcoded PS1 path for Windows-host
+  worker restart) — reasoning above
+
+### Out-of-scope sites NOT touched
+
+- `brain/brain_daemon.py:1137–1138` — `asyncio.TimeoutError: pass` on
+  the cycle interval timer. Pure control flow (the timeout is the
+  signal that no shutdown was requested and the next cycle should
+  start). DEBUG logging here would add a line every 5 minutes to no
+  benefit.
+- `brain/brain_daemon.py:1089–1091` — `(NotImplementedError,
+AttributeError): pass` for the Windows signal-handler fallback.
+  Documented + Windows-only control flow.
+- `brain/health_probes.py:452–453` — `ValueError: pass` parsing
+  schtasks `Last Result` ints. Control flow — non-int rows are just
+  skipped.
+- `brain/health_probes.py:482–483` — `(FileNotFoundError, OSError):
+pass` while enumerating Windows drive letters C through H.
+  Control flow — drive doesn't exist.
+- `brain/health_probes.py:692–698` — `Exception: pass` on the
+  `cost_logs.cost_type` query, with a fallback query for installs
+  where the migration hasn't run yet. Control flow — schema-version
+  fallback.
+- `brain/alert_sync.py` — already audit-grade (every swallow already
+  logs at WARNING/DEBUG with rationale). Reviewed, no changes.
+
+The net effect: the brain daemon now (a) tells operators when its
+own internal config reads fail instead of sitting on stale defaults,
+(b) writes a heartbeat that actually reflects cycle health,
+(c) preserves the audit trail in `brain_decisions` even when one
+sub-step crashes, and (d) backs off restart attempts so a wedged
+service doesn't get respawned every 5 minutes.

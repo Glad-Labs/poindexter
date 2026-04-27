@@ -125,10 +125,25 @@ async def _setting_int(pool, key: str, default: int) -> int:
         val = await pool.fetchval(
             "SELECT value FROM app_settings WHERE key = $1", key
         )
-        if val is None:
-            return default
+    except Exception as e:
+        # DB read failed — log so an outage doesn't masquerade as
+        # "everything's on defaults".
+        logger.warning(
+            "[BRAIN] _setting_int(%s) DB read failed: %s — using default %d",
+            key, e, default,
+        )
+        return default
+    if val is None:
+        return default
+    try:
         return int(val)
-    except (ValueError, TypeError, Exception):
+    except (ValueError, TypeError) as e:
+        # Value is set but unparseable — that's a real misconfiguration
+        # the operator should see, not a silent fallback.
+        logger.warning(
+            "[BRAIN] _setting_int(%s) unparseable value %r: %s — using default %d",
+            key, val, e, default,
+        )
         return default
 
 
@@ -284,8 +299,45 @@ def notify(message: str):
         send_discord(message)  # fallback to lab-logs if ops not configured
 
 
+# Per-service restart cooldown to prevent hot-restart loops when a
+# service is genuinely broken. Without this, monitor_services calls
+# restart_service every cycle (every 5 minutes) for as long as the
+# service stays down — fine for a one-off blip, but if a config error
+# is preventing startup we'd respawn the process every cycle while it
+# fails to bind. 15-minute cooldown matches REMEDIATION_COOLDOWN in
+# health_probes.py for consistency. Tunable via app_settings would be
+# nice but the brain daemon's restart paths run on critical-failure
+# scenarios where a hardcoded floor is safer than hoping the DB is up.
+_RESTART_COOLDOWN_SECONDS = 15 * 60
+_last_restart_attempt: dict[str, float] = {}
+
+
+def _restart_in_cooldown(name: str) -> tuple[bool, float]:
+    """Return (in_cooldown, seconds_remaining). seconds_remaining is 0
+    when not in cooldown."""
+    last = _last_restart_attempt.get(name, 0.0)
+    elapsed = time.time() - last
+    if elapsed < _RESTART_COOLDOWN_SECONDS:
+        return True, _RESTART_COOLDOWN_SECONDS - elapsed
+    return False, 0.0
+
+
 def restart_service(name: str):
-    """Attempt to restart a local service on the operator's PC."""
+    """Attempt to restart a local service on the operator's PC.
+
+    Backed off via ``_RESTART_COOLDOWN_SECONDS`` so a service stuck in
+    a crash loop doesn't trigger a fresh restart attempt every cycle.
+    First failure within the cooldown window logs at INFO and bails.
+    """
+    in_cooldown, remaining = _restart_in_cooldown(name)
+    if in_cooldown:
+        logger.info(
+            "[BRAIN] Restart of %s suppressed — cooldown %.0fs remaining",
+            name, remaining,
+        )
+        return
+    _last_restart_attempt[name] = time.time()
+
     if IS_DOCKER:
         # Docker socket is mounted — restart sibling containers directly.
         _container_map = {
@@ -394,10 +446,10 @@ async def monitor_services(pool) -> list:
             issues.append({"service": name, "code": code, "detail": detail, "critical": config["critical"]})
             logger.warning("[BRAIN] Service %s is DOWN: %s", name, detail)
 
-            # Auto-restart local services
+            # Auto-restart local services (cooldown-gated inside restart_service
+            # so a stuck service doesn't get respawned every cycle).
             if name in ("worker", "openclaw"):
                 restart_service(name)
-                logger.info("[BRAIN] Auto-restarted %s", name)
 
             # Auto-triage: check alert_actions table before escalating
             if config["critical"]:
@@ -771,8 +823,11 @@ async def generate_daily_digest(pool):
                 today = now.strftime("%Y-%m-%d")
                 if last_date == today:
                     return  # Already sent today
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(
+                    "[BRAIN] digest last_sent parse failed for %r: %s — proceeding",
+                    last_sent, e,
+                )
 
         # Only send between 13:00-14:00 UTC (~9 AM ET)
         if not (13 <= now.hour < 14):
@@ -897,8 +952,11 @@ async def log_electricity_cost(pool):
             elif estimate_watts:
                 watts = estimate_watts
                 power_source = "estimate"
-        except Exception:
-            pass  # Exporter not running, use estimate
+        except Exception as e:
+            # Exporter not running — fall through to default estimate.
+            # DEBUG only: this is normal control flow when nvidia-smi-exporter
+            # isn't deployed (e.g., headless / non-GPU host).
+            logger.debug("[BRAIN] nvidia-smi-exporter unreachable (%s) — using default watts", e)
 
         if watts is None:
             # Fallback estimate: local PC idles around 150W
@@ -912,8 +970,14 @@ async def log_electricity_cost(pool):
             )
             if row:
                 rate_per_kwh = float(row["value"])
-        except Exception:
-            pass
+        except Exception as e:
+            # DB read or float() parse failed — log so an operator-visible
+            # rate misconfig (e.g., a typo in app_settings) doesn't quietly
+            # lock us to the default $0.29/kWh.
+            logger.warning(
+                "[BRAIN] electricity_rate_kwh lookup failed: %s — using default $%.2f",
+                e, rate_per_kwh,
+            )
 
         # Calculate cost for this 5-minute interval
         hours = CYCLE_SECONDS / 3600.0
@@ -963,8 +1027,10 @@ async def log_electricity_cost(pool):
                 VALUES ('psu_watchdog', 'last_source', $1, 1.0, 'brain_daemon')
                 ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
             """, power_source)
-        except Exception:
-            pass  # watchdog is best-effort
+        except Exception as e:
+            # PSU watchdog is best-effort — DEBUG so an exporter blip doesn't
+            # noisy up Loki, but still surfaces during real DB outages.
+            logger.debug("[BRAIN] PSU watchdog write failed: %s", e)
 
     except Exception as e:
         logger.debug("[BRAIN] Electricity cost logging failed: %s", e)
@@ -994,46 +1060,118 @@ async def _maybe_sync_grafana_alerts(pool) -> None:
         logger.warning("[BRAIN] Grafana alert sync failed: %s", e, exc_info=True)
 
 
-async def run_cycle(pool):
-    """One full brain cycle: monitor → process → maintain → update."""
+async def run_cycle(pool) -> dict:
+    """One full brain cycle: monitor → process → maintain → update.
+
+    Returns a dict with the cycle's health stats so the outer loop can
+    feed them into the heartbeat (so a watchdog/operator can see *which*
+    cycle was bad, not just "stale heartbeat"):
+
+        {
+            "issues": int,            # internal + external service issues
+            "probe_failures": int,    # health/business probes that failed
+            "step_failed": str|None,  # name of the step that crashed, if any
+        }
+
+    Never raises: every step is wrapped so one slow / broken sub-task
+    can't take down the whole cycle. Per-step failures are logged at
+    WARNING and surfaced in the brain_decisions row + heartbeat so a
+    persistent failure in (e.g.) ``log_electricity_cost`` doesn't silently
+    skip the rest of the cycle.
+    """
     logger.info("[BRAIN] === Cycle start ===")
 
-    issues = await monitor_services(pool)
-    ext_issues = await monitor_external_services(pool)
-    await process_queue(pool)
-    await auto_remediate(pool)
-    await self_maintain(pool)
-    await update_system_metrics(pool)
-    await log_electricity_cost(pool)
-    await generate_daily_digest(pool)
-    await _maybe_sync_grafana_alerts(pool)
+    step_failed: str | None = None
+    issues: list = []
+    ext_issues: list = []
+    probe_results: dict = {}
+
+    async def _step(name: str, coro):
+        """Run a cycle step, capture failures, keep going."""
+        nonlocal step_failed
+        try:
+            return await coro
+        except Exception as e:
+            # First failure wins for the step_failed label so the
+            # heartbeat points operators at the original culprit.
+            if step_failed is None:
+                step_failed = name
+            logger.warning("[BRAIN] Cycle step '%s' failed: %s", name, e, exc_info=True)
+            return None
+
+    monitor_result = await _step("monitor_services", monitor_services(pool))
+    issues = monitor_result or []
+    ext_result = await _step("monitor_external_services", monitor_external_services(pool))
+    ext_issues = ext_result or []
+    await _step("process_queue", process_queue(pool))
+    await _step("auto_remediate", auto_remediate(pool))
+    await _step("self_maintain", self_maintain(pool))
+    await _step("update_system_metrics", update_system_metrics(pool))
+    await _step("log_electricity_cost", log_electricity_cost(pool))
+    await _step("generate_daily_digest", generate_daily_digest(pool))
+    await _step("_maybe_sync_grafana_alerts", _maybe_sync_grafana_alerts(pool))
 
     # Health probes — exercise services with real inputs (each on its own schedule)
-    probe_results = await run_health_probes(pool, notify_fn=notify)
+    probes_out = await _step(
+        "run_health_probes", run_health_probes(pool, notify_fn=notify)
+    )
+    probe_results = probes_out or {}
     probe_failures = [name for name, r in probe_results.items() if not r.get("ok")]
 
     # Business probes — operator-level monitoring (Glad Labs private, #215)
     if _HAS_BUSINESS_PROBES:
-        try:
-            biz_results = await run_business_probes(pool, notify_fn=notify)
+        biz_results = await _step(
+            "run_business_probes", run_business_probes(pool, notify_fn=notify)
+        )
+        if biz_results:
             probe_results.update(biz_results)
-        except Exception as e:
-            logger.warning("[BRAIN] Business probes failed: %s", e)
 
     all_issues = issues + ext_issues
 
-    # Log cycle result
-    await pool.execute("""
-        INSERT INTO brain_decisions (decision, reasoning, context, confidence)
-        VALUES ($1, $2, $3::jsonb, $4)
-    """, f"Cycle complete: {len(all_issues)} issues ({len(issues)} internal, {len(ext_issues)} external), {len(probe_results)} probes ({len(probe_failures)} failed)",
-        f"Monitored {len(SERVICES)} internal + {len(EXTERNAL_SERVICES)} external services, ran {len(probe_results)} probes, processed queue, updated metrics",
-        json.dumps({"issues": issues, "external_issues": ext_issues, "probe_failures": probe_failures, "timestamp": datetime.now(timezone.utc).isoformat()}),
-        1.0,
+    # Log cycle result — including step_failed so an operator can grep
+    # brain_decisions for cycles where a specific sub-task crashed.
+    decision_text = (
+        f"Cycle complete: {len(all_issues)} issues "
+        f"({len(issues)} internal, {len(ext_issues)} external), "
+        f"{len(probe_results)} probes ({len(probe_failures)} failed)"
+    )
+    if step_failed:
+        decision_text += f" — step '{step_failed}' crashed"
+    try:
+        await pool.execute("""
+            INSERT INTO brain_decisions (decision, reasoning, context, confidence)
+            VALUES ($1, $2, $3::jsonb, $4)
+        """, decision_text,
+            f"Monitored {len(SERVICES)} internal + {len(EXTERNAL_SERVICES)} external services, ran {len(probe_results)} probes, processed queue, updated metrics",
+            json.dumps({
+                "issues": issues,
+                "external_issues": ext_issues,
+                "probe_failures": probe_failures,
+                "step_failed": step_failed,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }),
+            # Confidence drops when any step crashed — the cycle ran but
+            # produced incomplete data, so downstream consumers can spot
+            # degraded heartbeats by filtering on confidence < 1.0.
+            0.5 if step_failed else 1.0,
+        )
+    except Exception as e:
+        # If even brain_decisions write fails, the heartbeat path is still
+        # the last line of defence. Don't crash run_cycle for this.
+        logger.warning("[BRAIN] brain_decisions write failed: %s", e, exc_info=True)
+
+    logger.info(
+        "[BRAIN] === Cycle end: %d issues (%d internal, %d external), %d probes (%d failed)%s ===",
+        len(all_issues), len(issues), len(ext_issues),
+        len(probe_results), len(probe_failures),
+        f", step_failed={step_failed}" if step_failed else "",
     )
 
-    logger.info("[BRAIN] === Cycle end: %d issues (%d internal, %d external), %d probes (%d failed) ===",
-                len(all_issues), len(issues), len(ext_issues), len(probe_results), len(probe_failures))
+    return {
+        "issues": len(all_issues),
+        "probe_failures": len(probe_failures),
+        "step_failed": step_failed,
+    }
 
 
 async def main():
@@ -1099,15 +1237,31 @@ async def main():
     # Also keep Docker path for container healthcheck compatibility
     _docker_heartbeat = "/tmp/brain_heartbeat" if IS_DOCKER else None
 
-    def _touch_heartbeat(cycle_issues=0, probe_failures=0):
-        """Write structured heartbeat — timestamp + cycle stats."""
+    def _touch_heartbeat(cycle_issues=0, probe_failures=0,
+                         step_failed: str | None = None,
+                         cycle_crashed: str | None = None):
+        """Write structured heartbeat — timestamp + cycle stats.
+
+        ``cycle_ok`` is true iff the cycle ran clean: zero issues, zero
+        probe failures, no per-step crash, no top-level cycle crash.
+        Watchdogs can read the JSON and either (a) ignore content and
+        watch ``ts`` freshness or (b) actively flag ``cycle_ok=false``
+        even when the file is fresh.
+        """
         data = json.dumps({
             "ts": time.time(),
             "iso": datetime.now(timezone.utc).isoformat(),
             "pid": os.getpid(),
-            "cycle_ok": cycle_issues == 0 and probe_failures == 0,
+            "cycle_ok": (
+                cycle_issues == 0
+                and probe_failures == 0
+                and step_failed is None
+                and cycle_crashed is None
+            ),
             "issues": cycle_issues,
             "probe_failures": probe_failures,
+            "step_failed": step_failed,
+            "cycle_crashed": cycle_crashed,
         })
         try:
             with open(_heartbeat_path, "w") as hb:
@@ -1123,11 +1277,24 @@ async def main():
 
     while not shutdown.is_set():
         try:
-            await run_cycle(pool)
-            # Update heartbeat after successful cycle
-            _touch_heartbeat()
+            cycle_stats = await run_cycle(pool)
+            # Surface the actual cycle health in the heartbeat. A watchdog
+            # reading {"cycle_ok": false} can decide whether stale-but-failing
+            # warrants a restart sooner than the file-age check would.
+            _touch_heartbeat(
+                cycle_issues=cycle_stats.get("issues", 0),
+                probe_failures=cycle_stats.get("probe_failures", 0),
+                step_failed=cycle_stats.get("step_failed"),
+            )
         except Exception as e:
+            # run_cycle itself crashed — still touch the heartbeat so the
+            # OS-level watchdog doesn't restart us in the middle of debugging,
+            # but mark ``cycle_ok=false`` and capture the exception type so
+            # a Grafana panel reading the heartbeat JSON can flag it.
             logger.error("[BRAIN] Cycle failed: %s", e, exc_info=True)
+            _touch_heartbeat(
+                cycle_crashed=f"{type(e).__name__}: {str(e)[:200]}",
+            )
 
         if one_shot:
             break

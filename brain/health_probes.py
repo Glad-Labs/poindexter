@@ -547,8 +547,13 @@ async def probe_approval_queue(pool) -> dict:
             )
             if row and row["value"]:
                 threshold = int(str(row["value"]).strip())
-        except Exception:  # pragma: no cover — defaults are fine
-            pass
+        except Exception as e:  # pragma: no cover — defaults are fine
+            # DB hiccup or bad value — log so a real outage doesn't
+            # masquerade as "threshold defaults to 15".
+            logger.warning(
+                "[PROBES] approval_queue_alert_threshold lookup failed: %s — using default %d",
+                e, threshold,
+            )
 
         row = await pool.fetchrow("""
             SELECT COUNT(*) as c FROM pipeline_tasks_view
@@ -1055,8 +1060,14 @@ async def probe_gpu_temperature(_pool) -> dict:
             )
             if row and row["value"]:
                 threshold = int(str(row["value"]).strip())
-        except Exception:  # pragma: no cover — defaults are fine
-            pass
+        except Exception as e:  # pragma: no cover — defaults are fine
+            # Misconfigured threshold or DB hiccup — log so the operator
+            # sees the fallback rather than wondering why their tuned
+            # threshold isn't taking effect.
+            logger.warning(
+                "[PROBES] gpu_temperature_high_threshold_c lookup failed: %s — using default %dC",
+                e, threshold,
+            )
 
     prom = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
     try:

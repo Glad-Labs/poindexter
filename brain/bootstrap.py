@@ -208,8 +208,18 @@ def write_bootstrap_toml(values: dict[str, str]) -> Path:
         import stat
 
         tmp.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    except Exception:
-        pass
+    except Exception as exc:
+        # chmod is best-effort. On Windows, NTFS doesn't honour POSIX
+        # mode bits and chmod is effectively a no-op (no exception in
+        # CPython 3.12, but historically has raised on some shells / on
+        # network mounts). On POSIX a real failure means the bootstrap
+        # file may be world-readable, which is worth surfacing.
+        if sys.platform != "win32":
+            sys.stderr.write(
+                f"WARNING: could not restrict permissions on "
+                f"{tmp}: {exc!r}. The file may be world-readable.\n"
+            )
+            sys.stderr.flush()
 
     tmp.replace(BOOTSTRAP_FILE)
     return BOOTSTRAP_FILE
