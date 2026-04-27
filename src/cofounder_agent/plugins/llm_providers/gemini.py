@@ -115,7 +115,10 @@ class GeminiProvider:
             return False
         try:
             raw = site_config.get("plugin.llm_provider.gemini.enabled", "false")
-        except Exception:
+        except Exception as e:
+            # Defensive — SiteConfig.get is sync and reads from cache.
+            # DEBUG so a misbehaving cache surfaces in dev.
+            logger.debug("[gemini] site_config.get(enabled) failed: %s", e)
             return False
         return str(raw).strip().lower() in ("true", "1", "yes", "on")
 
@@ -132,7 +135,10 @@ class GeminiProvider:
                 )
                 or _DEFAULT_MODEL
             )
-        except Exception:
+        except Exception as e:
+            logger.debug(
+                "[gemini] site_config.get(default_model) failed: %s", e,
+            )
             return _DEFAULT_MODEL
 
     def _resolve_embed_model(self, site_config: Any) -> str:
@@ -148,7 +154,10 @@ class GeminiProvider:
                 )
                 or _DEFAULT_EMBED_MODEL
             )
-        except Exception:
+        except Exception as e:
+            logger.debug(
+                "[gemini] site_config.get(embed_model) failed: %s", e,
+            )
             return _DEFAULT_EMBED_MODEL
 
     def _resolve_timeout_s(self, site_config: Any, kwargs: dict[str, Any]) -> int:

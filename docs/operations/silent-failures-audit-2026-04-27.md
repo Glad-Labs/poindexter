@@ -336,3 +336,142 @@ own internal config reads fail instead of sitting on stale defaults,
 (c) preserves the audit trail in `brain_decisions` even when one
 sub-step crashes, and (d) backs off restart attempts so a wedged
 service doesn't get respawned every 5 minutes.
+---
+
+## Sweep 2 — routes / main / plugins / utils / poindexter
+
+Continuation of the audit. Same rules: real DB / network / IO swallows
+become `logger.warning` (or DEBUG when the failure is normal-path),
+control-flow / parsing fallbacks stay quiet.
+
+### Sweep-2 fixed
+
+| File                                 | Line(s)            | What was swallowed                                                            | Now logs                                                     |
+| ------------------------------------ | ------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `main.py`                            | 675                | `database_service.tasks.get_task_counts()` inside `/api/health`               | WARNING (queue-depth metrics silently reading 0 was the bug) |
+| `main.py`                            | 766                | `site_config.get("ollama_base_url", ...)` inside `/metrics`                   | DEBUG (sync sc.get from cache — defensive)                   |
+| `utils/connection_health.py`         | 135                | `sentry_sdk.capture_message()` for unhealthy-pool alert                       | DEBUG (best-effort; `.critical()` already logs the outage)   |
+| `plugins/llm_providers/anthropic.py` | 277, 285, 293, 306 | 4× defensive `sc.get(plugin.llm_provider.anthropic.*)` config reads           | DEBUG (4 sites — `# pragma: no cover — defensive`)           |
+| `plugins/llm_providers/gemini.py`    | 118, 135, 151      | 3× defensive `sc.get(plugin.llm_provider.gemini.*)` config reads              | DEBUG (3 sites — same defensive pattern as anthropic)        |
+| `poindexter/cli/setup.py`            | 203                | `_setting_value()` reading `app_settings` for `setup --check`                 | `click.secho yellow` (CLI has no logger)                     |
+| `poindexter/cli/premium.py`          | 242                | `_validate_silent()` Lemon Squeezy license recheck — silent downgrade to free | WARNING (added module logger)                                |
+
+Total: **11 sites converted**, across 6 files.
+
+The premium one is the most operationally meaningful: a silent network
+blip against `api.lemonsqueezy.com` was setting `premium_active=false`
+and downgrading to free prompts without any log line — exactly the
+kind of "is the pipeline broken or just being conservative?" question
+the audit is meant to eliminate.
+
+### Sweep-2 NotImplementedError audit
+
+`grep -rn "raise NotImplementedError" routes/ main.py plugins/ utils/ poindexter/`
+returns the same 5 stubs already documented in §2 (Anthropic stream/
+embed flags + 3 social adapters under `services/`). No new stubs
+landed in the routes / main / utils / poindexter scope between
+sweeps.
+
+### Sweep-2 TODO/FIXME audit
+
+`grep -rn "# TODO|FIXME|XXX|HACK"` over the same scope returns zero
+matches. The single stale TODO from §3 (the migration seed for
+`grafana_api_token`) lives in `services/migrations/` which is out of
+scope for sweep 2.
+
+### Sweep-2 sites NOT touched
+
+Listed here so the next agent doesn't double-back. All are normal-path
+control flow:
+
+- `main.py:30` — `except ImportError:` for `setup_sentry` stub when
+  Sentry isn't installed (optional-import probe)
+- `routes/memory_dashboard_routes.py:105` — `int(row["value"])` parse
+  fallback inside `_get_memory_stale_threshold`
+- `routes/task_routes.py:40` — `json.loads(value)` decode fallback
+  for `seo_keywords` (string vs list)
+- `routes/pipeline_events_routes.py:70` — `json.loads(details)` decode
+  fallback for the `details` audit column
+- `routes/external_webhooks.py:117` — `float(cents) / 100.0` parse
+  fallback for Lemon Squeezy webhook amounts
+- `routes/topics_routes.py:156, 158` — `safe_scrape()` returns
+  errors as the third tuple element so the response surfaces them
+  (not silent — caller renders into the response body)
+- `routes/alertmanager_webhook_routes.py:157` —
+  `_dt.datetime.fromisoformat()` parse fallback for Alertmanager's
+  `0001-01-01T00:00:00Z` "never" sentinel
+- `routes/approval_routes.py`, `routes/cms_routes.py`,
+  `routes/settings_routes.py`, `routes/task_publishing_routes.py`,
+  `routes/task_routes.py`, `routes/task_status_routes.py` — every
+  `except HTTPException: raise` pattern (intentional rethrow that
+  preserves FastAPI's status code instead of being wrapped by an
+  outer `except Exception`)
+- `plugins/registry.py:74` — `entry_points()` Python-3.9-vs-3.10+
+  shape fallback (control flow)
+- `plugins/scheduler.py:64` — `CronTrigger.from_crontab()` parse
+  fallback returning `None`; the caller (`PluginScheduler.add`)
+  already does `logger.error("scheduler: job %r has unrecognized
+schedule")`
+- `plugins/llm_providers/anthropic.py:298, 333` — already documented
+  in §5 (per-call `int(timeout)` parse fallbacks)
+- `plugins/llm_providers/anthropic.py:427` — `except CostGuardExhausted: raise`
+  intentional rethrow before the broader `except Exception`
+- `plugins/llm_providers/anthropic.py:769` — `int(usage_tokens)` parse
+  fallback when the SDK returns a non-numeric `usage` field
+- `plugins/llm_providers/gemini.py:118-152` — handled above (config
+  reads)
+- `plugins/llm_providers/gemini.py:159, 169` — per-call timeout int
+  parse fallback (control flow)
+- `plugins/llm_providers/gemini.py:218` — `genai_types.HttpOptions(timeout=…)`
+  SDK-version-compat fallback
+- `plugins/llm_providers/gemini.py:336, 457` —
+  `except CostGuardExhausted: raise` intentional rethrow
+- `plugins/llm_providers/gemini.py:528` — `genai_types.GenerateContentConfig(**)`
+  SDK-version-compat fallback
+- `plugins/llm_providers/gemini.py:578` — `_extract_finish_reason`
+  enum/`.name` walk fallback returning `"stop"`
+- `plugins/llm_providers/gemini.py:597` — `model_dump()`/`to_dict()`
+  walk-loop fallback inside `_response_to_raw`
+- `utils/connection_health.py:258` — `int(pool_min/max)` parse
+  fallback that already appends a diagnostics issue
+- `utils/error_handler.py:98` — `except HTTPException: raise`
+  intentional rethrow
+- `utils/error_handler.py:184` — `except Exception` that delegates
+  to `handle_service_error()` (which logs at ERROR)
+- `utils/exception_handlers.py:30` — `except ImportError:` for
+  optional Sentry SDK
+- `utils/json_encoder.py:79` — JSON decode fallback (parse)
+- `utils/task_status.py:334, 339` — `TaskStatus(value)` enum lookup
+  fallbacks that already append to the validation `errors` list
+- `utils/text_utils.py:318` — JSON decode fallback for keywords
+- `poindexter/cli/setup.py:62, 72, 91, 117, 161, 171, 237, 254, 313, 315`
+  — every `_check_*` returns `(ok, reason)` tuples; CLI prints them
+  (`reason` is the user-visible error)
+- `poindexter/cli/setup.py:123` — `pool.close()` inside `finally`
+  (cleanup on teardown, already in error path)
+- `poindexter/cli/setup.py:145` — `urlparse()` parse fallback inside
+  `_rewrite_to_host`
+- `poindexter/cli/setup.py:326, 337` — `_container_exists()` /
+  `_container_running()` docker-not-installed probes returning False
+- `poindexter/cli/setup.py:396` — already converted to `click.secho yellow`
+  in sweep 1 (`bootstrap.resolve_database_url()` failure)
+- `poindexter/cli/sprint.py:168` — `datetime.fromisoformat()` parse
+  fallback for Gitea's `closed_at`
+- `poindexter/cli/_api_client.py:90, 95` — `resp.json()` decode
+  fallback (caller-visible — the raw body becomes part of the error
+  message)
+- `poindexter/memory/client.py:431` — JSON decode fallback for the
+  `metadata` JSONB column when asyncpg returns it as a string
+
+### Sweep-2 totals
+
+- 11 swallow sites converted, across 6 files
+- 0 new NotImplementedError stubs
+- 0 new TODO/FIXME comments
+- ~50 control-flow swallow sites enumerated and left as-is (mostly
+  parse fallbacks, intentional `raise`-only handlers, and CLI probes
+  that surface the error in their return tuple)
+
+Combined with sweep 1: **36 swallow sites converted across 22
+files.** The remaining FastAPI-surface scope is now clean of
+silent DB / network / IO swallows.

@@ -274,15 +274,23 @@ class AnthropicProvider:
                 )
                 if enabled_val != "":
                     cfg["enabled"] = _to_bool(enabled_val)
-            except Exception:  # pragma: no cover — defensive
-                pass
+            except Exception as e:  # pragma: no cover — defensive
+                # SiteConfig.get is sync and reads from the startup-loaded
+                # cache, so this should not fire. DEBUG so a misbehaving
+                # cache is at least visible in dev.
+                logger.debug(
+                    "[anthropic] site_config.get(enabled) failed: %s", e,
+                )
             for key, default_type in (
                 ("default_model", str),
                 ("base_url", str),
             ):
                 try:
                     val = sc.get(f"plugin.llm_provider.anthropic.{key}", "")
-                except Exception:  # pragma: no cover — defensive
+                except Exception as e:  # pragma: no cover — defensive
+                    logger.debug(
+                        "[anthropic] site_config.get(%s) failed: %s", key, e,
+                    )
                     val = ""
                 if val:
                     cfg[key] = default_type(val)
@@ -290,7 +298,10 @@ class AnthropicProvider:
                 timeout_val = sc.get(
                     "plugin.llm_provider.anthropic.request_timeout_s", "",
                 )
-            except Exception:  # pragma: no cover — defensive
+            except Exception as e:  # pragma: no cover — defensive
+                logger.debug(
+                    "[anthropic] site_config.get(request_timeout_s) failed: %s", e,
+                )
                 timeout_val = ""
             if timeout_val:
                 try:
@@ -303,8 +314,10 @@ class AnthropicProvider:
                 )
                 if pc_val != "":
                     cfg["prompt_caching"] = _to_bool(pc_val)
-            except Exception:  # pragma: no cover — defensive
-                pass
+            except Exception as e:  # pragma: no cover — defensive
+                logger.debug(
+                    "[anthropic] site_config.get(prompt_caching) failed: %s", e,
+                )
             # Secret has to come through the async path — get_secret
             # filters is_secret=true rows out of the in-memory cache.
             try:

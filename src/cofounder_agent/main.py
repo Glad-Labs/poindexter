@@ -672,8 +672,14 @@ async def api_health():
                         task_counts = await database_service.tasks.get_task_counts()
                         pending_count = getattr(task_counts, "pending", 0)
                         in_progress_count = getattr(task_counts, "in_progress", 0)
-                    except Exception:  # pylint: disable=broad-except
-                        pass  # Non-critical — executor stats still returned
+                    except Exception as e:  # pylint: disable=broad-except
+                        # Non-critical — executor stats still returned with
+                        # zero counts. Log so a real DB outage that turns
+                        # queue-depth metrics into "always 0" is visible.
+                        logger.warning(
+                            "[health] task_counts DB read failed (queue-depth "
+                            "metrics will read as 0): %s", e,
+                        )
                 health_data["components"]["task_executor"] = {
                     "running": executor_stats.get("running", False),
                     "pending_task_count": pending_count,
@@ -763,7 +769,12 @@ async def prometheus_metrics_canonical():
     try:
         sc = getattr(app.state, "site_config", None) or _site_cfg
         ollama_url = sc.get("ollama_base_url", "http://host.docker.internal:11434")
-    except Exception:
+    except Exception as e:
+        # SiteConfig.get is sync and reads from in-memory cache, so this
+        # path is defensive — but if it ever fires, surface it as DEBUG so
+        # we know the cache is misbehaving rather than thinking the
+        # operator never set ollama_base_url.
+        logger.debug("[metrics] site_config.get(ollama_base_url) failed: %s", e)
         ollama_url = "http://host.docker.internal:11434"
 
     if pool is not None:

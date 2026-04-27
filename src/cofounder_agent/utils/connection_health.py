@@ -132,8 +132,13 @@ class ConnectionPoolHealth:
                                 f"Connection pool unhealthy: {consecutive} consecutive failures",
                                 level="error",
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            # Sentry not installed / DSN unset / network blip —
+                            # the .critical() above already surfaces the pool
+                            # outage in our logs, so this is best-effort only.
+                            logger.debug(
+                                "[connection_health] sentry capture_message failed: %s", e,
+                            )
 
             except asyncio.CancelledError:
                 logger.info("🏥 Connection pool health checks stopped")

@@ -10,12 +10,15 @@ Lemon Squeezy License API docs:
 from __future__ import annotations
 
 import asyncio
+import logging
 import platform
 import socket
 from datetime import datetime, timezone
 
 import click
 import httpx
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Lemon Squeezy License API
@@ -239,7 +242,14 @@ async def _validate_silent() -> bool:
         await _set_setting(conn, "premium_validated_at", datetime.now(timezone.utc).isoformat())
 
         return is_valid
-    except Exception:
+    except Exception as e:
+        # Network blip / Lemon Squeezy API outage / DB write failure —
+        # log so a real outage doesn't silently downgrade the operator
+        # to "free" mode while their license is actually paid.
+        logger.warning(
+            "[premium] silent license revalidation failed "
+            "(returning False, premium gates will close): %s", e,
+        )
         return False
     finally:
         await conn.close()

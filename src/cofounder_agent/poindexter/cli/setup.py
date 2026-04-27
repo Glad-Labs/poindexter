@@ -200,7 +200,15 @@ async def _setting_value(dsn: str, key: str) -> str:
             return str(row["value"]) if row and row["value"] is not None else ""
         finally:
             await conn.close()
-    except Exception:
+    except Exception as e:
+        # Surface so a real DB outage / missing app_settings table doesn't
+        # look like "operator never set this key" in `poindexter setup --check`.
+        # CLI module has no logger — use click.secho yellow to match the
+        # bootstrap.toml-resolution warning style at the bottom of this file.
+        click.secho(
+            f"  could not read app_settings.{key} ({type(e).__name__}: {e})",
+            fg="yellow",
+        )
         return ""
 
 
