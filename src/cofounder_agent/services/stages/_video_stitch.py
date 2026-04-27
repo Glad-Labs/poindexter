@@ -108,6 +108,10 @@ def build_scenes(
     visuals: list[dict[str, Any]],
     tts_scenes: list[dict[str, Any]],
     fallback_duration_s: int,
+    intro_audio_path: str = "",
+    intro_duration_s: float = 0.0,
+    outro_audio_path: str = "",
+    outro_duration_s: float = 0.0,
 ) -> list[Any]:
     """Zip per-scene visuals + audio into ``CompositionScene`` objects.
 
@@ -115,6 +119,16 @@ def build_scenes(
     Skips scenes missing either a clip_path or audio_path —
     short-form misses are graceful-degrade per the upstream Stages'
     contracts.
+
+    Bookends — when ``intro_audio_path`` / ``outro_audio_path`` are
+    supplied, prepend/append a CompositionScene that reuses the first
+    or last body scene's visual but plays the intro/outro narration
+    over it. This keeps the SRT track (built by :func:`derive_srt`)
+    aligned with the rendered video. Without bookend scenes, the
+    intro/outro audio that the upstream tts_for_video Stage produces
+    gets dropped silently and the SRT timing offsets the captions
+    against the actual video — Matt caught the symptom on the V0
+    sample run.
     """
     from plugins.media_compositor import CompositionScene
 
@@ -129,7 +143,8 @@ def build_scenes(
         if isinstance(s.get("scene_idx"), int)
     }
 
-    scenes: list[CompositionScene] = []
+    body_scenes: list[CompositionScene] = []
+    body_visuals: list[str] = []  # parallel list — visual for each body scene, in order
     for idx in sorted(set(visuals_by_idx) | set(tts_by_idx)):
         v = visuals_by_idx.get(idx) or {}
         t = tts_by_idx.get(idx) or {}
@@ -145,12 +160,37 @@ def build_scenes(
         if duration_s <= 0:
             duration_s = float(fallback_duration_s)
 
-        scenes.append(
+        body_scenes.append(
             CompositionScene(
                 clip_path=clip_path,
                 narration_path=narration_path,
                 duration_s=duration_s,
                 caption_text="",  # full SRT track handled separately
+            ),
+        )
+        body_visuals.append(clip_path)
+
+    if not body_scenes:
+        return []
+
+    scenes: list[CompositionScene] = []
+    if intro_audio_path and intro_duration_s > 0:
+        scenes.append(
+            CompositionScene(
+                clip_path=body_visuals[0],
+                narration_path=intro_audio_path,
+                duration_s=intro_duration_s,
+                caption_text="",
+            ),
+        )
+    scenes.extend(body_scenes)
+    if outro_audio_path and outro_duration_s > 0:
+        scenes.append(
+            CompositionScene(
+                clip_path=body_visuals[-1],
+                narration_path=outro_audio_path,
+                duration_s=outro_duration_s,
+                caption_text="",
             ),
         )
     return scenes

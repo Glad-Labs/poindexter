@@ -172,6 +172,10 @@ class StitchShortFormStage:
             visuals=visuals,
             tts_scenes=tts.get("scenes") or [],
             fallback_duration_s=_SHORT_FORM_FALLBACK_SCENE_S,
+            intro_audio_path=str(tts.get("intro_audio_path") or ""),
+            intro_duration_s=float(tts.get("intro_duration_s") or 0.0),
+            # Short-form has no outro per the StitchSpec — leaving the
+            # outro_* params at their defaults skips the bookend.
         )
         if not scenes:
             return StageResult(

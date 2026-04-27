@@ -117,6 +117,10 @@ class StitchLongFormStage:
             visuals=visuals,
             tts_scenes=tts.get("scenes") or [],
             fallback_duration_s=_LONG_FORM_FALLBACK_SCENE_S,
+            intro_audio_path=str(tts.get("intro_audio_path") or ""),
+            intro_duration_s=float(tts.get("intro_duration_s") or 0.0),
+            outro_audio_path=str(tts.get("outro_audio_path") or ""),
+            outro_duration_s=float(tts.get("outro_duration_s") or 0.0),
         )
         if not scenes:
             return StageResult(
