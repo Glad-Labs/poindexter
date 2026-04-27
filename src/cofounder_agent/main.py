@@ -699,12 +699,22 @@ async def api_health():
         else:
             health_data["components"]["task_executor"] = "unavailable"
 
-        # GPU scheduler status (gaming detection)
+        # GPU scheduler status (gaming detection).
+        # Any failure here used to be swallowed silently — leaving the
+        # gpu key absent from the response. A monitor/alert that
+        # depended on `components.gpu` would then never fire on a real
+        # GPU outage. Record the failure as an explicit error state
+        # instead so the health endpoint stays the source of truth.
         try:
             from services.gpu_scheduler import gpu
             health_data["components"]["gpu"] = gpu.status
-        except Exception:
-            pass
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("GPU scheduler status probe failed: %s", e, exc_info=True)
+            health_data["components"]["gpu"] = {
+                "status": "error",
+                "reason": str(e)[:200],
+                "error_type": type(e).__name__,
+            }
 
         return health_data
     except Exception as e:  # pylint: disable=broad-except
