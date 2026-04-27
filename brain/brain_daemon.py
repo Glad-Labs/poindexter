@@ -50,6 +50,25 @@ try:
 except ImportError:
     _HAS_BUSINESS_PROBES = False
 
+# OpenTelemetry tracing — module is no-op until setup_brain_telemetry()
+# runs at startup, so the import here is safe even when the SDK isn't
+# installed (telemetry.py defers all OTel imports to inside the setup
+# function).
+try:
+    from telemetry import (  # type: ignore[import-not-found]
+        get_tracer,
+        setup_brain_telemetry,
+        traced_step,
+    )
+except ImportError:  # pragma: no cover — package-qualified for tests
+    from brain.telemetry import (  # type: ignore[import-not-found]
+        get_tracer,
+        setup_brain_telemetry,
+        traced_step,
+    )
+
+_tracer = get_tracer("poindexter.brain")
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1078,7 +1097,23 @@ async def run_cycle(pool) -> dict:
     WARNING and surfaced in the brain_decisions row + heartbeat so a
     persistent failure in (e.g.) ``log_electricity_cost`` doesn't silently
     skip the rest of the cycle.
+
+    Tracing: one parent ``brain.cycle`` span + one child span per
+    ``_step`` so the Tempo flame graph shows the full cadence and
+    timing.
     """
+    cycle_span_cm = _tracer.start_as_current_span("brain.cycle")
+    cycle_span = cycle_span_cm.__enter__()
+    try:
+        return await _run_cycle_inner(pool, cycle_span)
+    except Exception as e:
+        cycle_span.record_exception(e)
+        raise
+    finally:
+        cycle_span_cm.__exit__(None, None, None)
+
+
+async def _run_cycle_inner(pool, cycle_span) -> dict:
     logger.info("[BRAIN] === Cycle start ===")
 
     step_failed: str | None = None
@@ -1087,17 +1122,25 @@ async def run_cycle(pool) -> dict:
     probe_results: dict = {}
 
     async def _step(name: str, coro):
-        """Run a cycle step, capture failures, keep going."""
+        """Run a cycle step, capture failures, keep going.
+
+        Each step gets its own span (``brain.<step_name>``) so the
+        Tempo→Grafana view shows a flame graph of the cycle: which
+        sub-tasks ran, which slowed, which crashed. Span-name
+        prefix mirrors the existing log [BRAIN] tag for grep-ability.
+        """
         nonlocal step_failed
-        try:
-            return await coro
-        except Exception as e:
-            # First failure wins for the step_failed label so the
-            # heartbeat points operators at the original culprit.
-            if step_failed is None:
-                step_failed = name
-            logger.warning("[BRAIN] Cycle step '%s' failed: %s", name, e, exc_info=True)
-            return None
+        with _tracer.start_as_current_span(f"brain.step.{name}") as span:
+            try:
+                return await coro
+            except Exception as e:
+                span.record_exception(e)
+                # First failure wins for the step_failed label so the
+                # heartbeat points operators at the original culprit.
+                if step_failed is None:
+                    step_failed = name
+                logger.warning("[BRAIN] Cycle step '%s' failed: %s", name, e, exc_info=True)
+                return None
 
     monitor_result = await _step("monitor_services", monitor_services(pool))
     issues = monitor_result or []
@@ -1167,6 +1210,19 @@ async def run_cycle(pool) -> dict:
         f", step_failed={step_failed}" if step_failed else "",
     )
 
+    # Stamp summary attrs on the parent cycle span so the Tempo
+    # service-graph view groups cycles by health (issues, probe
+    # failures, which step crashed).
+    try:
+        cycle_span.set_attribute("brain.issues", len(all_issues))
+        cycle_span.set_attribute("brain.probes_total", len(probe_results))
+        cycle_span.set_attribute("brain.probe_failures", len(probe_failures))
+        if step_failed:
+            cycle_span.set_attribute("brain.step_failed", step_failed)
+    except Exception:
+        # Span attribute writes shouldn't block cycle return.
+        pass
+
     return {
         "issues": len(all_issues),
         "probe_failures": len(probe_failures),
@@ -1204,6 +1260,18 @@ async def main():
 
     # Load config from DB (site URLs, Telegram tokens, etc.)
     await _load_config_from_db(pool)
+
+    # Configure OpenTelemetry tracing if enable_tracing=true in
+    # app_settings. Idempotent — second call is a no-op. The brain
+    # cycle's _step wrapper and the parent run_cycle span only emit
+    # real spans when this returns True.
+    global _tracer
+    try:
+        await setup_brain_telemetry(pool)
+        # Refresh module-level tracer in case it was a no-op stub before.
+        _tracer = get_tracer("poindexter.brain")
+    except Exception as e:
+        logger.warning("[BRAIN] telemetry setup failed (non-fatal): %s", e)
 
     # Fallback: load Telegram token from OpenClaw .env if not in DB
     global TELEGRAM_BOT_TOKEN
