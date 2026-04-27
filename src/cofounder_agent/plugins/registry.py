@@ -271,6 +271,18 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Pgvector retention — GH-106. Prunes stale embeddings using
         # per-source TTLs. Still in initial rollout; weekly cadence.
         ("jobs", "services.jobs.collapse_old_embeddings", "CollapseOldEmbeddingsJob"),
+        # GH-106 v1: TTL-based prune (daily 03:17 UTC) + orphan cleanup
+        # (daily 03:23 UTC). Both run on apscheduler; per-source TTLs
+        # come from app_settings.embedding_retention_days.<source>.
+        ("jobs", "services.jobs.prune_stale_embeddings", "PruneStaleEmbeddingsJob"),
+        ("jobs", "services.jobs.prune_orphan_embeddings", "PruneOrphanEmbeddingsJob"),
+        # Topic-discovery signal evaluator — replaces the deleted
+        # IdleWorker._should_trigger_discovery method. Polls every 5
+        # min and fires TopicDiscovery when a signal trips
+        # (queue_low / stale_content / rejection_streak / manual /
+        # 24h safety net). Same algorithm + same priority order as
+        # the legacy implementation.
+        ("jobs", "services.jobs.topic_discovery_signals", "TopicDiscoverySignalsJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
