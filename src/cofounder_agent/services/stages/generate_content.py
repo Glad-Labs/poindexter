@@ -304,6 +304,27 @@ class GenerateContentStage:
                 )
             except Exception as e:
                 logger.warning("Cost logging failed (non-critical): %s", e)
+                # Visibility for the silent-cost-drop pattern (gitea#322
+                # finding 5). Mirror to audit_log so alerts can fire on
+                # write-failure rate; original swallow is preserved so a
+                # transient DB hiccup never breaks a content generation.
+                try:
+                    audit_log_bg(
+                        "cost_log_write_failed",
+                        "generate_content",
+                        {
+                            "phase": "generate_content",
+                            "error": str(e)[:300],
+                            "error_type": type(e).__name__,
+                            "cost_usd": cost_log.get("cost_usd"),
+                            "model": cost_log.get("model"),
+                            "provider": cost_log.get("provider"),
+                        },
+                        task_id=task_id,
+                        severity="error",
+                    )
+                except Exception:
+                    pass
 
         # Snapshot the initial draft into content_revisions so the feedback
         # loop can later diff this against the QA-revised + finalized

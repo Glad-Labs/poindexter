@@ -386,6 +386,28 @@ class CrossModelQAStage:
                 }, task_id=task_id)
             except Exception as e:
                 logger.warning("QA cost logging failed (non-critical): %s", e)
+                # Visibility: same shape as cost_guard.record's audit
+                # emission — alerts can fire on N% failure rate per
+                # window. Without this the budget tracker just
+                # silently undercounts every QA pass that drops a row.
+                # gitea#322 finding 5 follow-up.
+                try:
+                    audit_log_bg(
+                        "cost_log_write_failed",
+                        "cross_model_qa",
+                        {
+                            "phase": "multi_model_qa",
+                            "error": str(e)[:300],
+                            "error_type": type(e).__name__,
+                            "cost_usd": cost_log.get("cost_usd"),
+                            "model": cost_log.get("model"),
+                            "provider": cost_log.get("provider"),
+                        },
+                        task_id=task_id,
+                        severity="error",
+                    )
+                except Exception:
+                    pass
 
         # Rejection short-circuit.
         if not qa_result.approved:
