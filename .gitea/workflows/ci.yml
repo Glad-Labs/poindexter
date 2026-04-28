@@ -40,6 +40,12 @@ jobs:
           cd src/cofounder_agent
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
+          # Register the project's [tool.poetry.plugins."poindexter.*"]
+          # entry_points in dist-info so importlib.metadata.entry_points()
+          # picks them up. Without this step plugin-discovery tests fail
+          # because both entry_points AND get_core_samples() come back
+          # empty (gh#152: same fix Dockerfile.worker applies for runtime).
+          pip install --no-deps --no-cache-dir .
 
       # Split by directory to avoid cross-directory test state pollution.
       # Services uses --forked because intra-directory singleton pollution

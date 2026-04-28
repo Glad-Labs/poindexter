@@ -240,7 +240,10 @@ class TestWaitForGamingClear:
         # already falls back to the supplied default when site_config lacks the
         # gpu_* keys (conftest seeds brand keys only), so the test just uses
         # the hardcoded defaults — same behavior as `lambda k, d: d`.
-        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d):
+        # _cfg_str also needs forcing to "auto" — _DEFAULT_GAMING_MODE is "off"
+        # since GH#144, which short-circuits before _get_gpu_utilization is called.
+        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d), \
+             patch("services.gpu_scheduler._cfg_str", side_effect=lambda sc, k, d: "auto"):
             await scheduler._wait_for_gaming_clear()
         # Did not enter gaming-detected state
         assert scheduler._gaming_detected is False
@@ -291,7 +294,8 @@ class TestWaitForGamingClear:
         scheduler._gaming_paused_since = time.monotonic() - 60.0
         scheduler._get_gpu_utilization = AsyncMock(return_value=5.0)
 
-        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d):
+        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d), \
+             patch("services.gpu_scheduler._cfg_str", side_effect=lambda sc, k, d: "auto"):
             await scheduler._wait_for_gaming_clear()
 
         assert scheduler._gaming_detected is False
