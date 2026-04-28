@@ -100,6 +100,7 @@ class ReplaceInlineImagesStage:
         from services.image_service import get_image_service
 
         task_id = context.get("task_id")
+        post_id = context.get("post_id")
         topic = context.get("topic", "")
         content_text = context.get("content", "")
         database_service = context.get("database_service")
@@ -175,6 +176,7 @@ class ReplaceInlineImagesStage:
                 used_image_ids=used_image_ids,
                 site_config=_sc,
                 task_id=task_id,
+                post_id=post_id,
             )
 
         content_text = _cleanup_leaked_descriptions(content_text)
@@ -303,12 +305,18 @@ async def _resolve_one_placeholder(
     used_image_ids: set[str],
     site_config: Any,
     task_id: str,
+    post_id: Any = None,
 ) -> str:
     """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it.
 
     ``task_id`` is forwarded to :func:`_try_sdxl` so the GPU scheduler
     can attribute Ollama-prompt + SDXL-render electricity cost back to
     the originating pipeline task — see Glad-Labs/poindexter#157.
+
+    ``post_id`` is forwarded so a successful image generation lands a
+    ``media_assets`` row pinned to the post it belongs to (Glad-Labs/
+    poindexter#161). When ``post_id`` is None (early-pipeline calls
+    before the post is persisted), the row is skipped.
     """
     from services.alt_text import sanitize_alt_text
     search_query = desc.strip() if desc else topic
@@ -334,6 +342,21 @@ async def _resolve_one_placeholder(
             width=1024, height=1024,
         )
         logger.info("  [IMAGE-%s] SDXL generated + R2 uploaded", num)
+        await _record_inline_image_asset(
+            site_config=site_config,
+            post_id=post_id,
+            public_url=img_url,
+            provider_plugin="image.sdxl",
+            width=1024,
+            height=1024,
+            mime_type="image/png",
+            metadata={
+                "placeholder_num": num,
+                "alt_text": alt_text,
+                "task_id": str(task_id or ""),
+                "search_query": search_query,
+            },
+        )
         return content_text
 
     # Strategy 2: Pexels.
@@ -351,12 +374,76 @@ async def _resolve_one_placeholder(
                 rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1,
             )
             logger.info("  [IMAGE-%s] Pexels image by %s", num, photographer)
+            await _record_inline_image_asset(
+                site_config=site_config,
+                post_id=post_id,
+                public_url=img_url,
+                provider_plugin="image.pexels",
+                width=650,
+                height=433,
+                mime_type="image/jpeg",
+                metadata={
+                    "placeholder_num": num,
+                    "alt_text": alt_text,
+                    "task_id": str(task_id or ""),
+                    "photographer": photographer,
+                },
+            )
             return content_text
 
     # Strategy 3: strip.
     content_text = re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
     logger.warning("  [IMAGE-%s] no image source available, removed placeholder", num)
     return content_text
+
+
+async def _record_inline_image_asset(
+    *,
+    site_config: Any,
+    post_id: Any,
+    public_url: str,
+    provider_plugin: str,
+    width: int,
+    height: int,
+    mime_type: str,
+    metadata: dict[str, Any],
+) -> None:
+    """Best-effort ``media_assets`` insert for one inline image.
+
+    Closes Glad-Labs/poindexter#161 — every inline image now lands a
+    DB row so cleanup / retention / cost-attribution can find it.
+    Failures log and never propagate (callers must keep going so the
+    pipeline doesn't break on a DB hiccup).
+    """
+    if post_id is None:
+        # Early pipeline runs (before the post row exists) skip the
+        # insert — backfill picks them up later from the rendered HTML.
+        return
+    try:
+        from services.media_asset_recorder import record_media_asset
+    except Exception as exc:  # noqa: BLE001 — defensive import guard
+        logger.debug("[STAGE2C] media_asset_recorder unavailable: %s", exc)
+        return
+    pool = getattr(site_config, "_pool", None)
+    storage_provider = (
+        "cloudflare_r2"
+        if public_url.startswith("http") and "r2" in public_url
+        else ("local" if public_url.startswith("/") else "external")
+    )
+    await record_media_asset(
+        pool=pool,
+        post_id=post_id,
+        asset_type="inline_image",
+        public_url=public_url,
+        storage_path="",
+        mime_type=mime_type,
+        width=width,
+        height=height,
+        provider_plugin=provider_plugin,
+        source="pipeline",
+        storage_provider=storage_provider,
+        metadata=metadata,
+    )
 
 
 async def _try_sdxl(

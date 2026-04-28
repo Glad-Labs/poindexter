@@ -628,6 +628,15 @@ class PodcastService:
                     await self._maybe_generate_stings(
                         post_id=post_id, title=title,
                     )
+                    # Glad-Labs/poindexter#161 — record media_assets row
+                    # so cleanup / retention / cost-attribution find the
+                    # podcast file. Best-effort.
+                    await self._record_episode_asset(
+                        post_id=post_id,
+                        result=result,
+                        voice=voice,
+                        title=title,
+                    )
                     return result
                 last_error = result.error
             except Exception as e:
@@ -637,6 +646,56 @@ class PodcastService:
         error_msg = f"All voices failed. Last error: {last_error}"
         logger.error("[PODCAST] %s", error_msg)
         return EpisodeResult(success=False, error=error_msg)
+
+    async def _record_episode_asset(
+        self,
+        *,
+        post_id: str,
+        result: "EpisodeResult",
+        voice: str,
+        title: str,
+    ) -> None:
+        """Best-effort ``media_assets`` insert for the rendered podcast.
+
+        Closes Glad-Labs/poindexter#161 — pre-fix, the legacy podcast
+        path produced an MP3 on disk but never wrote the DB row, so
+        cleanup / retention / cost-attribution missed it. Failures
+        here must NEVER bubble up; the episode itself is fine.
+        """
+        if self._site_config is None:
+            return
+        try:
+            from services.media_asset_recorder import record_media_asset
+        except Exception as exc:  # noqa: BLE001 — defensive import guard
+            logger.debug("[PODCAST] media_asset_recorder unavailable: %s", exc)
+            return
+        pool = getattr(self._site_config, "_pool", None)
+        engine = DEFAULT_TTS_ENGINE
+        try:
+            engine = (
+                self._site_config.get("podcast_tts_engine", DEFAULT_TTS_ENGINE)
+                or DEFAULT_TTS_ENGINE
+            )
+        except Exception:
+            engine = DEFAULT_TTS_ENGINE
+        await record_media_asset(
+            pool=pool,
+            post_id=post_id,
+            asset_type="podcast",
+            storage_path=result.file_path or "",
+            public_url="",  # podcasts upload separately via backfill / R2 sync
+            mime_type="audio/mpeg",
+            duration_ms=int((result.duration_seconds or 0) * 1000),
+            file_size_bytes=result.file_size_bytes or 0,
+            provider_plugin=f"tts.{engine}",
+            source="pipeline",
+            storage_provider="local",
+            metadata={
+                "voice": voice,
+                "title": title,
+                "engine": engine,
+            },
+        )
 
     async def _maybe_generate_stings(
         self, *, post_id: str, title: str,

@@ -393,6 +393,9 @@ async def upload_podcast_episode(post_id: str, *, site_config: Any) -> str | Non
     ``primary`` still applies the legacy version prefix to keep
     existing public RSS URLs stable.
 
+    On success, also updates the corresponding ``media_assets`` row so
+    its ``url`` reflects the public URL (Glad-Labs/poindexter#161).
+
     Args:
         post_id: Post UUID (used as episode file stem).
         site_config: SiteConfig instance (DI — Phase H, GH#95).
@@ -409,29 +412,42 @@ async def upload_podcast_episode(post_id: str, *, site_config: Any) -> str | Non
     # operator's intent.
     podcast_row = await _lookup_store(site_config, "podcast_cdn")
     if podcast_row is not None and podcast_row.get("enabled"):
-        return await upload_to_store(
+        url = await upload_to_store(
             "podcast_cdn",
             str(mp3_path),
             f"podcast/{post_id}.mp3",
             site_config=site_config,
         )
+    else:
+        # Fallback to primary — preserve the legacy ``podcast_cdn_version``
+        # behavior so existing RSS feeds don't break.
+        try:
+            cdn_ver = site_config.get("podcast_cdn_version", "v2")
+        except Exception:
+            cdn_ver = "v2"
+        url = await upload_to_store(
+            "primary",
+            str(mp3_path),
+            f"podcast/{cdn_ver}/{post_id}.mp3",
+            site_config=site_config,
+        )
 
-    # Fallback to primary — preserve the legacy ``podcast_cdn_version``
-    # behavior so existing RSS feeds don't break.
-    try:
-        cdn_ver = site_config.get("podcast_cdn_version", "v2")
-    except Exception:
-        cdn_ver = "v2"
-    return await upload_to_store(
-        "primary",
-        str(mp3_path),
-        f"podcast/{cdn_ver}/{post_id}.mp3",
-        site_config=site_config,
-    )
+    if url:
+        await _update_media_asset_url(
+            site_config=site_config,
+            post_id=post_id,
+            asset_type="podcast",
+            storage_path=str(mp3_path),
+            public_url=url,
+        )
+    return url
 
 
 async def upload_video_episode(post_id: str, *, site_config: Any) -> str | None:
     """Upload a video episode MP4 to object storage.
+
+    On success, also updates the corresponding ``media_assets`` row so
+    its ``url`` reflects the public URL (Glad-Labs/poindexter#161).
 
     Args:
         post_id: Post UUID (used as episode file stem).
@@ -439,11 +455,61 @@ async def upload_video_episode(post_id: str, *, site_config: Any) -> str | None:
     """
     video_dir = Path(os.path.expanduser("~")) / ".poindexter" / "video"
     mp4_path = video_dir / f"{post_id}.mp4"
-    if mp4_path.exists():
-        return await upload_to_store(
-            "primary",
-            str(mp4_path),
-            f"video/{post_id}.mp4",
+    if not mp4_path.exists():
+        return None
+
+    url = await upload_to_store(
+        "primary",
+        str(mp4_path),
+        f"video/{post_id}.mp4",
+        site_config=site_config,
+    )
+    if url:
+        # Legacy path stores rows as asset_type='video' (no _long/_short).
+        await _update_media_asset_url(
             site_config=site_config,
+            post_id=post_id,
+            asset_type="video",
+            storage_path=str(mp4_path),
+            public_url=url,
         )
-    return None
+    return url
+
+
+async def _update_media_asset_url(
+    *,
+    site_config: Any,
+    post_id: str,
+    asset_type: str,
+    storage_path: str,
+    public_url: str,
+) -> None:
+    """Best-effort: stamp the public URL onto an existing media_assets row.
+
+    Used after a successful object-storage upload to keep the row in
+    sync with the live URL (Glad-Labs/poindexter#161). Failures log
+    and never propagate — the upload itself was the operator-visible
+    success.
+    """
+    pool = getattr(site_config, "_pool", None)
+    if pool is None:
+        return
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE media_assets
+                   SET url = $4,
+                       storage_provider = 'cloudflare_r2',
+                       updated_at = NOW()
+                 WHERE post_id::text = $1
+                   AND type = $2
+                   AND storage_path = $3
+                """,
+                str(post_id), asset_type, storage_path, public_url,
+            )
+    except Exception as exc:
+        logger.debug(
+            "[STORAGE] media_assets URL update failed (post_id=%s type=%s): %s",
+            post_id, asset_type, exc,
+        )

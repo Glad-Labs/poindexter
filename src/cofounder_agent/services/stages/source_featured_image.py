@@ -115,6 +115,7 @@ class SourceFeaturedImageStage:
         tags = context.get("tags") or []
         generate_featured_image = bool(context.get("generate_featured_image", True))
         task_id = context.get("task_id")
+        post_id = context.get("post_id")
         image_service = context.get("image_service") or get_image_service()
 
         stages = context.setdefault("stages", {})
@@ -172,6 +173,24 @@ class SourceFeaturedImageStage:
                     "featured_image_source": sdxl_image.source,
                     "stages": stages,
                 })
+                # Glad-Labs/poindexter#161: record media_assets row for
+                # cleanup / retention / cost-attribution. Best-effort —
+                # never breaks the Stage.
+                await _record_featured_image_asset(
+                    site_config=_sc,
+                    post_id=post_id,
+                    public_url=sdxl_image.url,
+                    width=1024,
+                    height=1024,
+                    provider_plugin=f"image.{sdxl_image.source}",
+                    metadata={
+                        "topic": topic,
+                        "task_id": str(task_id or ""),
+                        "photographer": sdxl_image.photographer,
+                        "image_style": updates.get("image_style", ""),
+                    },
+                    mime_type="image/png",
+                )
                 logger.info("Featured image generated via SDXL + R2")
                 return StageResult(
                     ok=True,
@@ -201,6 +220,23 @@ class SourceFeaturedImageStage:
                     "featured_image_source": pexels.source,
                     "stages": stages,
                 })
+                # Glad-Labs/poindexter#161 — same insert as the SDXL
+                # branch above; Pexels images need a media_assets row
+                # too so backfill scripts can find them.
+                await _record_featured_image_asset(
+                    site_config=_sc,
+                    post_id=post_id,
+                    public_url=pexels.url,
+                    width=getattr(pexels, "width", 650),
+                    height=getattr(pexels, "height", 433),
+                    provider_plugin="image.pexels",
+                    metadata={
+                        "topic": topic,
+                        "task_id": str(task_id or ""),
+                        "photographer": pexels.photographer,
+                    },
+                    mime_type="image/jpeg",
+                )
                 logger.info(
                     "Featured image found: %s (Pexels)", pexels.photographer,
                 )
@@ -224,6 +260,57 @@ class SourceFeaturedImageStage:
             context_updates=updates,
             metrics={"source": "none"},
         )
+
+
+# ---------------------------------------------------------------------------
+# media_assets persistence (Glad-Labs/poindexter#161)
+# ---------------------------------------------------------------------------
+
+
+async def _record_featured_image_asset(
+    *,
+    site_config: Any,
+    post_id: Any,
+    public_url: str,
+    width: int,
+    height: int,
+    provider_plugin: str,
+    metadata: dict[str, Any],
+    mime_type: str,
+) -> None:
+    """Best-effort ``media_assets`` insert for the featured image.
+
+    Wraps :func:`services.media_asset_recorder.record_media_asset` so
+    the call site stays one line and never propagates DB errors out
+    of the Stage. Used by both the SDXL and Pexels success branches.
+    """
+    try:
+        from services.media_asset_recorder import record_media_asset
+    except Exception as exc:  # noqa: BLE001 — defensive import guard
+        logger.debug(
+            "[STAGE3] media_asset_recorder unavailable: %s", exc,
+        )
+        return
+    pool = getattr(site_config, "_pool", None)
+    storage_provider = (
+        "cloudflare_r2"
+        if public_url and public_url.startswith("http") and "r2" in public_url
+        else ("local" if (public_url or "").startswith("/") else "external")
+    )
+    await record_media_asset(
+        pool=pool,
+        post_id=post_id,
+        asset_type="featured_image",
+        public_url=public_url,
+        storage_path="",
+        mime_type=mime_type,
+        width=width,
+        height=height,
+        provider_plugin=provider_plugin,
+        source="pipeline",
+        storage_provider=storage_provider,
+        metadata=metadata,
+    )
 
 
 # ---------------------------------------------------------------------------
