@@ -17,6 +17,7 @@ def _site_config(values: dict | None = None) -> MagicMock:
     sc.get.side_effect = lambda key, default="": values.get(key, default)
     sc.get_int.side_effect = lambda key, default: values.get(key, default)
     sc.get_float.side_effect = lambda key, default: values.get(key, default)
+    sc.get_bool.side_effect = lambda key, default=False: values.get(key, default)
     return sc
 
 
@@ -170,3 +171,96 @@ class TestRetrieverQuery:
         assert "source_table IN" in captured["sql"]
         # Args after [vec_str, min_sim] are the source_filter values.
         assert captured["args"][2:] == ("posts", "brain")
+
+
+# ---------------------------------------------------------------------------
+# Phase C — Hybrid + rerank wiring
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestHybridFactory:
+    @pytest.mark.asyncio
+    async def test_hybrid_flag_wraps_in_hybrid_retriever(self):
+        retriever = await get_rag_retriever(pool=MagicMock(), hybrid=True)
+        # Outermost class should be the hybrid wrapper
+        assert "Hybrid" in type(retriever).__name__
+
+    @pytest.mark.asyncio
+    async def test_rerank_flag_wraps_in_rerank_retriever(self):
+        retriever = await get_rag_retriever(pool=MagicMock(), rerank=True)
+        assert "Rerank" in type(retriever).__name__
+
+    @pytest.mark.asyncio
+    async def test_both_flags_wrap_rerank_outside(self):
+        # Order: vector → hybrid → rerank, so rerank wraps the hybrid.
+        retriever = await get_rag_retriever(
+            pool=MagicMock(), hybrid=True, rerank=True,
+        )
+        assert "Rerank" in type(retriever).__name__
+        # Inner should be the hybrid
+        assert "Hybrid" in type(retriever._inner).__name__
+
+    @pytest.mark.asyncio
+    async def test_site_config_enables_hybrid(self):
+        sc = _site_config({"rag_hybrid_enabled": True})
+        retriever = await get_rag_retriever(pool=MagicMock(), site_config=sc)
+        assert "Hybrid" in type(retriever).__name__
+
+
+@pytest.mark.unit
+class TestHybridRRF:
+    @pytest.mark.asyncio
+    async def test_rrf_fusion_orders_results(self):
+        from llama_index.core.schema import (
+            NodeWithScore,
+            QueryBundle,
+            TextNode,
+        )
+
+        # Inner vector retriever returns 2 nodes (ranks 1, 2 in vector
+        # space). BM25 returns 2 different ones in different order.
+        vector_nodes = [
+            NodeWithScore(
+                node=TextNode(text="vec hit 1", id_="posts:V1",
+                              metadata={"source_table": "posts", "source_id": "V1"}),
+                score=0.9,
+            ),
+            NodeWithScore(
+                node=TextNode(text="vec hit 2", id_="posts:V2",
+                              metadata={"source_table": "posts", "source_id": "V2"}),
+                score=0.7,
+            ),
+        ]
+        bm25_pairs = [("posts:V2", 0.5), ("posts:V3", 0.4)]
+        # V2 appears in both lists — should rank highest after RRF.
+
+        inner = MagicMock()
+        inner._aretrieve = AsyncMock(return_value=vector_nodes)
+
+        pool = MagicMock()
+        pool.fetch = AsyncMock(return_value=[
+            {
+                "source_table": "posts", "source_id": "V3",
+                "text_preview": "lex-only hit", "metadata": {},
+            },
+        ])
+
+        from services.rag_engine import _build_hybrid_retriever_class
+        cls = _build_hybrid_retriever_class()
+        h = cls(
+            vector_retriever=inner, pool=pool, top_k=3,
+            min_similarity=0.3, source_filter=None, site_config=None,
+        )
+        # Stub the BM25 query to return our scripted pairs
+        h._bm25_search = AsyncMock(return_value=bm25_pairs)
+
+        results = await h._aretrieve(QueryBundle(query_str="test"))
+
+        # V2 was rank-2 in vector, rank-1 in BM25 → highest RRF.
+        # V1 was rank-1 in vector only.
+        # V3 was rank-2 in BM25 only.
+        ids = [r.node.node_id for r in results]
+        assert ids[0] == "posts:V2"  # appears in both lists
+        assert "posts:V1" in ids
+        assert "posts:V3" in ids

@@ -207,11 +207,21 @@ async def get_rag_retriever(
     top_k: int | None = None,
     min_similarity: float | None = None,
     source_filter: list[str] | None = None,
+    hybrid: bool | None = None,
+    rerank: bool | None = None,
 ) -> Any:
     """Return a LlamaIndex retriever wired to our pgvector schema.
 
     All parameters fall back to ``app_settings`` when omitted. Callers
     pass site_config to enable runtime tuning without code changes.
+
+    Phase C extensions:
+    - ``hybrid=True`` (or ``rag_hybrid_enabled`` setting) — wraps the
+      vector retriever in BM25 (tsvector) + RRF fusion.
+    - ``rerank=True`` (or ``rag_rerank_enabled`` setting) — wraps the
+      whole retriever in a cross-encoder re-ranker. Pulls
+      ``rag_rerank_candidate_k`` candidates, returns ``top_k`` after
+      re-scoring.
     """
     if site_config is not None:
         top_k = top_k if top_k is not None else int(site_config.get_int("rag_default_top_k", 5))
@@ -225,19 +235,288 @@ async def get_rag_retriever(
         model_name = (
             site_config.get("embedding_model", "") or "nomic-embed-text"
         )
+        if hybrid is None:
+            hybrid = bool(site_config.get_bool("rag_hybrid_enabled", False))
+        if rerank is None:
+            rerank = bool(site_config.get_bool("rag_rerank_enabled", False))
     else:
         top_k = top_k if top_k is not None else 5
         min_similarity = min_similarity if min_similarity is not None else 0.3
         model_name = "nomic-embed-text"
+        if hybrid is None:
+            hybrid = False
+        if rerank is None:
+            rerank = False
 
     cls = _build_retriever_class()
-    return cls(
+    base = cls(
         pool=pool,
-        top_k=top_k,
+        top_k=top_k if not (hybrid or rerank) else max(top_k * 4, 20),
         min_similarity=min_similarity,
         source_filter=source_filter,
         model_name=model_name,
     )
+
+    retriever = base
+    if hybrid:
+        hybrid_cls = _build_hybrid_retriever_class()
+        retriever = hybrid_cls(
+            vector_retriever=retriever,
+            pool=pool,
+            top_k=max(top_k * 4, 20) if rerank else top_k,
+            min_similarity=min_similarity,
+            source_filter=source_filter,
+            site_config=site_config,
+        )
+    if rerank:
+        rerank_cls = _build_rerank_retriever_class()
+        retriever = rerank_cls(
+            inner=retriever,
+            top_k=top_k,
+            site_config=site_config,
+        )
+
+    return retriever
+
+
+# ---------------------------------------------------------------------------
+# Phase C — Hybrid retrieval (BM25 + vector + RRF) + cross-encoder rerank
+# ---------------------------------------------------------------------------
+
+
+def _build_hybrid_retriever_class():
+    """Hybrid retriever that fuses vector similarity with tsvector BM25
+    via Reciprocal Rank Fusion. Lazy-built (same pattern as the vector
+    retriever class) so the module imports without llama-index.
+
+    Background reading: RRF was introduced in
+    https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf —
+    ``score(doc) = sum_over_lists 1 / (k + rank(doc, list))``.
+    The constant ``k`` (default 60 in the literature, configurable
+    here via ``rag_rrf_k``) dampens the influence of any single
+    high-rank match.
+    """
+    from llama_index.core.retrievers import BaseRetriever
+    from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
+
+    class HybridRRFRetriever(BaseRetriever):
+        def __init__(
+            self,
+            *,
+            vector_retriever: Any,
+            pool: Any,
+            top_k: int,
+            min_similarity: float,
+            source_filter: list[str] | None,
+            site_config: Any,
+        ) -> None:
+            super().__init__()
+            self._vector = vector_retriever
+            self._pool = pool
+            self._top_k = top_k
+            self._min_similarity = min_similarity
+            self._source_filter = source_filter
+            self._site_config = site_config
+
+        def _rrf_k(self) -> int:
+            if self._site_config is None:
+                return 60
+            try:
+                return int(self._site_config.get_int("rag_rrf_k", 60))
+            except Exception:
+                return 60
+
+        async def _bm25_search(self, query: str) -> list[tuple[str, float]]:
+            """Run tsvector lexical search. Returns ``[(node_id, ts_rank), ...]``
+            ordered by ts_rank desc, capped at ``top_k * 4``.
+            """
+            if not query.strip():
+                return []
+            sql_parts = [
+                "SELECT source_table, source_id, "
+                "ts_rank(text_search, websearch_to_tsquery('simple', $1)) AS rank "
+                "FROM embeddings",
+                "WHERE text_search @@ websearch_to_tsquery('simple', $1)",
+            ]
+            params: list[Any] = [query]
+            if self._source_filter:
+                placeholders = ", ".join(
+                    f"${i+2}" for i in range(len(self._source_filter))
+                )
+                sql_parts.append(f"AND source_table IN ({placeholders})")
+                params.extend(self._source_filter)
+            sql_parts.append(
+                f"ORDER BY rank DESC LIMIT {int(self._top_k * 4)}"
+            )
+            sql = " ".join(sql_parts)
+
+            try:
+                rows = await self._pool.fetch(sql, *params)
+            except Exception as e:
+                logger.warning("[rag/hybrid] BM25 query failed: %s", e)
+                return []
+            return [
+                (f"{r['source_table']}:{r['source_id']}", float(r["rank"]))
+                for r in rows
+            ]
+
+        async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
+            # Run both passes — vector retriever gives us full
+            # NodeWithScore objects, lexical gives us (id, rank) pairs.
+            vector_nodes = await self._vector._aretrieve(query_bundle)
+            lexical_pairs = await self._bm25_search(query_bundle.query_str)
+
+            # Index nodes by id so RRF can attach scores back to them.
+            node_by_id: dict[str, NodeWithScore] = {
+                n.node.node_id: n for n in vector_nodes
+            }
+
+            # Fetch any lexical-only results that vector missed, so RRF
+            # has full nodes to score. Cheap — they're already
+            # bounded to top_k * 4.
+            missing_ids = [
+                nid for nid, _r in lexical_pairs if nid not in node_by_id
+            ]
+            if missing_ids:
+                # Rehydrate from embeddings table (text_preview + metadata).
+                # Use a conservative LIMIT in case of duplicates.
+                src_rows = []
+                try:
+                    src_rows = await self._pool.fetch(
+                        "SELECT source_table, source_id, text_preview, metadata "
+                        "FROM embeddings "
+                        "WHERE (source_table || ':' || source_id) = ANY($1::text[])",
+                        missing_ids,
+                    )
+                except Exception as e:
+                    logger.warning("[rag/hybrid] lexical rehydrate failed: %s", e)
+                for row in src_rows:
+                    nid = f"{row['source_table']}:{row['source_id']}"
+                    metadata = dict(row.get("metadata") or {})
+                    metadata.update({
+                        "source_table": row["source_table"],
+                        "source_id": row["source_id"],
+                    })
+                    node_by_id[nid] = NodeWithScore(
+                        node=TextNode(
+                            text=row.get("text_preview") or "",
+                            metadata=metadata,
+                            id_=nid,
+                        ),
+                        score=0.0,  # placeholder — RRF score replaces it
+                    )
+
+            # RRF: rank lists from each retriever; scores are
+            # ``1 / (k + rank)`` summed across lists.
+            k = self._rrf_k()
+            rrf_scores: dict[str, float] = {}
+            for rank, n in enumerate(vector_nodes, start=1):
+                rrf_scores[n.node.node_id] = (
+                    rrf_scores.get(n.node.node_id, 0.0) + 1.0 / (k + rank)
+                )
+            for rank, (nid, _ts) in enumerate(lexical_pairs, start=1):
+                rrf_scores[nid] = rrf_scores.get(nid, 0.0) + 1.0 / (k + rank)
+
+            # Sort by RRF score desc, hand back the corresponding nodes
+            # with the RRF score on each.
+            ordered = sorted(rrf_scores.items(), key=lambda kv: kv[1], reverse=True)
+            results: list[NodeWithScore] = []
+            for nid, score in ordered[: self._top_k]:
+                if nid in node_by_id:
+                    n = node_by_id[nid]
+                    results.append(NodeWithScore(node=n.node, score=score))
+            return results
+
+        def _retrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
+            import asyncio
+            return asyncio.run(self._aretrieve(query_bundle))
+
+    return HybridRRFRetriever
+
+
+_RERANKER_CACHE: dict[str, Any] = {}
+
+
+def _build_rerank_retriever_class():
+    """Cross-encoder re-ranker. Wraps any retriever, takes its top-N
+    candidates, and re-scores them using a sentence-transformers
+    cross-encoder (``cross-encoder/ms-marco-MiniLM-L-6-v2`` default).
+
+    The cross-encoder is more accurate than dot-product similarity but
+    much heavier per call (~50-200ms per (query, doc) pair). Fine on
+    20-50 candidates per query; would not scale to whole-corpus
+    scoring. Always sits AFTER cheap retrieval (vector or hybrid).
+    """
+    from llama_index.core.retrievers import BaseRetriever
+    from llama_index.core.schema import NodeWithScore, QueryBundle
+
+    class CrossEncoderRerankRetriever(BaseRetriever):
+        def __init__(
+            self,
+            *,
+            inner: Any,
+            top_k: int,
+            site_config: Any,
+        ) -> None:
+            super().__init__()
+            self._inner = inner
+            self._top_k = top_k
+            self._site_config = site_config
+
+        def _model_name(self) -> str:
+            if self._site_config is None:
+                return "cross-encoder/ms-marco-MiniLM-L-6-v2"
+            return (
+                self._site_config.get(
+                    "rag_rerank_model", "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                ) or "cross-encoder/ms-marco-MiniLM-L-6-v2"
+            )
+
+        def _get_model(self) -> Any:
+            name = self._model_name()
+            if name in _RERANKER_CACHE:
+                return _RERANKER_CACHE[name]
+            from sentence_transformers import CrossEncoder
+            logger.info(
+                "[rag/rerank] Loading cross-encoder %s (first call)", name,
+            )
+            _RERANKER_CACHE[name] = CrossEncoder(name)
+            return _RERANKER_CACHE[name]
+
+        async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
+            candidates = await self._inner._aretrieve(query_bundle)
+            if not candidates:
+                return []
+            try:
+                model = self._get_model()
+            except Exception as e:
+                logger.warning(
+                    "[rag/rerank] cross-encoder unavailable, returning "
+                    "candidates unchanged: %s", e,
+                )
+                return candidates[: self._top_k]
+
+            pairs = [(query_bundle.query_str, c.node.text or "") for c in candidates]
+            try:
+                scores = model.predict(pairs)
+            except Exception as e:
+                logger.warning(
+                    "[rag/rerank] cross-encoder predict failed: %s", e,
+                )
+                return candidates[: self._top_k]
+
+            scored = list(zip(candidates, [float(s) for s in scores]))
+            scored.sort(key=lambda cs: cs[1], reverse=True)
+            return [
+                NodeWithScore(node=c.node, score=score)
+                for c, score in scored[: self._top_k]
+            ]
+
+        def _retrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
+            import asyncio
+            return asyncio.run(self._aretrieve(query_bundle))
+
+    return CrossEncoderRerankRetriever
 
 
 __all__ = [
