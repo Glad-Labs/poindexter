@@ -478,6 +478,56 @@ class MultiModelQA:
         if citation_review is not None:
             reviews.append(citation_review)
 
+        # 1b. Optional parallel rails (gh#197 + gh#198 Phase 2). When the
+        # operator flips ``guardrails_enabled`` / ``deepeval_enabled``,
+        # the corresponding rail runs as an additional ReviewerResult
+        # alongside the existing checks. Default OFF — the rails are
+        # learning artifacts at this stage, not load-bearing decisions.
+        # When a rail flags content, its score is 0 and approved=False —
+        # it joins the same vote aggregation the other reviewers do, so
+        # the operator can A/B test "would the deepeval rail have caught
+        # this?" against the existing critic-pool verdict via the audit
+        # log without changing any other behavior.
+        try:
+            from services import deepeval_rails, guardrails_rails
+
+            if guardrails_rails.is_enabled(self._site_config):
+                ok, reason = guardrails_rails.run_brand_guard(content)
+                reviews.append(
+                    ReviewerResult(
+                        reviewer="guardrails_brand_rail",
+                        approved=ok,
+                        score=100.0 if ok else 0.0,
+                        feedback=reason or "passed (no fabrication patterns matched)",
+                        provider="guardrails_ai",
+                    )
+                )
+
+            if deepeval_rails.is_enabled(self._site_config):
+                ok, score, reason = deepeval_rails.evaluate_brand_fabrication(
+                    content, topic=topic,
+                )
+                reviews.append(
+                    ReviewerResult(
+                        reviewer="deepeval_brand_rail",
+                        approved=ok,
+                        # DeepEval scores are 0-1; rescale to 0-100 to
+                        # match the existing reviewer-score convention.
+                        score=float(score) * 100.0,
+                        feedback=reason or "",
+                        provider="deepeval",
+                    )
+                )
+        except Exception as rail_err:
+            # Belt-and-suspenders. Both rails individually never raise
+            # (their public functions catch internal errors), but if a
+            # caller's site_config or import path is wonky we still
+            # don't want a learning-artifact rail to take down the QA.
+            logger.warning(
+                "[MULTI_QA] parallel rail dispatch failed (non-fatal): %s",
+                rail_err, exc_info=True,
+            )
+
         # 2. Cross-model review using a DIFFERENT provider than the writer
         # Model is configurable via app_settings (pipeline_critic_model)
         # qa_gates row name: ``llm_critic`` (reviewer="llm_critic" matches
