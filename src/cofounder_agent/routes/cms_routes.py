@@ -108,6 +108,49 @@ _STRIP_MD_RE = __import__("re").compile(
 _LINK_TEXT_RE = __import__("re").compile(r"\[([^\]]+)\]\([^)]*\)")
 
 
+async def _refresh_post_caches(pool: Any, slug: str, site_config: Any) -> dict[str, Any]:
+    """Fire ISR revalidation + R2 static export for a single post.
+
+    Used by PATCH /api/posts/{id} after a successful UPDATE and by the
+    ``poindexter posts refresh`` CLI for out-of-band edits (gh#193).
+    Both calls are best-effort — failures log + return an error key in
+    the result dict, but never raise. Returns a dict the caller can
+    surface in its response::
+
+        {"slug": "...", "revalidation": True/False, "static_export": True/False}
+
+    The revalidation path mirrors what publish_service does on first
+    publish so cache lifetimes match between publish and post-edit.
+    """
+    result: dict[str, Any] = {"slug": slug}
+
+    # 1. Vercel ISR revalidation
+    try:
+        from services.revalidation_service import trigger_nextjs_revalidation
+
+        reval_paths = ["/", "/archive", "/posts", f"/posts/{slug}"]
+        reval_tags = ["posts", "post-index", f"post:{slug}"]
+        result["revalidation"] = await trigger_nextjs_revalidation(
+            reval_paths, reval_tags, site_config=site_config,
+        )
+    except Exception as e:
+        logger.warning("[posts.refresh] ISR revalidation failed for %s: %s", slug, e)
+        result["revalidation"] = False
+        result["revalidation_error"] = f"{type(e).__name__}: {e}"
+
+    # 2. Static export to R2 (re-uploads the post's JSON + the index)
+    try:
+        from services.static_export_service import export_post
+
+        result["static_export"] = await export_post(pool, slug, site_config)
+    except Exception as e:
+        logger.warning("[posts.refresh] static export failed for %s: %s", slug, e)
+        result["static_export"] = False
+        result["static_export_error"] = f"{type(e).__name__}: {e}"
+
+    return result
+
+
 def generate_excerpt_from_content(content: str, length: int = 200) -> str:
     """Generate a plain-text excerpt from markdown content."""
     if not content:
@@ -620,6 +663,7 @@ async def get_post_by_slug(
 async def update_post(
     post_id: str,
     updates: dict,
+    request: Request,
     token: str = Depends(verify_api_token),
 ):
     """
@@ -630,6 +674,11 @@ async def update_post(
     When status is set to 'scheduled', published_at must be a valid future
     ISO 8601 datetime. When status is 'published' and published_at is not
     provided, it defaults to the current UTC time.
+
+    On success, fires Vercel ISR revalidation + R2 static export refresh
+    for the updated post so the public site reflects the change without
+    a manual cache bust (gh#193). Both fire-and-forget — failures log
+    but never fail the API call.
     """
     try:
         allowed = {
@@ -705,13 +754,33 @@ async def update_post(
 
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            result = await conn.execute(
-                f"UPDATE posts SET {set_clause}, updated_at = NOW() WHERE id = ${len(params)}",
+            # RETURNING slug so we can invalidate by-slug paths + tags
+            # below without a separate fetch.
+            row = await conn.fetchrow(
+                f"UPDATE posts SET {set_clause}, updated_at = NOW() "
+                f"WHERE id = ${len(params)} RETURNING slug",
                 *params,
             )
-            if result == "UPDATE 0":
+            if row is None:
                 raise HTTPException(status_code=404, detail="Post not found")
-        return {"success": True, "message": "Post updated"}
+            slug = row["slug"]
+
+        # Fire revalidation + static export so the public site reflects
+        # the change without waiting for ISR's natural max-age (gh#193).
+        # Pull site_config off app.state directly (not via Depends) so
+        # tests with a bare TestClient still work — _refresh_post_caches
+        # is best-effort anyway.
+        site_config = getattr(request.app.state, "site_config", None)
+        if site_config is not None:
+            try:
+                await _refresh_post_caches(pool, slug, site_config)
+            except Exception as reval_err:
+                logger.warning(
+                    "[update_post] cache refresh failed for %s (non-fatal): %s",
+                    slug, reval_err,
+                )
+
+        return {"success": True, "message": "Post updated", "slug": slug}
     except HTTPException:
         raise
     except Exception as e:

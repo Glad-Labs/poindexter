@@ -283,3 +283,71 @@ def posts_retitle(post_id: str, title: str) -> None:
         f"Retitled: {post_id}  new title: {p.get('title', title)[:70]}",
         fg="green",
     )
+
+
+@posts_group.command("refresh")
+@click.argument("slug")
+@click.option("--json", "json_output", is_flag=True)
+def posts_refresh(slug: str, json_output: bool) -> None:
+    """Refresh a post's caches — fires Vercel ISR revalidation + R2 static export.
+
+    Use after a direct DB edit or any out-of-band change that didn't go
+    through PATCH /api/posts/{id}. The PATCH endpoint already triggers
+    this automatically (gh#193).
+
+    Example:
+
+        poindexter posts refresh the-ai-first-freelancer-building-...
+
+    Returns the per-step result so you can see which path succeeded.
+    """
+    import asyncio
+    import os
+
+    async def _impl():
+        import asyncpg
+        from services.site_config import SiteConfig
+
+        dsn = (
+            os.getenv("POINDEXTER_MEMORY_DSN")
+            or os.getenv("LOCAL_DATABASE_URL")
+            or os.getenv("DATABASE_URL")
+            or ""
+        )
+        if not dsn:
+            raise RuntimeError(
+                "No DSN — set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, or DATABASE_URL."
+            )
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+        try:
+            cfg = SiteConfig(pool=pool)
+            try:
+                await cfg.load(pool)
+            except Exception:
+                pass
+            from routes.cms_routes import _refresh_post_caches
+            return await _refresh_post_caches(pool, slug, cfg)
+        finally:
+            await pool.close()
+
+    try:
+        result = asyncio.run(_impl())
+    except Exception as e:
+        click.echo(f"Error: {type(e).__name__}: {e}", err=True)
+        sys.exit(1)
+
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    rev = result.get("revalidation")
+    exp = result.get("static_export")
+    rev_ok = "✓" if rev else "✗"
+    exp_ok = "✓" if exp else "✗"
+    click.secho(f"Refreshed: {slug}", fg="cyan", bold=True)
+    click.echo(f"  ISR revalidation:    {rev_ok} {rev}")
+    click.echo(f"  Static export (R2):  {exp_ok} {exp}")
+    if "revalidation_error" in result:
+        click.secho(f"  rev error: {result['revalidation_error']}", fg="yellow")
+    if "static_export_error" in result:
+        click.secho(f"  export error: {result['static_export_error']}", fg="yellow")

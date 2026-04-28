@@ -1567,5 +1567,32 @@ async def show_pending_publish(post_id: str) -> str:
         return f"show_pending_publish unexpected: {type(e).__name__}: {e}"
 
 
+@mcp.tool()
+async def refresh_post(slug: str) -> str:
+    """Force-refresh a published post's caches — fires Vercel ISR revalidation + R2 static export.
+
+    Use after a direct DB edit or out-of-band content change that didn't
+    go through PATCH /api/posts/{id}. The PATCH endpoint triggers this
+    automatically (gh#193). Same behavior as ``poindexter posts refresh
+    <slug>``.
+
+    Args:
+        slug: Post slug (e.g. "the-ai-first-freelancer-building-...").
+
+    Returns:
+        JSON with per-step success/failure: revalidation, static_export.
+    """
+    _ensure_poindexter_on_path()
+    from routes.cms_routes import _refresh_post_caches  # type: ignore[import-not-found]
+
+    try:
+        pool = await _get_pool()
+        site_config = await _make_site_config(pool)
+        result = await _refresh_post_caches(pool, slug, site_config)
+        return json.dumps(_result_to_jsonable(result), default=str)
+    except Exception as e:
+        return f"refresh_post failed: {type(e).__name__}: {e}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

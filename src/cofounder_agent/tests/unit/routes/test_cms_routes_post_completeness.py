@@ -485,7 +485,9 @@ class TestGetPostBySlugCompleteness:
 class TestPostUpdateValidation:
     def test_publish_sets_published_at(self):
         """Setting status to 'published' without published_at should auto-set it."""
-        pool, conn = _make_pool_mock()
+        # gh#193: PATCH now uses fetchrow with RETURNING slug; mock the
+        # success row so the route's revalidation hook has a slug to fire.
+        pool, conn = _make_pool_mock(fetchrow_return={"slug": "post-001"})
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
@@ -493,9 +495,9 @@ class TestPostUpdateValidation:
                 json={"status": "published"},
             )
         assert resp.status_code == 200
-        # Verify published_at was added to the update params
-        call_args = conn.execute.call_args
-        # The params list should contain a datetime for published_at
+        # Verify published_at was added to the update params (fetchrow
+        # is now the SQL caller after gh#193).
+        call_args = conn.fetchrow.call_args
         params = call_args[0][1:]  # skip SQL string
         has_datetime = any(isinstance(p, datetime) for p in params)
         assert has_datetime, "published_at datetime should be auto-set on publish"
@@ -549,7 +551,10 @@ class TestPostUpdateValidation:
 
     def test_update_seo_fields(self):
         """Should allow updating SEO-specific fields."""
-        pool, conn = _make_pool_mock()
+        # gh#193: fetchrow returns slug after the UPDATE; revalidation
+        # hook is best-effort and skipped when app.state has no
+        # site_config (the case under TestClient).
+        pool, conn = _make_pool_mock(fetchrow_return={"slug": "post-001"})
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
@@ -564,8 +569,9 @@ class TestPostUpdateValidation:
 
     def test_update_nonexistent_post_returns_404(self):
         """PATCH on a non-existent post should return 404."""
-        pool, conn = _make_pool_mock()
-        conn.execute = AsyncMock(return_value="UPDATE 0")
+        # gh#193: fetchrow returning None signals "no row matched the
+        # WHERE id = ..." clause (replaces the old "UPDATE 0" check).
+        pool, conn = _make_pool_mock(fetchrow_return=None)
         with patch("routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
             client = TestClient(_build_app())
             resp = client.patch(
