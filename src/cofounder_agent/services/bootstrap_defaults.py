@@ -41,6 +41,14 @@ DEFAULT_SDXL_URL = "http://localhost:9836"
 """SDXL image-generation server (shipped in docker-compose.local.yml as
 the `sdxl` service). Fallback for `sdxl_server_url`."""
 
+DEFAULT_WAN_URL = "http://localhost:9840"
+"""Wan 2.1 text-to-video server (shipped in docker-compose.local.yml as
+the `wan` service). Fallback for `wan_server_url` /
+`plugin.video_provider.wan2.1-1.3b.server_url`. Used by the cooperative
+sidecar-unload protocol in `gpu_scheduler.request_sidecar_unload` so the
+worker can ask Wan to release its idle ~14GB VRAM footprint before
+claiming the GPU lock for an Ollama / SDXL workload."""
+
 # -------- Internal service mesh --------------------------------------------
 
 DEFAULT_WORKER_API_URL = "http://localhost:8002"

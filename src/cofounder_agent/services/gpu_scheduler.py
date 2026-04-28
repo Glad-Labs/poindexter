@@ -75,6 +75,14 @@ _DEFAULT_GAMING_CHECK_INTERVAL = 15  # seconds between checks while waiting
 _DEFAULT_GAMING_CONFIRM_CHECKS = 2  # consecutive checks above threshold to confirm
 _DEFAULT_GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
 
+# Cooperative sidecar-unload protocol (Glad-Labs/poindexter#160 —
+# supersedes the #144 sample-runner workaround). Before claiming the GPU
+# lock for a competing operation, the scheduler asks the listed sidecars
+# to release VRAM via their /unload endpoints. Sidecars lazy-reload on
+# their next /generate request, so no explicit reload is needed.
+_DEFAULT_UNLOAD_TIMEOUT_S = 60  # per-sidecar HTTP timeout for the /unload POST
+_DEFAULT_UNLOAD_FAILURE_POLICY = "proceed"  # "proceed" | "abort"
+
 
 def _cfg_int(site_config: Any, key: str, default: int) -> int:
     """Read an int from the injected site_config.
@@ -186,6 +194,10 @@ class GPUScheduler:
         """Acquire exclusive GPU access.
 
         Waits for any gaming/external workload to finish before acquiring.
+        Then runs the cooperative sidecar-unload protocol (#160) — the
+        scheduler asks any sidecars listed in
+        ``gpu_competing_sidecars_for_<phase>`` to release VRAM before the
+        new workload starts.
 
         Args:
             owner: "ollama" or "sdxl"
@@ -199,6 +211,25 @@ class GPUScheduler:
         """
         # Wait for gaming to stop before acquiring lock
         await self._wait_for_gaming_clear()
+
+        # Cooperative sidecar-unload protocol (#160). Reads
+        # ``gpu_competing_sidecars_for_<phase>`` (or ``..._for_<owner>``
+        # when phase is unset) — a comma-separated list of sidecar names
+        # registered in ``_SIDECAR_REGISTRY``. When the list is empty
+        # (default), this is a no-op so existing behavior is preserved.
+        # When ``failure_policy="abort"`` and any sidecar fails to
+        # unload, the lock claim is aborted via RuntimeError — the
+        # caller's stage / provider sees the failure and can retry or
+        # skip. Default policy is "proceed" so existing pipelines stay
+        # backwards-compatible.
+        phase_label = phase or owner
+        sidecar_names = self._resolve_competing_sidecars(phase_label)
+        if sidecar_names:
+            await self._cooperative_unload_or_abort(
+                sidecars=sidecar_names,
+                phase=phase_label,
+                task_id=task_id,
+            )
 
         waited = False
         if self._lock.locked():
@@ -484,11 +515,7 @@ class GPUScheduler:
 
     async def _unload_sdxl(self):
         """Tell the SDXL server to unload its model and free VRAM immediately."""
-        from services.bootstrap_defaults import DEFAULT_SDXL_URL
-        if self._site_config is not None:
-            sdxl_url = self._site_config.get("sdxl_server_url", DEFAULT_SDXL_URL)
-        else:
-            sdxl_url = DEFAULT_SDXL_URL
+        sdxl_url = self._resolve_sidecar_url("sdxl")
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
                 resp = await client.post(f"{sdxl_url}/unload", timeout=10)
@@ -496,6 +523,237 @@ class GPUScheduler:
                     logger.info("[GPU] SDXL model unloaded via /unload endpoint")
         except Exception:
             pass  # SDXL server not running — nothing to unload
+
+    # ------------------------------------------------------------------
+    # Cooperative sidecar-unload protocol — Glad-Labs/poindexter#160
+    # ------------------------------------------------------------------
+
+    def _resolve_sidecar_url(self, sidecar: str) -> str:
+        """Resolve the base URL for a registered sidecar.
+
+        Reads ``<sidecar>_server_url`` from site_config, falling back to
+        the canonical bootstrap default. Centralised here so the
+        ``request_sidecar_unload`` protocol and the existing
+        ``_unload_sdxl`` shortcut share one resolver.
+        """
+        from services.bootstrap_defaults import DEFAULT_SDXL_URL, DEFAULT_WAN_URL
+
+        defaults = {
+            "sdxl": DEFAULT_SDXL_URL,
+            "wan": DEFAULT_WAN_URL,
+        }
+        default_url = defaults.get(sidecar, "")
+        if self._site_config is None:
+            return default_url
+        # Try the canonical flat key first, then the plugin-namespaced
+        # key (used by the wan video provider).
+        flat_key = f"{sidecar}_server_url"
+        url = self._site_config.get(flat_key, "") or ""
+        if url:
+            return str(url)
+        if sidecar == "wan":
+            nested = self._site_config.get(
+                "plugin.video_provider.wan2.1-1.3b.server_url", "",
+            ) or ""
+            if nested:
+                return str(nested)
+        return default_url
+
+    def _resolve_competing_sidecars(self, phase: str) -> list[str]:
+        """Look up the sidecars that must yield before ``phase`` starts.
+
+        Reads ``gpu_competing_sidecars_for_<phase>`` from site_config —
+        a comma-separated list of sidecar names. Empty / unset means
+        "no cooperative unload needed", preserving the pre-#160
+        behavior.
+        """
+        if self._site_config is None or not phase:
+            return []
+        key = f"gpu_competing_sidecars_for_{phase}"
+        try:
+            raw = self._site_config.get(key, "") or ""
+        except Exception:
+            return []
+        return [
+            s.strip().lower() for s in str(raw).split(",") if s.strip()
+        ]
+
+    async def request_sidecar_unload(
+        self,
+        sidecars: list[str],
+        timeout_s: float | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Ask each named sidecar to release its model from VRAM.
+
+        Issues concurrent ``POST /unload`` calls to the resolved URL for
+        every sidecar. A "successful" unload means a 2xx response within
+        ``timeout_s``; anything else (timeout, connection refused, 5xx)
+        is recorded as a failure but does not raise — the caller decides
+        what to do via ``gpu_unload_failure_policy``.
+
+        Args:
+            sidecars: list of registered sidecar names ("wan", "sdxl").
+                Names not in the registry are recorded as ``unknown``
+                and skipped.
+            timeout_s: per-sidecar HTTP timeout. Defaults to
+                ``gpu_unload_timeout_s`` (60s).
+
+        Returns:
+            dict keyed by sidecar name, each value:
+                ``{"ok": bool, "status_code": int|None, "url": str,
+                   "elapsed_s": float, "error": str|None,
+                   "vram_freed_mb": int|None}``
+        """
+        if not sidecars:
+            return {}
+
+        if timeout_s is None:
+            timeout_s = float(_cfg_int(
+                self._site_config,
+                "gpu_unload_timeout_s",
+                _DEFAULT_UNLOAD_TIMEOUT_S,
+            ))
+
+        async def _unload_one(name: str) -> tuple[str, dict[str, Any]]:
+            started = time.monotonic()
+            url = self._resolve_sidecar_url(name)
+            if not url:
+                return name, {
+                    "ok": False,
+                    "status_code": None,
+                    "url": "",
+                    "elapsed_s": 0.0,
+                    "error": "unknown sidecar",
+                    "vram_freed_mb": None,
+                }
+            try:
+                # connect timeout kept tight (5s) so a dead sidecar
+                # doesn't dominate the per-call budget; the read budget
+                # gets the rest of timeout_s.
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(
+                        timeout_s, connect=min(5.0, timeout_s),
+                    ),
+                ) as client:
+                    resp = await client.post(f"{url}/unload")
+            except Exception as exc:
+                elapsed = time.monotonic() - started
+                logger.warning(
+                    "[GPU] sidecar %s /unload failed: %s",
+                    name, exc,
+                )
+                return name, {
+                    "ok": False,
+                    "status_code": None,
+                    "url": url,
+                    "elapsed_s": round(elapsed, 3),
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "vram_freed_mb": None,
+                }
+            elapsed = time.monotonic() - started
+            ok = 200 <= resp.status_code < 300
+            vram_freed: int | None = None
+            try:
+                payload = resp.json()
+                if isinstance(payload, dict):
+                    raw_vram = payload.get("vram_freed_mb")
+                    if raw_vram is None:
+                        # Some sidecars only emit vram_used_mb on /unload —
+                        # we don't know the delta but at least surface it.
+                        raw_vram = payload.get("vram_used_mb")
+                    if raw_vram is not None:
+                        vram_freed = int(raw_vram)
+            except Exception:
+                pass
+            if ok:
+                logger.info(
+                    "[GPU] sidecar %s unloaded in %.2fs (status=%s)",
+                    name, elapsed, resp.status_code,
+                )
+            else:
+                logger.warning(
+                    "[GPU] sidecar %s /unload returned %s (body=%s)",
+                    name, resp.status_code, (resp.text or "")[:160],
+                )
+            return name, {
+                "ok": ok,
+                "status_code": resp.status_code,
+                "url": url,
+                "elapsed_s": round(elapsed, 3),
+                "error": None if ok else f"http {resp.status_code}",
+                "vram_freed_mb": vram_freed,
+            }
+
+        results = await asyncio.gather(
+            *[_unload_one(name) for name in sidecars],
+            return_exceptions=False,
+        )
+        return dict(results)
+
+    async def _cooperative_unload_or_abort(
+        self,
+        *,
+        sidecars: list[str],
+        phase: str,
+        task_id: str | None,
+    ) -> None:
+        """Run ``request_sidecar_unload`` and apply the failure policy.
+
+        Reads ``gpu_unload_failure_policy`` (``"proceed"`` or
+        ``"abort"``, default ``"proceed"``). On ``"abort"``, raises a
+        ``RuntimeError`` so the lock context never enters and the caller
+        is forced to handle the GPU contention upstream. On
+        ``"proceed"``, logs a warning + emits an audit event and the
+        lock claim continues — this is the backwards-compat path that
+        matches the pre-#160 best-effort behavior.
+        """
+        results = await self.request_sidecar_unload(sidecars=sidecars)
+        failed = {n: r for n, r in results.items() if not r.get("ok")}
+        if not failed:
+            return
+
+        policy = _cfg_str(
+            self._site_config,
+            "gpu_unload_failure_policy",
+            _DEFAULT_UNLOAD_FAILURE_POLICY,
+        ).lower().strip()
+        if policy not in ("proceed", "abort"):
+            policy = _DEFAULT_UNLOAD_FAILURE_POLICY
+
+        # Best-effort audit so operators can see contention events
+        # without scraping logs. Avoid blocking the lock path on the
+        # audit write; audit_log_bg is fire-and-forget.
+        try:
+            from services.audit_log import audit_log_bg
+            audit_log_bg(
+                event_type="gpu_sidecar_unload_failed",
+                source="gpu_scheduler",
+                details={
+                    "phase": phase,
+                    "policy": policy,
+                    "results": results,
+                    "failed": list(failed.keys()),
+                },
+                task_id=task_id,
+                severity="warning" if policy == "proceed" else "error",
+            )
+        except Exception:
+            pass
+
+        if policy == "abort":
+            failed_summary = ", ".join(
+                f"{name}: {info.get('error') or 'unknown'}"
+                for name, info in failed.items()
+            )
+            raise RuntimeError(
+                f"gpu_scheduler: cooperative unload failed for phase={phase!r}; "
+                f"policy=abort; sidecars: {failed_summary}",
+            )
+        logger.warning(
+            "[GPU] cooperative unload had failures (policy=proceed) "
+            "phase=%s failed=%s — claiming lock anyway",
+            phase, list(failed.keys()),
+        )
 
     @property
     def is_busy(self) -> bool:

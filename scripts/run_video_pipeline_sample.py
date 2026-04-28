@@ -202,25 +202,14 @@ class _FakeDatabaseService:
         self.pool = pool
 
 
-async def _pre_unload_wan() -> None:
-    """Tell wan-server to release VRAM before the pipeline starts.
-
-    Wan-server holds the model in VRAM idle for ``WAN_IDLE_TIMEOUT_S``
-    seconds (15min) so successive scene_visuals calls stay warm. But
-    that idle 14GB GPU footprint trips the worker's gpu_scheduler
-    "external workload detected" check at the start of each pipeline
-    run — ollama can't acquire the GPU for the script + tts Stages
-    until something gives. The fix is to unload wan up front; it
-    lazy-reloads on the first /generate from scene_visuals.
-
-    No-op when wan-server isn't running. Best-effort; never raises.
-    """
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post("http://localhost:9840/unload")
-    except Exception:
-        pass  # wan-server isn't up; nothing to unload
+# NOTE (Glad-Labs/poindexter#160): the previous _pre_unload_wan() helper
+# was removed once the cooperative sidecar-unload protocol landed in
+# ``services.gpu_scheduler``. Pipeline stages that compete with Wan/SDXL
+# for VRAM (script_for_video, tts_for_video, generate_content,
+# featured_image, replace_inline_images) now request the appropriate
+# sidecars to release VRAM via gpu.lock(), driven by
+# ``gpu_competing_sidecars_for_<phase>`` in app_settings. The sample
+# runner doesn't need to pre-unload anything anymore.
 
 
 async def main(
@@ -289,9 +278,11 @@ async def main(
             "site_config": site_config,
         }
 
-        # Free up GPU before script + tts Stages need ollama. Wan
-        # lazy-reloads on first scene_visuals call.
-        await _pre_unload_wan()
+        # The cooperative sidecar-unload protocol (#160) handles GPU
+        # contention from inside gpu.lock() — no pre-unload step needed
+        # here. Stages that need Wan to yield (script_for_video,
+        # tts_for_video, etc.) drive it via
+        # gpu_competing_sidecars_for_<phase> settings.
         await _run_stages(context, skip_long_form=skip_long_form)
 
         print("\n=== final video_outputs ===")
