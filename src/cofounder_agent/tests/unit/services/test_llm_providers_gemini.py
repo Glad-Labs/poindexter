@@ -601,8 +601,29 @@ class TestCostGuardBudget:
 
 class TestGeminiEntryPoint:
     def test_gemini_discoverable_via_core_samples(self):
-        from plugins.registry import get_core_samples
+        """gemini must surface via either entry_points or core_samples.
 
-        samples = get_core_samples()
-        names = [getattr(p, "name", None) for p in samples["llm_providers"]]
-        assert "gemini" in names
+        After gh#152 reduced get_core_samples() to the three bundled
+        samples (taps/probes/jobs), production providers come from
+        pyproject.toml entry_points instead. Either path satisfies the
+        contract — same pattern as test_stable_audio_open_discovered.
+        """
+        from plugins.registry import (
+            clear_registry_cache,
+            get_core_samples,
+            get_llm_providers,
+        )
+
+        clear_registry_cache()
+        try:
+            ep_providers = get_llm_providers()
+            sample_providers = get_core_samples().get("llm_providers", [])
+            all_providers = list(ep_providers) + list(sample_providers)
+            names = [getattr(p, "name", None) for p in all_providers]
+            assert "gemini" in names, (
+                "gemini must be discoverable via either the "
+                "poindexter.llm_providers entry-point group or the "
+                f"core-samples loader. Found: {names}"
+            )
+        finally:
+            clear_registry_cache()
