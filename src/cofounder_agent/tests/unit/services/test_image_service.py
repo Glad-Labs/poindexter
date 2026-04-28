@@ -831,6 +831,230 @@ class TestEnsurePexelsKey:
 
 
 # ---------------------------------------------------------------------------
+# _site_config seeding contract — GH#159
+#
+# The dispatcher MUST seed `_site_config` into the provider config dict
+# (per CLAUDE.md "Image providers / taps / topic sources:
+# config.get('_site_config') — seeded by the dispatcher/runner"). Without
+# the seed, providers fall back to class-level defaults silently and
+# operator changes to app_settings don't take effect on those providers
+# until a worker restart.
+#
+# These tests use a recording fake provider so we can assert both:
+#  1. The forwarded config dict contains the `_site_config` key.
+#  2. The value is the *same* SiteConfig instance the service was
+#     constructed with (NOT a fresh one or None).
+#  3. A custom value set on that SiteConfig instance is visible to the
+#     provider via `config["_site_config"].get(...)`.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingFakeProvider:
+    """Fake provider that records the (query, config) it was called with.
+
+    Mirrors the ImageProvider Protocol shape (``name`` + async ``fetch``)
+    closely enough that ``_resolve_image_provider`` patches can return
+    it. The default ``return_value`` is one ``ImageResult`` so the
+    dispatcher's "got results" branch is exercised.
+    """
+
+    def __init__(self, name: str, return_value: list | None = None) -> None:
+        self.name = name
+        self._return_value = return_value or []
+        self.received_query: str | None = None
+        self.received_config: dict | None = None
+        self.call_count = 0
+
+    async def fetch(self, query_or_prompt, config):
+        self.received_query = query_or_prompt
+        self.received_config = config
+        self.call_count += 1
+        return self._return_value
+
+
+class TestSiteConfigSeeding:
+    """GH#159 — image_service dispatcher seeds `_site_config` into the
+    provider config dict so providers can read live app_settings values
+    without falling back to class-level defaults."""
+
+    @pytest.mark.asyncio
+    async def test_pexels_dispatcher_seeds_site_config_into_config_dict(self):
+        """``_pexels_search`` MUST add `_site_config` to the dict it
+        passes to the PexelsProvider."""
+        sc = SiteConfig(initial_config={"some_test_key": "test_value"})
+        svc = ImageService(site_config=sc)
+        svc.pexels_available = True
+        svc._pexels_key_checked_db = True
+
+        fake = _RecordingFakeProvider("pexels")
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake,
+        ):
+            await svc._pexels_search("nature")
+
+        assert fake.received_config is not None
+        assert "_site_config" in fake.received_config, (
+            "Pexels dispatcher must seed `_site_config` per CLAUDE.md "
+            "convention (GH#159)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_pexels_dispatcher_forwards_actual_site_config_instance(self):
+        """The seeded `_site_config` must be the SAME SiteConfig the
+        service was built with — not a new one and not None."""
+        sc = SiteConfig(initial_config={"some_test_key": "test_value"})
+        svc = ImageService(site_config=sc)
+        svc.pexels_available = True
+        svc._pexels_key_checked_db = True
+
+        fake = _RecordingFakeProvider("pexels")
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake,
+        ):
+            await svc._pexels_search("nature")
+
+        forwarded = fake.received_config["_site_config"]
+        assert forwarded is sc, (
+            "Provider must receive the actual SiteConfig instance the "
+            "service was built with (identity check)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_pexels_provider_can_read_operator_settings_from_seed(self):
+        """A custom value on the SiteConfig must be readable by the
+        provider through ``config["_site_config"].get(...)`` — proves
+        operator changes propagate without a restart."""
+        sc = SiteConfig(
+            initial_config={"pexels_search_per_page": "42"},
+        )
+        svc = ImageService(site_config=sc)
+        svc.pexels_available = True
+        svc._pexels_key_checked_db = True
+
+        fake = _RecordingFakeProvider("pexels")
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake,
+        ):
+            await svc._pexels_search("nature")
+
+        forwarded = fake.received_config["_site_config"]
+        # Provider-level code reads custom keys via ``.get(...)``; the
+        # value flows through verbatim — no class-default fallback.
+        assert forwarded.get("pexels_search_per_page") == "42"
+
+    @pytest.mark.asyncio
+    async def test_generate_image_dispatcher_seeds_site_config(self, tmp_path):
+        """``generate_image`` MUST add `_site_config` to the dict it
+        passes to the configured ImageProvider."""
+        sc = SiteConfig(
+            initial_config={"plugin.image_provider.primary": "sdxl"},
+        )
+        svc = ImageService(site_config=sc)
+
+        from plugins.image_provider import ImageResult
+        out = tmp_path / "out.png"
+        out.write_bytes(b"\x89PNG fake")
+        fake = _RecordingFakeProvider(
+            "sdxl",
+            return_value=[
+                ImageResult(
+                    url=f"file://{out}", source="sdxl", search_query="x",
+                ),
+            ],
+        )
+
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake,
+        ):
+            ok = await svc.generate_image(
+                prompt="cat in space",
+                output_path=str(out),
+            )
+
+        assert ok is True
+        assert fake.received_config is not None
+        assert "_site_config" in fake.received_config, (
+            "generate_image dispatcher must seed `_site_config` per "
+            "CLAUDE.md convention (GH#159)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_generate_image_forwards_actual_site_config_instance(
+        self, tmp_path,
+    ):
+        """The seeded `_site_config` in the generate_image path must be
+        the SAME SiteConfig instance the service was built with."""
+        sc = SiteConfig(
+            initial_config={"plugin.image_provider.primary": "sdxl"},
+        )
+        svc = ImageService(site_config=sc)
+
+        from plugins.image_provider import ImageResult
+        out = tmp_path / "out.png"
+        out.write_bytes(b"\x89PNG fake")
+        fake = _RecordingFakeProvider(
+            "sdxl",
+            return_value=[
+                ImageResult(
+                    url=f"file://{out}", source="sdxl", search_query="x",
+                ),
+            ],
+        )
+
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake,
+        ):
+            await svc.generate_image(prompt="x", output_path=str(out))
+
+        forwarded = fake.received_config["_site_config"]
+        assert forwarded is sc
+
+    @pytest.mark.asyncio
+    async def test_generate_image_provider_reads_operator_settings_from_seed(
+        self, tmp_path,
+    ):
+        """Operator settings on the SiteConfig must be readable by the
+        provider through the seeded `_site_config` (no restart needed)."""
+        sc = SiteConfig(
+            initial_config={
+                "plugin.image_provider.primary": "sdxl",
+                "image_negative_prompt": "ugly, blurry, watermark",
+                "sdxl_steps": "12",
+            },
+        )
+        svc = ImageService(site_config=sc)
+
+        from plugins.image_provider import ImageResult
+        out = tmp_path / "out.png"
+        out.write_bytes(b"\x89PNG fake")
+        fake = _RecordingFakeProvider(
+            "sdxl",
+            return_value=[
+                ImageResult(
+                    url=f"file://{out}", source="sdxl", search_query="x",
+                ),
+            ],
+        )
+
+        with patch(
+            "services.image_service._resolve_image_provider",
+            return_value=fake,
+        ):
+            await svc.generate_image(prompt="x", output_path=str(out))
+
+        forwarded = fake.received_config["_site_config"]
+        assert forwarded.get("image_negative_prompt") == (
+            "ugly, blurry, watermark"
+        )
+        assert forwarded.get("sdxl_steps") == "12"
+
+
+# ---------------------------------------------------------------------------
 # Removed in Phase G step 4 (GH#71)
 #
 # - ``get_active_model`` / ``list_available_models`` — in-process pipeline
