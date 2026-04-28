@@ -243,8 +243,18 @@ class TopicDiscoverySignalsJob:
     schedule = _SCHEDULE
     idempotent = True
 
-    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        site_config = (config or {}).get("site_config")
+    async def run(
+        self,
+        pool: Any,
+        config: dict[str, Any],
+        site_config: Any = None,
+    ) -> JobResult:
+        # PluginScheduler injects site_config as a kwarg when the job's
+        # signature declares it (see plugins/scheduler.py:120). Without
+        # this parameter, site_config arrived only via config.get(...)
+        # which PluginScheduler never populates — the discover step then
+        # raised "TopicDiscovery: site_config is required" and the queue
+        # starved (gh: nothing-generated incident 2026-04-28).
         should_fire, reason = await _evaluate_signals(pool, site_config)
         if not should_fire:
             return JobResult(
