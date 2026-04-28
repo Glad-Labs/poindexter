@@ -518,6 +518,27 @@ class MultiModelQA:
                         provider="deepeval",
                     )
                 )
+
+            # Self-consistency rail (#196). HalluCounter-style:
+            # samples the writer model N times for a short summary,
+            # measures pairwise embedding agreement. Low agreement
+            # correlates with unstable / hallucinated content.
+            from services import self_consistency_rail as scr
+            if scr.is_enabled(self._site_config):
+                ok_sc, score_sc, reason_sc = await scr.evaluate(
+                    content=content, topic=topic, site_config=self._site_config,
+                )
+                reviews.append(
+                    ReviewerResult(
+                        reviewer="self_consistency_rail",
+                        approved=ok_sc,
+                        # Score is cosine similarity in [0, 1]; rescale
+                        # to 0-100 to match the convention.
+                        score=max(0.0, float(score_sc)) * 100.0,
+                        feedback=reason_sc or "",
+                        provider="self_consistency",
+                    )
+                )
         except Exception as rail_err:
             # Belt-and-suspenders. Both rails individually never raise
             # (their public functions catch internal errors), but if a
