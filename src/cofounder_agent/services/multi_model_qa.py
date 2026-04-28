@@ -57,6 +57,11 @@ class MultiModelResult:
     # can show "5 reviewers ran, 2 errored" instead of pretending the
     # gate ran cleanly.
     errored_reviewers: list[str] = field(default_factory=list)
+    # Optional human-readable explanation of WHY a result is what it is.
+    # Set when the auto-reject gate fires due to a degraded reviewer
+    # pool (gh#162) so callers can distinguish "QA passed score
+    # threshold" from "QA rejected because too many reviewers errored".
+    detail: str | None = None
 
     @property
     def summary(self) -> str:
@@ -746,6 +751,86 @@ class MultiModelQA:
 
         approved = all_passed and final_score >= approval_threshold
 
+        # Degraded-reviewer-pool auto-reject (gh#162). Even when the
+        # surviving reviewers vote pass + score above threshold, a QA
+        # pass run with most reviewers throwing exceptions is unsafe:
+        # a single happy reviewer is not adversarial QA. The previous
+        # observability landed in commit 3fa51168 logged this case but
+        # didn't change behavior — degraded content could still ship.
+        # The gate is ADDITIVE: it can only flip approved from True to
+        # False, never the other way. Threshold default 0.5 (>= 50%
+        # errored = reject), DB-tunable via
+        # ``multi_model_qa_max_reviewer_error_rate``. Operator can
+        # tighten to 0.3 (require 70% to succeed) or relax to 0.8.
+        # Semantics: ratio >= threshold triggers reject — a 50/50 tie
+        # at the default threshold counts as too-degraded, erring on
+        # safety. Edge cases: zero-reviewer pool also fails loud
+        # (defensive — shouldn't happen in production but a divide-
+        # by-zero or silent pass would mask a regression).
+        max_error_rate = 0.5
+        if self.settings:
+            with suppress(ValueError, TypeError):
+                _raw_rate = await self.settings.get(
+                    "multi_model_qa_max_reviewer_error_rate"
+                )
+                if _raw_rate is not None:
+                    max_error_rate = float(_raw_rate)
+
+        errored_count = len(self._errored_reviewers)
+        succeeded_count = len(reviews)
+        total_reviewers = errored_count + succeeded_count
+        degraded_pool = False
+        degraded_detail: str | None = None
+        if total_reviewers == 0:
+            # Defensive: no reviewers at all. Programmatic validator
+            # always runs in normal flow, so reaching this branch means
+            # the validator itself was bypassed — fail loud rather than
+            # silently approve a post that was never QA'd.
+            degraded_pool = True
+            degraded_detail = (
+                "degraded reviewer pool: 0 reviewers ran (no QA evidence)"
+            )
+        else:
+            error_ratio = errored_count / total_reviewers
+            if errored_count > 0 and error_ratio >= max_error_rate:
+                degraded_pool = True
+                degraded_detail = (
+                    f"degraded reviewer pool: {errored_count}/{total_reviewers} "
+                    f"reviewers errored "
+                    f"(threshold: {int(max_error_rate * 100)}%)"
+                )
+
+        if degraded_pool:
+            approved = False
+            logger.warning("[MULTI_QA] auto-reject: %s", degraded_detail)
+            # Audit row + Prometheus alert tag so Grafana surfaces the
+            # event. Tagged ``degraded_reviewer_pool`` so the qa_aggregate
+            # dashboard can chart it independently of normal failures.
+            try:
+                from services.audit_log import audit_log_bg  # noqa: PLC0415
+                audit_log_bg(
+                    "qa_degraded_reviewer_pool",
+                    "multi_model_qa",
+                    {
+                        "errored_reviewers": list(self._errored_reviewers),
+                        "errored_count": errored_count,
+                        "succeeded_count": succeeded_count,
+                        "total_reviewers": total_reviewers,
+                        "error_rate": (
+                            errored_count / total_reviewers
+                            if total_reviewers else 1.0
+                        ),
+                        "threshold": max_error_rate,
+                        "alert_tag": "degraded_reviewer_pool",
+                    },
+                    severity="error",
+                )
+            except Exception as _audit_exc:
+                logger.debug(
+                    "audit_log_bg(qa_degraded_reviewer_pool) failed: %s",
+                    _audit_exc,
+                )
+
         result = MultiModelResult(
             approved=approved,
             final_score=final_score,
@@ -753,6 +838,7 @@ class MultiModelQA:
             validation=validation,
             cost_log=qa_cost_log,
             errored_reviewers=list(self._errored_reviewers),
+            detail=degraded_detail,
         )
 
         if result.errored_reviewers:

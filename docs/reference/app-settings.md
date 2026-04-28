@@ -462,13 +462,14 @@ The worker re-reads on every poll; no restart needed.
 
 ## quality
 
-| Key                           | Default | Classification | Description                                      |
-| ----------------------------- | ------- | -------------- | ------------------------------------------------ |
-| `qa_critical_dimension_floor` | `50`    |                | Minimum score on any single quality dimension    |
-| `qa_critic_weight`            | `0.6`   |                | Weight for LLM critic in final score             |
-| `qa_final_score_threshold`    | `80`    |                | Multi-model QA final approval score threshold    |
-| `qa_overall_score_threshold`  | `80`    |                | Minimum overall quality score to pass QA (0-100) |
-| `qa_validator_weight`         | `0.4`   |                | Weight for programmatic validator in final score |
+| Key                                      | Default | Classification | Description                                                                                        |
+| ---------------------------------------- | ------- | -------------- | -------------------------------------------------------------------------------------------------- |
+| `multi_model_qa_max_reviewer_error_rate` | `0.5`   |                | Auto-reject when this fraction (>=) of reviewers errored. 0.5 = reject when >=50% errored (gh#162) |
+| `qa_critical_dimension_floor`            | `50`    |                | Minimum score on any single quality dimension                                                      |
+| `qa_critic_weight`                       | `0.6`   |                | Weight for LLM critic in final score                                                               |
+| `qa_final_score_threshold`               | `80`    |                | Multi-model QA final approval score threshold                                                      |
+| `qa_overall_score_threshold`             | `80`    |                | Minimum overall quality score to pass QA (0-100)                                                   |
+| `qa_validator_weight`                    | `0.4`   |                | Weight for programmatic validator in final score                                                   |
 
 ## security
 

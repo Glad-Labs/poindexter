@@ -948,3 +948,249 @@ class TestWarningQAPenalty:
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.final_score < 70
+
+
+# ---------------------------------------------------------------------------
+# GH-162: degraded-reviewer-pool auto-reject
+# ---------------------------------------------------------------------------
+#
+# Even when the surviving reviewers vote pass + score above threshold, a
+# QA pass with most reviewers throwing exceptions is unsafe. Threshold
+# default 0.5 (>= 50% errored = reject), DB-tunable via
+# ``multi_model_qa_max_reviewer_error_rate``. Semantics: ratio >=
+# threshold triggers reject — a 50/50 tie at the default threshold
+# counts as too-degraded, erring on safety.
+
+
+def _build_qa_with_errors(
+    errored_reviewer_names: list[str],
+    *,
+    settings_overrides: dict | None = None,
+):
+    """Build a MultiModelQA whose cross-model review path silently
+    populates ``_errored_reviewers`` with the given names.
+
+    All gate methods (and the inline url_verifier path via patching
+    ``verify_content_urls`` to raise) are stubbed to return None so
+    the only reviewer that lands in ``reviews`` from the real flow
+    is the programmatic validator. Tests for the degraded-pool gate
+    then add successful reviewers explicitly via custom stubs to
+    control the ratio.
+    """
+    overrides = dict(settings_overrides or {})
+    overrides.setdefault("qa_validator_weight", 0.4)
+    overrides.setdefault("qa_critic_weight", 0.6)
+    overrides.setdefault("qa_gate_weight", 0.3)
+    overrides.setdefault("qa_final_score_threshold", 70)
+    settings = _settings_service(**overrides)
+
+    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
+
+    async def _skip_gate(*_a, **_k):
+        return None
+
+    qa._check_topic_delivery = _skip_gate
+    qa._check_internal_consistency = _skip_gate
+    qa._check_image_relevance = _skip_gate
+    qa._check_rendered_preview = _skip_gate
+    qa._check_citations = _skip_gate
+    qa._web_fact_check = _skip_gate
+
+    async def _cross_model_with_errors(*_a, **_k):
+        # Simulate the silent-fail path — every named reviewer hit the
+        # try/except and got recorded via _record_reviewer_error.
+        for name in errored_reviewer_names:
+            qa._record_reviewer_error(name, RuntimeError("simulated"))
+        return None
+
+    qa._review_with_cloud_model = _cross_model_with_errors
+    return qa
+
+
+def _patch_url_verifier():
+    """Make the inline url_verifier reviewer skip cleanly so it does
+    not contribute to the reviewer count in degraded-pool tests.
+
+    The url_verifier path is inline in ``review()`` (not a method
+    that can be monkeypatched on the instance), so we make
+    ``verify_content_urls`` raise. The surrounding ``except Exception``
+    logs at debug and skips appending the reviewer entirely.
+    """
+    return patch(
+        "services.content_validator.verify_content_urls",
+        AsyncMock(side_effect=RuntimeError("test: url_verifier disabled")),
+    )
+
+
+class TestDegradedReviewerPoolAutoReject:
+    """gh#162: auto-reject when too many reviewers errored.
+
+    The ``_patch_url_verifier()`` context manager is applied around
+    every test in this class so the inline url_verifier reviewer
+    doesn't bloat the reviewer count — keeps the math in the
+    degraded-pool gate easy to reason about (validator + N user-
+    supplied reviewers, no surprise extras).
+    """
+
+    async def test_no_errors_existing_behavior_unchanged(self):
+        """With zero errored reviewers, the gate is a no-op — the
+        normal pass-through behavior decides the result."""
+        # _build_qa_with_errors with empty list = zero errors recorded.
+        # The ``_review_with_cloud_model`` stub returns None (no critic),
+        # so critic_skipped=True and final_score = validator score (100).
+        # No errors → degraded-pool gate doesn't fire → approved.
+        qa = _build_qa_with_errors([])
+
+        with _patch_url_verifier(), \
+             patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result.approved is True
+        assert result.detail is None
+        assert result.errored_reviewers == []
+
+    async def test_fifty_percent_errored_default_threshold_rejects(self):
+        """50% of reviewers errored at default threshold 0.5 — a 50/50
+        tie counts as too-degraded (>= semantics). gate fires."""
+        # 1 errored + 1 succeeded (validator) = 50% error rate.
+        qa = _build_qa_with_errors(["ollama_critic"])
+
+        with _patch_url_verifier(), \
+             patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result.approved is False
+        assert result.detail is not None
+        assert "degraded reviewer pool" in result.detail
+        assert "1/2" in result.detail
+        assert "50%" in result.detail
+        assert result.errored_reviewers == ["ollama_critic"]
+
+    async def test_thirty_three_percent_errored_default_threshold_passes(self):
+        """1/3 errored = ~33% < default 50% threshold. Gate doesn't
+        fire — existing logic decides ok by score."""
+        qa = _build_qa_with_errors([])  # no errors via cross-model
+
+        # Use a custom cross-model review that appends 1 extra
+        # ReviewerResult and records 1 error.
+        async def _mixed(*_a, **_k):
+            qa._record_reviewer_error("flaky_gate", RuntimeError("boom"))
+            from services.multi_model_qa import ReviewerResult
+            extra = ReviewerResult(
+                reviewer="ollama_critic",
+                approved=True,
+                score=85.0,
+                feedback="ok",
+                provider="ollama",
+            )
+            return (extra, None)
+
+        qa._review_with_cloud_model = _mixed
+
+        # Add a third successful reviewer via the consistency gate stub
+        async def _consistency_pass(*_a, **_k):
+            from services.multi_model_qa import ReviewerResult
+            return ReviewerResult(
+                reviewer="internal_consistency",
+                approved=True,
+                score=90.0,
+                feedback="consistent",
+                provider="consistency_gate",
+            )
+
+        qa._check_internal_consistency = _consistency_pass
+
+        with _patch_url_verifier(), \
+             patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # 1 errored / (1 errored + 3 succeeded) = 25% < 50% threshold.
+        # Existing logic should approve since score is high.
+        assert result.approved is True
+        assert result.detail is None
+        assert len(result.errored_reviewers) == 1
+
+    async def test_all_errored_fails_with_degraded_pool_detail(self):
+        """All non-validator reviewers errored — strong signal QA is
+        broken. Reject with degraded-pool detail even if validator
+        scored high."""
+        qa = _build_qa_with_errors([
+            "ollama_critic",
+            "topic_delivery",
+            "internal_consistency",
+            "vision_gate",
+        ])
+
+        with _patch_url_verifier(), \
+             patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # 4 errored + 1 succeeded (validator) = 80% error rate >> 50%.
+        assert result.approved is False
+        assert result.detail is not None
+        assert "degraded reviewer pool" in result.detail
+        assert "4/5" in result.detail
+        assert len(result.errored_reviewers) == 4
+
+    async def test_single_reviewer_errored_rejects(self):
+        """Edge case: only the validator path runs, one reviewer
+        errored. errored=1, succeeded=1, ratio=50% >= default 0.5 →
+        reject. Confirms no divide-by-zero or weird off-by-one."""
+        qa = _build_qa_with_errors(["ollama_critic"])
+
+        with _patch_url_verifier(), \
+             patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result.approved is False
+        assert "1/2" in (result.detail or "")
+
+    async def test_custom_threshold_via_settings_respected(self):
+        """Operator sets the threshold to 0.8 — relaxes the gate so
+        50% errored is allowed through. With 50% errored and
+        threshold 0.8, error_ratio (0.5) < 0.8 → no auto-reject."""
+        qa = _build_qa_with_errors(
+            ["ollama_critic"],
+            settings_overrides={"multi_model_qa_max_reviewer_error_rate": 0.8},
+        )
+
+        with _patch_url_verifier(), \
+             patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # 50% errored, threshold 80% — gate doesn't fire. Validator
+        # alone scored 100 (passing), so result.approved is True.
+        assert result.approved is True
+        assert result.detail is None
+
+    async def test_tighter_custom_threshold_rejects_smaller_pool(self):
+        """Operator sets threshold to 0.3 — requires 70% of reviewers
+        to succeed. 1 errored / 3 total = 33% which is >= 0.3 → reject."""
+        qa = _build_qa_with_errors(
+            [],
+            settings_overrides={"multi_model_qa_max_reviewer_error_rate": 0.3},
+        )
+
+        async def _mixed(*_a, **_k):
+            qa._record_reviewer_error("ollama_critic", RuntimeError("boom"))
+            from services.multi_model_qa import ReviewerResult
+            extra = ReviewerResult(
+                reviewer="topic_delivery",
+                approved=True,
+                score=85.0,
+                feedback="ok",
+                provider="consistency_gate",
+            )
+            return (extra, None)
+
+        qa._review_with_cloud_model = _mixed
+
+        with _patch_url_verifier(), \
+             patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
+            result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        # 1 errored + 2 succeeded = 33% errored >= 30% threshold → reject.
+        assert result.approved is False
+        assert result.detail is not None
+        assert "30%" in result.detail

@@ -255,6 +255,12 @@
       "category": "quality",
       "description": "Points subtracted from final QA score per validator warning (GH-91)"
     },
+    {
+      "key": "multi_model_qa_max_reviewer_error_rate",
+      "value": "0.5",
+      "category": "quality",
+      "description": "Auto-reject the QA pass when this fraction (>=) of reviewers errored. Default 0.5 = reject when >=50% of reviewers threw exceptions. Tighten to 0.3 (require 70% to succeed) or relax to 0.8 per niche. (gh#162)"
+    },
 
     {
       "key": "auto_publish_threshold",
