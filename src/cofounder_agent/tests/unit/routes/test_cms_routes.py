@@ -577,7 +577,7 @@ class TestMapFeaturedImageToCoverimage:
 class TestUpdatePost:
     def test_success_returns_200(self):
         conn = MagicMock()
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+        conn.fetchrow = AsyncMock(return_value={"slug": "test-post"})
         cm = MagicMock()
         cm.__aenter__ = AsyncMock(return_value=conn)
         cm.__aexit__ = AsyncMock(return_value=None)
@@ -608,7 +608,7 @@ class TestUpdatePost:
 
     def test_post_not_found_returns_404(self):
         conn = MagicMock()
-        conn.execute = AsyncMock(return_value="UPDATE 0")
+        conn.fetchrow = AsyncMock(return_value=None)
         cm = MagicMock()
         cm.__aenter__ = AsyncMock(return_value=conn)
         cm.__aexit__ = AsyncMock(return_value=None)
@@ -662,7 +662,7 @@ class TestUpdatePost:
 
     def test_scheduled_with_future_date_succeeds(self):
         conn = MagicMock()
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+        conn.fetchrow = AsyncMock(return_value={"slug": "test-post"})
         cm = MagicMock()
         cm.__aenter__ = AsyncMock(return_value=conn)
         cm.__aexit__ = AsyncMock(return_value=None)
@@ -684,7 +684,7 @@ class TestUpdatePost:
     def test_z_suffix_normalized_to_utc(self):
         """ISO dates ending in Z should be accepted."""
         conn = MagicMock()
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+        conn.fetchrow = AsyncMock(return_value={"slug": "test-post"})
         cm = MagicMock()
         cm.__aenter__ = AsyncMock(return_value=conn)
         cm.__aexit__ = AsyncMock(return_value=None)
@@ -703,7 +703,7 @@ class TestUpdatePost:
     def test_filters_out_disallowed_fields(self):
         """Fields not in the allowed set get dropped before SQL."""
         conn = MagicMock()
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+        conn.fetchrow = AsyncMock(return_value={"slug": "test-post"})
         cm = MagicMock()
         cm.__aenter__ = AsyncMock(return_value=conn)
         cm.__aexit__ = AsyncMock(return_value=None)
@@ -723,7 +723,7 @@ class TestUpdatePost:
             )
         assert resp.status_code == 200
         # The UPDATE SQL should not mention admin_override or deleted_at
-        sql_arg = conn.execute.await_args.args[0]
+        sql_arg = conn.fetchrow.await_args.args[0]
         assert "admin_override" not in sql_arg
         assert "deleted_at" not in sql_arg
 
