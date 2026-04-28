@@ -285,3 +285,5 @@ curl http://localhost:9835/metrics | head -3 # GPU metrics
 - Matt Gladding: hello@gladlabs.io
 - Telegram: Brain daemon sends alerts to configured chat_id
 - Discord: Ops channel receives Grafana alerts
+
+<!-- DOC-SYNC 2026-04-28: stale references — `scripts/db-restore.ps1` does not exist (only `scripts/db-backup.ps1` and `scripts/db-backup-local.sh` are present). Restore step needs an actual script or an updated manual procedure. -->

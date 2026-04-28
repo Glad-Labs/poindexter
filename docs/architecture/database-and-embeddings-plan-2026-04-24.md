@@ -319,3 +319,5 @@ GH-111 will replace the current hardcoded routes with a declarative `webhooks` t
 4. **Phase 2 / Phase 3 (embedding cleanup itself)** — deferred until GH-110 ships. 13k rows / 126 MB is not urgent.
 
 **Rationale:** storage and one-off webhooks aren't the pain. Repeated one-off scripts and hardcoded integration routes are the pain. Ship the low-risk index work now, then put the framework issues through the design+build path before adding more one-offs.
+
+<!-- DOC-SYNC 2026-04-28: stale references — proposed paths `services/jobs/retention_runner.py` and `services/retention/handlers.py` were not used as drafted; actual implementation lives at `services/integrations/retention_runner.py` and `services/integrations/handlers/retention_{downsample,ttl_prune}.py` (plus `services/retention_janitor.py`). Plan describes the originally-proposed shape; current code took a different path. -->
