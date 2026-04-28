@@ -26,7 +26,6 @@ from typing import Any
 
 from services.content_validator import ValidationResult, validate_content
 from services.logger_config import get_logger
-from services.model_router import get_model_router
 from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
 
 logger = get_logger(__name__)
@@ -296,7 +295,10 @@ class MultiModelQA:
         self.pool = pool
         self.settings = settings_service
         self._site_config = site_config
-        self.router = get_model_router()
+        # `self.router = get_model_router()` removed in #199 Phase 2 —
+        # the reference was set on every MultiModelQA instance but never
+        # read. The router itself was deleted alongside.
+
         # Tracks reviewers that errored during the current review() call.
         # Reset at the start of every review() so two reviews in a row
         # don't bleed into each other. Concurrent review() calls on the

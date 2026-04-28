@@ -222,7 +222,7 @@ def _qa_with_chain(rows: list[dict[str, Any]]) -> MultiModelQA:
     the qa_gates fetch — used by the consumer-side tests."""
     conn = _StubConn(sorted(rows, key=lambda r: r["execution_order"]))
     pool = _StubPool(conn)
-    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+    with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
         qa = MultiModelQA(pool=pool, settings_service=None, site_config=_make_sc())
     return qa
 
@@ -404,7 +404,7 @@ class TestLegacyFallback:
         """``pool=None`` (the unit-test default for MultiModelQA) must
         load an empty chain → all gates default-enabled."""
         with patch(
-            "services.multi_model_qa.get_model_router", return_value=MagicMock(),
+            "services.multi_model_qa.get_model_router", create=True, return_value=MagicMock(),
         ):
             qa = MultiModelQA(
                 pool=None, settings_service=None, site_config=_make_sc(),

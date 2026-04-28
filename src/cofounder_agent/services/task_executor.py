@@ -23,7 +23,6 @@ from .ai_content_generator import AIContentGenerator  # noqa: F401
 # Import AI content generator for fallback
 from .error_handler import ServiceError
 from .quality_service import UnifiedQualityService
-from .usage_tracker import get_usage_tracker
 from .webhook_delivery_service import emit_webhook_event
 
 # Telegram notifications now routed through OpenClaw gateway (no direct bot token needed)
@@ -282,7 +281,10 @@ class TaskExecutor:
         self.error_count = 0
         self.published_count = 0
         self._processor_task = None
-        self.usage_tracker = get_usage_tracker()  # Initialize usage tracking
+        # `self.usage_tracker = get_usage_tracker()` removed in #199
+        # Phase 2 — set but never read. The tracker module was deleted
+        # alongside; per-call cost lookup now goes through services.
+        # cost_lookup directly (LiteLLM-backed, 2.6k+ models).
         self.critique_loop: Any | None = (
             None  # Optional critique loop (not wired in current version)
         )

@@ -357,19 +357,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             app.state.pool_health = pool_health
             logger.info("[LIFESPAN] Connection pool health monitor started")
 
-        # Initialize global model router singleton and seed spend counter from
-        # cost_logs so budget enforcement survives restarts (issue #1385).
-        try:
-            from services.model_router import get_model_router, initialize_model_router
-
-            _router = get_model_router()
-            if _router is None:
-                _router = initialize_model_router(site_config=app.state.site_config)
-            if _router and getattr(db_service, "pool", None):
-                await _router.seed_spend_from_db(db_service.pool)
-                logger.info("[LIFESPAN] Model router spend seeded from cost_logs")
-        except Exception as e:
-            logger.warning(f"[LIFESPAN] Failed to seed model router spend: {e}", exc_info=True)
+        # ModelRouter init removed in #199 Phase 2 — the singleton was
+        # initialized here only so seed_spend_from_db could log a one-line
+        # snapshot of month-to-date cloud spend at startup. Nothing read
+        # the resulting in-memory counter (callers query cost_aggregation_
+        # service or cost_guard directly, both of which hit cost_logs
+        # fresh on every call). Audit confirmed zero production readers.
 
         # Plugin scheduler — apscheduler + entry_point + core-sample Jobs.
         # Runs housekeeping (sync_page_views, db_backup, render_prometheus_rules, ...)

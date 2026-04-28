@@ -98,7 +98,7 @@ def qa():
     async def _skip_gate(*_args, **_kwargs):
         return None
 
-    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+    with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
         instance = MultiModelQA(pool=None, settings_service=None, site_config=_make_sc())
     # Stub the new gates so existing tests that don't care about them
     # see the pre-gate reviewer count (validator + main critic = 2).
@@ -340,7 +340,7 @@ def _mock_gate_client(json_payload: dict):
 @pytest.fixture
 def raw_qa():
     """MultiModelQA WITHOUT the gate stubs — exercises the real gate methods."""
-    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+    with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
         return MultiModelQA(pool=None, settings_service=None, site_config=_make_sc())
 
 
@@ -533,7 +533,7 @@ class TestSettingsOverrides:
             qa_gate_weight=0.0,
             qa_final_score_threshold=70,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         # Stub gates so they don't actually call Ollama
@@ -557,7 +557,7 @@ class TestSettingsOverrides:
             qa_gate_weight=0.3,
             qa_final_score_threshold=95,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*args, **kwargs):
@@ -580,7 +580,7 @@ class TestSettingsOverrides:
             qa_gate_weight=0.3,
             qa_final_score_threshold=50,  # very lenient
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*args, **kwargs):
@@ -598,7 +598,7 @@ class TestSettingsOverrides:
         """settings.get('pipeline_critic_model') is passed as model_override."""
         settings = _settings_service(pipeline_critic_model="ollama/qwen3:30b")
 
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*args, **kwargs):
@@ -869,7 +869,7 @@ class TestWarningQAPenalty:
             qa_final_score_threshold=70,
             content_validator_warning_qa_penalty=3,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*_a, **_k):
@@ -901,7 +901,7 @@ class TestWarningQAPenalty:
             qa_final_score_threshold=70,
             content_validator_warning_qa_penalty=3,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*_a, **_k):
@@ -930,7 +930,7 @@ class TestWarningQAPenalty:
             qa_final_score_threshold=70,
             content_validator_warning_qa_penalty=5,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
         async def _skip_gate(*_a, **_k):
@@ -984,7 +984,7 @@ def _build_qa_with_errors(
     overrides.setdefault("qa_final_score_threshold", 70)
     settings = _settings_service(**overrides)
 
-    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+    with patch("services.multi_model_qa.get_model_router", create=True, return_value=MagicMock()):
         qa = MultiModelQA(pool=None, settings_service=settings, site_config=_make_sc())
 
     async def _skip_gate(*_a, **_k):

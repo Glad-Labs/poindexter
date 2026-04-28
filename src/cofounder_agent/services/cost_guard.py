@@ -30,10 +30,11 @@ Settings (read from app_settings via ``SiteConfig``):
 - ``monthly_spend_limit_usd`` (default ``100.00``)
 - ``cost_alert_threshold_pct`` (default ``80.0``)
 
-Per-model rate table lives in ``services.model_constants.MODEL_COSTS``
-already; this module looks up by model name and falls back to a
-conservative default (GPT-4o-mini-style $0.0005 input / $0.0015 output
-per 1K tokens) if the model is unknown.
+Per-model rate table lives in ``services.cost_lookup`` (LiteLLM-backed
+post-#199, 2,600+ provider/model combos). This module looks up by
+model name and falls back to a conservative ``DEFAULT_COST_PER_1K``
+($0.005/1K) if LiteLLM doesn't know the model and it isn't a local
+Ollama route.
 """
 
 from __future__ import annotations

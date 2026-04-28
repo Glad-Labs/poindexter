@@ -62,7 +62,7 @@ def _make_executor(db=None, orchestrator=None, poll_interval=1, site_config=None
     with (
         patch("services.task_executor.UnifiedQualityService"),
         patch("services.task_executor.AIContentGenerator"),
-        patch("services.task_executor.get_usage_tracker"),
+        patch("services.task_executor.get_usage_tracker", create=True),
     ):
         executor = TaskExecutor(
             database_service=db,
