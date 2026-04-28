@@ -132,6 +132,15 @@ apscheduler = "^3.11.2"
 # provider plugin to litellm.acompletion — is tracked separately and
 # requires the 1-week soak the issue mandates before claiming success.
 litellm = "^1"
+# BERTopic — semantic topic modeling (#201). Alternative engine
+# alongside the existing word-overlap dedup in services/topic_dedup.py.
+# Operator picks the engine via app_settings.topic_dedup_engine
+# ('word_overlap' default, 'bertopic' opt-in). BERTopic adds
+# sentence-transformer + UMAP + HDBSCAN — heavier than the word-
+# overlap baseline, but the right tool once the post corpus grows
+# past the threshold where lexical overlap misses paraphrases.
+# Brings sentence-transformers as a transitive dep.
+bertopic = "^0.16"
 # Langfuse v3 — LLM observability + prompt management + experiments
 # (#202, #203). Self-hosted stack runs in docker-compose.local.yml
 # (5 containers: web, worker, clickhouse, redis, minio). Phase 1

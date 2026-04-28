@@ -514,11 +514,11 @@ class TopicDiscovery:
         will let more through.
         """
         # Implementation moved to services.topic_dedup.TopicDeduplicator
-        # in #151. This method stays as the public surface so existing
-        # callers don't break; it just delegates to the helper now.
-        from services.topic_dedup import TopicDeduplicator
+        # in #151. Engine selection (lexical vs semantic) added in #201
+        # — operator picks via app_settings.topic_dedup_engine.
+        from services.topic_dedup_semantic import get_deduplicator
 
-        deduper = TopicDeduplicator(self.pool, site_config=self._site_config)
+        deduper = get_deduplicator(self.pool, site_config=self._site_config)
         return await deduper.mark_duplicates(topics)
 
     # Keywords that indicate a topic is relevant to this site's niche.
