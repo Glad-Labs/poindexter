@@ -141,6 +141,21 @@ litellm = "^1"
 # past the threshold where lexical overlap misses paraphrases.
 # Brings sentence-transformers as a transitive dep.
 bertopic = "^0.16"
+# guardrails-ai — output validators framework (#198). Doesn't replace
+# the domain-specific fabrication-detection patterns in
+# services/content_validator.py — those are the moat. Adopted as a
+# parallel rail so operator gets hands-on with the BaseValidator /
+# RAIL spec / OnFailAction conventions, plus access to the hub of
+# pre-built validators (PII, toxicity, JSON schema, regex, length,
+# etc) for surfaces where commodity rails make sense (operator chat,
+# user-facing inputs).
+guardrails-ai = "^0.6"
+# DeepEval — LLM evaluation framework (#197). Same pattern as
+# guardrails: introduced as a parallel reviewer alongside the existing
+# multi_model_qa orchestration so the operator gets hands-on with
+# LLMTestCase / BaseMetric / G-Eval conventions without replacing the
+# domain-specific multi-reviewer logic that's the moat.
+deepeval = "^3"
 # Langfuse v3 — LLM observability + prompt management + experiments
 # (#202, #203). Self-hosted stack runs in docker-compose.local.yml
 # (5 containers: web, worker, clickhouse, redis, minio). Phase 1
