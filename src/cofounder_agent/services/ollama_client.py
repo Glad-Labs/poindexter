@@ -24,6 +24,11 @@ import httpx
 
 from plugins.tracing import get_tracer
 from services.logger_config import get_logger
+from services.ollama_resilience import (
+    OllamaCircuitOpenError,
+    OllamaEmptyResponseError,
+    OllamaResilienceManager,
+)
 
 logger = get_logger(__name__)
 
@@ -221,6 +226,16 @@ class OllamaClient:
         # Electricity cost parameters — updated at runtime via configure_electricity()
         self._gpu_power_watts: float = _default_gpu_power_watts(site_config=site_config)
         self._electricity_rate_kwh: float = _default_electricity_rate_kwh(site_config=site_config)
+
+        # Resilience layer (GH#153) — retry + queue + circuit breaker.
+        # Every generate/chat/embed call goes through ``self._resilience.run()``
+        # so transient Ollama failures (timeouts, 503s, empty content
+        # under GPU contention) get backoff-and-retry instead of being
+        # surfaced as a hard failure that publishes stub content. The
+        # manager is lazily reconfigured per call from app_settings, so
+        # changing ``ollama_max_concurrent_calls`` or
+        # ``ollama_circuit_breaker_*`` takes effect without a restart.
+        self._resilience = OllamaResilienceManager(site_config=site_config)
 
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
 
@@ -454,11 +469,31 @@ class OllamaClient:
             span.set_attribute("llm.max_tokens", max_tokens or 0)
             span.set_attribute("llm.stream", stream)
             try:
-                response = await self.client.post(
-                    f"{self.base_url}/api/chat", json=payload, timeout=call_timeout
+                async def _do_post() -> dict[str, Any]:
+                    resp = await self.client.post(
+                        f"{self.base_url}/api/chat",
+                        json=payload,
+                        timeout=call_timeout,
+                    )
+                    resp.raise_for_status()
+                    return resp.json()
+
+                # The validator catches Ollama's "200 OK with empty
+                # message.content" failure mode (thinking-trace
+                # overflow under GPU contention) and converts it into
+                # a retryable OllamaEmptyResponseError so the
+                # resilience layer retries instead of accepting the
+                # stub. Returns True (accept) if there's any content
+                # OR a non-empty thinking trace we can salvage from.
+                def _has_usable_content(r: dict[str, Any]) -> bool:
+                    msg = r.get("message") or {}
+                    return bool(msg.get("content") or msg.get("thinking"))
+
+                result = await self._resilience.run(
+                    _do_post,
+                    op_name="generate",
+                    validate_result=_has_usable_content,
                 )
-                response.raise_for_status()
-                result = response.json()
 
                 # Extract text from chat response format
                 msg = result.get("message") or {}
@@ -558,11 +593,24 @@ class OllamaClient:
             span.set_attribute("llm.temperature", temperature)
             span.set_attribute("llm.max_tokens", max_tokens or 0)
             try:
-                response = await self.client.post(
-                    f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
+                async def _do_post() -> dict[str, Any]:
+                    resp = await self.client.post(
+                        f"{self.base_url}/api/chat",
+                        json=payload,
+                        timeout=self.timeout,
+                    )
+                    resp.raise_for_status()
+                    return resp.json()
+
+                def _has_usable_content(r: dict[str, Any]) -> bool:
+                    msg_check = r.get("message") or {}
+                    return bool(msg_check.get("content") or msg_check.get("thinking"))
+
+                result = await self._resilience.run(
+                    _do_post,
+                    op_name="chat",
+                    validate_result=_has_usable_content,
                 )
-                response.raise_for_status()
-                result = response.json()
 
                 msg = result.get("message", {})
 
@@ -761,13 +809,26 @@ class OllamaClient:
             span.set_attribute("llm.model", model)
             span.set_attribute("llm.input_chars", len(text))
             try:
-                response = await self.client.post(
-                    f"{self.base_url}/api/embed",
-                    json={"model": model, "input": text},
-                    timeout=self.timeout,
+                async def _do_post() -> dict[str, Any]:
+                    resp = await self.client.post(
+                        f"{self.base_url}/api/embed",
+                        json={"model": model, "input": text},
+                        timeout=self.timeout,
+                    )
+                    resp.raise_for_status()
+                    return resp.json()
+
+                # Empty embeddings array means the model wasn't loaded
+                # cleanly (transient under VRAM pressure) — let the
+                # resilience layer retry before surfacing as fatal.
+                def _has_embeddings(r: dict[str, Any]) -> bool:
+                    return bool(r.get("embeddings"))
+
+                result = await self._resilience.run(
+                    _do_post,
+                    op_name="embed",
+                    validate_result=_has_embeddings,
                 )
-                response.raise_for_status()
-                result = response.json()
 
                 embeddings = result.get("embeddings", [])
                 if not embeddings:
@@ -800,13 +861,23 @@ class OllamaClient:
             List of embedding vectors.
         """
         try:
-            response = await self.client.post(
-                f"{self.base_url}/api/embed",
-                json={"model": model, "input": texts},
-                timeout=self.timeout,
+            async def _do_post() -> dict[str, Any]:
+                resp = await self.client.post(
+                    f"{self.base_url}/api/embed",
+                    json={"model": model, "input": texts},
+                    timeout=self.timeout,
+                )
+                resp.raise_for_status()
+                return resp.json()
+
+            def _has_all_embeddings(r: dict[str, Any]) -> bool:
+                return len(r.get("embeddings") or []) == len(texts)
+
+            result = await self._resilience.run(
+                _do_post,
+                op_name="embed_batch",
+                validate_result=_has_all_embeddings,
             )
-            response.raise_for_status()
-            result = response.json()
 
             embeddings = result.get("embeddings", [])
             if len(embeddings) != len(texts):

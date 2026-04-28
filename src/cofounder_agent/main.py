@@ -705,6 +705,34 @@ async def api_health():
         else:
             health_data["components"]["task_executor"] = "unavailable"
 
+        # Ollama resilience layer (GH#153) — surface circuit state and
+        # in-flight call count so a tripped breaker is visible in
+        # /api/health (and in the Grafana ops dashboard that scrapes
+        # this endpoint). Best-effort: any import/probe error reports
+        # an error component instead of being swallowed.
+        try:
+            from services.ollama_resilience import get_default_manager
+            ollama_resilience = get_default_manager(
+                site_config=getattr(app.state, "site_config", None),
+            )
+            snapshot = ollama_resilience.health_snapshot()
+            health_data["components"]["ollama_resilience"] = snapshot
+            if snapshot.get("state") == "open":
+                if health_data["status"] == "healthy":
+                    health_data["status"] = "degraded"
+                health_data["components"]["ollama_resilience"][
+                    "degraded_reason"
+                ] = "circuit_breaker_open"
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning(
+                "Ollama resilience health probe failed: %s", e, exc_info=True,
+            )
+            health_data["components"]["ollama_resilience"] = {
+                "status": "error",
+                "reason": str(e)[:200],
+                "error_type": type(e).__name__,
+            }
+
         # GPU scheduler status (gaming detection).
         # Any failure here used to be swallowed silently — leaving the
         # gpu key absent from the response. A monitor/alert that
