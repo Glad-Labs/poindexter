@@ -401,6 +401,50 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                     exc_info=True,
                 )
 
+        # Cross-encoder warmup (#210 Phase C). Pre-load the rerank
+        # model at boot so the first query that hits hybrid+rerank
+        # doesn't pay the 3-5s lazy-load latency. Skipped silently
+        # when ``rag_rerank_enabled`` is off.
+        try:
+            _site_cfg_for_warm = getattr(app.state, "site_config", None)
+            _rerank_on = bool(
+                _site_cfg_for_warm and _site_cfg_for_warm.get_bool(
+                    "rag_rerank_enabled", False,
+                )
+            )
+            if _rerank_on:
+                # Run in background so worker startup isn't blocked on
+                # the 80MB model download (first-ever boot only) +
+                # ~3-5s load. After this completes the rerank cache is
+                # populated in the same process.
+                async def _warm_reranker():
+                    try:
+                        from services.rag_engine import (
+                            _build_rerank_retriever_class,
+                            _RERANKER_CACHE,
+                        )
+                        cls = _build_rerank_retriever_class()
+                        # Synthesize a stub inner retriever so we can
+                        # construct + warm the model without running a
+                        # real query path.
+                        class _NullInner:
+                            async def _aretrieve(self, _qb):
+                                return []
+                        inst = cls(inner=_NullInner(), top_k=1, site_config=_site_cfg_for_warm)
+                        inst._get_model()  # forces SentenceTransformer load
+                        logger.info(
+                            "[LIFESPAN] Cross-encoder reranker warmed: %s",
+                            list(_RERANKER_CACHE.keys()),
+                        )
+                    except Exception as warm_err:
+                        logger.warning(
+                            "[LIFESPAN] Cross-encoder warmup failed (non-critical): %s",
+                            warm_err,
+                        )
+                asyncio.create_task(_warm_reranker())
+        except Exception as e:
+            logger.warning("[LIFESPAN] reranker warmup dispatch failed: %s", e)
+
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
             logger.info("[OK] Application is now running")

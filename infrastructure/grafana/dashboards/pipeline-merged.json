@@ -2673,6 +2673,297 @@
       ],
       "title": "Top Quality Published Posts",
       "type": "table"
+    },
+    {
+      "type": "row",
+      "id": 37,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 118
+      },
+      "title": "Dry-Run Mode (gh#215)",
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "id": 38,
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 119
+      },
+      "title": "Dry-Run Tasks (1h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "poindexter-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*)::int AS value FROM pipeline_tasks WHERE status = 'dry_run' AND updated_at > NOW() - INTERVAL '1 hour'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 39,
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 119
+      },
+      "title": "Dry-Run Total (all-time)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "poindexter-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*)::int AS value FROM pipeline_tasks WHERE status = 'dry_run'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 40,
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 119
+      },
+      "title": "Dry-Run Avg Quality",
+      "datasource": {
+        "type": "postgres",
+        "uid": "poindexter-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT ROUND(AVG(quality_score), 1)::float AS value FROM pipeline_tasks WHERE status = 'dry_run' AND quality_score IS NOT NULL",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "green",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short",
+          "max": 100,
+          "min": 0
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 41,
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 119
+      },
+      "title": "pipeline_dry_run_mode",
+      "datasource": {
+        "type": "postgres",
+        "uid": "poindexter-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT CASE WHEN value IN ('true','1','yes','on') THEN 'ON' ELSE 'off' END AS value FROM app_settings WHERE key = 'pipeline_dry_run_mode'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "ON": {
+                  "color": "purple",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "off": {
+                  "color": "blue",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 42,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 124
+      },
+      "title": "Dry-Run Generation Rate",
+      "datasource": {
+        "type": "postgres",
+        "uid": "poindexter-postgres"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('minute', updated_at) AS time, COUNT(*)::int AS dry_run FROM pipeline_tasks WHERE status = 'dry_run' AND updated_at > $__timeFrom() AND updated_at < $__timeTo() GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
     }
   ],
   "refresh": "30s",

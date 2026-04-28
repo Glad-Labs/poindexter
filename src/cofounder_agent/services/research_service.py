@@ -269,9 +269,38 @@ class ResearchService:
         return matched[:8]  # Cap at 8 references
 
     async def _find_internal_links(self, topic: str) -> list[dict[str, str]]:
-        """Find existing published posts related to the topic."""
+        """Find existing published posts related to the topic.
+
+        Two paths controlled by ``app_settings.rag_enabled_for_research``:
+
+        - **off (default):** legacy ILIKE word-overlap match against
+          posts.title / posts.slug. Cheap, deterministic, low recall on
+          paraphrased topics.
+        - **on:** LlamaIndex retriever (#210) over the embeddings table,
+          filtered to ``source_table='posts'``. Picks up semantic
+          neighbors that ILIKE misses — e.g. a post on "Bootstrapping
+          a SaaS Startup" surfaces for a topic like "Indie Hacker
+          Founder Strategy". Honors the same hybrid + rerank flags
+          (``rag_hybrid_enabled``, ``rag_rerank_enabled``) the rest of
+          the RAG layer respects, so flipping those toggles cascades
+          through the research stage without code changes here.
+
+        The RAG path falls through to the legacy ILIKE on any error
+        (Ollama down, pgvector miss, etc) so research never blocks.
+        """
         if not self.pool:
             return []
+
+        if self._rag_research_enabled():
+            try:
+                rag_results = await self._rag_internal_links(topic)
+                if rag_results:
+                    return rag_results
+            except Exception as e:
+                logger.debug(
+                    "[RESEARCH] RAG retrieval failed, falling back to ILIKE: %s", e,
+                )
+
         try:
             # Search by topic word overlap
             topic_words = [w for w in re.findall(r"\b\w{4,}\b", topic.lower()) if len(w) > 3]
@@ -295,6 +324,66 @@ class ResearchService:
         except Exception as e:
             logger.debug("[RESEARCH] Internal link search failed: %s", e)
             return []
+
+    def _rag_research_enabled(self) -> bool:
+        if self._site_config is None:
+            return False
+        try:
+            return bool(self._site_config.get_bool("rag_enabled_for_research", False))
+        except Exception:
+            try:
+                v = self._site_config.get("rag_enabled_for_research", "")
+                return str(v).strip().lower() in ("true", "1", "yes", "on")
+            except Exception:
+                return False
+
+    async def _rag_internal_links(self, topic: str) -> list[dict[str, str]]:
+        """LlamaIndex-backed retrieval — query the RAG layer scoped to
+        published posts, hydrate the matches into the same
+        ``[{title, slug}]`` shape the legacy ILIKE path returns.
+
+        Embeddings store the post body chunks; we look up post slug +
+        title from the ``posts`` table using the source_id metadata.
+        """
+        from llama_index.core.schema import QueryBundle
+
+        from services.rag_engine import get_rag_retriever
+
+        retriever = await get_rag_retriever(
+            self.pool,
+            site_config=self._site_config,
+            top_k=5,
+            source_filter=["posts"],
+        )
+        nodes = await retriever._aretrieve(QueryBundle(query_str=topic))
+        if not nodes:
+            return []
+
+        post_ids = [
+            n.node.metadata.get("source_id") for n in nodes
+            if n.node.metadata.get("source_id")
+        ]
+        if not post_ids:
+            return []
+
+        # Hydrate slug + title from the posts table. Filter to
+        # ``status='published'`` so the research context never points
+        # the writer at draft / dry_run / archived URLs.
+        rows = await self.pool.fetch(
+            "SELECT id, title, slug FROM posts "
+            "WHERE id::text = ANY($1) AND status = 'published'",
+            post_ids,
+        )
+        # Preserve the retriever's ranking order — posts table fetch
+        # comes back unordered.
+        by_id = {str(r["id"]): r for r in rows}
+        ordered: list[dict[str, str]] = []
+        for n in nodes:
+            sid = n.node.metadata.get("source_id")
+            if sid and str(sid) in by_id:
+                r = by_id[str(sid)]
+                ordered.append({"title": r["title"], "slug": r["slug"]})
+        return ordered
 
     async def _web_search(self, topic: str) -> list[dict[str, str]]:
         """Search the web for fresh sources (free — DuckDuckGo, no API key)."""
