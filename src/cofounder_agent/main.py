@@ -705,29 +705,59 @@ async def api_health():
         else:
             health_data["components"]["task_executor"] = "unavailable"
 
-        # Ollama resilience layer (GH#153) — surface circuit state and
-        # in-flight call count so a tripped breaker is visible in
-        # /api/health (and in the Grafana ops dashboard that scrapes
-        # this endpoint). Best-effort: any import/probe error reports
-        # an error component instead of being swallowed.
+        # LLM resilience layer (GH#192, generalized from GH#153) —
+        # surface circuit state and in-flight call count for every
+        # registered LLM provider's resilience manager. Visible in the
+        # Grafana ops dashboard that scrapes this endpoint.
+        #
+        # The shape is now ``components.llm_resilience.<provider>``
+        # (e.g. ``components.llm_resilience.ollama``,
+        # ``...anthropic``, ``...openai_compat``, ``...gemini``).
+        # Each provider's manager registers itself on construction with
+        # ``ResilienceRegistry``; the health endpoint walks the registry
+        # so adding a provider doesn't need a code change here.
+        #
+        # Backwards compat: the old top-level ``components.ollama_resilience``
+        # key is preserved for one release so dashboards / alerts that
+        # parse the old shape keep working — it points at the same
+        # snapshot data that lives under ``components.llm_resilience.ollama``.
         try:
+            from plugins.llm_resilience import ResilienceRegistry
             from services.ollama_resilience import get_default_manager
-            ollama_resilience = get_default_manager(
-                site_config=getattr(app.state, "site_config", None),
-            )
-            snapshot = ollama_resilience.health_snapshot()
-            health_data["components"]["ollama_resilience"] = snapshot
-            if snapshot.get("state") == "open":
-                if health_data["status"] == "healthy":
-                    health_data["status"] = "degraded"
-                health_data["components"]["ollama_resilience"][
-                    "degraded_reason"
-                ] = "circuit_breaker_open"
+
+            site_cfg = getattr(app.state, "site_config", None)
+            # Ensure the Ollama default manager is registered even when
+            # nobody has constructed an OllamaClient yet (warm start
+            # path). Calling get_default_manager wires the registration.
+            try:
+                get_default_manager(site_config=site_cfg)
+            except Exception as e:  # pragma: no cover — defensive
+                logger.debug(
+                    "[health] could not warm Ollama default manager: %s", e,
+                )
+
+            per_provider = ResilienceRegistry.snapshot_all()
+            health_data["components"]["llm_resilience"] = per_provider
+
+            # Degrade overall status if any provider's breaker is open.
+            for provider_name, snapshot in per_provider.items():
+                if snapshot.get("state") == "open":
+                    if health_data["status"] == "healthy":
+                        health_data["status"] = "degraded"
+                    snapshot["degraded_reason"] = "circuit_breaker_open"
+                    snapshot.setdefault("provider", provider_name)
+
+            # Legacy alias — keep ``components.ollama_resilience`` for
+            # one release so existing alert rules / dashboards survive
+            # the rename. Drop in a follow-up once consumers migrate.
+            ollama_snapshot = per_provider.get("ollama")
+            if ollama_snapshot is not None:
+                health_data["components"]["ollama_resilience"] = ollama_snapshot
         except Exception as e:  # pylint: disable=broad-except
             logger.warning(
-                "Ollama resilience health probe failed: %s", e, exc_info=True,
+                "LLM resilience health probe failed: %s", e, exc_info=True,
             )
-            health_data["components"]["ollama_resilience"] = {
+            health_data["components"]["llm_resilience"] = {
                 "status": "error",
                 "reason": str(e)[:200],
                 "error_type": type(e).__name__,

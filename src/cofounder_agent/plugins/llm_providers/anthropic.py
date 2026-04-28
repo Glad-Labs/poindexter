@@ -72,15 +72,121 @@ by ``dispatch_complete``, exactly like ``OpenAICompatProvider`` does.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
+
 from plugins.llm_provider import Completion, Token
+from plugins.llm_resilience import (
+    CircuitOpenError,
+    LLMResilienceManager,
+    RetryDecision,
+)
 
 logger = logging.getLogger(__name__)
+
+
+# Anthropic SDK exceptions sit under the ``anthropic`` package; we
+# duck-type by class name so the classifier doesn't force the SDK to
+# load on every plugin enumeration. The full list lives in
+# ``anthropic._exceptions`` — what we care about for retry decisions:
+#
+# * ``RateLimitError`` (429) — Anthropic ships a ``Retry-After`` header
+#   when their rate-limiter delays a request. Honor it via
+#   ``RetryDecision.wait_seconds``; the manager skips its exponential
+#   schedule when an explicit wait is set.
+# * ``APIStatusError`` (5xx) — transient gateway / capacity issues.
+# * ``APIConnectionError`` / ``APITimeoutError`` — transport blips.
+# * ``BadRequestError`` (400), ``AuthenticationError`` (401),
+#   ``PermissionDeniedError`` (403), ``NotFoundError`` (404),
+#   ``UnprocessableEntityError`` (422) — caller bug, no retry.
+_RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def anthropic_classifier(exc: BaseException) -> RetryDecision:
+    """Classify exceptions raised by ``anthropic.AsyncAnthropic`` calls.
+
+    Honors Anthropic's ``Retry-After`` header on 429s by returning
+    ``RetryDecision.wait_seconds=N``; the resilience manager respects
+    the override and skips its exponential schedule for that retry.
+    Transport errors (httpx) fall back to the manager's default
+    backoff.
+    """
+    if isinstance(exc, asyncio.CancelledError):
+        return RetryDecision(retry=False, reason="cancelled")
+    if isinstance(exc, CircuitOpenError):
+        return RetryDecision(retry=False, reason="circuit_open")
+    # CostGuardExhausted (and the AnthropicProvider subclass) — the
+    # caller chose this provider and ran out of budget; surfacing the
+    # exception is the right answer, not retrying.
+    cls_name = type(exc).__name__
+    if cls_name == "CostGuardExhausted":
+        return RetryDecision(retry=False, reason="cost_guard_exhausted")
+    if cls_name == "AnthropicProviderDisabled":
+        return RetryDecision(retry=False, reason="provider_disabled")
+    # SDK-typed exceptions — duck-typed to avoid a hard import.
+    if cls_name in {"APIConnectionError", "APITimeoutError"}:
+        return RetryDecision(retry=True, reason=cls_name)
+    if cls_name == "RateLimitError":
+        # Pull Retry-After off the response when the SDK exposes it.
+        wait = None
+        response = getattr(exc, "response", None)
+        if response is not None:
+            wait = _retry_after_seconds(getattr(response, "headers", None))
+        return RetryDecision(retry=True, wait_seconds=wait, reason="rate_limit")
+    if cls_name in {"InternalServerError", "APIStatusError"}:
+        code = int(getattr(exc, "status_code", 0) or 0)
+        if code in _RETRYABLE_HTTP_STATUSES:
+            return RetryDecision(retry=True, reason=f"http_{code}")
+        return RetryDecision(retry=False, reason=f"http_{code}")
+    # Bare httpx fallthrough (the SDK uses httpx under the hood).
+    if isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+            httpx.RemoteProtocolError,
+            httpx.ConnectTimeout,
+        ),
+    ):
+        return RetryDecision(retry=True, reason=type(exc).__name__)
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code in _RETRYABLE_HTTP_STATUSES:
+            wait = _retry_after_seconds(exc.response.headers)
+            return RetryDecision(
+                retry=True, wait_seconds=wait, reason=f"http_{code}",
+            )
+        return RetryDecision(retry=False, reason=f"http_{code}")
+    return RetryDecision(retry=False, reason="non_retryable")
+
+
+def _retry_after_seconds(headers: Any) -> float | None:
+    """Pull a numeric Retry-After value off a header mapping.
+
+    Tolerates the common shapes (``httpx.Headers``, plain dict, SDK
+    response wrapper). Returns ``None`` when the header is absent or
+    unparseable so the manager falls back to its exponential schedule.
+    """
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("retry-after") or headers.get("Retry-After")
+    except Exception:  # pragma: no cover — defensive
+        return None
+    if raw is None:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +331,17 @@ class AnthropicProvider:
         # changes invalidate the cached client.
         self._client: Any = None
         self._client_key: tuple[str, str, float] | None = None
+        # Resilience layer (GH#192). Anthropic's SDK does its own
+        # retries internally; this layer wraps as defense-in-depth and
+        # adds the cross-provider audit + circuit-breaker. The
+        # ``Retry-After`` header on 429s is honored via
+        # :func:`anthropic_classifier` returning
+        # ``RetryDecision.wait_seconds=N``.
+        self._resilience = LLMResilienceManager(
+            provider_name="anthropic",
+            classifier=anthropic_classifier,
+            site_config=site_config,
+        )
 
     # ------------------------------------------------------------------
     # Config resolution — site_config (DI) > _provider_config (kwargs)
@@ -564,7 +681,15 @@ class AnthropicProvider:
             sdk_kwargs["temperature"] = float(temperature)
 
         started = time.monotonic()
-        response = await client.messages.create(**sdk_kwargs)
+
+        async def _do_create() -> Any:
+            return await client.messages.create(**sdk_kwargs)
+
+        response = await self._resilience.run(
+            _do_create,
+            op_name="complete",
+            task_id=kwargs.get("task_id"),
+        )
         duration_ms = int((time.monotonic() - started) * 1000)
 
         # The SDK returns a Message object with a content list. For

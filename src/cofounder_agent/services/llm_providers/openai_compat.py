@@ -38,6 +38,7 @@ exhaustion is the operator's call (raise the cap, switch to local).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from collections.abc import AsyncIterator
@@ -46,11 +47,129 @@ from typing import Any
 import httpx
 
 from plugins.llm_provider import Completion, Token
+from plugins.llm_resilience import (
+    CircuitOpenError,
+    LLMResilienceManager,
+    RetryDecision,
+)
 from services.cost_guard import (
     CostGuard,
     CostGuardExhausted,
     is_local_base_url,
 )
+
+
+# OpenAI-compat retryable HTTP statuses — same set as Ollama's. The
+# venn diagram of "OAI-compat backends I might point this at" includes
+# vLLM (returns 503 under load), llama.cpp (404 on missing model is
+# permanent — don't retry), and OpenRouter / Together / Groq (429 with
+# Retry-After when their gateway is rate-limiting). Treat 408/429/5xx
+# as retryable and let the SDK's own backoff handle the rest.
+_RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def openai_compat_classifier(exc: BaseException) -> RetryDecision:
+    """Classify exceptions raised by ``openai_compat`` SDK / streaming calls.
+
+    Retry on:
+        * httpx connect / read / write / pool / protocol errors —
+          transient transport issues. Local OAI-compat backends (vLLM,
+          llama.cpp) drop connections under contention; cloud backends
+          throw these on bad routes.
+        * Generic ``httpx.HTTPStatusError`` with 408/425/429/5xx.
+        * The official ``openai`` SDK's typed exceptions (``APITimeoutError``,
+          ``APIConnectionError``, ``RateLimitError``, ``InternalServerError``).
+          We use duck-typing (``__class__.__name__``) so the classifier
+          works without an SDK import — the openai package isn't a hard
+          dep on every install.
+        * 429 ``RateLimitError`` honors a ``Retry-After`` header when
+          the SDK exposes it on ``.response.headers``.
+
+    Do NOT retry on:
+        * 4xx schema / auth / not-found errors.
+        * ``CostGuardExhausted`` — the budget caller decides.
+        * Programmer errors (TypeError, ValueError, etc.).
+    """
+    if isinstance(exc, asyncio.CancelledError):
+        return RetryDecision(retry=False, reason="cancelled")
+    if isinstance(exc, CircuitOpenError):
+        return RetryDecision(retry=False, reason="circuit_open")
+    if isinstance(exc, CostGuardExhausted):
+        return RetryDecision(retry=False, reason="cost_guard_exhausted")
+    # httpx transport errors → retry. Same set as the Ollama classifier.
+    if isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+            httpx.RemoteProtocolError,
+            httpx.ConnectTimeout,
+        ),
+    ):
+        return RetryDecision(retry=True, reason=type(exc).__name__)
+    # httpx HTTPStatusError → 5xx + 408/425/429 retryable.
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code in _RETRYABLE_HTTP_STATUSES:
+            wait = _retry_after_seconds(exc.response.headers)
+            return RetryDecision(
+                retry=True, wait_seconds=wait, reason=f"http_{code}",
+            )
+        return RetryDecision(retry=False, reason=f"http_{code}")
+    # OpenAI SDK typed exceptions — duck-typed by class name so the
+    # classifier doesn't need the SDK at import time.
+    cls_name = type(exc).__name__
+    if cls_name in {
+        "APITimeoutError",
+        "APIConnectionError",
+        "InternalServerError",
+    }:
+        return RetryDecision(retry=True, reason=cls_name)
+    if cls_name == "RateLimitError":
+        wait = None
+        response = getattr(exc, "response", None)
+        if response is not None:
+            wait = _retry_after_seconds(getattr(response, "headers", None))
+        return RetryDecision(retry=True, wait_seconds=wait, reason="rate_limit")
+    if cls_name == "APIStatusError":
+        # SDK sub-class with .status_code; only 5xx are retryable.
+        code = int(getattr(exc, "status_code", 0) or 0)
+        if code in _RETRYABLE_HTTP_STATUSES:
+            return RetryDecision(retry=True, reason=f"http_{code}")
+        return RetryDecision(retry=False, reason=f"http_{code}")
+    # Generic httpx.HTTPError fallback.
+    if isinstance(exc, httpx.HTTPError):
+        response = getattr(exc, "response", None)
+        if response is not None:
+            code = int(getattr(response, "status_code", 0) or 0)
+            if code in _RETRYABLE_HTTP_STATUSES:
+                return RetryDecision(retry=True, reason=f"http_{code}")
+            return RetryDecision(retry=False, reason=f"http_{code}")
+        return RetryDecision(retry=True, reason=type(exc).__name__)
+    return RetryDecision(retry=False, reason="non_retryable")
+
+
+def _retry_after_seconds(headers: Any) -> float | None:
+    """Pull a numeric Retry-After value off a header mapping.
+
+    Tolerates the common shapes (httpx.Headers, plain dict, SDK-wrapped
+    response). Returns ``None`` when the header is absent or unparseable
+    so the manager falls back to its exponential schedule.
+    """
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("retry-after") or headers.get("Retry-After")
+    except Exception:  # pragma: no cover — defensive
+        return None
+    if raw is None:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return None
 
 
 def _compute_cost(
@@ -128,6 +247,15 @@ class OpenAICompatProvider:
         # (production dispatcher path). Either way it's optional — the
         # provider falls back to safe defaults when absent.
         self._site_config = site_config
+        # Resilience layer (GH#192) — retry + concurrency cap + circuit
+        # breaker, plus cross-provider audit and OTel tracing. Settings
+        # are read from ``llm_openai_compat_*`` keys with sensible
+        # defaults; operators tune via app_settings without restart.
+        self._resilience = LLMResilienceManager(
+            provider_name="openai_compat",
+            classifier=openai_compat_classifier,
+            site_config=site_config,
+        )
 
     # ------------------------------------------------------------------
     # Config resolution
@@ -292,8 +420,16 @@ class OpenAICompatProvider:
             sdk_kwargs["top_p"] = kwargs["top_p"]
 
         client = self._build_sdk_client(cfg)
+
+        async def _do_complete() -> Any:
+            return await client.chat.completions.create(**sdk_kwargs)
+
         try:
-            response = await client.chat.completions.create(**sdk_kwargs)
+            response = await self._resilience.run(
+                _do_complete,
+                op_name="complete",
+                task_id=kwargs.get("task_id"),
+            )
         except CostGuardExhausted:
             # Bubbles up — see policy note in module docstring.
             raise
@@ -494,8 +630,16 @@ class OpenAICompatProvider:
         )
 
         client = self._build_sdk_client(cfg)
+
+        async def _do_embed() -> Any:
+            return await client.embeddings.create(input=text, model=target_model)
+
         try:
-            response = await client.embeddings.create(input=text, model=target_model)
+            response = await self._resilience.run(
+                _do_embed,
+                op_name="embed",
+                task_id=kwargs.get("task_id"),
+            )
         except CostGuardExhausted:
             raise
         except Exception as exc:

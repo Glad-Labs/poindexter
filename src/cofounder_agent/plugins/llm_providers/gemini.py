@@ -43,11 +43,93 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
+
 from plugins.llm_provider import Completion, Token
+from plugins.llm_resilience import (
+    CircuitOpenError,
+    LLMResilienceManager,
+    RetryDecision,
+)
 from services.cost_guard import CostGuard, CostGuardExhausted
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
+# Gemini SDK's exception hierarchy lives at ``google.genai.errors``;
+# the retryable members are:
+#
+# * ``ClientError`` — 4xx, mostly non-retryable (auth, bad model, etc.)
+# * ``ServerError`` — 5xx, transient.
+# * ``APIError`` — base class with ``code`` attribute (HTTP status).
+# * Quota / rate-limit errors come back as 429 with code on the
+#   ``APIError``; some SDK builds raise ``ResourceExhausted`` instead.
+#
+# We duck-type by class name so the classifier doesn't force the SDK
+# import — the ``google-genai`` package isn't a hard dep on every
+# install (the provider ships disabled by default).
+_RETRYABLE_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def gemini_classifier(exc: BaseException) -> RetryDecision:
+    """Classify exceptions raised by ``google.genai.Client`` calls.
+
+    Retry on:
+        * ``ServerError`` and any ``APIError`` with a 408/425/429/5xx
+          ``code`` attribute. ``ResourceExhausted`` (quota) maps to
+          429.
+        * Transport errors via ``httpx`` — the SDK uses httpx under
+          the hood so connection drops surface as the same exception
+          types.
+
+    Do NOT retry on:
+        * ``ClientError`` with a 4xx code (auth, schema, bad model).
+        * ``CostGuardExhausted`` / ``GeminiProviderError`` — caller
+          policy decision, not transient.
+    """
+    if isinstance(exc, asyncio.CancelledError):
+        return RetryDecision(retry=False, reason="cancelled")
+    if isinstance(exc, CircuitOpenError):
+        return RetryDecision(retry=False, reason="circuit_open")
+    if isinstance(exc, CostGuardExhausted):
+        return RetryDecision(retry=False, reason="cost_guard_exhausted")
+    cls_name = type(exc).__name__
+    if cls_name in {"GeminiProviderError"}:
+        return RetryDecision(retry=False, reason="provider_disabled")
+    # SDK-typed exceptions (ducked).
+    if cls_name in {"ServerError", "InternalServerError"}:
+        return RetryDecision(retry=True, reason=cls_name)
+    if cls_name in {"ResourceExhausted", "ResourceExhaustedError"}:
+        # Gemini quota exhausted — treat like a 429. SDK doesn't ship
+        # a Retry-After value here (the API returns the wait suggestion
+        # in the message body), so fall back to the manager's
+        # exponential schedule.
+        return RetryDecision(retry=True, reason="resource_exhausted")
+    if cls_name in {"APIError", "ClientError"}:
+        code = int(getattr(exc, "code", 0) or 0)
+        if code in _RETRYABLE_HTTP_STATUSES:
+            return RetryDecision(retry=True, reason=f"http_{code}")
+        return RetryDecision(retry=False, reason=f"http_{code}")
+    # httpx fallback.
+    if isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+            httpx.RemoteProtocolError,
+            httpx.ConnectTimeout,
+        ),
+    ):
+        return RetryDecision(retry=True, reason=type(exc).__name__)
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code in _RETRYABLE_HTTP_STATUSES:
+            return RetryDecision(retry=True, reason=f"http_{code}")
+        return RetryDecision(retry=False, reason=f"http_{code}")
+    return RetryDecision(retry=False, reason="non_retryable")
 
 
 _DEFAULT_MODEL = "gemini-2.5-flash"
@@ -92,6 +174,13 @@ class GeminiProvider:
         # call without a restart.
         self._client: Any = None
         self._client_api_key: str | None = None
+        # Resilience layer (GH#192). Wraps the SDK call as
+        # defense-in-depth on top of google-genai's own retries.
+        self._resilience = LLMResilienceManager(
+            provider_name="gemini",
+            classifier=gemini_classifier,
+            site_config=site_config,
+        )
 
     # ------------------------------------------------------------------
     # Config resolution helpers
@@ -353,11 +442,18 @@ class GeminiProvider:
             max_tokens=max_tokens,
         )
 
-        try:
-            response = await client.aio.models.generate_content(
+        async def _do_generate() -> Any:
+            return await client.aio.models.generate_content(
                 model=resolved_model,
                 contents=contents,
                 config=config,
+            )
+
+        try:
+            response = await self._resilience.run(
+                _do_generate,
+                op_name="complete",
+                task_id=kwargs.get("task_id"),
             )
         except Exception as e:
             logger.error(
@@ -467,10 +563,17 @@ class GeminiProvider:
             raise
 
         client = self._get_client(api_key, timeout_s)
-        try:
-            response = await client.aio.models.embed_content(
+
+        async def _do_embed() -> Any:
+            return await client.aio.models.embed_content(
                 model=resolved_model,
                 contents=[text],
+            )
+
+        try:
+            response = await self._resilience.run(
+                _do_embed,
+                op_name="embed",
             )
         except Exception as e:
             logger.error(

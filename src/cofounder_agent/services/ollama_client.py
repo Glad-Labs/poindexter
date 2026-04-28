@@ -227,14 +227,16 @@ class OllamaClient:
         self._gpu_power_watts: float = _default_gpu_power_watts(site_config=site_config)
         self._electricity_rate_kwh: float = _default_electricity_rate_kwh(site_config=site_config)
 
-        # Resilience layer (GH#153) — retry + queue + circuit breaker.
-        # Every generate/chat/embed call goes through ``self._resilience.run()``
-        # so transient Ollama failures (timeouts, 503s, empty content
-        # under GPU contention) get backoff-and-retry instead of being
-        # surfaced as a hard failure that publishes stub content. The
-        # manager is lazily reconfigured per call from app_settings, so
-        # changing ``ollama_max_concurrent_calls`` or
-        # ``ollama_circuit_breaker_*`` takes effect without a restart.
+        # Resilience layer (GH#153, generalized in GH#192) — retry +
+        # queue + circuit breaker. Every generate/chat/embed call goes
+        # through ``self._resilience.run()`` so transient Ollama failures
+        # (timeouts, 503s, empty content under GPU contention) get
+        # backoff-and-retry instead of being surfaced as a hard failure
+        # that publishes stub content. The manager is lazily
+        # reconfigured per call from app_settings, so changing
+        # ``llm_ollama_max_concurrent_calls`` or
+        # ``llm_ollama_circuit_breaker_*`` (legacy ``ollama_*`` keys
+        # still honored for one release) takes effect without a restart.
         self._resilience = OllamaResilienceManager(site_config=site_config)
 
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
