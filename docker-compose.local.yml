@@ -312,6 +312,12 @@ services:
       # Mounted at /opt/poindexter/brain below; add /opt/poindexter to
       # sys.path so `from brain.bootstrap import ...` resolves.
       PYTHONPATH: "/app:/opt/poindexter"
+      # Prefect 3 — content pipeline orchestration (#206). Worker
+      # imports the @flow decorated entry point and submits flow runs
+      # to the local Prefect server for observability + retry plumbing.
+      # Server runs in `prefect-server` service, postgres-backed via
+      # the shared postgres-local container's `prefect` database.
+      PREFECT_API_URL: "http://prefect-server:4200/api"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
@@ -333,11 +339,89 @@ services:
         condition: service_healthy
       brain-daemon:
         condition: service_healthy
+      # Prefect server is non-blocking — pipeline still runs without it
+      # (we wrap the flow submission in best-effort), so use service_started
+      # not service_healthy to avoid a startup deadlock if Prefect is down.
+      prefect-server:
+        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,json; r=json.loads(urllib.request.urlopen('http://localhost:8002/api/health').read()); e=r.get('components',{}).get('task_executor',{}); exit(1 if isinstance(e,dict) and e.get('success_count',0)==0 and e.get('error_count',0)>5 else 0)"]
       interval: 60s
       timeout: 10s
       retries: 3
+
+  # ===========================================
+  # Prefect 3 — content pipeline orchestration (#206)
+  # ===========================================
+  # Three services per the canonical 3-latest self-host pattern:
+  #   prefect-redis    — messaging broker (event bus between server + services)
+  #   prefect-server   — API + UI on :4200, postgres-backed via shared
+  #                      postgres-local container (`prefect` database)
+  #   prefect-services — background workers that run inside Prefect (event
+  #                      processor, scheduler, etc). Separate container
+  #                      because `prefect server start` needs --no-services
+  #                      when paired with a dedicated services process.
+  #
+  # We do NOT run a `prefect-worker` (no work pool). Flows execute
+  # in-process inside our existing worker container — Prefect server
+  # just records runs for observability + retry coordination.
+  prefect-redis:
+    image: redis:7
+    container_name: poindexter-prefect-redis
+    restart: unless-stopped
+    volumes:
+      - prefect-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    container_name: poindexter-prefect-server
+    restart: unless-stopped
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      prefect-redis:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/prefect"
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_SERVER_UI_API_URL: "http://localhost:4200/api"
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+      PREFECT_MESSAGING_BROKER: prefect_redis.messaging
+      PREFECT_MESSAGING_CACHE: prefect_redis.messaging
+      PREFECT_REDIS_MESSAGING_HOST: prefect-redis
+      PREFECT_REDIS_MESSAGING_PORT: "6379"
+      PREFECT_REDIS_MESSAGING_DB: "0"
+    command: prefect server start --no-services
+    ports:
+      - "4200:4200"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:4200/api/health', timeout=2)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  prefect-services:
+    image: prefecthq/prefect:3-latest
+    container_name: poindexter-prefect-services
+    restart: unless-stopped
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/prefect"
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+      PREFECT_MESSAGING_BROKER: prefect_redis.messaging
+      PREFECT_MESSAGING_CACHE: prefect_redis.messaging
+      PREFECT_REDIS_MESSAGING_HOST: prefect-redis
+      PREFECT_REDIS_MESSAGING_PORT: "6379"
+      PREFECT_REDIS_MESSAGING_DB: "0"
+    command: prefect server services start
 
   # ===========================================
   # SDXL Image Server — GPU-accelerated image generation
@@ -769,6 +853,7 @@ services:
 # Volumes are rarely customer-visible (only in `docker volume ls`) so the
 # name mismatch is acceptable to preserve user data across the rebrand.
 volumes:
+  prefect-redis-data:
   postgres-local-data:
     name: gladlabs-postgres-local-data
   grafana-data:
