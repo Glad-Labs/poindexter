@@ -1,13 +1,21 @@
 """URL scraper — extract title + content from any URL for topic seeding (#230).
 
 Supports:
-- Article pages (blog posts, news)
+- Article pages (blog posts, news) — via trafilatura
 - GitHub repos (via README endpoint)
 - arXiv papers (via abstract page)
 - Product pages (generic OG metadata)
 
-Uses httpx + beautifulsoup4 (already deps). Respects timeouts, user-agent,
-and returns a structured dict compatible with DiscoveredTopic.
+#204: generic article extraction now uses **trafilatura** (Apache 2.0)
+instead of hand-rolled BeautifulSoup heuristics. Trafilatura is a
+peer-reviewed library purpose-built for clean text + metadata
+extraction, used by NLP research groups for the same kind of corpus
+prep our research stage does. Github/arXiv routes still use bespoke
+scrapers because they're API-driven and don't benefit from trafilatura.
+
+Uses httpx for fetch (timeouts + user-agent control), trafilatura for
+HTML parsing on the generic path, BeautifulSoup4 retained for the
+arXiv route's structured-element selectors.
 """
 
 from __future__ import annotations
@@ -18,6 +26,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+import trafilatura
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
@@ -122,53 +131,47 @@ async def _fetch(url: str, timeout: float, *, site_config: Any) -> str:
 
 
 async def _scrape_generic(url: str, timeout: float, *, site_config: Any) -> dict:
-    """Extract title + main content from a generic HTML page."""
+    """Extract title + main content from a generic HTML page.
+
+    Uses trafilatura's bare_extraction for both metadata and body text.
+    Falls back to a BeautifulSoup minimum (just <title>) if trafilatura
+    can't make sense of the page — matches the legacy behavior of
+    "always return *something* with a title", needed by callers that
+    seed topics from arbitrary URLs an operator pasted.
+    """
     try:
         html = await _fetch(url, timeout, site_config=site_config)
     except httpx.HTTPError as e:
         raise URLScrapeError(f"Fetch failed: {e}") from e
 
-    soup = BeautifulSoup(html, "html.parser")
+    doc = trafilatura.bare_extraction(html, output_format="python", with_metadata=True)
 
-    # Title priority: og:title > <h1> > <title>
-    title = (
-        _meta_content(soup, "og:title")
-        or _meta_content(soup, "twitter:title")
-        or _first_text(soup, "h1")
-        or _first_text(soup, "title")
-        or "Untitled"
-    ).strip()
+    if doc is not None:
+        # Trafilatura already runs the OG/twitter/H1/title precedence
+        # we used to do by hand, plus a much more thorough boilerplate
+        # stripper. Map its Document fields onto our existing dict shape
+        # so callers and tests see no API change.
+        title = (doc.title or "").strip() or "Untitled"
+        excerpt = (doc.description or "").strip()
+        author = doc.author or None
+        published_at = doc.date or None
+        # ``text`` is the cleaned narrative body (boilerplate removed,
+        # scripts/styles/nav/footer dropped); ``raw_text`` keeps more
+        # structure but includes some noise. Stick with ``text`` here.
+        body = (doc.text or "").strip()
+    else:
+        # Trafilatura couldn't parse — happens for bare-bones HTML like
+        # ``<html><body><p>orphan</p></body></html>``. Pull just the
+        # <title> tag with BS4 so we don't break the
+        # "scrape_url returns *something*" contract.
+        soup = BeautifulSoup(html, "html.parser")
+        title = (_first_text(soup, "title") or "Untitled").strip()
+        excerpt = ""
+        author = None
+        published_at = None
+        body = ""
 
-    # Excerpt
-    excerpt = (
-        _meta_content(soup, "og:description")
-        or _meta_content(soup, "description")
-        or _meta_content(soup, "twitter:description")
-        or ""
-    ).strip()
-
-    # Author
-    author = _meta_content(soup, "article:author") or _meta_content(soup, "author")
-
-    # Published date
-    published_at = (
-        _meta_content(soup, "article:published_time")
-        or _meta_content(soup, "og:published_time")
-        or _meta_content(soup, "date")
-    )
-
-    # Main content: strip scripts/styles/nav/footer, extract text
-    for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "form"]):
-        tag.decompose()
-
-    # Prefer <article> or <main>, fall back to body
-    main = soup.find("article") or soup.find("main") or soup.find("body")
-    content_full = ""
-    if main:
-        # Get text, collapse whitespace
-        text = main.get_text(separator="\n", strip=True)
-        content_full = re.sub(r"\n{3,}", "\n\n", text)[:MAX_CONTENT_CHARS]
-
+    content_full = re.sub(r"\n{3,}", "\n\n", body)[:MAX_CONTENT_CHARS]
     content_preview = content_full[:500]
     word_count = len(content_full.split())
 
@@ -278,17 +281,6 @@ async def _scrape_arxiv(url: str, timeout: float, *, site_config: Any) -> dict:
         "excerpt": abstract[:500],
         "word_count": len(abstract.split()),
     }
-
-
-def _meta_content(soup: BeautifulSoup, name: str) -> str:
-    """Extract <meta name=X> or <meta property=X> content attribute."""
-    el = soup.find("meta", attrs={"name": name})
-    if el and el.get("content"):
-        return el["content"]
-    el = soup.find("meta", attrs={"property": name})
-    if el and el.get("content"):
-        return el["content"]
-    return ""
 
 
 def _first_text(soup: BeautifulSoup, selector: str) -> str:

@@ -125,6 +125,14 @@ apscheduler = "^3.11.2"
 # decorators so each stage gets retries, observability UI, and durable
 # state. APScheduler stays for the 31 periodic Jobs (different shape).
 prefect = "^3"
+# Trafilatura — article extraction for the URL scraper (#204). Replaces
+# the homegrown BeautifulSoup heuristics in services/url_scraper.py
+# with a peer-reviewed library purpose-built for clean text + metadata
+# extraction from arbitrary HTML. Apache 2.0, lightweight (no playwright
+# dep). The Crawl4AI option mentioned in the issue carried a ~600MB
+# chromium download for features we don't use — Trafilatura is the
+# surgical fit for our topic-seeding workload.
+trafilatura = "^2"
 prometheus-client = "^0.25.0"
 # Continuous profiling — LGTM+P stack (GH #75). Opt-in via app_settings
 # enable_pyroscope; services/profiling.py configures the agent.

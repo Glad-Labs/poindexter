@@ -1,7 +1,10 @@
 """Unit tests for services.url_scraper.
 
 Targets ``scrape_url`` (generic + GitHub + arXiv routes) and the
-helpers ``_build_user_agent``, ``_meta_content``, ``_first_text``.
+helpers ``_build_user_agent``, ``_first_text``. Generic-route extraction
+is delegated to trafilatura post-#204 (the heuristics ``_meta_content``
+used to encode are now provided by the library itself).
+
 Lifts the module from 0% to ~95% coverage with mocked httpx.
 """
 
@@ -18,7 +21,6 @@ from services.url_scraper import (
     URLScrapeError,
     _build_user_agent,
     _first_text,
-    _meta_content,
     scrape_url,
 )
 
@@ -392,28 +394,12 @@ class TestScrapeArxiv:
 
 
 # ---------------------------------------------------------------------------
-# _meta_content / _first_text
+# _first_text
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestHelpers:
-    def test_meta_content_reads_name_attribute(self):
-        soup = BeautifulSoup(
-            '<meta name="description" content="hello">', "html.parser",
-        )
-        assert _meta_content(soup, "description") == "hello"
-
-    def test_meta_content_reads_property_attribute(self):
-        soup = BeautifulSoup(
-            '<meta property="og:title" content="Headline">', "html.parser",
-        )
-        assert _meta_content(soup, "og:title") == "Headline"
-
-    def test_meta_content_returns_empty_when_missing(self):
-        soup = BeautifulSoup("<html></html>", "html.parser")
-        assert _meta_content(soup, "missing") == ""
-
     def test_first_text_finds_tag_by_name(self):
         soup = BeautifulSoup("<h1>Heading</h1>", "html.parser")
         assert _first_text(soup, "h1") == "Heading"
