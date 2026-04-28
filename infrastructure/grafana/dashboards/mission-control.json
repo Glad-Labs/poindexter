@@ -16,7 +16,7 @@
       "title": "Prefect UI",
       "tooltip": "Open Prefect 3 flow-runs UI (workstation tailscale IP, port 4200)",
       "type": "link",
-      "url": "http://100.64.0.1:4200"
+      "url": "http://100.81.93.12:4200"
     }
   ],
   "panels": [
