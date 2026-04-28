@@ -318,6 +318,12 @@ services:
       # Server runs in `prefect-server` service, postgres-backed via
       # the shared postgres-local container's `prefect` database.
       PREFECT_API_URL: "http://prefect-server:4200/api"
+      # Langfuse v3 — LLM observability (#202, #203). SDK reads these
+      # to authenticate against the local langfuse-web container.
+      # Headless-init creates this org/project/key pair on first boot.
+      LANGFUSE_HOST: "http://langfuse-web:3000"
+      LANGFUSE_PUBLIC_KEY: "pk-lf-KCi8EdrTVh6kg4_YNmB63UD6N7E"
+      LANGFUSE_SECRET_KEY: "sk-lf-gXIcHW6U_krse_PC5rP4BZT8fl6aYF9X7H9ki-aJQXE"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
@@ -430,6 +436,169 @@ services:
       PREFECT_REDIS_MESSAGING_PORT: "6379"
       PREFECT_REDIS_MESSAGING_DB: "0"
     command: prefect server services start
+
+  # ===========================================
+  # Langfuse v3 — LLM observability + prompt management + experiments (#202, #203)
+  # ===========================================
+  # Six containers per the canonical v3 self-host pattern:
+  #   langfuse-clickhouse — OLAP store for traces/observations/scores
+  #   langfuse-minio      — S3-compatible blob store for events + media
+  #   langfuse-redis      — messaging broker between web + worker
+  #   langfuse-worker     — async ingestion + batch jobs
+  #   langfuse-web        — UI on :3010 + REST API
+  #
+  # Postgres is shared via the existing postgres-local container (separate
+  # `langfuse` database, created at deploy time).
+  #
+  # Heavy stack on purpose: per Matt's "learning industry standards" goal,
+  # operating ClickHouse + MinIO + Langfuse v3 is part of the curriculum,
+  # not the cost. See feedback_learning_is_primary_goal.md.
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: poindexter-langfuse-clickhouse
+    restart: unless-stopped
+    user: "101:101"
+    # Memory cap. Docs recommend 8G for production scale; we run 50
+    # LLM calls/day so a 4G ceiling is plenty. Cap means a runaway
+    # query restarts this one container instead of starving the rest
+    # of the stack on Matt's 64G workstation.
+    mem_limit: 4g
+    mem_reservation: 1g
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  langfuse-minio:
+    image: minio/minio
+    container_name: poindexter-langfuse-minio
+    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports:
+      # MinIO console — browse buckets + verify uploads. Bind to localhost
+      # only; not exposed off-host. Worker + web reach it via the
+      # service-network name on port 9000.
+      - "127.0.0.1:9091:9001"
+    volumes:
+      - langfuse-minio-data:/data
+    # `mc ready local` (the canonical Langfuse health pattern) needs
+    # an `mc alias set` first — which we don't run in the entrypoint
+    # override above. The image has no wget either. curl IS present;
+    # use it against MinIO's health endpoint.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  langfuse-redis:
+    image: redis:7
+    container_name: poindexter-langfuse-redis
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
+    command: --requirepass langfuseredis --maxmemory 384mb --maxmemory-policy allkeys-lru
+    volumes:
+      - langfuse-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a langfuseredis ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: poindexter-langfuse-worker
+    restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 512m
+    depends_on: &langfuse-depends-on
+      postgres-local:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+    environment: &langfuse-env
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/langfuse"
+      # SALT + ENCRYPTION_KEY persist across restarts. If you rotate
+      # them, existing encrypted rows become unreadable. Generated
+      # with python -c "import secrets; print(secrets.token_urlsafe(16))"
+      # / token_hex(32). Move to bootstrap.toml later (#198 secrets pattern).
+      SALT: "l7H7UXNRb28w4zO1TwYQmw"
+      ENCRYPTION_KEY: "2b83ac6518cde3b06b9f146462a8a65ae50920fa05cbb753f41f7b02db2e5394"
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+      CLICKHOUSE_MIGRATION_URL: "clickhouse://langfuse-clickhouse:9000"
+      CLICKHOUSE_URL: "http://langfuse-clickhouse:8123"
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: "http://langfuse-minio:9000"
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: "events/"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: "http://langfuse-minio:9000"
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: "media/"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: langfuseredis
+      REDIS_TLS_ENABLED: "false"
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: poindexter-langfuse-web
+    restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 512m
+    depends_on: *langfuse-depends-on
+    ports:
+      # Avoid the existing :3000 binding (Grafana). Map :3010 → :3000
+      # so the operator browses to localhost:3010 / tailscale-ip:3010.
+      - "3010:3000"
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_URL: "http://localhost:3010"
+      NEXTAUTH_SECRET: "-3GzsWxnEMJwRzAtNygOyxLmOsrS4EQ-0th-RJhdzug"
+      # Headless initialization (Langfuse 2024-09-04). The first boot
+      # creates the org, project, owner user, and API key pair from
+      # these vars. After they exist, the env vars become inert
+      # (Langfuse skips already-initialized resources).
+      LANGFUSE_INIT_ORG_ID: glad-labs
+      LANGFUSE_INIT_ORG_NAME: "Glad Labs"
+      LANGFUSE_INIT_PROJECT_ID: poindexter
+      LANGFUSE_INIT_PROJECT_NAME: "Poindexter Pipeline"
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "pk-lf-KCi8EdrTVh6kg4_YNmB63UD6N7E"
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: "sk-lf-gXIcHW6U_krse_PC5rP4BZT8fl6aYF9X7H9ki-aJQXE"
+      LANGFUSE_INIT_USER_EMAIL: "mattg@gladlabs.io"
+      LANGFUSE_INIT_USER_NAME: "Matt Gladding"
+      LANGFUSE_INIT_USER_PASSWORD: "x4vYr3CB3edQ1PToKQunRw"
 
   # ===========================================
   # SDXL Image Server — GPU-accelerated image generation
@@ -862,6 +1031,10 @@ services:
 # name mismatch is acceptable to preserve user data across the rebrand.
 volumes:
   prefect-redis-data:
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
+  langfuse-minio-data:
+  langfuse-redis-data:
   postgres-local-data:
     name: gladlabs-postgres-local-data
   grafana-data:

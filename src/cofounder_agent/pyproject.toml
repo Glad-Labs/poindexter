@@ -60,10 +60,14 @@ sentry-sdk = { version = "^2.18.0", extras = ["fastapi"] }
 # OpenTelemetry stack pinned to 1.28+ / 0.49b0+ — earlier 1.27 line locked
 # protobuf to <5.0 via opentelemetry-proto, blocking the protobuf 5.29.6
 # CVE-2026-0994 fix. 1.28.0 is the first OTel release that allows protobuf 5.x.
-opentelemetry-api = "^1.28"
-opentelemetry-sdk = "^1.28"
-opentelemetry-exporter-otlp-proto-grpc = "^1.28"
-opentelemetry-instrumentation-fastapi = "^0.49b0"
+opentelemetry-api = ">=1.33,<2"
+opentelemetry-sdk = ">=1.33,<2"
+opentelemetry-exporter-otlp-proto-grpc = ">=1.33,<2"
+# Bumped from ^0.49b0 to >=0.54 so the instrumentation pin doesn't
+# transitively block opentelemetry-sdk >=1.33 (which Langfuse v3
+# requires). See pyproject.toml history pre-#202 for the original
+# 0.49b0 pin context.
+opentelemetry-instrumentation-fastapi = ">=0.54b0,<1"
 # Direct pin to ensure CVE-2026-0994 (HIGH) fix is picked up. Without this
 # the resolver is free to land on any ^4.x release that satisfies the
 # transitive constraints.
@@ -128,6 +132,15 @@ apscheduler = "^3.11.2"
 # provider plugin to litellm.acompletion — is tracked separately and
 # requires the 1-week soak the issue mandates before claiming success.
 litellm = "^1"
+# Langfuse v3 — LLM observability + prompt management + experiments
+# (#202, #203). Self-hosted stack runs in docker-compose.local.yml
+# (5 containers: web, worker, clickhouse, redis, minio). Phase 1
+# wires tracing (OpenTelemetry-flavored). Phase 2 migrates prompt_
+# manager + experiment_service onto the SDK. The "learning industry-
+# standard tooling" principle (feedback_learning_is_primary_goal)
+# is why the heavy stack is in our compose despite our 50-call/day
+# scale.
+langfuse = "^3"
 # Prefect 3 — workflow orchestration for the content pipeline
 # (#206). Wraps the existing 6-stage StageRunner with @flow + @task
 # decorators so each stage gets retries, observability UI, and durable
