@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from services.cost_lookup import get_model_cost_per_1k
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -68,19 +69,18 @@ class UsageMetrics:
 
 
 class UsageTracker:
-    """Track and aggregate usage metrics"""
+    """Track and aggregate usage metrics.
 
-    # Default pricing per 1K tokens (in USD)
-    # Ollama-only policy — all models are local, zero API cost
-    MODEL_PRICING = {
-        # Ollama (self-hosted — electricity cost, not free)
-        # ~300W GPU, ~40 tok/s, $0.12/kWh => ~$0.00025/1K tokens
-        "ollama": {"input": 0.00025, "output": 0.00025},
-        # Mistral (via Ollama)
-        "mistral-7b": {"input": 0.0002, "output": 0.0006},
-        # Meta models (via Ollama)
-        "llama-2-70b": {"input": 0.001, "output": 0.003},
-    }
+    Per-token pricing comes from ``services.cost_lookup`` (LiteLLM-backed
+    post-#199 Phase 1) — covers 2,600+ provider/model combos
+    out-of-the-box, with a $0 fallback for local Ollama routes and a
+    conservative default for unknown models.
+
+    The legacy 3-entry ``MODEL_PRICING`` dict was deleted; it only
+    matched ``model_name.lower().split('-')[0]`` which was brittle
+    (e.g. "claude-haiku-4-5" matched "claude" → not in dict → $0,
+    silently treating Anthropic calls as free).
+    """
 
     def __init__(self):
         """Initialize usage tracker"""
@@ -109,17 +109,15 @@ class UsageTracker:
         Returns:
             UsageMetrics object to track this operation
         """
-        # Get pricing for this model
-        pricing_key = model_name.lower().split("-")[0]  # "gpt-4" from "gpt-4-turbo"
-        pricing = self.MODEL_PRICING.get(pricing_key, {})
+        input_cost, output_cost = get_model_cost_per_1k(model_name)
 
         metrics = UsageMetrics(
             operation_id=operation_id,
             operation_type=operation_type,
             model_name=model_name,
             model_provider=model_provider,
-            input_cost_usd=pricing.get("input", 0),
-            output_cost_usd=pricing.get("output", 0),
+            input_cost_usd=input_cost,
+            output_cost_usd=output_cost,
             metadata=metadata or {},
         )
 

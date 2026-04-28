@@ -120,6 +120,14 @@ pyasn1 = ">=0.6.3"
 mcp = ">=1.23.0"
 pillow = ">=12.2.0"
 apscheduler = "^3.11.2"
+# LiteLLM — unified LLM call boundary + accurate provider pricing (#199).
+# Phase 1 cut adopts LiteLLM as the source of truth for per-token costs
+# (replaces the hand-maintained MODEL_COSTS table in model_constants.py
+# and the static MODEL_PRICING dict in usage_tracker.py). Phase 2/3 — full
+# deletion of model_router.py + usage_tracker.py and cutover of every LLM
+# provider plugin to litellm.acompletion — is tracked separately and
+# requires the 1-week soak the issue mandates before claiming success.
+litellm = "^1"
 # Prefect 3 — workflow orchestration for the content pipeline
 # (#206). Wraps the existing 6-stage StageRunner with @flow + @task
 # decorators so each stage gets retries, observability UI, and durable

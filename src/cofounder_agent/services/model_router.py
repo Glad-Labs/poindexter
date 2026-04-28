@@ -10,6 +10,7 @@ from typing import Any
 
 from services.logger_config import get_logger
 
+from .cost_lookup import get_model_cost as _lookup_model_cost
 from .model_constants import MODEL_COSTS
 
 logger = get_logger(__name__)
@@ -366,8 +367,12 @@ class ModelRouter:
         model = recommendation["model"]
         self.metrics["ollama_uses"] += 1
 
-        # Calculate estimated cost (zero for Ollama)
-        cost_per_1k = MODEL_COSTS.get(model, 0.0)
+        # Calculate estimated cost (zero for Ollama). LiteLLM is the
+        # source of truth post-#199 — for any cloud model in its 2,600-
+        # entry pricing table, we get accurate per-1K pricing without
+        # maintaining MODEL_COSTS by hand. Falls through to MODEL_COSTS
+        # for our hand-maintained Ollama entries.
+        cost_per_1k = _lookup_model_cost(model) or MODEL_COSTS.get(model, 0.0)
         estimated_cost = (estimated_tokens / 1000) * cost_per_1k
 
         # Update metrics
@@ -413,8 +418,13 @@ class ModelRouter:
         return TaskComplexity.MEDIUM
 
     def get_model_cost(self, model: str) -> float:
-        """Get cost per 1K tokens for a model."""
-        return MODEL_COSTS.get(model, 0.0)
+        """Get cost per 1K tokens for a model.
+
+        LiteLLM-backed via ``cost_lookup`` post-#199 Phase 1. Falls
+        through to the local ``MODEL_COSTS`` dict only for entries
+        LiteLLM doesn't know about (i.e. our specific Ollama tags).
+        """
+        return _lookup_model_cost(model) or MODEL_COSTS.get(model, 0.0)
 
     def get_max_tokens(self, task_type: str, context: dict[str, Any] | None = None) -> int:
         """Get maximum token limit for a task type."""
@@ -478,8 +488,19 @@ class ModelRouter:
     def recommend_model_for_budget(
         self, remaining_budget: float, estimated_tokens: int
     ) -> str | None:
-        """Recommend cheapest model that fits within budget."""
-        sorted_models = sorted(MODEL_COSTS.items(), key=lambda x: x[1])
+        """Recommend cheapest model that fits within budget.
+
+        Iterates the hand-maintained MODEL_COSTS list (Ollama-only at
+        time of writing — all $0). Per-model live pricing for the
+        actual estimate uses LiteLLM via cost_lookup, so an Ollama
+        entry that LiteLLM happens to have priced won't accidentally
+        get downgraded to "free".
+        """
+        # Resolve live cost for each candidate via cost_lookup so we
+        # don't accidentally recommend a model the table claims is
+        # free but LiteLLM knows is paid.
+        priced = [(m, _lookup_model_cost(m) or hardcoded) for m, hardcoded in MODEL_COSTS.items()]
+        sorted_models = sorted(priced, key=lambda x: x[1])
 
         for model, cost_per_1k in sorted_models:
             estimated_cost = (estimated_tokens / 1000) * cost_per_1k

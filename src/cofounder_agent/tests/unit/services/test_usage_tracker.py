@@ -120,11 +120,24 @@ class TestUsageTrackerStartOperation:
         assert m.metadata == {"session": "s1"}
 
     def test_unknown_model_uses_default_pricing(self):
-        """Models not in MODEL_PRICING fall back to 0 cost-per-token."""
+        """Pre-#199 fell back to $0 for any unknown model — that silently
+        treated paid cloud calls as free. Post-#199 cost_lookup returns
+        ``DEFAULT_COST_PER_1K`` for unknown non-local models so the
+        cost path is conservative."""
+        from services.cost_lookup import DEFAULT_COST_PER_1K
         m = self.tracker.start_operation("op-d", "chat", "unknown-model-xyz", "unknown")
-        # Should not raise; cost just defaults to 0
-        assert m.input_cost_usd == 0
-        assert m.output_cost_usd == 0
+        assert m.input_cost_usd == DEFAULT_COST_PER_1K
+        assert m.output_cost_usd == DEFAULT_COST_PER_1K
+
+    def test_local_ollama_route_is_free(self):
+        """Local Ollama route always resolves to $0 — GPU electricity
+        is tracked separately via the cost_logs ``electricity`` provider
+        rows, not as per-token inference cost."""
+        m = self.tracker.start_operation(
+            "op-d-local", "chat", "ollama/qwen3.5:35b", "ollama",
+        )
+        assert m.input_cost_usd == 0.0
+        assert m.output_cost_usd == 0.0
 
 
 # ---------------------------------------------------------------------------

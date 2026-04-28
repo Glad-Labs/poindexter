@@ -198,9 +198,17 @@ class TestGetModelCost:
         cost = router.get_model_cost("ollama/qwen3:8b")
         assert cost == 0.0
 
-    def test_unknown_model_returns_zero(self, router):
+    def test_unknown_model_falls_back_to_default(self, router):
+        """Pre-#199 returned 0.0 for unknown models — that was wrong, it
+        silently treated paid cloud models as free. Post-#199 LiteLLM
+        cost_lookup is the source of truth: known models get accurate
+        prices, unknown cloud models fall back to ``DEFAULT_COST_PER_1K``
+        (currently $0.005/1K) which is intentionally non-zero so a
+        misconfigured model doesn't slip through cost_guard.
+        """
+        from services.cost_lookup import DEFAULT_COST_PER_1K
         cost = router.get_model_cost("unknown-model-xyz")
-        assert cost == 0.0
+        assert cost == DEFAULT_COST_PER_1K
 
 
 # ---------------------------------------------------------------------------
