@@ -3,6 +3,13 @@ Tests for WebhookDeliveryService — event emission and HTTP delivery to OpenCla
 
 Post-Phase-H (GH#95): WebhookDeliveryService.__init__ takes site_config via DI.
 Tests construct a MagicMock SiteConfig per case via _mock_sc().
+
+GH-107 / poindexter#156: ``openclaw_webhook_token`` is encrypted at rest
+(``is_secret=true``), so the production code now reads it inside
+``start()`` via ``await site_config.get_secret(...)``. The mock
+SiteConfig in this test file simulates the bug class — sync ``.get()``
+returns the ``enc:v1:<ciphertext>`` blob, async ``get_secret()``
+returns plaintext — and asserts production receives plaintext.
 """
 
 import json
@@ -23,13 +30,31 @@ from services.webhook_delivery_service import (
 
 
 def _mock_sc(webhook_url: str = "", webhook_token: str = "") -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for WebhookDeliveryService(...)."""
+    """Return a MagicMock shaped like SiteConfig for WebhookDeliveryService(...).
+
+    The token is exposed via the async ``get_secret`` helper because
+    ``openclaw_webhook_token`` is ``is_secret=true`` in app_settings.
+    The sync ``.get(...)`` is wired to return ciphertext for that key
+    so any regression that drops the await would surface as a busted
+    Authorization header in the assertions.
+    """
     sc = MagicMock()
-    values = {
+    sync_values = {
         "openclaw_webhook_url": webhook_url,
+        # If a regression re-adds a sync .get() on this secret, the
+        # token shipped to OpenClaw would be this ciphertext blob —
+        # tests below assert plaintext, so the regression would fail.
+        "openclaw_webhook_token": (
+            f"enc:v1:CIPHERTEXT_FOR_{webhook_token}" if webhook_token else ""
+        ),
+    }
+    secret_values = {
         "openclaw_webhook_token": webhook_token,
     }
-    sc.get.side_effect = lambda k, d="": values.get(k, d)
+    sc.get.side_effect = lambda k, d="": sync_values.get(k, d)
+    sc.get_secret = AsyncMock(
+        side_effect=lambda k, d="": secret_values.get(k, d)
+    )
     return sc
 
 
@@ -116,10 +141,13 @@ class TestServiceLifecycle:
         pool, _ = _make_pool()
         svc = WebhookDeliveryService(pool, _mock_sc())
         assert svc.webhook_url == ""
+        # Token is loaded inside start() now; before start() runs it's "".
         assert svc.webhook_token == ""
         assert svc._running is False
 
-    def test_reads_url_and_token_from_site_config(self):
+    def test_init_reads_url_but_not_secret_token(self):
+        """``openclaw_webhook_token`` is is_secret=true — must NOT be
+        read in __init__ (sync). Only the non-secret URL goes here."""
         pool, _ = _make_pool()
         svc = WebhookDeliveryService(
             pool,
@@ -129,11 +157,20 @@ class TestServiceLifecycle:
             ),
         )
         assert svc.webhook_url == "https://openclaw.example.com"
-        assert svc.webhook_token == "secret123"
+        # Token deferred to start() — empty in __init__ regardless of
+        # what site_config carries. This guards against regressions
+        # that re-add a sync .get() on the encrypted token and ship
+        # ``enc:v1:...`` to OpenClaw.
+        assert svc.webhook_token == ""
 
     @pytest.mark.asyncio
     async def test_start_without_url_does_nothing(self):
-        """If no webhook URL is configured, start() returns immediately."""
+        """If no webhook URL is configured, start() returns immediately.
+
+        Even though we still resolve the secret first (so the cached
+        plaintext is correct if URL gets set later), we don't open the
+        HTTP client or spin up the loop.
+        """
         pool, _ = _make_pool()
         svc = WebhookDeliveryService(pool, _mock_sc())
         await svc.start()
@@ -149,6 +186,43 @@ class TestServiceLifecycle:
             await svc.start()
         assert svc._running is True
         assert svc._client is not None
+        await svc.stop()
+
+    @pytest.mark.asyncio
+    async def test_start_loads_encrypted_token_via_get_secret(self):
+        """GH-107 / poindexter#156 — start() must call get_secret(),
+        not get(), so the Authorization header carries plaintext, not
+        the ``enc:v1:<ciphertext>`` blob."""
+        pool, _ = _make_pool()
+        sc = _mock_sc(webhook_url="https://hook.test", webhook_token="real-token")
+        svc = WebhookDeliveryService(pool, sc)
+
+        # Before start(): token cache empty
+        assert svc.webhook_token == ""
+
+        with patch("asyncio.create_task"):
+            await svc.start()
+
+        # After start(): plaintext (NOT enc:v1:CIPHERTEXT_FOR_real-token)
+        assert svc.webhook_token == "real-token"
+        assert "enc:v1:" not in svc.webhook_token
+        sc.get_secret.assert_awaited_once_with("openclaw_webhook_token", "")
+        await svc.stop()
+
+    @pytest.mark.asyncio
+    async def test_start_handles_get_secret_failure_gracefully(self):
+        """If decryption fails, fall back to empty token (no auth
+        header) rather than crashing the whole worker on startup."""
+        pool, _ = _make_pool()
+        sc = _mock_sc(webhook_url="https://hook.test", webhook_token="x")
+        sc.get_secret = AsyncMock(side_effect=RuntimeError("decrypt failed"))
+        svc = WebhookDeliveryService(pool, sc)
+
+        with patch("asyncio.create_task"):
+            await svc.start()
+
+        assert svc.webhook_token == ""
+        assert svc._running is True
         await svc.stop()
 
     @pytest.mark.asyncio
@@ -306,6 +380,10 @@ class TestDeliverEvent:
                 webhook_token="tok_secret",
             ),
         )
+        # Token is now loaded by start() — bypass the lifecycle for
+        # _deliver_event-only tests by setting it directly. This is
+        # the same plaintext the new start() flow caches.
+        self.svc.webhook_token = "tok_secret"
         self.svc._client = AsyncMock()
 
     @pytest.mark.asyncio

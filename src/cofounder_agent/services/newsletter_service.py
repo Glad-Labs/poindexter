@@ -24,17 +24,31 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
-def _cfg(site_config: Any) -> dict:
-    """Load newsletter config from the passed SiteConfig instance."""
+async def _cfg(site_config: Any) -> dict:
+    """Load newsletter config from the passed SiteConfig instance.
+
+    Async because ``resend_api_key`` is ``is_secret=true`` in
+    app_settings — see GH-107 secret-keys-audit and
+    Glad-Labs/poindexter#156. The sync ``site_config.get(...)`` would
+    return the ``enc:v1:<ciphertext>`` blob and Resend's API would
+    401 every send.
+
+    Note: ``smtp_password`` is **not** currently flagged
+    ``is_secret=true`` in app_settings (the row doesn't exist in the
+    live DB as of 2026-04-27). When it gets seeded encrypted, this
+    callsite must also flip to ``await site_config.get_secret(...)``.
+    Tracked in the audit doc.
+    """
     return {
         "enabled": site_config.get_bool("newsletter_enabled", False),
         "provider": site_config.get("newsletter_provider", "resend"),
         "from_email": site_config.get("newsletter_from_email", ""),
         "from_name": site_config.get("newsletter_from_name", ""),
-        "resend_api_key": site_config.get("resend_api_key", ""),
+        "resend_api_key": await site_config.get_secret("resend_api_key", ""),
         "smtp_host": site_config.get("smtp_host", ""),
         "smtp_port": site_config.get_int("smtp_port", 587),
         "smtp_user": site_config.get("smtp_user", ""),
+        # smtp_password is not yet encrypted in app_settings — see docstring
         "smtp_password": site_config.get("smtp_password", ""),
         "smtp_use_tls": site_config.get_bool("smtp_use_tls", True),
         "batch_size": site_config.get_int("newsletter_batch_size", 50),
@@ -184,7 +198,7 @@ async def send_post_newsletter(
     Returns:
         dict with sent, failed, skipped counts
     """
-    cfg = _cfg(site_config)
+    cfg = await _cfg(site_config)
     result: dict[str, Any] = {
         "sent": 0, "failed": 0, "skipped": 0, "total_subscribers": 0,
     }

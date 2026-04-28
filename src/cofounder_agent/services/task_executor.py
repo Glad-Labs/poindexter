@@ -12,11 +12,7 @@ from typing import Any
 import httpx as _httpx
 
 from services.logger_config import get_logger
-from services.telegram_config import (
-    get_telegram_bot_token,
-    get_telegram_chat_id,
-    telegram_configured,
-)
+from services.telegram_config import get_telegram_chat_id
 
 # Kept importable (not instantiated) so tests can
 # patch("services.task_executor.AIContentGenerator") and verify no

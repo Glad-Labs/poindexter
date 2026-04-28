@@ -49,7 +49,7 @@ external_webhooks_router = APIRouter(prefix="/api/webhooks", tags=["External Web
 # ---------------------------------------------------------------------------
 
 
-def _verify_lemon_squeezy_signature(
+async def _verify_lemon_squeezy_signature(
     body: bytes,
     provided_signature: str | None,
     site_config: Any,
@@ -57,8 +57,14 @@ def _verify_lemon_squeezy_signature(
     """Lemon Squeezy signs payloads with HMAC-SHA256 using the webhook secret.
 
     See https://docs.lemonsqueezy.com/help/webhooks for the scheme.
+
+    ``lemon_squeezy_webhook_secret`` is ``is_secret=true`` in app_settings,
+    so we MUST go through ``site_config.get_secret(...)`` (async) to get
+    the decrypted plaintext. A plain sync ``site_config.get(...)`` would
+    return the ``enc:v1:<ciphertext>`` blob and the HMAC comparison would
+    silently never match — the GH-107 secret-keys-audit failure mode.
     """
-    secret = site_config.get("lemon_squeezy_webhook_secret", "") or ""
+    secret = await site_config.get_secret("lemon_squeezy_webhook_secret", "") or ""
     if not secret:
         logger.warning(
             "[LemonSqueezy] lemon_squeezy_webhook_secret not set — refusing webhook",
@@ -97,7 +103,7 @@ async def lemon_squeezy_webhook(
     for audit completeness.
     """
     body = await request.body()
-    if not _verify_lemon_squeezy_signature(body, x_signature, site_config):
+    if not await _verify_lemon_squeezy_signature(body, x_signature, site_config):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
@@ -165,7 +171,7 @@ async def lemon_squeezy_webhook(
 # ---------------------------------------------------------------------------
 
 
-def _verify_resend_signature(
+async def _verify_resend_signature(
     body: bytes,
     provided_signature: str | None,
     site_config: Any,
@@ -173,8 +179,14 @@ def _verify_resend_signature(
     """Resend uses Svix-style HMAC signatures — Authorization-style header.
 
     https://resend.com/docs/dashboard/webhooks/verify-webhooks
+
+    ``resend_webhook_secret`` is ``is_secret=true`` in app_settings, so we
+    MUST use ``site_config.get_secret(...)`` (async) to receive the
+    decrypted plaintext. The sync ``.get()`` returns ``enc:v1:...``
+    ciphertext and would 401 every legitimate Resend delivery — same
+    failure pattern documented in GH-107.
     """
-    secret = site_config.get("resend_webhook_secret", "") or ""
+    secret = await site_config.get_secret("resend_webhook_secret", "") or ""
     if not secret:
         logger.warning(
             "[Resend] resend_webhook_secret not set — refusing webhook",
@@ -203,7 +215,7 @@ async def resend_webhook(
     email.clicked, email.bounced, email.complained.
     """
     body = await request.body()
-    if not _verify_resend_signature(body, svix_signature, site_config):
+    if not await _verify_resend_signature(body, svix_signature, site_config):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:

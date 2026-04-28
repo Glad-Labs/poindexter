@@ -14,6 +14,7 @@ import pytest
 
 from services.newsletter_service import (
     _build_html,
+    _cfg,
     _get_active_subscribers,
     send_post_newsletter,
 )
@@ -30,7 +31,15 @@ def _mock_site_config(
     site_name: str = "Test Site",
     batch_delay: int = 0,
 ) -> MagicMock:
-    """Build a MagicMock with the methods newsletter_service calls."""
+    """Build a MagicMock with the methods newsletter_service calls.
+
+    GH-107 / poindexter#156: ``resend_api_key`` is encrypted at rest
+    (``is_secret=true``). Production code reads it via the async
+    ``site_config.get_secret(...)``. The mock here serves the
+    plaintext through ``get_secret`` and a ``enc:v1:<ciphertext>``
+    blob through the sync ``.get()`` so any regression that drops the
+    await would surface as a Resend 401 in the assertions.
+    """
     sc = MagicMock()
 
     def _get_bool(k: str, d: bool = False) -> bool:
@@ -40,16 +49,30 @@ def _mock_site_config(
         }.get(k, d)
 
     def _get(k: str, d: str = "") -> str:
+        sync_overrides = {
+            # Regression bait — if production reverts to sync .get() on
+            # the encrypted resend_api_key, this is what would land in
+            # the Resend Authorization header.
+            "resend_api_key": (
+                f"enc:v1:CIPHERTEXT_FOR_{resend_api_key}" if resend_api_key else ""
+            ),
+        }
+        if k in sync_overrides:
+            return sync_overrides[k]
         return {
             "newsletter_provider": provider,
             "newsletter_from_email": "from@test.com",
             "newsletter_from_name": "Test Sender",
-            "resend_api_key": resend_api_key,
             "smtp_host": smtp_host,
             "smtp_user": "user",
             "smtp_password": "pass",
             "company_name": company_name,
             "site_name": site_name,
+        }.get(k, d)
+
+    async def _get_secret(k: str, d: str = "") -> str:
+        return {
+            "resend_api_key": resend_api_key,
         }.get(k, d)
 
     def _get_int(k: str, d: int = 0) -> int:
@@ -61,6 +84,7 @@ def _mock_site_config(
 
     sc.get_bool.side_effect = _get_bool
     sc.get.side_effect = _get
+    sc.get_secret = AsyncMock(side_effect=_get_secret)
     sc.get_int.side_effect = _get_int
     sc.require.side_effect = lambda k: site_url if k == "site_url" else ""
     return sc
@@ -73,6 +97,39 @@ _TEST_CFG = {
     "from_name": "Test Sender",
     "from_email": "from@test.com",
 }
+
+
+# ---------------------------------------------------------------------------
+# _cfg — GH-107 / poindexter#156 regression guard
+# ---------------------------------------------------------------------------
+
+
+class TestCfgSecretResolution:
+    """``resend_api_key`` is encrypted in app_settings — _cfg must use
+    the async get_secret() decryption helper, not sync .get()."""
+
+    @pytest.mark.asyncio
+    async def test_cfg_returns_plaintext_resend_key(self):
+        sc = _mock_site_config(resend_api_key="re_real_key_abc123")
+        cfg = await _cfg(sc)
+        assert cfg["resend_api_key"] == "re_real_key_abc123"
+        # Ciphertext leak guard — _mock_site_config wires .get() to
+        # return enc:v1:CIPHERTEXT_FOR_<key> on this key, so any
+        # regression that drops `await` would yield a value with
+        # this prefix.
+        assert "enc:v1:" not in cfg["resend_api_key"]
+
+    @pytest.mark.asyncio
+    async def test_cfg_calls_get_secret_for_resend_api_key(self):
+        sc = _mock_site_config(resend_api_key="re_test")
+        await _cfg(sc)
+        sc.get_secret.assert_awaited_with("resend_api_key", "")
+
+    @pytest.mark.asyncio
+    async def test_cfg_empty_resend_key_yields_empty(self):
+        sc = _mock_site_config(resend_api_key="")
+        cfg = await _cfg(sc)
+        assert cfg["resend_api_key"] == ""
 
 
 # ---------------------------------------------------------------------------
