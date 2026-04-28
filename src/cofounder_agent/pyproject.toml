@@ -156,6 +156,15 @@ guardrails-ai = "^0.6"
 # LLMTestCase / BaseMetric / G-Eval conventions without replacing the
 # domain-specific multi-reviewer logic that's the moat.
 deepeval = "^3"
+# LlamaIndex core + Ollama embeddings adapter + Ragas eval (#210, #205).
+# Adopted as the canonical RAG retrieval framework — wraps our existing
+# pgvector embeddings table behind a BaseRetriever so stages get a
+# clean industry-standard query interface (LlamaIndex Document /
+# NodeWithScore conventions). Ragas runs alongside as the RAG-specific
+# eval framework (faithfulness, context-precision, answer-relevancy).
+llama-index-core = "^0.12"
+llama-index-embeddings-ollama = "^0.5"
+ragas = "^0.2"
 # Langfuse v3 — LLM observability + prompt management + experiments
 # (#202, #203). Self-hosted stack runs in docker-compose.local.yml
 # (5 containers: web, worker, clickhouse, redis, minio). Phase 1
