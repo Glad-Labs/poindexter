@@ -6,6 +6,7 @@ metadata access, category filtering, and JSON export — no LLM or DB calls.
 """
 
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -444,3 +445,66 @@ class TestPremiumGating:
         pool = _FakePool(rows_default_and_premium, premium_active_value="true")
         await pm.load_from_db(pool, site_config=None)
         assert pm.get_prompt("seo_title", topic="x") == "PRO TITLE for x"
+
+
+# ---------------------------------------------------------------------------
+# Langfuse-first lookup (#203 Phase 2a)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestLangfuseFirstLookup:
+    """When Langfuse returns a template, it wins over DB + YAML.
+    When Langfuse returns None / errors, fall through cleanly."""
+
+    def test_langfuse_template_wins_over_yaml(self, pm: UnifiedPromptManager):
+        # Stub Langfuse client that returns a template for one key.
+        fake_prompt = MagicMock()
+        fake_prompt.prompt = "LANGFUSE TEMPLATE for {topic}"
+        pm._langfuse = MagicMock()
+        pm._langfuse.get_prompt = MagicMock(return_value=fake_prompt)
+
+        # Pick any real key that already has a YAML template.
+        key = "blog_generation.initial_draft"
+        result = pm.get_prompt(key, topic="X", style="s", tone="t",
+                               target_length=500, tags="")
+        assert result.startswith("LANGFUSE TEMPLATE")
+
+    def test_langfuse_miss_falls_through_to_yaml(self, pm: UnifiedPromptManager):
+        # Stub Langfuse client that raises (e.g. 404 on get_prompt).
+        pm._langfuse = MagicMock()
+        pm._langfuse.get_prompt = MagicMock(side_effect=Exception("not found"))
+
+        # YAML still serves the prompt. Use seo.generate_title (single var).
+        result = pm.get_prompt("seo.generate_title", topic="AI")
+        assert "LANGFUSE" not in result
+        assert "AI" in result
+
+    def test_langfuse_lookup_cached_per_key(self, pm: UnifiedPromptManager):
+        # Calling get_prompt twice with the same key only hits Langfuse once.
+        fake_prompt = MagicMock()
+        fake_prompt.prompt = "TEMPLATE {topic}"
+        pm._langfuse = MagicMock()
+        pm._langfuse.get_prompt = MagicMock(return_value=fake_prompt)
+
+        key = "blog_generation.initial_draft"
+        kwargs = dict(topic="X", style="s", tone="t",
+                      target_length=500, tags="")
+        pm.get_prompt(key, **kwargs)
+        pm.get_prompt(key, **kwargs)
+
+        assert pm._langfuse.get_prompt.call_count == 1
+
+    def test_no_langfuse_env_silently_skips(self, monkeypatch, pm: UnifiedPromptManager):
+        # Without env vars, _try_langfuse short-circuits to None and the
+        # YAML path serves normally — no exception, no log spam.
+        monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+        monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+        monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+        # Force re-init by clearing cache.
+        pm._langfuse = None
+        pm._langfuse_lookup_cache.clear()
+
+        result = pm.get_prompt("seo.generate_title", topic="AI")
+        assert isinstance(result, str)
+        assert "AI" in result

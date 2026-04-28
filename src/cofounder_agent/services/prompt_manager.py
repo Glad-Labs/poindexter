@@ -106,6 +106,14 @@ class UnifiedPromptManager:
         self._db_overrides_premium: dict[str, str] = {}
         self._site_config: Any = None
         self._premium_active_static: bool = False
+        # Langfuse SDK client (lazy-initialized, opt-in via env vars).
+        # When all of LANGFUSE_HOST + LANGFUSE_PUBLIC_KEY +
+        # LANGFUSE_SECRET_KEY are set, ``get_prompt`` consults Langfuse
+        # first (highest priority); on cache miss / network error /
+        # missing prompt we fall through to the existing chain. The SDK
+        # has its own in-memory TTL cache so repeated lookups are cheap.
+        self._langfuse: Any = None
+        self._langfuse_lookup_cache: dict[str, str | None] = {}
         self._initialize_prompts()
 
     def _initialize_prompts(self):
@@ -265,12 +273,76 @@ class UnifiedPromptManager:
                 )
         return getattr(self, "_premium_active_static", False)
 
+    def _try_langfuse(self, key: str) -> str | None:
+        """Best-effort fetch from Langfuse Prompt Management.
+
+        Lazy-init the client on first call (avoids blocking import
+        even when Langfuse is unreachable). Returns the template
+        string when Langfuse has a production-labeled prompt by this
+        key; returns None on any failure (network, auth, missing
+        prompt) so the caller falls through to the YAML/DB chain.
+
+        The result for a given key is cached per process lifetime to
+        keep the lookup hot — Langfuse's own SDK does similar TTL
+        caching internally; ours is one level cheaper. A successful
+        lookup populates the cache with the template; a miss
+        populates it with ``None`` so we don't retry the network
+        round-trip on every ``get_prompt`` call.
+        """
+        if key in self._langfuse_lookup_cache:
+            return self._langfuse_lookup_cache[key]
+
+        if self._langfuse is None:
+            try:
+                import os
+                if not (
+                    os.getenv("LANGFUSE_HOST")
+                    and os.getenv("LANGFUSE_PUBLIC_KEY")
+                    and os.getenv("LANGFUSE_SECRET_KEY")
+                ):
+                    self._langfuse_lookup_cache[key] = None
+                    return None
+                from langfuse import Langfuse
+                self._langfuse = Langfuse()  # reads env vars
+            except Exception as e:
+                logger.debug("[prompt_manager] Langfuse client init failed: %s", e)
+                self._langfuse = False  # sentinel: don't retry init
+                self._langfuse_lookup_cache[key] = None
+                return None
+
+        if self._langfuse is False:
+            self._langfuse_lookup_cache[key] = None
+            return None
+
+        try:
+            prompt_obj = self._langfuse.get_prompt(key, label="production")
+            template = prompt_obj.prompt if hasattr(prompt_obj, "prompt") else None
+        except Exception as e:
+            # Most common: prompt not in Langfuse yet (404). Logged at
+            # debug to avoid log spam during the gradual cutover.
+            logger.debug("[prompt_manager] Langfuse miss for %r: %s", key, e)
+            template = None
+
+        self._langfuse_lookup_cache[key] = template
+        return template
+
     def get_prompt(self, key: str, **kwargs) -> str:
         """
         Get a prompt by key and format with provided kwargs.
 
-        Priority: premium DB override (when ``premium_active``) > default
-        DB override > YAML file > KeyError.
+        Priority (post-#203 Phase 2a):
+          1. Langfuse production-labeled prompt (when env vars set)
+          2. Premium DB override (when ``premium_active``)
+          3. Default DB override
+          4. YAML file
+          5. KeyError
+
+        Langfuse-first means operators can edit prompts in the
+        Langfuse UI from any tailnet device and the change takes
+        effect on the next worker restart (or sooner if we add a
+        Langfuse webhook that invalidates the per-process cache).
+        Prompts not yet migrated to Langfuse fall through cleanly —
+        no manual cutover required, the chain is fully backward-compat.
 
         Args:
             key: Prompt key (e.g., "blog_generation.initial_draft")
@@ -280,15 +352,16 @@ class UnifiedPromptManager:
             Formatted prompt ready for LLM
 
         Raises:
-            KeyError: If prompt key not found
+            KeyError: If prompt key not found in any source
         """
+        template = self._try_langfuse(key)
+
         # Premium overrides win when the operator's license is active.
         # Otherwise (no license, expired, or pre-activation), we silently
         # use the same default the free tier sees. Toggling the flag
         # flips the pipeline immediately on the next prompt lookup —
         # no redeploy and no reload required.
-        template = None
-        if self._is_premium_active():
+        if template is None and self._is_premium_active():
             template = self._db_overrides_premium.get(key)
         if template is None:
             template = self._db_overrides.get(key)
