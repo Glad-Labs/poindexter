@@ -389,7 +389,15 @@ services:
     environment:
       PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/prefect"
       PREFECT_SERVER_API_HOST: 0.0.0.0
-      PREFECT_SERVER_UI_API_URL: "http://localhost:4200/api"
+      # The UI's bundled JS calls this URL from the BROWSER, so it has
+      # to be an address the browser can reach — not a service-network
+      # name. Workstation's tailscale IP works from both the host's own
+      # browser and from any phone on the tailnet (verified via
+      # `tailscale status`: nightrider = 100.81.93.12). Plain
+      # `localhost:4200/api` breaks the moment the operator opens the
+      # UI from their phone — the browser resolves "localhost" against
+      # the phone, not against the server.
+      PREFECT_SERVER_UI_API_URL: "http://100.81.93.12:4200/api"
       PREFECT_API_URL: "http://prefect-server:4200/api"
       PREFECT_MESSAGING_BROKER: prefect_redis.messaging
       PREFECT_MESSAGING_CACHE: prefect_redis.messaging
