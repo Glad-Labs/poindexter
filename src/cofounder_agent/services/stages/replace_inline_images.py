@@ -174,6 +174,7 @@ class ReplaceInlineImagesStage:
                 image_service=image_service,
                 used_image_ids=used_image_ids,
                 site_config=_sc,
+                task_id=task_id,
             )
 
         content_text = _cleanup_leaked_descriptions(content_text)
@@ -301,8 +302,14 @@ async def _resolve_one_placeholder(
     image_service: Any,
     used_image_ids: set[str],
     site_config: Any,
+    task_id: str,
 ) -> str:
-    """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it."""
+    """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it.
+
+    ``task_id`` is forwarded to :func:`_try_sdxl` so the GPU scheduler
+    can attribute Ollama-prompt + SDXL-render electricity cost back to
+    the originating pipeline task — see Glad-Labs/poindexter#157.
+    """
     from services.alt_text import sanitize_alt_text
     search_query = desc.strip() if desc else topic
     alt_text = desc.strip() if desc else f"{topic} illustration"
@@ -317,7 +324,9 @@ async def _resolve_one_placeholder(
     )
 
     # Strategy 1: SDXL.
-    img_url = await _try_sdxl(num, search_query, topic, site_config=site_config)
+    img_url = await _try_sdxl(
+        num, search_query, topic, site_config=site_config, task_id=task_id,
+    )
     if img_url and img_url not in used_image_ids:
         used_image_ids.add(img_url)
         content_text = _inject_html_image(
@@ -356,8 +365,16 @@ async def _try_sdxl(
     topic: str,
     *,
     site_config: Any,
+    task_id: str,
 ) -> str | None:
-    """Generate an SDXL image and return its final URL (R2 or local)."""
+    """Generate an SDXL image and return its final URL (R2 or local).
+
+    ``task_id`` is threaded through to :meth:`gpu.lock` for both the
+    Ollama prompt-build and the SDXL render so ``gpu_task_sessions`` /
+    cost_logs rows attribute kWh + electricity cost to the originating
+    pipeline task. Without this, the inline-image phase logged un-
+    attributed sessions — see Glad-Labs/poindexter#157.
+    """
     from services.gpu_scheduler import gpu
 
     try:
@@ -373,7 +390,9 @@ async def _try_sdxl(
         )
 
         # Step 1: ollama generates the SDXL prompt
-        async with gpu.lock("ollama", model=model):
+        async with gpu.lock(
+            "ollama", model=model, task_id=task_id, phase="inline_image_prompt",
+        ):
             async with httpx.AsyncClient(timeout=90) as client:
                 resp = await client.post(f"{ollama_url}/api/generate", json={
                     "model": model, "prompt": img_prompt_req, "stream": False,
@@ -388,7 +407,10 @@ async def _try_sdxl(
         logger.info("  [IMAGE-%s] SDXL prompt: %s...", num, sdxl_prompt[:60])
 
         # Step 2: SDXL renders the image
-        async with gpu.lock("sdxl", model="sdxl_lightning"):
+        async with gpu.lock(
+            "sdxl", model="sdxl_lightning",
+            task_id=task_id, phase="inline_image",
+        ):
             async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
                 img_resp = await client.post(
                     f"{sdxl_url}/generate",
