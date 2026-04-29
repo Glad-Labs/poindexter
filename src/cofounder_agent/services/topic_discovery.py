@@ -120,6 +120,12 @@ class TopicDiscovery:
             )
         self.pool = pool
         self._site_config = site_config
+        # Cached resolved overrides for the DB-backed filter constants
+        # (gh#218). Resolved lazily on first use so construction stays
+        # cheap and tests don't have to seed these settings to spin up
+        # an instance. ``None`` means "not yet resolved".
+        self.__news_re_cache: list[re.Pattern[str]] | None = None
+        self.__category_searches_cache: dict[str, list[str]] | None = None
 
     async def discover(self, max_topics: int = 10, categories: list[str] | None = None) -> list[DiscoveredTopic]:
         """Discover fresh topics from multiple sources.
@@ -619,18 +625,84 @@ class TopicDiscovery:
             keywords = self._BRAND_KEYWORDS
         return self._match_brand_keywords(title, keywords)
 
+    def _resolved_category_searches(self) -> dict[str, list[str]]:
+        """Resolve the active category-search map (gh#218).
+
+        Resolution order:
+
+        1. ``app_settings.topic_discovery_category_searches`` — JSON
+           object, the customer-tunable override. Empty object ``{}``
+           (the default after migration 0111) means "no override".
+        2. The module-level :pydata:`CATEGORY_SEARCHES` map — Glad
+           Labs's tech / startup / hardware / gaming buckets, used as a
+           permissive fallback so existing deployments don't change
+           behaviour out from under themselves.
+
+        Cached on ``self`` after the first call: ``site_config.get`` is
+        a cheap dict lookup but ``json.loads`` is wasted work to repeat
+        on every classification.
+        """
+        if self.__category_searches_cache is not None:
+            return self.__category_searches_cache
+        raw = (
+            self._site_config.get("topic_discovery_category_searches", "")
+            or ""
+        ).strip()
+        resolved: dict[str, list[str]] = {}
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    resolved = {
+                        str(cat): [str(q) for q in queries]
+                        for cat, queries in parsed.items()
+                        if isinstance(queries, list)
+                    }
+                else:
+                    logger.warning(
+                        "[TOPIC_DISCOVERY] topic_discovery_category_searches "
+                        "is not a JSON object (got %s); using hardcoded "
+                        "CATEGORY_SEARCHES fallback",
+                        type(parsed).__name__,
+                    )
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(
+                    "[TOPIC_DISCOVERY] Failed to parse "
+                    "topic_discovery_category_searches as JSON: %s; "
+                    "using hardcoded CATEGORY_SEARCHES fallback", e,
+                )
+        else:
+            # Empty string OR setting absent. Migration 0111 seeds "{}",
+            # so a totally missing key is a strong signal the migration
+            # hasn't been applied yet — log loudly per the gh#218 brief.
+            if "topic_discovery_category_searches" not in self._site_config.all():
+                logger.warning(
+                    "[TOPIC_DISCOVERY] topic_discovery_category_searches "
+                    "not seeded — migration 0111 hasn't run? Falling "
+                    "back to hardcoded CATEGORY_SEARCHES."
+                )
+        if not resolved:
+            resolved = CATEGORY_SEARCHES
+        self.__category_searches_cache = resolved
+        return resolved
+
     def _classify_category(self, title: str) -> str:
         """Classify a title into a category."""
         title_lower = title.lower()
         scores = {}
-        for cat, searches in CATEGORY_SEARCHES.items():
+        for cat, searches in self._resolved_category_searches().items():
             keywords = " ".join(searches).lower().split()
             score = sum(1 for kw in keywords if kw in title_lower)
             scores[cat] = score
         best = max(scores, key=scores.get) if scores else "technology"
         return best if scores.get(best, 0) > 0 else "technology"
 
-    # Patterns that indicate news/current events (not evergreen editorial content)
+    # Patterns that indicate news/current events (not evergreen editorial
+    # content). Kept as class-level constants for the back-compat
+    # fallback path: when ``app_settings.topic_discovery_news_patterns``
+    # is empty (the default after migration 0111), TopicDiscovery uses
+    # these so existing Glad Labs deployments don't change behaviour.
+    # New customers seed their own JSON-array override per gh#218.
     _NEWS_PATTERNS = [
         r"\b(?:police|arrest|charged|sentenced|indicted|convicted|alleged)\b",
         r"\b(?:lawsuit|sued|court|judge|ruling|verdict)\b",
@@ -642,20 +714,95 @@ class TopicDiscovery:
     ]
     _NEWS_RE = [re.compile(p, re.IGNORECASE) for p in _NEWS_PATTERNS]
 
-    @staticmethod
-    def _is_news_or_junk(title: str) -> bool:
+    def _resolved_news_re(self) -> list[re.Pattern[str]]:
+        """Resolve the active news/junk regex list (gh#218).
+
+        Resolution order:
+
+        1. ``app_settings.topic_discovery_news_patterns`` — JSON array
+           of regex strings, customer-tunable override. Empty array
+           ``[]`` (the default after migration 0111) means "no
+           override".
+        2. The class-level :pyattr:`_NEWS_RE` — Glad Labs's
+           lawsuit/election/merch reject list, used as a permissive
+           fallback.
+
+        Compiled patterns are cached on ``self``. Bad regexes in the
+        override are logged and skipped, not raised — one typo in the
+        operator's seed shouldn't take topic discovery offline.
+        """
+        if self.__news_re_cache is not None:
+            return self.__news_re_cache
+        raw = (
+            self._site_config.get("topic_discovery_news_patterns", "")
+            or ""
+        ).strip()
+        compiled: list[re.Pattern[str]] = []
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    for p in parsed:
+                        if not isinstance(p, str):
+                            continue
+                        try:
+                            compiled.append(re.compile(p, re.IGNORECASE))
+                        except re.error as e:
+                            logger.warning(
+                                "[TOPIC_DISCOVERY] Skipping invalid regex "
+                                "in topic_discovery_news_patterns: %r (%s)",
+                                p, e,
+                            )
+                else:
+                    logger.warning(
+                        "[TOPIC_DISCOVERY] topic_discovery_news_patterns "
+                        "is not a JSON array (got %s); using hardcoded "
+                        "_NEWS_RE fallback",
+                        type(parsed).__name__,
+                    )
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(
+                    "[TOPIC_DISCOVERY] Failed to parse "
+                    "topic_discovery_news_patterns as JSON: %s; "
+                    "using hardcoded _NEWS_RE fallback", e,
+                )
+        else:
+            if "topic_discovery_news_patterns" not in self._site_config.all():
+                logger.warning(
+                    "[TOPIC_DISCOVERY] topic_discovery_news_patterns "
+                    "not seeded — migration 0111 hasn't run? Falling "
+                    "back to hardcoded _NEWS_RE."
+                )
+        if not compiled:
+            compiled = self._NEWS_RE
+        self.__news_re_cache = compiled
+        return compiled
+
+    def _is_news_or_junk(self, title: str) -> bool:
         """Reject breaking news, current events, personal anecdotes, merch,
         truncated mid-phrase titles, and emoji-led clickbait.
 
-        Delegates to the canonical implementation in
+        Regex list is sourced from ``app_settings`` (gh#218) with the
+        class-level :pyattr:`_NEWS_RE` as the permissive fallback. The
+        non-regex filters (too-short titles, trailing-fragment, leading
+        non-letter clickbait) are imported from
         ``services.topic_sources._filters`` so the dispatcher and the
-        per-source plugins stay in sync. The local class-level
-        ``_NEWS_RE`` constants are kept around for back-compat with any
-        code that still references them directly, but new patterns go
-        in ``_filters.py``.
+        per-source plugins stay in sync on those parts.
         """
-        from services.topic_sources._filters import is_news_or_junk
-        return is_news_or_junk(title)
+        from services.topic_sources._filters import (
+            _LEADING_NON_LETTER_RE,
+            _TRAILING_FRAGMENT_RE,
+        )
+        for pattern in self._resolved_news_re():
+            if pattern.search(title):
+                return True
+        if len(title.split()) < 4:
+            return True
+        if _TRAILING_FRAGMENT_RE.search(title):
+            return True
+        if _LEADING_NON_LETTER_RE.match(title):
+            return True
+        return False
 
     def _rewrite_as_blog_topic(self, title: str) -> str:
         """Clean up a scraped title into a good blog topic.

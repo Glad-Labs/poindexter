@@ -560,29 +560,38 @@ class TestCategorySearches:
 
 
 class TestIsNewsOrJunk:
+    # gh#218: _is_news_or_junk is an instance method now (was @staticmethod)
+    # so the regex list can be sourced from app_settings via SiteConfig.
+    # Each test instantiates a TopicDiscovery with the empty test SiteConfig
+    # so the hardcoded _NEWS_RE fallback path is exercised.
+
+    def _d(self):
+        return TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+
     def test_too_short_title_rejected(self):
-        assert TopicDiscovery._is_news_or_junk("Short title") is True
-        assert TopicDiscovery._is_news_or_junk("AI Tools") is True
+        d = self._d()
+        assert d._is_news_or_junk("Short title") is True
+        assert d._is_news_or_junk("AI Tools") is True
 
     def test_long_title_not_rejected_for_length(self):
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Building Production-Ready Microservices with Go"
         ) is False
 
     def test_lawsuit_pattern_rejected(self):
         # Real pattern from _NEWS_PATTERNS — "lawsuit" matches
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Tech Giant Faces Major Lawsuit Over Privacy"
         ) is True
 
     def test_personal_anecdote_pattern_rejected(self):
         # "my experience" is in the news/junk pattern list
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "My experience building a startup from scratch"
         ) is True
 
     def test_merch_pattern_rejected(self):
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Limited Edition Tech Merch and Sticker Pack"
         ) is True
 
@@ -591,35 +600,125 @@ class TestIsNewsOrJunk:
         'Top Cybersecurity Threats in' must be rejected — the trailing
         preposition is a strong signal the source cut off mid-phrase.
         Real evergreen titles never end with these tokens."""
-        assert TopicDiscovery._is_news_or_junk("Top Cybersecurity Threats in") is True
-        assert TopicDiscovery._is_news_or_junk("Different Language Models Learn") is False  # ends with verb, not preposition
-        assert TopicDiscovery._is_news_or_junk("Best Practices for") is True
-        assert TopicDiscovery._is_news_or_junk("How to Deploy Apps with") is True
-        assert TopicDiscovery._is_news_or_junk("Choosing Frameworks Using") is True
+        d = self._d()
+        assert d._is_news_or_junk("Top Cybersecurity Threats in") is True
+        assert d._is_news_or_junk("Different Language Models Learn") is False  # ends with verb, not preposition
+        assert d._is_news_or_junk("Best Practices for") is True
+        assert d._is_news_or_junk("How to Deploy Apps with") is True
+        assert d._is_news_or_junk("Choosing Frameworks Using") is True
 
     def test_leading_emoji_rejected(self):
         """gitea#279 follow-up: emoji-led devto/medium clickbait
         ('🦸Let Superheroes Cheer You Up...') is junk that previously
         slipped past brand-relevance on a coincidental 'AI' match."""
-        assert TopicDiscovery._is_news_or_junk(
+        d = self._d()
+        assert d._is_news_or_junk(
             "🦸Let Superheroes Cheer You Up (AI Avatar v6: Chrome Extension)"
         ) is True
-        assert TopicDiscovery._is_news_or_junk(
+        assert d._is_news_or_junk(
             "🚀Rocket-fast Startup Strategies for AI Founders"
         ) is True
 
     def test_bracket_prefix_not_rejected(self):
         """[Show HN] / [Ask HN] prefixes are legitimate — those go through
         the rewrite path, not the leading-emoji reject."""
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "[Show HN] My open-source tool for content automation"
         ) is False
 
     def test_normal_title_not_rejected(self):
         """Sanity check: a perfectly normal title still passes."""
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Building Production-Ready Microservices with Go"
         ) is False
+
+    def test_db_override_replaces_hardcoded_patterns(self):
+        """gh#218: an operator-supplied JSON-array override in
+        app_settings.topic_discovery_news_patterns replaces the
+        hardcoded list — a real-estate niche customer who removes
+        'lawsuit' from the patterns should see those titles pass."""
+        sc = SiteConfig(initial_config={
+            "topic_discovery_news_patterns": '["\\\\b(?:merch|sticker|swag)\\\\b"]',
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # 'lawsuit' is no longer in the active reject list
+        assert d._is_news_or_junk(
+            "Tech Giant Faces Major Lawsuit Over Privacy"
+        ) is False
+        # 'merch' still matches because the operator kept it
+        assert d._is_news_or_junk(
+            "Limited Edition Tech Merch Drop for 2026"
+        ) is True
+
+    def test_db_override_empty_array_falls_back_to_hardcoded(self):
+        """gh#218: an explicit '[]' (the default seeded by migration
+        0111) is semantically the same as 'no override has been
+        configured' — it falls back to the hardcoded _NEWS_RE so
+        existing Glad Labs deployments keep their behaviour. This
+        mirrors the brand_keywords / migration 0105 precedent: ship
+        empty, fall back to hardcoded, force customers to opt in."""
+        sc = SiteConfig(initial_config={
+            "topic_discovery_news_patterns": "[]",
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Lawsuit still rejected — fell back to hardcoded list
+        assert d._is_news_or_junk(
+            "Tech Giant Faces Major Lawsuit Over Privacy"
+        ) is True
+        # Non-regex filters always apply
+        assert d._is_news_or_junk("Top Cybersecurity Threats in") is True
+        assert d._is_news_or_junk("AI Tools") is True
+
+    def test_db_override_invalid_json_falls_back_to_hardcoded(self):
+        """gh#218: a malformed JSON value should not take the dispatcher
+        offline — it logs a warning and falls back to _NEWS_RE."""
+        sc = SiteConfig(initial_config={
+            "topic_discovery_news_patterns": "not valid json [",
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._is_news_or_junk(
+            "Tech Giant Faces Major Lawsuit Over Privacy"
+        ) is True
+
+
+# ===========================================================================
+# _classify_category — DB override (gh#218)
+# ===========================================================================
+
+
+class TestClassifyCategoryDbOverride:
+    def test_override_replaces_hardcoded_categories(self):
+        """gh#218: a customer-supplied
+        app_settings.topic_discovery_category_searches overrides the
+        hardcoded CATEGORY_SEARCHES — a gardener's titles bucket into
+        gardening categories instead of always defaulting to 'technology'."""
+        import json as _json
+        override = {
+            "gardening": ["heirloom tomato", "compost tea", "raised bed"],
+            "tools": ["pruning shears", "soil test", "drip irrigation"],
+        }
+        sc = SiteConfig(initial_config={
+            "topic_discovery_category_searches": _json.dumps(override),
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._classify_category(
+            "Best heirloom tomato varieties for cool climates"
+        ) == "gardening"
+        assert d._classify_category(
+            "How drip irrigation saves your raised bed"
+        ) in ("gardening", "tools")  # both have matching keywords
+        # No matches → falls through to the always-on 'technology' default
+        assert d._classify_category(
+            "Quantum chromodynamics explained"
+        ) == "technology"
+
+    def test_invalid_json_override_falls_back_to_hardcoded(self):
+        sc = SiteConfig(initial_config={
+            "topic_discovery_category_searches": "{not valid json",
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Hardcoded CATEGORY_SEARCHES still classifies hardware titles
+        assert d._classify_category("AMD vs NVIDIA GPU Benchmarks") == "hardware"
 
 
 # ===========================================================================
