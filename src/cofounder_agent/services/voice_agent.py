@@ -177,7 +177,15 @@ async def run_local(site_config: Any) -> None:
             ) from exc
     stt = WhisperSTTService(model=whisper_model_enum)
     llm = OLLamaLLMService(model=llm_model, base_url=ollama_url)
-    tts = KokoroTTSService(voice=tts_voice, speed=tts_speed)
+    # Pipecat 1.1 deprecated KokoroTTSService(voice_id=...) in favor of
+    # settings=Settings(voice=...). Passing voice= as a kwarg gets eaten
+    # by **kwargs and the underlying kokoro_onnx ends up with voice=None
+    # → crash on first synthesis. Pipecat hardcodes speed=1.0 internally
+    # so tts_speed isn't honored today; kept the setting for forward-compat.
+    _ = tts_speed  # noqa: F841 — pipecat doesn't accept speed yet
+    tts = KokoroTTSService(
+        settings=KokoroTTSService.Settings(voice=tts_voice),
+    )
 
     # Pipecat 1.1 API: LLMContext (universal, not OpenAI-specific) + a
     # standalone LLMContextAggregatorPair (replaces the old
