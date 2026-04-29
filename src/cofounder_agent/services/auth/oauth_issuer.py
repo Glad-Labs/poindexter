@@ -1,51 +1,37 @@
-"""OAuth 2.1 Client Credentials issuer (Glad-Labs/poindexter#241 Phase 1).
+"""OAuth 2.1 JWT issuance + verification (Glad-Labs/poindexter#241).
 
-Issues short-lived JWT access tokens to registered clients (CLI, MCP
-servers, OpenClaw skills, brain daemon, Grafana webhooks, etc.).
-*Not* an end-user authentication system — every client is a tool /
-agent owned by the operator.
+This module is the JWT side of the OAuth surface — it does NOT speak
+HTTP. The HTTP token endpoint is built on the MCP SDK's
+``OAuthAuthorizationServerProvider`` (see :mod:`services.auth.oauth_provider`),
+which calls into here when it needs to mint or verify a token.
 
 ## Token format
 
 Symmetric JWT, HS256, signed with the bootstrap symmetric key
-(``POINDEXTER_SECRET_KEY``, the same one
-``plugins.secrets`` already reads). Payload:
+(``POINDEXTER_SECRET_KEY`` — the same key ``plugins.secrets`` already
+reads for app_settings encryption). Payload:
 
     {
-      "iss": "poindexter",
-      "sub": "<client_id>",
-      "scope": "mcp:read mcp:write",   # space-delimited per RFC 8693
-      "iat": 1714000000,
-      "exp": 1714003600,
-      "jti": "<uuid4>"
+      "iss":   "poindexter",
+      "sub":   "<client_id>",
+      "scope": "mcp:read mcp:write",   # space-delimited per RFC 6749 §3.3
+      "iat":   1714000000,
+      "exp":   1714003600,
+      "jti":   "<uuid4>"
     }
 
-## Why PyJWT instead of Authlib
+## Why PyJWT (and not Authlib)
 
-The Phase 1 plan in #241 named Authlib as the issuer library. Once we
-sat with the actual scope — Client Credentials Grant only, JWT-only
-verification, no refresh tokens, no DCR, no auth-code flow — the
-Authlib surface stopped paying for itself: PyJWT (already pinned in
-``pyproject.toml`` for CVE GHSA-752w-5fwx-jx9f) covers everything we
-need in ~50 lines, and the resource server (``api_token_auth``) verifies
-the same way both sides of the bridge. We can swap to Authlib later if
-we add a flow it actually carries weight for; nothing in the wire format
-or DB schema would change.
-
-## Client secret hashing
-
-Plaintext secrets are 256 bits of randomness — brute-forcing them is
-infeasible regardless of the hash. We still use ``hashlib.scrypt`` so
-the stored hash is opaque to a DB-only compromise: an attacker who
-exfiltrates ``oauth_clients`` rows can't replay the secret without
-also obtaining the signing key (which lives outside the DB in
-``bootstrap.toml``).
+The HTTP server framework (authorize / token / register endpoints,
+PKCE verification, client authenticator) comes from the MCP SDK's
+``mcp.server.auth`` package — which is the "mature OSS" the original
+#241 plan named alongside Authlib. PyJWT is the JWT library underneath
+that does the actual sign / verify. Authlib would be a duplicative
+third layer; the SDK already covers the AS-flow plumbing.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import secrets
 import time
@@ -64,8 +50,8 @@ logger = get_logger(__name__)
 # Config knobs (DB-first; defaults here only kick in if the row is missing)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_TTL_SECONDS = 3600  # 60 min, per #241 LOCKED decision
-_ISSUER = "poindexter"
+DEFAULT_TTL_SECONDS = 3600  # 60 min, per #241 LOCKED decision
+ISSUER_CLAIM = "poindexter"
 _ALGORITHM = "HS256"
 _KEY_ENV = "POINDEXTER_SECRET_KEY"
 
@@ -78,23 +64,9 @@ ALLOWED_SCOPES: frozenset[str] = frozenset({
     "api:write",
 })
 
-# scrypt params — N=2^14, r=8, p=1 is the widely-recommended baseline
-# for online password hashing. Our inputs are 256-bit random secrets,
-# not human passwords, so this is comfortably more cost than the
-# attacker actually faces.
-_SCRYPT_N = 1 << 14
-_SCRYPT_R = 8
-_SCRYPT_P = 1
-_SCRYPT_DKLEN = 32
-_SCRYPT_SALT_BYTES = 16
-
 
 class OAuthError(Exception):
-    """Base class for OAuth issuer failures (token mint, verify, register)."""
-
-
-class InvalidClient(OAuthError):
-    """RFC 6749 §5.2 ``invalid_client`` — bad id or wrong secret."""
+    """Base class for OAuth issuer failures."""
 
 
 class InvalidScope(OAuthError):
@@ -110,7 +82,7 @@ class InvalidToken(OAuthError):
 # ---------------------------------------------------------------------------
 
 
-def _signing_key() -> str:
+def signing_key() -> str:
     """Return the symmetric signing key.
 
     Reuses ``POINDEXTER_SECRET_KEY`` so we have one rotation target
@@ -129,55 +101,7 @@ def _signing_key() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Client secret hashing (scrypt)
-# ---------------------------------------------------------------------------
-
-
-def hash_secret(plaintext: str) -> str:
-    """Hash a client secret for storage.
-
-    Format: ``scrypt$<N>$<r>$<p>$<salt_hex>$<hash_hex>``. Self-describing
-    so we can change params later without ambiguity.
-    """
-    salt = secrets.token_bytes(_SCRYPT_SALT_BYTES)
-    h = hashlib.scrypt(
-        plaintext.encode("utf-8"),
-        salt=salt,
-        n=_SCRYPT_N,
-        r=_SCRYPT_R,
-        p=_SCRYPT_P,
-        dklen=_SCRYPT_DKLEN,
-    )
-    return f"scrypt${_SCRYPT_N}${_SCRYPT_R}${_SCRYPT_P}${salt.hex()}${h.hex()}"
-
-
-def verify_secret(plaintext: str, stored_hash: str) -> bool:
-    """Constant-time verify a client secret against the stored scrypt hash."""
-    try:
-        algo, n_s, r_s, p_s, salt_hex, hash_hex = stored_hash.split("$")
-    except ValueError:
-        return False
-    if algo != "scrypt":
-        return False
-    try:
-        n, r, p = int(n_s), int(r_s), int(p_s)
-        salt = bytes.fromhex(salt_hex)
-        expected = bytes.fromhex(hash_hex)
-    except (ValueError, TypeError):
-        return False
-    candidate = hashlib.scrypt(
-        plaintext.encode("utf-8"),
-        salt=salt,
-        n=n,
-        r=r,
-        p=p,
-        dklen=len(expected),
-    )
-    return hmac.compare_digest(candidate, expected)
-
-
-# ---------------------------------------------------------------------------
-# Identifier generation (client_id / client_secret)
+# Identifier generation (client_id / client_secret / authorization codes)
 # ---------------------------------------------------------------------------
 
 
@@ -188,6 +112,13 @@ def generate_client_id() -> str:
 
 def generate_client_secret() -> str:
     """256 bits of randomness, urlsafe-base64. Shown to the operator once."""
+    return secrets.token_urlsafe(32)
+
+
+def generate_authorization_code() -> str:
+    """OAuth 2.1 §10.10 mandates ≥128 bits of entropy; we ship 256 to
+    leave headroom and stay on a tidy round number.
+    """
     return secrets.token_urlsafe(32)
 
 
@@ -211,14 +142,13 @@ def issue_token(
     client_id: str,
     scopes: Iterable[str],
     *,
-    ttl_seconds: int = _DEFAULT_TTL_SECONDS,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
 ) -> tuple[str, TokenClaims]:
-    """Mint a signed JWT. Returns (jwt_string, claims) — claims are useful
-    for logging or for the caller to record.
+    """Mint a signed JWT. Returns (jwt_string, claims).
 
     Rejects scopes outside :data:`ALLOWED_SCOPES`; the token endpoint
     is supposed to have intersected against the client's grant before
-    calling us, but we double-check as a defence-in-depth.
+    calling us, but we double-check as defence-in-depth.
     """
     scope_set = frozenset(scopes)
     bad = scope_set - ALLOWED_SCOPES
@@ -229,14 +159,14 @@ def issue_token(
     exp = now + ttl_seconds
     jti = uuid.uuid4().hex
     payload = {
-        "iss": _ISSUER,
+        "iss": ISSUER_CLAIM,
         "sub": client_id,
         "scope": " ".join(sorted(scope_set)),
         "iat": now,
         "exp": exp,
         "jti": jti,
     }
-    token = jwt.encode(payload, _signing_key(), algorithm=_ALGORITHM)
+    token = jwt.encode(payload, signing_key(), algorithm=_ALGORITHM)
     claims = TokenClaims(
         client_id=client_id,
         scopes=scope_set,
@@ -256,9 +186,9 @@ def verify_token(token: str) -> TokenClaims:
     try:
         payload = jwt.decode(
             token,
-            _signing_key(),
+            signing_key(),
             algorithms=[_ALGORITHM],
-            issuer=_ISSUER,
+            issuer=ISSUER_CLAIM,
             options={"require": ["exp", "iat", "sub", "scope", "jti"]},
         )
     except jwt.ExpiredSignatureError as e:
@@ -275,105 +205,3 @@ def verify_token(token: str) -> TokenClaims:
         expires_at=int(payload["exp"]),
         jti=str(payload["jti"]),
     )
-
-
-# ---------------------------------------------------------------------------
-# DB operations (oauth_clients)
-# ---------------------------------------------------------------------------
-
-
-async def register_client(
-    pool,
-    *,
-    name: str,
-    scopes: Iterable[str],
-) -> tuple[str, str]:
-    """Create a new client row. Returns ``(client_id, client_secret_plaintext)``.
-
-    The plaintext is shown to the operator once — we hash before
-    storing and never have a way to recover it.
-    """
-    scope_list = sorted(set(scopes))
-    bad = set(scope_list) - ALLOWED_SCOPES
-    if bad:
-        raise InvalidScope(f"unknown scope(s): {sorted(bad)}")
-
-    client_id = generate_client_id()
-    plaintext = generate_client_secret()
-    secret_hash = hash_secret(plaintext)
-
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO oauth_clients
-                (client_id, client_secret_hash, name, scopes)
-            VALUES ($1, $2, $3, $4)
-            """,
-            client_id,
-            secret_hash,
-            name,
-            scope_list,
-        )
-    logger.info(
-        "Registered OAuth client client_id=%s name=%r scopes=%s",
-        client_id, name, scope_list,
-    )
-    return client_id, plaintext
-
-
-async def mint_token_from_credentials(
-    pool,
-    *,
-    client_id: str,
-    client_secret: str,
-    requested_scopes: Iterable[str] | None = None,
-    ttl_seconds: int = _DEFAULT_TTL_SECONDS,
-) -> tuple[str, TokenClaims]:
-    """Full Client Credentials Grant: verify creds, intersect scopes,
-    issue JWT, bump ``last_used_at``.
-
-    ``requested_scopes`` may be empty/None — RFC 6749 says omit the
-    ``scope`` parameter and the AS issues the client's full set.
-    """
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT client_secret_hash, scopes, revoked_at
-              FROM oauth_clients
-             WHERE client_id = $1
-            """,
-            client_id,
-        )
-
-        if row is None:
-            # Don't reveal whether the id exists; same error for
-            # "no such client" as for "wrong secret". Brief work
-            # against the pwhash so timing matches the secret-check
-            # path roughly.
-            verify_secret(client_secret, "scrypt$16384$8$1$00$00")
-            raise InvalidClient("invalid client credentials")
-
-        if row["revoked_at"] is not None:
-            raise InvalidClient("client revoked")
-
-        if not verify_secret(client_secret, row["client_secret_hash"]):
-            raise InvalidClient("invalid client credentials")
-
-        granted = frozenset(row["scopes"] or ())
-        if requested_scopes:
-            requested = frozenset(requested_scopes)
-            extras = requested - granted
-            if extras:
-                raise InvalidScope(
-                    f"scope(s) not granted to client: {sorted(extras)}"
-                )
-            issued_scopes = requested
-        else:
-            issued_scopes = granted
-
-        await conn.execute(
-            "UPDATE oauth_clients SET last_used_at = NOW() WHERE client_id = $1",
-            client_id,
-        )
-
-    return issue_token(client_id, issued_scopes, ttl_seconds=ttl_seconds)

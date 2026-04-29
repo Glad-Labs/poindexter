@@ -1,39 +1,57 @@
-"""OAuth 2.1 Authorization Server endpoints (Phase 1, #241).
+"""OAuth 2.1 Authorization Server routes (Phase 1, #241).
 
-Three routes — the bare minimum for an OAuth 2.1 Client Credentials
-Authorization Server that an Anthropic Custom Connector (or any other
-MCP 2025-03-26 / RFC-8414 / RFC-9728-aware client) can talk to:
+Wires the MCP SDK's ``mcp.server.auth.routes.create_auth_routes`` and
+``create_protected_resource_routes`` onto the FastAPI worker. The SDK
+provides:
 
-- ``GET /.well-known/oauth-authorization-server`` — RFC 8414 metadata
-  (issuer-side; lists token endpoint, supported grants, scopes)
-- ``GET /.well-known/oauth-protected-resource`` — RFC 9728 metadata
-  (resource-side; tells the client which authorization server protects
-  this resource). MCP 2025-03-26 §authorization REQUIRES this for
-  discovery — without it Anthropic's Custom Connector aborts before
-  ever hitting the token endpoint.
-- ``POST /oauth/token`` — Client Credentials Grant only (RFC 6749 §4.4)
+- ``GET /.well-known/oauth-authorization-server`` (RFC 8414 metadata)
+- ``GET /.well-known/oauth-protected-resource``  (RFC 9728 metadata)
+- ``GET /authorize``                              (Auth Code Grant + PKCE)
+- ``POST /token``                                 (token exchange — auth_code,
+                                                   refresh_token, plus a
+                                                   client_credentials wrapper
+                                                   we layer on top)
+- ``POST /register``                              (RFC 7591 DCR)
+- ``POST /revoke``                                (token revocation)
 
-Token validation lives next to the rest of the auth surface in
-``middleware/api_token_auth.py`` — these routes are the *issuer* side
-only.
+Plus a few Poindexter-specific extras:
 
-There's no ``/oauth/register`` (DCR) yet — clients are provisioned by
-the operator via ``poindexter auth register-client``.
+- ``GET /.well-known/openid-configuration`` aliased to RFC 8414 metadata
+  (some clients try OIDC discovery first; redirecting them to the same
+  document is cheaper than 404→fallback)
+- ``POST /token`` falls through to a small ``client_credentials`` handler
+  before the SDK gets the request — keeps the headless CLI / scripts
+  flow working alongside the browser-driven Custom Connector flow
+
+The provider implementation lives in
+:mod:`services.auth.oauth_provider` — see that module for storage and
+JWT plumbing.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Request
+from pydantic import AnyHttpUrl
+from starlette.responses import JSONResponse
+
+from mcp.server.auth.provider import TokenError
+from mcp.server.auth.routes import (
+    create_auth_routes,
+    create_protected_resource_routes,
+)
+from mcp.server.auth.settings import (
+    ClientRegistrationOptions,
+    RevocationOptions,
+)
 
 from services.auth.oauth_issuer import (
     ALLOWED_SCOPES,
-    InvalidClient,
-    InvalidScope,
-    mint_token_from_credentials,
+    DEFAULT_TTL_SECONDS,
+    issue_token,
 )
+from services.auth.oauth_provider import PoindexterOAuthProvider
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -41,25 +59,21 @@ from utils.route_utils import get_database_dependency, get_site_config_dependenc
 logger = get_logger(__name__)
 
 
-# Two routers because they sit at different paths — well-known is at the
-# document root, the grant endpoint is under /oauth.
-metadata_router = APIRouter(tags=["OAuth"])
-token_router = APIRouter(prefix="/oauth", tags=["OAuth"])
-
-
 # ---------------------------------------------------------------------------
-# RFC 8414 — Authorization Server Metadata
+# Route module discovery — exported as a single APIRouter named ``router``
+# so route_registration.py can mount it like every other route module. The
+# SDK gives us Starlette ``Route`` objects; we adapt each to a FastAPI
+# endpoint via ``add_api_route``.
 # ---------------------------------------------------------------------------
 
 
 def _issuer_url(request: Request, site_config: Any) -> str:
     """Best-effort canonical issuer URL.
 
-    Prefers the configured public-facing URL (set explicitly in
-    ``app_settings.oauth_issuer_url`` so the operator controls what
-    Custom Connectors see) and falls back to reconstructing from the
+    Prefers ``app_settings.oauth_issuer_url`` so the operator controls
+    what Custom Connectors see; falls back to reconstructing from the
     incoming request — handy for local dev but not what we want from
-    behind a Tailscale Funnel.
+    behind Tailscale Funnel.
     """
     explicit = site_config.get("oauth_issuer_url", "") if site_config else ""
     if explicit:
@@ -67,151 +81,335 @@ def _issuer_url(request: Request, site_config: Any) -> str:
     return f"{request.url.scheme}://{request.url.netloc}".rstrip("/")
 
 
-@metadata_router.get("/.well-known/oauth-authorization-server")
-async def oauth_metadata(
+def _resource_url(issuer: str) -> str:
+    """The MCP HTTP server's external URL — what gets advertised as the
+    protected resource. Same hostname as the issuer, with ``/mcp/``."""
+    return f"{issuer}/mcp/"
+
+
+metadata_router = APIRouter(tags=["OAuth"])
+authorization_router = APIRouter(tags=["OAuth"])
+
+
+# ---------------------------------------------------------------------------
+# Build SDK routes lazily, per-request
+# ---------------------------------------------------------------------------
+#
+# create_auth_routes() needs the issuer URL at construction time to bake it
+# into the metadata document. Building it once at startup would freeze the
+# value, but the operator might rotate ``oauth_issuer_url`` after the
+# worker is up. So we build the SDK route on each request and dispatch.
+# Cheap — it's a few Pydantic ctor calls.
+# ---------------------------------------------------------------------------
+
+
+def _build_sdk_routes(issuer_url: str, db_service: DatabaseService):
+    pool = getattr(db_service, "pool", None)
+    if pool is None:
+        raise RuntimeError("database pool unavailable")
+    provider = PoindexterOAuthProvider(pool)
+    auth_routes = create_auth_routes(
+        provider=provider,
+        issuer_url=AnyHttpUrl(issuer_url),
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=sorted(ALLOWED_SCOPES),
+            default_scopes=["mcp:read", "mcp:write"],
+        ),
+        revocation_options=RevocationOptions(enabled=True),
+    )
+    resource_routes = create_protected_resource_routes(
+        resource_url=AnyHttpUrl(_resource_url(issuer_url)),
+        authorization_servers=[AnyHttpUrl(issuer_url)],
+        scopes_supported=sorted(ALLOWED_SCOPES),
+        resource_name="Poindexter MCP",
+    )
+    return provider, auth_routes + resource_routes
+
+
+def _find_route(routes, path: str):
+    for r in routes:
+        if getattr(r, "path", None) == path:
+            return r
+    return None
+
+
+async def _dispatch_sdk(
     request: Request,
-    site_config: Any = Depends(get_site_config_dependency),
-) -> dict[str, Any]:
+    path: str,
+    db_service: DatabaseService,
+    site_config: Any,
+    *,
+    body_override: bytes | None = None,
+):
+    """Adapter — find the SDK route by path and run its endpoint with
+    the FastAPI Request. The SDK's CORS-wrapped handlers expect an
+    ASGI app interface; FastAPI gave us a Request, so we pass through
+    via a buffered scope/receive/send.
+
+    Body buffering is mandatory: FastAPI may have already consumed the
+    request body (e.g. our /token wrapper reads the form once before
+    deciding whether to delegate to the SDK). The original ``receive``
+    channel can only be drained once, so we read the body up-front and
+    replay it as a single ``http.request`` message.
+    """
     issuer = _issuer_url(request, site_config)
-    return {
-        "issuer": issuer,
-        "token_endpoint": f"{issuer}/oauth/token",
-        "grant_types_supported": ["client_credentials"],
-        "token_endpoint_auth_methods_supported": [
-            # Per RFC 6749 we accept both — body params (used by the
-            # Anthropic Custom Connector UI) and HTTP Basic.
-            "client_secret_post",
-            "client_secret_basic",
-        ],
-        "scopes_supported": sorted(ALLOWED_SCOPES),
-        "response_types_supported": [],  # client_credentials has no response type
-        "service_documentation": "https://github.com/Glad-Labs/poindexter/issues/241",
-    }
+    _, routes = _build_sdk_routes(issuer, db_service)
+    target = _find_route(routes, path)
+    if target is None:
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    # If the caller already drained the body (e.g. /token reads it
+    # before deciding whether to delegate), use that buffer; otherwise
+    # read it now from the underlying stream.
+    body_bytes = body_override if body_override is not None else await request.body()
+    body_sent = False
+
+    async def _replay_receive():
+        nonlocal body_sent
+        if not body_sent:
+            body_sent = True
+            return {"type": "http.request", "body": body_bytes, "more_body": False}
+        # The SDK shouldn't ask twice, but if it does we keep returning
+        # an empty disconnect so it doesn't hang.
+        return {"type": "http.disconnect"}
+
+    response_holder: dict[str, Any] = {}
+
+    async def _send(message):
+        if message["type"] == "http.response.start":
+            response_holder["status"] = message["status"]
+            response_holder["headers"] = message.get("headers", [])
+        elif message["type"] == "http.response.body":
+            response_holder.setdefault("body", b"")
+            response_holder["body"] += message.get("body", b"")
+
+    await target.app(request.scope, _replay_receive, _send)
+    from starlette.responses import Response
+    return Response(
+        content=response_holder.get("body", b""),
+        status_code=response_holder.get("status", 500),
+        headers={k.decode(): v.decode() for k, v in response_holder.get("headers", [])},
+    )
+
+
+# ---------------------------------------------------------------------------
+# RFC 8414 + RFC 9728 metadata
+# ---------------------------------------------------------------------------
+
+
+@metadata_router.get("/.well-known/oauth-authorization-server")
+async def oauth_authorization_server(
+    request: Request,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+):
+    return await _dispatch_sdk(
+        request, "/.well-known/oauth-authorization-server", db_service, site_config,
+    )
+
+
+@metadata_router.get("/.well-known/openid-configuration")
+async def oidc_alias(
+    request: Request,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+):
+    """OIDC discovery alias — returns the same document as RFC 8414.
+
+    Some clients (notably the Anthropic Custom Connector) probe OIDC
+    first before falling back to RFC 8414. Serving the same body at
+    both URLs avoids the round-trip and the noisy 404 in our logs.
+    """
+    return await _dispatch_sdk(
+        request, "/.well-known/oauth-authorization-server", db_service, site_config,
+    )
 
 
 @metadata_router.get("/.well-known/oauth-protected-resource")
-async def oauth_protected_resource_metadata(
+async def oauth_protected_resource_root(
     request: Request,
+    db_service: DatabaseService = Depends(get_database_dependency),
     site_config: Any = Depends(get_site_config_dependency),
-) -> dict[str, Any]:
-    """RFC 9728 — tells a client which authorization server protects this resource.
+):
+    """Host-level resource metadata.
 
-    Required by the MCP 2025-03-26 authorization spec for the discovery
-    chain to complete. The Custom Connector hits the MCP URL with no
-    auth, parses the ``WWW-Authenticate`` header for ``resource_metadata``,
-    fetches *this* document, then fetches the listed authorization
-    server's ``/.well-known/oauth-authorization-server`` for the token
-    endpoint.
-
-    The ``resource`` we name is the MCP HTTP endpoint (``/mcp/``); the
-    ``authorization_servers`` array points back at the worker (which is
-    the same external host but a logically different role — the worker
-    issues tokens, the MCP server consumes them).
-    """
-    issuer = _issuer_url(request, site_config)
-    return {
-        "resource": f"{issuer}/mcp/",
-        "authorization_servers": [issuer],
-        "scopes_supported": sorted(ALLOWED_SCOPES),
-        "bearer_methods_supported": ["header"],
-        "resource_documentation": "https://github.com/Glad-Labs/poindexter/issues/241",
-    }
-
-
-# ---------------------------------------------------------------------------
-# RFC 6749 §4.4 — Client Credentials Grant
-# ---------------------------------------------------------------------------
-
-
-def _oauth_error(error: str, description: str, status: int = 400) -> JSONResponse:
-    """Format an RFC 6749 §5.2 error response."""
-    return JSONResponse(
-        status_code=status,
-        content={"error": error, "error_description": description},
-        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    RFC 9728 §3.1 actually mandates the path-based form
+    ``/.well-known/oauth-protected-resource/mcp`` for our resource at
+    ``/mcp/``, but a lot of clients (including the Custom Connector)
+    only probe the host-default URL. Serve both — same body."""
+    return await _dispatch_sdk(
+        request, "/.well-known/oauth-protected-resource/mcp/", db_service, site_config,
     )
 
 
-@token_router.post("/token")
-async def token_endpoint(
+@metadata_router.get("/.well-known/oauth-protected-resource/mcp")
+async def oauth_protected_resource_mcp(
     request: Request,
-    grant_type: str = Form(...),
-    scope: str | None = Form(default=None),
-    client_id: str | None = Form(default=None),
-    client_secret: str | None = Form(default=None),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ):
-    """RFC 6749 §4.4 token endpoint.
+    return await _dispatch_sdk(
+        request, "/.well-known/oauth-protected-resource/mcp/", db_service, site_config,
+    )
 
-    Accepts client credentials either as form params (``client_id`` +
-    ``client_secret``, the path the Anthropic Custom Connector takes) or
-    via HTTP Basic auth. ``scope`` is space-delimited per RFC 6749 §3.3
-    and is optional — omitting it issues the client's full registered
-    scope set.
+
+# ---------------------------------------------------------------------------
+# /authorize, /register, /revoke — straight passthrough
+# ---------------------------------------------------------------------------
+
+
+@authorization_router.api_route("/authorize", methods=["GET", "POST"])
+async def authorize(
+    request: Request,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+):
+    return await _dispatch_sdk(request, "/authorize", db_service, site_config)
+
+
+@authorization_router.post("/register")
+async def register(
+    request: Request,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+):
+    return await _dispatch_sdk(request, "/register", db_service, site_config)
+
+
+@authorization_router.post("/revoke")
+async def revoke(
+    request: Request,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+):
+    return await _dispatch_sdk(request, "/revoke", db_service, site_config)
+
+
+# ---------------------------------------------------------------------------
+# /token — wraps SDK to also accept grant_type=client_credentials
+# ---------------------------------------------------------------------------
+
+
+@authorization_router.post("/token")
+async def token(
+    request: Request,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
+):
+    """Token endpoint.
+
+    The SDK's TokenHandler natively supports ``authorization_code`` and
+    ``refresh_token`` grant types. We additionally accept
+    ``client_credentials`` so the headless CLI / scripts / brain daemon
+    can keep minting tokens without a browser hop.
+
+    The body is read once up-front (Starlette's Request stream can only
+    be drained once) and then parsed manually as urlencoded so the
+    dispatcher can replay the same bytes to the SDK if we don't handle
+    it locally.
     """
-    if grant_type != "client_credentials":
-        return _oauth_error(
-            "unsupported_grant_type",
-            "this server only supports grant_type=client_credentials",
-        )
+    body_bytes = await request.body()
+    parsed = _parse_form_bytes(body_bytes)
+    grant_type = parsed.get("grant_type")
+    if grant_type == "client_credentials":
+        return await _client_credentials(parsed, db_service)
+    return await _dispatch_sdk(
+        request, "/token", db_service, site_config, body_override=body_bytes,
+    )
 
-    # HTTP Basic fallback — RFC 6749 §2.3.1
-    if not (client_id and client_secret):
-        auth_header = request.headers.get("authorization", "")
-        if auth_header.lower().startswith("basic "):
-            import base64
-            try:
-                decoded = base64.b64decode(auth_header.split(" ", 1)[1]).decode("utf-8")
-                basic_id, _, basic_secret = decoded.partition(":")
-                if basic_id and basic_secret:
-                    client_id = client_id or basic_id
-                    client_secret = client_secret or basic_secret
-            except (ValueError, UnicodeDecodeError):
-                pass
+
+def _parse_form_bytes(body: bytes) -> dict[str, str]:
+    """Parse application/x-www-form-urlencoded body into a flat dict.
+
+    The /token endpoint always uses urlencoded form bodies per RFC 6749
+    §4.1.3, so we don't bother with multipart. Last-value-wins for
+    repeated keys, matching :func:`urllib.parse.parse_qs` defaults.
+    """
+    from urllib.parse import parse_qsl
+    if not body:
+        return {}
+    return dict(parse_qsl(body.decode("utf-8"), keep_blank_values=False))
+
+
+async def _client_credentials(form, db_service: DatabaseService) -> JSONResponse:
+    """Minimal Client Credentials Grant — we keep it inline rather than
+    wiring it through the SDK because the SDK's TokenRequest discriminator
+    rejects unknown grant_types at the Pydantic layer.
+    """
+    client_id = form.get("client_id")
+    client_secret = form.get("client_secret")
+    requested_scopes = form.get("scope")
 
     if not client_id or not client_secret:
-        # 401 + WWW-Authenticate per RFC 6749 §5.2 when client auth
-        # comes via the Authorization header.
-        resp = _oauth_error(
-            "invalid_client",
-            "client_id and client_secret are required",
-            status=401,
-        )
-        resp.headers["WWW-Authenticate"] = 'Basic realm="poindexter-oauth"'
-        return resp
-
-    requested_scopes = scope.split() if scope else None
+        return _oauth_error("invalid_client", "client_id and client_secret are required", 401)
 
     pool = getattr(db_service, "pool", None)
     if pool is None:
-        raise HTTPException(status_code=503, detail="database unavailable")
+        return _oauth_error("server_error", "database unavailable", 503)
+
+    provider = PoindexterOAuthProvider(pool)
+    client = await provider.get_client(str(client_id))
+    if client is None:
+        return _oauth_error("invalid_client", "invalid client credentials", 401)
+
+    import hmac
+    if not client.client_secret or not hmac.compare_digest(
+        client.client_secret.encode(), str(client_secret).encode()
+    ):
+        return _oauth_error("invalid_client", "invalid client credentials", 401)
+
+    if "client_credentials" not in client.grant_types:
+        return _oauth_error(
+            "unauthorized_client",
+            "client is not authorized for the client_credentials grant",
+            400,
+        )
+
+    granted = set((client.scope or "").split())
+    if requested_scopes:
+        requested = set(str(requested_scopes).split())
+        extras = requested - granted
+        if extras:
+            return _oauth_error("invalid_scope", f"scope(s) not granted: {sorted(extras)}", 400)
+        issued_scopes = requested
+    else:
+        issued_scopes = granted
 
     try:
-        token, claims = await mint_token_from_credentials(
-            pool,
-            client_id=client_id,
-            client_secret=client_secret,
-            requested_scopes=requested_scopes,
+        access_token, claims = issue_token(
+            str(client_id), issued_scopes, ttl_seconds=DEFAULT_TTL_SECONDS,
         )
-    except InvalidClient as e:
-        logger.warning("token mint failed: invalid_client client_id=%s", client_id)
-        resp = _oauth_error("invalid_client", str(e), status=401)
-        resp.headers["WWW-Authenticate"] = 'Basic realm="poindexter-oauth"'
-        return resp
-    except InvalidScope as e:
-        return _oauth_error("invalid_scope", str(e))
+    except TokenError as e:
+        return _oauth_error(e.error, e.error_description or "", 400)
 
-    expires_in = claims.expires_at - claims.issued_at
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE oauth_clients SET last_used_at = NOW() WHERE client_id = $1",
+            client_id,
+        )
+
     logger.info(
-        "issued OAuth token client_id=%s scopes=%s expires_in=%ds",
-        claims.client_id, sorted(claims.scopes), expires_in,
+        "issued client_credentials token client_id=%s scopes=%s",
+        client_id, sorted(claims.scopes),
     )
     return JSONResponse(
         content={
-            "access_token": token,
+            "access_token": access_token,
             "token_type": "Bearer",
-            "expires_in": expires_in,
+            "expires_in": claims.expires_at - claims.issued_at,
             "scope": " ".join(sorted(claims.scopes)),
         },
         headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+
+
+def _oauth_error(error: str, description: str, status: int) -> JSONResponse:
+    headers = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+    if status == 401:
+        headers["WWW-Authenticate"] = 'Basic realm="poindexter-oauth"'
+    return JSONResponse(
+        status_code=status,
+        content={"error": error, "error_description": description},
+        headers=headers,
     )

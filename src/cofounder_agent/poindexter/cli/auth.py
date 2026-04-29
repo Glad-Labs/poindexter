@@ -90,49 +90,118 @@ def auth_group() -> None:
         'Quote the whole value, e.g. --scopes "mcp:read mcp:write".'
     ),
 )
-def register_client(name: str, scopes: str) -> None:
+@click.option(
+    "--redirect-uri",
+    "redirect_uris",
+    multiple=True,
+    help=(
+        "Allowed callback URL for Auth Code Grant clients (Custom Connectors, "
+        "browser apps). May be repeated. Omit for headless clients that only "
+        "use client_credentials."
+    ),
+)
+@click.option(
+    "--grant-type",
+    "grant_types",
+    multiple=True,
+    type=click.Choice(["authorization_code", "refresh_token", "client_credentials"]),
+    help=(
+        "Allowed grant types. May be repeated. Default: all three (covers both "
+        "browser and headless clients)."
+    ),
+)
+def register_client(
+    name: str,
+    scopes: str,
+    redirect_uris: tuple[str, ...],
+    grant_types: tuple[str, ...],
+) -> None:
     """Create a new OAuth client. Prints client_id + plaintext secret ONCE.
 
-    The secret is never stored in plaintext anywhere — capture it now,
-    paste it into wherever the consuming tool reads its credentials, and
-    discard the terminal scrollback.
+    The secret is encrypted at rest with the bootstrap secret key — what's
+    in the DB is opaque without the key. The CLI prints the plaintext
+    here once for the operator to capture; capture it now and discard the
+    terminal scrollback.
     """
     _bootstrap_path_for_secret_key()
 
-    requested = [s.strip() for s in scopes.split() if s.strip()]
-    if not requested:
+    requested_scopes = [s.strip() for s in scopes.split() if s.strip()]
+    if not requested_scopes:
         raise click.UsageError("--scopes must list at least one scope")
 
+    grants = list(grant_types) if grant_types else [
+        "authorization_code", "refresh_token", "client_credentials",
+    ]
+
+    # The Custom Connector / browser flow needs at least one redirect_uri,
+    # but a CLI-only client doesn't. Warn the operator if they're asking
+    # for authorization_code without one.
+    if "authorization_code" in grants and not redirect_uris:
+        click.echo(click.style(
+            "Note: registering with no --redirect-uri — this client can use "
+            "client_credentials only. Add a --redirect-uri to enable browser "
+            "Auth Code Grant clients (e.g. Anthropic Custom Connector).",
+            fg="yellow",
+        ))
+
     async def _impl():
-        from services.auth.oauth_issuer import register_client as _register, InvalidScope
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyUrl
+        from services.auth.oauth_issuer import generate_client_id, generate_client_secret
+        from services.auth.oauth_provider import PoindexterOAuthProvider
+
+        client_id = generate_client_id()
+        client_secret = generate_client_secret()
+
+        # OAuthClientMetadata's redirect_uris field requires min_length=1
+        # even for clients that only use client_credentials. Stash a
+        # localhost placeholder when none was supplied — it'll never be
+        # exercised because such a client doesn't hit /authorize anyway.
+        uri_list = (
+            [AnyUrl(u) for u in redirect_uris]
+            if redirect_uris
+            else [AnyUrl("http://localhost/")]
+        )
+
+        client_info = OAuthClientInformationFull(
+            client_id=client_id,
+            client_secret=client_secret,
+            redirect_uris=uri_list,
+            token_endpoint_auth_method="client_secret_post",
+            grant_types=grants,
+            response_types=["code"],
+            scope=" ".join(requested_scopes),
+            client_name=name,
+        )
 
         pool = await _pool()
         try:
-            try:
-                client_id, secret = await _register(pool, name=name, scopes=requested)
-            except InvalidScope as e:
-                raise click.ClickException(str(e)) from e
+            provider = PoindexterOAuthProvider(pool)
+            await provider.register_client(client_info)
         finally:
             await pool.close()
 
         click.echo("")
         click.echo(click.style("OAuth client registered.", fg="green", bold=True))
-        click.echo(f"  name:          {name}")
-        click.echo(f"  scopes:        {' '.join(sorted(set(requested)))}")
-        click.echo(f"  client_id:     {client_id}")
-        click.echo(f"  client_secret: {secret}")
+        click.echo(f"  name:           {name}")
+        click.echo(f"  scopes:         {' '.join(sorted(set(requested_scopes)))}")
+        click.echo(f"  grant_types:    {' '.join(grants)}")
+        if redirect_uris:
+            click.echo(f"  redirect_uris:  {' '.join(redirect_uris)}")
+        click.echo(f"  client_id:      {client_id}")
+        click.echo(f"  client_secret:  {client_secret}")
         click.echo("")
         click.echo(click.style(
             "  Capture the client_secret NOW — it is not recoverable.",
             fg="yellow",
         ))
         click.echo("")
-        click.echo("Test with curl:")
+        click.echo("Test with curl (client_credentials):")
         click.echo(
-            f'  curl -s -X POST http://localhost:8002/oauth/token \\\n'
+            f'  curl -s -X POST http://localhost:8002/token \\\n'
             f'    -d grant_type=client_credentials \\\n'
             f'    -d client_id={client_id} \\\n'
-            f'    -d client_secret={secret}'
+            f'    -d client_secret={client_secret}'
         )
 
     _run(_impl())
@@ -254,29 +323,43 @@ def revoke_client(client_id: str) -> None:
 @click.option("--client-secret", required=True)
 @click.option("--scopes", default="", help="Optional subset of the client's scopes.")
 def mint_token(client_id: str, client_secret: str, scopes: str) -> None:
-    """Exchange creds for a JWT locally (skips the HTTP /oauth/token round-trip).
+    """Exchange creds for a JWT locally (skips the HTTP /token round-trip).
 
     Useful for one-off ``curl -H "Authorization: Bearer …"`` tests or
-    poking the MCP HTTP server before any HTTP issuer is reachable.
+    poking services before any HTTP issuer is reachable.
     """
     _bootstrap_path_for_secret_key()
 
     requested = [s.strip() for s in scopes.split() if s.strip()] or None
 
     async def _impl():
-        from services.auth.oauth_issuer import (
-            mint_token_from_credentials, InvalidClient, InvalidScope,
-        )
+        import hmac
+        from services.auth.oauth_issuer import issue_token, InvalidScope
+        from services.auth.oauth_provider import PoindexterOAuthProvider
+
         pool = await _pool()
         try:
+            provider = PoindexterOAuthProvider(pool)
+            client = await provider.get_client(client_id)
+            if client is None:
+                raise click.ClickException("invalid client credentials")
+            if not client.client_secret or not hmac.compare_digest(
+                client.client_secret.encode(), client_secret.encode(),
+            ):
+                raise click.ClickException("invalid client credentials")
+            granted = set((client.scope or "").split())
+            if requested:
+                extras = set(requested) - granted
+                if extras:
+                    raise click.ClickException(
+                        f"scope(s) not granted to client: {sorted(extras)}",
+                    )
+                issued = requested
+            else:
+                issued = sorted(granted)
             try:
-                token, claims = await mint_token_from_credentials(
-                    pool,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    requested_scopes=requested,
-                )
-            except (InvalidClient, InvalidScope) as e:
+                token, claims = issue_token(client_id, issued)
+            except InvalidScope as e:
                 raise click.ClickException(str(e)) from e
         finally:
             await pool.close()
