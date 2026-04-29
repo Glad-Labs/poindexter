@@ -58,8 +58,7 @@ export default function AboutPage() {
                 <p className="gl-h3 mb-0">Matt Gladding</p>
                 <p className="gl-body gl-body--sm gl-body--muted">
                   Founder &amp; sole operator, Glad Labs LLC (founded
-                  September 25, 2025). Application Engineer at GEO-Instruments
-                  by day. Wyoming, Rhode Island.
+                  September 25, 2025). Wyoming, Rhode Island.
                 </p>
                 <p className="gl-body gl-body--sm gl-body--muted">
                   B.A.Sc. Computer Games &amp; Programming Skills, New England
@@ -130,16 +129,23 @@ export default function AboutPage() {
               </p>
 
               <p className="gl-body gl-body--lg">
-                After NEIT I spent over three years at Retail Solutions in
-                Providence as a Production Implementation Specialist — ETL
-                data streams, SQL procedures against Oracle warehouses, root
-                cause analysis on the kind of dashboards where moving a
-                column the wrong way breaks somebody&apos;s morning. After
-                that came a stretch managing residential construction
-                projects, and then in October 2021 I joined GEO-Instruments
-                as an Application Engineer in Narragansett — geotechnical
-                measurement systems and sensor arrays — where I still work
-                today.
+                After NEIT I spent over three years as a Production
+                Implementation Specialist in Providence — ETL data streams,
+                SQL procedures against Oracle warehouses, root cause analysis
+                on the kind of dashboards where moving a column the wrong
+                way breaks somebody&apos;s morning. After that came a stretch
+                managing residential construction projects, and since 2021
+                I&apos;ve worked as an application engineer in geotechnical
+                instrumentation — measurement systems and sensor arrays for
+                civil and infrastructure projects.
+              </p>
+
+              <p className="gl-body gl-body--lg">
+                Glad Labs is the nights-and-weekends project. Built outside
+                of working hours, on my own hardware, with the idea that one
+                operator plus the right AI systems can run a real content
+                business without giving up the day job until it earns its
+                keep.
               </p>
 
               <p className="gl-body gl-body--lg">
