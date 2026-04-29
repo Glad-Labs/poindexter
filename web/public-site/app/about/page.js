@@ -88,10 +88,9 @@ export default function AboutPage() {
                   >
                     X / Twitter
                   </a>
-                  {/* TODO: replace # with actual LinkedIn URL */}
                   <span className="gl-body--muted">·</span>
                   <a
-                    href="#"
+                    href="https://www.linkedin.com/in/matthew-gladding/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="gl-link"

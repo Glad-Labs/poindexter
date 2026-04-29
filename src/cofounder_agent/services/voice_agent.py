@@ -206,10 +206,28 @@ async def run_local(site_config: Any) -> None:
         log.info("Exiting on user interrupt")
 
 
+def _ensure_brain_on_path() -> None:
+    """Walk up parents until ``brain/bootstrap.py`` is found, then add
+    that repo root to ``sys.path``. Same trick used by
+    ``poindexter/cli/setup.py`` and ``poindexter/cli/migrate.py`` so the
+    voice agent works regardless of which directory it's launched from.
+    """
+    from pathlib import Path
+
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "brain" / "bootstrap.py").is_file():
+            p = str(parent)
+            if p not in sys.path:
+                sys.path.insert(0, p)
+            return
+
+
 async def _bootstrap_and_run() -> None:
     """Build a SiteConfig from the live DB and start the local mic loop."""
     import asyncpg
 
+    _ensure_brain_on_path()
     from brain.bootstrap import require_database_url
     from services.site_config import SiteConfig
 
