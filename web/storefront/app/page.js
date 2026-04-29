@@ -14,7 +14,7 @@ export default function Landing() {
                 <span className="dot" aria-hidden="true" />
                 POINDEXTER · V3.1
               </span>
-              <span>LICENSED AGPL-3.0</span>
+              <span>LICENSED APACHE-2.0</span>
               <span>SHIPS WITH HARDWARE SPEC</span>
             </div>
 
@@ -85,8 +85,9 @@ export default function Landing() {
               <h3 className="sf-card__title">The Source</h3>
               <p className="sf-card__body">
                 Full access to the Poindexter repository — pipelines, plugins,
-                MCP servers, observability, CI. AGPL-3.0. Fork it, run it,
-                modify it. You keep everything you publish with it.
+                MCP servers, observability, CI. Apache 2.0. Fork it, run it,
+                modify it, ship a competing SaaS if you want — the moat is
+                ongoing tuning, not the code.
               </p>
             </article>
           </div>

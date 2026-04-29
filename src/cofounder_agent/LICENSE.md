@@ -1,64 +1,69 @@
-# GNU AFFERO GENERAL PUBLIC LICENSE v3.0
+# Apache License 2.0
 
 **Poindexter — AI Content Pipeline (built by Glad Labs LLC)**
 
-Copyright (C) 2025-2026 Matthew M. Gladding (Glad Labs, LLC)
+Copyright 2025-2026 Matthew M. Gladding (Glad Labs, LLC)
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published
-by the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
+> http://www.apache.org/licenses/LICENSE-2.0
 
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
----
-
-## Full License Terms
-
-The complete GNU AGPL 3.0 license text is available at: https://www.gnu.org/licenses/agpl-3.0.html
-
-Key points of the AGPL 3.0:
-
-- **Freedom to Use**: You are free to run the program for any purpose
-- **Freedom to Study**: You can access and study the source code
-- **Freedom to Distribute**: You can distribute copies to others
-- **Freedom to Modify**: You can modify the code and distribute modifications
-- **Copyleft Requirement**: If you run modified versions on a network server, you must provide source code to users
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
 ---
 
-## Commercial & Proprietary Use
+## Why Apache 2.0?
 
-**Poindexter is licensed under the GNU AGPL 3.0.** This means it is free to use for any project that also complies with the AGPL 3.0.
+Poindexter was previously licensed under AGPL-3.0-or-later. **Relicensed to
+Apache 2.0 on 2026-04-29** to invite integration into commercial AI/ML
+infrastructure stacks.
 
-### Commercial License
+Apache 2.0 grants:
 
-A **commercial license** is required for any use of this software in a closed-source, proprietary application or for any use that does not comply with the terms of the AGPL 3.0.
+- **Freedom to use** for any purpose, including commercial
+- **Freedom to modify** and redistribute
+- **Patent grant** — contributors can't pull rug after the fact
+- **No copyleft requirement** — derived works don't have to ship source
 
-To purchase a commercial license or inquire about licensing options, please contact:
+This matches the rest of the modern AI/ML stack (Prefect, Ragas, DeepEval,
+guardrails-ai, sentence-transformers, Anthropic SDK, OpenAI SDK, Kubernetes,
+TensorFlow, PyTorch — all Apache 2.0).
 
-📧 **sales@gladlabs.io**
+---
+
+## Glad Labs Pro
+
+The engine itself is permissively licensed and free. Glad Labs Pro
+($9/mo or $89/yr) is a separate **convenience subscription** that includes
+premium prompts, premium seeding scripts, and VIP Discord access. Pro is
+delivered out-of-band (license-key-gated download); it does not affect
+the Apache 2.0 license terms of this repository.
+
+For Pro details: https://gladlabs.io/product
 
 ---
 
 ## Third-Party Dependencies
 
-This software includes components with the following licenses:
+This software includes components with the following licenses (all permissive
+or compatible with Apache 2.0):
 
 - **FastAPI**: MIT License
-- **React**: MIT License
-- **PostgreSQL**: PostgreSQL License (permissive open-source)
-- **smolagents**: MIT License
+- **PostgreSQL**: PostgreSQL License (permissive)
+- **Prefect**: Apache 2.0
+- **Ragas / DeepEval / guardrails-ai**: Apache 2.0
+- **Langfuse / LangChain / LiteLLM / BERTopic**: MIT License
 - See individual component repositories for complete license information
 
 ---
 
 ## Important Notice
 
-This software is provided AS-IS without warranty of any kind. Users are responsible for ensuring compliance with all applicable laws and licenses, including the AGPL 3.0.
+This software is provided AS-IS without warranty of any kind. Users are
+responsible for ensuring compliance with all applicable laws and licenses.

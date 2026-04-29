@@ -32,7 +32,7 @@ Show HN: Poindexter – self-hosted AI content pipeline with multi-model QA
 
 ```
 Poindexter is an open-source content pipeline that researches, writes, reviews,
-and publishes blog posts on your own hardware. Ollama-only inference, AGPL,
+and publishes blog posts on your own hardware. Ollama-only inference, Apache 2.0,
 built for a solo operator on a single workstation.
 
 The whole thing exists because every AI content tool I tried either
@@ -69,7 +69,7 @@ Feedback welcome. I'm the operator and the maintainer — there's one of me.
 **Title:**
 
 ```
-I built a self-hosted AI content pipeline that runs on my own GPU — 100% Ollama, full source, AGPL
+I built a self-hosted AI content pipeline that runs on my own GPU — 100% Ollama, full source, Apache 2.0
 ```
 
 **Body (~300 words, Reddit rewards concrete + specific):**
@@ -109,7 +109,7 @@ vendor I had no visibility into. So I built the thing I wanted.
 **Hardware:** RTX 3060 minimum (8GB VRAM), 5090 is what I run. CPU-only
 works but you'll wait.
 
-**Cost:** engine is AGPL-free. Optional Pro subscription ($9/mo, 7-day trial)
+**Cost:** engine is Apache-2.0. Optional Pro subscription ($9/mo, 7-day trial)
 unlocks my production prompts + 5 premium Grafana dashboards + the operator
 book. Repo works without it.
 
@@ -137,7 +137,7 @@ I open-sourced my AI content pipeline.
 Runs on your own GPU with Ollama.
 Catches hallucinations.
 Writes one post per day at a quality score above 80.
-AGPL, forkable, no cloud dependency.
+Apache 2.0, forkable, no cloud dependency.
 
 Demo + repo: [Loom link] [GitHub link]
 
@@ -222,7 +222,7 @@ Ollama, SDXL, Grafana + Prometheus + Loki.
 **Post 8 (pricing):**
 
 ```
-Engine is free (AGPL).
+Engine is free (Apache 2.0).
 
 Optional Pro subscription — $9/mo or $89/yr with a 7-day free trial.
 

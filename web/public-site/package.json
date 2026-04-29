@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Next.js 15 public website for Glad Labs - features SSG optimization, FastAPI integration, and markdown content rendering",
-  "license": "AGPL-3.0",
+  "license": "Apache-2.0",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "scripts": {
     "build": "next build",

@@ -81,4 +81,4 @@ Report security vulnerabilities via GitHub Security Advisories: **<https://githu
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the AGPL-3.0 license.
+By contributing, you agree that your contributions will be licensed under the Apache License 2.0.

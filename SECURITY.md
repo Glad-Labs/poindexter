@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-04-18
 
-Poindexter is built by [Glad Labs LLC](https://www.gladlabs.io) and licensed under AGPL-3.0. This document covers how to report vulnerabilities, how to handle secrets, and the security architecture of a default Poindexter install.
+Poindexter is built by [Glad Labs LLC](https://www.gladlabs.io) and licensed under Apache 2.0. This document covers how to report vulnerabilities, how to handle secrets, and the security architecture of a default Poindexter install.
 
 ---
 
@@ -141,4 +141,4 @@ If you deploy Poindexter in a way that doesn't match these assumptions, the secu
 
 ---
 
-GNU Affero General Public License v3.0 — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).

@@ -100,7 +100,7 @@ No workflow-engine adoption in this refactor. Pipeline stays hand-rolled. Tempor
 
 Not code; data. Distribution via pip:
 
-- **Free (community):** `poindexter-pack-community` on public pypi, AGPL-3
+- **Free (community):** `poindexter-pack-community` on public pypi, Apache-2.0
 - **Premium:** `glad-labs-pack` on private pypi, license-gated
 
 `pip` already handles install/update/uninstall/version-pin. No custom overlay CLI needed.

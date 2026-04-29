@@ -88,12 +88,12 @@ export default function AboutPage() {
           <div className="sf-fact">
             <div className="sf-fact__label">// LICENSE</div>
             <div className="sf-fact__value">
-              <em>AGPL-3.0</em>
+              <em>Apache 2.0</em>
             </div>
             <p className="sf-fact__body">
-              Fork the entire pipeline. Run it. Modify it. Sell services around
-              it. The only ask is you keep the next person&apos;s freedoms
-              intact.
+              Fork the entire pipeline. Run it. Modify it. Sell services or a
+              SaaS around it. Permissive license with a patent grant — built to
+              be integrated, not just admired.
             </p>
           </div>
 

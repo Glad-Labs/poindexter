@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### 2026-04-29 — Relicense to Apache 2.0; doc-paywall removal
+
+**License: AGPL-3.0-or-later → Apache-2.0.** Poindexter is now permissively
+licensed. Apache 2.0 includes a patent grant and no copyleft requirement —
+matches the rest of the modern AI/ML stack (Prefect, Ragas, DeepEval,
+guardrails-ai, sentence-transformers, Anthropic SDK, OpenAI SDK,
+Kubernetes, TensorFlow, PyTorch). Sole copyright holder consented; relicense
+applies to all prior commits. Files updated: `LICENSE` (root), `LICENSE.md`
+variants under `src/`, all five `package.json` files, `pyproject.toml`
+(poindexter package), `main.py` FastAPI license_info, `plugins/pack.py`
+docstring, `test_package_metadata.py` assertion, README/CONTRIBUTING/
+SECURITY/SUPPORT, storefront pages, architecture docs, launch-draft copy.
+
+**Documentation moved free + public.** "Selling documentation seems cruel,
+selling convenience is not." The operator setup guide that was previously
+slated as a paid $29 product (killed Apr 23) is now confirmed as free public
+OSS in `Glad-Labs/poindexter`. Glad Labs Pro ($9/mo or $89/yr) sells
+**convenience layers** — premium prompts, premium seeding scripts, VIP
+Discord — not knowledge gates. SUPPORT.md updated to drop the
+"Commercial License" row (no longer relevant under Apache 2.0).
+
 ### 2026-04-23 — Tuning session, pricing consolidation, comprehensive docs sweep
 
 **Pricing consolidated to single Pro tier.** Removed the split $29 Quick Start Guide + $9.99/mo Premium product in favor of **Poindexter Pro — $9/month or $89/year with a 7-day free trial**. Everything previously split across two products (prompt library, premium Grafana dashboards, anti-hallucination fact overrides, 200+ tuned app_settings, the Poindexter book, VIP Discord) is now in a single subscription. Commits: `0b2c3007`, `87cda44e`, `12a205d4`, `16d33f43`, `d659f22` (prompts repo), `65c7bbe` (prompts repo).

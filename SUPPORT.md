@@ -4,30 +4,28 @@ Poindexter is built and maintained by [Glad Labs LLC](https://www.gladlabs.io). 
 
 ## Where to ask
 
-| Type of question                                                             | Best channel                                                                                                                                                                                                              |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Bug reports**                                                              | [Open a GitHub issue](https://github.com/Glad-Labs/poindexter/issues) with the bug template. Include logs, your `docker compose ps` output, and the steps to reproduce.                                                   |
-| **Feature requests**                                                         | GitHub issues with the "enhancement" label. Discussion happens in the issue thread.                                                                                                                                       |
-| **"How do I configure X"**                                                   | Check the README first, then `app_settings` in your local DB (`SELECT * FROM app_settings WHERE category = 'whatever'`). If still stuck, open a GitHub issue with the "question" label or ask in the Discord (see below). |
-| **Real-time chat / community**                                               | Glad Labs Discord — informal Q&A, build-along chat, dogfooding feedback. Currently invite-only while the community is small; email **sales@gladlabs.io** for an invite if you're a customer or contributor.               |
-| **Security vulnerabilities**                                                 | **Do not open a public issue.** Email **security@gladlabs.io** with subject `[SECURITY] Vulnerability Report`. See [SECURITY.md](SECURITY.md).                                                                            |
-| **Code of conduct concerns**                                                 | Email **conduct@gladlabs.io**.                                                                                                                                                                                            |
-| **Commercial licensing** (you need a non-AGPL license for closed-source use) | Email **sales@gladlabs.io**.                                                                                                                                                                                              |
-| **Paid support, custom development, prompts pack**                           | Email **sales@gladlabs.io** or visit [gladlabs.io](https://www.gladlabs.io).                                                                                                                                              |
+| Type of question                                   | Best channel                                                                                                                                                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bug reports**                                    | [Open a GitHub issue](https://github.com/Glad-Labs/poindexter/issues) with the bug template. Include logs, your `docker compose ps` output, and the steps to reproduce.                                                   |
+| **Feature requests**                               | GitHub issues with the "enhancement" label. Discussion happens in the issue thread.                                                                                                                                       |
+| **"How do I configure X"**                         | Check the README first, then `app_settings` in your local DB (`SELECT * FROM app_settings WHERE category = 'whatever'`). If still stuck, open a GitHub issue with the "question" label or ask in the Discord (see below). |
+| **Real-time chat / community**                     | Glad Labs Discord — informal Q&A, build-along chat, dogfooding feedback. Currently invite-only while the community is small; email **sales@gladlabs.io** for an invite if you're a customer or contributor.               |
+| **Security vulnerabilities**                       | **Do not open a public issue.** Email **security@gladlabs.io** with subject `[SECURITY] Vulnerability Report`. See [SECURITY.md](SECURITY.md).                                                                            |
+| **Code of conduct concerns**                       | Email **conduct@gladlabs.io**.                                                                                                                                                                                            |
+| **Paid support, custom development, prompts pack** | Email **sales@gladlabs.io** or visit [gladlabs.io](https://www.gladlabs.io).                                                                                                                                              |
 
 ## What's free vs paid
 
 ### Free, no strings attached
 
-- The Poindexter source code itself, under [AGPL-3.0](LICENSE).
+- The Poindexter source code itself, under [Apache 2.0](LICENSE).
 - All issues, bug reports, and PRs in the public GitHub repo.
 - Reading the docs in the repo (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, this file).
-- Self-hosting Poindexter on your own machine for any purpose, including commercial, as long as your downstream complies with the AGPL.
+- Self-hosting Poindexter on your own machine for any purpose — including commercial, closed-source, and SaaS resale. Apache 2.0 includes a patent grant; no copyleft requirement.
 
 ### Paid (sold by Glad Labs LLC)
 
-- **Pro ($9/month or $89/year — 7-day free trial)** — private repo access with Matt's full production prompt library, 5 additional Grafana dashboards (Cost Analytics, Quality, Infrastructure, Approval Queue, Link Registry), anti-hallucination fact_overrides database, 200+ tuned app_settings, operator VIP Discord, and the full Poindexter book. Continuous updates as Matt tunes the live system. Cancel anytime — you keep everything you downloaded.
-- **Commercial License** — required if you want to use Poindexter in a closed-source product, or in a way that doesn't comply with the AGPL's source disclosure requirements. Pricing on inquiry.
+- **Pro ($9/month or $89/year — 7-day free trial)** — premium prompts (Matt's full production library), premium seeding scripts (industry-niche packs, advanced operator setups), 5 premium Grafana dashboards (Cost Analytics, Content Quality, Infrastructure, Approval Queue, Link Registry), anti-hallucination fact_overrides database, 200+ tuned app_settings, VIP Discord, and the full Poindexter book. Continuous updates as Matt tunes the live system. Cancel anytime — you keep everything you downloaded.
 - **Custom development and consulting** — for organizations that want a Glad Labs-staffed integration. Inquire at sales@gladlabs.io.
 
 The free version is fully functional. Pro exists because Matt runs Poindexter as his own content business daily — the subscription gives you continuous access to his production tuning. The engine improves as a side effect of running the business, and subscribers get those improvements automatically.
@@ -50,7 +48,7 @@ To set expectations honestly:
 - **No managed/hosted Poindexter offering.** Self-host only. We're not a SaaS.
 - **No multi-tenant deployment recipe.** Poindexter is designed for one operator on one machine. If you want to run it as a service for multiple customers, that's a different architecture and we don't ship it.
 - **No Windows-native support outside Git Bash / WSL.** The bootstrap script needs `bash`. Native cmd and PowerShell are not supported install paths.
-- **No backwards compatibility guarantee on AGPL releases pre-1.0.** Database schema and config keys may change between releases. Read the CHANGELOG before upgrading.
+- **No backwards compatibility guarantee on pre-1.0 releases.** Database schema and config keys may change between releases. Read the CHANGELOG before upgrading.
 - **No public community forum yet.** The Discord is invite-only — GitHub issues remain the canonical public channel.
 
 ## Helping yourself
@@ -69,4 +67,4 @@ If you want to fix something instead of just reporting it, see [CONTRIBUTING.md]
 
 ---
 
-Poindexter is built by Glad Labs LLC. AGPL-3.0 licensed. See [LICENSE](LICENSE) for details.
+Poindexter is built by Glad Labs LLC. Apache 2.0 licensed (relicensed from AGPL-3.0 on 2026-04-29). See [LICENSE](LICENSE) for details.

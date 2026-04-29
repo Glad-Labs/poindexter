@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "gladlabs.ai — the Glad Labs storefront. Lemon Squeezy checkout overlays, no redirect. Consumes @glad-labs/brand (E3).",
-  "license": "AGPL-3.0-or-later",
+  "license": "Apache-2.0",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "type": "module",
   "scripts": {

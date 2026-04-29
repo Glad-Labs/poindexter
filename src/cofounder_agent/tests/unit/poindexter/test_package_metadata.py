@@ -60,7 +60,7 @@ def test_standalone_pyproject_has_required_metadata() -> None:
     assert project.get("version"), "project.version must be set"
     assert project.get("description")
     assert project.get("readme") == "README.md"
-    assert project.get("license", {}).get("text", "").startswith("AGPL")
+    assert project.get("license", {}).get("text", "") == "Apache-2.0"
     # requires-python should cover the same range as the umbrella repo.
     assert "3.1" in project.get("requires-python", "")
 

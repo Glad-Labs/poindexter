@@ -98,4 +98,4 @@ with tests especially.
 
 ## License
 
-GNU AGPL v3.0. See [LICENSE](../LICENSE).
+Apache 2.0. See [LICENSE](../LICENSE). (Relicensed from AGPL-3.0 on 2026-04-29.)
