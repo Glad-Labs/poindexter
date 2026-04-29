@@ -616,6 +616,59 @@ logger.info("[STARTUP] ✅ Routes registered (mode=%s)", _deployment_mode)
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
 
 
+async def _build_migrations_health(database_service: Any) -> dict[str, Any]:
+    """
+    Build the migrations status block for /api/health (#230).
+
+    Counts files on disk in services/migrations/ (excluding __init__.py)
+    and compares against rows in the schema_migrations table. Used by
+    external monitors (Uptime Kuma, Grafana synthetic checks, brain
+    daemon probes) to detect when a running worker is on an older
+    schema than the codebase ships.
+
+    Tolerant of an unavailable pool — returns ``{"status": "unknown",
+    "error": ...}`` rather than raising, so callers can swallow the
+    block without 500-ing the whole health endpoint.
+    """
+    # Count migration files on disk first — this works even when the
+    # DB pool is offline and is useful debug info either way.
+    from pathlib import Path
+    migrations_dir = Path(__file__).parent / "services" / "migrations"
+    try:
+        files_on_disk = sorted(
+            f.name for f in migrations_dir.glob("*.py") if f.name != "__init__.py"
+        )
+    except Exception as e:  # pragma: no cover — defensive
+        return {"status": "unknown", "error": f"disk_scan_failed: {e!s}"[:200]}
+
+    pool = getattr(database_service, "pool", None) if database_service else None
+    if pool is None:
+        return {"status": "unknown", "error": "db_pool_unavailable"}
+
+    # Reuse the existing async pool — do NOT open a fresh connection.
+    try:
+        async with pool.acquire() as conn:
+            applied_rows = await conn.fetch(
+                "SELECT name FROM schema_migrations ORDER BY applied_at DESC, id DESC"
+            )
+    except Exception as e:  # pylint: disable=broad-except
+        # schema_migrations table may not exist yet (fresh DB before the
+        # runner has executed) — surface as unknown rather than as a
+        # real component failure so the health endpoint stays useful.
+        return {"status": "unknown", "error": f"query_failed: {e!s}"[:200]}
+
+    applied_names = {row["name"] for row in applied_rows}
+    pending = [name for name in files_on_disk if name not in applied_names]
+    latest_applied = applied_rows[0]["name"] if applied_rows else None
+
+    return {
+        "applied": len(applied_names),
+        "pending": len(pending),
+        "latest_applied": latest_applied,
+        "drift": len(pending) > 0,
+    }
+
+
 @app.get("/api/health")
 async def api_health():
     """
@@ -795,6 +848,34 @@ async def api_health():
                 "LLM resilience health probe failed: %s", e, exc_info=True,
             )
             health_data["components"]["llm_resilience"] = {
+                "status": "error",
+                "reason": str(e)[:200],
+                "error_type": type(e).__name__,
+            }
+
+        # Migration drift status (#230). External monitors (Uptime Kuma,
+        # Grafana synthetic checks, brain daemon probes) need to see when
+        # the running worker is on an older schema than the codebase ships.
+        # Failure here is non-fatal — return a marker block instead of
+        # 500-ing the health endpoint, which is consumed by load balancers.
+        try:
+            migrations_block = await _build_migrations_health(
+                getattr(app.state, "database", None),
+            )
+            health_data["components"]["migrations"] = migrations_block
+            # Degrade overall status when there's pending migration drift
+            # so Uptime Kuma trips automatically (acceptance criterion in
+            # issue #230). "unknown" / "error" shapes are NOT treated as
+            # drift — they only surface as informational so a fresh DB
+            # before bootstrap doesn't flip the endpoint to degraded.
+            if (
+                migrations_block.get("drift") is True
+                and health_data["status"] == "healthy"
+            ):
+                health_data["status"] = "degraded"
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("Migrations health probe failed: %s", e, exc_info=True)
+            health_data["components"]["migrations"] = {
                 "status": "error",
                 "reason": str(e)[:200],
                 "error_type": type(e).__name__,
