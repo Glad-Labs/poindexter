@@ -1,10 +1,16 @@
 """OAuth 2.1 Authorization Server endpoints (Phase 1, #241).
 
-Two routes — the bare minimum for an OAuth 2.1 Client Credentials
+Three routes — the bare minimum for an OAuth 2.1 Client Credentials
 Authorization Server that an Anthropic Custom Connector (or any other
-RFC-8414-aware client) can talk to:
+MCP 2025-03-26 / RFC-8414 / RFC-9728-aware client) can talk to:
 
 - ``GET /.well-known/oauth-authorization-server`` — RFC 8414 metadata
+  (issuer-side; lists token endpoint, supported grants, scopes)
+- ``GET /.well-known/oauth-protected-resource`` — RFC 9728 metadata
+  (resource-side; tells the client which authorization server protects
+  this resource). MCP 2025-03-26 §authorization REQUIRES this for
+  discovery — without it Anthropic's Custom Connector aborts before
+  ever hitting the token endpoint.
 - ``POST /oauth/token`` — Client Credentials Grant only (RFC 6749 §4.4)
 
 Token validation lives next to the rest of the auth surface in
@@ -80,6 +86,35 @@ async def oauth_metadata(
         "scopes_supported": sorted(ALLOWED_SCOPES),
         "response_types_supported": [],  # client_credentials has no response type
         "service_documentation": "https://github.com/Glad-Labs/poindexter/issues/241",
+    }
+
+
+@metadata_router.get("/.well-known/oauth-protected-resource")
+async def oauth_protected_resource_metadata(
+    request: Request,
+    site_config: Any = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """RFC 9728 — tells a client which authorization server protects this resource.
+
+    Required by the MCP 2025-03-26 authorization spec for the discovery
+    chain to complete. The Custom Connector hits the MCP URL with no
+    auth, parses the ``WWW-Authenticate`` header for ``resource_metadata``,
+    fetches *this* document, then fetches the listed authorization
+    server's ``/.well-known/oauth-authorization-server`` for the token
+    endpoint.
+
+    The ``resource`` we name is the MCP HTTP endpoint (``/mcp/``); the
+    ``authorization_servers`` array points back at the worker (which is
+    the same external host but a logically different role — the worker
+    issues tokens, the MCP server consumes them).
+    """
+    issuer = _issuer_url(request, site_config)
+    return {
+        "resource": f"{issuer}/mcp/",
+        "authorization_servers": [issuer],
+        "scopes_supported": sorted(ALLOWED_SCOPES),
+        "bearer_methods_supported": ["header"],
+        "resource_documentation": "https://github.com/Glad-Labs/poindexter/issues/241",
     }
 
 

@@ -187,6 +187,29 @@ def _oauth_jwt_wrapper(
         verify_token,
     )
 
+    def _resource_metadata_url(scope: MutableMapping[str, Any]) -> str:
+        """Build the public ``/.well-known/oauth-protected-resource`` URL.
+
+        Reads the Host header (Tailscale Funnel sets this to the public
+        ``nightrider.taild4f626.ts.net`` hostname) and the forwarded
+        scheme so the URL is what the *client* should fetch, not what
+        we'd see internally on 127.0.0.1:8004.
+        """
+        host = ""
+        scheme = "https"  # behind Funnel, always TLS-fronted
+        for name, value in scope.get("headers", ()):
+            lname = name.lower()
+            if lname == b"host" and not host:
+                host = value.decode("latin-1", errors="replace")
+            elif lname == b"x-forwarded-host":
+                host = value.decode("latin-1", errors="replace")
+            elif lname == b"x-forwarded-proto":
+                scheme = value.decode("latin-1", errors="replace")
+        if not host:
+            host = "127.0.0.1:8004"
+            scheme = "http"
+        return f"{scheme}://{host}/.well-known/oauth-protected-resource"
+
     async def asgi_app(
         scope: MutableMapping[str, Any],
         receive: Callable,
@@ -197,9 +220,14 @@ def _oauth_jwt_wrapper(
             return
 
         async def _reject(status: int, error: str, description: str) -> None:
+            # MCP 2025-03-26 §authorization REQUIRES resource_metadata=
+            # so the client can discover the authorization server. Without
+            # it Anthropic's Custom Connector aborts before the OAuth dance.
+            metadata_url = _resource_metadata_url(scope)
             challenge = (
                 f'Bearer realm="poindexter-mcp", '
-                f'error="{error}", error_description="{description}"'
+                f'error="{error}", error_description="{description}", '
+                f'resource_metadata="{metadata_url}"'
             ).encode("ascii")
             await send(
                 {
