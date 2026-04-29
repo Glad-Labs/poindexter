@@ -15,7 +15,7 @@ npm install
 # Start all services (backend required for content)
 npm run dev
 
-# Or public site only (needs backend running on :8000)
+# Or public site only (needs backend running on :8002)
 npm run dev:public
 ```
 
