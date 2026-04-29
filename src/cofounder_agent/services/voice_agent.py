@@ -1,0 +1,221 @@
+"""voice_agent.py — Local real-time voice agent for Poindexter.
+
+Real-time voice conversation loop running ENTIRELY on your machine
+(Ollama-first, no paid APIs):
+
+    Mic → Silero VAD → faster-whisper STT → Ollama LLM → Kokoro TTS → Speakers
+
+Single process. No cloud, no API keys. Built on Pipecat (Apache-2.0).
+All configuration lives in ``app_settings`` (DB-first config plane —
+zero env-var dependency per the project's standard pattern).
+
+## Roadmap
+
+This file is the engine. Surfaces are added on top:
+
+- Local mic loop (this entry point — ``run_local()``)
+- Poindexter MCP tools wired into the LLM step (so "what's in my approval
+  queue" calls the existing mcp-server/server.py tools)
+- WebRTC transport for phone/laptop access over Tailscale
+- Discord voice bot adapter
+- Multi-agent voice rooms (foundation for the tactical-sim product)
+
+## Install
+
+System dep (portaudio for mic+speaker access):
+
+    sudo apt-get install -y portaudio19-dev   # Linux
+    # macOS:  brew install portaudio
+    # Windows: portaudio ships with python's pyaudio wheel — no extra step
+
+Python deps (Apache-2.0 / MIT all the way down):
+
+    pip install \
+        "pipecat-ai[silero,whisper,ollama,kokoro,local]" \
+        sounddevice numpy
+
+First run downloads model weights:
+- Silero VAD ONNX (~2 MB)
+- faster-whisper base.en (~140 MB)
+- Kokoro 82M ONNX (~325 MB) + voice packs
+
+Subsequent runs are warm (everything cached under ``~/.cache/``).
+
+## Run (local mic loop)
+
+    python -m services.voice_agent
+
+Talk into your default mic. The agent transcribes when you stop speaking,
+sends to Ollama, speaks the response in the bf_emma British-female voice.
+Ctrl+C to exit.
+
+## Configuration (DB-driven via app_settings)
+
+All knobs are app_settings rows — change at runtime, no restart needed.
+Defaults are seeded by migration ``0104_seed_voice_agent_defaults.py``.
+
+| Key                              | Default                              | Purpose                              |
+| -------------------------------- | ------------------------------------ | ------------------------------------ |
+| voice_agent_llm_model            | glm-4.7-5090:latest                  | Ollama model tag                     |
+| voice_agent_ollama_url           | http://host.docker.internal:11434    | Ollama base URL                      |
+| voice_agent_tts_voice            | bf_emma                              | Kokoro voice id (top-graded UK fem)  |
+| voice_agent_tts_speed            | 1.0                                  | Kokoro playback speed                |
+| voice_agent_whisper_model        | base.en                              | faster-whisper model size            |
+| voice_agent_system_prompt        | (Emma, terse Glad Labs assistant)    | Agent personality                    |
+
+Edit any setting via the CLI:
+
+    poindexter settings set voice_agent_tts_voice bf_isabella
+
+If latency hurts:
+- Drop ``voice_agent_whisper_model`` to ``tiny.en`` (~40 MB, ~2-3× faster)
+- Confirm the 5090 isn't busy with SDXL (kill the worker container if needed)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import sys
+from typing import Any
+
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.services.llm.ollama import OllamaLLMService
+from pipecat.services.stt.whisper import Model as WhisperModel, WhisperSTTService
+from pipecat.services.tts.kokoro import KokoroTTSService
+from pipecat.transports.local.audio import (
+    LocalAudioTransport,
+    LocalAudioTransportParams,
+)
+
+
+_DEFAULT_SYSTEM_PROMPT = (
+    "You are Emma, a concise voice assistant for Matt at Glad Labs. "
+    "Speak naturally — your output goes through text-to-speech, so "
+    "avoid markdown, bullet lists, and code blocks. Use short "
+    "sentences. If Matt asks a factual question you don't know the "
+    "answer to, say so plainly rather than guessing. Default to "
+    "responses under 30 seconds of speech (~80 words) unless he "
+    "explicitly asks for a longer one."
+)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
+
+
+async def run_local(site_config: Any) -> None:
+    """Run the voice agent on local mic + speakers.
+
+    Reads every knob from ``app_settings`` via ``site_config``. Blocking
+    until Ctrl+C.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    log = logging.getLogger("voice_agent")
+
+    llm_model = site_config.get(
+        "voice_agent_llm_model", "glm-4.7-5090:latest",
+    )
+    ollama_url = site_config.get(
+        "voice_agent_ollama_url", "http://host.docker.internal:11434",
+    )
+    tts_voice = site_config.get("voice_agent_tts_voice", "bf_emma")
+    tts_speed = float(site_config.get("voice_agent_tts_speed", 1.0))
+    whisper_model_name = site_config.get(
+        "voice_agent_whisper_model", "base.en",
+    )
+    system_prompt = (
+        site_config.get("voice_agent_system_prompt", "")
+        or _DEFAULT_SYSTEM_PROMPT
+    )
+
+    log.info(
+        "Starting voice agent (local mic) — llm=%s voice=%s whisper=%s",
+        llm_model, tts_voice, whisper_model_name,
+    )
+
+    transport = LocalAudioTransport(
+        LocalAudioTransportParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(),
+        ),
+    )
+
+    stt = WhisperSTTService(model=WhisperModel(whisper_model_name))
+    llm = OllamaLLMService(model=llm_model, base_url=ollama_url)
+    tts = KokoroTTSService(voice=tts_voice, speed=tts_speed)
+
+    context = OpenAILLMContext(
+        messages=[{"role": "system", "content": system_prompt}],
+    )
+    context_aggregator = llm.create_context_aggregator(context)
+
+    pipeline = Pipeline(
+        [
+            transport.input(),
+            stt,
+            context_aggregator.user(),
+            llm,
+            tts,
+            transport.output(),
+            context_aggregator.assistant(),
+        ],
+    )
+
+    task = PipelineTask(
+        pipeline,
+        params=PipelineParams(
+            allow_interruptions=True,
+            enable_metrics=True,
+            enable_usage_metrics=True,
+        ),
+    )
+
+    @transport.event_handler("on_client_connected")
+    async def _on_connected(_t, _client) -> None:
+        log.info("Audio transport ready — start talking")
+        # Greet so Matt knows the chain is live.
+        await task.queue_frames(
+            context_aggregator.user().get_context_frames(
+                [{"role": "user", "content": "Greet Matt in one sentence."}],
+            ),
+        )
+
+    runner = PipelineRunner()
+    try:
+        await runner.run(task)
+    except KeyboardInterrupt:
+        log.info("Exiting on user interrupt")
+
+
+async def _bootstrap_and_run() -> None:
+    """Build a SiteConfig from the live DB and start the local mic loop."""
+    from brain.bootstrap import require_database_url
+    import asyncpg
+
+    from services.site_config import SiteConfig
+
+    dsn = require_database_url(source="voice_agent")
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    try:
+        site_config = SiteConfig(pool=pool)
+        await site_config.load_from_db()
+        await run_local(site_config)
+    finally:
+        await pool.close()
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(_bootstrap_and_run())
+    except KeyboardInterrupt:
+        sys.exit(0)

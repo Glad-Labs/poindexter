@@ -836,6 +836,7 @@ description = "Foreign Function Interface for Python calling C code."
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "platform_python_implementation != \"PyPy\" or sys_platform != \"win32\""
 files = [
     {file = "cffi-2.0.0-cp310-cp310-macosx_10_13_x86_64.whl", hash = "sha256:0cf2d91ecc3fcc0625c2c530fe004f82c110405f101548512cce44322fa8ac44"},
     {file = "cffi-2.0.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f73b96c41e3b2adedc34a7356e64c8eb96e03a3782b535e043a986276ce12a49"},
@@ -4815,7 +4816,7 @@ description = "Fundamental package for array computing in Python"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "python_version < \"3.13\""
+markers = "python_version == \"3.10\""
 files = [
     {file = "numpy-1.26.4-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:9ff0f4f29c51e2803569d7a51c2304de5554655a60c5d776e35b4a41413830d0"},
     {file = "numpy-1.26.4-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:2e4ee3380d6de9c9ec04745830fd9e2eccb3e6cf790d39d7b98ffd19b0dd754a"},
@@ -4862,7 +4863,7 @@ description = "Fundamental package for array computing in Python"
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
-markers = "python_version == \"3.13\""
+markers = "python_version >= \"3.11\""
 files = [
     {file = "numpy-2.4.4-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:f983334aea213c99992053ede6168500e5f086ce74fbc4acc3f2b00f5762e9db"},
     {file = "numpy-2.4.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:72944b19f2324114e9dc86a159787333b77874143efcf89a5167ef83cfee8af0"},
@@ -6581,7 +6582,7 @@ description = "C parser in Python"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "implementation_name != \"PyPy\""
+markers = "implementation_name != \"PyPy\" and (platform_python_implementation != \"PyPy\" or sys_platform != \"win32\")"
 files = [
     {file = "pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"},
     {file = "pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29"},
@@ -6949,6 +6950,7 @@ description = "Pyroscope Python integration"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
+markers = "sys_platform != \"win32\""
 files = [
     {file = "pyroscope_io-1.0.6-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:9cba2e3be45412d15e0e5725675c28ddbc270cccb305525cdd2acd7e8f9c4f8c"},
     {file = "pyroscope_io-1.0.6-cp310-abi3-macosx_11_0_x86_64.whl", hash = "sha256:ea62d35269b82e333e94a7bb02df0765185750743a6a6b0c216417bd7db84c72"},
@@ -10389,4 +10391,4 @@ ml = ["diffusers", "torch", "transformers"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "8896ff512b694161b0f4b8ec79b1b5e8bb528081079dd9041ee2aa7fcfbd1bbb"
+content-hash = "ac1dc87fd5454e84086082764b8455bed87e2ad160f5d6edf9ef8d669358a772"

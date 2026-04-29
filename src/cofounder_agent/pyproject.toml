@@ -196,7 +196,13 @@ prometheus-client = "^0.25.0"
 # installed in the running container even with `enable_pyroscope=true`
 # in app_settings — agent silently no-op'd. Default-include keeps
 # the contract simple (DB flag is the single source of truth).
-pyroscope-io = "^1.0.6"
+#
+# Windows skip (2026-04-29): pyroscope-io 1.0.4-1.0.6 ship no Windows+
+# py3.12 wheels and the source build needs a Rust toolchain. Worker
+# only runs in the Linux container in production, so the marker scopes
+# the dep to non-Windows platforms — Linux containers still get
+# profiling, Windows host devs can `poetry install` without rustc.
+pyroscope-io = { version = "^1.0.6", markers = "sys_platform != 'win32'" }
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
