@@ -75,12 +75,11 @@ telling the writer model what NOT to fabricate.
   text strings live in DB rows, not in this repo.
 
 **What slips through.** Almost everything that matters. Prompt-level
-guards are advisory: a 27B-parameter writer model under temperature
-
-> 0 will routinely ignore "do not invent statistics" and produce
-> "according to a 2024 McKinsey report, 73% of teams..." anyway.
-> Prompts shape the prior; they do not enforce truth. The two layers
-> below exist precisely because Layer 1 is unreliable.
+guards are advisory: a 27B-parameter writer model with non-zero
+temperature will routinely ignore "do not invent statistics" and
+produce "according to a 2024 McKinsey report, 73% of teams..."
+anyway. Prompts shape the prior; they do not enforce truth. The
+two layers below exist precisely because Layer 1 is unreliable.
 
 **Honest note:** in the public OSS repo today, the default prompts
 do **not** carry strong anti-fabrication language. The "prompt-level
