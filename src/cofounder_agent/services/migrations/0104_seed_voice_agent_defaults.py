@@ -34,10 +34,12 @@ _SEEDS: list[tuple[str, str, str]] = [
     ),
     (
         "voice_agent_ollama_url",
-        "http://host.docker.internal:11434",
-        "Ollama base URL. Default targets the host's Ollama from inside "
-        "Docker; running voice_agent.py directly on the host can stay on "
-        "this URL or switch to http://localhost:11434.",
+        "http://host.docker.internal:11434/v1",
+        "Ollama OpenAI-compatible base URL — must include the /v1 suffix "
+        "(Pipecat's OllamaLLMService talks to /v1/chat/completions, not "
+        "the bare /api/* paths). Default targets the host's Ollama from "
+        "inside Docker; running voice_agent.py directly on the host can "
+        "stay on this URL or switch to http://localhost:11434/v1.",
     ),
     (
         "voice_agent_tts_voice",
