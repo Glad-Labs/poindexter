@@ -57,9 +57,8 @@ export default function AboutPage() {
               <div className="space-y-2">
                 <p className="gl-h3 mb-0">Matt Gladding</p>
                 <p className="gl-body gl-body--sm gl-body--muted">
-                  Founder &amp; sole operator, Glad Labs LLC. Senior data
-                  engineer turned AI systems builder. Founded September 25,
-                  2025.
+                  Founder &amp; sole operator, Glad Labs LLC. Founded
+                  September 25, 2025.
                 </p>
                 <p className="gl-body gl-body--sm gl-body--muted">
                   B.A.Sc. Game Development &amp; Simulation Programming —
@@ -123,13 +122,7 @@ export default function AboutPage() {
                 Programming from New England Institute of Technology — the
                 degree that made me think in terms of systems, state machines,
                 and update loops long before I knew that&apos;s also how AI
-                pipelines work. Before Glad Labs I spent over a decade as a
-                senior data engineer — ETL pipelines, warehouse architectures,
-                and the kind of slow-burn integration work where moving a
-                column the wrong way breaks a hundred dashboards. Those two
-                skills, combined, are exactly what AI systems need: reliable
-                plumbing, idempotent migrations, observability everywhere, no
-                silent failures.
+                pipelines work.
               </p>
 
               <p className="gl-body gl-body--lg">
