@@ -343,16 +343,46 @@ async def get_budget() -> str:
 # SETTINGS TOOLS
 # ============================================================================
 
+def _strip_category_prefix(key: str) -> tuple[str, str | None]:
+    """Strip an optional ``<category>/`` prefix from a settings key.
+
+    ``list_settings`` renders rows as ``category/key`` (e.g.
+    ``site/public_site_url``), so operators copy-paste that form into
+    ``get_setting`` / ``set_setting``. The DB only stores the bare key,
+    so we strip the prefix before lookup. The supplied prefix is
+    returned alongside so callers can warn when it disagrees with the
+    row's actual ``category`` column (Glad-Labs/poindexter#253).
+    """
+    if "/" not in key:
+        return key, None
+    cat, _, bare = key.partition("/")
+    return bare, cat
+
+
 @mcp.tool()
 async def get_setting(key: str) -> str:
-    """Get a configuration setting value from the database."""
+    """Get a configuration setting value from the database.
+
+    Accepts either a bare ``key`` or the ``category/key`` form printed by
+    :func:`list_settings`. If a category prefix is supplied but does not
+    match the row's actual category, a warning is logged and the value
+    is still returned (the supplied prefix is informational only).
+    """
     try:
         pool = await _get_pool()
+        bare_key, declared_category = _strip_category_prefix(key)
         row = await pool.fetchrow(
-            "SELECT key, value, category, is_secret FROM app_settings WHERE key = $1", key
+            "SELECT key, value, category, is_secret FROM app_settings WHERE key = $1",
+            bare_key,
         )
         if not row:
             return f"Setting '{key}' not found."
+        if declared_category and declared_category != (row["category"] or ""):
+            logger.warning(
+                "get_setting: supplied category prefix %r does not match "
+                "row's actual category %r for key %r — proceeding anyway",
+                declared_category, row["category"] or "", bare_key,
+            )
         val = "********" if row["is_secret"] else row["value"]
         return f"{row['key']} = {val} (category: {row['category'] or '?'})"
     except Exception as e:
@@ -363,8 +393,15 @@ async def get_setting(key: str) -> str:
 async def set_setting(key: str, value: str) -> str:
     """Update a configuration setting in the database.
 
+    Accepts either a bare ``key`` or the ``category/key`` form printed by
+    :func:`list_settings`. If a category prefix is supplied but does not
+    match the row's existing category, a warning is logged and the
+    update proceeds against the bare key.
+
     Respects agent_permissions table — checks if mcp_server is allowed to write app_settings.
     """
+    bare_key, declared_category = _strip_category_prefix(key)
+
     # Permission check
     try:
         pool = await _get_pool()
@@ -377,21 +414,31 @@ async def set_setting(key: str, value: str) -> str:
                 await pool.execute(
                     "INSERT INTO approval_queue (agent_name, resource, action, proposed_change, reason) "
                     "VALUES ('mcp_server', 'app_settings', 'write', $1, 'MCP set_setting tool')",
-                    json.dumps({"key": key, "value": value}),
+                    json.dumps({"key": bare_key, "value": value}),
                 )
-                return f"Permission denied: change to {key} queued for approval"
+                return f"Permission denied: change to {bare_key} queued for approval"
             return f"Permission denied: mcp_server cannot write to app_settings"
     except Exception:
         pass  # Permission check failed — fall through to direct DB write
 
     try:
         pool = await _get_pool()
+        if declared_category:
+            existing_category = await pool.fetchval(
+                "SELECT category FROM app_settings WHERE key = $1", bare_key
+            )
+            if existing_category is not None and declared_category != (existing_category or ""):
+                logger.warning(
+                    "set_setting: supplied category prefix %r does not match "
+                    "row's existing category %r for key %r — updating value anyway",
+                    declared_category, existing_category or "", bare_key,
+                )
         await pool.execute(
             "INSERT INTO app_settings (key, value) VALUES ($1, $2) "
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            key, value,
+            bare_key, value,
         )
-        return f"Updated: {key} = {value}"
+        return f"Updated: {bare_key} = {value}"
     except Exception as e:
         return f"Error: {e}"
 
