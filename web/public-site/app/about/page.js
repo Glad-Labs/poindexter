@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { OrganizationSchema } from '../../components/StructuredData';
@@ -41,8 +42,68 @@ export default function AboutPage() {
               <Display.Accent>Unlimited scale.</Display.Accent>
             </Display>
 
+            {/* Author card — photo + identity (EEAT signal for Google) */}
+            <div className="mt-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
+              <div className="flex-shrink-0">
+                <Image
+                  src="/images/matt-gladding.png"
+                  alt="Matt Gladding, founder of Glad Labs LLC"
+                  width={140}
+                  height={140}
+                  priority
+                  className="rounded-full border-2 border-cyan-500/30"
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="gl-h3 mb-0">Matt Gladding</p>
+                <p className="gl-body gl-body--sm gl-body--muted">
+                  Founder &amp; sole operator, Glad Labs LLC. Senior data
+                  engineer turned AI systems builder. Founded September 25,
+                  2025.
+                </p>
+                <div className="flex flex-wrap gap-3 pt-1 text-sm">
+                  <a
+                    href="https://github.com/Glad-Labs/poindexter"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gl-link"
+                  >
+                    GitHub · Poindexter
+                  </a>
+                  <span className="gl-body--muted">·</span>
+                  <a
+                    href="https://github.com/mattg-stack"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gl-link"
+                  >
+                    GitHub · Personal
+                  </a>
+                  <span className="gl-body--muted">·</span>
+                  <a
+                    href="https://x.com/_gladlabs"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gl-link"
+                  >
+                    X / Twitter
+                  </a>
+                  {/* TODO: replace # with actual LinkedIn URL */}
+                  <span className="gl-body--muted">·</span>
+                  <a
+                    href="#"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gl-link"
+                  >
+                    LinkedIn
+                  </a>
+                </div>
+              </div>
+            </div>
+
             {/* Main prose */}
-            <div className="space-y-6 mt-8">
+            <div className="space-y-6 mt-10">
               <p className="gl-body gl-body--lg">
                 I&apos;m{' '}
                 <span className="gl-body--primary font-medium">
@@ -55,10 +116,31 @@ export default function AboutPage() {
               </p>
 
               <p className="gl-body gl-body--lg">
-                The system running this site is an autonomous content pipeline:
-                AI agents that research, draft, critique, refine, and publish —
-                with quality scoring at every stage. It&apos;s not a toy demo —
-                and the system gets better with every run.
+                Before Glad Labs I spent over a decade as a senior data
+                engineer — ETL pipelines, warehouse architectures, and the kind
+                of slow-burn integration work where moving a column the wrong
+                way breaks a hundred dashboards. The transferable skill turned
+                out to be exactly what AI systems need: reliable plumbing,
+                idempotent migrations, observability everywhere, no silent
+                failures.
+              </p>
+
+              <p className="gl-body gl-body--lg">
+                The system running this site is{' '}
+                <a
+                  href="https://github.com/Glad-Labs/poindexter"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="gl-link"
+                >
+                  Poindexter
+                </a>{' '}
+                — an open-source autonomous content pipeline I built and run on
+                my own hardware (Ryzen 9 9950X3D + RTX 5090, no cloud LLM
+                dependency). AI agents research, draft, critique, refine, and
+                publish — with quality scoring at every stage. Apache 2.0
+                licensed, every line of code is on GitHub, every config knob
+                lives in a settings table you can read.
               </p>
 
               <p className="gl-body gl-body--lg">
@@ -78,7 +160,7 @@ export default function AboutPage() {
                 buzzwords, no pretending GPT wrappers are products. I write
                 about what I actually build, what actually works, and what
                 doesn&apos;t. If something breaks, you&apos;ll read about that
-                too.
+                too — usually with a commit hash.
               </p>
             </div>
           </div>
