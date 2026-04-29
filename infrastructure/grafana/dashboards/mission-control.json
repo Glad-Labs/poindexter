@@ -98,9 +98,9 @@
       "tags": [],
       "targetBlank": true,
       "title": "Tempo",
-      "tooltip": "Distributed traces \u2014 direct query UI (tailscale workstation IP, port 3200)",
+      "tooltip": "Tempo datasource \u2014 opens Grafana Explore view (Loki/Tempo have no standalone UI)",
       "type": "link",
-      "url": "http://100.81.93.12:3200"
+      "url": "/explore?orgId=1&left=%7B%22datasource%22%3A%20%22local-tempo%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22tempo%22%2C%20%22uid%22%3A%20%22local-tempo%22%7D%2C%20%22queryType%22%3A%20%22traceqlSearch%22%2C%20%22filters%22%3A%20%5B%5D%7D%5D%2C%20%22range%22%3A%20%7B%22from%22%3A%20%22now-1h%22%2C%20%22to%22%3A%20%22now%22%7D%7D"
     },
     {
       "asDropdown": false,
@@ -110,9 +110,9 @@
       "tags": [],
       "targetBlank": true,
       "title": "Loki",
-      "tooltip": "Log aggregation \u2014 direct query UI (tailscale workstation IP, port 3100)",
+      "tooltip": "Loki datasource \u2014 opens Grafana Explore view (Loki/Tempo have no standalone UI)",
       "type": "link",
-      "url": "http://100.81.93.12:3100"
+      "url": "/explore?orgId=1&left=%7B%22datasource%22%3A%20%22local-loki%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22loki%22%2C%20%22uid%22%3A%20%22local-loki%22%7D%2C%20%22expr%22%3A%20%22%7Bjob%3D~%5C%22.%2B%5C%22%7D%22%7D%5D%2C%20%22range%22%3A%20%7B%22from%22%3A%20%22now-1h%22%2C%20%22to%22%3A%20%22now%22%7D%7D"
     },
     {
       "asDropdown": false,
