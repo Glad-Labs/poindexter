@@ -13,6 +13,7 @@ from .approval import (
     reject_command,
     show_pending_command,
 )
+from .auth import auth_group
 from .publish_approval import (
     approve_publish_command,
     list_pending_publish_command,
@@ -60,6 +61,7 @@ def main(ctx: click.Context, verbose: bool) -> None:
 
 
 main.add_command(setup_command, name="setup")
+main.add_command(auth_group, name="auth")
 main.add_command(memory_group, name="memory")
 main.add_command(tasks_group, name="tasks")
 main.add_command(posts_group, name="posts")
