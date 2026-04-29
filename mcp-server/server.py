@@ -81,9 +81,44 @@ from pathlib import Path as _Path_boot
 _repo_root_boot = _Path_boot(__file__).resolve().parents[1]
 if str(_repo_root_boot) not in _sys_boot.path:
     _sys_boot.path.insert(0, str(_repo_root_boot))
+# Also expose src/cofounder_agent so we can import services.logger_config
+# without altering the rest of the import shape (#259).
+_cofounder_root = _repo_root_boot / "src" / "cofounder_agent"
+if _cofounder_root.is_dir() and str(_cofounder_root) not in _sys_boot.path:
+    _sys_boot.path.insert(0, str(_cofounder_root))
 from brain.bootstrap import require_database_url
 
 LOCAL_DB_DSN = require_database_url(source="mcp_server")
+
+# --- Tool error formatting helper (#259) -----------------------------------
+# Anti-pattern being replaced: ``return f"X failed: {e}"`` swallowed the
+# exception class and produced empty messages whenever ``str(e) == ""``
+# (common with chained ``raise ... from None`` and some asyncpg / network
+# errors). Every MCP tool now routes errors through ``_format_tool_error``
+# so callers see the exception class, a correlation id, and the server logs
+# carry the full traceback under that same id.
+import traceback  # noqa: E402, F401  (traceback is used by logger.exception)
+import uuid as _uuid  # noqa: E402
+
+try:  # pragma: no cover - import-shape only
+    from services.logger_config import get_logger as _get_logger
+
+    _log = _get_logger(__name__)
+except Exception:  # pragma: no cover - structlog/services optional
+    _log = logging.getLogger(__name__)
+
+
+def _format_tool_error(tool_name: str, e: Exception) -> str:
+    """Return a user-visible error string and log the full traceback.
+
+    The returned string always includes the exception class name and a short
+    request id (``rid``); the server log carries the full traceback under the
+    same id so an operator can grep for it. Use this in every MCP tool's
+    ``except Exception`` block instead of ``f"... failed: {e}"``.
+    """
+    rid = _uuid.uuid4().hex[:8]
+    _log.exception("[mcp-tool] %s failed [rid=%s]", tool_name, rid)
+    return f"{tool_name} failed (rid={rid}): {type(e).__name__}: {e}"
 
 OLLAMA_URL = _require_env("OLLAMA_URL")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
@@ -512,7 +547,7 @@ async def search_memory(
         return "\n".join(lines)
 
     except Exception as e:
-        return f"Memory search failed: {e}"
+        return _format_tool_error("Memory search", e)
 
 
 @mcp.tool()
@@ -638,7 +673,7 @@ async def store_memory(
             f"  Queryable via search_memory immediately."
         )
     except Exception as e:
-        return f"store_memory failed: {e}"
+        return _format_tool_error("store_memory", e)
 
 
 @mcp.tool()
@@ -729,7 +764,7 @@ async def get_audit_log(event_type: str = "", severity: str = "", limit: int = 2
             )
         return "\n".join(lines)
     except Exception as e:
-        return f"Audit log query failed: {e}"
+        return _format_tool_error("Audit log query", e)
 
 
 @mcp.tool()
@@ -754,7 +789,7 @@ async def get_audit_summary(hours: int = 24) -> str:
             lines.append(f"  {row['event_type']:30s} {row['severity']:8s} x{row['count']}")
         return "\n".join(lines)
     except Exception as e:
-        return f"Audit summary failed: {e}"
+        return _format_tool_error("Audit summary", e)
 
 
 # ============================================================================
@@ -840,7 +875,7 @@ async def get_brain_knowledge(entity: str = "", attribute: str = "", limit: int 
             )
         return "\n".join(lines)
     except Exception as e:
-        return f"Brain knowledge query failed: {e}"
+        return _format_tool_error("Brain knowledge query", e)
 
 
 if __name__ == "__main__":
