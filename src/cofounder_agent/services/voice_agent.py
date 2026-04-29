@@ -156,7 +156,21 @@ async def run_local(site_config: Any) -> None:
         ),
     )
 
-    stt = WhisperSTTService(model=WhisperModel(whisper_model_name))
+    # Pipecat's Whisper Model is an enum keyed on `value` (e.g. 'base',
+    # 'small'). Accept either the enum value ('base') or name ('BASE')
+    # so operators don't have to memorize which case the lookup wants.
+    try:
+        whisper_model_enum = WhisperModel(whisper_model_name)
+    except ValueError:
+        try:
+            whisper_model_enum = WhisperModel[whisper_model_name.upper()]
+        except KeyError as exc:
+            valid = ", ".join(m.value for m in WhisperModel)
+            raise ValueError(
+                f"voice_agent_whisper_model={whisper_model_name!r} is not a "
+                f"valid Pipecat Whisper model. Valid values: {valid}",
+            ) from exc
+    stt = WhisperSTTService(model=whisper_model_enum)
     llm = OLLamaLLMService(model=llm_model, base_url=ollama_url)
     tts = KokoroTTSService(voice=tts_voice, speed=tts_speed)
 

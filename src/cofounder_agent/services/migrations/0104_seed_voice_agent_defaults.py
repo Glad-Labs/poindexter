@@ -54,10 +54,14 @@ _SEEDS: list[tuple[str, str, str]] = [
     ),
     (
         "voice_agent_whisper_model",
-        "base.en",
-        "faster-whisper model size. base.en (~140 MB) balances accuracy + "
-        "latency on the 5090. Drop to tiny.en (~40 MB, 2-3x faster) if "
-        "latency hurts; bump to small.en/medium.en if accuracy matters.",
+        "base",
+        "faster-whisper model size. Valid Pipecat 1.1 enum values: "
+        "tiny, base, small, medium, large-v3, "
+        "deepdml/faster-whisper-large-v3-turbo-ct2 (LARGE_V3_TURBO), "
+        "Systran/faster-distil-whisper-large-v2 (DISTIL_LARGE_V2), "
+        "Systran/faster-distil-whisper-medium.en (DISTIL_MEDIUM_EN). "
+        "base balances accuracy + latency. Drop to tiny if latency hurts; "
+        "bump to DISTIL_MEDIUM_EN for English-optimized accuracy on a 5090.",
     ),
     (
         "voice_agent_system_prompt",
