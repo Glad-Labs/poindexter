@@ -133,6 +133,53 @@ class TestVerifyApiToken:
         assert exc_info.value.status_code == 401
         assert "not allowed in production" in exc_info.value.detail
 
+    @pytest.mark.asyncio
+    async def test_canonical_key_is_api_token_not_api_auth_token(self):
+        """Regression for Glad-Labs/poindexter#231.
+
+        Two near-identical rows used to live in app_settings: the
+        canonical ``api_token`` (what the middleware actually validates)
+        and a legacy/typo ``api_auth_token`` (orphaned, read by nothing).
+        Migration 0106 removes the orphan; this test pins the contract
+        so it can't silently regress.
+
+        Setup: a mock site_config returns DIFFERENT values for the two
+        keys. We expect:
+          - a request bearing the ``api_token`` value SUCCEEDS
+          - a request bearing the dead ``api_auth_token`` value FAILS 401
+        """
+        mapping = {
+            "api_token": "canonical-token-value",
+            "api_auth_token": "legacy-orphan-value",
+            "development_mode": "",
+            "operator_id": "operator",
+        }
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda k, d="": mapping.get(k, d))
+        sc.get_secret = AsyncMock(side_effect=lambda k, d="": mapping.get(k, d))
+        req = MagicMock()
+        req.app.state.site_config = sc
+
+        # Canonical key — auth succeeds
+        good = await verify_api_token(
+            req, credentials=_make_credentials("canonical-token-value")
+        )
+        assert good == "canonical-token-value"
+
+        # Dead key — auth fails 401 because middleware never reads it
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_api_token(
+                req, credentials=_make_credentials("legacy-orphan-value")
+            )
+        assert exc_info.value.status_code == 401
+        assert "Invalid token" in exc_info.value.detail
+
+        # And confirm the middleware actually asked for "api_token"
+        # (not "api_auth_token") via get_secret.
+        secret_keys_read = [call.args[0] for call in sc.get_secret.await_args_list]
+        assert "api_token" in secret_keys_read
+        assert "api_auth_token" not in secret_keys_read
+
 
 # ---------------------------------------------------------------------------
 # verify_api_token_optional

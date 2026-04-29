@@ -45,8 +45,8 @@ class WorkerClient:
         if not self.token:
             raise RuntimeError(
                 "No API token found. Set POINDEXTER_KEY (preferred) or GLADLABS_KEY "
-                "in the environment. Get the value from `app_settings.api_auth_token` "
-                "via `poindexter settings get api_auth_token` (or the DB directly)."
+                "in the environment. Get the value from `app_settings.api_token` "
+                "via `poindexter settings get api_token` (or the DB directly)."
             )
         self._client: httpx.AsyncClient | None = None
 
