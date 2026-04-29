@@ -564,3 +564,168 @@ class TestExecute:
             result = await SceneVisualsStage().execute(ctx, {})
         assert result.metrics["strategy"] == "pexels"
         assert "by_source" in result.metrics
+
+
+# ---------------------------------------------------------------------------
+# gh#163 bookend dedup against body URLs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestBookendDedup:
+    async def test_intro_skips_url_already_used_by_body(self):
+        """When a body scene picked URL X, the intro bookend must NOT
+        also pick URL X — it should pull a different candidate from the
+        Pexels result list.
+        """
+        cfg = _make_site_config({"video_scene_visuals_strategy": "pexels"})
+        ctx: dict[str, Any] = {
+            "site_config": cfg,
+            "video_script": _video_script(long_form_count=1, short_form_count=0),
+        }
+
+        # First call (body scene) returns the "shared" URL.
+        # Subsequent calls (bookends) receive seen_urls={SHARED_URL}
+        # and must fetch with that set — the helper itself dedups
+        # internally against the result list.
+        body_url = "https://pexels.example/body.jpg"
+        intro_url = "https://pexels.example/intro.jpg"
+
+        async def fake_try_pexels(_query, _site_config, *, seen_urls=None):
+            # Body call: no seen_urls or empty
+            if not seen_urls:
+                return {"clip_path": "/tmp/body.jpg", "url": body_url, "metadata": {}}
+            # Bookend calls: must skip body_url
+            assert body_url in seen_urls, (
+                "bookend call must receive seen_urls containing the body URL"
+            )
+            return {"clip_path": "/tmp/intro.jpg", "url": intro_url, "metadata": {}}
+
+        with patch(
+            "services.stages.scene_visuals._try_pexels", AsyncMock(side_effect=fake_try_pexels),
+        ) as pexels_mock:
+            result = await SceneVisualsStage().execute(ctx, {})
+
+        assert result.ok is True
+        # 1 body scene + 1 intro + 1 outro = 3 _try_pexels calls
+        assert pexels_mock.await_count == 3
+
+    async def test_outro_dedups_against_intro(self):
+        """When intro + outro have the same query (both fall through to
+        title because intro_hook + outro_cta are empty), the outro must
+        receive seen_urls containing the intro URL.
+        """
+        cfg = _make_site_config({"video_scene_visuals_strategy": "pexels"})
+        # Build a video_script with empty intro_hook + outro_cta — both
+        # will fall through to the post title. Need at least 1 body
+        # scene so the stage doesn't short-circuit on "no scenes".
+        video_script = _video_script(long_form_count=1, short_form_count=0)
+        video_script["long_form"]["intro_hook"] = ""
+        video_script["long_form"]["outro_cta"] = ""
+        ctx: dict[str, Any] = {
+            "site_config": cfg,
+            "title": "Self-Hosting Your Own AI",
+            "video_script": video_script,
+        }
+
+        body_url = "https://pexels.example/body.jpg"
+        intro_url = "https://pexels.example/intro.jpg"
+        outro_url = "https://pexels.example/outro.jpg"
+        call_count = {"n": 0}
+
+        async def fake_try_pexels(_query, _site_config, *, seen_urls=None):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                # body scene — no seen_urls
+                return {"clip_path": "/tmp/body.jpg", "url": body_url, "metadata": {}}
+            if call_count["n"] == 2:
+                # intro — seen_urls contains body_url
+                assert seen_urls is not None
+                assert body_url in seen_urls
+                return {"clip_path": "/tmp/intro.jpg", "url": intro_url, "metadata": {}}
+            # outro — seen_urls must contain BOTH body_url AND intro_url
+            assert seen_urls is not None
+            assert body_url in seen_urls, (
+                "outro must dedup against the body URL"
+            )
+            assert intro_url in seen_urls, (
+                "outro must dedup against the intro URL"
+            )
+            return {"clip_path": "/tmp/outro.jpg", "url": outro_url, "metadata": {}}
+
+        with patch(
+            "services.stages.scene_visuals._try_pexels", AsyncMock(side_effect=fake_try_pexels),
+        ):
+            result = await SceneVisualsStage().execute(ctx, {})
+
+        v = result.context_updates["video_scene_visuals"]
+        assert v["intro_clip_path"] == "/tmp/intro.jpg"
+        assert v["outro_clip_path"] == "/tmp/outro.jpg"
+
+
+# ---------------------------------------------------------------------------
+# gh#163 _try_pexels — internal seen_urls handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestTryPexelsSeenUrls:
+    async def test_picks_first_unseen_when_top_hit_already_used(self):
+        """When the Pexels top hit is in seen_urls, _try_pexels must
+        skip it and pick the next candidate.
+        """
+        from services.stages.scene_visuals import _try_pexels
+
+        seen_url = "https://pexels.example/seen.jpg"
+        unseen_url = "https://pexels.example/unseen.jpg"
+
+        candidates = [
+            SimpleNamespace(
+                url=seen_url, photographer="A", photographer_url="", width=0, height=0,
+            ),
+            SimpleNamespace(
+                url=unseen_url, photographer="B", photographer_url="", width=0, height=0,
+            ),
+        ]
+        provider = MagicMock()
+        provider.fetch = AsyncMock(return_value=candidates)
+
+        with patch(
+            "services.image_providers.pexels.PexelsProvider", return_value=provider,
+        ), patch(
+            "services.stages.scene_visuals._download_to_tmp",
+            AsyncMock(return_value="/tmp/dl.jpg"),
+        ):
+            result = await _try_pexels(
+                "topic", _FAKE_SITE_CONFIG, seen_urls={seen_url},
+            )
+
+        assert result is not None
+        assert result["url"] == unseen_url
+
+    async def test_returns_none_when_all_results_are_seen(self):
+        """When every candidate is already in seen_urls, _try_pexels
+        returns None rather than reusing one — caller falls through
+        (better to leave the bookend empty than to dupe).
+        """
+        from services.stages.scene_visuals import _try_pexels
+
+        url = "https://pexels.example/only.jpg"
+        candidates = [
+            SimpleNamespace(
+                url=url, photographer="X", photographer_url="", width=0, height=0,
+            ),
+        ]
+        provider = MagicMock()
+        provider.fetch = AsyncMock(return_value=candidates)
+
+        with patch(
+            "services.image_providers.pexels.PexelsProvider", return_value=provider,
+        ):
+            result = await _try_pexels(
+                "topic", _FAKE_SITE_CONFIG, seen_urls={url},
+            )
+
+        assert result is None

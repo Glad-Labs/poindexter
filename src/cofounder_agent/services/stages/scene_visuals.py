@@ -203,6 +203,12 @@ class SceneVisualsStage:
         # script's hook / CTA text (or the post title as a fallback)
         # so they're topically related but visually distinct from the
         # body imagery.
+        #
+        # gh#163 — when intro_hook + outro_cta are both empty (or both
+        # collapse to the post title), intro/outro can pick the same
+        # Pexels top-hit AND that hit can match a body-scene image.
+        # Build a seen_urls set from body visuals + the chosen intro
+        # so each bookend pick is genuinely distinct.
         long_form = script.get("long_form") or {}
         intro_query = (
             str(long_form.get("intro_hook") or "")
@@ -212,11 +218,24 @@ class SceneVisualsStage:
             str(long_form.get("outro_cta") or "")
             or str(context.get("title") or "")
         )
-        intro_clip = await _try_pexels(intro_query, site_config) if intro_query else None
-        outro_clip = await _try_pexels(outro_query, site_config) if outro_query else None
+        seen_urls: set[str] = {
+            str(v.get("url"))
+            for v in visuals["long_form"] + visuals["short_form"]
+            if v.get("url")
+        }
+        intro_clip = (
+            await _try_pexels(intro_query, site_config, seen_urls=seen_urls)
+            if intro_query else None
+        )
         if intro_clip:
             visuals["intro_clip_path"] = intro_clip["clip_path"]
             counts["pexels"] += 1
+            if intro_clip.get("url"):
+                seen_urls.add(intro_clip["url"])
+        outro_clip = (
+            await _try_pexels(outro_query, site_config, seen_urls=seen_urls)
+            if outro_query else None
+        )
         if outro_clip:
             visuals["outro_clip_path"] = outro_clip["clip_path"]
             counts["pexels"] += 1
@@ -427,19 +446,36 @@ async def _try_reuse_from_media_assets(
 async def _try_pexels(
     visual_prompt: str,
     site_config: Any,
+    *,
+    seen_urls: set[str] | None = None,
 ) -> dict[str, Any] | None:
-    """Run a Pexels search and download the top hit to a tempfile."""
+    """Run a Pexels search and download the top hit to a tempfile.
+
+    When ``seen_urls`` is provided, picks the first result whose URL
+    isn't already present — used by the bookend resolver (gh#163) so
+    intro/outro never reuse a body-scene image when query overlap is
+    high (e.g. intro_hook + outro_cta both empty, both falling through
+    to the post title).
+    """
     from services.image_providers.pexels import PexelsProvider
 
     provider = PexelsProvider()
-    config = {"_site_config": site_config, "per_page": 3}
+    config = {"_site_config": site_config, "per_page": 5}
     results = await provider.fetch(_query_for_pexels(visual_prompt), config)
     if not results:
         return None
 
-    chosen = results[0]
-    if not chosen.url:
+    chosen = None
+    for candidate in results:
+        if not candidate.url:
+            continue
+        if seen_urls is not None and candidate.url in seen_urls:
+            continue
+        chosen = candidate
+        break
+    if chosen is None:
         return None
+
     local = await _download_to_tmp(chosen.url, suffix=".jpg")
     if not local:
         return None
