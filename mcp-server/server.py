@@ -227,7 +227,13 @@ async def _resolve_task_id(task_id: str) -> str:
 
 @mcp.tool()
 async def approve_post(task_id: str) -> str:
-    """Approve a content task for publishing."""
+    """Stage a content task for publishing (does NOT publish — call publish_post for that).
+
+    As of gh#189, /api/tasks/{id}/approve defaults to auto_publish=false so
+    batch curation flows ("approve the best 3 from awaiting_approval") stage
+    without accidental go-lives. Use publish_post() to push an approved task
+    live on the configured site.
+    """
     full_id = await _resolve_task_id(task_id)
     result = _api("POST", f"/api/tasks/{full_id}/approve")
     return f"Status: {result.get('status', '?')}"

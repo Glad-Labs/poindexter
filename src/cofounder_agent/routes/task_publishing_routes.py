@@ -252,7 +252,7 @@ async def approve_task(
     reviewer_id: str | None = None,
     featured_image_url: str | None = None,
     image_source: str | None = None,
-    auto_publish: bool = True,
+    auto_publish: bool = False,
     publish_at: str | None = None,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
@@ -272,7 +272,9 @@ async def approve_task(
     - reviewer_id: Optional ID of reviewer
     - featured_image_url: Optional featured image URL for the task
     - image_source: Optional source of image (pexels, sdxl)
-    - auto_publish: Automatically publish after approval (default: true - approve = publish)
+    - auto_publish: Automatically publish after approval (default: false — staging-only;
+      callers must POST /publish for the explicit go-live step). Flipped to false 2026-04-28
+      (gh#189) so batch curation flows can stage multiple posts without accidental go-lives.
 
     **Returns:**
     - Updated task with status 'approved' or 'rejected' (and 'published' if auto_publish=true)
@@ -288,7 +290,7 @@ async def approve_task(
         "reviewer_id": "user123",
         "featured_image_url": "https://...",
         "image_source": "pexels",
-        "auto_publish": true
+        "auto_publish": false
       }'
     ```
     """

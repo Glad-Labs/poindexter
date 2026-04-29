@@ -48,6 +48,7 @@ class FinalizeTaskStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
+        from services.markdown_normalizer import normalize_markdown as _normalize_markdown
         from services.text_utils import normalize_text as _normalize_text
 
         task_id = context.get("task_id")
@@ -82,6 +83,11 @@ class FinalizeTaskStage:
         if seo_description:
             seo_description = _normalize_text(seo_description)
         content_text = _normalize_text(content_text)
+        # gh#191 — writer often emits bullet groups without the required
+        # blank line above; python-markdown then renders them as literal
+        # asterisks inside a <p>. Idempotent fix at the persistence
+        # boundary so every awaiting_approval row lands well-formed.
+        content_text = _normalize_markdown(content_text)
 
         # Phase 6 / GH#54: if the writer cited external URLs inline but
         # didn't append a Sources section, add one automatically. Readers

@@ -360,6 +360,7 @@ class StartupManager:
                 database_service=self.database_service,
                 orchestrator=None,  # Will be injected in main.py AFTER UnifiedOrchestrator is created
                 poll_interval=5,  # Poll every 5 seconds
+                site_config=self._site_config,
             )
             logger.debug(f"  [DEBUG] TaskExecutor created: {self.task_executor}")
             logger.debug(

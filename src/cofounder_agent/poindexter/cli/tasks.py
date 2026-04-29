@@ -238,10 +238,20 @@ def _post_action(task_id: str, action: str, payload: dict | None = None) -> dict
 
 @tasks_group.command("approve")
 @click.argument("task_id")
-def tasks_approve(task_id: str) -> None:
-    """Approve a task for publishing."""
+@click.option(
+    "--publish", is_flag=True,
+    help="Publish immediately instead of just staging (default: stage-only — call `tasks publish` later).",
+)
+def tasks_approve(task_id: str, publish: bool) -> None:
+    """Approve (stage) a task for publishing.
+
+    As of gh#189, approve defaults to STAGING ONLY — task moves to status='approved'
+    but NOT 'published'. Use --publish for the legacy "approve = ship it now" behavior,
+    or run `poindexter tasks publish <id>` as a separate explicit step.
+    """
+    payload = {"auto_publish": True} if publish else None
     try:
-        t = _post_action(task_id, "approve")
+        t = _post_action(task_id, "approve", payload)
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
