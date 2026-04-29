@@ -48,3 +48,17 @@ repos:
         pass_filenames: false
         files: '^src/cofounder_agent/services/.*\.py$'
         stages: [pre-commit]
+
+      # GH#180 — block poetry.lock drift before it lands in a commit.
+      # Mirrors the `poetry check --lock` step in .gitea/workflows/ci.yml
+      # (and the new defense-in-depth job in .github/workflows/security.yml).
+      # Only fires when src/cofounder_agent/{pyproject.toml,poetry.lock} is
+      # in the staged changes — other Python projects in this repo
+      # (mcp-server/, src/cofounder_agent/poindexter/) use uv, not Poetry.
+      - id: poetry-check-lock
+        name: poetry check --lock (src/cofounder_agent)
+        entry: bash -c 'cd src/cofounder_agent && poetry check --lock'
+        language: system
+        pass_filenames: false
+        files: '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$'
+        stages: [pre-commit]
