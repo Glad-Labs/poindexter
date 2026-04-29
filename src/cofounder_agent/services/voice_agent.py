@@ -83,10 +83,16 @@ from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
-from pipecat.services.llm.ollama import OllamaLLMService
-from pipecat.services.stt.whisper import Model as WhisperModel, WhisperSTTService
-from pipecat.services.tts.kokoro import KokoroTTSService
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+)
+from pipecat.services.kokoro.tts import KokoroTTSService
+from pipecat.services.ollama.llm import OLLamaLLMService
+from pipecat.services.whisper.stt import (
+    Model as WhisperModel,
+    WhisperSTTService,
+)
 from pipecat.transports.local.audio import (
     LocalAudioTransport,
     LocalAudioTransportParams,
@@ -151,13 +157,16 @@ async def run_local(site_config: Any) -> None:
     )
 
     stt = WhisperSTTService(model=WhisperModel(whisper_model_name))
-    llm = OllamaLLMService(model=llm_model, base_url=ollama_url)
+    llm = OLLamaLLMService(model=llm_model, base_url=ollama_url)
     tts = KokoroTTSService(voice=tts_voice, speed=tts_speed)
 
-    context = OpenAILLMContext(
+    # Pipecat 1.1 API: LLMContext (universal, not OpenAI-specific) + a
+    # standalone LLMContextAggregatorPair (replaces the old
+    # llm.create_context_aggregator helper).
+    context = LLMContext(
         messages=[{"role": "system", "content": system_prompt}],
     )
-    context_aggregator = llm.create_context_aggregator(context)
+    context_aggregator = LLMContextAggregatorPair(context=context)
 
     pipeline = Pipeline(
         [
@@ -199,16 +208,16 @@ async def run_local(site_config: Any) -> None:
 
 async def _bootstrap_and_run() -> None:
     """Build a SiteConfig from the live DB and start the local mic loop."""
-    from brain.bootstrap import require_database_url
     import asyncpg
 
+    from brain.bootstrap import require_database_url
     from services.site_config import SiteConfig
 
     dsn = require_database_url(source="voice_agent")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
     try:
-        site_config = SiteConfig(pool=pool)
-        await site_config.load_from_db()
+        site_config = SiteConfig()
+        await site_config.load(pool)
         await run_local(site_config)
     finally:
         await pool.close()
