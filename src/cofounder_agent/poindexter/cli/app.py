@@ -21,6 +21,7 @@ from .publish_approval import (
 )
 from .costs import costs_group
 from .memory import memory_group
+from .migrate import migrate_group
 from .posts import posts_group
 from .premium import premium_group
 from .qa_gates import qa_gates_group
@@ -74,6 +75,7 @@ main.add_command(qa_gates_group, name="qa-gates")
 main.add_command(stores_group, name="stores")
 main.add_command(schedule_group, name="schedule")
 main.add_command(publish_at_command, name="publish-at")
+main.add_command(migrate_group, name="migrate")
 
 # HITL approval gate commands (#145).
 main.add_command(approve_command, name="approve")

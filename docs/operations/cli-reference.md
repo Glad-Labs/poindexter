@@ -31,6 +31,7 @@ consolidated reference.
 | `approve`     | Clear any HITL gate by task id                                   |
 | `reject`      | Reject any HITL gate by task id                                  |
 | `gates`       | List + toggle HITL approval gates                                |
+| `migrate`     | Schema migration runner (status / up / down)                     |
 
 Run `poindexter --help` for the top-level list and
 `poindexter <group> --help` for subcommands.
@@ -634,6 +635,87 @@ poindexter schedule shift --all --by 1h
 Every post still in the future has its `published_at` advanced by
 one hour. The audit trail records the operation as a single
 `schedule.shifted` event with the post-id list in the payload.
+
+---
+
+## `migrate`
+
+Schema migration runner ([Glad-Labs/poindexter#226][issue-226]). The
+worker auto-runs migrations on boot, but operators who don't restart
+their container can have unapplied migrations sitting on disk. This
+group exposes the same runner as a direct CLI surface — no worker
+round-trip, no container restart.
+
+[issue-226]: https://github.com/Glad-Labs/poindexter/issues/226
+
+The CLI operates on the same `services/migrations/` directory and the
+`schema_migrations` tracking table the worker uses, so it's safe to
+mix and match (CLI `migrate up` then a worker reboot, or vice versa).
+
+### `migrate status [--json]`
+
+List every migration file on disk alongside its applied state.
+
+```bash
+poindexter migrate status
+poindexter migrate status --json
+```
+
+Sample output:
+
+```
+[x] 0103_add_embeddings_tsvector.py                    applied 2026-04-28
+[x] 0104_seed_voice_agent_defaults.py                  applied 2026-04-29
+[ ] 0105_seed_brand_keywords.py                        pending
+
+Total: 89 migrations — 87 applied, 2 pending
+```
+
+### `migrate up [--to NAME] [--json]`
+
+Apply all pending migrations. Idempotent — already-applied migrations
+are skipped via `schema_migrations`.
+
+```bash
+poindexter migrate up                       # apply everything pending
+poindexter migrate up --to 0103             # stop at 0103 (everything ≤ 0103)
+poindexter migrate up --to 0103_xxx.py      # also accepted
+poindexter migrate up --json
+```
+
+`--to` accepts either a numeric prefix (`0103`) or a full filename
+(`0103_add_embeddings_tsvector.py`). The summary line at the end
+reads `applied N, skipped M, failed K, pending P`.
+
+### `migrate down [--to NAME] [--all] [--yes] [--json]`
+
+Roll back applied migrations. Migrations are rolled back in reverse
+order. Without flags, only the most recent applied migration is
+rolled back.
+
+```bash
+poindexter migrate down                     # roll back only the latest
+poindexter migrate down --to 0099           # roll back everything > 0099
+poindexter migrate down --all               # roll back EVERYTHING (asks first)
+poindexter migrate down --all --yes         # skip the confirmation
+poindexter migrate down --json
+```
+
+A migration's rollback path is whichever of these the migration
+module exposes (in priority order):
+
+- `async def down(pool)` — pool-based, the modern convention
+- `async def rollback_migration(conn)` — connection-based, the older
+  convention
+
+If a migration defines neither, `migrate down` skips it and exits
+non-zero with a `no down()/rollback_migration() defined — skipped`
+notice. The `schema_migrations` row is left intact in that case so
+nothing silently disappears from the tracker.
+
+`--all` and `--to` are mutually exclusive. `--all` prompts for
+confirmation unless `--yes` is set or `--json` is set (JSON mode
+suppresses the interactive prompt).
 
 ---
 
