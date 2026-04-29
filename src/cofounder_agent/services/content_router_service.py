@@ -296,9 +296,41 @@ async def process_content_generation_task(
     except Exception as e:
         logger.error("[BG-TASK] Pipeline error for task %s...: %s", task_id[:8], e, exc_info=True)
         logger.error("[BG-TASK] Detailed traceback:", exc_info=True)
-        audit_log_bg("error", "content_router", {
-            "error": str(e)[:500], "stages_completed": list(result.get("stages", {}).keys()),
-        }, task_id=task_id, severity="error")
+
+        # Glad-Labs/poindexter#260: when pipeline_dry_run_mode is on, the
+        # writer chain short-circuits with AllModelsFailedError ("no
+        # attempts recorded") because dry-run intentionally suppresses
+        # model calls. That's expected behavior, NOT a real failure —
+        # logging it as severity='error' was drowning the 24h error
+        # count (277/277 in one window were dry-run noise) and hiding
+        # actual ollama/db errors. Demote to severity='info' with a
+        # filterable event_type so dashboards/alerts can ignore it.
+        # The task's own status (set below to 'failed', or 'dry_run' by
+        # finalize_task) remains the authoritative state — only the
+        # audit_log row severity changes here.
+        _is_dry_run_halt = False
+        try:
+            from services.site_config import site_config as _sc_dryrun_check
+            _dry_raw = _sc_dryrun_check.get("pipeline_dry_run_mode", "")
+            _is_dry_run = str(_dry_raw).strip().lower() in ("true", "1", "yes", "on")
+            _err_text = str(e)
+            _is_dry_run_halt = _is_dry_run and (
+                "no attempts recorded" in _err_text
+                or "AllModelsFailedError" in _err_text
+            )
+        except Exception as _dry_exc:
+            logger.debug("[BG-TASK] dry-run severity-demote check failed: %s", _dry_exc)
+
+        if _is_dry_run_halt:
+            audit_log_bg("dry_run_halt", "content_router", {
+                "error": str(e)[:500],
+                "stages_completed": list(result.get("stages", {}).keys()),
+                "reason": "pipeline_dry_run_mode short-circuited the writer chain",
+            }, task_id=task_id, severity="info")
+        else:
+            audit_log_bg("error", "content_router", {
+                "error": str(e)[:500], "stages_completed": list(result.get("stages", {}).keys()),
+            }, task_id=task_id, severity="error")
 
         # Update content_task with failure status
         # 🔑 CRITICAL: Preserve all partially-generated data (content, image, metadata)
