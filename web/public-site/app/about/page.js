@@ -61,6 +61,10 @@ export default function AboutPage() {
                   engineer turned AI systems builder. Founded September 25,
                   2025.
                 </p>
+                <p className="gl-body gl-body--sm gl-body--muted">
+                  B.A.Sc. Game Development &amp; Simulation Programming —
+                  New England Institute of Technology.
+                </p>
                 <div className="flex flex-wrap gap-3 pt-1 text-sm">
                   <a
                     href="https://github.com/Glad-Labs/poindexter"
@@ -115,13 +119,17 @@ export default function AboutPage() {
               </p>
 
               <p className="gl-body gl-body--lg">
-                Before Glad Labs I spent over a decade as a senior data
-                engineer — ETL pipelines, warehouse architectures, and the kind
-                of slow-burn integration work where moving a column the wrong
-                way breaks a hundred dashboards. The transferable skill turned
-                out to be exactly what AI systems need: reliable plumbing,
-                idempotent migrations, observability everywhere, no silent
-                failures.
+                I&apos;ve got a B.A.Sc. in Game Development &amp; Simulation
+                Programming from New England Institute of Technology — the
+                degree that made me think in terms of systems, state machines,
+                and update loops long before I knew that&apos;s also how AI
+                pipelines work. Before Glad Labs I spent over a decade as a
+                senior data engineer — ETL pipelines, warehouse architectures,
+                and the kind of slow-burn integration work where moving a
+                column the wrong way breaks a hundred dashboards. Those two
+                skills, combined, are exactly what AI systems need: reliable
+                plumbing, idempotent migrations, observability everywhere, no
+                silent failures.
               </p>
 
               <p className="gl-body gl-body--lg">
