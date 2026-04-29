@@ -86,6 +86,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
 )
 from pipecat.services.kokoro.tts import KokoroTTSService
 from pipecat.services.ollama.llm import OLLamaLLMService
@@ -148,11 +149,15 @@ async def run_local(site_config: Any) -> None:
         llm_model, tts_voice, whisper_model_name,
     )
 
+    # Pipecat 1.1 moved vad_analyzer OFF the transport params and onto
+    # the user-aggregator params (see LLMContextAggregatorPair below).
+    # Passing vad_analyzer to LocalAudioTransportParams is silently
+    # dropped by pydantic v2 — speech-start/stop events never fire and
+    # STT never runs. Spent way too long diagnosing this.
     transport = LocalAudioTransport(
         LocalAudioTransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),
         ),
     )
 
@@ -180,7 +185,13 @@ async def run_local(site_config: Any) -> None:
     context = LLMContext(
         messages=[{"role": "system", "content": system_prompt}],
     )
-    context_aggregator = LLMContextAggregatorPair(context=context)
+    # VAD lives here in Pipecat 1.1 (see transport block above).
+    context_aggregator = LLMContextAggregatorPair(
+        context=context,
+        user_params=LLMUserAggregatorParams(
+            vad_analyzer=SileroVADAnalyzer(),
+        ),
+    )
 
     pipeline = Pipeline(
         [
@@ -203,15 +214,14 @@ async def run_local(site_config: Any) -> None:
         ),
     )
 
-    @transport.event_handler("on_client_connected")
-    async def _on_connected(_t, _client) -> None:
-        log.info("Audio transport ready — start talking")
-        # Greet so Matt knows the chain is live.
-        await task.queue_frames(
-            context_aggregator.user().get_context_frames(
-                [{"role": "user", "content": "Greet Matt in one sentence."}],
-            ),
-        )
+    log.info(
+        "Audio transport ready. Start talking when the model downloads "
+        "finish (first run only). Ctrl+C to exit.",
+    )
+    # No on_client_connected event for LocalAudioTransport (that's a
+    # WebRTC concept). Skip the greet — operator sees the log line above
+    # and can speak first. We can revisit a "type a message to start"
+    # path later if the silent-start UX is bad.
 
     runner = PipelineRunner()
     try:
