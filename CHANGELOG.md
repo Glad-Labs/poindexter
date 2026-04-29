@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Week of 2026-04-29
+
+#### Fixed
+
+- **MCP `topics_propose` no longer crashes on launch.** The tool (and the rest of the topic-gate flow — `topics_show`, `topics_reject`, `topics_approve`) failed at import with a missing-dependency error. Reinstall or upgrade the MCP server to pick up the fix. ([#258](https://github.com/Glad-Labs/poindexter/issues/258))
+- **MCP tool errors are now actionable.** Tool failures used to surface as bare `… failed:` messages with no exception class, no traceback hint, and no correlation id, which trained operators to retry instead of report. Errors now include the exception class name and a short `rid=` request id; the full traceback is logged server-side under the same id so a maintainer can grep by `rid` when you file a bug. ([#259](https://github.com/Glad-Labs/poindexter/issues/259))
+- **MCP `get_setting` / `set_setting` accept the `category/key` form** that `list_settings` prints (e.g. `site/public_site_url`). Copy-paste from `list_settings` output now works without manually stripping the prefix. ([#253](https://github.com/Glad-Labs/poindexter/issues/253))
+- **Audit log no longer floods with errors during dry-run mode.** Expected pipeline halts triggered by `pipeline_dry_run_mode` were logged at `error` severity, drowning the 24h error count and hiding real failures. Dry-run halts are now recorded at `info` severity under a dedicated `dry_run_halt` event type; real errors (model timeouts, DB issues, etc.) are still logged at `error`. ([#260](https://github.com/Glad-Labs/poindexter/issues/260))
+
 ### Renamed
 
 - **Project rebrand: Glad Labs Engine → Poindexter (built by Glad Labs LLC).** The public product is now known as Poindexter. Glad Labs LLC remains the legal entity and copyright holder. Migration impact for existing users:
