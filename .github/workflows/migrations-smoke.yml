@@ -1,0 +1,80 @@
+# Smoke-test that every migration in src/cofounder_agent/services/migrations/
+# applies cleanly against an empty Postgres 16 + pgvector database.
+# Catches "migration N silently dropped a column migration M depended on"
+# regressions before they hit a real restart. (GH#229)
+name: migrations-smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/cofounder_agent/services/migrations/**"
+      - "scripts/ci/migrations_smoke.py"
+      - ".github/workflows/migrations-smoke.yml"
+      - "src/cofounder_agent/pyproject.toml"
+      - "src/cofounder_agent/poetry.lock"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/cofounder_agent/services/migrations/**"
+      - "scripts/ci/migrations_smoke.py"
+      - ".github/workflows/migrations-smoke.yml"
+      - "src/cofounder_agent/pyproject.toml"
+      - "src/cofounder_agent/poetry.lock"
+  workflow_dispatch:
+
+jobs:
+  migrations-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: poindexter_test
+        ports:
+          - 5432:5432
+        # Health-check ensures the runner waits until pg_isready before the
+        # job step starts — matches the canonical actions/example pattern.
+        options: >-
+          --health-cmd "pg_isready -U postgres -d poindexter_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/poindexter_test
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The runner only needs asyncpg + the project's own migration files.
+      # Avoid a full poetry install (300+ deps, ~2 min) — keeps this job fast.
+      - name: Install runtime deps
+        run: pip install "asyncpg>=0.30,<0.32"
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres > /dev/null 2>&1; then
+              echo "postgres ready"
+              exit 0
+            fi
+            echo "waiting for postgres... ($i)"
+            sleep 1
+          done
+          echo "postgres never became ready" >&2
+          exit 1
+
+      - name: Run migrations against empty database
+        run: python scripts/ci/migrations_smoke.py
