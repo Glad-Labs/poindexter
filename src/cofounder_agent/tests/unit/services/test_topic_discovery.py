@@ -104,38 +104,129 @@ class TestRewriteTitle:
 
 
 class TestIsBrandRelevant:
+    """Default behaviour: when ``brand_keywords`` is not set in app_settings
+    (the empty-SiteConfig case used by these tests), the dispatcher falls
+    back to the hardcoded ``_BRAND_KEYWORDS`` set — Glad Labs's
+    AI/gaming/PC-hardware niche."""
+
+    def _td(self):
+        return TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+
     def test_ai_topic_is_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("Building AI Agents with LLMs") is True
+        assert self._td()._is_brand_relevant("Building AI Agents with LLMs") is True
 
     def test_gpu_topic_is_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is True
+        assert self._td()._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is True
 
     def test_gaming_topic_is_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("Best Steam Games of 2026") is True
+        assert self._td()._is_brand_relevant("Best Steam Games of 2026") is True
 
     def test_self_hosted_topic_is_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("Self-Hosted AI Content Pipeline for Solo Founders") is True
+        assert self._td()._is_brand_relevant("Self-Hosted AI Content Pipeline for Solo Founders") is True
 
     def test_local_inference_topic_is_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("Running Local Inference with Ollama on Your Own Hardware") is True
+        assert self._td()._is_brand_relevant("Running Local Inference with Ollama on Your Own Hardware") is True
 
     def test_docker_topic_is_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("Docker Kubernetes CI/CD Pipeline") is True
+        assert self._td()._is_brand_relevant("Docker Kubernetes CI/CD Pipeline") is True
 
     def test_unrelated_topic_not_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("Best Recipes for Dinner Tonight") is False
+        assert self._td()._is_brand_relevant("Best Recipes for Dinner Tonight") is False
 
     def test_empty_string(self):
-        assert TopicDiscovery._is_brand_relevant("") is False
+        assert self._td()._is_brand_relevant("") is False
 
     def test_case_insensitive(self):
-        assert TopicDiscovery._is_brand_relevant("MACHINE LEARNING Trends") is True
+        assert self._td()._is_brand_relevant("MACHINE LEARNING Trends") is True
 
     def test_ollama_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("Running Ollama Locally") is True
+        assert self._td()._is_brand_relevant("Running Ollama Locally") is True
 
     def test_self_hosted_relevant(self):
-        assert TopicDiscovery._is_brand_relevant("Self-Host Your Own Blog") is True
+        assert self._td()._is_brand_relevant("Self-Host Your Own Blog") is True
+
+
+# ===========================================================================
+# _is_brand_relevant — site_config override (gh#216)
+# ===========================================================================
+
+
+class TestIsBrandRelevantOverride:
+    """gh#216: brand_keywords is configurable via app_settings so non-Glad-Labs
+    niches (gardener, dentist, indie musician) aren't filtered out by the
+    AI/PC/gaming-niche hardcoded fallback."""
+
+    def test_empty_setting_falls_back_to_hardcoded(self):
+        """An empty (or whitespace-only) app_settings value must NOT swallow
+        the hardcoded set — otherwise existing Glad Labs deployments that
+        haven't explicitly set the setting would start rejecting every topic."""
+        sc = SiteConfig(initial_config={"brand_keywords": ""})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._is_brand_relevant("Building AI Agents with LLMs") is True
+        assert d._is_brand_relevant("Running Ollama Locally") is True
+
+        sc_ws = SiteConfig(initial_config={"brand_keywords": "   "})
+        d_ws = TopicDiscovery(AsyncMock(), site_config=sc_ws)
+        assert d_ws._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is True
+
+    def test_unset_setting_falls_back_to_hardcoded(self):
+        """When the key is absent entirely (not even an empty row), behaviour
+        is identical to the empty-string case — fall back to hardcoded."""
+        sc = SiteConfig(initial_config={})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._is_brand_relevant("Building AI Agents with LLMs") is True
+
+    def test_custom_keywords_replace_hardcoded(self):
+        """When the override IS set, it is the authoritative list — the
+        hardcoded Glad Labs niche must NOT bleed through (otherwise a
+        gardener customer would still match 'AI'/'GPU'/etc and produce
+        off-niche content)."""
+        sc = SiteConfig(
+            initial_config={"brand_keywords": "gardening,compost,heirloom tomato"}
+        )
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Custom keywords match (word boundaries respected for single words)
+        assert d._is_brand_relevant("Compost Bin Setup for the Backyard") is True
+        assert d._is_brand_relevant("Heirloom Tomato Varieties for Zone 6") is True
+        assert d._is_brand_relevant("Container Gardening Tips") is True
+        # Glad Labs niche keywords no longer match
+        assert d._is_brand_relevant("Building AI Agents with LLMs") is False
+        assert d._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is False
+
+    def test_custom_keywords_case_insensitive(self):
+        """Override matching keeps the same case-insensitive semantics as the
+        hardcoded path — operators don't have to think about casing when
+        seeding their niche keywords."""
+        sc = SiteConfig(initial_config={"brand_keywords": "Gardening,Compost"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Title-case keyword vs upper-case title
+        assert d._is_brand_relevant("GARDENING TIPS FOR BEGINNERS") is True
+        # Lower-case keyword vs mixed-case title
+        sc2 = SiteConfig(initial_config={"brand_keywords": "compost"})
+        d2 = TopicDiscovery(AsyncMock(), site_config=sc2)
+        assert d2._is_brand_relevant("How To Compost At Home") is True
+
+    def test_custom_keywords_handle_whitespace_and_empties(self):
+        """Operators will inevitably leave stray spaces / trailing commas in
+        the comma-separated string — those should be tolerated, not turn
+        into ghost keywords that match every title."""
+        sc = SiteConfig(
+            initial_config={"brand_keywords": " gardening , , compost ,"}
+        )
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._is_brand_relevant("Gardening Tips") is True
+        assert d._is_brand_relevant("Compost Bin Setup") is True
+        # Empty string between commas must not match arbitrary text
+        assert d._is_brand_relevant("Best Recipes for Dinner Tonight") is False
+
+    def test_custom_keywords_word_boundary_for_single_word(self):
+        """Word-boundary matching is preserved through the override path —
+        a single-word keyword 'art' must not match 'cartoon' or 'smart'."""
+        sc = SiteConfig(initial_config={"brand_keywords": "art"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._is_brand_relevant("Modern Art Movements") is True
+        assert d._is_brand_relevant("Smart Home Hubs Reviewed") is False
+        assert d._is_brand_relevant("Cartoon History") is False
 
 
 # ===========================================================================

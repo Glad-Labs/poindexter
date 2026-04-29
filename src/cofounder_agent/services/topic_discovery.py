@@ -572,23 +572,52 @@ class TopicDiscovery:
     }
 
     @staticmethod
-    def _is_brand_relevant(title: str) -> bool:
-        """Check if a topic is relevant to the site's niche.
+    def _match_brand_keywords(title: str, keywords: set[str]) -> bool:
+        """Pure matching helper: True if any keyword in ``keywords`` appears
+        in ``title``.
 
-        Uses word-boundary matching to avoid false positives like
-        'farmer' matching 'arm' or 'autocross' matching 'solo'.
-        Multi-word keywords use substring match (they're specific enough).
+        Uses word-boundary matching for single-word keywords (so 'arm'
+        doesn't match 'farmer') and substring matching for multi-word /
+        hyphenated keywords (specific enough to skip the boundary check).
+        Case-insensitive.
         """
         title_lower = title.lower()
-        for kw in TopicDiscovery._BRAND_KEYWORDS:
-            if " " in kw or "-" in kw:
+        for kw in keywords:
+            kw_lower = kw.lower()
+            if not kw_lower:
+                continue
+            if " " in kw_lower or "-" in kw_lower:
                 # Multi-word keywords: substring match is fine
-                if kw in title_lower:
+                if kw_lower in title_lower:
                     return True
             # Single-word keywords: require word boundary
-            elif re.search(rf"\b{re.escape(kw)}\b", title_lower):
+            elif re.search(rf"\b{re.escape(kw_lower)}\b", title_lower):
                 return True
         return False
+
+    def _is_brand_relevant(self, title: str) -> bool:
+        """Check if a topic is relevant to the site's niche.
+
+        Resolution order (gh#216):
+
+        1. ``app_settings.brand_keywords`` (comma-separated string) — the
+           customer-tunable override. New installs ship with this seeded
+           empty so Poindexter is niche-agnostic out of the box.
+        2. The hardcoded :pyattr:`_BRAND_KEYWORDS` set — Glad Labs's own
+           AI / gaming / PC-hardware niche, used as a permissive fallback
+           when no override has been configured. Falling back (rather than
+           hard-failing on empty) keeps existing Glad Labs deployments
+           working unchanged and avoids accidentally rejecting every topic
+           on a fresh install before the operator has tuned the niche.
+        """
+        override = (self._site_config.get("brand_keywords", "") or "").strip()
+        if override:
+            keywords = {
+                kw.strip() for kw in override.split(",") if kw.strip()
+            }
+        else:
+            keywords = self._BRAND_KEYWORDS
+        return self._match_brand_keywords(title, keywords)
 
     def _classify_category(self, title: str) -> str:
         """Classify a title into a category."""

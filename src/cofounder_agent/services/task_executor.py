@@ -637,12 +637,32 @@ class TaskExecutor:
                 if isinstance(_inner, dict):
                     _task_meta = _inner
             _user_seeded = _task_meta.get("discovered_by") in ("url_seed", "url_list")
-            if topic and not _user_seeded and not TopicDiscovery._is_brand_relevant(topic):
+
+            # gh#216: brand_keywords is now site_config-aware. When a
+            # site_config is wired up, instantiate TopicDiscovery so the
+            # customer-tunable override (app_settings.brand_keywords) takes
+            # effect; the dispatcher falls back to the hardcoded set only
+            # when the override is empty. During early boot (before
+            # app.state.site_config is bound) site_config can be None — in
+            # that case fall back directly to the hardcoded set so we
+            # still reject obviously off-brand topics rather than crashing.
+            def _check_brand_relevance(_topic: str) -> bool:
+                if self._site_config is None:
+                    return TopicDiscovery._match_brand_keywords(
+                        _topic, TopicDiscovery._BRAND_KEYWORDS,
+                    )
+                _td = TopicDiscovery(
+                    self.database_service.pool, site_config=self._site_config,
+                )
+                return _td._is_brand_relevant(_topic)
+
+            if topic and not _user_seeded and not _check_brand_relevance(topic):
                 _reason = (
                     f"Off-brand: topic '{topic[:80]}' did not match any keyword in "
+                    f"the configured brand_keywords (app_settings) or the fallback "
                     f"TopicDiscovery._BRAND_KEYWORDS. Add the relevant niche keyword "
-                    f"to the whitelist (topic_discovery.py) or to the 'brand_keywords' "
-                    f"app_settings key if this topic should have passed."
+                    f"to the 'brand_keywords' app_settings key (comma-separated) "
+                    f"if this topic should have passed."
                 )
                 logger.info("[TASK_SINGLE] Rejecting off-brand topic: %s", topic[:60])
                 # Populate BOTH error_message and result.reason so the
