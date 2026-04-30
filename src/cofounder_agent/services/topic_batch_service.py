@@ -283,7 +283,8 @@ class TopicBatchService:
             # External candidates are dicts (carry-forward rows or plugin
             # output). Carry-forward rows have a "row" key; fresh discovery
             # output is the dict itself.
-            row = item.get("row") if isinstance(item, dict) and "row" in item else item
+            row = item["row"] if isinstance(item, dict) and "row" in item else item
+            assert row is not None
             text = (row.get("title") or "") + " " + (row.get("summary") or "")
             decay = item.get("decay_factor", 1.0) if isinstance(item, dict) else 1.0
             score, breakdown = await score_one(text, decay)
