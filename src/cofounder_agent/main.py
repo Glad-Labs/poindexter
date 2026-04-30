@@ -608,6 +608,54 @@ async def api_health():
         except Exception:
             pass
 
+        # Migration drift detection (#230)
+        # Compares applied (schema_migrations table) vs available (.py files in
+        # services/migrations/) so external monitors can detect schema drift.
+        try:
+            from pathlib import Path
+
+            migrations_dir = Path(__file__).parent / "services" / "migrations"
+            available = sorted(
+                p.name
+                for p in migrations_dir.glob("*.py")
+                if p.name != "__init__.py"
+            )
+
+            pool = getattr(database_service, "pool", None) if database_service else None
+            if pool is None:
+                health_data["components"]["migrations"] = {
+                    "status": "unknown",
+                    "error": "database pool unavailable",
+                }
+            else:
+                async with pool.acquire() as conn:
+                    applied = await conn.fetchval(
+                        "SELECT COUNT(*) FROM schema_migrations"
+                    )
+                    latest_applied = await conn.fetchval(
+                        "SELECT name FROM schema_migrations "
+                        "ORDER BY applied_at DESC LIMIT 1"
+                    )
+                applied = int(applied or 0)
+                pending = max(len(available) - applied, 0)
+                drift = pending > 0
+                health_data["components"]["migrations"] = {
+                    "applied": applied,
+                    "pending": pending,
+                    "latest_applied": latest_applied,
+                    "drift": drift,
+                }
+                if drift and health_data["status"] == "healthy":
+                    health_data["status"] = "degraded"
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning(
+                "Migration health check failed in /api/health: %s", str(e), exc_info=True
+            )
+            health_data["components"]["migrations"] = {
+                "status": "unknown",
+                "error": str(e),
+            }
+
         return health_data
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Health check failed: %s", str(e), exc_info=True)
