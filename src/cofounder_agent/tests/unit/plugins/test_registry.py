@@ -47,7 +47,26 @@ def _reset_registry_cache():
 
     The registry caches results for the process lifetime; tests that
     monkeypatch entry_points need a clean slate.
+
+    GH#311: also re-binds the original ``plugins.registry`` submodule
+    onto the parent ``plugins`` package before the test runs. A handful
+    of service tests stub ``sys.modules["plugins"]`` with a bare module
+    to avoid dragging in heavyweight imports; if that stub leaks, every
+    ``monkeypatch.setattr("plugins.registry.entry_points", ...)`` in
+    this file dies with ``no attribute 'registry'``. We rebind rather
+    than re-import so the patches still hit the same module object
+    referenced by this file's top-level imports of ``get_taps`` etc.
     """
+    import sys
+
+    registry = sys.modules.get("plugins.registry")
+    if registry is None:
+        import importlib
+        registry = importlib.import_module("plugins.registry")
+    plugins_pkg = sys.modules.get("plugins")
+    if plugins_pkg is not None and getattr(plugins_pkg, "registry", None) is not registry:
+        plugins_pkg.registry = registry  # type: ignore[attr-defined]
+
     clear_registry_cache()
     yield
     clear_registry_cache()

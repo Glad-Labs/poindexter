@@ -140,10 +140,36 @@ def _reset_singletons_between_tests():
     # (image_style_rotation singleton removed in Phase G1 —
     # ImageStyleTracker is now a class; workers inject an instance.)
 
-    # plugin registry entry-point cache (lru_cache)
+    # plugin registry entry-point cache (lru_cache).
+    #
+    # GH#311: some service tests stub ``sys.modules["plugins"]`` with a
+    # bare ``types.ModuleType("plugins")`` (e.g. ``test_stores_cli`` to
+    # avoid dragging in apscheduler/etc.). When such a polluter mutates
+    # ``sys.modules`` directly (without monkeypatch teardown), the
+    # parent ``plugins`` module ends up without a ``registry`` attribute
+    # even though ``sys.modules["plugins.registry"]`` is still the real
+    # module. A subsequent ``monkeypatch.setattr("plugins.registry.X",
+    # ...)`` then fails with:
+    #     'module' object at plugins.registry has no attribute 'registry'
+    #
+    # Defensive cleanup: re-bind the original ``plugins.registry``
+    # submodule onto the (possibly stub) ``plugins`` package so attribute
+    # lookups via the dotted path succeed. We deliberately do NOT
+    # re-import plugins.registry — other test modules already hold
+    # references to the original module's globals (e.g. ``get_taps``,
+    # ``entry_points``), and a fresh import would create a parallel
+    # module object whose globals nobody can patch from the outside.
+    # Idempotent + cheap when nothing is wrong.
     try:
-        from plugins.registry import clear_registry_cache
-        clear_registry_cache()
+        registry = sys.modules.get("plugins.registry")
+        if registry is None:
+            import importlib
+            registry = importlib.import_module("plugins.registry")
+        plugins_pkg = sys.modules.get("plugins")
+        if plugins_pkg is not None and getattr(plugins_pkg, "registry", None) is not registry:
+            plugins_pkg.registry = registry  # type: ignore[attr-defined]
+
+        registry.clear_registry_cache()
     except Exception:
         pass
 
