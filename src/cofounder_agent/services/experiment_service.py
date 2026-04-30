@@ -29,12 +29,14 @@ Assignment math
 ---------------
 
 Sticky assignment uses
-``sha1(f"{experiment_key}:{subject_id}".encode()).digest()`` —
+``blake2b(f"{experiment_key}:{subject_id}".encode()).digest()`` —
 the first 4 bytes interpreted as a big-endian unsigned int, modulo
 100, dropped into the cumulative weight buckets defined by the
-experiment's variants. SHA-1 is fine here: this is a uniform-hash
-need, not a security need, and it's available in stdlib without a
-dependency.
+experiment's variants. We use BLAKE2b (not SHA-1, which Bandit B324
+correctly flags as broken for security uses); this is a uniform-hash
+need, not a security need, but BLAKE2b is faster than SHA-1, just as
+uniform, and available in stdlib without a dependency. See
+GitHub issue Glad-Labs/poindexter#307.
 
 Statistical significance testing is deliberately out of scope. This
 module is plumbing; once data starts flowing, a follow-up can add a
@@ -173,11 +175,20 @@ class ExperimentService:
     def _hash_subject(experiment_key: str, subject_id: str) -> int:
         """Map (experiment, subject) → integer in [0, 100).
 
-        SHA-1 first-four-bytes mod 100. Stable across processes / OS /
-        Python versions because we go through ``hashlib`` rather than
-        relying on ``hash()`` (which is salted per process).
+        BLAKE2b first-four-bytes mod 100. Stable across processes /
+        OS / Python versions because we go through ``hashlib`` rather
+        than relying on ``hash()`` (which is salted per process).
+
+        BLAKE2b — not SHA-1 — because Bandit B324 (HIGH, CWE-327)
+        correctly flags SHA-1 as broken for security uses. Bucketing
+        is not a security use (any uniform hash works), but B324 is
+        a blanket "no SHA-1" rule and BLAKE2b is a strict upgrade:
+        cryptographically strong, faster than SHA-1, stdlib, drop-in.
+        Only the first 4 bytes are consumed, so digest_size doesn't
+        matter for the bucketing math — we use the default. See
+        GitHub issue Glad-Labs/poindexter#307.
         """
-        digest = hashlib.sha1(
+        digest = hashlib.blake2b(
             f"{experiment_key}:{subject_id}".encode("utf-8")
         ).digest()
         return int.from_bytes(digest[:4], "big") % 100
