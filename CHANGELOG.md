@@ -37,6 +37,7 @@
 - **`get_setting` / `set_setting` accept the `category/key` form** that `list_settings` prints (e.g. `site/public_site_url`). Copy-paste from `list_settings` output now works without manually stripping the prefix. ([#253](https://github.com/Glad-Labs/poindexter/issues/253))
 - **Audit log no longer floods with errors during dry-run mode.** Expected halts under `pipeline_dry_run_mode` were logged at `error` severity, drowning the 24h error count and hiding real failures. Dry-run halts now log at `info` under a dedicated event type; real errors (model timeouts, DB issues) still log at `error`. ([#260](https://github.com/Glad-Labs/poindexter/issues/260))
 - **RSS feed regeneration is now collision-safe.** Concurrent publishes could previously race on a shared scratch file and produce a truncated or empty podcast/video feed. Each regen now uses its own isolated working file, so feeds stay intact under load. ([#284](https://github.com/Glad-Labs/poindexter/issues/284))
+- **Windows installs no longer fail on the `profiling` extras.** `poetry install --extras profiling` on Windows used to fall through to a Rust source build for `pyroscope-io` (which has no Windows wheels) and crash the install. The dependency is now scoped to non-Windows platforms, so Windows users can pull the profiling extras cleanly while the Linux worker container still installs it normally. ([#224](https://github.com/Glad-Labs/poindexter/issues/224), [#297](https://github.com/Glad-Labs/poindexter/pull/297))
 
 #### Known issues
 
