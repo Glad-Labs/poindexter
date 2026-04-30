@@ -44,7 +44,12 @@ async def verify_api_token(
     Returns:
         The verified token string.
     """
-    api_token = site_config.get("api_token", "")
+    # api_token is is_secret=true (encrypted at rest with enc:v1: prefix).
+    # Sync site_config.get() returns the raw ciphertext (or empty) for
+    # secret rows because the in-memory cache filters secrets out per the
+    # Phase H DI-injection design. Use the async get_secret accessor so
+    # we compare against the decrypted plaintext. Closes Glad-Labs/poindexter#325.
+    api_token = await site_config.get_secret("api_token", "")
     dev_mode = site_config.get("development_mode", "").lower() == "true"
 
     if not credentials:
