@@ -958,6 +958,20 @@ services:
       - ./brain:/brain:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Healthcheck (issue #319): catches the silent-hang failure mode where the
+    # HTTP socket stays LISTENING but stops accepting connections. python:3.12-slim
+    # has no wget/curl, so we use the bundled Python urllib (3s timeout matches
+    # the alloy scrape budget). When this fails 3× docker restarts the container.
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; urllib.request.urlopen('http://localhost:9835/metrics', timeout=3).read(); sys.exit(0)"
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         reservations:

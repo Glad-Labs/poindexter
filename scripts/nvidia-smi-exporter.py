@@ -11,11 +11,25 @@ Metrics:
   - aida64_* — All AIDA64 sensors (when shared memory is enabled, Windows)
   - psu_* — Corsair HXi PSU metrics (via liquidctl or AIDA64)
   - lm_sensors_* — Linux hardware sensors (temps, voltages, fans)
+
+Reliability (issue #319):
+  - ThreadingHTTPServer so a slow scrape doesn't block other requests.
+  - Watchdog: if nvidia-smi takes >2× its timeout three times in a row, the
+    process exits so docker's restart policy brings it back. Pairs with the
+    HEALTHCHECK in docker-compose.local.yml.
 """
+import logging
 import re
 import subprocess
 import sys
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import time
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 # Hide console windows when spawning subprocesses on Windows
 _SUBPROCESS_KWARGS = {}
@@ -27,14 +41,48 @@ if sys.platform == "win32":
 
 PORT = 9835
 
+# Watchdog state — if nvidia-smi keeps misbehaving, exit so docker restarts us.
+# Bug #319: HTTP socket can stay LISTENING but stop accepting connections,
+# typically because subprocess.run() is silently wedged on a stuck nvidia-smi.
+_NVIDIA_SMI_TIMEOUT_SEC = 5
+_WATCHDOG_SLOW_THRESHOLD_SEC = 2 * _NVIDIA_SMI_TIMEOUT_SEC  # 10s
+_MAX_CONSECUTIVE_TIMEOUTS = 3
+_consecutive_timeouts = 0
+
+def _trip_watchdog(reason: str) -> None:
+    """Increment consecutive-timeout counter and exit if threshold reached."""
+    global _consecutive_timeouts
+    _consecutive_timeouts += 1
+    logger.warning(
+        "nvidia-smi watchdog: %s (consecutive=%d/%d)",
+        reason, _consecutive_timeouts, _MAX_CONSECUTIVE_TIMEOUTS,
+    )
+    if _consecutive_timeouts >= _MAX_CONSECUTIVE_TIMEOUTS:
+        logger.error(
+            "nvidia-smi watchdog tripped after %d consecutive bad scrapes — "
+            "exiting so docker restart-policy brings us back",
+            _consecutive_timeouts,
+        )
+        sys.exit(1)
+
+
 def get_gpu_metrics():
     """Query nvidia-smi and return Prometheus-format metrics."""
+    global _consecutive_timeouts
+    start = time.monotonic()
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory",
              "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5, **_SUBPROCESS_KWARGS
+            capture_output=True, text=True, timeout=_NVIDIA_SMI_TIMEOUT_SEC,
+            **_SUBPROCESS_KWARGS,
         )
+        elapsed = time.monotonic() - start
+        if elapsed > _WATCHDOG_SLOW_THRESHOLD_SEC:
+            _trip_watchdog(f"nvidia-smi took {elapsed:.1f}s (threshold {_WATCHDOG_SLOW_THRESHOLD_SEC}s)")
+        else:
+            _consecutive_timeouts = 0
+
         if result.returncode != 0:
             return "# nvidia-smi failed\n"
 
@@ -77,6 +125,10 @@ def get_gpu_metrics():
             f'nvidia_gpu_clock_memory_mhz{{gpu="0"}} {clock_mem}',
         ]
         return "\n".join(lines) + "\n"
+    except subprocess.TimeoutExpired:
+        elapsed = time.monotonic() - start
+        _trip_watchdog(f"nvidia-smi TimeoutExpired after {elapsed:.1f}s")
+        return "# nvidia-smi timeout\n"
     except Exception as e:
         return f"# error: {e}\n"
 
@@ -591,6 +643,9 @@ class MetricsHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = HTTPServer(("0.0.0.0", PORT), MetricsHandler)
-    print(f"nvidia-smi exporter listening on :{PORT}/metrics")
+    # ThreadingHTTPServer (issue #319): the prior single-threaded HTTPServer
+    # would silently stop accepting connections when a single scrape wedged.
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), MetricsHandler)
+    server.daemon_threads = True
+    logger.info("nvidia-smi exporter listening on :%d/metrics", PORT)
     server.serve_forever()
