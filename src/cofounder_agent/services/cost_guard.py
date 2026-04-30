@@ -107,7 +107,7 @@ _LOCAL_HOST_HINTS = (
     "localhost",
     "127.0.0.1",
     "host.docker.internal",
-    "0.0.0.0",
+    "0.0.0.0",  # nosec B104  # matched against hostnames in URLs (allowlist), not bound to (see Glad-Labs/poindexter#305)
 )
 
 
