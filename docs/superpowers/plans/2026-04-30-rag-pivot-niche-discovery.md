@@ -30,6 +30,26 @@ ls src/cofounder_agent/services/migrations/ | tail -3
 
 5. Confirm pgvector extension is loaded (`SELECT extname FROM pg_extension WHERE extname='vector'`). Migration 0103 added it; should already be present.
 
+6. Add `langgraph` to deps (Task 13 / TWO_PASS uses it; the simpler writer modes stay plain Python). Per spec §"OSS leverage decisions":
+
+```bash
+cd src/cofounder_agent
+poetry add "langgraph>=0.2,<1.0"
+poetry run python -c "from langgraph.graph import StateGraph; print('ok')"
+```
+
+7. Throughout implementation, wrap every new LLM call (ranker in Task 4, distiller in Task 5, writer modes in Tasks 10-13) with a Langfuse trace. Spec §"OSS leverage decisions" — Langfuse is already running, every call should be observable from day one. Pattern (use this everywhere we call `_ollama_chat_json`):
+
+```python
+from langfuse.decorators import observe
+
+@observe(name="topic_ranker_llm_score")
+async def llm_final_score(...):
+    ...
+```
+
+The exact decorator path depends on the project's Langfuse SDK version — check existing services for `@observe` usage and mirror.
+
 ---
 
 ## File structure
@@ -2035,37 +2055,171 @@ git commit -m "feat(writer): STORY_SPINE mode — structured outline pre-pass"
 
 ---
 
-## Task 13: Writer mode — TWO_PASS (Glad Labs default)
+## Task 13: Writer mode — TWO_PASS (Glad Labs default, LangGraph)
 
 **Files:**
 
 - Create: `src/cofounder_agent/services/writer_rag_modes/two_pass.py`
+- Test: `src/cofounder_agent/tests/unit/services/writer_rag_modes/test_two_pass.py`
 
-- [ ] **Step 1: Implement TWO_PASS**
+Per spec §"OSS leverage decisions" — TWO_PASS is the only writer mode that uses LangGraph (the others stay plain Python). The flow is a real state machine: `embed_and_fetch → draft → detect_needs → research_each → revise`, with a conditional edge from `revise` back to `detect_needs` if revision surfaces new `[EXTERNAL_NEEDED]` markers. Bounded by `_MAX_REVISION_LOOPS=3` so it can't spin forever.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# tests/unit/services/writer_rag_modes/test_two_pass.py
+import pytest
+from unittest.mock import AsyncMock
+from services.writer_rag_modes import two_pass
+
+pytestmark = pytest.mark.asyncio
+
+
+def _fake_pool_with_no_snippets():
+    pool = AsyncMock()
+    conn_mock = AsyncMock()
+    conn_mock.fetch = AsyncMock(return_value=[])
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn_mock)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+    return pool
+
+
+async def test_no_external_needed_returns_pass1_draft(monkeypatch):
+    """First draft has no [EXTERNAL_NEEDED] markers → graph short-circuits, no revise."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None):
+        return "A clean first draft with no markers."
+    monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1)
+    async def fake_embed(text): return [0.0] * 768
+    monkeypatch.setattr("services.embedding_service.embed_text", fake_embed)
+
+    result = await two_pass.run(topic="t", angle="a", niche_id="n", pool=_fake_pool_with_no_snippets())
+    assert result["draft"] == "A clean first draft with no markers."
+    assert result["external_lookups"] == []
+    assert result["revision_loops"] == 0
+
+
+async def test_external_needed_triggers_research_and_revise(monkeypatch):
+    """One marker → research → revise → done in 1 loop."""
+    drafts = iter([
+        "First draft with [EXTERNAL_NEEDED: a fact] inside.",
+        "Revised draft with the actual fact inside.",
+    ])
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None):
+        return next(drafts)
+    monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1)
+    async def fake_revise(prompt, *, model):
+        return next(drafts)
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_revise)
+    async def fake_research(query, max_sources=2):
+        return f"External research result for: {query}"
+    monkeypatch.setattr("services.research_service.research_topic", fake_research)
+    async def fake_embed(text): return [0.0] * 768
+    monkeypatch.setattr("services.embedding_service.embed_text", fake_embed)
+
+    result = await two_pass.run(topic="t", angle="a", niche_id="n", pool=_fake_pool_with_no_snippets())
+    assert "Revised draft" in result["draft"]
+    assert len(result["external_lookups"]) == 1
+    assert result["revision_loops"] == 1
+
+
+async def test_loop_caps_at_max_revisions(monkeypatch):
+    """Pathological: every revision adds new markers. Loop must terminate at _MAX_REVISION_LOOPS=3."""
+    counter = {"n": 0}
+    async def always_needs_more(topic, angle, snippets, extra_instructions=None):
+        counter["n"] += 1
+        return f"Draft with [EXTERNAL_NEEDED: thing {counter['n']}] inside."
+    monkeypatch.setattr("services.ai_content_generator.generate_with_context", always_needs_more)
+    async def fake_revise(prompt, *, model):
+        counter["n"] += 1
+        return f"Revised with [EXTERNAL_NEEDED: another thing {counter['n']}]."
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_revise)
+    async def fake_research(query, max_sources=2):
+        return "fact"
+    monkeypatch.setattr("services.research_service.research_topic", fake_research)
+    async def fake_embed(text): return [0.0] * 768
+    monkeypatch.setattr("services.embedding_service.embed_text", fake_embed)
+
+    result = await two_pass.run(topic="t", angle="a", niche_id="n", pool=_fake_pool_with_no_snippets())
+    assert result["revision_loops"] == 3
+    assert result["loop_capped"] is True
+```
+
+- [ ] **Step 2: Run tests to verify failure**
+
+```bash
+cd src/cofounder_agent && poetry run pytest tests/unit/services/writer_rag_modes/test_two_pass.py -v
+```
+
+Expected: ImportError on `two_pass` (or LangGraph import error if Step 6 of pre-flight wasn't run).
+
+- [ ] **Step 3: Implement TWO_PASS as a LangGraph state machine**
 
 ```python
 # services/writer_rag_modes/two_pass.py
-"""TWO_PASS — first draft from internal context only (no external research),
-then a fact-augmentation pass adds external corroboration where needed.
+"""TWO_PASS — internal-first draft, then conditional external fact-augmentation
+loop. Implemented as a LangGraph state machine because:
 
-Glad Labs default: maximum first-person reporting; external content only
-appears where the model identifies a claim that needs outside support."""
+- Multi-pass with conditional re-entry (revise can surface new
+  [EXTERNAL_NEEDED] markers that need another research pass)
+- Bounded loop (_MAX_REVISION_LOOPS=3 prevents runaway)
+- Future-friendly: when we add an auto-researcher agent or a draft-critic
+  loop, they slot in as new nodes/edges rather than refactoring orchestration
+
+Spec §"OSS leverage decisions" — TWO_PASS is the only writer mode using
+LangGraph; the simpler modes (TOPIC_ONLY, CITATION_BUDGET, STORY_SPINE)
+stay plain Python because they don't have branching.
+
+State flow:
+
+    embed_and_fetch → draft → detect_needs ┐
+                                            │ if needs found and loops < max:
+                                            ↓
+                                  research_each → revise ─┐
+                                                           │
+                                                           ↓
+                                                  detect_needs (loop)
+                                                           │
+                                                           ↓ if no needs OR loops capped
+                                                          END
+"""
 
 from __future__ import annotations
-from typing import Any
+
+import re
+from typing import Any, TypedDict
 from uuid import UUID
+
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
 
-async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
-    from services.embedding_service import embed_text
-    from services.topic_ranking import _ollama_chat_json
-    from services.ai_content_generator import generate_with_context
+_MAX_REVISION_LOOPS = 3
+_NEED_PATTERN = re.compile(r"\[EXTERNAL_NEEDED:\s*([^\]]+)\]")
 
-    qvec = await embed_text(f"{topic} — {angle}")
-    async with pool.acquire() as conn:
+
+class _State(TypedDict, total=False):
+    topic: str
+    angle: str
+    snippets: list[dict[str, Any]]
+    pool: Any
+    draft: str
+    needs: list[str]
+    research_results: list[dict[str, Any]]
+    external_lookups: list[dict[str, Any]]
+    revision_loops: int
+    loop_capped: bool
+
+
+# -- nodes --
+
+async def _embed_and_fetch_snippets(state: _State) -> _State:
+    from services.embedding_service import embed_text
+    qvec = await embed_text(f"{state['topic']} — {state['angle']}")
+    async with state["pool"].acquire() as conn:
         rows = await conn.fetch(
             """
             SELECT source_table, source_id, text_preview
@@ -2075,52 +2229,131 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
             """,
             qvec,
         )
-    snippets = [{"source": r["source_table"], "ref": str(r["source_id"]), "snippet": r["text_preview"]}
-                for r in rows]
+    snippets = [{"source": r["source_table"], "ref": str(r["source_id"]),
+                 "snippet": r["text_preview"]} for r in rows]
+    return {**state, "snippets": snippets, "revision_loops": 0,
+            "external_lookups": [], "loop_capped": False}
 
-    # Pass 1 — internal-only draft
-    pass1_instruction = (
-        "Write a first-draft blog post drawing ONLY from the provided internal snippets. "
-        "Do NOT make up external facts, statistics, or quotes you cannot ground in a snippet. "
-        "If you need an outside fact you don't have, mark it [EXTERNAL_NEEDED: <description>] "
-        "in the draft so a follow-up pass can fill it in."
+
+async def _draft_node(state: _State) -> _State:
+    from services.ai_content_generator import generate_with_context
+    instruction = (
+        "Write a first-draft blog post drawing ONLY from the provided internal "
+        "snippets. Do NOT make up external facts, statistics, or quotes you cannot "
+        "ground in a snippet. If you need an outside fact you don't have, mark it "
+        "[EXTERNAL_NEEDED: <description>] in the draft so a follow-up pass can fill it in."
     )
-    pass1_draft = await generate_with_context(
-        topic=topic, angle=angle, snippets=snippets,
-        extra_instructions=pass1_instruction,
+    draft = await generate_with_context(
+        topic=state["topic"], angle=state["angle"],
+        snippets=state["snippets"], extra_instructions=instruction,
     )
+    return {**state, "draft": draft}
 
-    # Find [EXTERNAL_NEEDED: ...] markers
-    import re
-    needs = re.findall(r"\[EXTERNAL_NEEDED:\s*([^\]]+)\]", pass1_draft)
-    if not needs:
-        return {"draft": pass1_draft, "snippets_used": snippets,
-                "external_lookups": [], "mode": "TWO_PASS"}
 
-    # Pass 2 — external fact-augmentation
+def _detect_needs(state: _State) -> _State:
+    needs = _NEED_PATTERN.findall(state["draft"])
+    return {**state, "needs": [n.strip() for n in needs]}
+
+
+async def _research_each(state: _State) -> _State:
     from services.research_service import research_topic
-    augmentations = []
-    for need in needs:
-        aug = await research_topic(query=need.strip(), max_sources=2)
-        augmentations.append({"need": need.strip(), "research": aug})
+    results = []
+    for need in state["needs"]:
+        aug = await research_topic(query=need, max_sources=2)
+        results.append({"need": need, "research": aug})
+    cumulative = list(state.get("external_lookups") or []) + results
+    return {**state, "research_results": results, "external_lookups": cumulative}
 
-    aug_block = "\n\n".join(f"[EXTERNAL_NEEDED: {a['need']}] → {a['research']}" for a in augmentations)
+
+async def _revise_node(state: _State) -> _State:
+    from services.topic_ranking import _ollama_chat_json
+    aug_block = "\n\n".join(
+        f"[EXTERNAL_NEEDED: {r['need']}] → {r['research']}"
+        for r in state["research_results"]
+    )
     revise_prompt = f"""Revise the following draft. For each [EXTERNAL_NEEDED: ...] marker,
-substitute the corresponding external fact provided below. Keep the rest unchanged.
+substitute the corresponding external fact provided below. Keep everything else unchanged.
+If revision exposes a new claim that needs outside support, mark it [EXTERNAL_NEEDED: ...]
+again so the next pass can fill it.
 
 Original draft:
-{pass1_draft}
+{state['draft']}
 
 External facts:
 {aug_block}
 """
-    final_draft = await _ollama_chat_json(revise_prompt, model="glm-4.7-5090:latest")
+    new_draft = await _ollama_chat_json(revise_prompt, model="glm-4.7-5090:latest")
+    return {**state, "draft": new_draft, "revision_loops": state.get("revision_loops", 0) + 1}
+
+
+def _mark_capped(state: _State) -> _State:
+    return {**state, "loop_capped": True}
+
+
+# -- conditional edges --
+
+def _needs_or_done(state: _State) -> str:
+    """After detect_needs: route to research_each if needs found AND we haven't
+    hit the loop cap, else END (or _done_capped if we're capping)."""
+    if not state.get("needs"):
+        return END
+    if state.get("revision_loops", 0) >= _MAX_REVISION_LOOPS:
+        return "_done_capped"
+    return "research_each"
+
+
+def _build_graph():
+    g = StateGraph(_State)
+    g.add_node("embed_and_fetch", _embed_and_fetch_snippets)
+    g.add_node("draft", _draft_node)
+    g.add_node("detect_needs", _detect_needs)
+    g.add_node("research_each", _research_each)
+    g.add_node("revise", _revise_node)
+    g.add_node("_done_capped", _mark_capped)
+
+    g.set_entry_point("embed_and_fetch")
+    g.add_edge("embed_and_fetch", "draft")
+    g.add_edge("draft", "detect_needs")
+    g.add_conditional_edges("detect_needs", _needs_or_done, {
+        "research_each": "research_each",
+        "_done_capped": "_done_capped",
+        END: END,
+    })
+    g.add_edge("research_each", "revise")
+    g.add_edge("revise", "detect_needs")
+    g.add_edge("_done_capped", END)
+
+    # MemorySaver checkpointer means the graph CAN be paused mid-run and
+    # resumed — useful when an operator interrupts mid-revision in v2.
+    # v1 uses in-memory; v2 swaps to a postgres checkpointer for
+    # cross-process durability.
+    return g.compile(checkpointer=MemorySaver())
+
+
+_GRAPH = _build_graph()
+
+
+async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
+    initial: _State = {"topic": topic, "angle": angle, "pool": pool}
+    config = {"configurable": {"thread_id": f"two_pass-{niche_id}-{topic[:32]}"}}
+    final = await _GRAPH.ainvoke(initial, config=config)
     return {
-        "draft": final_draft, "pass1_draft": pass1_draft,
-        "snippets_used": snippets, "external_lookups": augmentations,
+        "draft": final["draft"],
+        "snippets_used": final.get("snippets", []),
+        "external_lookups": final.get("external_lookups", []),
+        "revision_loops": final.get("revision_loops", 0),
+        "loop_capped": final.get("loop_capped", False),
         "mode": "TWO_PASS",
     }
 ```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+```bash
+cd src/cofounder_agent && poetry run pytest tests/unit/services/writer_rag_modes/test_two_pass.py -v
+```
+
+Expected: 3 PASSED.
 
 - [ ] **Step 2: Commit**
 
