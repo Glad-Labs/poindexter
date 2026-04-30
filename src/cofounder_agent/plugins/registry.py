@@ -54,6 +54,12 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "llm_providers": "poindexter.llm_providers",
     "topic_sources": "poindexter.topic_sources",
     "image_providers": "poindexter.image_providers",
+    "audio_gen_providers": "poindexter.audio_gen_providers",
+    "video_providers": "poindexter.video_providers",
+    "tts_providers": "poindexter.tts_providers",
+    "caption_providers": "poindexter.caption_providers",
+    "publish_adapters": "poindexter.publish_adapters",
+    "media_compositors": "poindexter.media_compositors",
 }
 
 
@@ -158,6 +164,36 @@ def get_topic_sources() -> list[Any]:
 def get_image_providers() -> list[Any]:
     """Return all registered ImageProvider instances."""
     return list(_cached(ENTRY_POINT_GROUPS["image_providers"]))
+
+
+def get_audio_gen_providers() -> list[Any]:
+    """Return all registered AudioGenProvider instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["audio_gen_providers"]))
+
+
+def get_video_providers() -> list[Any]:
+    """Return all registered VideoProvider instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["video_providers"]))
+
+
+def get_tts_providers() -> list[Any]:
+    """Return all registered TTSProvider instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["tts_providers"]))
+
+
+def get_caption_providers() -> list[Any]:
+    """Return all registered CaptionProvider instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["caption_providers"]))
+
+
+def get_publish_adapters() -> list[Any]:
+    """Return all registered PublishAdapter instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["publish_adapters"]))
+
+
+def get_media_compositors() -> list[Any]:
+    """Return all registered MediaCompositor instances."""
+    return list(_cached(ENTRY_POINT_GROUPS["media_compositors"]))
 
 
 # ---------------------------------------------------------------------------
