@@ -33,6 +33,7 @@ def _reset_gauges():
         mx.EMBEDDINGS_MISSING_POSTS,
         mx.APPROVAL_QUEUE_LENGTH,
         mx.AUTO_CANCELLED_TOTAL,
+        mx.UNAPPLIED_MIGRATIONS_COUNT,
     ):
         g.set(0)
     yield
@@ -61,8 +62,8 @@ class TestRefreshMetrics:
         from services import metrics_exporter as mx
 
         # fetchval queue: SELECT 1, pg_stat_activity, max_connections,
-        # embeddings-gap, approval-queue.
-        pool, _ = _make_pool([1, 50, 300, 0, 0], [[], []])
+        # embeddings-gap, approval-queue, auto-cancelled, applied-migrations.
+        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
         with patch(
             "services.metrics_exporter.httpx.AsyncClient"
         ) as mock_http_cls:
@@ -88,7 +89,7 @@ class TestRefreshMetrics:
 
         before = _latency_count()
 
-        pool, _ = _make_pool([1, 50, 300, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -120,7 +121,7 @@ class TestRefreshMetrics:
     async def test_ollama_model_count_set_from_api_tags(self):
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 50, 300, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
 
         fake_response = MagicMock()
         fake_response.status_code = 200
@@ -143,7 +144,7 @@ class TestRefreshMetrics:
         """"Ollama up but no models" — the scenario Gitea #238 flagged."""
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 50, 300, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
 
         fake_response = MagicMock()
         fake_response.status_code = 200
@@ -164,8 +165,9 @@ class TestRefreshMetrics:
         from services import metrics_exporter as mx
 
         # fetchval queue: SELECT 1 → 1, pg_stat_activity → 50,
-        # max_connections → 300, embeddings-gap → 5, queue → 2.
-        pool, _ = _make_pool([1, 50, 300, 5, 2], [[], []])
+        # max_connections → 300, embeddings-gap → 5, queue → 2,
+        # auto-cancelled → 0, applied-migrations → 0.
+        pool, _ = _make_pool([1, 50, 300, 5, 2, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -175,13 +177,14 @@ class TestRefreshMetrics:
     async def test_approval_queue_length_reflects_count(self):
         from services import metrics_exporter as mx
 
-        # fetchval queue (post-rebase, GH-90 + GH-92 combined):
+        # fetchval queue (post-rebase, GH-90 + GH-92 + GH-227):
         #   SELECT 1 → 1
         #   pg_stat_activity → 50, max_connections → 300 (GH-92)
         #   embeddings-gap → 0
         #   queue → 7
         #   auto-cancelled → 0 (GH-90)
-        pool, _ = _make_pool([1, 50, 300, 0, 7, 0], [[], []])
+        #   applied-migrations → 0 (GH-227)
+        pool, _ = _make_pool([1, 50, 300, 0, 7, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -196,9 +199,10 @@ class TestRefreshMetrics:
         restarts so short-window rate() queries stay useful."""
         from services import metrics_exporter as mx
 
-        # fetchval queue (6 values post-rebase):
-        #   SELECT 1, pg_used, pg_max, embeddings-gap, queue, cancelled=42.
-        pool, _ = _make_pool([1, 0, 100, 0, 0, 42], [[], []])
+        # fetchval queue (7 values post-GH-227):
+        #   SELECT 1, pg_used, pg_max, embeddings-gap, queue, cancelled=42,
+        #   applied-migrations=0.
+        pool, _ = _make_pool([1, 0, 100, 0, 0, 42, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -211,9 +215,9 @@ class TestRefreshMetrics:
         exhausts ``max_connections``."""
         from services import metrics_exporter as mx
 
-        # 6-value fetchval queue: SELECT 1, pg_used=127, pg_max=300,
-        # gap=0, queue=0, cancelled=0.
-        pool, _ = _make_pool([1, 127, 300, 0, 0, 0], [[], []])
+        # 7-value fetchval queue: SELECT 1, pg_used=127, pg_max=300,
+        # gap=0, queue=0, cancelled=0, applied-migrations=0.
+        pool, _ = _make_pool([1, 127, 300, 0, 0, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -230,9 +234,9 @@ class TestRefreshMetrics:
         pool = MagicMock()
         conn = MagicMock()
         # SELECT 1 → 1, pg_stat_activity raises (one block's try/except
-        # eats that + skips the max_conn fetchval), then gap/queue/cancelled.
+        # eats that + skips the max_conn fetchval), then gap/queue/cancelled/migrations.
         conn.fetchval = AsyncMock(
-            side_effect=[1, RuntimeError("permission denied"), 0, 0, 0]
+            side_effect=[1, RuntimeError("permission denied"), 0, 0, 0, 0]
         )
         conn.fetch = AsyncMock(return_value=[])
         ctx = MagicMock()
@@ -258,7 +262,7 @@ class TestRefreshMetrics:
         ``/metrics`` text body consumed by Prometheus."""
         from services import metrics_exporter as mx
 
-        pool, _ = _make_pool([1, 88, 300, 0, 0, 0], [[], []])
+        pool, _ = _make_pool([1, 88, 300, 0, 0, 0, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -267,6 +271,92 @@ class TestRefreshMetrics:
         text = body.decode("utf-8")
         assert "pg_connections_used" in text
         assert "pg_connections_max" in text
+
+    async def test_unapplied_migrations_count_zero_when_all_applied(self):
+        """GH-227: when schema_migrations row count >= on-disk migration
+        files, the gauge sits at 0 (clean steady state)."""
+        from pathlib import Path
+
+        from services import metrics_exporter as mx
+        from services import migrations as _migrations_pkg
+
+        # Match the actual on-disk count so the gauge converges to 0.
+        migrations_dir = Path(_migrations_pkg.__file__).parent
+        on_disk = sum(
+            1 for p in migrations_dir.glob("*.py") if p.name != "__init__.py"
+        )
+
+        # 7-value queue: SELECT 1, pg_used, pg_max, gap, queue, cancelled,
+        # applied=on_disk.
+        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, on_disk], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert mx.UNAPPLIED_MIGRATIONS_COUNT._value.get() == 0  # type: ignore[attr-defined]
+
+    async def test_unapplied_migrations_count_positive_on_drift(self):
+        """GH-227: when applied < on-disk, the gauge surfaces the gap so
+        Alertmanager can alert that the worker is on a stale schema."""
+        from pathlib import Path
+
+        from services import metrics_exporter as mx
+        from services import migrations as _migrations_pkg
+
+        migrations_dir = Path(_migrations_pkg.__file__).parent
+        on_disk = sum(
+            1 for p in migrations_dir.glob("*.py") if p.name != "__init__.py"
+        )
+        # Pretend the worker has applied 3 fewer migrations than the
+        # files on disk.
+        applied = max(on_disk - 3, 0)
+
+        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, applied], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert mx.UNAPPLIED_MIGRATIONS_COUNT._value.get() == on_disk - applied  # type: ignore[attr-defined]
+
+    async def test_unapplied_migrations_count_floored_at_zero(self):
+        """GH-227: ghost rows (schema_migrations row count > on-disk file
+        count) clamp to 0, never negative — the alert is "stale schema",
+        not "ghost rows"."""
+        from pathlib import Path
+
+        from services import metrics_exporter as mx
+        from services import migrations as _migrations_pkg
+
+        migrations_dir = Path(_migrations_pkg.__file__).parent
+        on_disk = sum(
+            1 for p in migrations_dir.glob("*.py") if p.name != "__init__.py"
+        )
+        # Pretend schema_migrations has 5 more rows than there are files
+        # on disk (legal but odd — manual inserts, removed files).
+        applied_inflated = on_disk + 5
+
+        pool, _ = _make_pool(
+            [1, 50, 300, 0, 0, 0, applied_inflated], [[], []]
+        )
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert mx.UNAPPLIED_MIGRATIONS_COUNT._value.get() == 0  # type: ignore[attr-defined]
+
+    async def test_unapplied_migrations_metric_appears_in_exposition(self):
+        """Smoke-check that the new gauge actually renders in the
+        ``/metrics`` exposition text Prometheus scrapes."""
+        from services import metrics_exporter as mx
+
+        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0], [[], []])
+        with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        body, _ = mx.render_exposition()
+        text = body.decode("utf-8")
+        assert "poindexter_unapplied_migrations_count" in text
 
 
 @pytest.mark.unit

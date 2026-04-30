@@ -168,6 +168,29 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "connection-pool saturation, or disk I/O pressure."
         ),
     },
+    # GH-227 — alert on schema drift (worker on stale schema).
+    "UnappliedMigrationsDrift": {
+        "enabled": True,
+        "group": "poindexter-infra",
+        "interval": "1m",
+        # Catches the failure mode where a container is rebuilt with
+        # new migration files but the running worker process wasn't
+        # restarted, so run_migrations() never re-ran. The /api/health
+        # JSON probe surfaces this but Alertmanager couldn't see it
+        # until the gauge landed in metrics_exporter.
+        "expr": "poindexter_unapplied_migrations_count > 0",
+        "for": "30m",
+        "severity": "warning",
+        "category": "infra",
+        "summary": "Worker is on a stale schema — restart to apply pending migrations",
+        "description": (
+            "poindexter_unapplied_migrations_count > 0 for 30m. The container "
+            "has migration files on disk that aren't in schema_migrations. "
+            "Pull a fresh main + restart poindexter-worker — the migration "
+            "runner applies pending migrations on boot. To inspect first: "
+            "`poindexter migrate status` (or `--json` for machine-readable)."
+        ),
+    },
     "OllamaNoModelsLoaded": {
         "enabled": True,
         "group": "poindexter-infra",

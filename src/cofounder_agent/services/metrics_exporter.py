@@ -35,6 +35,11 @@ Content pipeline:
   ``content_tasks`` with ``status = 'awaiting_approval'`` (Gitea #238
   — used as the ``unless`` cross-check against cost alerts so they
   don't fire while the pipeline is throttling on pending approvals)
+- ``poindexter_unapplied_migrations_count`` — gauge, count of ``.py``
+  files in ``services/migrations/`` not yet recorded in
+  ``schema_migrations`` (GH-227 — catches the "container updated but
+  worker not restarted, running on stale schema" failure mode that the
+  ``/api/health`` JSON probe already surfaces but Prometheus didn't see)
 
 Cost:
 - ``poindexter_daily_spend_usd`` — gauge
@@ -130,6 +135,17 @@ POSTS_TOTAL = Gauge(
 APPROVAL_QUEUE_LENGTH = Gauge(
     "poindexter_approval_queue_length",
     "Content tasks currently in status='awaiting_approval' (pipeline throttle signal)",
+)
+
+# GH-227: Count of migration files on disk not yet present in
+# schema_migrations. >0 means the worker is on a stale schema (typically
+# because a container was rebuilt with new code but the running process
+# wasn't restarted). The /api/health JSON probe already surfaces this,
+# but it wasn't visible to Prometheus / Alertmanager.
+UNAPPLIED_MIGRATIONS_COUNT = Gauge(
+    "poindexter_unapplied_migrations_count",
+    "Number of migration .py files in services/migrations/ not yet present in "
+    "schema_migrations table. >0 means worker is on stale schema.",
 )
 
 TASKS_CREATED = Counter(
@@ -400,6 +416,37 @@ async def refresh_metrics(
         AUTO_CANCELLED_TOTAL.set(int(cancelled_n or 0))
     except Exception as e:
         logger.debug("refresh_metrics: auto_cancelled count query failed: %s", e)
+
+    # GH-227: unapplied migration count.
+    # Compares the number of .py files in services/migrations/ to the row
+    # count in schema_migrations. A positive value means the running worker
+    # is on a stale schema — it pulled a container update with new
+    # migration files but the migration runner hasn't applied them
+    # (typically because the worker wasn't restarted). The brain's URL
+    # probe + /api/health migrations block already surface this, but
+    # Prometheus didn't see it until now.
+    try:
+        from pathlib import Path
+
+        from services import migrations as _migrations_pkg
+
+        migrations_dir = Path(_migrations_pkg.__file__).parent
+        on_disk = sum(
+            1
+            for p in migrations_dir.glob("*.py")
+            if p.name != "__init__.py"
+        )
+        async with pool.acquire() as conn:
+            applied_n = await conn.fetchval(
+                "SELECT COUNT(*) FROM schema_migrations"
+            )
+        # max() guards against the (legal but odd) case where someone
+        # manually inserted rows for migrations that no longer exist on
+        # disk — the alert is "stale schema", not "ghost rows", so we
+        # never want a negative value here.
+        UNAPPLIED_MIGRATIONS_COUNT.set(max(on_disk - int(applied_n or 0), 0))
+    except Exception as e:
+        logger.debug("refresh_metrics: unapplied_migrations count failed: %s", e)
 
     # Spend.
     try:
