@@ -562,7 +562,7 @@ description = "Foreign Function Interface for Python calling C code."
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "platform_python_implementation != \"PyPy\" or extra == \"profiling\""
+markers = "platform_python_implementation != \"PyPy\" or sys_platform != \"win32\" and extra == \"profiling\""
 files = [
     {file = "cffi-2.0.0-cp310-cp310-macosx_10_13_x86_64.whl", hash = "sha256:0cf2d91ecc3fcc0625c2c530fe004f82c110405f101548512cce44322fa8ac44"},
     {file = "cffi-2.0.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f73b96c41e3b2adedc34a7356e64c8eb96e03a3782b535e043a986276ce12a49"},
@@ -3964,7 +3964,7 @@ description = "C parser in Python"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "implementation_name != \"PyPy\" and (platform_python_implementation != \"PyPy\" or extra == \"profiling\")"
+markers = "implementation_name != \"PyPy\" and (platform_python_implementation != \"PyPy\" or sys_platform != \"win32\") and (platform_python_implementation != \"PyPy\" or extra == \"profiling\")"
 files = [
     {file = "pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"},
     {file = "pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29"},
@@ -4255,7 +4255,7 @@ description = "Pyroscope Python integration"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "extra == \"profiling\""
+markers = "sys_platform != \"win32\" and extra == \"profiling\""
 files = [
     {file = "pyroscope_io-0.8.16-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:e07edcfd59f5bdce42948b92c9b118c824edbd551730305f095a6b9af401a9e8"},
     {file = "pyroscope_io-0.8.16-py2.py3-none-macosx_11_0_x86_64.whl", hash = "sha256:dc98355e27c0b7b61f27066500fe1045b70e9459bb8b9a3082bc4755cb6392b6"},
@@ -6716,4 +6716,4 @@ profiling = ["pyroscope-io"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "916c9bc077b2dacafd7509b266cb6bdc229994a922373a198d108ca1ec3b06a3"
+content-hash = "fd4dee9318b0d6aa164f1724fbe8ebbe412d5f8a4f03895aab7c3fe056f6fcdc"
