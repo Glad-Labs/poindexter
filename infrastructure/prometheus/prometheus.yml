@@ -45,14 +45,27 @@ scrape_configs:
       - targets: ["host.docker.internal:9182"]
 
   # Uptime Kuma — HTTP / TCP monitor response times & up/down status.
-  # Auth via API key (password-only basic auth). Key lives in
-  # ~/.poindexter/bootstrap.toml as uptime_kuma_api_key.
+  # Auth via API key (password-only basic auth). The key lives in the
+  # `uptime_kuma_api_key` row of `app_settings` (is_secret=true) — see
+  # migration 0120. The literal placeholder below is intentional:
+  # Prometheus has no native env/setting interpolation, so until a
+  # follow-up worker job templates this file at startup from the
+  # `app_settings` value, this scrape will return 401 and the
+  # `up{job="uptime-kuma"}` series will report 0. Operator workflow:
+  #   1. Generate / rotate the key in Uptime Kuma admin UI (Settings ->
+  #      API Keys).
+  #   2. `poindexter set uptime_kuma_api_key <new-key>`.
+  #   3. Replace `__REPLACE_AT_RUNTIME__` below with the new key in a
+  #      LOCAL-ONLY edit (do NOT commit) and `docker compose restart
+  #      prometheus`, OR wait for the templating follow-up to land.
+  # Closes Glad-Labs/poindexter#312 — old leaked key was rotated; this
+  # placeholder ensures no plaintext credential ever lands in git again.
   - job_name: uptime-kuma
     scrape_interval: 30s
     metrics_path: /metrics
     basic_auth:
       username: ""
-      password: "uk1_3Q6UA_-CzuydfWqNPxKXtZTTjg1vRU9NUNqnkXvp"
+      password: "__REPLACE_AT_RUNTIME__"
     static_configs:
       - targets: ["uptime-kuma:3001"]
 
