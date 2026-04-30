@@ -132,7 +132,7 @@ _Screenshots coming. In the meantime, see [gladlabs.io](https://www.gladlabs.io)
 ```
 Your PC (the engine)
 ├── Content Pipeline (FastAPI)     — researches, writes, scores, publishes
-├── Brain Daemon                   — monitors health, self-heals, auto-restarts
+├── Brain Daemon                   — monitors health, self-heals, probes operator URLs (see brain/README.md)
 ├── MCP Server                     — control from Claude Desktop / Telegram
 ├── Static Export                  — pushes JSON/RSS/Feed to any S3-compatible storage
 ├── Grafana + Prometheus           — 1 free dashboard + 5 premium, alerting
