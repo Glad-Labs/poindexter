@@ -672,13 +672,20 @@ class TopicBatchService:
         """
         topic = winner.operator_edited_topic or winner.title
         angle = winner.operator_edited_angle or winner.summary or ""
+        # task_id, task_type, and content_type are NOT NULL on
+        # content_tasks; the legacy code path (topic_discovery.py:344)
+        # supplies task_id via gen_random_uuid()::text and sets both
+        # task_type and content_type to 'blog_post'. Mirror that here so
+        # the INSERT doesn't trip NotNullViolationError at runtime.
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO content_tasks
-                  (topic, description, status, stage,
+                  (task_id, task_type, content_type,
+                   topic, description, status, stage,
                    niche_slug, writer_rag_mode, topic_batch_id)
-                VALUES ($1, $2, 'pending', 'pending', $3, $4, $5)
+                VALUES (gen_random_uuid()::text, 'blog_post', 'blog_post',
+                        $1, $2, 'pending', 'pending', $3, $4, $5)
                 """,
                 topic, angle, niche.slug, niche.writer_rag_mode, batch_id,
             )
