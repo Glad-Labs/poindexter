@@ -33,11 +33,14 @@ scripts/run.sh "topic" [category] [target_audience] [primary_keyword]
 
 ## Parameters
 
-- **topic** (required): the subject of the post. Be specific — vague topics produce mediocre content and are more likely to trip the brand filter.
-- **category** (optional): `technology`, `business`, `marketing`, etc. Defaults to `general`.
-- **target_audience** (optional): `developers`, `founders`, `AI enthusiasts`. Defaults to `general`.
-- **primary_keyword** (optional): SEO keyword. The SEO stage will use it as the preferred anchor.
+- **topic** (string, optional): the subject of the post. Be specific — vague topics produce mediocre content and are more likely to trip the brand filter. Required unless `seed_url` is provided. Length: 3–200 characters.
+- **seed_url** (string, optional): a URL to seed the topic from. When present, the handler fetches the URL, extracts the title and opening paragraph, uses the title as the topic if `topic` is omitted, and injects a "Source article" attribution block into the writer's research context. The brand filter is bypassed for URL-seeded tasks. One of `topic` or `seed_url` is required (HTTP 422 otherwise). If the fetch fails (404, login wall, timeout, oversize response, non-HTML content type), the API returns HTTP 400 with an `error: "seed_url_fetch_failed"` body and a human-readable `reason`. Max length: 2048 characters.
+- **category** (string, optional): `technology`, `business`, `marketing`, etc. Defaults to `general`.
+- **target_audience** (string, optional): `developers`, `founders`, `AI enthusiasts`. Defaults to `general`.
+- **primary_keyword** (string, optional): SEO keyword. The SEO stage will use it as the preferred anchor.
+
+The fetch behavior is tunable via `app_settings`: `seed_url_fetch_timeout_seconds` (default 10s), `seed_url_user_agent`, and `seed_url_max_bytes` (default 1 MiB).
 
 ## Output
 
-Returns the task record with its `id` (UUID), `status: pending`, and metadata. Track progress with `list-tasks` or the `/pipeline` dashboard.
+Returns the task record with its `id` (UUID), `status: pending`, and metadata. When `seed_url` was provided, the URL is preserved on the task (and round-tripped via `task_metadata.seed_url`) so the writer can attribute the source. Track progress with `list-tasks` or the `/pipeline` dashboard.
