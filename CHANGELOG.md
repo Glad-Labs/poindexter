@@ -33,6 +33,7 @@
 - **MCP tool errors are now actionable.** Failures used to surface as bare `… failed:` messages with no exception type and no correlation id. Errors now include the exception class and a short `rid=` request id you can quote in a bug report; the full traceback is logged server-side under the same id. ([#259](https://github.com/Glad-Labs/poindexter/issues/259))
 - **`get_setting` / `set_setting` accept the `category/key` form** that `list_settings` prints (e.g. `site/public_site_url`). Copy-paste from `list_settings` output now works without manually stripping the prefix. ([#253](https://github.com/Glad-Labs/poindexter/issues/253))
 - **Audit log no longer floods with errors during dry-run mode.** Expected halts under `pipeline_dry_run_mode` were logged at `error` severity, drowning the 24h error count and hiding real failures. Dry-run halts now log at `info` under a dedicated event type; real errors (model timeouts, DB issues) still log at `error`. ([#260](https://github.com/Glad-Labs/poindexter/issues/260))
+- **RSS feed regeneration is now collision-safe.** Concurrent publishes could previously race on a shared scratch file and produce a truncated or empty podcast/video feed. Each regen now uses its own isolated working file, so feeds stay intact under load. ([#284](https://github.com/Glad-Labs/poindexter/issues/284))
 
 #### Known issues
 
