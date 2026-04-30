@@ -143,7 +143,7 @@ _SEED_SETTINGS = [
     ),
     (
         "grafana_api_token",
-        "",  # TODO: operator-provided (see description)
+        "",
         "monitoring",
         (
             "Grafana service-account token (Administration → Service "
