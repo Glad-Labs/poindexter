@@ -2,13 +2,20 @@
 # ==============================================================================
 # push-everywhere.sh — push to origin AND refresh the public github mirror
 #
+# Status as of 2026-04-30: this script is now a FALLBACK. The primary sync path
+# is the GitHub Actions workflow `.github/workflows/sync-to-public-poindexter.yml`
+# which runs automatically on every push to glad-labs-stack/main and mirrors
+# the filtered subset to Glad-Labs/poindexter via the POINDEXTER_DEPLOY_KEY
+# secret. You normally just `git push origin main` and CI does the rest in ~30s.
+#
+# Use this script (or `git pushe`) when you want IMMEDIATE local sync without
+# waiting for CI — useful if CI is broken, if Actions minutes are exhausted,
+# or when iterating on the sync filter itself and you want fast feedback.
+#
 # Single command that:
 #   1. Pushes current branch to origin (= Glad-Labs/glad-labs-stack, full tree)
-#   2. Runs scripts/sync-to-github.sh to refresh Glad-Labs/poindexter (public
-#      OSS subset, filtered by the script)
-#
-# Use instead of `git push origin main` when you want both repos updated.
-# Wired up as `git pushe` alias by scripts/install-git-hooks.sh.
+#   2. Runs scripts/sync-to-github.sh locally to refresh Glad-Labs/poindexter
+#      (public OSS subset, filtered by the script)
 #
 # Usage: bash scripts/push-everywhere.sh
 # Env:   SKIP_GITHUB_SYNC=1 → skip step 2 (mirrors `git push origin main` only)
