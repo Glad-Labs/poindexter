@@ -15,6 +15,7 @@ import json
 import os
 import random
 import re
+import tempfile
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -819,16 +820,26 @@ async def publish_post_from_task(
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
                 from services.site_config import site_config as _scfg
                 _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
-                async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                    _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
-                    _feed_path = "/tmp/podcast-feed.xml"
-                    # Blocking file I/O in async context — push to worker thread
-                    # so the event loop isn't stalled while we write the feed file.
-                    await asyncio.to_thread(
-                        _write_text_file, _feed_path, _feed.text,
-                    )
-                    await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
-                    logger.info("[R2] Podcast RSS feed regenerated on CDN")
+                # Per-call temp file via tempfile.mkstemp avoids hardcoded
+                # /tmp paths (Bandit B108) and prevents collisions when
+                # multiple publishes run concurrently.
+                _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-podcast-")
+                try:
+                    os.close(_fd)  # _write_text_file reopens the path
+                    async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
+                        _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
+                        # Blocking file I/O in async context — push to worker thread
+                        # so the event loop isn't stalled while we write the feed file.
+                        await asyncio.to_thread(
+                            _write_text_file, _feed_path, _feed.text,
+                        )
+                        await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
+                        logger.info("[R2] Podcast RSS feed regenerated on CDN")
+                finally:
+                    try:
+                        os.unlink(_feed_path)
+                    except OSError:
+                        pass
             except Exception as _e:
                 logger.warning("[R2] Podcast feed regen failed (non-fatal): %s", _e)
 
@@ -839,14 +850,23 @@ async def publish_post_from_task(
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
                 from services.site_config import site_config as _scfg
                 _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
-                async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                    _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
-                    _feed_path = "/tmp/video-feed.xml"
-                    await asyncio.to_thread(
-                        _write_text_file, _feed_path, _feed.text,
-                    )
-                    await upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
-                    logger.info("[R2] Video RSS feed regenerated on CDN")
+                # Per-call temp file via tempfile.mkstemp avoids hardcoded
+                # /tmp paths (Bandit B108).
+                _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-video-")
+                try:
+                    os.close(_fd)
+                    async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
+                        _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
+                        await asyncio.to_thread(
+                            _write_text_file, _feed_path, _feed.text,
+                        )
+                        await upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
+                        logger.info("[R2] Video RSS feed regenerated on CDN")
+                finally:
+                    try:
+                        os.unlink(_feed_path)
+                    except OSError:
+                        pass
             except Exception as _e:
                 logger.warning("[R2] Video feed regen failed (non-fatal): %s", _e)
 
