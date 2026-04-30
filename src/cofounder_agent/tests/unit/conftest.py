@@ -31,8 +31,13 @@ For now the fixtures reset the shared state between tests.
 from __future__ import annotations
 
 import os
+import secrets
+import sys
+from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 import pytest
+import pytest_asyncio
 
 from services.site_config import site_config
 
@@ -172,3 +177,128 @@ def _reset_singletons_between_tests():
             container._services = {}
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Layer 4 — optional real-Postgres ``db_pool`` fixture
+# ---------------------------------------------------------------------------
+#
+# Some service tests need to roundtrip SQL against a real Postgres (e.g.
+# tests that exercise CHECK constraints, UNIQUE indexes, or transactional
+# behavior — anything a mock pool would silently let through). These tests
+# request the ``db_pool`` fixture below.
+#
+# Mirrors the integration_db tier's skip pattern: if no live Postgres DSN
+# resolves, the whole module is skipped at fixture time so unit-only CI
+# runners don't blow up.
+
+
+def _bootstrap_resolve_dsn() -> str | None:
+    """Walk the tree up until we find brain/bootstrap.py, then call its
+    resolver. Same trick the integration_db conftest uses.
+    """
+    for p in Path(__file__).resolve().parents:
+        if (p / "brain" / "bootstrap.py").is_file():
+            if str(p) not in sys.path:
+                sys.path.insert(0, str(p))
+            break
+    try:
+        from brain.bootstrap import resolve_database_url
+        return resolve_database_url()
+    except Exception:
+        return None
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def _db_pool_session():
+    """Session-scoped asyncpg pool against a disposable test database.
+
+    Creates a fresh ``poindexter_unit_<hex>`` database, runs every
+    migration in ``services/migrations/`` against it, and yields a pool.
+    Drops the database at session teardown.
+
+    Skips the test if no live Postgres DSN is reachable.
+    """
+    import asyncpg
+
+    base = _bootstrap_resolve_dsn()
+    if not base or base == "postgresql://test:test@localhost/test":
+        pytest.skip(
+            "No live Postgres DSN configured — db_pool fixture requires a reachable DB"
+        )
+
+    parsed = urlparse(base)
+    admin_dsn = urlunparse(parsed._replace(path="/postgres"))
+    test_db_name = f"poindexter_unit_{secrets.token_hex(6)}"
+    test_dsn = urlunparse(parsed._replace(path=f"/{test_db_name}"))
+
+    admin = await asyncpg.connect(admin_dsn)
+    try:
+        await admin.execute(f"DROP DATABASE IF EXISTS {test_db_name}")
+        await admin.execute(f"CREATE DATABASE {test_db_name}")
+    finally:
+        await admin.close()
+
+    # Replay infra init.sql (extensions + base schema) before migrations.
+    fresh = await asyncpg.connect(test_dsn)
+    try:
+        await fresh.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        await fresh.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+        for p in Path(__file__).resolve().parents:
+            init_sql = p / "infrastructure" / "local-db" / "init.sql"
+            if init_sql.is_file():
+                try:
+                    await fresh.execute(init_sql.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+                break
+    finally:
+        await fresh.close()
+
+    pool = await asyncpg.create_pool(test_dsn, min_size=1, max_size=4)
+    try:
+        from services.migrations import run_migrations
+
+        class _StubService:
+            def __init__(self, pool):
+                self.pool = pool
+
+        ok = await run_migrations(_StubService(pool))
+        if not ok:
+            pytest.fail("Migrations failed against the unit-tier test DB")
+
+        try:
+            yield pool
+        finally:
+            await pool.close()
+    finally:
+        admin = await asyncpg.connect(admin_dsn)
+        try:
+            await admin.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = $1 AND pid <> pg_backend_pid()",
+                test_db_name,
+            )
+            await admin.execute(f"DROP DATABASE IF EXISTS {test_db_name}")
+        finally:
+            await admin.close()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def db_pool(_db_pool_session):
+    """Function-scoped wrapper around the session pool that wipes niche
+    tables after each test so cross-test slug collisions don't leak.
+
+    Tests just request ``db_pool`` — yields the same underlying pool, but
+    handles cleanup transparently.
+    """
+    try:
+        yield _db_pool_session
+    finally:
+        async with _db_pool_session.acquire() as conn:
+            # CASCADE drops dependent rows in niche_goals + niche_sources +
+            # topic_batches + candidates + discovery_runs.
+            try:
+                await conn.execute("TRUNCATE niches CASCADE")
+            except Exception:
+                pass
