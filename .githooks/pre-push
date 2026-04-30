@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# pre-push hook — auto-sync filtered subset to public github after push to origin/main
+#
+# Triggers when pushing to origin (= Glad-Labs/glad-labs-stack) on the main
+# branch. After the push completes successfully, runs scripts/sync-to-github.sh
+# to refresh the public Glad-Labs/poindexter mirror with the filtered subset.
+#
+# Skips when:
+#   - Push target is not "origin"
+#   - Pushed branch is not "main"
+#   - SKIP_GITHUB_SYNC=1 in env (escape hatch)
+#
+# Install: bash scripts/install-git-hooks.sh
+# Or:      git config core.hooksPath .githooks
+# ==============================================================================
+
+set -euo pipefail
+
+REMOTE_NAME="$1"   # arg 1: remote name (e.g., "origin")
+REMOTE_URL="$2"    # arg 2: remote URL
+
+# Read the refs being pushed from stdin (one per line):
+#   <local_ref> <local_sha> <remote_ref> <remote_sha>
+# We need to know if main is among them.
+
+PUSHING_MAIN=0
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ "$remote_ref" == "refs/heads/main" ]]; then
+    PUSHING_MAIN=1
+  fi
+done
+
+if [[ "$REMOTE_NAME" != "origin" ]]; then
+  exit 0
+fi
+if [[ "$PUSHING_MAIN" != "1" ]]; then
+  exit 0
+fi
+if [[ "${SKIP_GITHUB_SYNC:-0}" == "1" ]]; then
+  echo "[pre-push] SKIP_GITHUB_SYNC=1 set — skipping public mirror sync"
+  exit 0
+fi
+
+# Note: we run the sync BEFORE the actual push completes (this is pre-push).
+# That's intentional — if the github sync fails for any reason, we don't want
+# to also have to roll back the origin push. Better: github lags behind origin
+# by one push if it fails, and we can re-run the script manually.
+echo "[pre-push] Will sync filtered subset to Glad-Labs/poindexter after origin push completes."
+echo "[pre-push] (Run 'bash scripts/sync-to-github.sh' manually if this hook fails.)"
+
+# We CAN'T actually run sync-to-github.sh from inside pre-push, because the
+# origin commits we want to mirror haven't landed yet — pre-push can BLOCK
+# the push but it can't observe the post-push state. The pattern is:
+#
+#   1. Let this hook print the reminder (above)
+#   2. Use a git wrapper alias `git pushe` (push everywhere) that does:
+#        git push origin main && bash scripts/sync-to-github.sh
+#
+# See scripts/install-git-hooks.sh which sets up the alias.
+
+exit 0

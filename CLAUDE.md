@@ -214,7 +214,9 @@ target any S3-compatible provider (R2, S3, B2, MinIO). The old
 Source of truth: `docs/operations/ci-deploy-chain.md`. Two-remote model (post-2026-04-30 gitea decommission):
 
 - **`origin` = `Glad-Labs/glad-labs-stack`** (private GitHub) — full tree (public + Glad Labs operator/premium overlay). Vercel watches this and deploys `www.gladlabs.io`. Push your day-to-day work here.
-- **`github` = `Glad-Labs/poindexter`** (public GitHub) — open-source product subset. Periodically refreshed from origin via `scripts/sync-to-github.sh`, which strips private files (web/public-site, web/storefront, mcp-server-gladlabs, marketing, premium dashboards, writing_samples, gladlabs-config, .shared-context, CLAUDE.md, etc.).
+- **`github` = `Glad-Labs/poindexter`** (public GitHub) — open-source product subset. Refreshed from origin via `scripts/sync-to-github.sh`, which strips private files (web/public-site, web/storefront, mcp-server-gladlabs, marketing, premium dashboards, writing_samples, gladlabs-config, .shared-context, CLAUDE.md, etc.).
+
+**One-command publish to both remotes:** `git pushe` (alias for `bash scripts/push-everywhere.sh` — pushes to origin then auto-runs the sync script). Set up by `bash scripts/install-git-hooks.sh` after a fresh clone. Use `SKIP_GITHUB_SYNC=1 git pushe` to skip the public mirror refresh for in-progress branches.
 
 Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR frontend slice from glad-labs-stack.
 
