@@ -5,20 +5,14 @@
 name: migrations-smoke
 
 on:
+  # Fire on every push to main and every PR — branch protection requires
+  # this status check, so it has to report on every PR (a path-filtered
+  # workflow that doesn't fire would block the PR forever). The job
+  # itself runs ~30s on a cache-warm runner, so the trade-off is fine.
   push:
     branches: [main]
-    paths:
-      - "src/cofounder_agent/services/migrations/**"
-      - "scripts/ci/migrations_smoke.py"
-      - ".github/workflows/migrations-smoke.yml"
-      - "src/cofounder_agent/pyproject.toml"
   pull_request:
     branches: [main]
-    paths:
-      - "src/cofounder_agent/services/migrations/**"
-      - "scripts/ci/migrations_smoke.py"
-      - ".github/workflows/migrations-smoke.yml"
-      - "src/cofounder_agent/pyproject.toml"
   workflow_dispatch:
 
 jobs:
