@@ -100,3 +100,84 @@ def weighted_cosine_score(
         breakdown[g.goal_type] = contribution
         total += contribution
     return total, breakdown
+
+
+import json
+from dataclasses import dataclass
+
+
+@dataclass
+class ScoredCandidate:
+    id: str
+    title: str
+    summary: str | None
+    embedding_score: float
+    llm_score: float | None = None
+    score_breakdown: dict[str, float] | None = None
+
+
+async def _ollama_chat_json(prompt: str, *, model: str) -> str:
+    """One-shot Ollama chat call; returns the assistant's content as a string.
+    Indirection so tests can monkeypatch.
+    """
+    import httpx
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "format": "json",
+    }
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post("http://localhost:11434/api/chat", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+    return data["message"]["content"]
+
+
+async def llm_final_score(
+    candidates: list[ScoredCandidate],
+    weights: list[NicheGoal],
+    *,
+    model: str = "glm-4.7-5090:latest",
+) -> dict[str, ScoredCandidate]:
+    """Single LLM call ranks the (already-shortlisted) candidates against weighted goals.
+
+    Returns the same candidates with `llm_score` and `score_breakdown` filled in,
+    keyed by candidate id.
+    """
+    weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {GOAL_DESCRIPTIONS[g.goal_type]}" for g in weights)
+    cand_block = "\n".join(f"[{c.id}] {c.title} — {c.summary or ''}" for c in candidates)
+    prompt = f"""You are scoring topic candidates for a content pipeline against the operator's weighted goals.
+
+Goals (weight in pct):
+{weights_descr}
+
+Candidates:
+{cand_block}
+
+Return STRICT JSON keyed by candidate id, of the form:
+{{"<id>": {{"score": <0-100>, "breakdown": {{"<GOAL_TYPE>": <weighted contribution 0-1>, ...}}}}, ...}}
+
+The breakdown values per candidate should approximately sum to (score / 100).
+Return ONLY the JSON, no commentary.
+"""
+    raw = await _ollama_chat_json(prompt, model=model)
+    parsed = json.loads(raw)
+    result: dict[str, ScoredCandidate] = {}
+    for c in candidates:
+        score_blob = parsed.get(c.id)
+        if score_blob is None:
+            logger.warning("LLM scorer omitted candidate %s; defaulting to embedding_score", c.id)
+            score_blob = {"score": c.embedding_score * 100, "breakdown": {}}
+        c.llm_score = float(score_blob.get("score", 0.0))
+        c.score_breakdown = dict(score_blob.get("breakdown", {}))
+        result[c.id] = c
+    return result
+
+
+def apply_decay(*, score: float, decay_factor: float) -> float:
+    """Effective score = raw score × decay_factor. Used both at insertion time
+    (decay_factor=1.0 for fresh, <1.0 for carried-forward) and at re-rank time
+    (carried-forward candidates get an additional decay multiplier applied here).
+    """
+    return score * decay_factor

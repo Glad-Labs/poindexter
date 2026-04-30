@@ -45,3 +45,29 @@ async def test_weighted_cosine_score_combines_per_goal_signals():
     assert score == pytest.approx(0.6, abs=0.01)
     assert breakdown == {"TRAFFIC": pytest.approx(0.6, abs=0.01),
                          "EDUCATION": pytest.approx(0.0, abs=0.01)}
+
+
+async def test_llm_final_score_returns_score_per_candidate(monkeypatch):
+    from services.topic_ranking import llm_final_score, ScoredCandidate
+
+    async def fake_ollama_chat(prompt: str, *, model: str) -> str:
+        # Simulated JSON response from glm-4.7-5090
+        return '{"c1": {"score": 87.5, "breakdown": {"TRAFFIC": 0.5, "EDUCATION": 0.375}},'  \
+               ' "c2": {"score": 42.0, "breakdown": {"TRAFFIC": 0.2, "EDUCATION": 0.22}}}'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_ollama_chat)
+
+    candidates = [
+        ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.6),
+        ScoredCandidate(id="c2", title="B", summary="y", embedding_score=0.4),
+    ]
+    weights = [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)]
+    scored = await llm_final_score(candidates, weights)
+    assert scored["c1"].llm_score == 87.5
+    assert scored["c2"].llm_score == 42.0
+
+
+def test_apply_decay_multiplies_score():
+    from services.topic_ranking import apply_decay
+    assert apply_decay(score=80, decay_factor=1.0) == 80
+    assert apply_decay(score=80, decay_factor=0.7) == pytest.approx(56)
+    assert apply_decay(score=80, decay_factor=0.49) == pytest.approx(39.2)
