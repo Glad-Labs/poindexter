@@ -402,31 +402,156 @@ class TestCategorySearches:
 
 
 class TestIsNewsOrJunk:
+    # gh#218: _is_news_or_junk is an instance method now (was @staticmethod)
+    # so the regex list can be sourced from app_settings via SiteConfig.
+    # Each test instantiates a TopicDiscovery — the kwargless ctor falls back
+    # to the module singleton, which in tests is unloaded so we get the
+    # hardcoded _NEWS_RE fallback path.
+
+    def _d(self):
+        return TopicDiscovery(AsyncMock())
+
     def test_too_short_title_rejected(self):
-        assert TopicDiscovery._is_news_or_junk("Short title") is True
-        assert TopicDiscovery._is_news_or_junk("AI Tools") is True
+        d = self._d()
+        assert d._is_news_or_junk("Short title") is True
+        assert d._is_news_or_junk("AI Tools") is True
 
     def test_long_title_not_rejected_for_length(self):
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Building Production-Ready Microservices with Go"
         ) is False
 
     def test_lawsuit_pattern_rejected(self):
         # Real pattern from _NEWS_PATTERNS — "lawsuit" matches
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Tech Giant Faces Major Lawsuit Over Privacy"
         ) is True
 
     def test_personal_anecdote_pattern_rejected(self):
         # "my experience" is in the news/junk pattern list
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "My experience building a startup from scratch"
         ) is True
 
     def test_merch_pattern_rejected(self):
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Limited Edition Tech Merch and Sticker Pack"
         ) is True
+
+
+# ===========================================================================
+# gh#218 — DB-backed filter overrides (_resolved_news_re,
+# _resolved_category_searches)
+# ===========================================================================
+
+
+class _FakeSiteConfig:
+    """Minimal SiteConfig stand-in for gh#218 override tests.
+
+    Only exposes the surface ``TopicDiscovery._resolved_*`` calls reach
+    for: ``get(key, default)`` and ``all()``. Avoids importing the real
+    ``SiteConfig`` class so tests stay decoupled from any Phase H churn
+    on github/main.
+    """
+
+    def __init__(self, values: dict[str, str] | None = None):
+        self._values = values or {}
+
+    def get(self, key: str, default: str = "") -> str:
+        return self._values.get(key, default)
+
+    def all(self) -> dict[str, str]:
+        return dict(self._values)
+
+
+class TestResolvedCategorySearches:
+    def test_empty_falls_back_to_hardcoded(self):
+        sc = _FakeSiteConfig({"topic_discovery_category_searches": "{}"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Empty JSON object -> hardcoded CATEGORY_SEARCHES fallback
+        assert d._resolved_category_searches() is CATEGORY_SEARCHES
+
+    def test_json_override_used(self):
+        sc = _FakeSiteConfig({
+            "topic_discovery_category_searches":
+                '{"gardening": ["heirloom tomato varieties", "compost tea"]}',
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        resolved = d._resolved_category_searches()
+        assert "gardening" in resolved
+        assert resolved["gardening"] == ["heirloom tomato varieties", "compost tea"]
+        # Override replaces, doesn't merge
+        assert "technology" not in resolved
+
+    def test_malformed_json_falls_back(self):
+        sc = _FakeSiteConfig({
+            "topic_discovery_category_searches": "{not valid json",
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Bad JSON -> hardcoded fallback, no exception raised
+        assert d._resolved_category_searches() is CATEGORY_SEARCHES
+
+    def test_result_cached_on_instance(self):
+        sc = _FakeSiteConfig({"topic_discovery_category_searches": "{}"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        first = d._resolved_category_searches()
+        second = d._resolved_category_searches()
+        assert first is second  # cached, not re-parsed
+
+
+class TestResolvedNewsRe:
+    def test_empty_falls_back_to_hardcoded(self):
+        sc = _FakeSiteConfig({"topic_discovery_news_patterns": "[]"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Empty array -> hardcoded _NEWS_RE fallback
+        assert d._resolved_news_re() is TopicDiscovery._NEWS_RE
+
+    def test_json_override_used(self):
+        sc = _FakeSiteConfig({
+            "topic_discovery_news_patterns":
+                r'["\\b(?:foo|bar)\\b"]',
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        compiled = d._resolved_news_re()
+        # Operator's pattern, not the Glad Labs lawsuit/election set
+        assert len(compiled) == 1
+        assert compiled[0].search("things about foo here")
+
+    def test_invalid_regex_skipped(self):
+        # One bad pattern shouldn't break the rest — and shouldn't raise.
+        sc = _FakeSiteConfig({
+            "topic_discovery_news_patterns":
+                r'["[unclosed", "\\b(?:keepme)\\b"]',
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        compiled = d._resolved_news_re()
+        assert len(compiled) == 1
+        assert compiled[0].search("we should keepme out")
+
+    def test_malformed_json_falls_back(self):
+        sc = _FakeSiteConfig({
+            "topic_discovery_news_patterns": "[not valid json",
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._resolved_news_re() is TopicDiscovery._NEWS_RE
+
+    def test_override_changes_is_news_or_junk_behaviour(self):
+        # With an empty override, lawsuit titles still get rejected
+        sc = _FakeSiteConfig({"topic_discovery_news_patterns": "[]"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._is_news_or_junk(
+            "Tech Giant Faces Major Lawsuit Over Privacy"
+        ) is True
+
+        # With a custom override that doesn't include "lawsuit",
+        # the same title should pass (real-estate/legal niche)
+        sc2 = _FakeSiteConfig({
+            "topic_discovery_news_patterns": r'["\\b(?:onlything)\\b"]',
+        })
+        d2 = TopicDiscovery(AsyncMock(), site_config=sc2)
+        assert d2._is_news_or_junk(
+            "Tech Giant Faces Major Lawsuit Over Privacy"
+        ) is False
 
 
 # ===========================================================================
