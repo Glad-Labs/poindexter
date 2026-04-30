@@ -90,6 +90,13 @@ prometheus-client = "^0.25.0"
 # to skip cleanly instead of falling through to a Rust source build.
 pyroscope-io = { version = "^0.8.5", optional = true, markers = "sys_platform != 'win32'" }
 langgraph = ">=0.2,<1.0"
+# datasets pinned to ^3.0 to override the legacy 1.1.1 transitive dep
+# pulled in by ragas — 1.1.1 calls `pyarrow.PyExtensionType` which was
+# removed in pyarrow 14, breaking topic_discovery_signals at runtime
+# with `module 'pyarrow' has no attribute 'PyExtensionType'`.
+# datasets >=2.16 handles the new pyarrow API; 3.x is the current
+# stable line. Closes Glad-Labs/poindexter#308.
+datasets = "^3.0"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
