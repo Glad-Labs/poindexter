@@ -9,6 +9,7 @@ is reachable the fixture skips the module so CI runners without a DB
 don't blow up at fixture time — same pattern as the integration_db tier.
 """
 
+import asyncpg
 import pytest
 from services.niche_service import NicheService, Niche, NicheGoal, NicheSource
 
@@ -29,7 +30,7 @@ async def test_create_niche_inserts_row(db_pool):
 async def test_create_niche_rejects_duplicate_slug(db_pool):
     svc = NicheService(db_pool)
     await svc.create(slug="dupe", name="A")
-    with pytest.raises(Exception):
+    with pytest.raises(asyncpg.exceptions.UniqueViolationError):
         await svc.create(slug="dupe", name="B")
 
 
