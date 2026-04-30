@@ -86,6 +86,7 @@ prometheus-client = "^0.25.0"
 # Continuous profiling — LGTM+P stack (GH #75). Opt-in via app_settings
 # enable_pyroscope; services/profiling.py configures the agent.
 pyroscope-io = { version = "^0.8.5", optional = true }
+langgraph = ">=0.2,<1.0"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]

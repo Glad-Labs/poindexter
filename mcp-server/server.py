@@ -925,5 +925,98 @@ async def get_brain_knowledge(entity: str = "", attribute: str = "", limit: int 
         return _format_tool_error("Brain knowledge query", e)
 
 
+# ============================================================================
+# NICHE TOPIC-DISCOVERY TOOLS
+# ============================================================================
+# Mirror the ``poindexter topics ...`` CLI commands so an MCP client can drive
+# the discover -> rank -> batch -> gate flow exposed by
+# ``services.topic_batch_service.TopicBatchService``.
+
+
+@mcp.tool()
+async def topics_show_batch(niche: str) -> str:
+    """Show the current open batch for a niche, sorted by effective_score."""
+    try:
+        pool = await _get_pool()
+        from services.niche_service import NicheService
+        from services.topic_batch_service import TopicBatchService
+        n = await NicheService(pool).get_by_slug(niche)
+        if not n:
+            return f"unknown niche: {niche}"
+        async with pool.acquire() as conn:
+            bid = await conn.fetchval(
+                "SELECT id FROM topic_batches WHERE niche_id = $1 AND status = 'open'",
+                n.id,
+            )
+        if bid is None:
+            return f"No open batch for niche {niche}."
+        view = await TopicBatchService(pool).show_batch(batch_id=bid)
+        lines = [f"Batch {view.id} (status={view.status}, niche={niche})"]
+        for c in view.candidates:
+            marker = f"#{c.operator_rank}" if c.operator_rank else f"sys#{c.rank_in_batch}"
+            lines.append(
+                f"  {marker:6s} [{c.kind:8s}] eff={c.effective_score:5.1f} | {c.id} | {c.title}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return _format_tool_error("topics_show_batch", e)
+
+
+@mcp.tool()
+async def topics_rank_batch(batch_id: str, ordered_candidate_ids: list[str]) -> str:
+    """Set operator ranking for a batch's candidates. Pass IDs in best-first order."""
+    try:
+        pool = await _get_pool()
+        from services.topic_batch_service import TopicBatchService
+        await TopicBatchService(pool).rank_batch(
+            batch_id=batch_id, ordered_candidate_ids=ordered_candidate_ids,
+        )
+        return f"Ranked {len(ordered_candidate_ids)} candidates in batch {batch_id}"
+    except Exception as e:
+        return _format_tool_error("topics_rank_batch", e)
+
+
+@mcp.tool()
+async def topics_edit_winner(batch_id: str, topic: str = "", angle: str = "") -> str:
+    """Edit the title/angle of the rank-1 candidate before resolution."""
+    if not topic and not angle:
+        return "topics_edit_winner failed: provide topic and/or angle"
+    try:
+        pool = await _get_pool()
+        from services.topic_batch_service import TopicBatchService
+        await TopicBatchService(pool).edit_winner(
+            batch_id=batch_id,
+            topic=topic or None,
+            angle=angle or None,
+        )
+        return "Edited winner."
+    except Exception as e:
+        return _format_tool_error("topics_edit_winner", e)
+
+
+@mcp.tool()
+async def topics_resolve_batch(batch_id: str) -> str:
+    """Resolve a batch — advance the rank-1 candidate into the content pipeline."""
+    try:
+        pool = await _get_pool()
+        from services.topic_batch_service import TopicBatchService
+        await TopicBatchService(pool).resolve_batch(batch_id=batch_id)
+        return f"Resolved {batch_id}"
+    except Exception as e:
+        return _format_tool_error("topics_resolve_batch", e)
+
+
+@mcp.tool()
+async def topics_reject_batch(batch_id: str, reason: str = "") -> str:
+    """Reject a batch — discard candidates, allow a fresh sweep."""
+    try:
+        pool = await _get_pool()
+        from services.topic_batch_service import TopicBatchService
+        await TopicBatchService(pool).reject_batch(batch_id=batch_id, reason=reason)
+        return f"Rejected {batch_id}"
+    except Exception as e:
+        return _format_tool_error("topics_reject_batch", e)
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
