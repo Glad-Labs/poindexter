@@ -65,6 +65,9 @@ class TestRunCycleSkipsWhenBusy:
         worker._should_trigger_discovery = AsyncMock(
             return_value=(False, "mocked_not_triggered")
         )
+        # _get_setting must return a string (callers do .strip()/.lower()
+        # on the result); the blanket AsyncMock above returns {}.
+        worker._get_setting = AsyncMock(return_value="true")
         result = await worker.run_cycle()
         assert result.get("skipped") is not True
 
@@ -334,6 +337,120 @@ class TestShouldTriggerDiscoveryThrottleGate:
             should_fire, reason = await worker._should_trigger_discovery()
         # We got past the gate — reason is not "queue_full"
         assert "queue_full" not in reason
+
+
+# ===========================================================================
+# topic_discovery_auto_enabled kill-switch (migration 0118)
+# ===========================================================================
+
+
+class TestTopicDiscoveryAutoEnabledKillSwitch:
+    """Migration 0118 introduced ``topic_discovery_auto_enabled`` as a
+    master kill-switch over the legacy auto-firing discovery loop.
+
+    - Default ``"true"`` keeps backward-compatible behaviour for OSS users
+      with no niches configured.
+    - ``"false"`` makes operators with niches drive discovery via the
+      niche-aware operator flow (``poindexter topics rank-batch /
+      resolve-batch``) and suppresses signal-driven auto-firing.
+    - Manual trigger (``topic_discovery_manual_trigger=true``) MUST still
+      work even when auto is disabled — operators may want one-shot fires.
+    """
+
+    @pytest.mark.asyncio
+    async def test_default_true_fires_on_queue_low_signal(self):
+        """When ``topic_discovery_auto_enabled`` is unset (default 'true'),
+        the queue-low signal still fires discovery as before."""
+        pool = _make_pool(pending_count=0)
+        worker = IdleWorker(pool)
+
+        async def _settings(key, default=""):
+            # Manual off, auto-enabled defaults to "true" via the default arg,
+            # cooldown elapsed, queue-low threshold = 2.
+            if key == "topic_discovery_manual_trigger":
+                return "false"
+            if key == "topic_discovery_min_cooldown_seconds":
+                return "0"
+            if key == "idle_last_run_topic_discovery":
+                return "0"
+            if key == "topic_discovery_queue_low_threshold":
+                return "2"
+            # Falls through for topic_discovery_auto_enabled — returns
+            # the caller's default of "true".
+            return default
+
+        worker._get_setting = _settings
+        # 0 pending tasks → queue_low fires
+        pool.fetchval = AsyncMock(return_value=0)
+        with patch(
+            "services.pipeline_throttle.is_queue_full",
+            new=AsyncMock(return_value=(False, 0, 999)),
+        ):
+            should_fire, reason = await worker._should_trigger_discovery()
+        assert should_fire is True
+        assert "queue_low" in reason
+
+    @pytest.mark.asyncio
+    async def test_auto_disabled_skips_signals_and_logs_skip(self, caplog):
+        """When ``topic_discovery_auto_enabled=false`` the signal ladder
+        is suppressed and a recognizable INFO skip log is emitted."""
+        import logging
+
+        pool = _make_pool(pending_count=0)
+        worker = IdleWorker(pool)
+
+        async def _settings(key, default=""):
+            if key == "topic_discovery_manual_trigger":
+                return "false"
+            if key == "topic_discovery_auto_enabled":
+                return "false"
+            return default
+
+        worker._get_setting = _settings
+        # Even with a queue-low condition that would normally fire, auto
+        # disabled must short-circuit before the signal checks.
+        pool.fetchval = AsyncMock(return_value=0)
+        with caplog.at_level(logging.INFO, logger="services.idle_worker"):
+            with patch(
+                "services.pipeline_throttle.is_queue_full",
+                new=AsyncMock(return_value=(False, 0, 999)),
+            ):
+                should_fire, reason = await worker._should_trigger_discovery()
+
+        assert should_fire is False
+        assert reason == "auto_disabled"
+        # Skip log fires once per evaluation.
+        assert any(
+            "topic_discovery_auto_enabled=false" in record.getMessage()
+            and "skipped" in record.getMessage()
+            for record in caplog.records
+        ), f"expected skip log not found in: {[r.getMessage() for r in caplog.records]}"
+
+    @pytest.mark.asyncio
+    async def test_manual_trigger_still_works_when_auto_disabled(self):
+        """Manual operator override fires BEFORE the auto-enabled gate so
+        a one-shot ``topic_discovery_manual_trigger=true`` keeps working
+        even when auto-firing is otherwise off."""
+        pool = _make_pool(pending_count=0)
+        worker = IdleWorker(pool)
+
+        async def _settings(key, default=""):
+            if key == "topic_discovery_manual_trigger":
+                return "true"
+            if key == "topic_discovery_auto_enabled":
+                return "false"
+            return default
+
+        worker._get_setting = _settings
+        with patch(
+            "services.pipeline_throttle.is_queue_full",
+            new=AsyncMock(return_value=(False, 0, 999)),
+        ):
+            should_fire, reason = await worker._should_trigger_discovery()
+        assert should_fire is True
+        assert reason == "manual_trigger"
+        # Verify the manual flag was cleared so it doesn't re-fire next cycle.
+        pool.execute.assert_awaited()
 
 
 # ===========================================================================

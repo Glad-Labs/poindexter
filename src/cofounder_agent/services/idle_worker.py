@@ -99,6 +99,14 @@ class IdleWorker:
         # (queue_low, stale_content, rejection_streak, manual). 24h safety-net
         # kept as fallback so the system never stalls completely if signal
         # evaluation breaks.
+        #
+        # Auto-firing kill-switch (migration 0118): operators with niches
+        # configured drive discovery via ``poindexter topics rank-batch /
+        # resolve-batch``. They set ``topic_discovery_auto_enabled=false``
+        # and the auto branches bail out early. Manual triggers
+        # (``topic_discovery_manual_trigger=true``) still flow through
+        # ``_should_trigger_discovery`` and bypass the gate so one-shot
+        # operator-driven fires keep working.
         should_discover, reason = await self._should_trigger_discovery()
         if should_discover:
             logger.info("[IDLE] Topic discovery triggered by signal: %s", reason)
@@ -106,10 +114,23 @@ class IdleWorker:
             results["topic_discovery"]["trigger"] = reason
             await self._persist_mark_run("topic_discovery")
         elif self._is_due("topic_discovery", 1440):
-            logger.warning("[IDLE] Topic discovery: 24h safety-net triggered (signals not firing?)")
-            results["topic_discovery"] = await self._discover_and_queue_topics()
-            results["topic_discovery"]["trigger"] = "safety_net_24h"
-            await self._persist_mark_run("topic_discovery")
+            # 24h safety-net — also gated by the auto-enabled kill-switch.
+            auto_enabled = (await self._get_setting(
+                "topic_discovery_auto_enabled", "true"
+            )).strip().lower()
+            if auto_enabled == "false":
+                logger.info(
+                    "[idle_worker] topic_discovery auto-firing skipped — "
+                    "topic_discovery_auto_enabled=false (operator drives "
+                    "via poindexter topics flow)"
+                )
+                # Mark run so we don't log this every cycle for 24h.
+                await self._persist_mark_run("topic_discovery")
+            else:
+                logger.warning("[IDLE] Topic discovery: 24h safety-net triggered (signals not firing?)")
+                results["topic_discovery"] = await self._discover_and_queue_topics()
+                results["topic_discovery"]["trigger"] = "safety_net_24h"
+                await self._persist_mark_run("topic_discovery")
 
         # --- GPU/heavy tasks: skip when pipeline is actively generating ---
         pending = await self.pool.fetchrow(
@@ -182,6 +203,11 @@ class IdleWorker:
         Returns (should_fire, reason).  Signals considered:
         - Throttle gate: approval queue full → suppress (GH-89 AC#3)
         - Manual trigger: app_settings.topic_discovery_manual_trigger = true
+        - Auto-enabled kill-switch (migration 0118): if
+          ``topic_discovery_auto_enabled=false``, ALL signal-driven
+          firing is suppressed. Manual trigger above still works so
+          operators with niches can drive one-shot discoveries via
+          ``poindexter topics rank-batch / resolve-batch``.
         - Queue low: pending_tasks < queue_low_threshold (default 2)
         - Stale content: last published > stale_hours (default 6)
         - Rejection streak: 3+ consecutive rejections
@@ -213,6 +239,10 @@ class IdleWorker:
         # to 30 min — they already saw the state and asked to override.
         # Closes gitea#277. Queue-full from step 0 still applies above:
         # manual can't stuff more topics onto a wall.
+        #
+        # Manual ALSO runs before the auto-enabled kill-switch below so
+        # operators can fire one-shot discoveries even when auto firing
+        # is disabled — they explicitly asked for it.
         try:
             manual = (await self._get_setting(
                 "topic_discovery_manual_trigger", "false"
@@ -226,6 +256,26 @@ class IdleWorker:
                 return True, "manual_trigger"
         except Exception as e:
             logger.debug("[IDLE] Manual trigger check failed: %s", e)
+
+        # 1b. Auto-firing kill-switch (migration 0118). Operators with
+        # niches configured set ``topic_discovery_auto_enabled=false`` and
+        # drive discovery via the niche-aware operator flow
+        # (``poindexter topics rank-batch / resolve-batch``). Skip the
+        # signal ladder entirely so the legacy auto-discovery doesn't
+        # bypass the operator approval gate.
+        try:
+            auto_enabled = (await self._get_setting(
+                "topic_discovery_auto_enabled", "true"
+            )).strip().lower()
+            if auto_enabled == "false":
+                logger.info(
+                    "[idle_worker] topic_discovery auto-firing skipped — "
+                    "topic_discovery_auto_enabled=false (operator drives "
+                    "via poindexter topics flow)"
+                )
+                return False, "auto_disabled"
+        except Exception as e:
+            logger.debug("[IDLE] Auto-enabled check failed: %s", e)
 
         # 2. Cooldown check (after manual so operator override wins)
         try:
