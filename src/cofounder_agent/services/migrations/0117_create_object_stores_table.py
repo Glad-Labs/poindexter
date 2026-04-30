@@ -1,4 +1,10 @@
-"""Migration 0093: object_stores table (GH-113).
+"""Migration 0117: object_stores table (GH-113).
+
+Renumbered from 0093 on 2026-04-30 to resolve a number collision with
+``0093_create_qa_gates_table.py``. The qa_gates migration kept 0093
+because the immediately-following ``0094_seed_qa_gates_default_chain.py``
+depends on it; object_stores has no in-tree dependency ordering against
+0094-0116, so the safe move was to slot it after the current max.
 
 Phase D of the Declarative Data Plane RFC; implements GH-113.
 
@@ -178,7 +184,7 @@ async def _seed_primary_from_storage_settings(conn) -> None:
         "storage_credentials",
         "none",
         enabled,
-        '{"seeded_from": "storage_settings", "migration": "0093"}',
+        '{"seeded_from": "storage_settings", "migration": "0117"}',
     )
 
 
@@ -188,11 +194,11 @@ async def up(pool) -> None:
         await _seed_primary_from_storage_settings(conn)
         count = await conn.fetchval("SELECT count(*) FROM object_stores")
         logger.info(
-            "0093: object_stores table created + seeded; %d total row(s)", count
+            "0117: object_stores table created + seeded; %d total row(s)", count
         )
 
 
 async def down(pool) -> None:
     async with pool.acquire() as conn:
         await conn.execute(SQL_DOWN)
-        logger.info("0093: dropped object_stores table")
+        logger.info("0117: dropped object_stores table")

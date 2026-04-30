@@ -1,4 +1,7 @@
-"""Unit tests for migration 0093 (object_stores table) — GH-113.
+"""Unit tests for migration 0117 (object_stores table) — GH-113.
+
+Renumbered from 0093 on 2026-04-30 to resolve a number collision with
+``0093_create_qa_gates_table.py``.
 
 We don't spin up a real Postgres for unit tests. Instead we exercise:
 
@@ -23,7 +26,7 @@ def _import_migration():
     """Late-import so the migration discovery glob doesn't double-run it."""
     import importlib
     return importlib.import_module(
-        "services.migrations.0093_create_object_stores_table"
+        "services.migrations.0117_create_object_stores_table"
     )
 
 
