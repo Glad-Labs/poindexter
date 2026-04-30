@@ -5,6 +5,7 @@ Spec §"Goal vectors", §"Discovery sweep" steps 4-5.
 
 from __future__ import annotations
 
+import json
 import math
 
 from services.logger_config import get_logger
@@ -15,6 +16,12 @@ logger = get_logger(__name__)
 
 # Per the spec — fixed prose anchor for each goal type. Cached embeddings
 # are computed lazily on first use and live for the process lifetime.
+#
+# These are the IN-CODE FALLBACK defaults. Operators can override the
+# anchor prose per-deployment by setting the ``niche_goal_descriptions``
+# app_setting to a JSON object keyed by goal_type — see migration 0119.
+# Resolution happens lazily inside ``_resolve_goal_descriptions`` so a
+# DB reload picks up changes without a restart.
 GOAL_DESCRIPTIONS: dict[str, str] = {
     "TRAFFIC":     "Topic likely to attract organic search traffic; trending keyword, broad appeal, evergreen demand.",
     "EDUCATION":   "Topic that teaches the reader something concrete and useful they didn't know before.",
@@ -24,6 +31,31 @@ GOAL_DESCRIPTIONS: dict[str, str] = {
     "COMMUNITY":   "Topic that resonates with the operator's existing audience; sparks discussion, shares, replies.",
     "NICHE_DEPTH": "Topic that goes deep on the operator's niche specialty rather than broad-audience content.",
 }
+
+
+def _resolve_goal_descriptions() -> dict[str, str]:
+    """Return goal-type → prose mapping, preferring the
+    ``niche_goal_descriptions`` app_setting (JSON blob) over the in-code
+    default. Falls back silently to ``GOAL_DESCRIPTIONS`` if the setting
+    is missing, empty, or malformed — keeps test fixtures and bare
+    installs working without the migration applied.
+    """
+    try:
+        from services.site_config import site_config
+
+        raw = site_config.get("niche_goal_descriptions", "")
+        if not raw:
+            return GOAL_DESCRIPTIONS
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and parsed:
+            # Merge over defaults so a partial override still resolves
+            # the keys the operator didn't set explicitly.
+            merged = dict(GOAL_DESCRIPTIONS)
+            merged.update({str(k): str(v) for k, v in parsed.items()})
+            return merged
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("[NICHE] niche_goal_descriptions resolve failed: %s", exc)
+    return GOAL_DESCRIPTIONS
 
 
 _GOAL_VEC_CACHE: dict[str, list[float]] = {}
@@ -41,6 +73,7 @@ async def _embed_text_cached(text: str) -> list[float]:
     ``services.publish_service`` etc.).
     """
     from plugins.registry import get_llm_providers
+    from services.site_config import site_config
 
     providers = {p.name: p for p in get_llm_providers()}
     provider = providers.get("ollama_native")
@@ -48,7 +81,8 @@ async def _embed_text_cached(text: str) -> list[float]:
         raise RuntimeError(
             "ollama_native provider not registered — cannot generate embeddings"
         )
-    return await provider.embed(text, model="nomic-embed-text")
+    embed_model = site_config.get("niche_embedding_model", "nomic-embed-text")
+    return await provider.embed(text, model=embed_model)
 
 
 async def embed_text(text: str) -> list[float]:
@@ -61,9 +95,10 @@ async def embed_text(text: str) -> list[float]:
 async def goal_vector_for(goal_type: str) -> list[float]:
     if goal_type in _GOAL_VEC_CACHE:
         return _GOAL_VEC_CACHE[goal_type]
-    if goal_type not in GOAL_DESCRIPTIONS:
+    descriptions = _resolve_goal_descriptions()
+    if goal_type not in descriptions:
         raise ValueError(f"unknown goal_type: {goal_type!r}")
-    vec = await _embed_text_cached(GOAL_DESCRIPTIONS[goal_type])
+    vec = await _embed_text_cached(descriptions[goal_type])
     _GOAL_VEC_CACHE[goal_type] = vec
     return vec
 
@@ -102,7 +137,6 @@ def weighted_cosine_score(
     return total, breakdown
 
 
-import json
 from dataclasses import dataclass
 
 
@@ -119,16 +153,31 @@ class ScoredCandidate:
 async def _ollama_chat_json(prompt: str, *, model: str) -> str:
     """One-shot Ollama chat call; returns the assistant's content as a string.
     Indirection so tests can monkeypatch.
+
+    The base URL is resolved from ``local_llm_api_url`` (the existing
+    Ollama base-URL app_setting, seeded by migration 0116) and the
+    request timeout from ``niche_ollama_chat_timeout_seconds`` (migration
+    0119). Both fall back to the prior hardcoded values if app_settings
+    isn't loaded so unit-test fixtures that don't seed site_config
+    keep working.
     """
     import httpx
+    from services.site_config import site_config
+
+    base_url = (
+        site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
+    )
+    timeout = site_config.get_float(
+        "niche_ollama_chat_timeout_seconds", 60.0,
+    )
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
         "format": "json",
     }
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post("http://localhost:11434/api/chat", json=payload)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(f"{base_url}/api/chat", json=payload)
         resp.raise_for_status()
         data = resp.json()
     return data["message"]["content"]
@@ -138,14 +187,29 @@ async def llm_final_score(
     candidates: list[ScoredCandidate],
     weights: list[NicheGoal],
     *,
-    model: str = "glm-4.7-5090:latest",
+    model: str | None = None,
 ) -> dict[str, ScoredCandidate]:
     """Single LLM call ranks the (already-shortlisted) candidates against weighted goals.
 
     Returns the same candidates with `llm_score` and `score_breakdown` filled in,
     keyed by candidate id.
+
+    ``model`` defaults to the operator-tuned ``pipeline_writer_model``
+    app_setting (already used by the rest of the content pipeline). The
+    ``ollama/`` prefix some tenants use is stripped to mirror the
+    behaviour in ``ai_content_generator.py``. Falls back to the prior
+    hardcoded ``glm-4.7-5090:latest`` if no setting is configured so
+    test fixtures that don't seed site_config keep working.
     """
-    weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {GOAL_DESCRIPTIONS[g.goal_type]}" for g in weights)
+    if model is None:
+        from services.site_config import site_config
+
+        model = (
+            site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+            or "glm-4.7-5090:latest"
+        ).removeprefix("ollama/")
+    descriptions = _resolve_goal_descriptions()
+    weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {descriptions[g.goal_type]}" for g in weights)
     cand_block = "\n".join(f"[{c.id}] {c.title} — {c.summary or ''}" for c in candidates)
     prompt = f"""You are scoring topic candidates for a content pipeline against the operator's weighted goals.
 

@@ -18,20 +18,27 @@ logger = get_logger(__name__)
 
 
 async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
+    from services.site_config import site_config
     from services.topic_ranking import embed_text
 
+    # Top-N internal snippets by cosine similarity (pgvector). N is
+    # operator-tunable via writer_rag_topic_only_snippet_limit
+    # (migration 0119); default 8 matches the prior hardcoded LIMIT.
+    snippet_limit = site_config.get_int(
+        "writer_rag_topic_only_snippet_limit", 8,
+    )
     qvec = await embed_text(f"{topic} — {angle}")
     async with pool.acquire() as conn:
-        # Top 8 internal snippets by cosine similarity. Uses pgvector.
         rows = await conn.fetch(
             """
             SELECT source_table, source_id, text_preview,
                    1 - (embedding <=> $1::vector) AS similarity
               FROM embeddings
              ORDER BY embedding <=> $1::vector
-             LIMIT 8
+             LIMIT $2
             """,
             qvec,
+            snippet_limit,
         )
     snippets = [
         {

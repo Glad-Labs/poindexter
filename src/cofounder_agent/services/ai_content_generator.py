@@ -1059,13 +1059,27 @@ async def generate_with_context(
     extra_instructions: str | None = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
-    draft. Wraps the existing generation path; tests can monkeypatch here."""
+    draft. Wraps the existing generation path; tests can monkeypatch here.
+
+    Per-snippet length cap and writer model are operator-tunable via the
+    ``writer_rag_context_snippet_max_chars`` and ``pipeline_writer_model``
+    app_settings (the latter is the codebase-wide writer-model lookup).
+    """
+    from services.site_config import site_config
+    from services.topic_ranking import _ollama_chat_json
+
+    snippet_max_chars = site_config.get_int(
+        "writer_rag_context_snippet_max_chars", 500,
+    )
+    model = (
+        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        or "glm-4.7-5090:latest"
+    ).removeprefix("ollama/")
     snippet_block = "\n".join(
-        f"[{s['source']}/{s['ref']}] {s['snippet'][:500]}"
+        f"[{s['source']}/{s['ref']}] {s['snippet'][:snippet_max_chars]}"
         for s in snippets if s.get('snippet')
     )
     instructions = extra_instructions or ""
-    from services.topic_ranking import _ollama_chat_json
     prompt = f"""Write a blog post on the topic: "{topic}" with this angle: "{angle}".
 
 {instructions}
@@ -1075,7 +1089,7 @@ Background context (cite where relevant):
 
 Return the full post body in Markdown.
 """
-    return await _ollama_chat_json(prompt, model="glm-4.7-5090:latest")
+    return await _ollama_chat_json(prompt, model=model)
 
 
 async def generate_with_outline(
@@ -1085,13 +1099,26 @@ async def generate_with_outline(
 
     Used by the STORY_SPINE writer mode after it preprocesses the top
     snippets into a {hook, what_happened, why_it_matters, ...} skeleton.
+
+    Per-snippet length cap and writer model are operator-tunable via the
+    ``writer_rag_context_snippet_max_chars`` and ``pipeline_writer_model``
+    app_settings.
     """
+    from services.site_config import site_config
+    from services.topic_ranking import _ollama_chat_json
+
+    snippet_max_chars = site_config.get_int(
+        "writer_rag_context_snippet_max_chars", 500,
+    )
+    model = (
+        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        or "glm-4.7-5090:latest"
+    ).removeprefix("ollama/")
     snippet_block = "\n".join(
-        f"[{s['source']}/{s['ref']}] {s['snippet'][:500]}"
+        f"[{s['source']}/{s['ref']}] {s['snippet'][:snippet_max_chars]}"
         for s in snippets if s.get('snippet')
     )
     outline_block = "\n".join(f"{k.replace('_',' ').title()}: {v}" for k, v in outline.items())
-    from services.topic_ranking import _ollama_chat_json
     prompt = f"""Expand the following outline into a full blog post.
 
 Topic: {topic}
@@ -1103,7 +1130,7 @@ Background snippets to draw on:
 
 Return the full post body in Markdown.
 """
-    return await _ollama_chat_json(prompt, model="glm-4.7-5090:latest")
+    return await _ollama_chat_json(prompt, model=model)
 
 
 if __name__ == "__main__":

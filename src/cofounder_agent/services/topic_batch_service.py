@@ -129,7 +129,14 @@ class TopicBatchService:
                 internal + carried["internal"],
             )
 
-            top10 = pool_external[:5] + pool_internal[:5]
+            # Top-N per pool is operator-tunable via niche_top_n_per_pool
+            # (migration 0119). Default 5 matches the prior hardcoded
+            # slice — pre-rank + LLM-final-score then sees up to 2*N
+            # candidates. Same key gates the slice inside
+            # _embed_and_pre_rank so both ends of the funnel stay consistent.
+            from services.site_config import site_config
+            top_n = site_config.get_int("niche_top_n_per_pool", 5)
+            top10 = pool_external[:top_n] + pool_internal[:top_n]
 
             # Lazy import so tests can patch services.topic_ranking.llm_final_score.
             from services.topic_ranking import llm_final_score
@@ -226,10 +233,13 @@ class TopicBatchService:
         ):
             return []
         from services.internal_rag_source import InternalRagSource
+        from services.site_config import site_config
 
         rag = InternalRagSource(self._pool)
-        # Per spec: per-kind limit 4, all 6 valid kinds except git_commit
-        # (which still needs git-log plumbing).
+        # Per spec: per-kind limit defaults to 4, all 6 valid kinds
+        # except git_commit (which still needs git-log plumbing).
+        # Operator-tunable via niche_internal_rag_per_kind_limit
+        # (migration 0119).
         kinds = [
             "claude_session",
             "brain_knowledge",
@@ -238,19 +248,32 @@ class TopicBatchService:
             "memory_file",
             "post_history",
         ]
+        per_kind_limit = site_config.get_int(
+            "niche_internal_rag_per_kind_limit", 4,
+        )
         cands = await rag.generate(
-            niche_id=niche.id, source_kinds=kinds, per_kind_limit=4,
+            niche_id=niche.id,
+            source_kinds=kinds,
+            per_kind_limit=per_kind_limit,
         )
         return [{"kind": "internal", "data": c} for c in cands]
 
     async def _load_carry_forward(self, niche_id: UUID) -> dict[str, list]:
         """Pull unpicked candidates from the most recent resolved batch and
-        return them with ``decay_factor`` pre-multiplied by 0.7.
+        return them with ``decay_factor`` pre-multiplied by the configured
+        carry-forward decay factor (default 0.7).
 
-        The 0.7 decay multiplier on each carry-forward implements the spec's
-        "older candidates lose weight" — by the third batch a candidate has
-        decayed to 0.7^3 ≈ 0.343 of its original score.
+        The decay multiplier on each carry-forward implements the spec's
+        "older candidates lose weight" — by the third batch a candidate
+        has decayed to factor^3 of its original score (0.7^3 ≈ 0.343 at
+        the default). Tunable via
+        ``niche_carry_forward_decay_factor`` (migration 0119).
         """
+        from services.site_config import site_config
+
+        decay = site_config.get_float(
+            "niche_carry_forward_decay_factor", 0.7,
+        )
         async with self._pool.acquire() as conn:
             ext = await conn.fetch(
                 """
@@ -278,11 +301,11 @@ class TopicBatchService:
             )
         return {
             "external": [
-                {"row": dict(r), "decay_factor": float(r["decay_factor"]) * 0.7}
+                {"row": dict(r), "decay_factor": float(r["decay_factor"]) * decay}
                 for r in ext
             ],
             "internal": [
-                {"row": dict(r), "decay_factor": float(r["decay_factor"]) * 0.7}
+                {"row": dict(r), "decay_factor": float(r["decay_factor"]) * decay}
                 for r in int_
             ],
         }
@@ -367,7 +390,11 @@ class TopicBatchService:
 
         ext_scored.sort(key=lambda c: -c.embedding_score)
         int_scored.sort(key=lambda c: -c.embedding_score)
-        return ext_scored[:5], int_scored[:5]
+        # Same niche_top_n_per_pool key the run_sweep funnel uses so the
+        # two ends of the pre-rank/final-score pipeline stay in lockstep.
+        from services.site_config import site_config
+        top_n = site_config.get_int("niche_top_n_per_pool", 5)
+        return ext_scored[:top_n], int_scored[:top_n]
 
     async def _write_batch(
         self,
@@ -390,7 +417,11 @@ class TopicBatchService:
         """
         internal_ids: set[str] = {str(sc.id) for sc in all_internal}
 
-        expires = datetime.now(timezone.utc) + timedelta(days=7)
+        # Batch lifetime — operator-tunable via niche_batch_expires_days
+        # (migration 0119). Default 7 matches the prior hardcoded value.
+        from services.site_config import site_config
+        expires_days = site_config.get_int("niche_batch_expires_days", 7)
+        expires = datetime.now(timezone.utc) + timedelta(days=expires_days)
         rank_in_batch = 0
 
         async with self._pool.acquire() as conn:

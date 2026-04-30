@@ -17,6 +17,10 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
+# In-code fallback used only when the
+# ``writer_rag_citation_budget_min_citations`` app_setting is missing
+# (e.g. test fixtures that don't seed site_config). Operators tune the
+# real value via migration 0119.
 DEFAULT_MIN_CITATIONS = 3
 
 
@@ -26,11 +30,19 @@ async def run(
     angle: str,
     niche_id: UUID | str,
     pool,
-    min_citations: int = DEFAULT_MIN_CITATIONS,
+    min_citations: int | None = None,
     **kw: Any,
 ) -> dict[str, Any]:
+    from services.site_config import site_config
     from services.topic_ranking import embed_text
 
+    if min_citations is None:
+        min_citations = site_config.get_int(
+            "writer_rag_citation_budget_min_citations", DEFAULT_MIN_CITATIONS,
+        )
+    snippet_limit = site_config.get_int(
+        "writer_rag_citation_budget_snippet_limit", 12,
+    )
     qvec = await embed_text(f"{topic} — {angle}")
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -38,9 +50,10 @@ async def run(
             SELECT source_table, source_id, text_preview
               FROM embeddings
              ORDER BY embedding <=> $1::vector
-             LIMIT 12
+             LIMIT $2
             """,
             qvec,
+            snippet_limit,
         )
     snippets = [
         {"source": r["source_table"], "ref": str(r["source_id"]), "snippet": r["text_preview"]}

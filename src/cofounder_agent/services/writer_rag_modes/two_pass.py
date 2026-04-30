@@ -58,8 +58,27 @@ _POOL_REGISTRY: dict[str, Any] = {}
 logger = get_logger(__name__)
 
 
-_MAX_REVISION_LOOPS = 3
 _NEED_PATTERN = re.compile(r"\[EXTERNAL_NEEDED:\s*([^\]]+)\]")
+
+# Hard fallback used when ``writer_rag_two_pass_max_revision_loops`` is
+# unset (test fixtures that don't seed site_config). Operators tune the
+# real value via migration 0119. ``_MAX_REVISION_LOOPS`` is kept as a
+# module constant so existing imports / tests that reference the symbol
+# keep importing cleanly, but the live cap is resolved via
+# ``_resolve_max_revision_loops()`` so a runtime app_settings change
+# takes effect on the next graph invocation without a restart.
+_MAX_REVISION_LOOPS = 3
+
+
+def _resolve_max_revision_loops() -> int:
+    try:
+        from services.site_config import site_config
+
+        return site_config.get_int(
+            "writer_rag_two_pass_max_revision_loops", _MAX_REVISION_LOOPS,
+        )
+    except Exception:
+        return _MAX_REVISION_LOOPS
 
 
 class _State(TypedDict, total=False):
@@ -82,7 +101,12 @@ class _State(TypedDict, total=False):
 # -- nodes --
 
 async def _embed_and_fetch_snippets(state: _State) -> _State:
+    from services.site_config import site_config
     from services.topic_ranking import embed_text
+
+    snippet_limit = site_config.get_int(
+        "writer_rag_two_pass_snippet_limit", 20,
+    )
     qvec = await embed_text(f"{state['topic']} — {state['angle']}")
     pool = _POOL_REGISTRY[state["pool_thread"]]
     async with pool.acquire() as conn:
@@ -91,9 +115,10 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
             SELECT source_table, source_id, text_preview
               FROM embeddings
              ORDER BY embedding <=> $1::vector
-             LIMIT 20
+             LIMIT $2
             """,
             qvec,
+            snippet_limit,
         )
     snippets = [{"source": r["source_table"], "ref": str(r["source_id"]),
                  "snippet": r["text_preview"]} for r in rows]
@@ -123,16 +148,27 @@ def _detect_needs(state: _State) -> _State:
 
 async def _research_each(state: _State) -> _State:
     from services.research_service import research_topic
+    from services.site_config import site_config
+
+    max_sources = site_config.get_int(
+        "writer_rag_two_pass_research_max_sources", 2,
+    )
     results = []
     for need in state["needs"]:
-        aug = await research_topic(query=need, max_sources=2)
+        aug = await research_topic(query=need, max_sources=max_sources)
         results.append({"need": need, "research": aug})
     cumulative = list(state.get("external_lookups") or []) + results
     return {**state, "research_results": results, "external_lookups": cumulative}
 
 
 async def _revise_node(state: _State) -> _State:
+    from services.site_config import site_config
     from services.topic_ranking import _ollama_chat_json
+
+    model = (
+        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        or "glm-4.7-5090:latest"
+    ).removeprefix("ollama/")
     aug_block = "\n\n".join(
         f"[EXTERNAL_NEEDED: {r['need']}] → {r['research']}"
         for r in state["research_results"]
@@ -148,7 +184,7 @@ Original draft:
 External facts:
 {aug_block}
 """
-    new_draft = await _ollama_chat_json(revise_prompt, model="glm-4.7-5090:latest")
+    new_draft = await _ollama_chat_json(revise_prompt, model=model)
     return {**state, "draft": new_draft, "revision_loops": state.get("revision_loops", 0) + 1}
 
 
@@ -163,7 +199,7 @@ def _needs_or_done(state: _State) -> str:
     hit the loop cap, else END (or _done_capped if we're capping)."""
     if not state.get("needs"):
         return END
-    if state.get("revision_loops", 0) >= _MAX_REVISION_LOOPS:
+    if state.get("revision_loops", 0) >= _resolve_max_revision_loops():
         return "_done_capped"
     return "research_each"
 

@@ -42,8 +42,18 @@ class InternalRagSource:
         *,
         niche_id: UUID | str,
         source_kinds: list[str],
-        per_kind_limit: int = 5,
+        per_kind_limit: int | None = None,
     ) -> list[InternalCandidate]:
+        # ``per_kind_limit`` defaults to the operator-tunable
+        # ``niche_internal_rag_per_kind_limit`` app_setting (migration
+        # 0119). The prior hardcoded default was 5; falls back to that
+        # when site_config isn't loaded so unit-test fixtures still work.
+        if per_kind_limit is None:
+            from services.site_config import site_config
+
+            per_kind_limit = site_config.get_int(
+                "niche_internal_rag_per_kind_limit", 5,
+            )
         bad = [s for s in source_kinds if s not in VALID_SOURCE_KINDS]
         if bad:
             raise ValueError(f"unknown source_kinds: {bad}")
@@ -107,9 +117,25 @@ class InternalRagSource:
         return [(str(r["source_id"]), r["text_preview"] or "", []) for r in rows]
 
     async def _distill_topic_angle(self, snippets: list[str]) -> tuple[str, str]:
-        """Run a small LLM call to extract a proposed (topic, angle) from raw snippets."""
+        """Run a small LLM call to extract a proposed (topic, angle) from raw snippets.
+
+        Snippet truncation length and the LLM model are operator-tunable
+        via ``niche_internal_rag_snippet_max_chars`` and the existing
+        ``pipeline_writer_model`` app_setting (the latter is the codebase-
+        wide writer-model lookup; matches the pattern in
+        ``ai_content_generator.py``).
+        """
+        from services.site_config import site_config
         from services.topic_ranking import _ollama_chat_json
-        joined = "\n---\n".join(s[:600] for s in snippets if s)
+
+        snippet_max = site_config.get_int(
+            "niche_internal_rag_snippet_max_chars", 600,
+        )
+        model = (
+            site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+            or "glm-4.7-5090:latest"
+        ).removeprefix("ollama/")
+        joined = "\n---\n".join(s[:snippet_max] for s in snippets if s)
         prompt = f"""Read the snippets from an AI-operated content business's internal records.
 Extract a proposed blog post topic and the unique angle (the "why this matters / what we learned").
 
@@ -118,7 +144,7 @@ Snippets:
 
 Return STRICT JSON: {{"topic": "<short title>", "angle": "<one-sentence framing>"}}.
 """
-        raw = await _ollama_chat_json(prompt, model="glm-4.7-5090:latest")
+        raw = await _ollama_chat_json(prompt, model=model)
         import json
         parsed = json.loads(raw)
         return parsed.get("topic", "Untitled"), parsed.get("angle", "")

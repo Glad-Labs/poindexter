@@ -294,7 +294,7 @@ class ResearchService:
 # ---------------------------------------------------------------------------
 
 
-async def research_topic(query: str, max_sources: int = 2) -> str:
+async def research_topic(query: str, max_sources: int | None = None) -> str:
     """Shim for the TWO_PASS writer mode's external fact-augmentation step.
 
     Wraps ``ResearchService.build_context`` so the writer can ask for a
@@ -304,14 +304,27 @@ async def research_topic(query: str, max_sources: int = 2) -> str:
     lookup and the free DuckDuckGo web search, which are the two sources
     that matter for filling [EXTERNAL_NEEDED] markers.
 
-    ``max_sources`` is currently advisory: the underlying ``build_context``
-    method caps internally (5 web results, 8 references). Plumbing a true
-    cap requires refactoring ``ResearchService.build_context`` itself,
-    which is out of scope for Task 14.
+    ``max_sources`` defaults to the
+    ``writer_rag_research_topic_max_sources`` app_setting (migration
+    0119); falls back to 2 (the prior hardcoded default) when
+    site_config isn't loaded. Currently advisory — the underlying
+    ``build_context`` method caps internally (5 web results, 8
+    references). Plumbing a true cap requires refactoring
+    ``ResearchService.build_context`` itself, which is out of scope for
+    Task 14.
 
     Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
     Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 14)
     """
+    if max_sources is None:
+        try:
+            from services.site_config import site_config
+
+            max_sources = site_config.get_int(
+                "writer_rag_research_topic_max_sources", 2,
+            )
+        except Exception:
+            max_sources = 2
     try:
         svc = ResearchService(pool=None)
         ctx = await svc.build_context(query)

@@ -19,7 +19,19 @@ logger = get_logger(__name__)
 
 
 async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
+    from services.site_config import site_config
     from services.topic_ranking import _ollama_chat_json, embed_text
+
+    snippet_limit = site_config.get_int(
+        "writer_rag_story_spine_snippet_limit", 15,
+    )
+    snippet_max_chars = site_config.get_int(
+        "writer_rag_story_spine_snippet_max_chars", 600,
+    )
+    model = (
+        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        or "glm-4.7-5090:latest"
+    ).removeprefix("ollama/")
 
     qvec = await embed_text(f"{topic} — {angle}")
     async with pool.acquire() as conn:
@@ -28,17 +40,20 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
             SELECT source_table, source_id, text_preview
               FROM embeddings
              ORDER BY embedding <=> $1::vector
-             LIMIT 15
+             LIMIT $2
             """,
             qvec,
+            snippet_limit,
         )
     snippets = [
         {"source": r["source_table"], "ref": str(r["source_id"]), "snippet": r["text_preview"]}
         for r in rows
     ]
-    snippet_block = "\n---\n".join(s["snippet"][:600] for s in snippets if s["snippet"])
+    snippet_block = "\n---\n".join(
+        s["snippet"][:snippet_max_chars] for s in snippets if s["snippet"]
+    )
 
-    spine_prompt = f"""Read these 15 snippets from an AI-operated content business's records.
+    spine_prompt = f"""Read these {snippet_limit} snippets from an AI-operated content business's records.
 Produce a structured outline for a blog post about: "{topic}" (angle: "{angle}").
 
 Outline format (return JSON):
@@ -53,7 +68,7 @@ Outline format (return JSON):
 Snippets:
 {snippet_block}
 """
-    spine_raw = await _ollama_chat_json(spine_prompt, model="glm-4.7-5090:latest")
+    spine_raw = await _ollama_chat_json(spine_prompt, model=model)
     spine = json.loads(spine_raw)
 
     from services.ai_content_generator import generate_with_outline
