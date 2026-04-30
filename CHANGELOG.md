@@ -42,6 +42,18 @@
 
 ---
 
+## [1.1.0](https://github.com/Glad-Labs/poindexter/compare/v1.0.1...v1.1.0) (2026-04-30)
+
+
+### Features
+
+* **brain:** per-probe child spans inside run_health_probes (closes [#176](https://github.com/Glad-Labs/poindexter/issues/176)) ([#291](https://github.com/Glad-Labs/poindexter/issues/291)) ([4a6a6e3](https://github.com/Glad-Labs/poindexter/commit/4a6a6e32cd52703ce6194ba16ff6202224a49fbe))
+
+
+### Bug Fixes
+
+* **tests:** two test-suite bugs from 2026-04-27 audit (closes [#170](https://github.com/Glad-Labs/poindexter/issues/170), [#171](https://github.com/Glad-Labs/poindexter/issues/171)) ([#290](https://github.com/Glad-Labs/poindexter/issues/290)) ([fc8875e](https://github.com/Glad-Labs/poindexter/commit/fc8875e78a431064f2895594fffdeb67f5545f05))
+
 ## [1.0.1](https://github.com/Glad-Labs/poindexter/compare/v1.0.0...v1.0.1) (2026-04-30)
 
 
