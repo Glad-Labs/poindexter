@@ -221,7 +221,7 @@ target any S3-compatible provider (R2, S3, B2, MinIO). The old
 - **Async-everywhere:** FastAPI uses async/await throughout; never block the event loop
 - **Brain architecture:** System modeled after human brain anatomy — each region independent
 - **PostgreSQL as spinal cord:** All components communicate through shared DB tables, not imports
-- **Anti-hallucination:** Three layers — prompts, LLM QA, programmatic validator
+- **Anti-hallucination:** Three layers — prompts, LLM QA, programmatic validator. See [`docs/architecture/anti-hallucination.md`](docs/architecture/anti-hallucination.md) for the full layer-by-layer breakdown (rule groups, reviewers, prompts, aggregation logic).
 - **Config in DB, not code:** `app_settings` table replaces environment variables AND hardcoded constants. If you write a literal in production code, ask "could a customer tune this?" — if yes, it goes in app_settings.
 - **Fail loud + notify:** Missing required config triggers `notify_operator()` (Telegram → Discord → alerts.log) then `sys.exit(2)`. No silent fallbacks.
 - **Self-healing:** Brain daemon monitors and restarts services autonomously
