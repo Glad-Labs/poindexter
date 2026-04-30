@@ -20,8 +20,14 @@ rule_files:
 
 scrape_configs:
   - job_name: nvidia-smi
+    # Scrape via docker DNS (container-to-container) instead of
+    # host.docker.internal — Windows Docker Desktop occasionally fails
+    # the gateway resolution for sibling containers, producing intermittent
+    # "connection refused" up=0 reports even when the exporter is healthy
+    # on the host's port-forward. The gpu-exporter container is on the
+    # same compose network so the service name resolves directly.
     static_configs:
-      - targets: ["host.docker.internal:9835"]
+      - targets: ["gpu-exporter:9835"]
 
   # Canonical worker metrics — exposition produced via prometheus_client.
   # Gitea #269 folded the legacy /api/prometheus exposer into this path;
