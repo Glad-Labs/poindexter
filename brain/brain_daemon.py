@@ -50,6 +50,19 @@ try:
 except ImportError:
     _HAS_BUSINESS_PROBES = False
 
+try:
+    # GH#214 — operator-facing URL/IP drift probe. Runs on its own 15-min
+    # cadence, gated inside maybe_run_operator_url_probe so we don't need
+    # a separate scheduler.
+    from operator_url_probe import maybe_run_operator_url_probe
+    _HAS_OPERATOR_URL_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified for tests
+    try:
+        from brain.operator_url_probe import maybe_run_operator_url_probe
+        _HAS_OPERATOR_URL_PROBE = True
+    except ImportError:
+        _HAS_OPERATOR_URL_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1007,6 +1020,27 @@ async def run_cycle(pool):
             probe_results.update(biz_results)
         except Exception as e:
             logger.warning("[BRAIN] Business probes failed: %s", e)
+
+    # Operator URL/IP drift probe (#214). Internally gated to ~15 min so it
+    # doesn't run every 5-min cycle. Returns None when the gate skips, a
+    # summary dict on real runs.
+    if _HAS_OPERATOR_URL_PROBE:
+        try:
+            url_summary = await maybe_run_operator_url_probe(pool, notify_fn=None)
+            if url_summary is not None:
+                probe_results["operator_url_probe"] = {
+                    "ok": (
+                        url_summary.get("url_failures", 0) == 0
+                        and url_summary.get("tailscale_drift_count", 0) == 0
+                    ),
+                    "detail": (
+                        f"{url_summary.get('url_failures', 0)} URL failures, "
+                        f"{url_summary.get('tailscale_drift_count', 0)} drifted device(s)"
+                    ),
+                    "summary": url_summary,
+                }
+        except Exception as e:
+            logger.warning("[BRAIN] operator_url_probe failed: %s", e)
 
     all_issues = issues + ext_issues
 
