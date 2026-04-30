@@ -82,8 +82,8 @@ async def up(pool) -> None:
         for key, value, description in _SEEDS:
             result = await conn.execute(
                 """
-                INSERT INTO app_settings (key, value, description, is_active)
-                VALUES ($1, $2, $3, TRUE)
+                INSERT INTO app_settings (key, value, category, description, is_secret)
+                VALUES ($1, $2, 'content', $3, FALSE)
                 ON CONFLICT (key) DO NOTHING
                 """,
                 key, value, description,
