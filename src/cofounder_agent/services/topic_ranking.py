@@ -51,6 +51,13 @@ async def _embed_text_cached(text: str) -> list[float]:
     return await provider.embed(text, model="nomic-embed-text")
 
 
+async def embed_text(text: str) -> list[float]:
+    """Public embedding helper. Writer modes and the batch service import
+    this rather than reaching into ``_embed_text_cached`` directly.
+    """
+    return await _embed_text_cached(text)
+
+
 async def goal_vector_for(goal_type: str) -> list[float]:
     if goal_type in _GOAL_VEC_CACHE:
         return _GOAL_VEC_CACHE[goal_type]
