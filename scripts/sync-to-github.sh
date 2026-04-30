@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Sync to GitHub Public Repo
+# Sync to GitHub Public Repo (Glad-Labs/poindexter)
 #
-# Copies the current branch to GitHub, EXCLUDING private files:
-#   - web/public-site/ (branded frontend)
-#   - infrastructure/headscale/ (VPN config)
-#   - .env* (secrets)
+# Copies the current branch (full tree, lives on origin = glad-labs-stack)
+# to the public Glad-Labs/poindexter mirror, EXCLUDING all private files:
+# branded surfaces (web/public-site, web/storefront), operator MCP server,
+# premium dashboards, marketing materials, writing samples, secrets,
+# personal Claude config, internal docs, etc. — see filter list below.
+#
+# Workflow as of 2026-04-30 (post-gitea decommission):
+#   - Develop on local main; push to origin (glad-labs-stack/main)
+#   - Periodically run THIS script to refresh the public mirror
+#   - Public-only PRs (e.g. open-source contributions) can be opened
+#     directly against github/main without going through this script
 #
 # Usage: ./scripts/sync-to-github.sh
 # ==============================================================================
@@ -35,7 +42,7 @@ git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || t
 git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # private operator MCP server
 
 # === Private infrastructure (Matt's local setup, not useful publicly) ===
-git rm --cached --quiet .woodpecker.yml 2>/dev/null || true                  # internal Gitea CI config
+git rm --cached --quiet .woodpecker.yml 2>/dev/null || true                  # legacy Gitea CI config (unused post-decommission)
 git rm --cached --quiet scripts/migrate-poindexter-rename.sh 2>/dev/null || true  # one-shot rebrand script, specific to Matt's install
 
 # === Personal context (bank balance, memory paths, internal URLs) ===
@@ -53,7 +60,7 @@ git rm -r --cached --quiet .github/workflows-disabled/ 2>/dev/null || true
 git rm --cached --quiet .github/workflows/ci.yml 2>/dev/null || true          # Deploy runs from glad-labs-stack, not poindexter
 
 # === Operator-specific files (Glad Labs internal, not customer-facing) ===
-git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full stack with Gitea, pgAdmin, SDXL, etc.
+git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full local stack with pgAdmin, SDXL, etc.
 
 # === Operator OpenClaw skill toggles (private to Glad Labs install) ===
 git rm --cached --quiet skills/openclaw/gladlabs-config.json 2>/dev/null || true
@@ -72,7 +79,7 @@ git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2
 # emails; every operator should generate their own baseline anyway.
 git rm --cached --quiet .gitleaks-baseline.json 2>/dev/null || true
 
-# Commit the removal (temporary — never pushed to Gitea)
+# Commit the removal (temporary — only pushed to github, never to origin/glad-labs-stack)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
 
 # Force push this clean branch to GitHub as main

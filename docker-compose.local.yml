@@ -148,74 +148,19 @@ services:
         condition: service_healthy
 
   # ===========================================
-  # Gitea — self-hosted git (replaces GitHub)
+  # Gitea — DECOMMISSIONED 2026-04-30
   # ===========================================
-  gitea:
-    image: gitea/gitea:latest
-    container_name: gladlabs-gitea
-    restart: unless-stopped
-    # Operator-only: customers fork the public Poindexter repo on GitHub.
-    # Start explicitly: docker compose --profile operator up -d gitea
-    profiles: ["operator"]
-    ports:
-      - "3001:3000"
-      - "2222:22"
-    environment:
-      USER_UID: 1000
-      USER_GID: 1000
-      GITEA__database__DB_TYPE: postgres
-      GITEA__database__HOST: postgres-local:5432
-      GITEA__database__NAME: ${LOCAL_POSTGRES_DB:-poindexter_brain}
-      GITEA__database__USER: ${LOCAL_POSTGRES_USER:-poindexter}
-      GITEA__database__PASSWD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
-      GITEA__server__ROOT_URL: http://localhost:3001
-      # LOCAL_ROOT_URL is the URL Gitea advertises to internal callers
-      # (OAuth callbacks, CI link generation). Distinct from ROOT_URL which
-      # is the browser-facing UI URL. Setting both keeps internal and
-      # external URLs cleanly separated. Note: this does NOT redirect the
-      # Actions artifact upload endpoint — Gitea constructs that from
-      # setting.AppURL (= ROOT_URL), so actions/upload-artifact@v3 still
-      # hits localhost:3001 and fails from inside the runner's network
-      # namespace (Glad-Labs/poindexter#131). The workflow-level workaround
-      # lives in .gitea/workflows/security.yml.
-      GITEA__server__LOCAL_ROOT_URL: http://gitea:3000/
-      GITEA__server__SSH_DOMAIN: localhost
-      GITEA__server__SSH_PORT: 2222
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - gitea-data:/data
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/v1/version"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    depends_on:
-      postgres-local:
-        condition: service_healthy
-
-  # ===========================================
-  # Gitea Actions Runner — native CI (replaces Woodpecker)
-  # ===========================================
-  gitea-runner:
-    build:
-      context: ./infrastructure/gitea-runner
-    container_name: gladlabs-gitea-runner
-    restart: unless-stopped
-    # Operator-only: only runs alongside gitea
-    profiles: ["operator"]
-    environment:
-      GITEA_INSTANCE_URL: http://gitea:3000
-      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_TOKEN:-}
-      GITEA_RUNNER_NAME: local-runner
-      GITEA_RUNNER_LABELS: "ubuntu-latest:host"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - gitea-runner-data:/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      - gitea
+  # Self-hosted git was the source of truth from 2025-09 to 2026-04. Replaced
+  # by GitHub on 2026-04-30 — origin = Glad-Labs/glad-labs-stack (private,
+  # full tree), github = Glad-Labs/poindexter (public OSS subset, refreshed
+  # via scripts/sync-to-github.sh). All issues migrated, all branches deleted.
+  #
+  # Containers + named volumes (gitea-data, gitea-runner-data) preserved for
+  # ~1 week in case of recovery need; safe to `docker volume rm` after
+  # 2026-05-07.
+  #
+  # Service definitions removed; restore from git history if needed:
+  #   git log -- docker-compose.local.yml | grep gitea
 
   # ===========================================
   # Brain Daemon — standalone monitor, self-healer, knowledge graph
@@ -1039,6 +984,9 @@ volumes:
     name: gladlabs-postgres-local-data
   grafana-data:
     name: gladlabs-grafana-data
+  # Gitea volumes — service decommissioned 2026-04-30; volumes kept for
+  # ~1-week recovery window. Safe to remove after 2026-05-07:
+  #   docker volume rm gladlabs-gitea-data gladlabs-gitea-runner-data
   gitea-data:
     name: gladlabs-gitea-data
   gitea-runner-data:
