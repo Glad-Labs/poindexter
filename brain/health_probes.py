@@ -17,6 +17,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from typing import Any
 
 try:
     # When brain/ is on sys.path directly (container runtime), import bare.
@@ -27,6 +28,37 @@ except ImportError:
     from brain.docker_utils import localize_url, resolve_url
 
 logger = logging.getLogger("brain.probes")
+
+# OpenTelemetry is optional — health probes work with or without it.
+# When the opentelemetry SDK isn't installed, ``_tracer`` is a no-op
+# implementation that matches the real API's ``start_as_current_span``
+# contract. Same shape as src/cofounder_agent/services/llm_providers/dispatcher.py
+# so behavior stays uniform across the codebase.
+try:
+    from opentelemetry import trace as _otel_trace  # type: ignore[import-untyped]
+
+    _tracer = _otel_trace.get_tracer("poindexter.brain.probes")
+except ImportError:  # pragma: no cover - exercised in minimal dev envs
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _noop_span(_name: str, **_kwargs: Any):
+        class _NoopSpan:
+            def set_attribute(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+            def record_exception(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+            def set_status(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+        yield _NoopSpan()
+
+    class _NoopTracer:
+        start_as_current_span = staticmethod(_noop_span)
+
+    _tracer = _NoopTracer()
 
 # Bootstrap defaults — overridden from app_settings on first probe run.
 # localize_url rewrites `localhost` to `host.docker.internal` when running
@@ -1066,10 +1098,25 @@ async def run_health_probes(pool, notify_fn=None):
             continue
 
         _mark_run(name)
-        try:
-            result = await probe_fn(pool)
-        except Exception as e:
-            result = {"ok": False, "detail": f"probe crashed: {e}"}
+        # Per-probe child span — gives Tempo a flame-graph entry per probe so
+        # slow/failing probes are visible instead of aggregating under the
+        # parent run_health_probes span (issue #176).
+        with _tracer.start_as_current_span(
+            f"brain.probe.{name}",
+            attributes={"probe.name": name},
+        ) as span:
+            start = time.monotonic()
+            try:
+                try:
+                    result = await probe_fn(pool)
+                except Exception as e:
+                    result = {"ok": False, "detail": f"probe crashed: {e}"}
+                    span.record_exception(e)
+                span.set_attribute("probe.ok", bool(result.get("ok", False)))
+            finally:
+                span.set_attribute(
+                    "probe.duration_s", time.monotonic() - start,
+                )
 
         results[name] = result
         ok = result.get("ok", False)
