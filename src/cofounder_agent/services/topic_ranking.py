@@ -6,8 +6,6 @@ Spec §"Goal vectors", §"Discovery sweep" steps 4-5.
 from __future__ import annotations
 
 import math
-from functools import lru_cache
-from typing import Any
 
 from services.logger_config import get_logger
 from services.niche_service import NicheGoal
@@ -32,11 +30,25 @@ _GOAL_VEC_CACHE: dict[str, list[float]] = {}
 
 
 async def _embed_text_cached(text: str) -> list[float]:
-    """Embed via the existing service; the embedding service is responsible
-    for its own caching (or not). This indirection lets tests monkeypatch.
+    """Embed via the registered ollama_native provider.
+
+    The embedding service is responsible for its own caching (or not).
+    This indirection exists so tests can monkeypatch.
+
+    NB: The plan spec referenced ``from services.embedding_service import
+    embed_text`` but no such module-level helper exists — embeddings go
+    through the ``LLMProvider`` Protocol (matches the pattern in
+    ``services.publish_service`` etc.).
     """
-    from services.embedding_service import embed_text
-    return await embed_text(text)
+    from plugins.registry import get_llm_providers
+
+    providers = {p.name: p for p in get_llm_providers()}
+    provider = providers.get("ollama_native")
+    if provider is None:
+        raise RuntimeError(
+            "ollama_native provider not registered — cannot generate embeddings"
+        )
+    return await provider.embed(text, model="nomic-embed-text")
 
 
 async def goal_vector_for(goal_type: str) -> list[float]:
