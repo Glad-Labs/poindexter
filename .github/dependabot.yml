@@ -6,7 +6,7 @@ updates:
   # ────────────────────────────────────
   - package-ecosystem: 'github-actions'
     directory: '/'
-    target-branch: 'dev'
+    target-branch: 'main'
     schedule:
       interval: 'weekly'
       day: 'monday'
@@ -15,9 +15,9 @@ updates:
     pull-request-branch-name:
       separator: '/'
     reviewers:
-      - 'mattm'
+      - 'mattg-stack'
     assignees:
-      - 'mattm'
+      - 'mattg-stack'
     labels:
       - 'dependencies'
       - 'github-actions'
@@ -31,7 +31,7 @@ updates:
   # ────────────────────────────────────
   - package-ecosystem: 'npm'
     directory: '/'
-    target-branch: 'dev'
+    target-branch: 'main'
     schedule:
       interval: 'weekly'
       day: 'monday'
@@ -40,9 +40,9 @@ updates:
     pull-request-branch-name:
       separator: '/'
     reviewers:
-      - 'mattm'
+      - 'mattg-stack'
     assignees:
-      - 'mattm'
+      - 'mattg-stack'
     labels:
       - 'dependencies'
       - 'npm'
@@ -62,7 +62,7 @@ updates:
   # ────────────────────────────────────
   - package-ecosystem: 'pip'
     directory: '/src/cofounder_agent'
-    target-branch: 'dev'
+    target-branch: 'main'
     schedule:
       interval: 'weekly'
       day: 'monday'
@@ -71,9 +71,9 @@ updates:
     pull-request-branch-name:
       separator: '/'
     reviewers:
-      - 'mattm'
+      - 'mattg-stack'
     assignees:
-      - 'mattm'
+      - 'mattg-stack'
     labels:
       - 'dependencies'
       - 'python'
@@ -87,7 +87,7 @@ updates:
   # ────────────────────────────────────
   - package-ecosystem: 'docker'
     directory: '/'
-    target-branch: 'dev'
+    target-branch: 'main'
     schedule:
       interval: 'weekly'
       day: 'monday'
