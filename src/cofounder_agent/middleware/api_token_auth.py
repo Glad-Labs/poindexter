@@ -105,7 +105,9 @@ async def verify_api_token_optional(
     Used for public endpoints that optionally accept auth (e.g. list_posts
     shows drafts only when authenticated).
     """
-    api_token = site_config.get("api_token", "")
+    # See note on verify_api_token — sync .get() returns ciphertext for
+    # is_secret rows, so the comparison silently fails. Same fix here.
+    api_token = await site_config.get_secret("api_token", "")
     dev_mode = site_config.get("development_mode", "").lower() == "true"
 
     if not credentials:
