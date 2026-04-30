@@ -54,6 +54,9 @@ git rm --cached --quiet .github/workflows/ci.yml 2>/dev/null || true          # 
 
 # === Operator-specific files (Glad Labs internal, not customer-facing) ===
 git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full stack with Gitea, pgAdmin, SDXL, etc.
+
+# === Operator OpenClaw skill toggles (private to Glad Labs install) ===
+git rm --cached --quiet skills/openclaw/gladlabs-config.json 2>/dev/null || true
 git rm --cached --quiet .env.example 2>/dev/null || true                      # Legacy; customers use poindexter setup
 
 # === Premium Grafana dashboards (Seed Package — keep only pipeline-operations free) ===
