@@ -209,6 +209,226 @@ The error originates in the UMT5 text encoder forward pass.
 
 ---
 
+## Wan video pipeline silently produces a Pexels-only video (cold-load timeout)
+
+**Symptom.** A run of `scripts/run_video_pipeline_sample.py` finishes "successfully" — final MP4 lands in `~/.poindexter/generated-videos/` — but every scene visibly looks like Pexels stock footage. Wall clock matches a Pexels-only run (~5 min) instead of the expected ~12-42 min for Wan. `[Wan21Provider] inference server returned ...` errors do NOT appear; instead each scene logs an `httpx.ReadTimeout` or `httpx.ConnectTimeout` and the strategy falls through to the next provider.
+
+**Root cause.** `Wan21Provider` previously used `_HTTP_TIMEOUT = httpx.Timeout(300.0, connect=10.0)`. A first-call cold load (Hugging Face shard read off WSL2 disk into VRAM) plus 50-step diffusion on 5s @ 16 fps can run 8-10 min on a 5090. The 300 s ceiling fired ~5 min in, the dispatcher caught the exception, and the fall-through to SDXL/Pexels happened transparently for every scene.
+
+**Detection.**
+
+```bash
+# Look for ReadTimeout under Wan21Provider in worker logs:
+docker logs poindexter-worker 2>&1 | grep -E "Wan21Provider.*(Timeout|ReadTimeout|ConnectTimeout)"
+
+# Confirm each scene fell through (metadata.source != "wan2.1-1.3b"):
+SELECT slug, scene_index, metadata->>'source' AS provider
+FROM media_assets WHERE post_slug='<slug>' AND kind='video' ORDER BY scene_index;
+```
+
+**Fix.** Already applied in commit `427bed44` — `_HTTP_TIMEOUT` bumped to `httpx.Timeout(900.0, connect=10.0)` (15 min). If this regresses, set it back to 900 s. Per-`.post()` `timeout=300` arg in `_generate_to_path` was kept conservative for warm renders but the AsyncClient ceiling now tolerates one cold load per run.
+
+**Prevention.** Pre-warm before any Wan-bound run (see WSL restart entry above). Watch the `X-Elapsed-Seconds` header on successful 200 responses — anything > 180 s on a follow-up call indicates the model unloaded between scenes (idle timeout too short for the run length).
+
+---
+
+## Wan-server up, but pipeline wedges on first GPU stage ("Gaming/external workload detected")
+
+**Symptom.** `docker ps` shows `poindexter-wan-server` healthy. Worker pipeline starts, hits the first ollama-locked Stage (`script_for_video`, `tts_for_video`, or any blog QA stage) and logs:
+
+```
+[GPU] Gaming/external workload detected (util=100%) — pausing pipeline
+```
+
+…repeatedly, never recovering. No actual game running. Reproduces every time wan-server has the model resident in VRAM (~14 GB, idle).
+
+**Root cause.** `services/gpu_scheduler._wait_for_gaming_clear()` queries `nvidia_gpu_utilization_percent` from the `poindexter-gpu-exporter` Prometheus endpoint. Loaded sidecar VRAM looks identical to a third-party gaming workload from that metric's perspective. Wan-server's idle-keep timeout (900 s) was tuned long enough to span a 14-scene render — and that's exactly the window that trips the detector. See Glad-Labs/poindexter#144 for the full diagnosis.
+
+**Detection.**
+
+```bash
+# Is the Wan model actually resident?
+curl -s http://localhost:9840/health | jq '.status, .vram_used_mb'
+# status=="ready" and vram_used_mb>10000 → confirmed sidecar-VRAM contention
+
+# Confirm gpu_scheduler is the blocker:
+docker logs poindexter-worker 2>&1 | grep "Gaming/external workload"
+```
+
+**Fix.** Three options, in order of preference:
+
+1. **Set `gpu_gaming_detection_mode=off`** (the post-`c0c463c0` default). Trusts the in-process GPU lock + each sidecar's own VRAM management. Single command:
+
+   ```bash
+   poindexter settings set gpu_gaming_detection_mode off
+   ```
+
+2. **Pre-unload via the runner workaround** (commit `b83706f3`) — `POST /unload` to wan-server before the pipeline starts. Already wired into `scripts/run_video_pipeline_sample.py`; for ad-hoc triggers run:
+
+   ```bash
+   curl -X POST http://localhost:9840/unload
+   ```
+
+3. **Hard-stop wan-server** — `docker stop poindexter-wan-server` before any blog generation. Heavy-handed; only use when (1) and (2) aren't options.
+
+**Prevention.** Leave `gpu_gaming_detection_mode` on `off` (default) unless you actively game on the box, in which case use `manual` and flip `pipeline_paused_for_gaming` around game sessions. The legacy `auto` threshold mode is preserved but now defaults to 90% (was 30%) so brief inference bursts don't trip it.
+
+**Related.** Glad-Labs/poindexter#144 (closed by `c0c463c0`); follow-up Glad-Labs/poindexter#160 (cooperative-unload protocol — still open).
+
+---
+
+## Wan-server returns 500 mid-render with `CUDA out of memory` at 1080p
+
+**Symptom.** Operator overrides `width`/`height` to 1280×720 or 1920×1080 (or duration > 10 s) on a `/generate` call; server logs:
+
+```
+[wan] generation failed
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate XX.XX GiB
+```
+
+Provider receives HTTP 500 with `detail="OutOfMemoryError: CUDA out of memory..."`. Subsequent calls at the **same** dimensions also fail until the pipeline is unloaded.
+
+**Root cause.** Wan 2.1 1.3B's native res is 832×480 @ 16 fps for 5 s (~80 frames). Peak VRAM at native settings is ~14 GB; doubling pixel count or duration scales memory roughly linearly through the diffusion stack. On a 32 GB 5090 sharing with SDXL/Ollama, anything beyond ~960×540 / 8 s starts hitting OOM. The server enforces an upper-bound `_MAX_FRAMES = 240` (15 s @ 16 fps) but does NOT cap dimensions — the Pydantic model allows up to 1280×1280, which exceeds the model's safe envelope.
+
+**Detection.**
+
+```bash
+docker logs poindexter-wan-server 2>&1 | grep -E "OutOfMemoryError|CUDA out of memory"
+
+# What dims did the failed call request? Check the worker side:
+docker logs poindexter-worker 2>&1 | grep "Wan21Provider" | tail -20
+```
+
+**Fix.**
+
+1. **Force the unload to clear fragmented VRAM**:
+
+   ```bash
+   curl -X POST http://localhost:9840/unload
+   ```
+
+2. **Resubmit at native dims** — `width=832, height=480, duration_s=5, fps=16`. These are the `Wan21Provider` defaults; if the dispatcher overrode them, drop the override.
+
+3. If 1080p output is genuinely required, generate at 832×480 and upscale via ffmpeg / Real-ESRGAN as a separate stage rather than asking the diffusion model to do it.
+
+**Prevention.** Don't override `width`/`height`/`duration_s` above the defaults in `app_settings.plugin.video_provider.wan2.1-1.3b.*` or per-call config. PLACEHOLDER — needs operator confirmation: a server-side dimension cap (analogous to `_MAX_FRAMES`) would be a low-risk addition; until then, this is enforced by convention in the dispatcher.
+
+---
+
+## Wan-server enters DEGRADED state — `/generate` returns 503 forever
+
+**Symptom.** `curl http://localhost:9840/health` returns:
+
+```json
+{"status":"degraded","degraded":true,"degraded_reason":"<exc-type>: <message>",...}
+```
+
+Every `/generate` POST returns `503 server degraded: <reason>` immediately (no inference attempted). Container is "running" per `docker ps` but useless until restarted.
+
+**Root cause.** `_ensure_pipeline_loaded()` flips `state.degraded=True` whenever `WanPipeline.from_pretrained(...)` raises. Common triggers:
+
+- **Hugging Face cache corruption** — partial download from an interrupted `wsl --shutdown`. `degraded_reason` mentions `OSError`, `safetensors.SafetensorError`, or "file not found".
+- **CUDA not available at startup** — `degraded_reason="CUDA not available"` (set in `on_startup` before any `/generate`).
+- **First-load CUDA error** — Blackwell sm_120 mismatch (covered in the separate "no kernel image" entry above) leaves `degraded_reason` like `RuntimeError: CUDA error: ...`.
+- **Disk full** on the model cache mount.
+
+**Detection.**
+
+```bash
+curl -s http://localhost:9840/health | jq '.degraded, .degraded_reason'
+docker logs poindexter-wan-server 2>&1 | grep -E "WanPipeline load failed|degraded" | tail -10
+df -h ~/.cache/huggingface  # cache disk space
+```
+
+**Fix.** Degraded state is sticky for the life of the process — there's no `/reset` endpoint. To recover:
+
+1. **Restart the container**: `docker restart poindexter-wan-server`. On startup the model lazy-loads on first `/generate`; if the underlying cause is fixed, degraded clears automatically.
+2. **If cache corruption**: blow away the partial download and re-fetch on next start:
+
+   ```bash
+   rm -rf ~/.cache/huggingface/hub/models--Wan-AI--Wan2.1-T2V-1.3B-Diffusers
+   docker restart poindexter-wan-server
+   # First /generate after this will redownload (~10 GB, slow on a cold link)
+   ```
+
+3. **If disk full**: free space on the cache volume, then restart.
+
+**Prevention.** PLACEHOLDER — needs operator confirmation: ideally `/health` reporting `degraded=true` would alert via Telegram/Discord, but no such alert rule exists yet. Add one: `wan_server_degraded_alert_enabled=true` and a Grafana rule firing when the `/health` probe shows `degraded=true` for > 5 min.
+
+---
+
+## `poindexter-wan-server` container restart-loops every ~30 seconds
+
+**Symptom.** `docker ps` shows the container repeatedly transitioning Up → Restarting. `docker logs poindexter-wan-server -f` shows the server starting, sometimes printing "Wan server starting; GPU=...", then exiting. Healthcheck never goes green.
+
+**Root cause.** Most common causes (in observed-frequency order):
+
+1. **Healthcheck failing during cold load** — first `/generate` hasn't completed yet, but `wget http://localhost:9840/health` should still return 200 since `/health` is non-blocking. If healthcheck is failing it's either uvicorn never started (Python import error) or the container's port mapping is broken.
+2. **Python import-time crash** — `diffusers` / `torch` / `transformers` version skew after a base-image bump that didn't cleanly re-pin the pip layers. Logs show a traceback before the FastAPI startup banner.
+3. **GPU driver mismatch** — `torch.cuda.is_available()` raises rather than returning False (driver too old for CUDA 12.8). Look for `CUDA driver version is insufficient` in stderr.
+4. **OOM-kill at load** — the container hit the host's `--memory` limit (if set) during model load. `dmesg | grep -i oom` on the host shows the kill.
+
+**Detection.**
+
+```bash
+# Is the loop happening?
+docker ps --filter name=poindexter-wan-server --format "{{.Status}}"
+
+# Catch the crash output before next restart:
+docker logs poindexter-wan-server --tail 100 2>&1
+
+# Healthcheck history:
+docker inspect poindexter-wan-server --format '{{json .State.Health}}' | jq
+```
+
+**Fix.**
+
+1. **Stop the loop first** so logs are readable: `docker stop poindexter-wan-server`.
+2. Fix root cause based on traceback:
+   - Import error → `docker compose build --no-cache wan-server` to rebuild pip layers from `Dockerfile.wan`.
+   - Driver mismatch → update host NVIDIA driver (must support CUDA 12.8+; 555.85 or later on Windows).
+   - OOM-kill → drop or raise the container memory limit in `docker-compose.local.yml`.
+   - Healthcheck false-positive → confirm port 9840 isn't being used by another process: `Get-NetTCPConnection -LocalPort 9840` (PowerShell).
+3. Restart: `docker compose up -d wan-server`.
+
+**Prevention.** Pin `diffusers`, `transformers`, `torch` versions in `scripts/Dockerfile.wan` once the working set is identified (current pins are `>=` ranges). Add `start_period: 600s` to the healthcheck so a long cold load doesn't count failures during model boot.
+
+---
+
+## Wan model unloads mid-render between scenes (idle-timeout edge case)
+
+**Symptom.** A long pipeline run (e.g. 14-scene long-form video) takes radically longer than expected. First scene completes in ~3 min (warm), scene 2 starts and the worker logs show another full ~8-10 min cold-load before the second `/generate` returns. Repeats per scene. Wall clock balloons from ~42 min to ~2.5 h.
+
+**Root cause.** The idle-unload background task in `wan-server.py` (`idle_unloader`) compares `time.time() - state.last_used` to `IDLE_TIMEOUT_S` every 30 s. `state.last_used` is updated on `/generate` **completion**, not start. If the worker spends > `IDLE_TIMEOUT_S` between completing scene N and starting scene N+1 (e.g. doing TTS, scene-stitch prep, or waiting on the GPU lock for SDXL), the model gets unloaded and the next scene pays full cold-load cost. With `IDLE_TIMEOUT_S=120` (the in-code default) this triggers constantly; with `WAN_IDLE_TIMEOUT_S=900` (the compose-file override) it only triggers on long inter-scene gaps.
+
+**Detection.**
+
+```bash
+# Look for unload events between scenes:
+docker logs poindexter-wan-server 2>&1 | grep -E "Unloading WanPipeline|Wan 2.1 1.3B ready"
+# Pattern "Unloading... ready... Unloading... ready..." across a single pipeline run = repeated cold loads.
+
+# Confirm the configured idle timeout matches expectation:
+curl -s http://localhost:9840/health | jq '.idle_timeout_s'
+```
+
+**Fix.** No mid-run recovery — the cold-load cost is already paid. To prevent the next run from doing the same:
+
+1. **Bump `WAN_IDLE_TIMEOUT_S`** in `docker-compose.local.yml` to span the longest expected inter-scene gap. Current value is 900 s (15 min); raise to 1800 s for very long runs. Restart wan-server to pick up the env change.
+
+   ```bash
+   # Edit docker-compose.local.yml (WAN_IDLE_TIMEOUT_S: "1800") then:
+   docker compose up -d wan-server
+   ```
+
+2. **Pre-warm before each scene** — in the worker, hit `/health` (cheap, doesn't block GPU lock) before each `/generate` to confirm `status=="ready"`. PLACEHOLDER — needs operator confirmation: not currently implemented; would require a Stage-level pre-flight check.
+
+**Prevention.** Treat `WAN_IDLE_TIMEOUT_S` as a runbook-tuned value, not a default. Rule of thumb: `idle_timeout_s >= max(inter_scene_gap_s) * 1.5`. Track via the `Unloading WanPipeline` log line frequency — if it appears more than once per pipeline run, the timeout is too short.
+
+**Related.** This is the same setting tension flagged in the GPU-contention entry above — long timeout helps render throughput, hurts GPU sharing with ollama/SDXL. The current `gpu_gaming_detection_mode=off` default makes the long-timeout side of the trade-off safe.
+
+---
+
 ## OpenClaw MCP tools fail — "tool execution failed" from Discord
 
 **Symptom.** Using `#reject_post` or other MCP tools from Discord via OpenClaw reports success in the chat message but the action didn't actually happen (e.g., tasks still show `awaiting_approval` in the DB). The LLM fabricates a success response.
