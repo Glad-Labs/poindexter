@@ -15,8 +15,8 @@ scripts/run.sh "task_id" "reason"
 
 ## Parameters
 
-- task_id (required): The ID of the task to reject
-- reason (optional): Explanation for the rejection
+- **task_id** (string, required): The ID of the task to reject. Accepts a full UUID, a numeric legacy ID, or a short UUID prefix of 6 or more characters.
+- **reason** (string, optional): Explanation for the rejection, captured on the task record.
 
 ## Output
 
