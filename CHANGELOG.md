@@ -45,6 +45,13 @@
 
 ---
 
+## [1.2.0](https://github.com/Glad-Labs/poindexter/compare/v1.1.0...v1.2.0) (2026-04-30)
+
+
+### Features
+
+* **config:** migrate 5 env-vars to app_settings (closes [#175](https://github.com/Glad-Labs/poindexter/issues/175)) ([#300](https://github.com/Glad-Labs/poindexter/issues/300)) ([2aa3d8d](https://github.com/Glad-Labs/poindexter/commit/2aa3d8dc9c1824cd32295d0ef15a5a9c0bb0a96c))
+
 ## [1.1.0](https://github.com/Glad-Labs/poindexter/compare/v1.0.1...v1.1.0) (2026-04-30)
 
 
