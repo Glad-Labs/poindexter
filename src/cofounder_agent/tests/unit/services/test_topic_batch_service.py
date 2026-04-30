@@ -8,6 +8,8 @@ defined in ``tests/unit/conftest.py``. Skipped automatically when no live
 Postgres DSN is reachable.
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from services.niche_service import NicheService, NicheGoal, NicheSource
@@ -195,3 +197,209 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
             n.id,
         )
     assert open_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Operator-interaction tests (Task 7)
+# ---------------------------------------------------------------------------
+#
+# These tests don't exercise run_sweep — they seed a batch + candidates
+# directly via SQL so each test isolates the operator method under
+# test (show / rank / edit / resolve / reject). The seed helper returns
+# (niche, batch_id, ext_ids, int_ids).
+
+
+async def _seed_batch_with_mixed_candidates(
+    db_pool, *, slug: str, n_external: int = 2, n_internal: int = 3,
+):
+    """Insert a niche + an open batch + N external + M internal candidates.
+
+    Returns (niche, batch_id, [external candidate ids], [internal candidate ids]).
+
+    Scores are assigned descending starting at 90 so an unranked
+    show_batch sort-by-effective-score is deterministic.
+    """
+    nsvc = NicheService(db_pool)
+    niche = await nsvc.create(slug=slug, name=slug.title(), batch_size=5)
+    await nsvc.set_goals(niche.id, [NicheGoal("TRAFFIC", 100)])
+    await nsvc.set_sources(
+        niche.id, [NicheSource("internal_rag", enabled=True, weight_pct=100)],
+    )
+
+    expires = datetime.now(timezone.utc) + timedelta(days=7)
+    ext_ids: list[str] = []
+    int_ids: list[str] = []
+    async with db_pool.acquire() as conn:
+        batch_row = await conn.fetchrow(
+            "INSERT INTO topic_batches (niche_id, status, expires_at) "
+            "VALUES ($1, 'open', $2) RETURNING id",
+            niche.id, expires,
+        )
+        batch_id = batch_row["id"]
+
+        rank = 0
+        # External candidates first.
+        for i in range(n_external):
+            rank += 1
+            row = await conn.fetchrow(
+                """
+                INSERT INTO topic_candidates
+                  (batch_id, niche_id, source_name, source_ref, title, summary,
+                   score, score_breakdown, rank_in_batch, decay_factor)
+                VALUES ($1, $2, 'external', $3, $4, $5, $6, '{}'::jsonb, $7, 1.0)
+                RETURNING id
+                """,
+                batch_id, niche.id, f"ext-ref-{i}",
+                f"External Topic {i}", f"External summary {i}",
+                90 - rank, rank,
+            )
+            ext_ids.append(str(row["id"]))
+
+        # Internal candidates next.
+        for i in range(n_internal):
+            rank += 1
+            row = await conn.fetchrow(
+                """
+                INSERT INTO internal_topic_candidates
+                  (batch_id, niche_id, source_kind, primary_ref,
+                   supporting_refs, distilled_topic, distilled_angle,
+                   score, score_breakdown, rank_in_batch, decay_factor)
+                VALUES ($1, $2, 'claude_session', $3, '[]'::jsonb, $4, $5,
+                        $6, '{}'::jsonb, $7, 1.0)
+                RETURNING id
+                """,
+                batch_id, niche.id, f"int-ref-{i}",
+                f"Internal Topic {i}", f"Internal angle {i}",
+                90 - rank, rank,
+            )
+            int_ids.append(str(row["id"]))
+
+    return niche, batch_id, ext_ids, int_ids
+
+
+async def test_show_batch_returns_unified_ranked_view(db_pool):
+    """show_batch merges external + internal candidates into a single
+    list ordered by effective_score (= score * decay_factor) desc."""
+    niche, batch_id, ext_ids, int_ids = await _seed_batch_with_mixed_candidates(
+        db_pool, slug="show-batch-niche", n_external=2, n_internal=3,
+    )
+
+    svc = TopicBatchService(db_pool)
+    view = await svc.show_batch(batch_id=batch_id)
+
+    assert view.id == batch_id
+    assert view.status == "open"
+    assert view.picked_candidate_id is None
+    assert len(view.candidates) == 5
+    # Mixed kinds present.
+    kinds = {c.kind for c in view.candidates}
+    assert kinds == {"external", "internal"}
+    # Sorted by effective_score desc.
+    scores = [c.effective_score for c in view.candidates]
+    assert scores == sorted(scores, reverse=True)
+    # Every candidate has an effective_score == score * decay_factor.
+    for c in view.candidates:
+        assert c.effective_score == pytest.approx(c.score * c.decay_factor)
+
+
+async def test_rank_batch_records_operator_order(db_pool):
+    """rank_batch should set operator_rank by 1-based position in the
+    provided list, transparently spanning both candidate tables."""
+    niche, batch_id, ext_ids, int_ids = await _seed_batch_with_mixed_candidates(
+        db_pool, slug="rank-batch-niche", n_external=2, n_internal=3,
+    )
+    # Interleave external + internal ids so the test exercises the
+    # external-first-then-internal fallback.
+    ordered = [int_ids[2], ext_ids[0], int_ids[0], ext_ids[1], int_ids[1]]
+
+    svc = TopicBatchService(db_pool)
+    await svc.rank_batch(batch_id=batch_id, ordered_candidate_ids=ordered)
+
+    view = await svc.show_batch(batch_id=batch_id)
+    ranked = sorted(
+        [c for c in view.candidates if c.operator_rank is not None],
+        key=lambda c: c.operator_rank,
+    )
+    assert [c.id for c in ranked] == ordered
+
+
+async def test_edit_winner_sets_operator_edit_fields(db_pool):
+    """edit_winner updates the operator_edited_topic / angle on the
+    rank-1 candidate, regardless of which table it lives in."""
+    niche, batch_id, ext_ids, int_ids = await _seed_batch_with_mixed_candidates(
+        db_pool, slug="edit-winner-niche", n_external=2, n_internal=3,
+    )
+    # Make an INTERNAL candidate the winner so we exercise the fallback.
+    ordered = [int_ids[0], ext_ids[0], int_ids[1], ext_ids[1], int_ids[2]]
+    svc = TopicBatchService(db_pool)
+    await svc.rank_batch(batch_id=batch_id, ordered_candidate_ids=ordered)
+
+    await svc.edit_winner(
+        batch_id=batch_id, topic="Operator-Edited Title", angle="Operator angle",
+    )
+
+    view = await svc.show_batch(batch_id=batch_id)
+    winner = next(c for c in view.candidates if c.operator_rank == 1)
+    assert winner.id == int_ids[0]
+    assert winner.operator_edited_topic == "Operator-Edited Title"
+    assert winner.operator_edited_angle == "Operator angle"
+
+
+async def test_resolve_batch_advances_winner_and_marks_resolved(db_pool, monkeypatch):
+    """resolve_batch hands the winner off to the pipeline + flips
+    status to resolved + records picked_candidate_id."""
+    niche, batch_id, ext_ids, int_ids = await _seed_batch_with_mixed_candidates(
+        db_pool, slug="resolve-batch-niche", n_external=2, n_internal=3,
+    )
+    ordered = [ext_ids[0], int_ids[0], ext_ids[1], int_ids[1], int_ids[2]]
+    svc = TopicBatchService(db_pool)
+    await svc.rank_batch(batch_id=batch_id, ordered_candidate_ids=ordered)
+
+    handoff_calls: list[tuple[str, str, str]] = []
+
+    async def fake_handoff(self, candidate, niche, handoff_batch_id):
+        # CRITICAL: signature carries batch_id explicitly so the
+        # content_tasks row's topic_batch_id provenance points at the
+        # batch, not the candidate. Plan body had the wrong variable
+        # threaded through; this fake captures it so the test asserts
+        # we wired the right value.
+        handoff_calls.append(
+            (candidate.id, niche.slug, str(handoff_batch_id)),
+        )
+
+    monkeypatch.setattr(
+        "services.topic_batch_service.TopicBatchService._handoff_to_pipeline",
+        fake_handoff,
+    )
+
+    await svc.resolve_batch(batch_id=batch_id)
+
+    view = await svc.show_batch(batch_id=batch_id)
+    assert view.status == "resolved"
+    assert view.picked_candidate_id is not None
+    assert str(view.picked_candidate_id) == ext_ids[0]
+    assert len(handoff_calls) == 1
+    assert handoff_calls[0] == (ext_ids[0], niche.slug, str(batch_id))
+
+
+async def test_reject_batch_marks_expired_and_can_re_discover(db_pool):
+    """reject_batch flips the batch to expired + frees up the
+    one-open-batch-per-niche slot for a future sweep."""
+    niche, batch_id, ext_ids, int_ids = await _seed_batch_with_mixed_candidates(
+        db_pool, slug="reject-batch-niche", n_external=2, n_internal=3,
+    )
+    svc = TopicBatchService(db_pool)
+    await svc.reject_batch(batch_id=batch_id, reason="none of these")
+
+    view = await svc.show_batch(batch_id=batch_id)
+    assert view.status == "expired"
+
+    # One-open-batch-per-niche slot freed: a new open batch row may now
+    # be inserted without violating uq_one_open_batch_per_niche.
+    async with db_pool.acquire() as conn:
+        new_batch_row = await conn.fetchrow(
+            "INSERT INTO topic_batches (niche_id, status, expires_at) "
+            "VALUES ($1, 'open', NOW() + INTERVAL '7 days') RETURNING id",
+            niche.id,
+        )
+    assert new_batch_row is not None
