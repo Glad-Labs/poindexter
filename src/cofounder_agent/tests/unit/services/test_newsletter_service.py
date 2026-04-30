@@ -87,6 +87,7 @@ class TestSendNewsletterDisabled:
             mock_cfg.get_bool.return_value = False
             mock_cfg.get.return_value = ""
             mock_cfg.get_int.return_value = 50
+            mock_cfg.get_secret = AsyncMock(return_value="")
             result = await send_post_newsletter(pool, "Title", "Excerpt", "slug")
         assert result["skipped_reason"] == "disabled"
 
@@ -102,9 +103,10 @@ class TestSendNewsletterDisabled:
                 "resend_api_key": "",
                 "smtp_host": "",
                 "smtp_user": "",
-                "smtp_password": "",
             }.get(k, d)
             mock_cfg.get_int.return_value = 50
+            # smtp_password is now a secret — fetched via the async path.
+            mock_cfg.get_secret = AsyncMock(return_value="")
             result = await send_post_newsletter(pool, "T", "E", "s")
         assert result["skipped_reason"] == "no_api_key"
 
@@ -136,13 +138,14 @@ class TestSendNewsletterSuccess:
                 "resend_api_key": "re_test_key",
                 "smtp_host": "",
                 "smtp_user": "",
-                "smtp_password": "",
             }.get(k, d)
             mock_cfg.get_int.side_effect = lambda k, d=0: {
                 "smtp_port": 587,
                 "newsletter_batch_size": 50,
                 "newsletter_batch_delay_seconds": 0,
             }.get(k, d)
+            # smtp_password is now a secret — fetched via the async path.
+            mock_cfg.get_secret = AsyncMock(return_value="")
 
             with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
                 mock_send.return_value = True
@@ -178,6 +181,7 @@ class TestSendNewsletterSuccess:
                 "newsletter_batch_size": 50,
                 "newsletter_batch_delay_seconds": 0,
             }.get(k, d)
+            mock_cfg.get_secret = AsyncMock(return_value="")
 
             send_results = [True, False, True]
             with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
@@ -206,6 +210,7 @@ class TestSendNewsletterSuccess:
                 "newsletter_batch_size": 50,
                 "newsletter_batch_delay_seconds": 0,
             }.get(k, d)
+            mock_cfg.get_secret = AsyncMock(return_value="")
 
             result = await send_post_newsletter(pool, "T", "E", "s")
 
@@ -425,6 +430,7 @@ class TestSendNewsletterSmtpProvider:
                 "smtp_host": "",  # missing
             }.get(k, d)
             mock_cfg.get_int.side_effect = lambda k, d=0: d
+            mock_cfg.get_secret = AsyncMock(return_value="")
 
             result = await send_post_newsletter(pool, "T", "E", "s")
 
@@ -453,9 +459,10 @@ class TestSendNewsletterSmtpProvider:
                 "newsletter_from_email": "from@x.com",
                 "newsletter_from_name": "Test",
                 "smtp_user": "user",
-                "smtp_password": "pass",
             }.get(k, d)
             mock_cfg.get_int.side_effect = lambda k, d=0: d
+            # smtp_password is now a secret — fetched via the async path.
+            mock_cfg.get_secret = AsyncMock(return_value="pass")
             mock_smtp.return_value = True
             mock_resend.return_value = True
 

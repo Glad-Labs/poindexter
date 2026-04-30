@@ -32,8 +32,14 @@ def _site_url() -> str:
     return site_config.require("site_url")
 
 
-def _cfg() -> dict:
-    """Load newsletter config from DB."""
+async def _cfg() -> dict:
+    """Load newsletter config from DB.
+
+    ``smtp_password`` (and ``resend_api_key``) are ``is_secret=true`` rows
+    after migration 0121 — they're filtered out of the in-memory cache,
+    so they MUST be fetched via the async ``get_secret`` path. See
+    Glad-Labs/poindexter#221 for the schema flip.
+    """
     from services.site_config import site_config
 
     return {
@@ -45,7 +51,7 @@ def _cfg() -> dict:
         "smtp_host": site_config.get("smtp_host", ""),
         "smtp_port": site_config.get_int("smtp_port", 587),
         "smtp_user": site_config.get("smtp_user", ""),
-        "smtp_password": site_config.get("smtp_password", ""),
+        "smtp_password": await site_config.get_secret("smtp_password", ""),
         "smtp_use_tls": site_config.get_bool("smtp_use_tls", True),
         "batch_size": site_config.get_int("newsletter_batch_size", 50),
         "batch_delay": site_config.get_int("newsletter_batch_delay_seconds", 2),
@@ -182,7 +188,7 @@ async def send_post_newsletter(
     Returns:
         dict with sent, failed, skipped counts
     """
-    cfg = _cfg()
+    cfg = await _cfg()
     result = {"sent": 0, "failed": 0, "skipped": 0, "total_subscribers": 0}
 
     if not cfg["enabled"]:
