@@ -282,6 +282,26 @@ Existing topic_proposals data: there shouldn't be much in flight (Matt's been re
 - [ ] Glad Labs writer in TWO_PASS mode produces a draft whose first pass cites ≥3 internal sources before the external augmentation pass.
 - [ ] All existing pipeline stages (research → QA → SEO → finalize) still run unchanged downstream of the new topic flow.
 
+## OSS leverage decisions
+
+Audit added 2026-04-30 after Matt asked which existing stack pieces this work should lean on (the project already runs Langfuse, Prefect 3, pgvector, plus has Ragas in-tree, and Issues #199/#202/#209 track candidate adoptions of LiteLLM / Langfuse experiments / LangGraph).
+
+**Adopting in this spec:**
+
+- **LangGraph** — for the TWO_PASS writer mode only. Two-pass flow is a real state machine (draft → detect [EXTERNAL_NEEDED] markers → research each → revise, with conditional re-entry if revision surfaces new gaps), and operator-interrupt checkpointing gives us "batch sits awaiting operator for days, resumes cleanly" for free. Future agent-y additions (auto-researcher, draft critic loop) become natural extensions of the same graph. Not used for the simpler writer modes (TOPIC_ONLY, CITATION_BUDGET, STORY_SPINE — single-pass, no branching) and not used for the discovery/ranking/batch flow (serial pipeline + DB CRUD, no LLM-driven decisions).
+
+**Mentioned in this spec, deferred to follow-up tasks:**
+
+- **Langfuse** — already deployed (5 containers running). Every LLM call we add (ranker, internal-RAG distiller, all 4 writer modes) should be wrapped in a Langfuse trace from day one. Free observability + the dataset accumulation lets us migrate to Langfuse Prompt Management (tune goal_descriptions + writer prompts without code changes) and Langfuse Experiments (A/B test writer modes against each other) in a follow-up. Tracked by issue #202.
+- **Ragas** — `services/ragas_eval.py` exists in-tree but isn't wired to the new code yet. The TWO_PASS writer is its bullseye use case: faithfulness (does the draft only assert things grounded in the snippets?), context precision (did we retrieve the right snippets?), context recall (did we miss obvious ones?). Add a Ragas evaluation step on every writer output as a follow-up; gate publishes on minimum scores once we calibrate.
+- **DeepEval GEval** — could replace the hand-rolled "LLM scores candidates against weighted goals" prompt in Task 4 with a battle-tested rubric framework. Worth migrating to in a follow-up once the v1 prompt's behavior is understood.
+- **LiteLLM** — Issue #199 wants the LLM-call layer migrated. New code in this PR uses direct httpx Ollama calls (consistent with the rest of the codebase) so we don't expand LiteLLM's scope mid-migration; when #199 lands, our new calls migrate alongside.
+
+**Skipped — would be over-engineering for v1:**
+
+- LangChain retrievers (we already have pgvector + embedding_service, adding LangChain just to wrap them is dependency tax)
+- Custom orchestration framework for discovery/ranking — Prefect 3 already runs the content pipeline; the new sweep can join the same flow registry without new tooling
+
 ## Open questions for the implementation plan
 
 These don't block the spec, but the plan should answer:
