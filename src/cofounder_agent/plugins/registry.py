@@ -54,10 +54,6 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "llm_providers": "poindexter.llm_providers",
     "topic_sources": "poindexter.topic_sources",
     "image_providers": "poindexter.image_providers",
-    "tts_providers": "poindexter.tts_providers",
-    "video_providers": "poindexter.video_providers",
-    "audio_gen_providers": "poindexter.audio_gen_providers",
-    "publish_adapters": "poindexter.publish_adapters",
 }
 
 
@@ -164,36 +160,6 @@ def get_image_providers() -> list[Any]:
     return list(_cached(ENTRY_POINT_GROUPS["image_providers"]))
 
 
-def get_tts_providers() -> list[Any]:
-    """Return all registered TTSProvider instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["tts_providers"]))
-
-
-def get_video_providers() -> list[Any]:
-    """Return all registered VideoProvider instances.
-
-    Mirrors :func:`get_image_providers`. Tracks GitHub #124 — Wan 2.1
-    T2V 1.3B as the first generation provider; the legacy Ken Burns
-    slideshow pipeline ships as a sibling ``compose`` provider so a
-    settings flip can swap engines without code changes.
-    """
-    return list(_cached(ENTRY_POINT_GROUPS["video_providers"]))
-def get_audio_gen_providers() -> list[Any]:
-    """Return all registered AudioGenProvider instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["audio_gen_providers"]))
-
-
-def get_publish_adapters() -> list[Any]:
-    """Return all registered PublishAdapter instances.
-
-    Tracks Glad-Labs/poindexter#143 (video pipeline upload Stage) and
-    Glad-Labs/poindexter#40 (OAuth seed flow). Adapters ship inert
-    until the operator opts in — the registry just discovers them; per-
-    adapter ``enabled`` + secret gating is each adapter's discipline.
-    """
-    return list(_cached(ENTRY_POINT_GROUPS["publish_adapters"]))
-
-
 # ---------------------------------------------------------------------------
 # Core sample plugins — registered imperatively as a workaround for this
 # project's poetry packaging config (see pyproject.toml note). Third-party
@@ -203,48 +169,93 @@ def get_publish_adapters() -> list[Any]:
 
 
 def get_core_samples() -> dict[str, list[Any]]:
-    """Discover the bundled SAMPLE plugins.
+    """Discover sample plugins shipped under ``plugins.samples.*``.
 
-    History note (gh#152): this function used to also load every
-    *production* plugin imperatively because the worker container's
-    Dockerfile did ``poetry install --no-root`` — which means
-    poindexter-backend wasn't installed as a package, so its
-    ``[tool.poetry.plugins."poindexter.*"]`` entry_points blocks
-    were never registered in dist-info. The fallback was a hand-
-    maintained ``_SAMPLES`` list inside this function that mirrored
-    pyproject.toml. Adding a new plugin meant editing two files in
-    sync, and forgetting one was a silent failure (caught + fixed
-    in commit 5e421c6d for three jobs that were missing for days).
+    Imports each sample module + instantiates its plugin class. Returns
+    a dict keyed by plugin type (``"taps"`` / ``"probes"`` / ``"jobs"`` /
+    etc.) so callers that want to merge core samples with entry_point-
+    discovered third-party plugins can do so cleanly.
 
-    The proper fix shipped in gh#152: Dockerfile.worker now runs
-    ``pip install --no-deps .`` after copying source, which creates
-    the dist-info entry_points and lets ``importlib.metadata`` find
-    them. ``pyproject.toml`` is the single source of truth.
-
-    What this function still loads
-    ------------------------------
-
-    Three bundled SAMPLE plugins under ``plugins/samples/``. They're
-    test artifacts that prove each Protocol family loads correctly:
-    ``HelloTap``, ``DatabaseProbe``, ``NoopJob``. They're useful for
-    the integration test suite and as worked examples for plugin
-    authors, so they remain discoverable even in dev environments
-    where ``pip install .`` hasn't run.
-
-    Returns a dict keyed by plugin type so callers that want to merge
-    samples with entry_point-discovered plugins can do so cleanly.
-    Import failures are logged + skipped (same policy as
-    :func:`_load_group`).
+    Import failures are logged + skipped per the same policy as
+    ``_load_group()``.
     """
     samples: dict[str, list[Any]] = {k: [] for k in ENTRY_POINT_GROUPS}
 
     _SAMPLES: list[tuple[str, str, str]] = [
         # (plugin_type, module_path, class_name)
-        # Bundled samples only — production plugins come from
-        # pyproject.toml via setuptools entry_points (gh#152).
         ("taps", "plugins.samples.hello_tap", "HelloTap"),
         ("probes", "plugins.samples.database_probe", "DatabaseProbe"),
         ("jobs", "plugins.samples.noop_job", "NoopJob"),
+        # Core Taps — same imperative load path as samples. Keeps them
+        # discoverable in-container without relying on a `pip install .`
+        # of poindexter-backend itself (tracked as packaging follow-up).
+        ("taps", "services.taps.memory", "MemoryFilesTap"),
+        ("taps", "services.taps.published_posts", "PostsTap"),
+        ("taps", "services.taps.audit", "AuditTap"),
+        ("taps", "services.taps.brain_knowledge", "BrainKnowledgeTap"),
+        ("taps", "services.taps.brain_decisions", "BrainDecisionsTap"),
+        ("taps", "services.taps.gitea_issues", "GiteaIssuesTap"),
+        ("taps", "services.taps.claude_code_sessions", "ClaudeCodeSessionsTap"),
+        # Core Jobs — apscheduler-driven housekeeping. Ship as imperative
+        # loads until the poetry packaging issue is resolved.
+        ("jobs", "services.jobs.sync_page_views", "SyncPageViewsJob"),
+        ("jobs", "services.jobs.expire_stale_approvals", "ExpireStaleApprovalsJob"),
+        ("jobs", "services.jobs.db_backup", "DbBackupJob"),
+        ("jobs", "services.jobs.render_prometheus_rules", "RenderPrometheusRulesJob"),
+        ("jobs", "services.jobs.postgres_vacuum", "PostgresVacuumJob"),
+        ("jobs", "services.jobs.check_published_links", "CheckPublishedLinksJob"),
+        ("jobs", "services.jobs.flag_missing_seo", "FlagMissingSeoJob"),
+        ("jobs", "services.jobs.detect_duplicate_posts", "DetectDuplicatePostsJob"),
+        ("jobs", "services.jobs.audit_published_quality", "AuditPublishedQualityJob"),
+        ("jobs", "services.jobs.fix_broken_internal_links", "FixBrokenInternalLinksJob"),
+        ("jobs", "services.jobs.fix_broken_external_links", "FixBrokenExternalLinksJob"),
+        ("jobs", "services.jobs.fix_uncategorized_posts", "FixUncategorizedPostsJob"),
+        ("jobs", "services.jobs.tune_publish_threshold", "TunePublishThresholdJob"),
+        ("jobs", "services.jobs.verify_published_posts", "VerifyPublishedPostsJob"),
+        ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
+        ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
+        # ("jobs", "services.jobs.sync_shared_context", "SyncSharedContextJob"),
+        # ^ Disabled 2026-04-21: scripts/sync-shared-context.py doesn't exist
+        # in the tree. Job was failing every 30 min with ENOENT. The shared-
+        # context export path was never ported after IdleWorker removal.
+        # Re-enable when (and if) the script lands.
+        ("jobs", "services.jobs.auto_embed_posts", "AutoEmbedPostsJob"),
+        ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
+        # ReloadSiteConfigJob — every-minute refresh of the in-memory
+        # site_config cache so SQL/UI edits to app_settings take effect
+        # without a container restart (gitea#280).
+        ("jobs", "services.jobs.reload_site_config", "ReloadSiteConfigJob"),
+        ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
+        ("jobs", "services.jobs.sync_newsletter_subscribers", "SyncNewsletterSubscribersJob"),
+        # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
+        # pgvector-knowledge / codebase-scan / web-search migrate later.
+        ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
+        ("topic_sources", "services.topic_sources.devto", "DevtoSource"),
+        ("topic_sources", "services.topic_sources.web_search", "WebSearchSource"),
+        ("topic_sources", "services.topic_sources.knowledge", "KnowledgeSource"),
+        ("topic_sources", "services.topic_sources.codebase", "CodebaseSource"),
+        # Core ImageProviders — Phase G migration. Pexels first (search);
+        # SDXL generation provider lands in a follow-up slice.
+        ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
+        ("image_providers", "services.image_providers.sdxl", "SdxlProvider"),
+        ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
+        # Core LLM providers.
+        ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
+        ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
+        # Core Stages (Phase E migration — one per file, unblocks tearing
+        # down content_router_service.py over a handful of commits).
+        ("stages", "services.stages.verify_task", "VerifyTaskStage"),
+        ("stages", "services.stages.generate_content", "GenerateContentStage"),
+        ("stages", "services.stages.writer_self_review", "WriterSelfReviewStage"),
+        ("stages", "services.stages.quality_evaluation", "QualityEvaluationStage"),
+        ("stages", "services.stages.url_validation", "UrlValidationStage"),
+        ("stages", "services.stages.replace_inline_images", "ReplaceInlineImagesStage"),
+        ("stages", "services.stages.source_featured_image", "SourceFeaturedImageStage"),
+        ("stages", "services.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),
+        ("stages", "services.stages.generate_media_scripts", "GenerateMediaScriptsStage"),
+        ("stages", "services.stages.capture_training_data", "CaptureTrainingDataStage"),
+        ("stages", "services.stages.finalize_task", "FinalizeTaskStage"),
+        ("stages", "services.stages.cross_model_qa", "CrossModelQAStage"),
     ]
 
     for plugin_type, module_path, class_name in _SAMPLES:

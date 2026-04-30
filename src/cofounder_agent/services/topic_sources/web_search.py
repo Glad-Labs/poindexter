@@ -50,7 +50,6 @@ class WebSearchSource:
 
         # Lazy import so test environments that don't have the full
         # web_research dep chain installed can still import this module.
-        from services.site_config import SiteConfig
         from services.topic_discovery import CATEGORY_SEARCHES
         from services.web_research import WebResearcher
 
@@ -65,13 +64,7 @@ class WebSearchSource:
         )
         target_categories = target_categories[:max_cats]
 
-        # Phase H (GH#95): WebResearcher requires site_config. The
-        # TopicSource plugin interface doesn't yet thread site_config
-        # through `extract()`, so we construct a stand-alone SiteConfig
-        # that reads env vars / falls through to the hardcoded defaults
-        # for the handful of web_research_* tunables. Migrate this when
-        # the topic_sources plugin interface grows a ctx kwarg.
-        researcher = WebResearcher(site_config=SiteConfig())
+        researcher = WebResearcher()
 
         topics: list[DiscoveredTopic] = []
         for cat in target_categories:

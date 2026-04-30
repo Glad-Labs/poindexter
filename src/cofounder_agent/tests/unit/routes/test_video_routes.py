@@ -12,22 +12,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routes.video_routes import _rfc2822, router
-from services.site_config import SiteConfig
-from utils.route_utils import get_site_config_dependency
-
-# Phase H cleanup: module-level site_config singleton is gone. Tests
-# construct their own SiteConfig with the keys the route handlers
-# inspect, so assertions against brand fields stay deterministic.
-_seeded_sc = SiteConfig(
-    initial_config={
-        "site_name": "Test Brand",
-        "site_url": "https://test-site.example.com",
-        "site_domain": "test-site.example.com",
-        "video_feed_name": "Test Video",
-        "company_name": "Test Company",
-        "tagline": "Testing, testing, 1, 2, 3.",
-    }
-)
 
 # ---------------------------------------------------------------------------
 # Test app
@@ -37,10 +21,6 @@ _seeded_sc = SiteConfig(
 def _build_app():
     app = FastAPI()
     app.include_router(router)
-    # Phase H (GH#95): strict DI — supply the conftest-seeded SiteConfig
-    # (video_feed_name="Test Video", etc.) so route assertions against
-    # brand-identity fields keep matching without needing a live DB load.
-    app.dependency_overrides[get_site_config_dependency] = lambda: _seeded_sc
     return app
 
 
@@ -185,10 +165,6 @@ class TestGenerateVideo:
         test_app = FastAPI()
         test_app.include_router(router)
         test_app.dependency_overrides[verify_api_token] = lambda: None
-        # Phase H (GH#95): strict DI for site_config.
-        test_app.dependency_overrides[get_site_config_dependency] = (
-            lambda: _seeded_sc
-        )
         return TestClient(test_app, raise_server_exceptions=False)
 
     @patch("utils.route_utils.get_services")

@@ -203,21 +203,8 @@ async def _store_document(mem: Any, pool: Any, doc: Any) -> str:
     return "embedded"
 
 
-async def run_tap(
-    tap: Any, pool: Any, mem: Any, *, site_config: Any = None,
-) -> TapStats:
-    """Run one Tap end-to-end, returning a stats summary.
-
-    Args:
-        tap: Tap plugin instance.
-        pool: asyncpg pool.
-        mem: MemoryClient for embeddings.
-        site_config: SiteConfig instance seeded into ``tap_config["_site_config"]``
-            so Taps can read config without importing a module-level
-            singleton. Accepts ``None`` for callers that genuinely have no
-            site_config context (one-shot scripts); Taps that need it are
-            responsible for raising when it's unset.
-    """
+async def run_tap(tap: Any, pool: Any, mem: Any) -> TapStats:
+    """Run one Tap end-to-end, returning a stats summary."""
     import time
 
     stats = TapStats(name=getattr(tap, "name", type(tap).__name__))
@@ -229,17 +216,9 @@ async def run_tap(
         logger.info("Tap %s disabled; skipping", stats.name)
         return stats
 
-    # Phase H (GH#95): site_config is passed in, not imported from a
-    # module-level singleton. The reserved ``_site_config`` key in the
-    # per-invocation config dict is under the leading-underscore
-    # namespace so it can't collide with user-supplied app_settings keys.
-    tap_config: dict[str, Any] = dict(cfg.config)
-    if "_site_config" not in tap_config:
-        tap_config["_site_config"] = site_config
-
     start = time.monotonic()
     try:
-        async for doc in tap.extract(pool, tap_config):
+        async for doc in tap.extract(pool, cfg.config):
             try:
                 outcome = await _store_document(mem, pool, doc)
             except Exception as e:
@@ -262,22 +241,13 @@ async def run_tap(
     return stats
 
 
-async def run_all(
-    pool: Any, mem: Any, *, site_config: Any = None,
-) -> RunSummary:
+async def run_all(pool: Any, mem: Any) -> RunSummary:
     """Run every registered Tap in sequence and return an aggregated summary.
 
     Taps run sequentially (not in parallel) because they all share the
     same DB pool + Ollama endpoint; parallelism would mostly fight for
     the same resources. A future optimization can group by cost
     (network-bound taps can interleave with DB-bound taps).
-
-    Args:
-        pool: asyncpg pool.
-        mem: MemoryClient for embeddings.
-        site_config: SiteConfig instance. Optional — one-shot scripts
-            (``scripts/auto-embed.py``) may construct the runner without
-            one. Threaded through to Taps via the tap_config dict.
     """
     import time
 
@@ -296,7 +266,7 @@ async def run_all(
         all_taps.append(tap)
 
     for tap in all_taps:
-        stats = await run_tap(tap, pool, mem, site_config=site_config)
+        stats = await run_tap(tap, pool, mem)
         summary.taps.append(stats)
         summary.total_embedded += stats.embedded
         summary.total_skipped += stats.skipped

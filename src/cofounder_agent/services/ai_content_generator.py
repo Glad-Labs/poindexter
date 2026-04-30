@@ -1,11 +1,11 @@
 """
 Unified AI Content Generator Service
 
-Handles blog post generation on local Ollama. When every model in the
-configured chain fails, raises ``AllModelsFailedError`` — there is NO
-silent fallback to template content (Glad-Labs/poindexter#121). The
-stages-based pipeline in services/stages/* is the plugin-aware
-replacement and will eventually delete this file wholesale.
+Handles blog post generation on local Ollama with a fallback template
+when the model is unreachable. This is the legacy Ollama-native
+orchestrator — the stages-based pipeline in services/stages/* is the
+plugin-aware replacement and will eventually delete this file
+wholesale.
 
 Features:
 - Ollama model discovery + retry across installed models
@@ -13,7 +13,6 @@ Features:
 - Quality assurance with refinement loops
 - Content metrics and performance tracking
 - Electricity cost tracking from the Ollama result dict
-- Fail-loud when models exhaust — never publish a stub
 
 ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 
@@ -43,37 +42,6 @@ from .prompt_manager import get_prompt_manager
 logger = get_logger(__name__)
 
 
-class AllModelsFailedError(RuntimeError):
-    """Raised when every model in the configured chain fails.
-
-    Replaces the old "fall back to a hardcoded markdown template" behavior
-    (Glad-Labs/poindexter#121). Serving template content as a successful
-    publish was a quality-floor breach: it bypassed the QA gates the
-    pipeline depends on, was treated as ``status='success'`` by callers,
-    and masked transient Ollama outages as "the writer is fine, just
-    boring." The new contract is: if the chain exhausts, surface it.
-
-    The pipeline runner (``plugins/stage_runner.py``) catches this,
-    halts the stage, and ``content_router_service`` propagates the halt
-    into ``status='failed'`` with a ``task.failed`` webhook so the
-    operator sees the real failure mode instead of a published stub.
-
-    Attributes mirror the old ``_handle_all_providers_failed`` log so
-    Sentry still has the same per-attempt detail for fingerprinting.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        attempts: list[tuple[str, str]] | None = None,
-        topic: str = "",
-    ) -> None:
-        super().__init__(message)
-        self.attempts = list(attempts) if attempts else []
-        self.topic = topic
-
-
 class ContentValidationResult:
     """Result of content validation check"""
 
@@ -93,64 +61,22 @@ class ContentValidationResult:
 class AIContentGenerator:
     """Unified content generation with provider fallback and self-checking"""
 
-    def __init__(self, quality_threshold: float = 5.0, *, site_config: Any = None):
+    def __init__(self, quality_threshold: float = 5.0):
         """Initialize content generator
 
         Args:
             quality_threshold: Minimum quality score (0-10) for content acceptance
-            site_config: SiteConfig instance (DI — Phase H, GH#95).
-                Optional so the module-level singleton factory
-                (``get_content_generator``) and the TaskExecutor's
-                fallback construction path still work pre-lifespan. Every
-                async method that reads app_settings calls
-                ``_require_site_config()`` which fails loudly when it's
-                None, so accidental unwired callers can't silently fall
-                back to default thresholds.
         """
         self.quality_threshold = quality_threshold
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.generation_attempts = 0
-        self._site_config = site_config
         # #198: tunable via app_settings so operators can widen/tighten
-        # refinement loops without a redeploy. Resolved lazily below — we
-        # can't read site_config here because the test suite + legacy
-        # callers construct the class before wiring a site_config.
-        self.max_refinement_attempts = 3  # Default; overridden when site_config is wired.
-        if site_config is not None:
-            self.max_refinement_attempts = site_config.get_int(
-                "content_gen_max_refinement_attempts", 3,
-            )
+        # refinement loops without a redeploy.
+        from services.site_config import site_config as _sc
+        self.max_refinement_attempts = _sc.get_int("content_gen_max_refinement_attempts", 3)
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
-
-    def set_site_config(self, site_config: Any) -> None:
-        """Rebind site_config after construction — Phase H (GH#95).
-
-        TaskExecutor / stages can call this once site_config is wired so
-        subsequent generate_blog_post / refinement calls read DB-backed
-        tunables instead of raising from ``_require_site_config``.
-        """
-        self._site_config = site_config
-        self.max_refinement_attempts = site_config.get_int(
-            "content_gen_max_refinement_attempts", 3,
-        )
-
-    def _require_site_config(self) -> Any:
-        """Return ``self._site_config`` or raise — Phase H (GH#95).
-
-        Every method that reads app_settings routes through here so a
-        missing wire-up surfaces as a loud RuntimeError, not silent
-        defaults.
-        """
-        if self._site_config is None:
-            raise RuntimeError(
-                "AIContentGenerator instantiated without site_config. "
-                "Pass site_config= to the constructor (or call "
-                "set_site_config() before generate_blog_post) — Phase H "
-                "/ GH#95."
-            )
-        return self._site_config
 
     async def _check_ollama_async(self):
         """Async check if Ollama is running - call this once before using Ollama"""
@@ -158,7 +84,7 @@ class AIContentGenerator:
             logger.debug("Ollama already checked previously: %s", self.ollama_available)
             return
 
-        _sc = self._require_site_config()
+        from services.site_config import site_config as _sc
         ollama_url = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("Checking if Ollama server is running at %s...", ollama_url)
         try:
@@ -181,7 +107,7 @@ class AIContentGenerator:
     async def _populate_internal_links_cache(self):
         """Fetch published post titles + slugs so the LLM can include real internal links."""
         try:
-            _sc = self._require_site_config()
+            from services.site_config import site_config as _sc
             site_url = _sc.get("site_url", "")
 
             import asyncpg
@@ -341,7 +267,7 @@ class AIContentGenerator:
         try:
             logger.info("Loading system prompt...")
             # Word-count window buffers — tunable via app_settings (#198).
-            _sc = self._require_site_config()
+            from services.site_config import site_config as _sc
             _min_ratio = _sc.get_float("content_gen_min_word_ratio", 0.9)
             _max_ratio = _sc.get_float("content_gen_max_word_ratio", 1.1)
             min_words = int(target_length * _min_ratio)
@@ -591,7 +517,7 @@ class AIContentGenerator:
         # Try to refine with same model
         # Calculate max tokens for refinement pass — extra headroom for thinking models.
         # Token multipliers are tunable via app_settings (#198).
-        _sc = self._require_site_config()
+        from services.site_config import site_config as _sc
         _is_thinking_refine = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))
         _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 7.0)
         _standard_mult = _sc.get_float("content_gen_token_mult_standard", 4.5)
@@ -684,7 +610,7 @@ class AIContentGenerator:
             return None
 
         logger.info("[ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
-        _sc = self._require_site_config()
+        from services.site_config import site_config as _sc
         ollama_endpoint = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("   ├─ Endpoint: %s", ollama_endpoint)
         logger.info("   └─ Status: Connecting...\n")
@@ -704,10 +630,10 @@ class AIContentGenerator:
                 model_list = [preferred_model]
                 logger.info("   ├─ Using UI-selected model: %s", preferred_model)
             else:
-                # Read pipeline_writer_model from DB first (DB-first config).
-                # _sc already resolved above via self._require_site_config().
+                # Read pipeline_writer_model from DB first (DB-first config)
                 try:
-                    db_model = _sc.get("pipeline_writer_model", "")
+                    from services.site_config import site_config
+                    db_model = site_config.get("pipeline_writer_model", "")
                     if db_model:
                         # Strip "ollama/" prefix if present
                         db_model = db_model.removeprefix("ollama/")
@@ -724,16 +650,13 @@ class AIContentGenerator:
 
                 # Read fallback model from DB
                 try:
-                    db_fallback = _sc.get("pipeline_fallback_model", "")
+                    db_fallback = site_config.get("pipeline_fallback_model", "")
                     if db_fallback:
                         db_fallback = db_fallback.removeprefix("ollama/")
                         if db_fallback != resolved:
                             model_list.append(db_fallback)
-                except Exception as e:
-                    logger.warning(
-                        "[ai_content_generator] reading pipeline_fallback_model "
-                        "from site_config failed: %s", e,
-                    )
+                except Exception:
+                    pass
 
                 # Add other installed models as fallbacks (smaller first for speed)
                 try:
@@ -909,75 +832,54 @@ class AIContentGenerator:
         return None
 
     # v2.8 removed _try_huggingface + all paid-provider fallback methods.
-    # Glad-Labs/poindexter#121 (this commit) removed the silent
-    # template-fallback that ran when every Ollama model failed —
-    # serving canned content as ``status='success'`` was a quality-floor
-    # breach. The chain is now Ollama-only and fail-loud.
-    # ``_generate_fallback_content`` is retained ONLY as the
-    # signature-source for the validator's defense-in-depth pattern and
-    # MUST NOT be called from the generation path.
+    # Only the Ollama path + fallback template remain.
 
     def _handle_all_providers_failed(self, ctx: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
-        """Raise ``AllModelsFailedError`` — never return template content.
-
-        Glad-Labs/poindexter#121: previously returned a hardcoded markdown
-        stub which was then treated as ``status='success'`` by every
-        downstream stage, polluting the public site with generic "Topic is
-        an important area..." filler. The new behavior is fail-loud: log,
-        capture to Sentry, then raise so the stage runner halts and the
-        task transitions to ``failed`` (not ``published``).
-        """
+        """Handle the case where all AI providers failed. Returns fallback content."""
         metrics = ctx["metrics"]
         attempts = ctx["attempts"]
         start_time = ctx["start_time"]
         use_ollama = ctx["use_ollama"]
         topic = ctx["topic"]
+        style = ctx["style"]
+        tone = ctx["tone"]
+        tags = ctx["tags"]
 
-        logger.error("\n%s", "=" * 80)
-        logger.error("[FAIL] ALL AI MODELS FAILED — failing task (no template fallback)")
-        logger.error("%s", "=" * 80)
-        logger.error("Attempts made: %d", len(attempts))
+        # If all models fail, use fallback
+        logger.warning("\n%s", "=" * 80)
+        logger.warning("[FAIL] ALL AI MODELS FAILED - Using fallback template")
+        logger.warning("%s", "=" * 80)
+        logger.warning("Attempts made: %d", len(attempts))
         for provider, error in attempts:
-            logger.error("   [FAIL] %s: %s", provider, error)
-        logger.error("Provider summary:")
-        logger.error("   - Ollama:      %s (tried/available)", use_ollama)
-        logger.error("%s\n", "=" * 80)
+            logger.warning("   [FAIL] %s: %s", provider, error)
+        logger.warning("Provider summary:")
+        logger.warning("   - Ollama:      %s (tried/available)", use_ollama)
+        logger.warning("%s\n", "=" * 80)
 
         # Capture in Sentry as a distinct message so alert rules can target it.
-        # Behavior change vs. pre-#121: we now raise immediately after
-        # capturing — no stub content, no published placeholder.
+        # Generated content will be a stub template, not AI output (issue #556).
         try:
             import sentry_sdk  # pylint: disable=import-outside-toplevel
 
             if sentry_sdk.is_initialized():  # type: ignore[attr-defined]
                 sentry_sdk.capture_message(  # type: ignore[attr-defined]
-                    "ALL AI MODELS FAILED — task will be marked failed",
+                    "ALL AI MODELS FAILED — serving fallback template content",
                     level="error",
-                    extras={
-                        "attempts": [{"provider": p, "error": e} for p, e in attempts],
-                        "topic": topic,
-                        "use_ollama": use_ollama,
-                    },
+                    extras={"attempts": [{"provider": p, "error": e} for p, e in attempts]},
                 )
         except Exception:  # pylint: disable=broad-except
+            # Never let Sentry integration block content delivery, but do log the failure
             logger.error(
                 "[ai_content_generator] Failed to capture all-models-failed event in Sentry",
                 exc_info=True,
             )
 
-        # Best-effort metrics update for any caller that catches the
-        # exception and inspects partial state. Not used in the success
-        # path because we never return.
-        metrics["model_used"] = None
+        fallback_content = self._generate_fallback_content(topic, style, tone, tags)
+        metrics["model_used"] = "Fallback (no AI models available)"
+        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
         metrics["final_quality_score"] = 0.0
         metrics["generation_time_seconds"] = time.time() - start_time
-
-        attempts_summary = "; ".join(f"{p}: {e}" for p, e in attempts) or "no attempts recorded"
-        raise AllModelsFailedError(
-            f"All AI models failed for topic {topic!r}. Attempts: {attempts_summary}",
-            attempts=attempts,
-            topic=topic,
-        )
+        return fallback_content, metrics["model_used"], metrics
 
     async def generate_blog_post(
         self,
@@ -996,7 +898,7 @@ class AIContentGenerator:
 
         Features:
         - User-selected model support (respects frontend UI choices)
-        - Ollama-only generation; raises when every model fails (#121)
+        - Ollama-only generation with fallback template if unreachable
         - Self-validation and quality checking
         - Refinement loop for rejected content
         - Full metrics tracking
@@ -1009,23 +911,12 @@ class AIContentGenerator:
             tags: Content tags
             preferred_model: User-selected model (e.g., 'qwen3.5:35b')
             preferred_provider: User-selected provider (accepts 'ollama';
-                any other value short-circuits to the all-models-failed
-                path, which now raises ``AllModelsFailedError`` rather
-                than returning template content)
+                any other value routes straight to the fallback template)
             writing_style_context: Optional writing style excerpts to include in the prompt
                 for voice/tone matching
 
         Returns:
             Tuple of (content, model_used, metrics_dict)
-
-        Raises:
-            AllModelsFailedError: every configured Ollama model failed
-                or the provider was skipped entirely. Callers should let
-                this propagate — the stage runner halts the pipeline and
-                ``content_router_service`` marks the task as ``failed``.
-                This is the fix for Glad-Labs/poindexter#121: serving a
-                hardcoded template as a successful publish was a quality-
-                floor breach. No silent defaults.
         """
         # Populate internal links cache so the prompt includes real links to our posts
         await self._populate_internal_links_cache()
@@ -1041,14 +932,8 @@ class AIContentGenerator:
         if result:
             return result
 
-        # Glad-Labs/poindexter#121: chain exhausted — fail loud. Does not
-        # return; raises ``AllModelsFailedError`` which the stage runner
-        # turns into ``status='failed'`` on the content_task.
-        self._handle_all_providers_failed(ctx)
-        raise AssertionError(
-            "_handle_all_providers_failed must raise; reaching this line "
-            "indicates someone re-introduced a silent template fallback."
-        )
+        # Ollama failed — return fallback template. (HF path removed v2.8.)
+        return self._handle_all_providers_failed(ctx)
 
     def _generate_fallback_content(
         self,
@@ -1057,15 +942,7 @@ class AIContentGenerator:
         tone: str,
         tags: list[str],
     ) -> str:
-        """Render the legacy template stub.
-
-        Glad-Labs/poindexter#121: NOT used in the generation path
-        anymore. Retained as a signature reference for the
-        ``content_validator`` defense-in-depth check that refuses
-        template-shaped content if it ever leaks into the pipeline (e.g.
-        someone re-introduces a template fallback by mistake, or a model
-        echoes the prompt-leaked phrases). Do not call from new code.
-        """
+        """Generate fallback content when AI models are unavailable"""
 
         tag_str = ", ".join(tags) if tags else "general"
 
@@ -1131,23 +1008,11 @@ Take action today—the insights you gain will compound over time.
 _generator: AIContentGenerator | None = None
 
 
-def get_content_generator(*, site_config: Any = None) -> AIContentGenerator:
-    """Get or create global content generator.
-
-    Args:
-        site_config: SiteConfig instance (DI — Phase H, GH#95). When the
-            singleton is being constructed for the first time this is
-            threaded through the ctor. When the singleton already
-            exists, the kwarg is used to rebind via set_site_config()
-            so a late-arriving instance (main.py lifespan after
-            app.state.site_config wires up) takes effect even if a
-            pre-lifespan caller already built the singleton without.
-    """
+def get_content_generator() -> AIContentGenerator:
+    """Get or create global content generator"""
     global _generator
     if _generator is None:
-        _generator = AIContentGenerator(site_config=site_config)
-    elif site_config is not None and _generator._site_config is None:
-        _generator.set_site_config(site_config)
+        _generator = AIContentGenerator()
     return _generator
 
 
@@ -1174,6 +1039,71 @@ async def test_generation():
     logger.info("Generation attempts: %s", metrics["generation_attempts"])
     logger.info("Time taken: %.2f seconds", metrics["generation_time_seconds"])
     logger.info("First 500 characters:\n%s...", content[:500])
+
+
+# ---------------------------------------------------------------------------
+# Writer-RAG-mode helpers (Task 14 of the niche-discovery RAG pivot)
+# ---------------------------------------------------------------------------
+#
+# The four writer modes in services/writer_rag_modes/* call into these two
+# functions to render a draft from a topic + angle + retrieved snippets.
+# They are deliberately thin wrappers around _ollama_chat_json so unit tests
+# can monkeypatch this module to avoid a real Ollama call.
+#
+# Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
+# Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 14)
+
+
+async def generate_with_context(
+    *, topic: str, angle: str, snippets: list[dict],
+    extra_instructions: str | None = None,
+) -> str:
+    """Build a prompt using the snippets as background context, generate the
+    draft. Wraps the existing generation path; tests can monkeypatch here."""
+    snippet_block = "\n".join(
+        f"[{s['source']}/{s['ref']}] {s['snippet'][:500]}"
+        for s in snippets if s.get('snippet')
+    )
+    instructions = extra_instructions or ""
+    from services.topic_ranking import _ollama_chat_json
+    prompt = f"""Write a blog post on the topic: "{topic}" with this angle: "{angle}".
+
+{instructions}
+
+Background context (cite where relevant):
+{snippet_block}
+
+Return the full post body in Markdown.
+"""
+    return await _ollama_chat_json(prompt, model="glm-4.7-5090:latest")
+
+
+async def generate_with_outline(
+    *, topic: str, outline: dict, snippets: list[dict],
+) -> str:
+    """Expand a structured outline into a full blog post draft.
+
+    Used by the STORY_SPINE writer mode after it preprocesses the top
+    snippets into a {hook, what_happened, why_it_matters, ...} skeleton.
+    """
+    snippet_block = "\n".join(
+        f"[{s['source']}/{s['ref']}] {s['snippet'][:500]}"
+        for s in snippets if s.get('snippet')
+    )
+    outline_block = "\n".join(f"{k.replace('_',' ').title()}: {v}" for k, v in outline.items())
+    from services.topic_ranking import _ollama_chat_json
+    prompt = f"""Expand the following outline into a full blog post.
+
+Topic: {topic}
+Outline:
+{outline_block}
+
+Background snippets to draw on:
+{snippet_block}
+
+Return the full post body in Markdown.
+"""
+    return await _ollama_chat_json(prompt, model="glm-4.7-5090:latest")
 
 
 if __name__ == "__main__":

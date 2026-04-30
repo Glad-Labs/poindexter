@@ -31,15 +31,13 @@ class CrosspostToDevtoJob:
     schedule = "every 4 hours"
     idempotent = True  # dedup on metadata.devto_url — safe to retry
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         from services.devto_service import DevToCrossPostService
 
         batch_size = int(config.get("batch_size", 3))
         file_issue = bool(config.get("file_gitea_issue", False))
 
-        svc = DevToCrossPostService(pool, site_config)
+        svc = DevToCrossPostService(pool)
 
         # Early-out before we touch the DB: if there's no API key there's
         # nothing we can do.
@@ -108,7 +106,6 @@ class CrosspostToDevtoJob:
             await create_gitea_issue(
                 f"devto: {len(errors)} cross-post errors of {len(rows)} attempts",
                 body,
-                site_config=site_config,
             )
 
         detail = (

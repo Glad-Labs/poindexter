@@ -15,19 +15,6 @@ import pytest
 from services.jobs.crosspost_to_devto import CrosspostToDevtoJob
 
 
-def _mock_sc() -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for job.run() calls.
-
-    Post-Phase-H (GH#95) jobs receive site_config via the Job Protocol
-    kwarg instead of reaching into a module singleton.
-    """
-    sc = MagicMock()
-    sc.get.side_effect = lambda k, d="": d
-    sc.get_bool.side_effect = lambda k, d=False: d
-    sc.get_int.side_effect = lambda k, d=0: d
-    return sc
-
-
 def _make_pool(
     rows: list[dict] | None = None,
     fetch_raises: BaseException | None = None,
@@ -88,7 +75,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {}, site_config=_mock_sc())
+            result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 0
         assert "not configured" in result.detail
@@ -104,7 +91,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {}, site_config=_mock_sc())
+            result = await job.run(pool, {})
         assert result.ok is False
         assert "api key lookup failed" in result.detail
 
@@ -117,7 +104,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {}, site_config=_mock_sc())
+            result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 0
         assert "already on Dev.to" in result.detail
@@ -139,7 +126,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {}, site_config=_mock_sc())
+            result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 2
         assert result.metrics["posts_crossposted"] == 2
@@ -165,7 +152,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {}, site_config=_mock_sc())
+            result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 1
         assert result.metrics["errors"] == 2
@@ -179,7 +166,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            await job.run(pool, {"batch_size": 10}, site_config=_mock_sc())
+            await job.run(pool, {"batch_size": 10})
         args = conn.fetch.call_args.args
         assert args[1] == 10
 
@@ -200,9 +187,7 @@ class TestRun:
             new=mock_gitea,
         ):
             job = CrosspostToDevtoJob()
-            await job.run(
-                pool, {"file_gitea_issue": True}, site_config=_mock_sc(),
-            )
+            await job.run(pool, {"file_gitea_issue": True})
         mock_gitea.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -221,7 +206,7 @@ class TestRun:
             new=mock_gitea,
         ):
             job = CrosspostToDevtoJob()
-            await job.run(pool, {}, site_config=_mock_sc())  # omit file_gitea_issue
+            await job.run(pool, {})  # omit file_gitea_issue
         mock_gitea.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -233,6 +218,6 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {}, site_config=_mock_sc())
+            result = await job.run(pool, {})
         assert result.ok is False
         assert "pool closed" in result.detail

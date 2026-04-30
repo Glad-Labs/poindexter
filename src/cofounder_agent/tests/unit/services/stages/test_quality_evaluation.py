@@ -9,13 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.stage import Stage
-from services.site_config import SiteConfig
 from services.stages.quality_evaluation import QualityEvaluationStage
-
-
-def _sc() -> SiteConfig:
-    """Fresh SiteConfig for Phase H DI (GH#95)."""
-    return SiteConfig()
 
 
 def _fake_quality_result(score: float = 82.5, passing: bool = True, truncated: bool = False):
@@ -47,7 +41,7 @@ class TestExecute:
         )
         ctx: dict[str, Any] = {
             "topic": "AI", "tags": ["AI"], "content": "body text",
-            "database_service": MagicMock(), "site_config": _sc(),
+            "database_service": MagicMock(),
         }
         with patch(
             "services.quality_service.UnifiedQualityService",
@@ -64,7 +58,7 @@ class TestExecute:
         assert "quality_result" in u
 
     async def test_empty_content_returns_not_ok(self):
-        ctx: dict[str, Any] = {"topic": "X", "content": "", "database_service": MagicMock(), "site_config": _sc()}
+        ctx: dict[str, Any] = {"topic": "X", "content": "", "database_service": MagicMock()}
         result = await QualityEvaluationStage().execute(ctx, {})
         assert result.ok is False
         assert "content" in result.detail
@@ -72,7 +66,7 @@ class TestExecute:
     async def test_none_result_raises_valueerror(self):
         fake_svc = SimpleNamespace(evaluate=AsyncMock(return_value=None))
         ctx: dict[str, Any] = {
-            "topic": "AI", "content": "body", "database_service": MagicMock(), "site_config": _sc(),
+            "topic": "AI", "content": "body", "database_service": MagicMock(),
         }
         with patch(
             "services.quality_service.UnifiedQualityService",
@@ -85,7 +79,7 @@ class TestExecute:
         fake_svc = SimpleNamespace(evaluate=AsyncMock(return_value=_fake_quality_result()))
         ctx: dict[str, Any] = {
             "topic": "some-topic", "content": "body",
-            "database_service": MagicMock(), "tags": [], "site_config": _sc(),
+            "database_service": MagicMock(), "tags": [],
         }
         with patch(
             "services.quality_service.UnifiedQualityService",

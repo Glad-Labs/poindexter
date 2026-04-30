@@ -1,17 +1,9 @@
 name: Release Please
 
-# Triggers (changed 2026-04-27 — was push-on-main, which spammed failure
-# emails when the GitHub API installation rate limit was exhausted by
-# concurrent CI / sync / Vercel calls):
-#   - schedule: daily at 06:00 UTC. Release Please picks up everything
-#     merged since last release and creates/updates the release PR in
-#     one batched run, well outside the burst window when most pushes
-#     happen.
-#   - workflow_dispatch: manual fire when an immediate release is wanted.
 on:
-    schedule:
-        - cron: '0 6 * * *'
-    workflow_dispatch:
+    push:
+        branches:
+            - main
 
 permissions:
     contents: write
@@ -20,6 +12,9 @@ permissions:
 jobs:
     release-please:
         runs-on: ubuntu-latest
+
+        # Skip version bump commits from the old auto-bump system
+        if: "!contains(github.event.head_commit.message, '[skip ci]')"
 
         steps:
             - name: "\U0001F4E6 Run Release Please"

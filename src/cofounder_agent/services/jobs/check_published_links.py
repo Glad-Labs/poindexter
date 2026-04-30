@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from services.site_config import site_config
 from utils.gitea_issues import create_gitea_issue
 
 logger = logging.getLogger(__name__)
@@ -36,9 +37,7 @@ class CheckPublishedLinksJob:
     schedule = "every 6 hours"
     idempotent = True  # HEAD requests are read-only
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         sample_size = int(config.get("sample_size", 3))
         urls_per_post = int(config.get("urls_per_post", 10))
         file_issue = bool(config.get("file_gitea_issue", True))
@@ -101,7 +100,6 @@ class CheckPublishedLinksJob:
             await create_gitea_issue(
                 f"links: {len(broken)} broken URLs in published posts",
                 body,
-                site_config=site_config,
             )
 
         detail = f"checked {checked} URL(s) across {len(rows)} post(s), {len(broken)} broken"

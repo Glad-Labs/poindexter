@@ -16,15 +16,6 @@ import pytest
 from services.jobs.check_published_links import CheckPublishedLinksJob
 
 
-def _mock_sc() -> MagicMock:
-    """SiteConfig mock for post-Phase-H job.run() kwarg."""
-    sc = MagicMock()
-    sc.get.side_effect = lambda k, d="": d
-    sc.get_bool.side_effect = lambda k, d=False: d
-    sc.get_int.side_effect = lambda k, d=0: d
-    return sc
-
-
 def _make_pool(rows: list[dict]) -> Any:
     """asyncpg pool whose conn.fetch returns the given rows."""
     conn = AsyncMock()
@@ -74,7 +65,7 @@ class TestRun:
     async def test_no_published_posts_is_ok(self):
         pool = _make_pool([])
         job = CheckPublishedLinksJob()
-        result = await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
+        result = await job.run(pool, {"file_gitea_issue": False})
         assert result.ok is True
         assert result.changes_made == 0
         assert "no published posts" in result.detail
@@ -91,7 +82,7 @@ class TestRun:
             return_value=client,
         ):
             job = CheckPublishedLinksJob()
-            result = await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
+            result = await job.run(pool, {"file_gitea_issue": False})
 
         assert result.ok is True
         assert result.changes_made == 0
@@ -113,7 +104,7 @@ class TestRun:
             new=AsyncMock(return_value=False),
         ):
             job = CheckPublishedLinksJob()
-            result = await job.run(pool, {}, site_config=_mock_sc())
+            result = await job.run(pool, {})
 
         assert result.ok is True
         assert result.changes_made == 1
@@ -133,7 +124,7 @@ class TestRun:
             return_value=client,
         ):
             job = CheckPublishedLinksJob()
-            result = await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
+            result = await job.run(pool, {"file_gitea_issue": False})
 
         assert result.ok is True
         assert result.changes_made == 1
@@ -149,15 +140,15 @@ class TestRun:
         ])
         client = _patched_httpx_client({"https://ok.example": 200})
 
-        sc = _mock_sc()
-        sc.get.side_effect = lambda k, d=None: "gladlabs.io" if k == "site_domain" else d
-
         with patch(
             "services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
+        ), patch(
+            "services.jobs.check_published_links.site_config.get",
+            side_effect=lambda k, d=None: "gladlabs.io" if k == "site_domain" else d,
         ):
             job = CheckPublishedLinksJob()
-            result = await job.run(pool, {"file_gitea_issue": False}, site_config=sc)
+            result = await job.run(pool, {"file_gitea_issue": False})
 
         # Only the external one is checked.
         assert result.metrics["urls_checked"] == 1
@@ -177,7 +168,7 @@ class TestRun:
             return_value=client,
         ):
             job = CheckPublishedLinksJob()
-            result = await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
+            result = await job.run(pool, {"file_gitea_issue": False})
 
         assert result.metrics["urls_checked"] == 10
 
@@ -197,7 +188,7 @@ class TestRun:
             new=mock_gitea,
         ):
             job = CheckPublishedLinksJob()
-            await job.run(pool, {"file_gitea_issue": False}, site_config=_mock_sc())
+            await job.run(pool, {"file_gitea_issue": False})
 
         mock_gitea.assert_not_awaited()
 
@@ -212,6 +203,6 @@ class TestRun:
         pool.acquire = MagicMock(return_value=ctx)
 
         job = CheckPublishedLinksJob()
-        result = await job.run(pool, {}, site_config=_mock_sc())
+        result = await job.run(pool, {})
         assert result.ok is False
         assert "connection lost" in result.detail

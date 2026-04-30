@@ -19,7 +19,6 @@ Usage:
 """
 
 import functools
-import os
 import time
 from collections.abc import Callable
 from typing import Any
@@ -28,71 +27,35 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
-# Phase H finish (GH#95): the module-level
-# ``from services.site_config import site_config as _site_config`` is
-# gone. That import bound a stale reference to the empty singleton
-# constructed at site_config import time — when ``main.py``'s lifespan
-# rebound ``services.site_config.site_config`` to a DB-loaded instance,
-# every decorator helper here kept reading the empty original. The
-# decorators run from import-time (db service classes decorate methods
-# at module load), so we can't accept site_config via ctor injection
-# the way services do.
-#
-# Instead the lifespan calls ``decorators.set_site_config(site_cfg)``
-# explicitly once the DB-loaded instance is ready (see main.py's Phase H
-# wiring). Until then the helpers fall back to env vars + sensible
-# defaults — fine for the small window between import and lifespan
-# startup, and tests monkeypatch the helpers directly rather than the
-# binding (see tests/unit/services/test_decorators.py).
-_site_config: Any = None
-
-
-def set_site_config(site_config: Any) -> None:
-    """Bind the SiteConfig instance the decorators should read from.
-
-    Called by ``main.py``'s lifespan once the DB-loaded SiteConfig is
-    available, and by tests that want a custom config without
-    monkey-patching every helper. Passing ``None`` reverts to the
-    env-fallback path used during early startup.
-    """
-    global _site_config
-    _site_config = site_config
-
-
-def _bool_from_env(env_key: str, default: bool) -> bool:
-    val = os.getenv(env_key)
-    if val is None:
-        return default
-    return val.strip().lower() in ("true", "1", "yes", "on")
-
-
-def _int_from_env(env_key: str, default: int) -> int:
-    val = os.getenv(env_key)
-    if val is None:
-        return default
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
+def _site_config():
+    """Lazy site_config lookup — avoids import-cycle headaches and
+    ensures we always see the loaded values, not a stale import-time
+    snapshot. See ``_slow_query_threshold_ms`` for the rationale."""
+    from services.site_config import site_config
+    return site_config
 
 
 def _slow_query_threshold_ms() -> int:
-    """Read SLOW_QUERY_THRESHOLD_MS from the bound site_config (env-fallback before lifespan)."""
-    if _site_config is not None:
-        return _site_config.get_int("slow_query_threshold_ms", 100)
-    return _int_from_env("SLOW_QUERY_THRESHOLD_MS", 100)
+    """Read SLOW_QUERY_THRESHOLD_MS from site_config per-call.
+
+    Previously captured at module import time — but the decorators
+    module imports before site_config.load() runs in lifespan, so the
+    captured values were always the env-var/default fallback. Switching
+    settings in app_settings had no effect until a worker restart,
+    which contradicts the DB-first config promise.
+
+    Uses site_config.get_int which already validates and falls back
+    to the default on bad data — no try/except needed here.
+    """
+    return _site_config().get_int("slow_query_threshold_ms", 100)
 
 
 def _log_all_queries() -> bool:
-    if _site_config is not None:
-        return _site_config.get_bool("log_all_queries", False)
-    return _bool_from_env("LOG_ALL_QUERIES", False)
+    return _site_config().get_bool("log_all_queries", False)
 
 
 def _enable_query_monitoring() -> bool:
-    if _site_config is not None:
-        return _site_config.get_bool("enable_query_monitoring", True)
-    return _bool_from_env("ENABLE_QUERY_MONITORING", True)
+    return _site_config().get_bool("enable_query_monitoring", True)
 
 
 def log_query_performance(

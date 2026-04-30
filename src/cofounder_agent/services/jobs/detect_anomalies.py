@@ -95,9 +95,9 @@ class DetectAnomaliesJob:
     schedule = "every 4 hours"
     idempotent = True
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+        from services.site_config import site_config
+
         current_h = int(
             config.get("current_window_hours")
             or site_config.get_int("brain_anomaly_current_window_hours", 24)
@@ -162,7 +162,6 @@ class DetectAnomaliesJob:
                 )
                 await create_gitea_issue(
                     f"anomaly: {len(anomalies)} metrics outside normal range", body,
-                    site_config=site_config,
                 )
             except Exception as e:
                 logger.warning("[ANOMALY] gitea issue creation failed: %s", e)

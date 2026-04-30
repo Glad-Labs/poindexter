@@ -24,8 +24,7 @@ from fastapi.testclient import TestClient
 # Import task_routes first to resolve the circular import between
 # task_routes <-> task_publishing_routes.
 from middleware.api_token_auth import verify_api_token
-from services.site_config import SiteConfig
-from utils.route_utils import get_database_dependency, get_site_config_dependency
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Test constants
@@ -147,9 +146,6 @@ def _build_approval_app(mock_db=None, for_reject=False) -> FastAPI:
     if mock_db is None:
         mock_db = _make_mock_db_for_reject() if for_reject else _make_mock_db()
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
-    # Phase H (GH#95): strict DI — supply a fresh SiteConfig for approval
-    # + publishing routes that Depend(get_site_config_dependency).
-    app.dependency_overrides[get_site_config_dependency] = lambda: SiteConfig()
     return app
 
 

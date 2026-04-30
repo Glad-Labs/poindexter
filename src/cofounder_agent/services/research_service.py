@@ -12,13 +12,12 @@ Sources (in priority order):
 
 Usage:
     from services.research_service import ResearchService
-    research = ResearchService(pool, site_config=site_config)
+    research = ResearchService(pool)
     context = await research.build_context("FastAPI and PostgreSQL")
     # context is a formatted string ready for the generation prompt
 """
 
 import re
-from typing import Any
 
 from services.logger_config import get_logger
 
@@ -114,23 +113,17 @@ _DEFAULT_KNOWN_REFERENCES: dict[str, list[dict[str, str]]] = {
 }
 
 
-def get_known_references(site_config: Any = None) -> dict[str, list[dict[str, str]]]:
+def get_known_references() -> dict[str, list[dict[str, str]]]:
     """Return the reference-link database, preferring app_settings if set.
 
     Looks up `known_references_json` in app_settings; if present and
     valid, replaces the default tech-oriented list entirely. Malformed
     JSON logs a warning and falls back to defaults. (#198)
-
-    Args:
-        site_config: SiteConfig instance (DI — Phase H, GH#95). ``None``
-            returns the hardcoded defaults so legacy callers that haven't
-            been threaded through yet still work.
     """
     import json as _json
     try:
-        if site_config is None:
-            return _DEFAULT_KNOWN_REFERENCES
-        raw = site_config.get("known_references_json", "")
+        from services.site_config import site_config as _sc
+        raw = _sc.get("known_references_json", "")
         if not raw:
             return _DEFAULT_KNOWN_REFERENCES
         parsed = _json.loads(raw)
@@ -173,21 +166,9 @@ KNOWN_REFERENCES = _DEFAULT_KNOWN_REFERENCES
 class ResearchService:
     """Builds research context for content generation."""
 
-    def __init__(self, pool=None, settings_service=None, *, site_config: Any = None):
-        """
-        Args:
-            pool: asyncpg connection pool (optional — without it, internal
-                link lookup returns empty).
-            settings_service: Legacy settings service (reserved; unused
-                today).
-            site_config: SiteConfig instance (DI — Phase H, GH#95). Used
-                to resolve ``known_references_json`` override. ``None``
-                means the hardcoded defaults will always apply — keeps
-                legacy callers working during Phase H rollout.
-        """
+    def __init__(self, pool=None, settings_service=None):
         self.pool = pool
         self.settings = settings_service
-        self._site_config = site_config
 
     async def build_context(
         self,
@@ -248,7 +229,7 @@ class ResearchService:
         matched = []
         seen_urls = set()
 
-        _refs = get_known_references(self._site_config)
+        _refs = get_known_references()
         for keyword, refs in _refs.items():
             if keyword in topic_lower:
                 for ref in refs:
@@ -269,38 +250,9 @@ class ResearchService:
         return matched[:8]  # Cap at 8 references
 
     async def _find_internal_links(self, topic: str) -> list[dict[str, str]]:
-        """Find existing published posts related to the topic.
-
-        Two paths controlled by ``app_settings.rag_enabled_for_research``:
-
-        - **off (default):** legacy ILIKE word-overlap match against
-          posts.title / posts.slug. Cheap, deterministic, low recall on
-          paraphrased topics.
-        - **on:** LlamaIndex retriever (#210) over the embeddings table,
-          filtered to ``source_table='posts'``. Picks up semantic
-          neighbors that ILIKE misses — e.g. a post on "Bootstrapping
-          a SaaS Startup" surfaces for a topic like "Indie Hacker
-          Founder Strategy". Honors the same hybrid + rerank flags
-          (``rag_hybrid_enabled``, ``rag_rerank_enabled``) the rest of
-          the RAG layer respects, so flipping those toggles cascades
-          through the research stage without code changes here.
-
-        The RAG path falls through to the legacy ILIKE on any error
-        (Ollama down, pgvector miss, etc) so research never blocks.
-        """
+        """Find existing published posts related to the topic."""
         if not self.pool:
             return []
-
-        if self._rag_research_enabled():
-            try:
-                rag_results = await self._rag_internal_links(topic)
-                if rag_results:
-                    return rag_results
-            except Exception as e:
-                logger.debug(
-                    "[RESEARCH] RAG retrieval failed, falling back to ILIKE: %s", e,
-                )
-
         try:
             # Search by topic word overlap
             topic_words = [w for w in re.findall(r"\b\w{4,}\b", topic.lower()) if len(w) > 3]
@@ -325,73 +277,58 @@ class ResearchService:
             logger.debug("[RESEARCH] Internal link search failed: %s", e)
             return []
 
-    def _rag_research_enabled(self) -> bool:
-        if self._site_config is None:
-            return False
-        try:
-            return bool(self._site_config.get_bool("rag_enabled_for_research", False))
-        except Exception:
-            try:
-                v = self._site_config.get("rag_enabled_for_research", "")
-                return str(v).strip().lower() in ("true", "1", "yes", "on")
-            except Exception:
-                return False
-
-    async def _rag_internal_links(self, topic: str) -> list[dict[str, str]]:
-        """LlamaIndex-backed retrieval — query the RAG layer scoped to
-        published posts, hydrate the matches into the same
-        ``[{title, slug}]`` shape the legacy ILIKE path returns.
-
-        Embeddings store the post body chunks; we look up post slug +
-        title from the ``posts`` table using the source_id metadata.
-        """
-        from llama_index.core.schema import QueryBundle
-
-        from services.rag_engine import get_rag_retriever
-
-        retriever = await get_rag_retriever(
-            self.pool,
-            site_config=self._site_config,
-            top_k=5,
-            source_filter=["posts"],
-        )
-        nodes = await retriever._aretrieve(QueryBundle(query_str=topic))
-        if not nodes:
-            return []
-
-        post_ids = [
-            n.node.metadata.get("source_id") for n in nodes
-            if n.node.metadata.get("source_id")
-        ]
-        if not post_ids:
-            return []
-
-        # Hydrate slug + title from the posts table. Filter to
-        # ``status='published'`` so the research context never points
-        # the writer at draft / dry_run / archived URLs.
-        rows = await self.pool.fetch(
-            "SELECT id, title, slug FROM posts "
-            "WHERE id::text = ANY($1) AND status = 'published'",
-            post_ids,
-        )
-        # Preserve the retriever's ranking order — posts table fetch
-        # comes back unordered.
-        by_id = {str(r["id"]): r for r in rows}
-        ordered: list[dict[str, str]] = []
-        for n in nodes:
-            sid = n.node.metadata.get("source_id")
-            if sid and str(sid) in by_id:
-                r = by_id[str(sid)]
-                ordered.append({"title": r["title"], "slug": r["slug"]})
-        return ordered
-
     async def _web_search(self, topic: str) -> list[dict[str, str]]:
         """Search the web for fresh sources (free — DuckDuckGo, no API key)."""
         try:
             from services.web_research import WebResearcher
-            researcher = WebResearcher(site_config=self._site_config)
+            researcher = WebResearcher()
             results = await researcher.search_simple(topic, num_results=5)
             return results
         except Exception as e:
             logger.debug("[RESEARCH] Web search failed: %s", e)
             return []
+
+
+# ---------------------------------------------------------------------------
+# Module-level shim for the TWO_PASS writer mode (Task 14)
+# ---------------------------------------------------------------------------
+
+
+async def research_topic(query: str, max_sources: int = 2) -> str:
+    """Shim for the TWO_PASS writer mode's external fact-augmentation step.
+
+    Wraps ``ResearchService.build_context`` so the writer can ask for a
+    single fact lookup without instantiating the full service with a DB
+    pool. Constructed with ``pool=None`` — that disables the
+    ``_find_internal_links`` step (returns []) but keeps the known-references
+    lookup and the free DuckDuckGo web search, which are the two sources
+    that matter for filling [EXTERNAL_NEEDED] markers.
+
+    ``max_sources`` is currently advisory: the underlying ``build_context``
+    method caps internally (5 web results, 8 references). Plumbing a true
+    cap requires refactoring ``ResearchService.build_context`` itself,
+    which is out of scope for Task 14.
+
+    Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
+    Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 14)
+    """
+    try:
+        svc = ResearchService(pool=None)
+        ctx = await svc.build_context(query)
+        if not ctx:
+            logger.info(
+                "[RESEARCH] research_topic('%s') produced no context — "
+                "returning empty stub", query[:60],
+            )
+            return ""
+        return ctx
+    except Exception as e:
+        # Don't crash the TWO_PASS revise loop if research is unavailable
+        # (e.g. DuckDuckGo rate-limited, no network). Return a clearly-marked
+        # stub so the LLM can still produce a coherent revision and the
+        # downstream validator can flag the missing citation.
+        logger.warning(
+            "[RESEARCH] research_topic('%s') failed: %s — returning stub",
+            query[:60], e,
+        )
+        return f"[research stub for: {query}]"

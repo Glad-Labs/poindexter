@@ -11,9 +11,6 @@ Covers:
 - plan_images: 404 retry-then-success
 - plan_images: malformed JSON falls back to empty result with raw_response
 - plan_images: max_images cap is honored
-
-Post-Phase-H (GH#95): plan_images takes site_config via DI. Tests construct
-a MagicMock SiteConfig per case via _mock_sc() and pass it as a kwarg.
 """
 
 import json
@@ -26,22 +23,6 @@ from services.image_decision_agent import (
     ImagePlanResult,
     plan_images,
 )
-
-
-def _mock_sc(
-    ollama_base_url: str = "http://fake:11434",
-    model_role_image_decision: str = "ollama/llama3",
-    database_url: str = "",
-) -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for plan_images(site_config=...)."""
-    sc = MagicMock()
-    values = {
-        "ollama_base_url": ollama_base_url,
-        "model_role_image_decision": model_role_image_decision,
-        "database_url": database_url,
-    }
-    sc.get.side_effect = lambda k, d=None: values.get(k, d)
-    return sc
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -147,9 +128,7 @@ class TestPlanImagesShortCircuits:
     @pytest.mark.asyncio
     async def test_no_sections_returns_empty(self):
         # Content with no h2/h3 headings should skip planning entirely
-        result = await plan_images(
-            "Just a paragraph with no headings.", "topic", site_config=_mock_sc()
-        )
+        result = await plan_images("Just a paragraph with no headings.", "topic")
         assert isinstance(result, ImagePlanResult)
         assert result.images == []
         assert result.featured_image is None
@@ -187,11 +166,15 @@ class TestPlanImagesHappyPath:
             post_responses=[_generate_resp(json.dumps(plan_json))],
         )
 
-        with patch("httpx.AsyncClient", return_value=client):
-            result = await plan_images(
-                SAMPLE_CONTENT, "Test Topic", category="technology",
-                site_config=_mock_sc(ollama_base_url="http://fake-ollama:11434"),
-            )
+        with patch("httpx.AsyncClient", return_value=client), \
+             patch("services.image_decision_agent.site_config") as mock_site:
+            mock_site.get.side_effect = lambda k, d=None: {
+                "ollama_base_url": "http://fake-ollama:11434",
+                "model_role_image_decision": "ollama/llama3",
+                "database_url": "",
+            }.get(k, d)
+
+            result = await plan_images(SAMPLE_CONTENT, "Test Topic", category="technology")
 
         assert result.featured_image is not None
         assert result.featured_image.source == "sdxl"
@@ -217,10 +200,15 @@ class TestPlanImagesHappyPath:
             post_responses=[_generate_resp(json.dumps(plan_json))],
         )
 
-        with patch("httpx.AsyncClient", return_value=client):
-            result = await plan_images(
-                SAMPLE_CONTENT, "Test", max_images=3, site_config=_mock_sc(),
-            )
+        with patch("httpx.AsyncClient", return_value=client), \
+             patch("services.image_decision_agent.site_config") as mock_site:
+            mock_site.get.side_effect = lambda k, d=None: {
+                "ollama_base_url": "http://fake:11434",
+                "model_role_image_decision": "ollama/llama3",
+                "database_url": "",
+            }.get(k, d)
+
+            result = await plan_images(SAMPLE_CONTENT, "Test", max_images=3)
 
         assert len(result.images) == 3
 
@@ -240,11 +228,15 @@ class TestPlanImagesThinkingModel:
             post_responses=[_chat_resp(thinking_output)],
         )
 
-        with patch("httpx.AsyncClient", return_value=client):
-            result = await plan_images(
-                SAMPLE_CONTENT, "Topic",
-                site_config=_mock_sc(model_role_image_decision="qwen3:8b"),
-            )
+        with patch("httpx.AsyncClient", return_value=client), \
+             patch("services.image_decision_agent.site_config") as mock_site:
+            mock_site.get.side_effect = lambda k, d=None: {
+                "ollama_base_url": "http://fake:11434",
+                "model_role_image_decision": "qwen3:8b",
+                "database_url": "",
+            }.get(k, d)
+
+            result = await plan_images(SAMPLE_CONTENT, "Topic")
 
         assert result.featured_image is not None
         assert result.featured_image.style == "dramatic"
@@ -261,11 +253,15 @@ class TestPlanImagesThinkingModel:
             post_responses=[_chat_resp(wrapped)],
         )
 
-        with patch("httpx.AsyncClient", return_value=client):
-            result = await plan_images(
-                SAMPLE_CONTENT, "Topic",
-                site_config=_mock_sc(model_role_image_decision="qwen3:8b"),
-            )
+        with patch("httpx.AsyncClient", return_value=client), \
+             patch("services.image_decision_agent.site_config") as mock_site:
+            mock_site.get.side_effect = lambda k, d=None: {
+                "ollama_base_url": "http://fake:11434",
+                "model_role_image_decision": "qwen3:8b",
+                "database_url": "",
+            }.get(k, d)
+
+            result = await plan_images(SAMPLE_CONTENT, "Topic")
 
         assert result.featured_image is not None
         assert result.featured_image.style == "editorial"
@@ -280,10 +276,15 @@ class TestPlanImagesErrorPaths:
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("httpx.AsyncClient", return_value=client):
-            result = await plan_images(
-                SAMPLE_CONTENT, "Topic", site_config=_mock_sc(),
-            )
+        with patch("httpx.AsyncClient", return_value=client), \
+             patch("services.image_decision_agent.site_config") as mock_site:
+            mock_site.get.side_effect = lambda k, d=None: {
+                "ollama_base_url": "http://fake:11434",
+                "model_role_image_decision": "ollama/llama3",
+                "database_url": "",
+            }.get(k, d)
+
+            result = await plan_images(SAMPLE_CONTENT, "Topic")
 
         # Graceful fallback — empty result, no exception raised
         assert isinstance(result, ImagePlanResult)
@@ -296,10 +297,15 @@ class TestPlanImagesErrorPaths:
             get_resp=_tags_resp(["completely-different-model:latest"]),
         )
 
-        with patch("httpx.AsyncClient", return_value=client):
-            result = await plan_images(
-                SAMPLE_CONTENT, "Topic", site_config=_mock_sc(),
-            )
+        with patch("httpx.AsyncClient", return_value=client), \
+             patch("services.image_decision_agent.site_config") as mock_site:
+            mock_site.get.side_effect = lambda k, d=None: {
+                "ollama_base_url": "http://fake:11434",
+                "model_role_image_decision": "ollama/llama3",
+                "database_url": "",
+            }.get(k, d)
+
+            result = await plan_images(SAMPLE_CONTENT, "Topic")
 
         assert isinstance(result, ImagePlanResult)
         assert result.images == []
@@ -323,10 +329,15 @@ class TestPlanImagesErrorPaths:
 
         # Patch asyncio.sleep so we don't actually wait 3s
         with patch("httpx.AsyncClient", return_value=client), \
+             patch("services.image_decision_agent.site_config") as mock_site, \
              patch("asyncio.sleep", new=AsyncMock()):
-            result = await plan_images(
-                SAMPLE_CONTENT, "Topic", site_config=_mock_sc(),
-            )
+            mock_site.get.side_effect = lambda k, d=None: {
+                "ollama_base_url": "http://fake:11434",
+                "model_role_image_decision": "ollama/llama3",
+                "database_url": "",
+            }.get(k, d)
+
+            result = await plan_images(SAMPLE_CONTENT, "Topic")
 
         assert result.featured_image is not None
         assert client.post.await_count == 2
@@ -338,10 +349,15 @@ class TestPlanImagesErrorPaths:
             post_responses=[_generate_resp("not json at all, just words")],
         )
 
-        with patch("httpx.AsyncClient", return_value=client):
-            result = await plan_images(
-                SAMPLE_CONTENT, "Topic", site_config=_mock_sc(),
-            )
+        with patch("httpx.AsyncClient", return_value=client), \
+             patch("services.image_decision_agent.site_config") as mock_site:
+            mock_site.get.side_effect = lambda k, d=None: {
+                "ollama_base_url": "http://fake:11434",
+                "model_role_image_decision": "ollama/llama3",
+                "database_url": "",
+            }.get(k, d)
+
+            result = await plan_images(SAMPLE_CONTENT, "Topic")
 
         assert result.featured_image is None
         assert result.images == []

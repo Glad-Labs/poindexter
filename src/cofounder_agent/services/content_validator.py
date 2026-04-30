@@ -15,13 +15,12 @@ Usage:
         # Reject — content has quality issues
 """
 
-import os
 import re
 import time as _time
 from dataclasses import dataclass, field
-from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import site_config as _sc
 
 logger = get_logger(__name__)
 
@@ -76,50 +75,22 @@ _NAMED_SOURCE_KEYWORDS = (
 # ============================================================================
 
 
-def _env_str(key: str, default: str) -> str:
-    """Read an env var (uppercase) with a default, mirroring SiteConfig.get()."""
-    val = os.getenv(key.upper())
-    return val if val else default
-
-
-def _env_int(key: str, default: int) -> int:
-    """Read an int env var (uppercase) with a default, mirroring SiteConfig.get_int()."""
-    val = os.getenv(key.upper())
-    if not val:
-        return default
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
-
-
 def _get_company_facts() -> dict:
-    """Load company facts from env vars with hardcoded defaults.
-
-    Phase H step 5 (GH#95): module import runs BEFORE the app lifespan
-    populates site_config from DB, so at this point the singleton would
-    only resolve env vars anyway. Reading env directly here makes the
-    dependency explicit and lets the singleton be removed.
-    """
+    """Load company facts from DB (site_config) with env fallback."""
     return {
-        "company_name": _env_str("company_name", "My Company"),
-        "founded_date": _env_str("company_founded_date", "2025-01-01"),
-        "founded_year": _env_int("company_founded_year", 2025),
-        "age_months": _env_int("company_age_months", 12),
-        "team_size": _env_int("company_team_size", 1),
-        "founder_name": _env_str("company_founder_name", "Founder"),
+        "company_name": _sc.get("company_name", "My Company"),
+        "founded_date": _sc.get("company_founded_date", "2025-01-01"),
+        "founded_year": _sc.get_int("company_founded_year", 2025),
+        "age_months": _sc.get_int("company_age_months", 12),
+        "team_size": _sc.get_int("company_team_size", 1),
+        "founder_name": _sc.get("company_founder_name", "Founder"),
         "known_employees": set(),
-        "real_products": (
-            set(_env_str("company_products", "").split(","))
-            if _env_str("company_products", "")
-            else set()
-        ),
+        "real_products": set(_sc.get("company_products", "").split(",")) if _sc.get("company_products") else set(),
         "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "vercel", "grafana"},
     }
 
 
-# Loaded at module import time from env vars (see _get_company_facts).
-# Not refreshed on config changes without reimport.
+# Loaded at module import time — uses DB values from site_config cache. Not refreshed on config changes without reimport.
 GLAD_LABS_FACTS = _get_company_facts()
 _COMPANY_NAME = GLAD_LABS_FACTS["company_name"]
 
@@ -169,19 +140,11 @@ UNLINKED_CITATION_PATTERNS = [
     # "introduced in <Paper Title>" / "proposed in <Title>" — catches ALL-CAPS
     # acronyms (I-DLM), acronym-colon-title (I-DLM: Introspective...), and
     # plain title-case paper names.
-    r"(?i:introduced|proposed|described|presented|outlined|documented|published)\s+in\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?::\s+)?[A-Za-z]+(?:\s+[A-Za-z]+){1,10})",
+    r"(?:introduced|proposed|described|presented|outlined|documented|published)\s+in\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?::\s+)?[A-Za-z]+(?:\s+[A-Za-z]+){1,10})",
     # "described in 'Paper Title'" — quoted paper references (real papers are linked)
-    r"(?i:described|referenced|cited|mentioned)\s+in\s+['\"\u2018\u201c][A-Z][^'\"\u2019\u201d]{15,100}['\"\u2019\u201d]",
-    # "according to Title Case Source" (not followed by a link) — academic /
-    # proper-noun citations where the source is Title Case.
-    r"(?i:according\s+to|as\s+(?:highlighted|noted|reported|described|shown)\s+(?:in|by))\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Za-z]+){1,6})",
-    # "in this/a/our [Source] article/post/study/paper/blog/guide/report" —
-    # unsourced journalism-style attributions. Case-insensitive because the
-    # determiner ("this", "a") is always lowercase and the source-type noun
-    # ("article", "post") is the part that anchors it as a real citation
-    # rather than general prose. Source-type noun list is narrow on purpose
-    # so "this article" / "a post" etc. don't catch idiomatic phrases.
-    r"(?i:(?:according\s+to|as\s+(?:highlighted|noted|reported|described|shown)\s+(?:in|by)|in|on)\s+(?:this|a|an|the|our|my)\s+(?:[A-Za-z]+\s+){0,2}(?:article|post|paper|study|blog|documentation|guide|report|research|analysis|piece|series))",
+    r"(?:described|referenced|cited|mentioned)\s+in\s+['\"\u2018\u201c][A-Z][^'\"\u2019\u201d]{15,100}['\"\u2019\u201d]",
+    # "according to Title Case Source" (not followed by a link)
+    r"(?:according\s+to|as\s+(?:highlighted|noted|reported|described|shown)\s+(?:in|by))\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Za-z]+){1,6})",
     # Bare paper-style titles with colon: "Word Word: Subtitle With Title Case"
     r"(?<!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Z][a-z]+){1,}:\s+[A-Z][a-z]+(?:\s+[A-Za-z]+){2,})(?!\])",
     # "et al." references — almost certainly fabricated
@@ -330,28 +293,6 @@ FILLER_PHRASE_PATTERNS = [
     r"\bunlock the (?:full )?potential of\b",
 ]
 
-# Template-fallback fingerprint patterns — Glad-Labs/poindexter#121.
-#
-# The legacy ``_generate_fallback_content`` helper used to render a
-# canned markdown stub when every Ollama model failed. That path was
-# removed (the generator now raises ``AllModelsFailedError`` and the
-# task is marked ``failed``), but this pattern set acts as
-# defense-in-depth: if a regression re-introduces template publishing,
-# or a model echoes the template phrases verbatim, the validator
-# refuses the content rather than letting it onto the public site.
-#
-# The phrases are uniquely shaped — not normal author prose — so they
-# can be flagged ``critical`` without false positives.
-FALLBACK_TEMPLATE_PATTERNS = [
-    r"\bis an important area that deserves careful attention\b",
-    r"\bThis article provides insights and practical considerations\b",
-    r"\bTake action today[—–\-]+the insights you gain will compound over time\b",
-    r"\bStrategic Implementation\s*\*\*\s*:\s*How to apply these concepts in practice\b",
-    r"\bLooking ahead,\s+\S.+?\s+continues to evolve\b",
-    r"\bUnderstanding the foundational concepts.+?ensures clarity and depth\b",
-]
-
-
 # LLM image placeholder artifacts — [IMAGE-1: description], [IMAGE: ...], etc.
 IMAGE_PLACEHOLDER_PATTERNS = [
     r"\[IMAGE(?:-\d+)?:\s*[^\]]+\]",  # [IMAGE-1: description] or [IMAGE: description]
@@ -399,23 +340,15 @@ def _check_patterns(
     severity: str,
     category: str,
     description_template: str,
-    flags: int = re.IGNORECASE,
 ) -> list[ValidationIssue]:
-    """Run regex patterns against text and return issues.
-
-    ``flags`` defaults to ``re.IGNORECASE`` for backwards compatibility.
-    Pattern lists that rely on case-sensitive ``[A-Z]`` title matching
-    (e.g. UNLINKED_CITATION_PATTERNS) should pass ``flags=0`` — otherwise
-    ``[A-Z]`` collapses to ``[A-Za-z]`` under IGNORECASE and the pattern
-    matches any lowercase text, producing massive false positives.
-    """
+    """Run regex patterns against text and return issues."""
     issues = []
     clean_text = _strip_html(text)
     lines = clean_text.split("\n")
 
     for pattern in patterns:
         for i, line in enumerate(lines, 1):
-            for match in re.finditer(pattern, line, flags):
+            for match in re.finditer(pattern, line, re.IGNORECASE):
                 matched = match.group(0)[:100]
                 issues.append(ValidationIssue(
                     severity=severity,
@@ -625,56 +558,7 @@ _HALLUCINATION_WHITELIST = {
     "model", "models", "schema", "schemas", "view", "template",
     # Python style shorthands often used in examples
     "np", "pd", "plt", "tf", "torch",
-    # AI/ML acronyms and concepts (real but not on PyPI top-500)
-    "lora", "rag", "llm", "llms", "ai", "ml", "mlops", "sdxl", "rlhf", "dpo",
-    "ppo", "peft", "flashattention", "quantization", "mixtral", "qwen",
-    "gemma", "phi", "claude", "gpt", "falcon", "llama", "llama3", "llama2",
-    "mistral", "grok", "vllm", "tensorrt", "tensorflow", "pytorch",
-    # Web / API concepts (real but not Python packages)
-    "rest", "restful", "graphql", "grpc", "api", "apis", "webhook", "webhooks",
-    "oauth", "oauth2", "openid", "saml", "jwt", "json", "xml", "yaml", "toml",
-    "http", "https", "tcp", "udp", "websocket", "sse",
-    # Database products / extensions
-    "postgresql", "postgres", "mysql", "mariadb", "sqlite", "mongodb",
-    "clickhouse", "duckdb", "cassandra", "dynamodb", "cockroachdb",
-    "pgvector", "pg-hba", "pg_hba.conf", "pg-dump", "pg_dump",
-    # Infrastructure products / OSS tools
-    "docker", "kubernetes", "k8s", "podman", "terraform", "ansible",
-    "nginx", "haproxy", "traefik", "caddy", "envoy", "istio",
-    "prometheus", "grafana", "loki", "tempo", "pyroscope", "jaeger",
-    "alertmanager", "opentelemetry", "otel", "sentry", "glitchtip",
-    # Cloud / hosting / SaaS (name-drops in tech posts)
-    "cloudflare", "vercel", "netlify", "railway", "fly", "render",
-    "aws", "gcp", "azure", "linode", "digitalocean", "hetzner",
-    "cloudfront", "route53", "s3", "r2", "b2", "minio",
-    # Version control / CI
-    "github", "gitlab", "gitea", "forgejo", "bitbucket", "woodpecker",
-    "jenkins", "circleci", "travis", "buildkite",
-    # Editors / dev tools
-    "vscode", "neovim", "emacs", "cursor", "zed",
-    # Frameworks / runtimes (often backticked by name)
-    "fastapi", "django", "flask", "starlette", "uvicorn", "gunicorn",
-    "nextjs", "react", "vue", "svelte", "astro", "remix", "nuxt",
-    "node", "nodejs", "deno", "bun",
-    # OS / kernel terms that look like package names
-    "linux", "ubuntu", "debian", "alpine", "arch", "fedora", "centos",
-    "systemd", "cron", "crontab", "bash", "zsh", "powershell",
-    # Programming languages — names get backticked or capitalized in
-    # tech posts. They aren't libraries; flagging them as "hallucinated
-    # library/API reference" was rejecting otherwise-passing posts
-    # (gitea#cost-elec-unify follow-up — score-87 task 9bc0002b
-    # rejected solely because "JavaScript" hit this code path).
-    "javascript", "typescript", "java", "kotlin", "swift", "ruby",
-    "golang", "rust", "scala", "elixir", "erlang", "haskell", "ocaml",
-    "clojure", "fsharp", "csharp", "cpp", "perl", "lua", "dart",
-    "groovy", "julia", "matlab", "r-lang", "objc",
-    "html", "css", "sass", "scss", "less",
-    "sql", "plpgsql", "tsql", "pgsql",
-    "wasm", "webassembly", "regex", "regexp",
 }
-
-
-_PLAIN_TITLECASE_RE = re.compile(r"^[A-Z][a-z]+$")
 
 
 def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
@@ -685,12 +569,6 @@ def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
     because that is what we compare against the stdlib / PyPI lists.
 
     Deduplicated by the pair to avoid spamming issues for the same token.
-
-    Plain TitleCase English words ("Use", "Large", "Retrieval") fall out of
-    the narrative verb regex ("adopt Large", "using Retrieval", "Use API")
-    but are not library names. If the token is plain TitleCase and doesn't
-    match a known reference list, skip it — real fake-library names are
-    almost always CamelCase, snake_case, dotted, or all-lowercase.
     """
     seen: set[tuple[str, str]] = set()
     out: list[tuple[str, str]] = []
@@ -706,10 +584,6 @@ def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
                 continue
             # Skip tokens that are just a single short letter (likely noise)
             if len(norm) < 3:
-                continue
-            # Plain TitleCase ("Use", "Large") without a known-library hit is
-            # almost always just an English word, not a hallucinated library.
-            if _PLAIN_TITLECASE_RE.match(root) and not _is_known_reference(norm):
                 continue
             key = (raw, norm)
             if key in seen:
@@ -809,13 +683,237 @@ def _detect_hallucinated_references(
     return issues
 
 
+# ---------------------------------------------------------------------------
+# Code-block density check (GH-234)
+# ---------------------------------------------------------------------------
+#
+# Tech blogs without runnable code feel like surface summaries — "talks
+# about Docker" rather than "shows Docker working." Pure-prose tech posts
+# score worse on EEAT signals because they don't demonstrate first-hand
+# expertise.
+#
+# This rule runs only when the post carries one of the configured tech
+# tags (default: technical, ai, programming, ml, python, javascript,
+# rust, go). It compares the number of fenced code blocks against the
+# post's word count and emits a WARNING — never critical — when either
+# threshold is missed:
+#
+#   (a) at least 1 fenced code block per N words (default N=700), AND
+#   (b) at least P% of non-empty content lines live inside a fenced
+#       code block (default P=20%, only applied to posts > 300 words).
+#
+# Intentionally a soft signal: operators may genuinely write a non-code
+# tech post (architecture overview, postmortem). The warning surfaces in
+# the multi_model_qa critique via the existing programmatic_validator
+# review, which lets the human approver decide whether to override.
+
+# Match an opening fenced code block (``` or ~~~), captured as group 1
+# so we can find the matching closer with the same fence character.
+_FENCE_RE = re.compile(r"^(\s*)(```|~~~)([^\n`~]*)$", re.MULTILINE)
+
+
+def _count_code_blocks_and_lines(content: str) -> tuple[int, int, int]:
+    """Walk ``content`` line-by-line and tally fenced code blocks.
+
+    Returns ``(block_count, code_line_count, total_non_empty_lines)``.
+
+    A "block" is any well-formed ``` ... ``` (or ~~~ ... ~~~) pair. An
+    unterminated fence at EOF still counts as one block because the
+    writer's intent was clear; we'd rather count it than reject the
+    post for malformed markdown alone.
+
+    "Code lines" are non-fence lines that sit between an opening and
+    closing fence — used for the line-ratio sub-check.
+    """
+    if not content:
+        return (0, 0, 0)
+    block_count = 0
+    code_lines = 0
+    total_non_empty = 0
+    in_block = False
+    fence_char: str | None = None
+    for raw in content.split("\n"):
+        stripped = raw.strip()
+        if not stripped:
+            # Blank lines are excluded from the denominator so a heavily
+            # paragraph-padded post doesn't dilute the ratio artificially.
+            continue
+        # Fence detection — must start the line (after optional whitespace)
+        # and use only ``` or ~~~ for the fence itself.
+        is_fence = False
+        if stripped.startswith("```") and set(stripped[:3]) == {"`"}:
+            is_fence = True
+            this_fence = "```"
+        elif stripped.startswith("~~~") and set(stripped[:3]) == {"~"}:
+            is_fence = True
+            this_fence = "~~~"
+        if is_fence:
+            if not in_block:
+                in_block = True
+                fence_char = this_fence
+                block_count += 1
+            elif fence_char == this_fence:
+                in_block = False
+                fence_char = None
+            # Fence lines themselves don't count as code or prose for the
+            # ratio; they're structural punctuation.
+            continue
+        total_non_empty += 1
+        if in_block:
+            code_lines += 1
+    return (block_count, code_lines, total_non_empty)
+
+
+def _strip_code_blocks_for_word_count(content: str) -> str:
+    """Return ``content`` with the inside of every fenced block removed.
+
+    Word count for the density ratio is *prose words only* — counting
+    the words inside a code sample would let a single 200-line code
+    block satisfy the per-700-words threshold trivially.
+    """
+    if not content:
+        return ""
+    out: list[str] = []
+    in_block = False
+    fence_char: str | None = None
+    for raw in content.split("\n"):
+        stripped = raw.strip()
+        is_fence = False
+        if stripped.startswith("```") and set(stripped[:3]) == {"`"}:
+            is_fence = True
+            this_fence = "```"
+        elif stripped.startswith("~~~") and set(stripped[:3]) == {"~"}:
+            is_fence = True
+            this_fence = "~~~"
+        if is_fence:
+            if not in_block:
+                in_block = True
+                fence_char = this_fence
+            elif fence_char == this_fence:
+                in_block = False
+                fence_char = None
+            continue
+        if not in_block:
+            out.append(raw)
+    return "\n".join(out)
+
+
+def _is_tech_post(tags: list[str], topic: str, tech_tags: set[str]) -> bool:
+    """Return True if any tag/topic token matches the configured tech-tag set.
+
+    Matching is lowercase + whitespace/dash/underscore-tolerant so the
+    operator can list ``"ai"`` and still catch tags like ``"AI/ML"``,
+    ``"Artificial-Intelligence"`` (when "artificial intelligence" is on
+    the list), etc. Empty inputs return False.
+    """
+    if not tech_tags:
+        return False
+    haystack: set[str] = set()
+    for source in (*(tags or ()), topic or ""):
+        if not source:
+            continue
+        token = str(source).strip().lower()
+        if not token:
+            continue
+        haystack.add(token)
+        for piece in re.split(r"[\s,/\-_]+", token):
+            piece = piece.strip()
+            if piece:
+                haystack.add(piece)
+    return any(t in haystack for t in tech_tags)
+
+
+def _check_code_block_density(
+    content: str,
+    topic: str,
+    tags: list[str],
+) -> list[ValidationIssue]:
+    """GH-234: warn when tech-tagged posts ship without enough code.
+
+    All thresholds + the tag list are read from ``app_settings`` via
+    ``site_config`` so operators can tune per niche without redeploys.
+    Returns warnings only — never critical.
+    """
+    if not _sc.get_bool("code_density_check_enabled", True):
+        return []
+    tech_tags = {
+        t.strip().lower()
+        for t in _sc.get_list(
+            "code_density_tag_filter",
+            "technical,ai,programming,ml,python,javascript,rust,go",
+        )
+        if t and t.strip()
+    }
+    if not _is_tech_post(tags, topic, tech_tags):
+        return []
+
+    min_blocks_per_700w = _sc.get_int("code_density_min_blocks_per_700w", 1)
+    min_line_ratio_pct = _sc.get_int("code_density_min_line_ratio_pct", 20)
+    long_post_floor_words = _sc.get_int("code_density_long_post_floor_words", 300)
+
+    block_count, code_lines, total_non_empty = _count_code_blocks_and_lines(content)
+    prose_text = _strip_code_blocks_for_word_count(content)
+    word_count = len(re.findall(r"\b[\w'-]+\b", prose_text))
+
+    issues: list[ValidationIssue] = []
+
+    # Sub-check (a): blocks-per-N-words floor. Only meaningful when the
+    # post is long enough that "zero code blocks" is genuinely a signal —
+    # a 200-word note doesn't need a snippet.
+    if (
+        min_blocks_per_700w > 0
+        and word_count >= 200
+    ):
+        # Round up so a 701-word post still requires the floor count.
+        expected_blocks = max(
+            min_blocks_per_700w,
+            -(-word_count * min_blocks_per_700w // 700),
+        )
+        if block_count < expected_blocks:
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="code_block_density",
+                description=(
+                    f"Tech post has {block_count} fenced code block(s) for "
+                    f"{word_count} prose words; expected at least "
+                    f"{expected_blocks} (threshold: "
+                    f"{min_blocks_per_700w} per 700 words). Consider adding "
+                    "a runnable example — pure-prose tech posts hurt EEAT signals."
+                ),
+                matched_text=f"blocks={block_count}, prose_words={word_count}",
+            ))
+
+    # Sub-check (b): code-line ratio floor for longer posts. Independent
+    # of (a) — a post can have one giant block but still flunk this if
+    # the code share is buried under prose.
+    if (
+        min_line_ratio_pct > 0
+        and total_non_empty > 0
+        and word_count >= long_post_floor_words
+    ):
+        ratio_pct = (code_lines * 100) // total_non_empty
+        if ratio_pct < min_line_ratio_pct:
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="code_block_density",
+                description=(
+                    f"Tech post code-line ratio is {ratio_pct}% "
+                    f"({code_lines}/{total_non_empty} non-empty lines); "
+                    f"threshold is {min_line_ratio_pct}%. Add or expand "
+                    "code samples so the post demonstrates the technique, "
+                    "not just describes it."
+                ),
+                matched_text=f"code_lines={code_lines}, total_lines={total_non_empty}",
+            ))
+
+    return issues
+
+
 def validate_content(
     title: str,
     content: str,
     topic: str = "",
     tags: list[str] | None = None,
-    *,
-    site_config: Any | None = None,
 ) -> ValidationResult:
     """
     Validate content against hard quality rules.
@@ -828,13 +926,6 @@ def validate_content(
     topic-mismatched library mentions (e.g. recommending CadQuery from
     an ai-ml post). Omitting tags keeps the rule working but with a
     weaker fallback based on the topic/title text.
-
-    site_config (Phase H step 5, GH#95): SiteConfig instance used to
-    read the warning-reject threshold. When None, falls back to the
-    env var CONTENT_VALIDATOR_WARNING_REJECT_THRESHOLD (uppercase) and
-    then to a hardcoded floor of 3 — matches the previous singleton
-    behavior when the DB wasn't loaded yet. Production callers should
-    pass ``app.state.site_config``; tests can omit and get env/default.
     """
     issues: list[ValidationIssue] = []
     title = title or ""
@@ -888,33 +979,10 @@ def validate_content(
         "Hallucinated internal link: '{matched}'"
     ))
 
-    # 5b. Check for unlinked citations (hallucinated paper/study references).
-    # ``flags=0`` — these patterns rely on ``[A-Z]`` title-case discrimination
-    # which collapses to ``[A-Za-z]`` under IGNORECASE (default), producing a
-    # 100% false-positive rate on normal lowercase prose. Inline ``(?i:...)``
-    # groups inside each pattern handle the keyword case-insensitivity.
-    #
-    # Preprocess the text before matching:
-    #
-    #   - Strip markdown headings (# lines) and list-item leaders so section
-    #     titles shaped "Word Word: Subtitle" don't false-flag (pattern 5).
-    #   - Strip markdown link constructs ``[text](url)`` — the display text
-    #     of a link IS linked, so by definition cannot be an *un*linked
-    #     citation. Patterns already have ``(?<!\[)`` lookbehinds, but those
-    #     only block matches that START at the ``[`` boundary; matches
-    #     beginning a few words in ("in [The Amplifier Effect: ...]") slip
-    #     through. Full removal is robust.
-    _no_links_text = re.sub(r"\[([^\]]*)\]\([^)]+\)", " ", full_text)
-    _no_structure_text = "\n".join(
-        line for line in _no_links_text.split("\n")
-        if not line.lstrip().startswith("#")
-        and not re.match(r"^\s*[*\-]\s+", line)
-        and not re.match(r"^\s*\d+[.)]\s+", line)
-    )
+    # 5b. Check for unlinked citations (hallucinated paper/study references)
     issues.extend(_check_patterns(
-        _no_structure_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
-        "Unlinked citation — possible hallucinated reference: '{matched}'",
-        flags=0,
+        full_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
+        "Unlinked citation — possible hallucinated reference: '{matched}'"
     ))
 
     # 5c. Hallucinated library/API reference detection (GH-83 part b).
@@ -924,6 +992,14 @@ def validate_content(
     # to critical if the same category fires > N times (same plumbing as
     # #91's unlinked_citation path).
     issues.extend(_detect_hallucinated_references(title, content, topic, tags))
+
+    # 5d. Code-block density (GH-234). Soft signal — tech-tagged posts
+    # with too little runnable code get a warning (never critical) so
+    # the human approver in multi_model_qa can decide whether the post
+    # legitimately doesn't need code (architecture overview, postmortem)
+    # or whether the writer surface-summarized a topic that needed
+    # demonstration. Tag list + thresholds are DB-tunable.
+    issues.extend(_check_code_block_density(content, topic, tags))
 
     # 6. Check for brand contradictions (promoting paid cloud APIs)
     issues.extend(_check_patterns(
@@ -998,18 +1074,6 @@ def validate_content(
     issues.extend(_check_patterns(
         full_text, FILLER_PHRASE_PATTERNS, "warning", "filler_phrase",
         "Filler phrase: '{matched}' — replace with a specific, concrete claim"
-    ))
-
-    # 7d-bis. Glad-Labs/poindexter#121: defense-in-depth against the
-    # legacy template-fallback path. The generation chain now raises
-    # ``AllModelsFailedError`` when all models fail (no template
-    # publish), but ANY content matching the canned stub phrases must be
-    # refused outright — even one match is critical because real authors
-    # don't write "is an important area that deserves careful attention".
-    issues.extend(_check_patterns(
-        full_text, FALLBACK_TEMPLATE_PATTERNS, "critical", "fallback_template",
-        "Fallback template signature detected (#121): '{matched}'. Generation likely "
-        "fell through to the legacy stub — refusing publication."
     ))
 
     # 8. Check title for impossible claims (numeric and written-out years)
@@ -1209,14 +1273,9 @@ def validate_content(
     # (a) Per-rule threshold promotion. Read the threshold from
     # site_config (DB-first) with a hardcoded floor of 3 so the guard
     # still fires on a cold-boot environment with no settings loaded.
-    if site_config is not None:
-        _warning_threshold = site_config.get_int(
-            "content_validator_warning_reject_threshold", 3,
-        )
-    else:
-        _warning_threshold = _env_int(
-            "content_validator_warning_reject_threshold", 3,
-        )
+    _warning_threshold = _sc.get_int(
+        "content_validator_warning_reject_threshold", 3,
+    )
     if _warning_threshold > 0:
         for _i in issues:
             if (
@@ -1258,20 +1317,11 @@ def validate_content(
 # Call separately from the async pipeline (validate_content is sync)
 # ============================================================================
 
-async def verify_content_urls(
-    content: str,
-    *,
-    site_config: Any | None = None,
-) -> list[ValidationIssue]:
+async def verify_content_urls(content: str) -> list[ValidationIssue]:
     """Extract all URLs from content and verify they resolve.
 
     Returns a list of ValidationIssues for dead/broken links.
     This is async because it makes HTTP requests.
-
-    site_config (Phase H step 5, GH#95): SiteConfig instance used to
-    read the ``site_domains`` skip-list. When None, falls back to the
-    env var SITE_DOMAINS — matches the previous singleton behavior
-    when the DB wasn't loaded yet.
     """
     import httpx
 
@@ -1295,10 +1345,7 @@ async def verify_content_urls(
     # Skip internal links (our own site) and known-good domains.
     # Domain list comes from site_config (site_domains = comma-separated),
     # not hardcoded — lets operators bring their own brand (#198).
-    if site_config is not None:
-        _raw = site_config.get("site_domains", "")
-    else:
-        _raw = _env_str("site_domains", "")
+    _raw = _sc.get("site_domains", "")
     skip_domains = {d.strip().lower() for d in _raw.split(",") if d.strip()}
     skip_domains.add("localhost")
 

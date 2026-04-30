@@ -19,21 +19,15 @@ class ResearchAgent:
     ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 
-    def __init__(self, *, site_config: Any):
+    def __init__(self):
         """
         Initializes the ResearchAgent.
-
-        Args:
-            site_config: SiteConfig instance (DI — Phase H, GH#95).
-                Required — threaded through to ResearchQualityService.
         """
         logger.info("Initializing Research Agent...")
         if not config.SERPER_API_KEY:
             raise ValueError("SERPER_API_KEY is not set in the environment.")
         self.serper_api_key = config.SERPER_API_KEY
-        self.research_quality_service = ResearchQualityService(
-            site_config=site_config,
-        )
+        self.research_quality_service = ResearchQualityService()
         try:
             self.tools = CrewAIToolsFactory.get_research_agent_tools()
             logger.info("ResearchAgent: Initialized with all research agent tools")
@@ -101,13 +95,7 @@ class _WorkflowResearchAgentAdapter:
         self._agent = None
         self._init_error = None
         try:
-            # Phase H (GH#95): ResearchAgent now requires site_config. The
-            # workflow_executor factory path has no handle to app.state, so
-            # we resolve a fresh SiteConfig here (reads env / falls back to
-            # defaults). If the workflow needs DB-backed values, migrate
-            # workflow_executor to thread site_config through the factory.
-            from services.site_config import SiteConfig
-            self._agent = ResearchAgent(site_config=SiteConfig())
+            self._agent = ResearchAgent()
         except Exception as e:
             self._init_error = str(e)
 

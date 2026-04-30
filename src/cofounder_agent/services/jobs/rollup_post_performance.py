@@ -48,13 +48,7 @@ class RollupPostPerformanceJob:
     description = (
         "Snapshot views_1d/7d/30d/total from page_views into post_performance"
     )
-    # Wall-clock cron at 01:30 UTC daily, NOT "every 24 hours". The
-    # interval-based schedule restarts the clock on every worker boot, so
-    # any worker process restarted more often than once a day never
-    # actually fires the job (root cause of the 2-day post_performance
-    # gap that surfaced 2026-04-24). Cron triggers absolute wall-clock
-    # time so frequent restarts don't matter.
-    schedule = "30 1 * * *"
+    schedule = "every 24 hours"
     idempotent = False  # multiple runs = multiple snapshots, by design
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:

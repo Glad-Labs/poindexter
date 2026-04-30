@@ -99,7 +99,7 @@ class QualityDimensions:
     CRITICAL_FLOOR: float = 50.0
     CRITICAL_DIMENSIONS: tuple = ("clarity", "relevance")
 
-    def average(self, *, site_config: Any = None) -> float:
+    def average(self) -> float:
         """Calculate overall score with minimum-dimension enforcement.
 
         Returns the arithmetic mean of all 7 dimensions, but caps the result
@@ -114,11 +114,6 @@ class QualityDimensions:
         Examples:
             clarity=80, relevance=48 → overall capped at 48 → FAIL
             clarity=80, relevance=70 → normal average → may PASS
-
-        Phase H step 5 (GH#95): ``site_config`` is optional but no longer
-        falls back to the module singleton. When None, uses the hardcoded
-        CRITICAL_FLOOR. Callers that want the tunable ``qa_critical_floor``
-        app_setting to apply must pass the config explicitly.
         """
         raw_average = (
             self.clarity
@@ -134,11 +129,8 @@ class QualityDimensions:
         # readability excluded (#1238) — Flesch penalizes technical vocabulary.
         # CRITICAL_FLOOR is tunable via app_settings (qa_critical_floor).
         try:
-            effective_floor = (
-                site_config.get_float("qa_critical_floor", self.CRITICAL_FLOOR)
-                if site_config is not None
-                else self.CRITICAL_FLOOR
-            )
+            from services.site_config import site_config
+            effective_floor = site_config.get_float("qa_critical_floor", self.CRITICAL_FLOOR)
         except Exception:
             effective_floor = self.CRITICAL_FLOOR
         critical_values = {dim: getattr(self, dim) for dim in self.CRITICAL_DIMENSIONS}

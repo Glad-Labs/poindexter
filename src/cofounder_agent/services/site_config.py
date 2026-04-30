@@ -2,42 +2,29 @@
 Site Configuration — DB-first, env-fallback identity and config.
 
 Loads all identity/config from app_settings on startup.
-Every service reads from an injected ``SiteConfig`` instance instead
-of ``os.getenv()``.
+Every service reads from this module instead of os.getenv().
 
 Only DATABASE_URL and PORT remain as env vars (chicken-and-egg).
 Everything else comes from the database.
 
-Usage (post Phase H, GH#95):
-    ``main.py`` owns the canonical instance. The lifespan constructs it
-    once, loads it from the DB, and attaches it to ``app.state.site_config``:
+Usage:
+    from services.site_config import site_config
+    name = site_config.get("site_name")            # "Glad Labs"
+    url = site_config.get("api_base_url")           # "https://..."
+    email = site_config.get("privacy_email")        # "privacy@..."
 
-        _site_cfg = SiteConfig()
-        await _site_cfg.load(pool)
-        app.state.site_config = _site_cfg
+    # Or with a default
+    gpu = site_config.get("gpu_model", "Unknown GPU")
 
-    Code that needs site_config gets it via the DI seam for its layer:
-
-    * **Route handlers** — FastAPI dependency:
-        ``site_config: SiteConfig = Depends(get_site_config_dependency)``
-    * **Services** — accept ``site_config`` in ``__init__``; store on
-      ``self._site_config``. Make it required (no None default) for
-      production classes; tests construct with
-      ``SiteConfig(initial_config={...})``.
-    * **Pipeline stages** — read ``context.get("site_config")``. The
-      context dict is seeded by ``process_content_generation_task``.
-    * **Image providers / taps / topic sources** — read
-      ``config.get("_site_config")``. The dispatcher/runner seeds it.
-
-    The module-level ``site_config`` singleton is in the process of
-    being removed (GH-117). Until every call site migrates to DI, it
-    still exists as a transitional shim. All new code MUST accept the
-    instance as a parameter / read it from its DI seam.
+Startup:
+    Called from main.py lifespan after DB pool is ready:
+        await site_config.load(pool)
 
 Testing:
     Tests should construct their own ``SiteConfig(initial_config=...)``
-    or use the ``test_site_config`` fixture in
-    ``tests/unit/conftest.py``.
+    instead of mutating the shared singleton. This avoids test pollution
+    between cases that seed different values, and unblocks #242 one
+    test file at a time without touching production callers.
 
         cfg = SiteConfig(initial_config={"site_url": "https://test"})
         assert cfg.get("site_url") == "https://test"
@@ -96,16 +83,6 @@ class SiteConfig:
             logger.warning("[SITE_CONFIG] No DB pool — using env var fallbacks only")
             return 0
 
-        # Attach the pool BEFORE attempting the SELECT so a transient
-        # load failure doesn't leave the SiteConfig pool-less for the
-        # rest of the session (gitea#322 follow-up). Downstream
-        # consumers — CostGuard.record_usage, SiteConfig.get_secret,
-        # the LLM provider plugins' _build_cost_guard — all silently
-        # no-op when ``_pool`` is None. Losing the pool here was the
-        # silent-disabled-cost-tracking class of bug Matt asked us to
-        # hunt.
-        self._pool = pool
-
         try:
             rows = await pool.fetch(
                 "SELECT key, value FROM app_settings WHERE is_secret = false"
@@ -115,13 +92,11 @@ class SiteConfig:
                     self._config[row["key"]] = row["value"]
 
             self._loaded = True
+            self._pool = pool  # Retain for on-demand get_secret() lookups
             logger.info("[SITE_CONFIG] Loaded %d settings from database", len(self._config))
             return len(self._config)
         except Exception as e:
             logger.warning("[SITE_CONFIG] Failed to load from DB: %s — using env fallbacks", e)
-            # Pool is still attached above, so get_secret() and CostGuard
-            # writes keep working even though the in-memory cache is
-            # incomplete.
             return 0
 
     async def reload(self, pool) -> int:
@@ -247,20 +222,5 @@ class SiteConfig:
         return dict(self._config)
 
 
-# ---------------------------------------------------------------------------
-# Phase H cleanup status (2026-04-24)
-# ---------------------------------------------------------------------------
-#
-# Many call sites have been migrated to accept a SiteConfig instance via
-# DI (TopicDiscovery, plan_images, _plan_and_inject_placeholders,
-# DatabaseService.initialize, ContentDatabase.get_metrics,
-# services/taps/runner). The remaining importers are enumerated in
-# GH-117 — until that issue closes, this module-level singleton stays
-# as a transitional shim so those call sites still work.
-#
-# DO NOT import this singleton in NEW code. Accept ``site_config`` as
-# a parameter, read it from ``app.state.site_config`` (routes),
-# ``context["site_config"]`` (stages), or ``self._site_config``
-# (services). See commits under GH-95 and GH-117 for the established DI
-# patterns.
+# Global singleton — import this everywhere
 site_config = SiteConfig()

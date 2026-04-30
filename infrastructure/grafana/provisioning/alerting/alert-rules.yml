@@ -1,61 +1,800 @@
-# Grafana alert rules — RETIRED 2026-04-25.
-#
-# All 15 rules previously provisioned here have been replaced by direct-fanout
-# alert paths that don't depend on Grafana being up to fire:
-#
-#   - Brain probes (`brain/health_probes.py`) cover error rate, stuck tasks,
-#     embeddings freshness, content quality, traffic anomalies, pipeline
-#     throughput, publish rate, worker liveness, ollama liveness, disk space,
-#     and a new `gpu_temperature` probe (1-min cadence). Brain notifies via
-#     Telegram + Discord through `brain/brain_daemon.py:notify()`.
-#   - Prometheus rules (`infrastructure/prometheus/rules.yml`) cover the
-#     critical infra signals: PoindexterWorkerDown, PoindexterPostgresDown,
-#     PostgresConnectionsHigh/Critical, DailySpendApproachingLimit,
-#     DailySpendOverBudget, MonthlySpendHigh, EmbeddingsStale,
-#     NoPublishedPostsRecently, PostsNotEmbedded, PostgresSlowQuery,
-#     OllamaNoModelsLoaded. They fan out via Alertmanager → worker
-#     `/api/webhooks/alertmanager` → handler persists to alert_events and
-#     pages the operator (services/integrations/handlers/webhook_alertmanager.py).
-#
-# `deleteRules:` below explicitly removes the previously-provisioned UIDs;
-# Grafana's provisioner is additive by default and would otherwise keep
-# them in its internal DB even with an empty `groups:` block.
-#
-# Re-enabling Grafana-side alerts in the future: drop new entries under
-# `groups:` and remove the matching uid from `deleteRules`.
-
+# Grafana Alert Rules — Brain DB health monitoring
+# These fire against the local-brain-db PostgreSQL datasource and notify via Telegram.
 apiVersion: 1
 
-groups: []
+groups:
+  - orgId: 1
+    name: brain-db-health
+    folder: Glad Labs Alerts
+    interval: 1m
+    rules:
+      # 1. HIGH ERROR RATE — more than 5 errors in audit_log in the last hour
+      - uid: brain-high-error-rate
+        title: High Error Rate
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          team: glad-labs
+        annotations:
+          summary: "High error rate detected in audit_log"
+          description: "More than 5 errors logged in the last hour (current: {{ $values.B.Value }}). Investigate recent failures in the brain pipeline."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            model:
+              rawSql: "SELECT count(*) as error_count FROM audit_log WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '1 hour'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
 
-deleteRules:
-  - orgId: 1
-    uid: brain-high-error-rate
-  - orgId: 1
-    uid: brain-stale-tasks
-  - orgId: 1
-    uid: brain-embedding-sync-lag
-  - orgId: 1
-    uid: brain-db-size-warning
-  - orgId: 1
-    uid: brain-daily-cost-spike
-  - orgId: 1
-    uid: brain-content-quality-drop
-  - orgId: 1
-    uid: brain-traffic-anomaly
-  - orgId: 1
-    uid: brain-pipeline-stalled
-  - orgId: 1
-    uid: brain-zero-published-week
-  - orgId: 1
-    uid: brain-worker-offline
-  - orgId: 1
-    uid: brain-ollama-down
-  - orgId: 1
-    uid: brain-heartbeat-stale
-  - orgId: 1
-    uid: brain-gpu-metrics-stale
-  - orgId: 1
-    uid: brain-gpu-temp-high
-  - orgId: 1
-    uid: brain-disk-space-low
+      # 2. STALE TASKS — tasks stuck in_progress for > 2 hours
+      - uid: brain-stale-tasks
+        title: Stale Tasks
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Tasks stuck in_progress for over 2 hours"
+          description: "{{ $values.B.Value }} task(s) have been in_progress without updates for more than 2 hours. This likely indicates a hung worker or lost connection."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 7200
+              to: 0
+            model:
+              rawSql: "SELECT count(*) as stuck_count FROM pipeline_tasks_view WHERE status = 'in_progress' AND updated_at < NOW() - INTERVAL '2 hours'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 3. EMBEDDING SYNC LAG — newest embedding is > 6 hours old
+      - uid: brain-embedding-sync-lag
+        title: Embedding Sync Lag
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Embedding sync is lagging - newest embedding is over 6 hours old"
+          description: "The most recent embedding is {{ $values.B.Value }} hours old. Auto-embed may be stuck or the pipeline is not generating new content."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            model:
+              rawSql: "SELECT EXTRACT(EPOCH FROM NOW() - MAX(created_at))/3600 as hours_since FROM embeddings"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 6
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 4. DB SIZE WARNING — database exceeds 1 GB
+      - uid: brain-db-size-warning
+        title: DB Size Warning
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Brain database exceeds 1 GB"
+          description: "poindexter_brain database size is {{ $values.B.Value }} GB. Consider archiving old data or increasing storage allocation."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              rawSql: "SELECT pg_database_size('poindexter_brain') / (1024*1024*1024.0) as size_gb"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 5. DAILY COST SPIKE — cost_logs SUM in last 24h exceeds $5
+      - uid: brain-daily-cost-spike
+        title: Daily Cost Spike
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Daily LLM spending exceeded $5 budget"
+          description: "Total cost in the last 24 hours is ${{ $values.B.Value }}. Check cost_logs for runaway API calls."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 86400
+              to: 0
+            model:
+              rawSql: "SELECT COALESCE(SUM(cost_usd), 0) as daily_cost FROM cost_logs WHERE created_at > NOW() - INTERVAL '24 hours'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 6. CONTENT QUALITY DROP — avg quality_score over last 7 days below 70
+      - uid: brain-content-quality-drop
+        title: Content Quality Drop
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Average content quality score dropped below 70"
+          description: "7-day average quality score is {{ $values.B.Value }}. Review pipeline prompts or model performance."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 604800
+              to: 0
+            model:
+              rawSql: "SELECT COALESCE(AVG(quality_score), 100) as avg_score FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND updated_at > NOW() - INTERVAL '7 days'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 70
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 7. TRAFFIC ANOMALY — page_views dropped >50% vs previous 24h
+      - uid: brain-traffic-anomaly
+        title: Traffic Anomaly
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Page views dropped over 50% compared to previous day"
+          description: "Today: {{ $values.B.Value }} ratio vs yesterday. Possible site issue, SEO penalty, or CDN problem."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 172800
+              to: 0
+            model:
+              rawSql: >
+                WITH today AS (
+                  SELECT COUNT(*) as cnt FROM page_views
+                  WHERE created_at > NOW() - INTERVAL '24 hours'
+                ), yesterday AS (
+                  SELECT COUNT(*) as cnt FROM page_views
+                  WHERE created_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours'
+                )
+                SELECT CASE WHEN yesterday.cnt = 0 THEN 1.0
+                            ELSE today.cnt::float / yesterday.cnt::float
+                       END as ratio
+                FROM today, yesterday
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 0.5
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 8. PIPELINE STALLED — zero new pipeline_tasks_view in last 48h
+      - uid: brain-pipeline-stalled
+        title: Pipeline Stalled
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "No new content tasks created in 48 hours"
+          description: "The pipeline has not generated any new tasks in 2 days. Check worker status, cron jobs, and Ollama health."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 172800
+              to: 0
+            model:
+              rawSql: "SELECT COUNT(*) as task_count FROM pipeline_tasks_view WHERE created_at > NOW() - INTERVAL '48 hours'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 9. WORKER OFFLINE — API health endpoint not returning healthy worker
+      - uid: brain-worker-offline
+        title: Worker Offline
+        condition: C
+        for: 5m
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+          team: glad-labs
+        annotations:
+          summary: "Content worker has not checked in recently"
+          description: "No brain cycle has logged a decision in 30 minutes AND the worker has no recent task activity. The worker process may be crashed."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              rawSql: "SELECT CASE WHEN (SELECT MAX(created_at) FROM brain_decisions) > NOW() - INTERVAL '10 minutes' THEN 1 ELSE (SELECT COUNT(*) FROM pipeline_tasks_view WHERE updated_at > NOW() - INTERVAL '30 minutes' AND status IN ('in_progress', 'completed', 'failed')) END as worker_ok"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 10. OLLAMA DOWN — no cost_logs from local models in last 6 hours during active pipeline
+      - uid: brain-ollama-down
+        title: Ollama Unresponsive
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "No local model inference in the last 6 hours"
+          description: "No local model inference in 6 hours while tasks are pending. Ollama may be down or unresponsive."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            model:
+              rawSql: "SELECT CASE WHEN (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status IN ('pending', 'in_progress')) = 0 THEN 1 ELSE (SELECT COUNT(*) FROM cost_logs WHERE cost_type = 'local_compute' AND created_at > NOW() - INTERVAL '6 hours') END as ollama_ok"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 11. BRAIN HEARTBEAT STALE — brain daemon hasn't logged a decision in 15 min
+      - uid: brain-heartbeat-stale
+        title: Brain Daemon Stale
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+          team: glad-labs
+        annotations:
+          summary: "Brain daemon has not completed a cycle in 15+ minutes"
+          description: "No brain_decisions logged in {{ $values.B.Value }} minutes. The daemon may be crashed or stuck. The OS-level watchdog should auto-restart it."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            model:
+              rawSql: "SELECT EXTRACT(EPOCH FROM NOW() - MAX(created_at))/60 as minutes_since FROM brain_decisions"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 15
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 12. ZERO PUBLISHED POSTS THIS WEEK — no posts published in 7 days
+      - uid: brain-zero-published-week
+        title: Zero Published Posts This Week
+        condition: C
+        for: 0s
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "No posts published in the last 7 days"
+          description: "The pipeline has not published any content this week. Check approval queue, quality scores, and auto-publish threshold."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 604800
+              to: 0
+            model:
+              rawSql: "SELECT COUNT(*) as pub_count FROM posts WHERE status = 'published' AND published_at > NOW() - INTERVAL '7 days'"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 13. GPU METRICS STALE — gpu_metrics not updated in 30 minutes
+      - uid: brain-gpu-metrics-stale
+        title: GPU Metrics Stale
+        condition: C
+        for: 5m
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "GPU metrics scraper stopped collecting data"
+          description: "No gpu_metrics rows in the last 30 minutes. The gpu-scraper.py process may have crashed or lost its DB connection."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            model:
+              rawSql: "SELECT EXTRACT(EPOCH FROM NOW() - MAX(timestamp))/60 as minutes_since FROM gpu_metrics"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 30
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 14. GPU TEMPERATURE HIGH — GPU exceeds 85°C
+      - uid: brain-gpu-temp-high
+        title: GPU Temperature High
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          team: glad-labs
+        annotations:
+          summary: "GPU temperature exceeded 85°C"
+          description: "GPU temperature is {{ $values.B.Value }}°C. Check cooling, fan speed, and workload. Sustained high temps can damage hardware."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              rawSql: "SELECT temperature FROM gpu_metrics ORDER BY timestamp DESC LIMIT 1"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 85
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+
+      # 15. DISK SPACE LOW — less than 50 GB free
+      - uid: brain-disk-space-low
+        title: Disk Space Low
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          team: glad-labs
+        annotations:
+          summary: "Less than 50 GB disk space remaining"
+          description: "Free disk space is {{ $values.B.Value }} GB. Consider running docker-prune.ps1 or cleaning up old data."
+        data:
+          - refId: A
+            datasourceUid: local-brain-db
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              rawSql: "SELECT pg_database_size('poindexter_brain') / (1024*1024*1024.0) as db_size_gb"
+              format: table
+              editorMode: code
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 5
+                  operator:
+                    type: and
+                  reducer:
+                    type: last

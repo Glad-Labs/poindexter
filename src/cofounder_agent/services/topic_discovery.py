@@ -14,9 +14,7 @@ All free, no API keys. Runs as part of the idle worker or on a cron.
 
 Usage:
     from services.topic_discovery import TopicDiscovery
-    from services.site_config import site_config
-
-    discovery = TopicDiscovery(pool, site_config=site_config)
+    discovery = TopicDiscovery(pool)
     topics = await discovery.discover(max_topics=5)
     await discovery.queue_topics(topics)
 """
@@ -28,6 +26,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import site_config as _module_site_config
+
+# Re-export the module-level singleton under the legacy ``site_config``
+# name so existing call sites in this file (which still read directly
+# from the singleton) keep working unchanged. Aliased rather than
+# re-imported so there's a single hook point if/when the singleton is
+# retired (Phase H — gh#95).
+site_config = _module_site_config
 
 logger = get_logger(__name__)
 
@@ -88,38 +94,70 @@ CATEGORY_SEARCHES = {
 }
 
 
-# Stop-word + content-word + overlap helpers moved to services.topic_dedup
-# in #151 so other ingest paths (manual topic injection, RSS, future
-# topic sources) can reuse them without importing the full dispatcher.
-# Re-exported here so existing imports of these names from
-# ``services.topic_discovery`` keep working — public API surface
-# preserved, implementation moved.
-from services.topic_dedup import (  # noqa: F401  (re-exports for back-compat)
-    _STOP_WORDS,
-    _content_words,
-    _word_overlap_match,
+_STOP_WORDS = frozenset(
+    "a an the in on of to for and or but is are was were be been by with from "
+    "at as it its that this these those not no nor do does did will would "
+    "should could can may might shall into your you we they how what why when "
+    "where who which have has had here there their about just also than more "
+    "most some any all every without actually really need don t s re ve ll "
+    "new top best way beyond".split()
 )
+
+
+def _content_words(title: str) -> set[str]:
+    """Extract meaningful words from a title, stripping stop words and punctuation."""
+    import re
+    words = set(re.findall(r"[a-z0-9]+", title.lower()))
+    return words - _STOP_WORDS
+
+
+def _word_overlap_match(
+    words_a: set[str], words_b: set[str], threshold: float = 0.4,
+) -> tuple[bool, float]:
+    """Return (is_duplicate, max_overlap_ratio).
+
+    Content-word overlap > threshold in either direction = duplicate. Both the
+    boolean and the ratio are returned so callers can log the actual score for
+    tuning (gitea#279) — previously this only returned bool and the log line
+    said 'X ≈ Y' with no numeric evidence, making the 0.4 default untunable
+    without instrumentation.
+    """
+    if not words_a or not words_b:
+        return False, 0.0
+    overlap = len(words_a & words_b)
+    ratio_a = overlap / len(words_a)
+    ratio_b = overlap / len(words_b)
+    max_ratio = max(ratio_a, ratio_b)
+    return max_ratio >= threshold, max_ratio
 
 
 class TopicDiscovery:
     """Discover trending topics from free web sources."""
 
-    def __init__(self, pool, *, site_config: Any):
+    def __init__(self, pool, *, site_config: Any = None):
         """Initialize the topic discovery dispatcher.
 
         Args:
             pool: asyncpg pool for reading published posts / app_settings.
-            site_config: SiteConfig instance — required (keyword-only).
-                Tests should pass an explicit instance via
-                ``SiteConfig(initial_config={...})``.
+            site_config: Optional SiteConfig instance (keyword-only).
+                When ``None``, falls back to the module-level singleton
+                imported at the top of this file. Tests can pass an
+                explicit instance built via
+                ``SiteConfig(initial_config={...})`` for isolation.
         """
-        if site_config is None:
-            raise ValueError(
-                "TopicDiscovery: site_config is required "
-                "(no module singleton fallback)"
-            )
         self.pool = pool
-        self._site_config = site_config
+        # Phase H groundwork: prefer a DI'd SiteConfig when callers
+        # supply one, fall back to the module singleton so existing
+        # ``TopicDiscovery(pool)`` callers keep working unchanged.
+        self._site_config = (
+            site_config if site_config is not None else _module_site_config
+        )
+        # Cached resolved overrides for the DB-backed filter constants
+        # (gh#218). Resolved lazily on first use so construction stays
+        # cheap and tests don't have to seed these settings to spin up
+        # an instance. ``None`` means "not yet resolved".
+        self.__news_re_cache: list[re.Pattern[str]] | None = None
+        self.__category_searches_cache: dict[str, list[str]] | None = None
 
     async def discover(self, max_topics: int = 10, categories: list[str] | None = None) -> list[DiscoveredTopic]:
         """Discover fresh topics from multiple sources.
@@ -178,19 +216,6 @@ class TopicDiscovery:
         # Filter to brand-relevant topics
         all_topics = [t for t in all_topics if self._is_brand_relevant(t.title)]
 
-        # Reject news / merch / personal-anecdote / truncated / emoji-led junk.
-        # Brand-relevance alone passes single-word "Cybersecurity" (matches
-        # brand keyword) and emoji-led devto clickbait (matches "AI") — the
-        # junk filter catches what brand-relevance can't. Without this, the
-        # gitea#279 dedup loosening lets noise through to the approval queue.
-        before_junk = len(all_topics)
-        all_topics = [t for t in all_topics if not self._is_news_or_junk(t.title)]
-        if before_junk != len(all_topics):
-            logger.info(
-                "[TOPIC_DISCOVERY] Junk filter rejected %d titles (%d -> %d)",
-                before_junk - len(all_topics), before_junk, len(all_topics),
-            )
-
         # Score and rank
         all_topics.sort(key=lambda t: t.relevance_score, reverse=True)
 
@@ -244,37 +269,9 @@ class TopicDiscovery:
             return set(default.split(","))
 
     async def queue_topics(self, topics: list[DiscoveredTopic]) -> int:
-        """Queue discovered topics as content tasks.
-
-        Respects the topic-decision queue cap (#146): when the
-        ``topic_decision`` gate is enabled and the awaiting-approval
-        queue is at ``topic_discovery_max_pending``, this skips the
-        propose call so the operator can drain before more lands.
-        """
+        """Queue discovered topics as content tasks."""
         import json as _json
         import random
-
-        # Queue-cap check — respected only when the topic-decision gate
-        # is on (default off). Keeps anticipation_engine from filling
-        # Telegram with hundreds of pending topics. When the cap can't
-        # be read (DB outage, malformed value), helper logs WARNING and
-        # falls back to the default — never silently lets the queue
-        # grow unbounded.
-        try:
-            from services.topic_proposal_service import queue_at_capacity
-            if await queue_at_capacity(pool=self.pool, site_config=self._site_config):
-                logger.info(
-                    "[TOPIC_DISCOVERY] topic_decision queue at capacity; "
-                    "skipping queue_topics for %d candidates",
-                    len(topics),
-                )
-                return 0
-        except Exception as _exc:
-            # The cap helper bails loudly itself; fall through here so a
-            # broken cap check doesn't block the legacy auto-queue path.
-            logger.warning(
-                "[TOPIC_DISCOVERY] queue_at_capacity check failed: %s", _exc,
-            )
 
         # Vary post lengths: default 60% short / 30% medium / 10% deep dive.
         # Customers tune the mix via app_settings.topic_discovery_length_distribution
@@ -284,7 +281,7 @@ class TopicDiscovery:
             (1500, 2000, 0.3),   # Medium reads (6-8 min)
             (2500, 3500, 0.1),   # Deep dives (10-15 min)
         ]
-        _raw_lengths = self._site_config.get("topic_discovery_length_distribution", "")
+        _raw_lengths = site_config.get("topic_discovery_length_distribution", "")
         if _raw_lengths:
             try:
                 _parsed = _json.loads(_raw_lengths)
@@ -308,7 +305,7 @@ class TopicDiscovery:
             ("educational", "professional"),  # How-to / explainer
             ("narrative", "casual"),          # Conversational analysis
         ]
-        _raw_styles = self._site_config.get("topic_discovery_style_distribution", "")
+        _raw_styles = site_config.get("topic_discovery_style_distribution", "")
         if _raw_styles:
             try:
                 _parsed_styles = _json.loads(_raw_styles)
@@ -428,7 +425,7 @@ class TopicDiscovery:
         top_days = await self._get_int_setting("devto_top_days", 7)
         min_reactions = await self._get_int_setting("devto_min_reactions", 20)
         tag = (await self._get_str_setting("devto_tag", "")).strip()
-        api_base = self._site_config.get("devto_api_base", "https://dev.to/api")
+        api_base = site_config.get("devto_api_base", "https://dev.to/api")
         source = DevtoSource()
         try:
             topics = await source.extract(
@@ -479,7 +476,7 @@ class TopicDiscovery:
         from services.topic_sources.codebase import CodebaseSource
         if not self.pool:
             return []
-        lookback = self._site_config.get_int("topic_discovery_ideation_lookback_days", 30)
+        lookback = site_config.get_int("topic_discovery_ideation_lookback_days", 30)
         source = CodebaseSource()
         try:
             topics = await source.extract(
@@ -492,34 +489,96 @@ class TopicDiscovery:
             return []
 
     async def _deduplicate(self, topics: list[DiscoveredTopic]) -> list[DiscoveredTopic]:
-        """Mark topics that duplicate existing published posts.
+        """Mark topics that duplicate existing published posts."""
+        if not self.pool:
+            return topics
 
-        Two thresholds, both tunable via app_settings (gitea#279):
+        try:
+            # Get all published post titles for fuzzy matching
+            rows = await self.pool.fetch(
+                "SELECT title FROM posts WHERE status = 'published'"
+            )
+            published_titles = {r["title"].lower() for r in rows}
 
-        - ``topic_dedup_existing_threshold`` (default 0.7) — match against
-          published posts + in-flight tasks. Should be permissive because
-          coincidental keyword overlap with the ~hundreds-of-titles corpus
-          is common (e.g. "Challenge" and "Week" recur across distinct
-          events with different sponsors / dollar amounts / platforms).
+            # Also check in-flight tasks (pending/in_progress/awaiting_approval)
+            # and recently-published-but-not-yet-in-posts rows — prevents the
+            # scheduler from queueing the same topic twice while one copy is
+            # mid-generation, and keeps fresh published posts in the exclude
+            # list even before the `posts.status='published'` snapshot catches up.
+            #
+            # Rejected topics are EXPLICITLY NOT in this set (Matt 2026-04-22):
+            # rejecting a bad draft shouldn't permanently block the topic itself.
+            # If gemma3:27b wrote a bad post about Kubernetes and QA killed it,
+            # glm-4.7 writing a different, better post about Kubernetes is still
+            # worth attempting.
+            # Window is tunable via app_settings key: qa_topic_dedup_hours (default 48).
+            try:
+                from services.site_config import site_config
+                dedup_hours = site_config.get_int("qa_topic_dedup_hours", 48)
+            except Exception:
+                dedup_hours = 48
+            task_rows = await self.pool.fetch(
+                """
+                SELECT topic, title FROM content_tasks
+                WHERE created_at > NOW() - ($1 || ' hours')::interval
+                  AND status IN ('pending', 'in_progress', 'awaiting_approval', 'published')
+                """,
+                str(dedup_hours),
+            )
+            pending_topics = set()
+            for r in task_rows:
+                if r.get("topic"):
+                    pending_topics.add(r["topic"].lower())
+                if r.get("title"):
+                    pending_topics.add(r["title"].lower())
 
-        - ``topic_dedup_intra_batch_threshold`` (default 0.65) — match
-          between candidates in the same scrape. Slightly tighter, since
-          a single source dropping two near-identical headlines usually
-          *is* a duplicate.
+            all_existing = published_titles | pending_topics
 
-        Both replace the previous hardcoded 0.4, which was filtering
-        14/14 candidates against the corpus (gitea#279, "topic intra-batch
-        dedup is too aggressive — distinct-event titles flagged as
-        duplicates"). Lowering either knob will block more topics; raising
-        will let more through.
-        """
-        # Implementation moved to services.topic_dedup.TopicDeduplicator
-        # in #151. Engine selection (lexical vs semantic) added in #201
-        # — operator picks via app_settings.topic_dedup_engine.
-        from services.topic_dedup_semantic import get_deduplicator
+            for topic in topics:
+                title_lower = topic.title.lower()
+                if title_lower in all_existing:
+                    topic.is_duplicate = True
+                    continue
+                topic_words = _content_words(title_lower)
+                if len(topic_words) < 2:
+                    continue
+                for existing_title in all_existing:
+                    existing_words = _content_words(existing_title)
+                    if len(existing_words) < 2:
+                        continue
+                    is_dup, score = _word_overlap_match(topic_words, existing_words)
+                    if is_dup:
+                        topic.is_duplicate = True
+                        logger.debug(
+                            "[DEDUP] '%s' matches '%s' (overlap=%.2f)",
+                            topic.title[:40], existing_title[:40], score,
+                        )
+                        break
 
-        deduper = get_deduplicator(self.pool, site_config=self._site_config)
-        return await deduper.mark_duplicates(topics)
+        except Exception as e:
+            logger.warning("[TOPIC_DISCOVERY] Dedup failed: %s", e)
+
+        for i, t1 in enumerate(topics):
+            if t1.is_duplicate:
+                continue
+            t1_words = _content_words(t1.title.lower())
+            if len(t1_words) < 2:
+                continue
+            for t2 in topics[i + 1:]:
+                if t2.is_duplicate:
+                    continue
+                t2_words = _content_words(t2.title.lower())
+                if len(t2_words) < 2:
+                    continue
+                is_dup, score = _word_overlap_match(t1_words, t2_words)
+                if is_dup:
+                    t2.is_duplicate = True
+                    logger.info(
+                        "[DEDUP] Intra-batch: '%s' ≈ '%s' (overlap=%.2f)",
+                        t2.title[:40], t1.title[:40], score,
+                    )
+
+        return topics
 
     # Keywords that indicate a topic is relevant to this site's niche.
     # KEEP THIS TIGHT — overly broad terms like "software", "code", "data",
@@ -572,65 +631,106 @@ class TopicDiscovery:
     }
 
     @staticmethod
-    def _match_brand_keywords(title: str, keywords: set[str]) -> bool:
-        """Pure matching helper: True if any keyword in ``keywords`` appears
-        in ``title``.
+    def _is_brand_relevant(title: str) -> bool:
+        """Check if a topic is relevant to the site's niche.
 
-        Uses word-boundary matching for single-word keywords (so 'arm'
-        doesn't match 'farmer') and substring matching for multi-word /
-        hyphenated keywords (specific enough to skip the boundary check).
-        Case-insensitive.
+        Uses word-boundary matching to avoid false positives like
+        'farmer' matching 'arm' or 'autocross' matching 'solo'.
+        Multi-word keywords use substring match (they're specific enough).
         """
         title_lower = title.lower()
-        for kw in keywords:
-            kw_lower = kw.lower()
-            if not kw_lower:
-                continue
-            if " " in kw_lower or "-" in kw_lower:
+        for kw in TopicDiscovery._BRAND_KEYWORDS:
+            if " " in kw or "-" in kw:
                 # Multi-word keywords: substring match is fine
-                if kw_lower in title_lower:
+                if kw in title_lower:
                     return True
             # Single-word keywords: require word boundary
-            elif re.search(rf"\b{re.escape(kw_lower)}\b", title_lower):
+            elif re.search(rf"\b{re.escape(kw)}\b", title_lower):
                 return True
         return False
 
-    def _is_brand_relevant(self, title: str) -> bool:
-        """Check if a topic is relevant to the site's niche.
+    def _resolved_category_searches(self) -> dict[str, list[str]]:
+        """Resolve the active category-search map (gh#218).
 
-        Resolution order (gh#216):
+        Resolution order:
 
-        1. ``app_settings.brand_keywords`` (comma-separated string) — the
-           customer-tunable override. New installs ship with this seeded
-           empty so Poindexter is niche-agnostic out of the box.
-        2. The hardcoded :pyattr:`_BRAND_KEYWORDS` set — Glad Labs's own
-           AI / gaming / PC-hardware niche, used as a permissive fallback
-           when no override has been configured. Falling back (rather than
-           hard-failing on empty) keeps existing Glad Labs deployments
-           working unchanged and avoids accidentally rejecting every topic
-           on a fresh install before the operator has tuned the niche.
+        1. ``app_settings.topic_discovery_category_searches`` — JSON
+           object, the customer-tunable override. Empty object ``{}``
+           (the default after migration 0111) means "no override".
+        2. The module-level :pydata:`CATEGORY_SEARCHES` map — Glad
+           Labs's tech / startup / hardware / gaming buckets, used as a
+           permissive fallback so existing deployments don't change
+           behaviour out from under themselves.
+
+        Cached on ``self`` after the first call: ``site_config.get`` is
+        a cheap dict lookup but ``json.loads`` is wasted work to repeat
+        on every classification.
         """
-        override = (self._site_config.get("brand_keywords", "") or "").strip()
-        if override:
-            keywords = {
-                kw.strip() for kw in override.split(",") if kw.strip()
-            }
+        if self.__category_searches_cache is not None:
+            return self.__category_searches_cache
+        raw = (
+            self._site_config.get("topic_discovery_category_searches", "")
+            or ""
+        ).strip()
+        resolved: dict[str, list[str]] = {}
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    resolved = {
+                        str(cat): [str(q) for q in queries]
+                        for cat, queries in parsed.items()
+                        if isinstance(queries, list)
+                    }
+                else:
+                    logger.warning(
+                        "[TOPIC_DISCOVERY] topic_discovery_category_searches "
+                        "is not a JSON object (got %s); using hardcoded "
+                        "CATEGORY_SEARCHES fallback",
+                        type(parsed).__name__,
+                    )
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(
+                    "[TOPIC_DISCOVERY] Failed to parse "
+                    "topic_discovery_category_searches as JSON: %s; "
+                    "using hardcoded CATEGORY_SEARCHES fallback", e,
+                )
         else:
-            keywords = self._BRAND_KEYWORDS
-        return self._match_brand_keywords(title, keywords)
+            # Empty string OR setting absent. Migration 0111 seeds "{}",
+            # so a totally missing key is a strong signal the migration
+            # hasn't been applied yet — log loudly per the gh#218 brief.
+            try:
+                _all_keys = self._site_config.all()
+            except Exception:
+                _all_keys = {}
+            if "topic_discovery_category_searches" not in _all_keys:
+                logger.warning(
+                    "[TOPIC_DISCOVERY] topic_discovery_category_searches "
+                    "not seeded — migration 0111 hasn't run? Falling "
+                    "back to hardcoded CATEGORY_SEARCHES."
+                )
+        if not resolved:
+            resolved = CATEGORY_SEARCHES
+        self.__category_searches_cache = resolved
+        return resolved
 
     def _classify_category(self, title: str) -> str:
         """Classify a title into a category."""
         title_lower = title.lower()
         scores = {}
-        for cat, searches in CATEGORY_SEARCHES.items():
+        for cat, searches in self._resolved_category_searches().items():
             keywords = " ".join(searches).lower().split()
             score = sum(1 for kw in keywords if kw in title_lower)
             scores[cat] = score
         best = max(scores, key=scores.get) if scores else "technology"
         return best if scores.get(best, 0) > 0 else "technology"
 
-    # Patterns that indicate news/current events (not evergreen editorial content)
+    # Patterns that indicate news/current events (not evergreen editorial
+    # content). Kept as class-level constants for the back-compat
+    # fallback path: when ``app_settings.topic_discovery_news_patterns``
+    # is empty (the default after migration 0111), TopicDiscovery uses
+    # these so existing Glad Labs deployments don't change behaviour.
+    # New customers seed their own JSON-array override per gh#218.
     _NEWS_PATTERNS = [
         r"\b(?:police|arrest|charged|sentenced|indicted|convicted|alleged)\b",
         r"\b(?:lawsuit|sued|court|judge|ruling|verdict)\b",
@@ -642,20 +742,88 @@ class TopicDiscovery:
     ]
     _NEWS_RE = [re.compile(p, re.IGNORECASE) for p in _NEWS_PATTERNS]
 
-    @staticmethod
-    def _is_news_or_junk(title: str) -> bool:
-        """Reject breaking news, current events, personal anecdotes, merch,
-        truncated mid-phrase titles, and emoji-led clickbait.
+    def _resolved_news_re(self) -> list[re.Pattern[str]]:
+        """Resolve the active news/junk regex list (gh#218).
 
-        Delegates to the canonical implementation in
-        ``services.topic_sources._filters`` so the dispatcher and the
-        per-source plugins stay in sync. The local class-level
-        ``_NEWS_RE`` constants are kept around for back-compat with any
-        code that still references them directly, but new patterns go
-        in ``_filters.py``.
+        Resolution order:
+
+        1. ``app_settings.topic_discovery_news_patterns`` — JSON array
+           of regex strings, customer-tunable override. Empty array
+           ``[]`` (the default after migration 0111) means "no
+           override".
+        2. The class-level :pyattr:`_NEWS_RE` — Glad Labs's
+           lawsuit/election/merch reject list, used as a permissive
+           fallback.
+
+        Compiled patterns are cached on ``self``. Bad regexes in the
+        override are logged and skipped, not raised — one typo in the
+        operator's seed shouldn't take topic discovery offline.
         """
-        from services.topic_sources._filters import is_news_or_junk
-        return is_news_or_junk(title)
+        if self.__news_re_cache is not None:
+            return self.__news_re_cache
+        raw = (
+            self._site_config.get("topic_discovery_news_patterns", "")
+            or ""
+        ).strip()
+        compiled: list[re.Pattern[str]] = []
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    for p in parsed:
+                        if not isinstance(p, str):
+                            continue
+                        try:
+                            compiled.append(re.compile(p, re.IGNORECASE))
+                        except re.error as e:
+                            logger.warning(
+                                "[TOPIC_DISCOVERY] Skipping invalid regex "
+                                "in topic_discovery_news_patterns: %r (%s)",
+                                p, e,
+                            )
+                else:
+                    logger.warning(
+                        "[TOPIC_DISCOVERY] topic_discovery_news_patterns "
+                        "is not a JSON array (got %s); using hardcoded "
+                        "_NEWS_RE fallback",
+                        type(parsed).__name__,
+                    )
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(
+                    "[TOPIC_DISCOVERY] Failed to parse "
+                    "topic_discovery_news_patterns as JSON: %s; "
+                    "using hardcoded _NEWS_RE fallback", e,
+                )
+        else:
+            try:
+                _all_keys = self._site_config.all()
+            except Exception:
+                _all_keys = {}
+            if "topic_discovery_news_patterns" not in _all_keys:
+                logger.warning(
+                    "[TOPIC_DISCOVERY] topic_discovery_news_patterns "
+                    "not seeded — migration 0111 hasn't run? Falling "
+                    "back to hardcoded _NEWS_RE."
+                )
+        if not compiled:
+            compiled = self._NEWS_RE
+        self.__news_re_cache = compiled
+        return compiled
+
+    def _is_news_or_junk(self, title: str) -> bool:
+        """Reject breaking news, current events, personal anecdotes, and merch.
+
+        Regex list is sourced from ``app_settings`` (gh#218) with the
+        class-level :pyattr:`_NEWS_RE` as the permissive fallback. The
+        too-short-title guard still applies unconditionally.
+        """
+        for pattern in self._resolved_news_re():
+            if pattern.search(title):
+                return True
+        # Too short to be a real topic
+        if len(title.split()) < 4:
+            return True
+        return False
 
     def _rewrite_as_blog_topic(self, title: str) -> str:
         """Clean up a scraped title into a good blog topic.

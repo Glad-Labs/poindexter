@@ -32,21 +32,13 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def _mock_sc():
-    """Fresh SiteConfig instance — threaded into StartupManager's ctor
-    per Phase H (GH#95)."""
-    from services.site_config import SiteConfig
-
-    return SiteConfig()
-
-
 def _make_manager():
     """Import StartupManager with a clean import context."""
     # Remove cached module so re-import is fresh each test (avoids state leakage)
     sys.modules.pop("utils.startup_manager", None)
     from utils.startup_manager import StartupManager
 
-    return StartupManager(site_config=_mock_sc())
+    return StartupManager()
 
 
 def _run(coro):

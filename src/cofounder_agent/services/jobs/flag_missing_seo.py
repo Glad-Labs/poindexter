@@ -29,9 +29,7 @@ class FlagMissingSeoJob:
     schedule = "every 12 hours"
     idempotent = True  # Read-only — no writes to posts
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any = None,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         limit = int(config.get("limit", 10))
         file_issue = bool(config.get("file_gitea_issue", True))
 
@@ -64,7 +62,6 @@ class FlagMissingSeoJob:
             await create_gitea_issue(
                 f"seo: {len(rows)} posts missing SEO title or description",
                 body,
-                site_config=site_config,
             )
 
         detail = f"found {len(rows)} post(s) with missing SEO metadata"

@@ -1,12 +1,10 @@
 """
 Unit tests for services/image_service.py
 
-Post-Phase-G (GH#71) the SDXL model lifecycle lives in
-``services/image_providers/sdxl.py`` — the tests for
-``_initialize_model`` / ``_unload_model`` / ``_import_pipeline_class``
-now live in ``test_image_providers_sdxl.py``. This file covers the
-ImageService public surface: FeaturedImageMetadata, Pexels search
-orchestration, the ImageProvider dispatcher, and utility methods.
+Tests FeaturedImageMetadata (to_dict, to_markdown), ImageService initialization,
+search_featured_image, get_images_for_gallery, _pexels_search (mocked httpx),
+generate_image_markdown, optimize_image_for_web, cache helpers, and factory.
+Heavy GPU/SDXL paths are not exercised; they are tested via flag checks only.
 """
 
 from contextlib import asynccontextmanager
@@ -23,12 +21,6 @@ from services.image_service import (
     get_default_image_model,
     get_image_service,
 )
-from services.site_config import SiteConfig
-
-
-def _sc() -> SiteConfig:
-    """Fresh SiteConfig for Phase H DI (GH#95)."""
-    return SiteConfig()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -63,14 +55,17 @@ async def mock_async_client(response):
 
 
 def make_image_service_with_key() -> ImageService:
-    """Return an ImageService that thinks Pexels is configured.
+    """Return an ImageService with a fake Pexels API key injected.
 
-    Post-Phase-G the key itself lives in PexelsProvider — ImageService
-    only caches an ``is-configured`` verdict. Flip the cache flags so
-    tests don't try to hit the DB probe.
+    Post-encrypt refactor: ``ImageService()`` no longer reads the key
+    at __init__ (secrets aren't in site_config; require an async DB
+    fetch). Tests set the fields directly here and flip
+    ``_pexels_key_checked_db`` so the lazy DB lookup is skipped.
     """
-    svc = ImageService(site_config=_sc())
+    svc = ImageService()
+    svc.pexels_api_key = "fake-pexels-key"
     svc.pexels_available = True
+    svc.pexels_headers = {"Authorization": "fake-pexels-key"}
     svc._pexels_key_checked_db = True
     return svc
 
@@ -81,7 +76,7 @@ def make_image_service_no_key() -> ImageService:
         import os
 
         os.environ.pop("PEXELS_API_KEY", None)
-        return ImageService(site_config=_sc())
+        return ImageService()
 
 
 # ---------------------------------------------------------------------------
@@ -167,20 +162,23 @@ class TestImageServiceInit:
 
     def test_pexels_not_available_without_key(self, monkeypatch):
         monkeypatch.delenv("PEXELS_API_KEY", raising=False)
-        svc = ImageService(site_config=_sc())
+        svc = ImageService()
         assert svc.pexels_available is False
 
-    def test_sdxl_not_initialized_at_startup(self):
-        # Post-Phase-G the SDXL lifecycle lives on SdxlProvider's
-        # module-level state. A fresh ImageService surfaces
-        # ``sdxl_initialized=False`` via the provider shim. We avoid
-        # asserting on the shared module state here because other tests
-        # in this session may have touched it; the important invariant
-        # is that a new ImageService exposes the attribute at all.
-        svc = ImageService(site_config=_sc())
-        assert isinstance(svc.sdxl_initialized, bool)
-        assert isinstance(svc.sdxl_available, bool)
+    def test_pexels_base_url_set(self):
+        svc = ImageService()
+        assert "pexels.com" in svc.pexels_base_url
 
+    def test_sdxl_not_initialized_at_startup(self):
+        svc = ImageService()
+        # Models are lazily initialized only when generate_image() is called
+        assert svc.sdxl_initialized is False
+        assert svc._gen_pipe is None
+        assert svc._active_model is None
+
+    def test_search_cache_starts_empty(self):
+        svc = ImageService()
+        assert svc.search_cache == {}
 
 
 # ---------------------------------------------------------------------------
@@ -190,8 +188,10 @@ class TestImageServiceInit:
 
 class TestSearchFeaturedImage:
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_api_key(self):
-        svc = ImageService(site_config=_sc())
+    async def test_returns_none_when_no_api_key(self, monkeypatch):
+        monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+        svc = ImageService()
+        svc.pexels_api_key = ""
         svc.pexels_available = False
         svc._pexels_key_checked_db = True  # prevent DB lookup
         result = await svc.search_featured_image("AI")
@@ -199,45 +199,32 @@ class TestSearchFeaturedImage:
 
     @pytest.mark.asyncio
     async def test_returns_image_metadata_on_success(self):
-        from plugins.image_provider import ImageResult
-
         svc = make_image_service_with_key()
-        fake_provider = MagicMock()
-        fake_provider.name = "pexels"
-        fake_provider.fetch = AsyncMock(return_value=[
-            ImageResult(
-                url=SAMPLE_PHOTO["src"]["large"],
-                thumbnail=SAMPLE_PHOTO["src"]["small"],
-                photographer="Jane Doe",
-                photographer_url="https://pexels.com/@jane",
-                width=1920,
-                height=1080,
-                alt_text="A beautiful landscape",
-                source="pexels",
-                search_query="nature",
-            ),
-        ])
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
+        resp = make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
+            mock_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_ctx.get = AsyncMock(return_value=resp)
+            mock_cls.return_value = mock_ctx
+
             result = await svc.search_featured_image("nature")
 
         assert result is not None
         assert isinstance(result, FeaturedImageMetadata)
         assert result.url == SAMPLE_PHOTO["src"]["large"]
-        assert result.source == "pexels"
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_photos_found(self):
         svc = make_image_service_with_key()
-        fake_provider = MagicMock()
-        fake_provider.name = "pexels"
-        fake_provider.fetch = AsyncMock(return_value=[])
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
+        resp = make_mock_httpx_response({"photos": []})
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
+            mock_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_ctx.get = AsyncMock(return_value=resp)
+            mock_cls.return_value = mock_ctx
+
             result = await svc.search_featured_image("very_obscure_topic_xyz")
 
         assert result is None
@@ -245,16 +232,15 @@ class TestSearchFeaturedImage:
     @pytest.mark.asyncio
     async def test_excludes_person_keywords(self):
         svc = make_image_service_with_key()
-        captured_queries: list[str] = []
+        make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
+        captured_queries = []
 
-        async def capture_pexels_search(query, **kwargs):  # noqa: ARG001
+        async def capture_pexels_search(query, **kwargs):
             captured_queries.append(query)
             return []
 
         with patch.object(svc, "_pexels_search", side_effect=capture_pexels_search):
-            await svc.search_featured_image(
-                "AI", keywords=["portrait", "people", "technology"],
-            )
+            await svc.search_featured_image("AI", keywords=["portrait", "people", "technology"])
 
         # "portrait" and "people" should be excluded; "technology" should be included
         assert not any("portrait" in q for q in captured_queries)
@@ -268,8 +254,10 @@ class TestSearchFeaturedImage:
 
 class TestGetImagesForGallery:
     @pytest.mark.asyncio
-    async def test_returns_empty_list_without_api_key(self):
-        svc = ImageService(site_config=_sc())
+    async def test_returns_empty_list_without_api_key(self, monkeypatch):
+        monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+        svc = ImageService()
+        svc.pexels_api_key = ""
         svc.pexels_available = False
         svc._pexels_key_checked_db = True  # prevent DB lookup
         result = await svc.get_images_for_gallery("AI")
@@ -277,29 +265,17 @@ class TestGetImagesForGallery:
 
     @pytest.mark.asyncio
     async def test_returns_images_up_to_count(self):
-        from plugins.image_provider import ImageResult
-
         svc = make_image_service_with_key()
-        fake_provider = MagicMock()
-        fake_provider.name = "pexels"
-        fake_provider.fetch = AsyncMock(return_value=[
-            ImageResult(
-                url=SAMPLE_PHOTO["src"]["large"],
-                thumbnail=SAMPLE_PHOTO["src"]["small"],
-                photographer="Jane Doe",
-                source="pexels",
-            ),
-            ImageResult(
-                url="url2",
-                thumbnail="url2s",
-                photographer="Other",
-                source="pexels",
-            ),
-        ])
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
+        # Two photos returned by pexels search
+        photos = [SAMPLE_PHOTO, {**SAMPLE_PHOTO, "src": {"large": "url2", "small": "url2s"}}]
+        resp = make_mock_httpx_response({"photos": photos})
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
+            mock_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_ctx.get = AsyncMock(return_value=resp)
+            mock_cls.return_value = mock_ctx
+
             result = await svc.get_images_for_gallery("nature", count=2)
 
         assert len(result) == 2
@@ -313,49 +289,29 @@ class TestGetImagesForGallery:
 
 
 # ---------------------------------------------------------------------------
-# _pexels_search (delegates to PexelsProvider)
-#
-# The raw HTTP call lives in ``services/image_providers/pexels.py`` —
-# see ``test_image_providers_pexels.py`` for per-provider coverage.
-# These tests only exercise the adapter from ``ImageResult`` →
-# ``FeaturedImageMetadata``.
+# _pexels_search
 # ---------------------------------------------------------------------------
 
 
 class TestPexelsSearch:
     @pytest.mark.asyncio
-    async def test_returns_empty_list_when_provider_not_registered(self):
-        svc = make_image_service_with_key()
-        with patch(
-            "services.image_service._resolve_image_provider", return_value=None,
-        ):
-            result = await svc._pexels_search("AI")
+    async def test_returns_empty_list_without_key(self, monkeypatch):
+        monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+        svc = ImageService()
+        result = await svc._pexels_search("AI")
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_maps_image_result_to_metadata(self):
-        from plugins.image_provider import ImageResult
-
+    async def test_maps_photos_to_metadata(self):
         svc = make_image_service_with_key()
-        fake_provider = MagicMock()
-        fake_provider.name = "pexels"
-        fake_provider.fetch = AsyncMock(return_value=[
-            ImageResult(
-                url="https://img.example/large.jpg",
-                thumbnail="https://img.example/small.jpg",
-                photographer="Jane Doe",
-                photographer_url="https://img.example/@jane",
-                width=1920,
-                height=1080,
-                alt_text="sunset",
-                source="pexels",
-                search_query="nature",
-            ),
-        ])
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
+        resp = make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
+            mock_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_ctx.get = AsyncMock(return_value=resp)
+            mock_cls.return_value = mock_ctx
+
             result = await svc._pexels_search("nature")
 
         assert len(result) == 1
@@ -363,49 +319,56 @@ class TestPexelsSearch:
         assert img.photographer == "Jane Doe"
         assert img.width == 1920
         assert img.height == 1080
-        assert img.source == "pexels"
 
     @pytest.mark.asyncio
-    async def test_forwards_search_knobs_to_provider(self):
+    async def test_source_is_pexels(self):
         svc = make_image_service_with_key()
-        fake_provider = MagicMock()
-        fake_provider.name = "pexels"
-        fake_provider.fetch = AsyncMock(return_value=[])
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
-            await svc._pexels_search(
-                "mountain", per_page=12, orientation="portrait",
-                size="large", page=3,
-            )
+        resp = make_mock_httpx_response({"photos": [SAMPLE_PHOTO]})
+        with patch("httpx.AsyncClient") as mock_cls:
+            mock_ctx = AsyncMock()
+            mock_ctx.__aenter__ = AsyncMock(return_value=mock_ctx)
+            mock_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_ctx.get = AsyncMock(return_value=resp)
+            mock_cls.return_value = mock_ctx
 
-        call = fake_provider.fetch.await_args
-        forwarded = call.args[1] if len(call.args) > 1 else call.kwargs["config"]
-        # Phase H (GH#95): ImageService seeds `_site_config` into the
-        # provider dispatch dict so Pexels etc. can resolve the API key
-        # from the injected instance. Drop it for the legacy equality
-        # check against pure search knobs.
-        forwarded = {k: v for k, v in forwarded.items() if k != "_site_config"}
-        assert forwarded == {
-            "per_page": 12,
-            "orientation": "portrait",
-            "size": "large",
-            "page": 3,
-        }
-
-    @pytest.mark.asyncio
-    async def test_provider_exception_returns_empty(self):
-        svc = make_image_service_with_key()
-        fake_provider = MagicMock()
-        fake_provider.name = "pexels"
-        fake_provider.fetch = AsyncMock(side_effect=RuntimeError("boom"))
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
             result = await svc._pexels_search("nature")
-        assert result == []
+
+        assert result[0].source == "pexels"
+
+
+# ---------------------------------------------------------------------------
+# generate_image_markdown / optimize_image_for_web / cache helpers
+# ---------------------------------------------------------------------------
+
+
+class TestImageServiceUtils:
+    def test_generate_image_markdown_delegates_to_metadata(self):
+        svc = ImageService()
+        meta = FeaturedImageMetadata(url="https://example.com/photo.jpg", photographer="John")
+        md = svc.generate_image_markdown(meta, caption="Custom caption")
+        assert "Custom caption" in md
+        assert "example.com/photo.jpg" in md
+
+    @pytest.mark.asyncio
+    async def test_optimize_image_returns_original_url(self):
+        svc = ImageService()
+        result = await svc.optimize_image_for_web("https://example.com/image.jpg")
+        assert result is not None
+        assert result["url"] == "https://example.com/image.jpg"
+        assert result["optimized"] is False
+
+    def test_cache_get_returns_none_when_empty(self):
+        svc = ImageService()
+        assert svc.get_search_cache("any_query") is None
+
+    def test_cache_set_and_get(self):
+        svc = ImageService()
+        meta = FeaturedImageMetadata(url="https://example.com/photo.jpg")
+        svc.set_search_cache("nature", [meta])
+        cached = svc.get_search_cache("nature")
+        assert cached is not None
+        assert len(cached) == 1
+        assert cached[0].url == "https://example.com/photo.jpg"
 
 
 # ---------------------------------------------------------------------------
@@ -574,174 +537,326 @@ class TestImageModelRegistry:
 
 @pytest.mark.unit
 class TestGetDefaultImageModel:
-    # Phase H step 5 (GH#95): get_default_image_model now takes an
-    # optional site_config. Tests pass a fresh SiteConfig so env-var
-    # precedence still applies.
-    def _sc(self):
-        from services.site_config import SiteConfig
-        return SiteConfig()
-
     def test_returns_sdxl_lightning_when_env_not_set(self, monkeypatch):
         monkeypatch.delenv("IMAGE_MODEL", raising=False)
-        result = get_default_image_model(self._sc())
+        result = get_default_image_model()
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_returns_sdxl_base_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "sdxl_base")
-        result = get_default_image_model(self._sc())
+        result = get_default_image_model()
         assert result is ImageModel.SDXL_BASE
 
     def test_returns_flux_schnell_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "flux_schnell")
-        result = get_default_image_model(self._sc())
+        result = get_default_image_model()
         assert result is ImageModel.FLUX_SCHNELL
 
     def test_returns_sdxl_lightning_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "sdxl_lightning")
-        result = get_default_image_model(self._sc())
+        result = get_default_image_model()
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_falls_back_on_invalid_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "nonexistent_model_xyz")
-        result = get_default_image_model(self._sc())
+        result = get_default_image_model()
         assert result is ImageModel.SDXL_LIGHTNING
 
     def test_falls_back_on_empty_string_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "")
-        result = get_default_image_model(self._sc())
+        result = get_default_image_model()
         assert result is ImageModel.SDXL_LIGHTNING
 
-    def test_returns_sdxl_lightning_when_no_site_config_passed(self):
-        # Provider-level fallback: when the dispatcher hasn't seeded
-        # site_config into the config dict yet, callers can invoke
-        # get_default_image_model() with None and get a safe default.
-        assert get_default_image_model() is ImageModel.SDXL_LIGHTNING
-        assert get_default_image_model(None) is ImageModel.SDXL_LIGHTNING
-
 
 # ---------------------------------------------------------------------------
-# generate_image — dispatcher (Phase G)
-#
-# The SDXL model lifecycle itself (host sidecar HTTP path, in-process
-# diffusers pipeline init, model hot-swap, import helpers) lives in
-# ``services/image_providers/sdxl.py`` — see ``test_image_providers_sdxl.py``.
-# The tests here only cover the thin registry-lookup / forwarding in
-# ``ImageService.generate_image``.
+# _initialize_model()
 # ---------------------------------------------------------------------------
 
 
-class TestGenerateImageDispatcher:
-    """Coverage for the ImageProvider dispatch in ``generate_image``."""
+@pytest.mark.unit
+class TestInitializeModel:
+    def test_returns_early_when_model_already_loaded(self):
+        """When the requested model is already the active model, _initialize_model is a no-op."""
+        svc = ImageService()
+        svc._active_model = ImageModel.SDXL_BASE
+        svc._gen_pipe = MagicMock()  # pretend a pipeline is loaded
+        original_pipe = svc._gen_pipe
+
+        svc._initialize_model(ImageModel.SDXL_BASE)
+
+        # Pipeline reference unchanged — no reload happened
+        assert svc._gen_pipe is original_pipe
+
+    def test_sets_sdxl_available_false_when_diffusers_unavailable(self):
+        svc = ImageService()
+        with patch("services.image_service.DIFFUSERS_AVAILABLE", False):
+            svc._initialize_model(ImageModel.SDXL_BASE)
+        assert svc.sdxl_available is False
+        assert svc._gen_pipe is None
+
+    def test_sets_sdxl_available_false_when_torch_unavailable(self):
+        svc = ImageService()
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
+            patch("services.image_service.TORCH_AVAILABLE", False),
+        ):
+            svc._initialize_model(ImageModel.SDXL_BASE)
+        assert svc.sdxl_available is False
+        assert svc._gen_pipe is None
+
+    def test_unloads_previous_model_before_loading_new(self):
+        """When switching models, _unload_model is called before loading the new one."""
+        svc = ImageService()
+        svc._gen_pipe = MagicMock()
+        svc._active_model = ImageModel.SDXL_BASE
+
+        # DIFFUSERS and TORCH must be True so we get past the prerequisite checks
+        # and reach the unload branch. We then let the actual load fail (no real GPU).
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", True),
+            patch("services.image_service.TORCH_AVAILABLE", True),
+            patch.object(svc, "_unload_model") as mock_unload,
+            patch.object(svc, "_import_pipeline_class", side_effect=ImportError("no GPU")),
+        ):
+            svc._initialize_model(ImageModel.FLUX_SCHNELL)
+            mock_unload.assert_called_once()
+
+    def test_uses_get_default_when_model_is_none(self):
+        svc = ImageService()
+        with (
+            patch("services.image_service.DIFFUSERS_AVAILABLE", False),
+            patch(
+                "services.image_service.get_default_image_model",
+                return_value=ImageModel.FLUX_SCHNELL,
+            ) as mock_default,
+        ):
+            svc._initialize_model(None)
+            mock_default.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _unload_model()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUnloadModel:
+    def test_clears_pipeline_and_model(self):
+        svc = ImageService()
+        svc._gen_pipe = MagicMock()
+        svc._active_model = ImageModel.SDXL_BASE
+        svc.sdxl_available = True
+
+        with patch("services.image_service.TORCH_AVAILABLE", False):
+            svc._unload_model()
+
+        assert svc._gen_pipe is None
+        assert svc._active_model is None
+        assert svc.sdxl_available is False
+
+    def test_noop_when_no_pipeline_loaded(self):
+        svc = ImageService()
+        assert svc._gen_pipe is None
+        with patch("services.image_service.TORCH_AVAILABLE", False):
+            svc._unload_model()  # Should not raise
+        assert svc._gen_pipe is None
+        assert svc._active_model is None
+        assert svc.sdxl_available is False
+
+    def test_clears_cuda_cache_when_available(self):
+        svc = ImageService()
+        svc._gen_pipe = MagicMock()
+        svc._active_model = ImageModel.SDXL_LIGHTNING
+
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = True
+
+        import services.image_service as img_mod
+
+        original_torch = getattr(img_mod, "torch", None)
+        try:
+            img_mod.torch = mock_torch
+            with patch("services.image_service.TORCH_AVAILABLE", True):
+                svc._unload_model()
+            mock_torch.cuda.empty_cache.assert_called_once()
+        finally:
+            if original_torch is not None:
+                img_mod.torch = original_torch
+
+    def test_skips_cuda_cache_when_not_available(self):
+        svc = ImageService()
+        svc._gen_pipe = MagicMock()
+        svc._active_model = ImageModel.SDXL_BASE
+
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = False
+
+        import services.image_service as img_mod
+
+        original_torch = getattr(img_mod, "torch", None)
+        try:
+            img_mod.torch = mock_torch
+            with patch("services.image_service.TORCH_AVAILABLE", True):
+                svc._unload_model()
+            mock_torch.cuda.empty_cache.assert_not_called()
+        finally:
+            if original_torch is not None:
+                img_mod.torch = original_torch
+
+
+# ---------------------------------------------------------------------------
+# _import_pipeline_class()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestImportPipelineClass:
+    def test_valid_dotted_path(self):
+        # Use a known stdlib class as a stand-in
+        cls = ImageService._import_pipeline_class("collections.OrderedDict")
+        from collections import OrderedDict
+
+        assert cls is OrderedDict
+
+    def test_another_valid_path(self):
+        cls = ImageService._import_pipeline_class("os.path")
+        import os.path
+
+        assert cls is os.path
+
+    def test_invalid_path_no_dot(self):
+        with pytest.raises(ImportError, match="Invalid pipeline class path"):
+            ImageService._import_pipeline_class("nodots")
+
+    def test_nonexistent_module(self):
+        with pytest.raises(ModuleNotFoundError):
+            ImageService._import_pipeline_class("nonexistent_module_xyz.SomeClass")
+
+    def test_nonexistent_class_in_valid_module(self):
+        with pytest.raises(AttributeError):
+            ImageService._import_pipeline_class("collections.NonexistentClassXyz")
+
+    def test_with_mock_importlib(self):
+        """Verify the method calls importlib.import_module with the module part."""
+        mock_module = MagicMock()
+        mock_module.MyPipeline = "fake_class"
+
+        with patch("importlib.import_module", return_value=mock_module) as mock_import:
+            result = ImageService._import_pipeline_class("diffusers.MyPipeline")
+
+        mock_import.assert_called_once_with("diffusers")
+        assert result == "fake_class"
+
+
+# ---------------------------------------------------------------------------
+# generate_image — main public method
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateImage:
+    """Coverage for the 3-strategy generate_image method."""
 
     @pytest.mark.asyncio
-    async def test_dispatches_to_configured_provider(self, tmp_path):
-        """``plugin.image_provider.primary`` picks the provider; fetch() is
-        called with output_path + generation knobs in config."""
-        svc = ImageService(site_config=_sc())
+    async def test_host_sdxl_server_happy_path(self, tmp_path):
+        """Strategy 1: host SDXL server returns image bytes -> file written + True."""
+        svc = ImageService()
+
+        png_bytes = b"\x89PNG fake image data"
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "image/png", "X-Elapsed-Seconds": "1.5"}
+        mock_resp.content = png_bytes
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
         output_path = str(tmp_path / "out.png")
-        # Create a file at output_path so the post-call existence check passes.
-        (tmp_path / "out.png").write_bytes(b"\x89PNG fake")
 
-        fake_provider = MagicMock()
-        fake_provider.name = "sdxl"
-        fake_provider.fetch = AsyncMock(return_value=[MagicMock()])
-
-        with (
-            patch(
-                "services.image_service._resolve_image_provider",
-                return_value=fake_provider,
-            ),
-            patch(
-                "services.site_config.site_config.get",
-                return_value="sdxl",
-            ),
-        ):
+        with patch("httpx.AsyncClient", return_value=mock_client):
             result = await svc.generate_image(
                 prompt="cat in space",
                 output_path=output_path,
                 negative_prompt="ugly",
-                num_inference_steps=8,
-                guidance_scale=2.5,
             )
 
         assert result is True
-        fake_provider.fetch.assert_awaited_once()
-        # Config forwarded correctly
-        call_args = fake_provider.fetch.await_args
-        forwarded = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs["config"]
-        assert forwarded["output_path"] == output_path
-        assert forwarded["negative_prompt"] == "ugly"
-        assert forwarded["num_inference_steps"] == 8
-        assert forwarded["guidance_scale"] == 2.5
+        from pathlib import Path as _P
+        assert _P(output_path).exists()
+        assert _P(output_path).read_bytes() == png_bytes
 
     @pytest.mark.asyncio
-    async def test_returns_false_when_provider_not_registered(self, tmp_path):
-        svc = ImageService(site_config=_sc())
-        with (
-            patch("services.image_service._resolve_image_provider", return_value=None),
-            patch(
-                "services.site_config.site_config.get",
-                return_value="nonexistent",
-            ),
-        ):
+    async def test_host_sdxl_non_200_falls_through_to_local(self, tmp_path):
+        """If host SDXL returns 500 and local diffusers unavailable -> False."""
+        svc = ImageService()
+        svc.sdxl_available = False  # local diffusers not available
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.headers = {"content-type": "text/plain"}
+        mock_resp.text = "internal error"
+        mock_resp.content = b""
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch.object(svc, "_initialize_model"):
+            svc.sdxl_initialized = True  # skip the lazy init
             result = await svc.generate_image(
                 prompt="x",
                 output_path=str(tmp_path / "x.png"),
             )
+
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_returns_false_when_provider_returns_empty(self, tmp_path):
-        svc = ImageService(site_config=_sc())
-        fake_provider = MagicMock()
-        fake_provider.name = "sdxl"
-        fake_provider.fetch = AsyncMock(return_value=[])
+    async def test_host_sdxl_exception_falls_through_to_local(self, tmp_path):
+        """Connection error on host SDXL + diffusers unavailable -> False."""
+        svc = ImageService()
+        svc.sdxl_available = False
 
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch.object(svc, "_initialize_model"):
+            svc.sdxl_initialized = True
             result = await svc.generate_image(
-                prompt="x",
-                output_path=str(tmp_path / "x.png"),
+                prompt="x", output_path=str(tmp_path / "x.png"),
             )
+
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_returns_false_when_file_not_written(self, tmp_path):
-        """Even if provider reports success, a missing file at output_path
-        means the dispatcher returns False."""
-        svc = ImageService(site_config=_sc())
-        # Note: do NOT create the file — mimic a buggy provider.
-        fake_provider = MagicMock()
-        fake_provider.name = "sdxl"
-        fake_provider.fetch = AsyncMock(return_value=[MagicMock()])
+    async def test_host_sdxl_wrong_content_type_falls_through(self, tmp_path):
+        """200 with text/html content-type is treated as failure."""
+        svc = ImageService()
+        svc.sdxl_available = False
 
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "text/html"}
+        mock_resp.text = "<html>error</html>"
+        mock_resp.content = b""
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch.object(svc, "_initialize_model"):
+            svc.sdxl_initialized = True
             result = await svc.generate_image(
-                prompt="x",
-                output_path=str(tmp_path / "never-created.png"),
+                prompt="x", output_path=str(tmp_path / "x.png"),
             )
-        assert result is False
 
-    @pytest.mark.asyncio
-    async def test_provider_exception_returns_false(self, tmp_path):
-        svc = ImageService(site_config=_sc())
-        fake_provider = MagicMock()
-        fake_provider.name = "sdxl"
-        fake_provider.fetch = AsyncMock(side_effect=RuntimeError("GPU OOM"))
-
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake_provider,
-        ):
-            result = await svc.generate_image(
-                prompt="x",
-                output_path=str(tmp_path / "x.png"),
-            )
         assert result is False
 
 
@@ -751,18 +866,22 @@ class TestGenerateImageDispatcher:
 
 
 class TestEnsurePexelsKey:
-    """Tests for ``ImageService._ensure_pexels_key`` post-Phase-G.
+    """Tests for the DB-first (encrypted) Pexels API key loader.
 
-    The probe no longer stores the decrypted key on the service — the
-    PexelsProvider reads the key itself per-fetch. This method just
-    caches a ``pexels_available`` bool so the orchestrator can skip
-    the LLM semantic-query path when Pexels isn't configured.
+    Post-refactor, ``_ensure_pexels_key`` only has two paths:
+    1. Already-checked flag → no-op
+    2. Query ``plugins.secrets.get_secret`` via the shared pool from
+       ``services.container.get_service("database")``
+
+    No more site_config fallback, no more ``os.getenv("LOCAL_DATABASE_URL")``
+    fresh-connection fallback — those contradicted the "DB-first, no
+    hardcoded configs" policy.
     """
 
     @pytest.mark.asyncio
     async def test_already_checked_noop(self):
-        svc = ImageService(site_config=_sc())
-        svc.pexels_available = True
+        svc = ImageService()
+        svc.pexels_api_key = "existing-key"
         svc._pexels_key_checked_db = True
 
         # Should not touch the container at all.
@@ -771,8 +890,8 @@ class TestEnsurePexelsKey:
         mock_get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_probe_flips_available_when_key_present(self):
-        svc = ImageService(site_config=_sc())
+    async def test_loads_from_db_via_get_secret(self):
+        svc = ImageService()
         svc._pexels_key_checked_db = False
 
         fake_conn = AsyncMock()
@@ -784,32 +903,30 @@ class TestEnsurePexelsKey:
         fake_db_service.pool = MagicMock()
         fake_db_service.pool.acquire = MagicMock(return_value=fake_pool_ctx)
 
-        with (
-            patch("services.container.get_service", return_value=fake_db_service),
-            patch(
-                "plugins.secrets.get_secret",
-                new=AsyncMock(return_value="decrypted-key"),
-            ),
-        ):
+        with patch("services.container.get_service", return_value=fake_db_service), \
+             patch("plugins.secrets.get_secret", new=AsyncMock(return_value="decrypted-key")):
             await svc._ensure_pexels_key()
 
+        assert svc.pexels_api_key == "decrypted-key"
         assert svc.pexels_available is True
+        assert svc.pexels_headers == {"Authorization": "decrypted-key"}
         assert svc._pexels_key_checked_db is True
 
     @pytest.mark.asyncio
     async def test_no_db_service_sets_unavailable(self):
-        svc = ImageService(site_config=_sc())
+        svc = ImageService()
         svc._pexels_key_checked_db = False
 
         with patch("services.container.get_service", return_value=None):
             await svc._ensure_pexels_key()
 
+        assert svc.pexels_api_key is None
         assert svc.pexels_available is False
         assert svc._pexels_key_checked_db is True
 
     @pytest.mark.asyncio
     async def test_db_returns_empty_leaves_unavailable(self):
-        svc = ImageService(site_config=_sc())
+        svc = ImageService()
         svc._pexels_key_checked_db = False
 
         fake_conn = AsyncMock()
@@ -821,250 +938,63 @@ class TestEnsurePexelsKey:
         fake_db_service.pool = MagicMock()
         fake_db_service.pool.acquire = MagicMock(return_value=fake_pool_ctx)
 
-        with (
-            patch("services.container.get_service", return_value=fake_db_service),
-            patch("plugins.secrets.get_secret", new=AsyncMock(return_value=None)),
-        ):
+        with patch("services.container.get_service", return_value=fake_db_service), \
+             patch("plugins.secrets.get_secret", new=AsyncMock(return_value=None)):
             await svc._ensure_pexels_key()
 
+        assert svc.pexels_api_key is None
         assert svc.pexels_available is False
 
 
 # ---------------------------------------------------------------------------
-# _site_config seeding contract — GH#159
-#
-# The dispatcher MUST seed `_site_config` into the provider config dict
-# (per CLAUDE.md "Image providers / taps / topic sources:
-# config.get('_site_config') — seeded by the dispatcher/runner"). Without
-# the seed, providers fall back to class-level defaults silently and
-# operator changes to app_settings don't take effect on those providers
-# until a worker restart.
-#
-# These tests use a recording fake provider so we can assert both:
-#  1. The forwarded config dict contains the `_site_config` key.
-#  2. The value is the *same* SiteConfig instance the service was
-#     constructed with (NOT a fresh one or None).
-#  3. A custom value set on that SiteConfig instance is visible to the
-#     provider via `config["_site_config"].get(...)`.
+# get_active_model + list_available_models + optimize_image_for_web
 # ---------------------------------------------------------------------------
 
 
-class _RecordingFakeProvider:
-    """Fake provider that records the (query, config) it was called with.
+class TestModelIntrospection:
+    def test_get_active_model_none_at_startup(self):
+        svc = ImageService()
+        # Fresh instance — nothing loaded
+        assert svc.get_active_model() is None
 
-    Mirrors the ImageProvider Protocol shape (``name`` + async ``fetch``)
-    closely enough that ``_resolve_image_provider`` patches can return
-    it. The default ``return_value`` is one ``ImageResult`` so the
-    dispatcher's "got results" branch is exercised.
-    """
+    def test_get_active_model_returns_loaded(self):
+        svc = ImageService()
+        svc._active_model = ImageModel.SDXL_LIGHTNING
+        assert svc.get_active_model() == ImageModel.SDXL_LIGHTNING
 
-    def __init__(self, name: str, return_value: list | None = None) -> None:
-        self.name = name
-        self._return_value = return_value or []
-        self.received_query: str | None = None
-        self.received_config: dict | None = None
-        self.call_count = 0
+    def test_list_available_models_returns_dict_with_all_three(self):
+        models = ImageService.list_available_models()
+        assert isinstance(models, dict)
+        # All three from the registry
+        for m in IMAGE_MODEL_REGISTRY:
+            assert m.value in models
 
-    async def fetch(self, query_or_prompt, config):
-        self.received_query = query_or_prompt
-        self.received_config = config
-        self.call_count += 1
-        return self._return_value
+    def test_list_available_models_entries_have_metadata(self):
+        models = ImageService.list_available_models()
+        for _value, meta in models.items():
+            assert "display_name" in meta
+            assert "default_steps" in meta
+            assert "vram_gb" in meta
+            assert "notes" in meta
 
 
-class TestSiteConfigSeeding:
-    """GH#159 — image_service dispatcher seeds `_site_config` into the
-    provider config dict so providers can read live app_settings values
-    without falling back to class-level defaults."""
+class TestOptimizeImageForWeb:
+    @pytest.mark.asyncio
+    async def test_returns_placeholder_dict(self):
+        svc = ImageService()
+        result = await svc.optimize_image_for_web("https://cdn.example.com/img.png")
+        assert result is not None
+        assert result["url"] == "https://cdn.example.com/img.png"
+        assert result["optimized"] is False
+        assert "not yet implemented" in result["note"].lower()
 
     @pytest.mark.asyncio
-    async def test_pexels_dispatcher_seeds_site_config_into_config_dict(self):
-        """``_pexels_search`` MUST add `_site_config` to the dict it
-        passes to the PexelsProvider."""
-        sc = SiteConfig(initial_config={"some_test_key": "test_value"})
-        svc = ImageService(site_config=sc)
-        svc.pexels_available = True
-        svc._pexels_key_checked_db = True
-
-        fake = _RecordingFakeProvider("pexels")
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake,
-        ):
-            await svc._pexels_search("nature")
-
-        assert fake.received_config is not None
-        assert "_site_config" in fake.received_config, (
-            "Pexels dispatcher must seed `_site_config` per CLAUDE.md "
-            "convention (GH#159)"
+    async def test_accepts_size_overrides(self):
+        svc = ImageService()
+        # Just verify it doesn't raise with width/height overrides
+        result = await svc.optimize_image_for_web(
+            "https://cdn.example.com/x.png",
+            max_width=2000,
+            max_height=1000,
         )
-
-    @pytest.mark.asyncio
-    async def test_pexels_dispatcher_forwards_actual_site_config_instance(self):
-        """The seeded `_site_config` must be the SAME SiteConfig the
-        service was built with — not a new one and not None."""
-        sc = SiteConfig(initial_config={"some_test_key": "test_value"})
-        svc = ImageService(site_config=sc)
-        svc.pexels_available = True
-        svc._pexels_key_checked_db = True
-
-        fake = _RecordingFakeProvider("pexels")
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake,
-        ):
-            await svc._pexels_search("nature")
-
-        forwarded = fake.received_config["_site_config"]
-        assert forwarded is sc, (
-            "Provider must receive the actual SiteConfig instance the "
-            "service was built with (identity check)"
-        )
-
-    @pytest.mark.asyncio
-    async def test_pexels_provider_can_read_operator_settings_from_seed(self):
-        """A custom value on the SiteConfig must be readable by the
-        provider through ``config["_site_config"].get(...)`` — proves
-        operator changes propagate without a restart."""
-        sc = SiteConfig(
-            initial_config={"pexels_search_per_page": "42"},
-        )
-        svc = ImageService(site_config=sc)
-        svc.pexels_available = True
-        svc._pexels_key_checked_db = True
-
-        fake = _RecordingFakeProvider("pexels")
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake,
-        ):
-            await svc._pexels_search("nature")
-
-        forwarded = fake.received_config["_site_config"]
-        # Provider-level code reads custom keys via ``.get(...)``; the
-        # value flows through verbatim — no class-default fallback.
-        assert forwarded.get("pexels_search_per_page") == "42"
-
-    @pytest.mark.asyncio
-    async def test_generate_image_dispatcher_seeds_site_config(self, tmp_path):
-        """``generate_image`` MUST add `_site_config` to the dict it
-        passes to the configured ImageProvider."""
-        sc = SiteConfig(
-            initial_config={"plugin.image_provider.primary": "sdxl"},
-        )
-        svc = ImageService(site_config=sc)
-
-        from plugins.image_provider import ImageResult
-        out = tmp_path / "out.png"
-        out.write_bytes(b"\x89PNG fake")
-        fake = _RecordingFakeProvider(
-            "sdxl",
-            return_value=[
-                ImageResult(
-                    url=f"file://{out}", source="sdxl", search_query="x",
-                ),
-            ],
-        )
-
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake,
-        ):
-            ok = await svc.generate_image(
-                prompt="cat in space",
-                output_path=str(out),
-            )
-
-        assert ok is True
-        assert fake.received_config is not None
-        assert "_site_config" in fake.received_config, (
-            "generate_image dispatcher must seed `_site_config` per "
-            "CLAUDE.md convention (GH#159)"
-        )
-
-    @pytest.mark.asyncio
-    async def test_generate_image_forwards_actual_site_config_instance(
-        self, tmp_path,
-    ):
-        """The seeded `_site_config` in the generate_image path must be
-        the SAME SiteConfig instance the service was built with."""
-        sc = SiteConfig(
-            initial_config={"plugin.image_provider.primary": "sdxl"},
-        )
-        svc = ImageService(site_config=sc)
-
-        from plugins.image_provider import ImageResult
-        out = tmp_path / "out.png"
-        out.write_bytes(b"\x89PNG fake")
-        fake = _RecordingFakeProvider(
-            "sdxl",
-            return_value=[
-                ImageResult(
-                    url=f"file://{out}", source="sdxl", search_query="x",
-                ),
-            ],
-        )
-
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake,
-        ):
-            await svc.generate_image(prompt="x", output_path=str(out))
-
-        forwarded = fake.received_config["_site_config"]
-        assert forwarded is sc
-
-    @pytest.mark.asyncio
-    async def test_generate_image_provider_reads_operator_settings_from_seed(
-        self, tmp_path,
-    ):
-        """Operator settings on the SiteConfig must be readable by the
-        provider through the seeded `_site_config` (no restart needed)."""
-        sc = SiteConfig(
-            initial_config={
-                "plugin.image_provider.primary": "sdxl",
-                "image_negative_prompt": "ugly, blurry, watermark",
-                "sdxl_steps": "12",
-            },
-        )
-        svc = ImageService(site_config=sc)
-
-        from plugins.image_provider import ImageResult
-        out = tmp_path / "out.png"
-        out.write_bytes(b"\x89PNG fake")
-        fake = _RecordingFakeProvider(
-            "sdxl",
-            return_value=[
-                ImageResult(
-                    url=f"file://{out}", source="sdxl", search_query="x",
-                ),
-            ],
-        )
-
-        with patch(
-            "services.image_service._resolve_image_provider",
-            return_value=fake,
-        ):
-            await svc.generate_image(prompt="x", output_path=str(out))
-
-        forwarded = fake.received_config["_site_config"]
-        assert forwarded.get("image_negative_prompt") == (
-            "ugly, blurry, watermark"
-        )
-        assert forwarded.get("sdxl_steps") == "12"
-
-
-# ---------------------------------------------------------------------------
-# Removed in Phase G step 4 (GH#71)
-#
-# - ``get_active_model`` / ``list_available_models`` — in-process pipeline
-#   introspection lives on SdxlProvider's module state now.
-# - ``generate_image_markdown`` / ``optimize_image_for_web`` — placeholder
-#   methods with no callers. ``FeaturedImageMetadata.to_markdown`` is the
-#   public markdown helper if one is ever needed.
-# - ``get_search_cache`` / ``set_search_cache`` — search_cache dict was
-#   never populated (cache never wired in production). Dropped.
-#
-# See ``tests/unit/services/test_image_providers_sdxl.py`` and
-# ``test_image_providers_pexels.py`` for provider-level coverage.
-# ---------------------------------------------------------------------------
+        assert result is not None

@@ -21,26 +21,6 @@ import pytest
 from services.jobs.sync_page_views import SyncPageViewsJob
 
 
-def _mock_sc() -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for job.run() calls.
-
-    Post-Phase-H (GH#95) jobs receive site_config via the Job Protocol
-    kwarg instead of reaching into a module singleton.
-    """
-    sc = MagicMock()
-    sc.get.side_effect = lambda k, d="": d
-    sc.get_bool.side_effect = lambda k, d=False: d
-    sc.get_int.side_effect = lambda k, d=0: d
-    return sc
-
-
-def _sc_with_cloud_url(url: str = "postgres://cloud") -> MagicMock:
-    """SiteConfig mock that returns a cloud database_url."""
-    sc = _mock_sc()
-    sc.get.side_effect = lambda k, d="": url if k == "database_url" else d
-    return sc
-
-
 def _make_pool(watermark: Any = None) -> tuple[Any, Any]:
     conn = AsyncMock()
     conn.execute = AsyncMock(return_value="CREATE TABLE")
@@ -105,7 +85,8 @@ class TestSyncPageViewsJobRun:
     async def test_skips_when_no_database_url(self):
         pool, _ = _make_pool()
         job = SyncPageViewsJob()
-        result = await job.run(pool, {}, site_config=_mock_sc())
+        with patch("services.site_config.site_config.get", return_value=""):
+            result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 0
         assert "no database_url" in result.detail
@@ -114,8 +95,9 @@ class TestSyncPageViewsJobRun:
         pool, _ = _make_pool()
         job = SyncPageViewsJob()
         # Simulate asyncpg ImportError by blocking the import inside run().
-        with patch.dict("sys.modules", {"asyncpg": None}):
-            result = await job.run(pool, {}, site_config=_sc_with_cloud_url())
+        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
+             patch.dict("sys.modules", {"asyncpg": None}):
+            result = await job.run(pool, {})
         assert result.ok is False
         assert "asyncpg" in result.detail
 
@@ -123,8 +105,9 @@ class TestSyncPageViewsJobRun:
         pool, _ = _make_pool(watermark=None)
         fake, _ = _fake_asyncpg(rows=[])
         job = SyncPageViewsJob()
-        with patch.dict("sys.modules", {"asyncpg": fake}):
-            result = await job.run(pool, {}, site_config=_sc_with_cloud_url())
+        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
+             patch.dict("sys.modules", {"asyncpg": fake}):
+            result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 0
         assert "no new rows" in result.detail
@@ -134,10 +117,9 @@ class TestSyncPageViewsJobRun:
         pool, _ = _make_pool(watermark=None)
         fake, cloud_conn = _fake_asyncpg(rows=[_row(i) for i in range(3)])
         job = SyncPageViewsJob()
-        with patch.dict("sys.modules", {"asyncpg": fake}):
-            result = await job.run(
-                pool, {"batch_size": 1234}, site_config=_sc_with_cloud_url(),
-            )
+        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
+             patch.dict("sys.modules", {"asyncpg": fake}):
+            result = await job.run(pool, {"batch_size": 1234})
         assert result.ok is True
         assert result.changes_made == 3
         # The "no watermark" branch runs the LIMIT $1 query.
@@ -151,8 +133,9 @@ class TestSyncPageViewsJobRun:
         pool, _ = _make_pool(watermark=wm)
         fake, cloud_conn = _fake_asyncpg(rows=[_row(5)])
         job = SyncPageViewsJob()
-        with patch.dict("sys.modules", {"asyncpg": fake}):
-            result = await job.run(pool, {}, site_config=_sc_with_cloud_url())
+        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
+             patch.dict("sys.modules", {"asyncpg": fake}):
+            result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 1
         sql, passed_wm, batch = cloud_conn.fetch.await_args.args
@@ -163,7 +146,8 @@ class TestSyncPageViewsJobRun:
         pool, _ = _make_pool()
         fake, _ = _fake_asyncpg(connect_raises=ConnectionRefusedError("no cloud"))
         job = SyncPageViewsJob()
-        with patch.dict("sys.modules", {"asyncpg": fake}):
-            result = await job.run(pool, {}, site_config=_sc_with_cloud_url())
+        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
+             patch.dict("sys.modules", {"asyncpg": fake}):
+            result = await job.run(pool, {})
         assert result.ok is False
         assert "no cloud" in result.detail

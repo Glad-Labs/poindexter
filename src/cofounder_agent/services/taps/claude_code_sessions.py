@@ -257,26 +257,17 @@ def _resolve_projects_dir(config: dict[str, Any]) -> Path:
     Priority: ``config.claude_projects_dir`` > ``site_config.claude_projects_dir``
     > ``~/.claude/projects``. Same ordering as MemoryFilesTap so the two
     taps agree on which scopes exist.
-
-    site_config is injected by the runner under ``config["_site_config"]``
-    (Phase H, GH#95). When None, skip the site_config lookup and fall
-    through to the home-dir default.
     """
     override = config.get("claude_projects_dir")
     if override:
         return Path(override)
-    _sc = config.get("_site_config")
-    if _sc is not None:
-        try:
-            sc_val = _sc.get("claude_projects_dir", "")
-            if sc_val:
-                return Path(sc_val)
-        except Exception as e:
-            logger.debug(
-                "[claude_code_sessions] reading claude_projects_dir from "
-                "site_config failed; falling back to home-dir default: %s",
-                e,
-            )
+    try:
+        from services.site_config import site_config as _sc
+        sc_val = _sc.get("claude_projects_dir", "")
+        if sc_val:
+            return Path(sc_val)
+    except Exception:
+        pass
     return Path.home() / ".claude" / "projects"
 
 

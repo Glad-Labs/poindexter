@@ -105,7 +105,7 @@ poindexter --help
 
 ## License
 
-Apache 2.0. See [LICENSE](https://github.com/Glad-Labs/poindexter/blob/main/LICENSE)
+AGPL-3.0-or-later. See [LICENSE](https://github.com/Glad-Labs/poindexter/blob/main/LICENSE)
 in the upstream repo.
 
 ## Support

@@ -3,13 +3,10 @@ Unit tests for static_export_service — push-only headless CMS export layer.
 
 Tests JSON generation, data shaping, and feed building.
 No R2/S3 uploads — those are mocked.
-
-Post-Phase-H (GH#95): export_post / export_full_rebuild / _upload_json take
-site_config via DI. Tests build a MagicMock SiteConfig via ``_mock_sc()``.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -24,19 +21,6 @@ from services.static_export_service import (
     export_full_rebuild,
     export_post,
 )
-
-
-def _mock_sc(overrides: dict | None = None) -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for static_export tests.
-
-    Defaults: site_url → "https://example.com", site_name → "Test Site".
-    """
-    sc = MagicMock()
-    defaults = {"site_url": "https://example.com", "site_name": "Test Site"}
-    values = {**defaults, **(overrides or {})}
-    sc.get.side_effect = lambda k, d=None: values.get(k, d)
-    sc.require.side_effect = lambda k: values[k]
-    return sc
 
 # ---------------------------------------------------------------------------
 # Sample data
@@ -264,7 +248,7 @@ class TestExportPost:
             mock_upload.return_value = "https://r2.dev/static/test.json"
 
             from services.static_export_service import export_post
-            result = await export_post(mock_pool, "test-post-title-abc123", _mock_sc())
+            result = await export_post(mock_pool, "test-post-title-abc123")
 
             assert result is True
             # Should upload: individual post, index, feed, sitemap, manifest = 5 calls
@@ -276,7 +260,7 @@ class TestExportPost:
 
         with patch("services.static_export_service._upload_json", new_callable=AsyncMock):
             from services.static_export_service import export_post
-            result = await export_post(mock_pool, "nonexistent-slug", _mock_sc())
+            result = await export_post(mock_pool, "nonexistent-slug")
 
             assert result is False
 
@@ -419,7 +403,7 @@ class TestExportPostFailurePaths:
             return None  # signal upload failure
 
         with patch("services.static_export_service._upload_json", side_effect=fake_upload):
-            result = await export_post(mock_pool, "test-post-title-abc123", _mock_sc())
+            result = await export_post(mock_pool, "test-post-title-abc123")
         assert result is False
 
     @pytest.mark.asyncio
@@ -432,7 +416,7 @@ class TestExportPostFailurePaths:
 
         broken_pool.acquire = _explode
 
-        result = await export_post(broken_pool, "any-slug", _mock_sc())
+        result = await export_post(broken_pool, "any-slug")
         assert result is False
 
 
@@ -478,9 +462,15 @@ class TestExportFullRebuild:
         authors = [{"id": "a1", "name": "Matt"}]
         pool = _make_full_rebuild_pool(posts, cats, authors)
 
-        with patch("services.static_export_service._upload_json", new_callable=AsyncMock) as mock_upload:
+        with patch("services.static_export_service._upload_json", new_callable=AsyncMock) as mock_upload, \
+             patch("services.static_export_service.site_config") as mock_sc:
             mock_upload.return_value = "https://r2/x"
-            result = await export_full_rebuild(pool, _mock_sc())
+            mock_sc.get.side_effect = lambda k, d=None: None
+            mock_sc.require.side_effect = lambda k: {
+                "site_url": "https://example.com",
+                "site_name": "Test Site",
+            }[k]
+            result = await export_full_rebuild(pool)
 
         assert result["success"] is True
         assert result["posts_exported"] == 3
@@ -498,13 +488,19 @@ class TestExportFullRebuild:
         ]
         pool = _make_full_rebuild_pool(posts, [], [])
 
-        async def fake_upload(key, data, content_type="application/json", *, site_config=None):
+        async def fake_upload(key, data, content_type="application/json"):
             if "fail" in key:
                 return None
             return f"https://r2/{key}"
 
-        with patch("services.static_export_service._upload_json", side_effect=fake_upload):
-            result = await export_full_rebuild(pool, _mock_sc())
+        with patch("services.static_export_service._upload_json", side_effect=fake_upload), \
+             patch("services.static_export_service.site_config") as mock_sc:
+            mock_sc.get.side_effect = lambda k, d=None: None
+            mock_sc.require.side_effect = lambda k: {
+                "site_url": "https://example.com",
+                "site_name": "Test Site",
+            }[k]
+            result = await export_full_rebuild(pool)
 
         assert result["success"] is False
         assert any("fail" in e for e in result["errors"])
@@ -519,7 +515,13 @@ class TestExportFullRebuild:
 
         broken_pool.acquire = _explode
 
-        result = await export_full_rebuild(broken_pool, _mock_sc())
+        with patch("services.static_export_service.site_config") as mock_sc:
+            mock_sc.get.side_effect = lambda k, d=None: None
+            mock_sc.require.side_effect = lambda k: {
+                "site_url": "https://example.com",
+                "site_name": "Test Site",
+            }[k]
+            result = await export_full_rebuild(broken_pool)
 
         assert result["success"] is False
         assert "error" in result

@@ -212,6 +212,107 @@ class TestRunHealthProbes:
         p.execute.assert_not_called()
 
 
+@pytest.fixture
+def in_memory_otel_exporter():
+    """Install an InMemorySpanExporter as the global OTel provider for
+    the test, then restore. Module-scoped state is hard here because
+    OTel refuses to override an already-set TracerProvider — so we
+    install once, share, and clear spans between tests."""
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    exporter = InMemorySpanExporter()
+    # Re-use an already-installed provider if there is one (subsequent
+    # tests in the same process). Otherwise install ours.
+    current = trace.get_tracer_provider()
+    if isinstance(current, TracerProvider):
+        provider = current
+    else:
+        provider = TracerProvider()
+        trace.set_tracer_provider(provider)
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    exporter.clear()
+    yield exporter
+    exporter.clear()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestPerProbeSpans:
+    """Issue #176 — each probe in run_health_probes gets its own
+    brain.probe.<name> child span carrying probe.name, probe.duration_s,
+    and probe.ok attributes. Verified via the OTel SDK
+    InMemorySpanExporter so we don't need a live Tempo backend."""
+
+    async def test_each_probe_emits_child_span_with_attributes(
+        self, in_memory_otel_exporter,
+    ):
+        # Two fake probes — one passes, one fails — registered into
+        # the PROBES dict so run_health_probes iterates them. Skip
+        # _is_due / db writes / Telegram alerts to keep the assertion
+        # surface tight.
+        async def ok_probe(_pool):
+            return {"ok": True, "detail": "all good"}
+
+        async def fail_probe(_pool):
+            return {"ok": False, "detail": "boom"}
+
+        with patch.dict(
+            hp.PROBES,
+            {"fake_ok": ok_probe, "fake_fail": fail_probe},
+            clear=True,
+        ), \
+            patch.object(hp, "_is_due", return_value=True), \
+            patch.object(hp, "_create_gitea_issue"):
+            hp._config_synced = True
+            p = _make_pool()
+            await hp.run_health_probes(p, notify_fn=None)
+
+        spans = {s.name: s for s in in_memory_otel_exporter.get_finished_spans()}
+        assert "brain.probe.fake_ok" in spans
+        assert "brain.probe.fake_fail" in spans
+
+        ok_span = spans["brain.probe.fake_ok"]
+        assert ok_span.attributes["probe.name"] == "fake_ok"
+        assert ok_span.attributes["probe.ok"] is True
+        assert "probe.duration_s" in ok_span.attributes
+        assert ok_span.attributes["probe.duration_s"] >= 0
+
+        fail_span = spans["brain.probe.fake_fail"]
+        assert fail_span.attributes["probe.name"] == "fake_fail"
+        assert fail_span.attributes["probe.ok"] is False
+        assert "probe.duration_s" in fail_span.attributes
+
+    async def test_probe_exception_still_closes_span_with_ok_false(
+        self, in_memory_otel_exporter,
+    ):
+        """try/finally must end the span even when the probe raises —
+        and the span should record probe.ok=false (since the result
+        dict gets stamped {ok: False, detail: 'probe crashed: ...'})."""
+        async def crashy_probe(_pool):
+            raise RuntimeError("kaboom")
+
+        with patch.dict(
+            hp.PROBES, {"crashy": crashy_probe}, clear=True,
+        ), \
+            patch.object(hp, "_is_due", return_value=True), \
+            patch.object(hp, "_create_gitea_issue"):
+            hp._config_synced = True
+            p = _make_pool()
+            await hp.run_health_probes(p, notify_fn=None)
+
+        spans = {s.name: s for s in in_memory_otel_exporter.get_finished_spans()}
+        assert "brain.probe.crashy" in spans
+        crashy_span = spans["brain.probe.crashy"]
+        assert crashy_span.attributes["probe.name"] == "crashy"
+        assert crashy_span.attributes["probe.ok"] is False
+        assert "probe.duration_s" in crashy_span.attributes
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestProbeTopicQuality:
@@ -229,7 +330,7 @@ class TestProbeTopicQuality:
             "total": total, "rejected": rejected, "low_quality": low_quality,
         }
         driver_rows = [
-            {"event_type": k, "n": v}
+            {"event": k, "n": v}
             for k, v in (drivers or {}).items()
         ]
         p.fetch.return_value = driver_rows
@@ -265,11 +366,11 @@ class TestProbeTopicQuality:
     async def test_blames_qa_when_that_is_the_driver(self):
         r = await self._run_with_counts(
             total=50, rejected=25, low_quality=25,
-            drivers={"qa_failed": 25, "semantic_dedup_rejected": 3},
+            drivers={"qa_rejected": 25, "semantic_dedup_rejected": 3},
         )
         assert r["ok"] is False
-        assert "multi-model QA failed" in r["detail"]
-        assert r["top_driver"] == "qa_failed"
+        assert "QA threshold" in r["detail"]
+        assert r["top_driver"] == "qa_rejected"
 
     async def test_detail_says_cause_unknown_when_no_drivers(self):
         r = await self._run_with_counts(total=100, rejected=80, low_quality=0)
@@ -281,8 +382,10 @@ class TestProbeTopicQuality:
             total=100, rejected=60, low_quality=5,
             drivers={
                 "semantic_dedup_rejected": 40,
-                "qa_failed": 15,
+                "qa_rejected": 15,
+                "title_not_original": 5,
             },
         )
         assert r["drivers"]["semantic_dedup_rejected"] == 40
-        assert r["drivers"]["qa_failed"] == 15
+        assert r["drivers"]["qa_rejected"] == 15
+        assert r["drivers"]["title_not_original"] == 5

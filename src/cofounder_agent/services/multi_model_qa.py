@@ -22,11 +22,11 @@ Usage:
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
 
 from services.content_validator import ValidationResult, validate_content
 from services.logger_config import get_logger
-from services.qa_gates_db import QAGateSpec, load_qa_gate_chain
+from services.model_router import get_model_router
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -49,18 +49,6 @@ class MultiModelResult:
     reviews: list[ReviewerResult] = field(default_factory=list)
     validation: ValidationResult | None = None
     cost_log: dict | None = None
-    # Reviewers that *errored* — distinct from reviewers that ran and
-    # voted reject. A name appearing here means the reviewer threw an
-    # exception and was skipped silently; the aggregate's score was
-    # computed without its vote. Surfaced so the qa_aggregate audit row
-    # can show "5 reviewers ran, 2 errored" instead of pretending the
-    # gate ran cleanly.
-    errored_reviewers: list[str] = field(default_factory=list)
-    # Optional human-readable explanation of WHY a result is what it is.
-    # Set when the auto-reject gate fires due to a degraded reviewer
-    # pool (gh#162) so callers can distinguish "QA passed score
-    # threshold" from "QA rejected because too many reviewers errored".
-    detail: str | None = None
 
     @property
     def summary(self) -> str:
@@ -280,70 +268,10 @@ class MultiModelQA:
     Change at runtime via OpenClaw or the settings API.
     """
 
-    def __init__(self, pool=None, settings_service=None, *, site_config: Any):
-        """Build a MultiModelQA instance.
-
-        Args:
-            pool: asyncpg pool (optional — some callers use QA without DB).
-            settings_service: Runtime settings resolver (optional).
-            site_config: SiteConfig instance (DI — Phase H step 5, GH#95).
-                Must be passed explicitly — the module-level singleton
-                import was removed. Supply from ``app.state.site_config``
-                in production, or a ``SiteConfig(initial_config={...})``
-                per-test instance in unit tests.
-        """
+    def __init__(self, pool=None, settings_service=None):
         self.pool = pool
         self.settings = settings_service
-        self._site_config = site_config
-        # `self.router = get_model_router()` removed in #199 Phase 2 —
-        # the reference was set on every MultiModelQA instance but never
-        # read. The router itself was deleted alongside.
-
-        # Tracks reviewers that errored during the current review() call.
-        # Reset at the start of every review() so two reviews in a row
-        # don't bleed into each other. Concurrent review() calls on the
-        # same instance would mix — the pipeline serializes per task, so
-        # this is fine in practice. If concurrency lands, switch to a
-        # contextvars-backed list.
-        self._errored_reviewers: list[str] = []
-
-    def _record_reviewer_error(
-        self,
-        reviewer_name: str,
-        exc: BaseException,
-        *,
-        task_id: str | None = None,
-    ) -> None:
-        """Surface a reviewer that threw + was silently dropped.
-
-        Replaces the previous pattern of ``logger.warning + return None``,
-        which left no breadcrumb that the gate had failed. This emits an
-        audit_log row so the qa_aggregate dashboard can show error
-        counts per reviewer, AND records the reviewer name so the
-        aggregate audit row carries the full ``errored_reviewers`` list.
-
-        Severity is ``error`` (not ``warning``) — a thrown reviewer is
-        a bug or infra fault, not normal operating noise.
-        """
-        logger.warning("[MULTI_QA] %s reviewer errored: %s", reviewer_name, exc)
-        try:
-            self._errored_reviewers.append(reviewer_name)
-            from services.audit_log import audit_log_bg  # noqa: PLC0415 — avoid cycle
-            audit_log_bg(
-                "qa_reviewer_error",
-                "multi_model_qa",
-                {
-                    "reviewer": reviewer_name,
-                    "error": str(exc)[:300],
-                    "error_type": type(exc).__name__,
-                },
-                task_id=task_id,
-                severity="error",
-            )
-        except Exception as _audit_exc:
-            # Audit-log failure must never break QA. Log at debug because
-            # the original error is already in logger.warning above.
-            logger.debug("audit_log_bg(qa_reviewer_error) failed: %s", _audit_exc)
+        self.router = get_model_router()
 
     async def review(
         self,
@@ -375,64 +303,10 @@ class MultiModelQA:
 
         Returns MultiModelResult with approval decision and individual reviews.
         """
-        # Reset per-call error tracker. Reviewer try/except sites call
-        # ``self._record_reviewer_error`` to populate this; the populated
-        # list is plumbed onto MultiModelResult so the qa_aggregate audit
-        # row can show "N reviewers errored" instead of pretending the
-        # gate ran cleanly. See gitea#322 finding 1.
-        self._errored_reviewers = []
-
         reviews: list[ReviewerResult] = []
 
-        # Load the declarative QA gate chain from ``qa_gates`` (GH-115).
-        # Empty list = no DB, table missing, or unset; in that case we
-        # fall back to the legacy hardcoded enable-flag behaviour
-        # downstream so existing tests + deployments without the
-        # migration applied keep working.
-        gate_chain = await load_qa_gate_chain(self.pool, stage_name="qa")
-        gate_index: dict[str, QAGateSpec] = {g.name: g for g in gate_chain}
-        # ``advisory_overrides`` flips the ReviewerResult.approved bit
-        # to True for any gate whose ``required_to_pass`` is False —
-        # the gate's score still feeds the weighted average, but it
-        # doesn't veto. Keyed by reviewer name (matches
-        # ReviewerResult.reviewer).
-        advisory_overrides: set[str] = {
-            g.reviewer for g in gate_chain if not g.required_to_pass
-        }
-
-        def _gate_enabled(name: str, *, default: bool) -> bool:
-            """Resolve whether a gate runs, honoring the qa_gates table.
-
-            When the table is empty (fresh DB / tests / fallback path),
-            ``default`` decides — preserving legacy behaviour. When the
-            table has rows, only those marked enabled run.
-            """
-            if not gate_index:
-                return default
-            spec = gate_index.get(name)
-            if spec is None:
-                return False  # Operator deleted the row → gate is off.
-            return spec.enabled
-
-        def _apply_advisory(review: ReviewerResult) -> ReviewerResult:
-            """Honor required_to_pass=False from the qa_gates row.
-
-            If the matching row is advisory and the reviewer reported
-            approved=False, flip approved to True so the veto logic
-            doesn't reject. The score still flows into the weighted
-            average so a chronic failer still drags the final score.
-            """
-            if review.reviewer in advisory_overrides and not review.approved:
-                review.approved = True
-                review.feedback = (
-                    f"[advisory — gate not required_to_pass] {review.feedback}"
-                )[:500]
-            return review
-
         # 1. Programmatic validation (always runs, fast, deterministic)
-        validation = validate_content(
-            title, content, topic, site_config=self._site_config,
-        )
+        validation = validate_content(title, content, topic)
         validator_review = ReviewerResult(
             reviewer="programmatic_validator",
             approved=validation.passed,
@@ -440,10 +314,6 @@ class MultiModelQA:
             feedback="; ".join(i.description[:60] for i in validation.issues[:3]) or "No issues found",
             provider="programmatic",
         )
-        # Honor qa_gates row's required_to_pass — operator can mark the
-        # programmatic validator advisory if their niche has a high
-        # false-positive rate.
-        validator_review = _apply_advisory(validator_review)
         reviews.append(validator_review)
 
         # If programmatic validator finds critical issues, check whether they
@@ -478,107 +348,24 @@ class MultiModelQA:
         if citation_review is not None:
             reviews.append(citation_review)
 
-        # 1b. Optional parallel rails (gh#197 + gh#198 Phase 2). When the
-        # operator flips ``guardrails_enabled`` / ``deepeval_enabled``,
-        # the corresponding rail runs as an additional ReviewerResult
-        # alongside the existing checks. Default OFF — the rails are
-        # learning artifacts at this stage, not load-bearing decisions.
-        # When a rail flags content, its score is 0 and approved=False —
-        # it joins the same vote aggregation the other reviewers do, so
-        # the operator can A/B test "would the deepeval rail have caught
-        # this?" against the existing critic-pool verdict via the audit
-        # log without changing any other behavior.
-        try:
-            from services import deepeval_rails, guardrails_rails
-
-            if guardrails_rails.is_enabled(self._site_config):
-                ok, reason = guardrails_rails.run_brand_guard(content)
-                reviews.append(
-                    ReviewerResult(
-                        reviewer="guardrails_brand_rail",
-                        approved=ok,
-                        score=100.0 if ok else 0.0,
-                        feedback=reason or "passed (no fabrication patterns matched)",
-                        provider="guardrails_ai",
-                    )
-                )
-
-            if deepeval_rails.is_enabled(self._site_config):
-                ok, score, reason = deepeval_rails.evaluate_brand_fabrication(
-                    content, topic=topic,
-                )
-                reviews.append(
-                    ReviewerResult(
-                        reviewer="deepeval_brand_rail",
-                        approved=ok,
-                        # DeepEval scores are 0-1; rescale to 0-100 to
-                        # match the existing reviewer-score convention.
-                        score=float(score) * 100.0,
-                        feedback=reason or "",
-                        provider="deepeval",
-                    )
-                )
-
-            # Self-consistency rail (#196). HalluCounter-style:
-            # samples the writer model N times for a short summary,
-            # measures pairwise embedding agreement. Low agreement
-            # correlates with unstable / hallucinated content.
-            from services import self_consistency_rail as scr
-            if scr.is_enabled(self._site_config):
-                ok_sc, score_sc, reason_sc = await scr.evaluate(
-                    content=content, topic=topic, site_config=self._site_config,
-                )
-                reviews.append(
-                    ReviewerResult(
-                        reviewer="self_consistency_rail",
-                        approved=ok_sc,
-                        # Score is cosine similarity in [0, 1]; rescale
-                        # to 0-100 to match the convention.
-                        score=max(0.0, float(score_sc)) * 100.0,
-                        feedback=reason_sc or "",
-                        provider="self_consistency",
-                    )
-                )
-        except Exception as rail_err:
-            # Belt-and-suspenders. Both rails individually never raise
-            # (their public functions catch internal errors), but if a
-            # caller's site_config or import path is wonky we still
-            # don't want a learning-artifact rail to take down the QA.
-            logger.warning(
-                "[MULTI_QA] parallel rail dispatch failed (non-fatal): %s",
-                rail_err, exc_info=True,
-            )
-
         # 2. Cross-model review using a DIFFERENT provider than the writer
         # Model is configurable via app_settings (pipeline_critic_model)
-        # qa_gates row name: ``llm_critic`` (reviewer="llm_critic" matches
-        # ReviewerResult.reviewer="ollama_critic" via the advisory map below).
         critic_model = None
         if self.settings:
             critic_model = await self.settings.get("pipeline_critic_model")
         qa_cost_log = None
+        cross_result = await self._review_with_cloud_model(
+            title, content, topic,
+            model_override=critic_model,
+            research_sources=research_sources,
+        )
         critic_skipped = False
-        if not _gate_enabled("llm_critic", default=True):
-            logger.info("[MULTI_QA] llm_critic gate disabled via qa_gates")
-            critic_skipped = True
+        if cross_result:
+            cross_review, qa_cost_log = cross_result
+            reviews.append(cross_review)
         else:
-            cross_result = await self._review_with_cloud_model(
-                title, content, topic,
-                model_override=critic_model,
-                research_sources=research_sources,
-            )
-            if cross_result:
-                cross_review, qa_cost_log = cross_result
-                # The reviewer name in legacy ReviewerResult is
-                # ``ollama_critic``; the qa_gates row uses ``llm_critic``.
-                # Normalize the advisory check by matching either.
-                if "llm_critic" in advisory_overrides:
-                    advisory_overrides.add("ollama_critic")
-                cross_review = _apply_advisory(cross_review)
-                reviews.append(cross_review)
-            else:
-                critic_skipped = True
-                logger.warning("[MULTI_QA] Cross-model review skipped — score will reflect validator only")
+            critic_skipped = True
+            logger.warning("[MULTI_QA] Cross-model review skipped — score will reflect validator only")
 
         # 2b. Topic-delivery gate — catches bait-and-switch titles where the
         # body doesn't deliver what the topic promised. Binary gate: if the
@@ -598,119 +385,88 @@ class MultiModelQA:
         # When the consistency gate fires, the content_router_service
         # rewrite loop intercepts and retries the draft with targeted
         # fixes before finalizing the reject/approve decision.
-        # qa_gates row name: ``consistency`` (reviewer="internal_consistency").
-        if _gate_enabled("consistency", default=True):
-            # Map advisory flag from ``consistency`` row → reviewer name.
-            if "consistency" in advisory_overrides:
-                advisory_overrides.add("internal_consistency")
-            consistency_review = await self._check_internal_consistency(content)
-            if consistency_review is not None:
-                consistency_review = _apply_advisory(consistency_review)
-                reviews.append(consistency_review)
+        consistency_review = await self._check_internal_consistency(content)
+        if consistency_review is not None:
+            reviews.append(consistency_review)
 
         # 2d. Image relevance gate — checks whether inline images
         # actually match the content they're next to. Catches the
         # "a close-up image of a busy server room" stock-photo-for-a-
         # FastAPI-post pattern Matt flagged on 2026-04-11. Behind a
         # flag because it requires a vision-capable Ollama model.
-        # qa_gates row name: ``vision_gate`` (reviewer="image_relevance").
-        # Default off when no qa_gates row exists — _check_image_relevance
-        # respects qa_vision_check_enabled internally for the legacy path.
-        if _gate_enabled("vision_gate", default=True):
-            if "vision_gate" in advisory_overrides:
-                advisory_overrides.add("image_relevance")
-                advisory_overrides.add("rendered_preview")
-            image_review = await self._check_image_relevance(title, topic, content)
-            if image_review is not None:
-                image_review = _apply_advisory(image_review)
-                reviews.append(image_review)
+        image_review = await self._check_image_relevance(title, topic, content)
+        if image_review is not None:
+            reviews.append(image_review)
 
         # 2e. Web fact-check gate — uses DuckDuckGo to verify claims
         # that the LLM critic or validator flagged. Catches training-
         # cutoff false positives: if the web confirms a claim about a
         # post-cutoff product, the gate overrides the rejection.
-        # qa_gates row name: ``web_factcheck`` (reviewer="web_factcheck").
-        # When the qa_gates row exists it is authoritative; the legacy
-        # ``qa_web_factcheck_enabled`` setting is only consulted as a
-        # fallback default when no row is present.
-        if gate_index:
-            web_fc_enabled = _gate_enabled("web_factcheck", default=True)
-        else:
-            web_fc_enabled = True
-            if self.settings:
-                web_fc_enabled = (await self.settings.get("qa_web_factcheck_enabled") or "true").lower() != "false"
+        web_fc_enabled = True
+        if self.settings:
+            web_fc_enabled = (await self.settings.get("qa_web_factcheck_enabled") or "true").lower() != "false"
         if web_fc_enabled:
             web_review = await self._web_fact_check(title, topic, content, reviews)
             if web_review is not None:
-                web_review = _apply_advisory(web_review)
                 reviews.append(web_review)
 
         # 2f. URL verification gate — checks cited links actually resolve (#214)
         # Not a hard gate — dead links are critical (block), but having good
         # citations is rewarded with a score bonus (carrot, not stick).
-        # qa_gates row name: ``url_verifier``.
-        if _gate_enabled("url_verifier", default=True):
-            try:
-                from services.content_validator import verify_content_urls
-                url_issues = await verify_content_urls(
-                    content, site_config=self._site_config,
-                )
-                dead_links = [i for i in url_issues if i.category == "dead_link"]
+        try:
+            from services.content_validator import verify_content_urls
+            url_issues = await verify_content_urls(content)
+            dead_links = [i for i in url_issues if i.category == "dead_link"]
 
-                if dead_links:
-                    # Dead links block publish — this is a fabricated/hallucinated URL
-                    url_review = ReviewerResult(
-                        reviewer="url_verifier",
-                        approved=False,
-                        score=max(0, 100 - len(dead_links) * 20),
-                        feedback="; ".join(i.description[:60] for i in dead_links[:3]),
-                        provider="programmatic",
-                    )
-                    url_review = _apply_advisory(url_review)
-                    reviews.append(url_review)
-                    logger.warning("[MULTI_QA] URL verifier: %d dead links found", len(dead_links))
-                else:
-                    # Count verified external citations — bonus scoring.
-                    # "Internal" domains (the operator's own site) are excluded
-                    # from the citation count. Read site_domain from site_config
-                    # so forked Poindexter installs filter their own domain, not
-                    # Glad Labs' — prevents a fork's self-links from being
-                    # counted as "external citations" and inflating the score.
-                    import re as _re
-                    from urllib.parse import urlparse as _urlparse
-                    _internal_domains: set[str] = {"localhost"}
-                    try:
-                        _site_domain = (
-                            self._site_config.get("site_domain", "") or ""
-                        ).lower().strip()
-                        if _site_domain:
-                            _internal_domains.add(_site_domain)
-                            _internal_domains.add(f"www.{_site_domain}")
-                    except Exception as e:
-                        logger.debug(
-                            "[multi_model_qa] site_domain lookup for "
-                            "external-citation filter failed: %s", e,
-                        )
-                    _ext_urls = [
-                        m.group(2) for m in _re.finditer(r'\[([^\]]*)\]\((https?://[^)]+)\)', content)
-                        if _urlparse(m.group(2)).netloc.lower() not in _internal_domains
-                    ]
-                    citation_count = len(_ext_urls)
-                    # Reward: +5 per verified citation, max +15
-                    citation_bonus = min(15, citation_count * 5)
-                    url_score = min(100, 80 + citation_bonus)
-                    url_review = ReviewerResult(
-                        reviewer="url_verifier",
-                        approved=True,
-                        score=url_score,
-                        feedback=f"{citation_count} verified external citations (+{citation_bonus} bonus)" if citation_count else "No external citations (no penalty, but citations encouraged)",
-                        provider="programmatic",
-                    )
-                    reviews.append(url_review)
-                    if citation_count:
-                        logger.info("[MULTI_QA] URL verifier: %d verified citations (+%d bonus)", citation_count, citation_bonus)
-            except Exception as e:
-                logger.debug("[MULTI_QA] URL verification skipped: %s", e)
+            if dead_links:
+                # Dead links block publish — this is a fabricated/hallucinated URL
+                url_review = ReviewerResult(
+                    reviewer="url_verifier",
+                    approved=False,
+                    score=max(0, 100 - len(dead_links) * 20),
+                    feedback="; ".join(i.description[:60] for i in dead_links[:3]),
+                    provider="programmatic",
+                )
+                reviews.append(url_review)
+                logger.warning("[MULTI_QA] URL verifier: %d dead links found", len(dead_links))
+            else:
+                # Count verified external citations — bonus scoring.
+                # "Internal" domains (the operator's own site) are excluded
+                # from the citation count. Read site_domain from site_config
+                # so forked Poindexter installs filter their own domain, not
+                # Glad Labs' — prevents a fork's self-links from being
+                # counted as "external citations" and inflating the score.
+                import re as _re
+                from urllib.parse import urlparse as _urlparse
+                _internal_domains: set[str] = {"localhost"}
+                try:
+                    from services.site_config import site_config as _sc_int
+                    _site_domain = (_sc_int.get("site_domain", "") or "").lower().strip()
+                    if _site_domain:
+                        _internal_domains.add(_site_domain)
+                        _internal_domains.add(f"www.{_site_domain}")
+                except Exception:
+                    pass
+                _ext_urls = [
+                    m.group(2) for m in _re.finditer(r'\[([^\]]*)\]\((https?://[^)]+)\)', content)
+                    if _urlparse(m.group(2)).netloc.lower() not in _internal_domains
+                ]
+                citation_count = len(_ext_urls)
+                # Reward: +5 per verified citation, max +15
+                citation_bonus = min(15, citation_count * 5)
+                url_score = min(100, 80 + citation_bonus)
+                url_review = ReviewerResult(
+                    reviewer="url_verifier",
+                    approved=True,
+                    score=url_score,
+                    feedback=f"{citation_count} verified external citations (+{citation_bonus} bonus)" if citation_count else "No external citations (no penalty, but citations encouraged)",
+                    provider="programmatic",
+                )
+                reviews.append(url_review)
+                if citation_count:
+                    logger.info("[MULTI_QA] URL verifier: %d verified citations (+%d bonus)", citation_count, citation_bonus)
+        except Exception as e:
+            logger.debug("[MULTI_QA] URL verification skipped: %s", e)
 
         # 2g. Rendered-preview gate — the final "yup looks good"
         # sanity check. Screenshots the post's /preview/{hash} URL
@@ -719,13 +475,11 @@ class MultiModelQA:
         # tables, broken images, mangled HTML — the stuff that no
         # text-only QA can see. Opt-in via qa_preview_screenshot_enabled.
         # Skipped entirely if preview_url is None.
-        # qa_gates row name: ``vision_gate`` (shared with image_relevance).
-        if preview_url and _gate_enabled("vision_gate", default=True):
+        if preview_url:
             preview_review = await self._check_rendered_preview(
                 title, topic, preview_url
             )
             if preview_review is not None:
-                preview_review = _apply_advisory(preview_review)
                 reviews.append(preview_review)
 
         # 3. Aggregate scores — weights configurable via app_settings
@@ -824,102 +578,13 @@ class MultiModelQA:
 
         approved = all_passed and final_score >= approval_threshold
 
-        # Degraded-reviewer-pool auto-reject (gh#162). Even when the
-        # surviving reviewers vote pass + score above threshold, a QA
-        # pass run with most reviewers throwing exceptions is unsafe:
-        # a single happy reviewer is not adversarial QA. The previous
-        # observability landed in commit 3fa51168 logged this case but
-        # didn't change behavior — degraded content could still ship.
-        # The gate is ADDITIVE: it can only flip approved from True to
-        # False, never the other way. Threshold default 0.5 (>= 50%
-        # errored = reject), DB-tunable via
-        # ``multi_model_qa_max_reviewer_error_rate``. Operator can
-        # tighten to 0.3 (require 70% to succeed) or relax to 0.8.
-        # Semantics: ratio >= threshold triggers reject — a 50/50 tie
-        # at the default threshold counts as too-degraded, erring on
-        # safety. Edge cases: zero-reviewer pool also fails loud
-        # (defensive — shouldn't happen in production but a divide-
-        # by-zero or silent pass would mask a regression).
-        max_error_rate = 0.5
-        if self.settings:
-            with suppress(ValueError, TypeError):
-                _raw_rate = await self.settings.get(
-                    "multi_model_qa_max_reviewer_error_rate"
-                )
-                if _raw_rate is not None:
-                    max_error_rate = float(_raw_rate)
-
-        errored_count = len(self._errored_reviewers)
-        succeeded_count = len(reviews)
-        total_reviewers = errored_count + succeeded_count
-        degraded_pool = False
-        degraded_detail: str | None = None
-        if total_reviewers == 0:
-            # Defensive: no reviewers at all. Programmatic validator
-            # always runs in normal flow, so reaching this branch means
-            # the validator itself was bypassed — fail loud rather than
-            # silently approve a post that was never QA'd.
-            degraded_pool = True
-            degraded_detail = (
-                "degraded reviewer pool: 0 reviewers ran (no QA evidence)"
-            )
-        else:
-            error_ratio = errored_count / total_reviewers
-            if errored_count > 0 and error_ratio >= max_error_rate:
-                degraded_pool = True
-                degraded_detail = (
-                    f"degraded reviewer pool: {errored_count}/{total_reviewers} "
-                    f"reviewers errored "
-                    f"(threshold: {int(max_error_rate * 100)}%)"
-                )
-
-        if degraded_pool:
-            approved = False
-            logger.warning("[MULTI_QA] auto-reject: %s", degraded_detail)
-            # Audit row + Prometheus alert tag so Grafana surfaces the
-            # event. Tagged ``degraded_reviewer_pool`` so the qa_aggregate
-            # dashboard can chart it independently of normal failures.
-            try:
-                from services.audit_log import audit_log_bg  # noqa: PLC0415
-                audit_log_bg(
-                    "qa_degraded_reviewer_pool",
-                    "multi_model_qa",
-                    {
-                        "errored_reviewers": list(self._errored_reviewers),
-                        "errored_count": errored_count,
-                        "succeeded_count": succeeded_count,
-                        "total_reviewers": total_reviewers,
-                        "error_rate": (
-                            errored_count / total_reviewers
-                            if total_reviewers else 1.0
-                        ),
-                        "threshold": max_error_rate,
-                        "alert_tag": "degraded_reviewer_pool",
-                    },
-                    severity="error",
-                )
-            except Exception as _audit_exc:
-                logger.debug(
-                    "audit_log_bg(qa_degraded_reviewer_pool) failed: %s",
-                    _audit_exc,
-                )
-
         result = MultiModelResult(
             approved=approved,
             final_score=final_score,
             reviews=reviews,
             validation=validation,
             cost_log=qa_cost_log,
-            errored_reviewers=list(self._errored_reviewers),
-            detail=degraded_detail,
         )
-
-        if result.errored_reviewers:
-            logger.warning(
-                "[MULTI_QA] %d reviewer(s) errored during review: %s",
-                len(result.errored_reviewers),
-                ", ".join(result.errored_reviewers),
-            )
 
         logger.info("[MULTI_QA] %s — %s", title[:50], result.summary.split("\n")[0])
         return result
@@ -948,12 +613,8 @@ class MultiModelQA:
                 _fb = await self.settings.get("qa_fallback_critic_model")
                 if _fb:
                     fallback_model = _fb.removeprefix("ollama/")
-            except Exception as e:
-                logger.warning(
-                    "[multi_model_qa] reading qa_fallback_critic_model from "
-                    "settings failed; using default %r: %s",
-                    fallback_model, e,
-                )
+            except Exception:
+                pass
         if model_override != fallback_model:
             logger.warning(
                 "[MULTI_QA] Primary critic %s failed (empty response or error), falling back to %s",
@@ -1149,7 +810,7 @@ class MultiModelQA:
             return review, cost_log
 
         except Exception as e:
-            self._record_reviewer_error("ollama_critic", e)
+            logger.warning("[MULTI_QA] Ollama review failed (non-critical): %s", e)
             return None
 
     async def _run_gate_prompt(
@@ -1211,8 +872,9 @@ class MultiModelQA:
                 )
             ollama_model = default_model.removeprefix("ollama/")
 
-            _gate_max = self._site_config.get_int("qa_gate_max_tokens", 600)
-            _gate_timeout = self._site_config.get_int("qa_gate_timeout_seconds", 60)
+            from services.site_config import site_config as _sc_qa_gate
+            _gate_max = _sc_qa_gate.get_int("qa_gate_max_tokens", 600)
+            _gate_timeout = _sc_qa_gate.get_int("qa_gate_timeout_seconds", 60)
             try:
                 result = await asyncio.wait_for(
                     client.generate(
@@ -1278,7 +940,7 @@ class MultiModelQA:
                 provider="consistency_gate",
             )
         except Exception as e:
-            self._record_reviewer_error(reviewer_name, e)
+            logger.warning("[MULTI_QA] %s gate failed (non-critical): %s", reviewer_name, e)
             return None
 
     async def _check_citations(self, content: str) -> ReviewerResult | None:
@@ -1341,7 +1003,9 @@ class MultiModelQA:
                 concurrency=concurrency,
             )
         except Exception as exc:  # noqa: BLE001
-            self._record_reviewer_error("citation_verifier", exc)
+            logger.warning(
+                "[MULTI_QA] citation_verifier raised (non-fatal): %s", exc,
+            )
             return None
 
         passed, reason = await verdict_from_report(
@@ -1448,11 +1112,8 @@ class MultiModelQA:
                 pass_threshold = int(
                     await self.settings.get("qa_vision_pass_threshold") or 60
                 )
-            except Exception as e:
-                logger.warning(
-                    "[multi_model_qa] reading qa_vision_* settings failed; "
-                    "vision QA falling back to defaults: %s", e,
-                )
+            except Exception:
+                pass
 
         if not enabled:
             return None
@@ -1540,7 +1201,7 @@ class MultiModelQA:
                 }
                 resp = await asyncio.wait_for(
                     client.post(
-                        self._site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
+                        site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
                         json=payload,
                     ),
                     timeout=150,
@@ -1554,7 +1215,7 @@ class MultiModelQA:
                 data = resp.json()
                 text = data.get("message", {}).get("content", "")
         except Exception as e:
-            self._record_reviewer_error("vision_gate", e)
+            logger.warning("[VISION_QA] ollama call failed (non-critical): %s", e)
             return None
 
         if not text:
@@ -1663,11 +1324,8 @@ class MultiModelQA:
                 viewport_height = int(
                     await self.settings.get("qa_preview_viewport_height") or 1024
                 )
-            except Exception as e:
-                logger.warning(
-                    "[multi_model_qa] reading qa_preview_* settings failed; "
-                    "preview-screenshot QA falling back to defaults: %s", e,
-                )
+            except Exception:
+                pass
 
         if not enabled or not preview_url:
             return None
@@ -1732,7 +1390,7 @@ class MultiModelQA:
                 }
                 resp = await asyncio.wait_for(
                     client.post(
-                        self._site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
+                        site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
                         json=payload,
                     ),
                     timeout=200,
@@ -1746,7 +1404,7 @@ class MultiModelQA:
                 data = resp.json()
                 text = data.get("message", {}).get("content", "")
         except Exception as e:
-            self._record_reviewer_error("preview_gate", e)
+            logger.warning("[PREVIEW_QA] ollama call failed (non-critical): %s", e)
             return None
 
         if not text:
@@ -1858,7 +1516,7 @@ class MultiModelQA:
                 len(claims_list), claims_list, critic_concerned,
             )
 
-            researcher = WebResearcher(site_config=self._site_config)
+            researcher = WebResearcher()
             verified = 0
             contradicted = 0
             evidence_lines = []
@@ -1920,7 +1578,7 @@ class MultiModelQA:
             )
 
         except Exception as e:
-            self._record_reviewer_error("web_factcheck", e)
+            logger.warning("[WEB_FACTCHECK] Failed (non-fatal): %s", e)
             return None
 
     # _review_with_gemini removed — Ollama-only policy

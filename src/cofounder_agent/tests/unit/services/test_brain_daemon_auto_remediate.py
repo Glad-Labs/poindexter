@@ -26,31 +26,21 @@ import pytest
 # BEFORE importing. Tests without this prelude fail to collect with
 # ``ModuleNotFoundError: No module named 'health_probes'``.
 #
-# Walk up to find the repo root rather than hardcoding a parents[N]
-# index — the docker worker mounts `src/cofounder_agent` as `/app` so
-# only 5 parent levels exist and `brain/` is not present at all in
-# that tree. The test skips cleanly there; runs on the host.
-_BRAIN_DIR = None
-for _parent in Path(__file__).resolve().parents:
-    _candidate = _parent / "brain"
-    if (_candidate / "brain_daemon.py").is_file():
-        _BRAIN_DIR = _candidate
-        if str(_parent) not in sys.path:
-            sys.path.insert(0, str(_parent))
-        if str(_BRAIN_DIR) not in sys.path:
-            sys.path.insert(0, str(_BRAIN_DIR))
-        break
+# Path: tests/unit/services/test_brain_daemon_auto_remediate.py
+# parents[0] = services/
+# parents[1] = unit/
+# parents[2] = tests/
+# parents[3] = cofounder_agent/
+# parents[4] = src/
+# parents[5] = repo root (contains brain/)
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+_BRAIN_DIR = _REPO_ROOT / "brain"
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+if str(_BRAIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BRAIN_DIR))
 
-pytestmark = pytest.mark.skipif(
-    _BRAIN_DIR is None,
-    reason="brain/ directory not present — docker worker only mounts "
-    "src/cofounder_agent as /app; this test runs on the host.",
-)
-
-if _BRAIN_DIR is not None:
-    from brain import brain_daemon as bd  # noqa: E402
-else:
-    bd = None  # type: ignore[assignment]
+from brain import brain_daemon as bd  # noqa: E402
 
 
 def _make_pool_for_sweeper(

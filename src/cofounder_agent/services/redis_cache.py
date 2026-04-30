@@ -35,6 +35,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]
@@ -54,25 +55,34 @@ except ImportError:
 logger = get_logger(__name__)
 
 
+def _cache_ttl(key: str, default: int) -> int:
+    """Resolve a TTL from app_settings (cache_<key>_ttl_seconds) with a default.
+
+    Read at class-load time — restart the worker to pick up app_settings
+    changes. (#198)
+    """
+    try:
+        from services.site_config import site_config as _sc
+        return _sc.get_int(f"cache_{key}_ttl_seconds", default)
+    except Exception:
+        return default
+
+
 class CacheConfig:
     """Configuration for cache behavior.
 
-    TTL defaults live here; operators can override per-category via
-    app_settings keys (``cache_default_ttl_seconds``,
-    ``cache_query_ttl_seconds``, etc.) — see
-    :meth:`CacheConfig.resolve_ttl` for the DI-based reader. The class-
-    level attributes stay as last-resort defaults so older call sites
-    that haven't migrated off the constants still get a sensible value.
+    All TTLs read from app_settings with sensible defaults; operators
+    tune per-category without a code change via keys like
+    `cache_default_ttl_seconds`, `cache_query_ttl_seconds`, etc. (#198)
     """
 
-    # Default TTLs (Time-To-Live) in seconds. Override per-category via
-    # app_settings (``cache_<category>_ttl_seconds``) + ``resolve_ttl``.
-    DEFAULT_TTL = 3600        # 1 hour
-    QUERY_CACHE_TTL = 1800    # 30 minutes for DB queries
-    USER_CACHE_TTL = 300      # 5 minutes for user data
-    METRICS_CACHE_TTL = 60    # 1 minute for rapidly changing metrics
-    CONTENT_CACHE_TTL = 7200  # 2 hours for content
-    MODEL_CACHE_TTL = 86400   # 1 day for model configs
+    # Default TTLs (Time-To-Live) in seconds — values come from app_settings
+    DEFAULT_TTL = _cache_ttl("default", 3600)        # 1 hour
+    QUERY_CACHE_TTL = _cache_ttl("query", 1800)       # 30 minutes for DB queries
+    USER_CACHE_TTL = _cache_ttl("user", 300)          # 5 minutes for user data
+    METRICS_CACHE_TTL = _cache_ttl("metrics", 60)     # 1 minute for rapidly changing metrics
+    CONTENT_CACHE_TTL = _cache_ttl("content", 7200)   # 2 hours for content
+    MODEL_CACHE_TTL = _cache_ttl("model", 86400)      # 1 day for model configs
 
     # Cache key prefixes for organization
     PREFIX_QUERY = "query:"
@@ -82,33 +92,6 @@ class CacheConfig:
     PREFIX_MODEL = "model:"
     PREFIX_SESSION = "session:"
     PREFIX_TASK = "task:"
-
-    _CATEGORY_DEFAULTS: dict[str, int] = {
-        "default": 3600,
-        "query": 1800,
-        "user": 300,
-        "metrics": 60,
-        "content": 7200,
-        "model": 86400,
-    }
-
-    @classmethod
-    def resolve_ttl(cls, site_config: Any, category: str) -> int:
-        """Resolve a TTL from app_settings (``cache_<category>_ttl_seconds``).
-
-        Args:
-            site_config: SiteConfig instance (DI — Phase H, GH#95).
-            category: One of ``default``, ``query``, ``user``, ``metrics``,
-                ``content``, ``model``.
-
-        Falls back to the hardcoded default for the category when the
-        key is absent in app_settings.
-        """
-        default = cls._CATEGORY_DEFAULTS.get(category, cls.DEFAULT_TTL)
-        try:
-            return site_config.get_int(f"cache_{category}_ttl_seconds", default)
-        except Exception:
-            return default
 
 
 class RedisCache:
@@ -140,17 +123,9 @@ class RedisCache:
         self._enabled = enabled
 
     @classmethod
-    async def create(cls, site_config: Any) -> RedisCache:
+    async def create(cls) -> RedisCache:
         """
         Factory method to create a RedisCache instance with environment configuration.
-
-        Args:
-            site_config: SiteConfig instance (DI — Phase H, GH#95). Must be
-                passed explicitly — the module-level singleton import was
-                removed. Supply from ``app.state.site_config`` /
-                ``request.app.state.site_config`` or a transitional
-                ``from services.site_config import site_config`` at the
-                call site for legacy bootstrap paths.
 
         Returns:
             RedisCache: Instance with Redis connection if available, disabled otherwise
@@ -159,14 +134,8 @@ class RedisCache:
             logger.warning("Redis not available - caching disabled")
             return cls(redis_instance=None, enabled=False)
 
-        # Get configuration from site_config (falls back to env vars).
-        # redis_url is is_secret=true in app_settings (it can carry an
-        # AUTH password), so it must go through get_secret() for
-        # decryption — get() returns the enc:v1:<ciphertext> blob and
-        # would break aioredis.from_url (GH-107).
-        redis_url = await site_config.get_secret(
-            "redis_url", "redis://localhost:6379/0"
-        )
+        # Get configuration from site_config (falls back to env vars)
+        redis_url = site_config.get("redis_url", "redis://localhost:6379/0")
         redis_enabled = site_config.get("redis_enabled", "true").lower() in ("true", "1", "yes")
 
         if not redis_enabled:
@@ -463,24 +432,21 @@ class RedisCache:
 
 
 # Convenience function for backward compatibility
-async def setup_redis_cache(site_config: Any) -> bool:
+async def setup_redis_cache() -> bool:
     """
     Initialize Redis cache service (backward compatibility).
 
     DEPRECATED: Use RedisCache.create() instead in main startup code.
     This function is kept for compatibility but doesn't follow DI pattern.
 
-    Args:
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
-
     Usage (old way - do not use):
-        await setup_redis_cache(site_config)
+        await setup_redis_cache()
 
     Usage (new way - recommended):
-        redis_cache = await RedisCache.create(site_config)
+        redis_cache = await RedisCache.create()
         app.state.redis_cache = redis_cache
     """
-    redis_cache = await RedisCache.create(site_config)
+    redis_cache = await RedisCache.create()
     return redis_cache._enabled
 
 

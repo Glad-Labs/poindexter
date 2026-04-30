@@ -132,13 +132,8 @@ class ConnectionPoolHealth:
                                 f"Connection pool unhealthy: {consecutive} consecutive failures",
                                 level="error",
                             )
-                        except Exception as e:
-                            # Sentry not installed / DSN unset / network blip —
-                            # the .critical() above already surfaces the pool
-                            # outage in our logs, so this is best-effort only.
-                            logger.debug(
-                                "[connection_health] sentry capture_message failed: %s", e,
-                            )
+                        except Exception:
+                            pass
 
             except asyncio.CancelledError:
                 logger.info("🏥 Connection pool health checks stopped")
@@ -207,13 +202,9 @@ class ConnectionPoolHealth:
         return False
 
 
-async def diagnose_connection_issues(site_config: Any) -> dict[str, Any]:
+async def diagnose_connection_issues() -> dict[str, Any]:
     """
     Run diagnostic checks for common connection issues.
-
-    Args:
-        site_config: SiteConfig instance (Phase H — DI; replaces the
-            lazy module-level import).
 
     Returns:
         Dictionary with diagnostic information
@@ -237,6 +228,7 @@ async def diagnose_connection_issues(site_config: Any) -> dict[str, Any]:
 
     _config = get_config()
     _is_dev = _config.environment.lower() in ("development", "dev", "local")
+    from services.site_config import site_config
     # GH-92: keep ``min_size`` small in every environment (pools that
     # pre-warm 20 idle connections eat max_connections). Defaults must
     # stay in sync with services/database_service.py.

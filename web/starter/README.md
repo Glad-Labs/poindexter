@@ -144,4 +144,5 @@ CMD ["npm", "run", "start"]
 
 ## License
 
-Same as the umbrella repo: Apache 2.0. See `LICENSE` at the repo root.
+Same as the umbrella repo: AGPL-3.0-or-later. See `LICENSE.md` at the
+repo root.

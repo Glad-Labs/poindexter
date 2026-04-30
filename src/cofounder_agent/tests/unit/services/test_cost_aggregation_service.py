@@ -165,8 +165,8 @@ class TestGetBreakdownByPhase:
     @pytest.mark.asyncio
     async def test_with_rows_calculates_percentages(self):
         rows = [
-            {"phase": "research", "total_cost": "2.00", "total_kwh": "0.0008", "task_count": "4"},
-            {"phase": "draft", "total_cost": "2.00", "total_kwh": "0.0012", "task_count": "4"},
+            {"phase": "research", "total_cost": "2.00", "task_count": "4"},
+            {"phase": "draft", "total_cost": "2.00", "task_count": "4"},
         ]
         conn = _make_conn(fetchval_values=[4.0], fetch_rows=rows)
         db = _make_db(conn=conn)
@@ -177,8 +177,6 @@ class TestGetBreakdownByPhase:
         assert result["period"] == "week"
         assert len(result["phases"]) == 2
         assert result["total_cost"] == pytest.approx(4.0, abs=0.001)
-        assert result["total_kwh"] == pytest.approx(0.002, abs=1e-6)
-        assert result["phases"][0]["total_kwh"] == pytest.approx(0.0008, abs=1e-6)
 
     @pytest.mark.asyncio
     async def test_period_today_accepted(self):
@@ -223,7 +221,6 @@ class TestGetBreakdownByModel:
                 "model": "claude-3-haiku",
                 "provider": "anthropic",
                 "total_cost": "1.50",
-                "total_kwh": "0.0006",  # ~0.6 mWh — cloud inference estimate
                 "task_count": "5",
             },
         ]
@@ -235,9 +232,6 @@ class TestGetBreakdownByModel:
 
         assert len(result["models"]) == 1
         assert result["models"][0]["model"] == "claude-3-haiku"
-        # Energy axis flows through alongside dollars.
-        assert result["models"][0]["total_kwh"] == pytest.approx(0.0006, rel=1e-3)
-        assert result["total_kwh"] == pytest.approx(0.0006, rel=1e-3)
 
     @pytest.mark.asyncio
     async def test_db_error_returns_empty(self):
@@ -275,10 +269,10 @@ class TestGetHistory:
     async def test_upward_trend_detected(self):
         # 4 days data: low in first half, high in second half → "up" trend
         rows = [
-            {"date": "2026-03-09", "total_cost": "0.10", "total_kwh": "0.0001", "task_count": "1"},
-            {"date": "2026-03-10", "total_cost": "0.10", "total_kwh": "0.0001", "task_count": "1"},
-            {"date": "2026-03-11", "total_cost": "1.50", "total_kwh": "0.0001", "task_count": "5"},
-            {"date": "2026-03-12", "total_cost": "2.00", "total_kwh": "0.0001", "task_count": "8"},
+            {"date": "2026-03-09", "total_cost": "0.10", "task_count": "1"},
+            {"date": "2026-03-10", "total_cost": "0.10", "task_count": "1"},
+            {"date": "2026-03-11", "total_cost": "1.50", "task_count": "5"},
+            {"date": "2026-03-12", "total_cost": "2.00", "task_count": "8"},
         ]
         conn = _make_conn(fetch_rows=rows)
         db = _make_db(conn=conn)
@@ -289,10 +283,10 @@ class TestGetHistory:
     @pytest.mark.asyncio
     async def test_downward_trend_detected(self):
         rows = [
-            {"date": "2026-03-09", "total_cost": "2.00", "total_kwh": "0.0001", "task_count": "8"},
-            {"date": "2026-03-10", "total_cost": "1.50", "total_kwh": "0.0001", "task_count": "5"},
-            {"date": "2026-03-11", "total_cost": "0.05", "total_kwh": "0.0001", "task_count": "1"},
-            {"date": "2026-03-12", "total_cost": "0.05", "total_kwh": "0.0001", "task_count": "1"},
+            {"date": "2026-03-09", "total_cost": "2.00", "task_count": "8"},
+            {"date": "2026-03-10", "total_cost": "1.50", "task_count": "5"},
+            {"date": "2026-03-11", "total_cost": "0.05", "task_count": "1"},
+            {"date": "2026-03-12", "total_cost": "0.05", "task_count": "1"},
         ]
         conn = _make_conn(fetch_rows=rows)
         db = _make_db(conn=conn)
@@ -335,7 +329,7 @@ class TestGetBudgetStatus:
         # Spent $50 of $150 budget = 33% — status is healthy
         # Note: projection alerts may still fire if daily spend extrapolates
         # over budget, but the STATUS should be "healthy" based on actual spend
-        conn = _make_conn(fetchrow_value={"total_cost": 50.0, "total_kwh": 0.0001})
+        conn = _make_conn(fetchval_values=[50.0])
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
         result = await svc.get_budget_status(monthly_budget=150.0)
@@ -347,7 +341,7 @@ class TestGetBudgetStatus:
     @pytest.mark.asyncio
     async def test_warning_at_80_percent(self):
         # Spent $120 of $150 = 80%
-        conn = _make_conn(fetchrow_value={"total_cost": 120.0, "total_kwh": 0.0001})
+        conn = _make_conn(fetchval_values=[120.0])
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
         result = await svc.get_budget_status(monthly_budget=150.0)
@@ -357,7 +351,7 @@ class TestGetBudgetStatus:
     @pytest.mark.asyncio
     async def test_critical_at_100_percent(self):
         # Spent $150 of $150 = 100%
-        conn = _make_conn(fetchrow_value={"total_cost": 150.0, "total_kwh": 0.0001})
+        conn = _make_conn(fetchval_values=[150.0])
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
         result = await svc.get_budget_status(monthly_budget=150.0)
@@ -367,7 +361,7 @@ class TestGetBudgetStatus:
 
     @pytest.mark.asyncio
     async def test_required_fields_present(self):
-        conn = _make_conn(fetchrow_value={"total_cost": 10.0, "total_kwh": 0.0001})
+        conn = _make_conn(fetchval_values=[10.0])
         db = _make_db(conn=conn)
         svc = _make_service(db=db)
         result = await svc.get_budget_status(monthly_budget=150.0)
@@ -504,12 +498,12 @@ class TestGetHistoryTrends:
     async def test_trend_up_when_second_half_higher(self):
         """If second-half average > 110% of first-half, trend is 'up'."""
         rows = [
-            {"date": "2026-04-01", "total_cost": 1.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-02", "total_cost": 1.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-03", "total_cost": 1.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-04", "total_cost": 5.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-05", "total_cost": 5.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-06", "total_cost": 5.0, "total_kwh": 0.0001, "task_count": 10},
+            {"date": "2026-04-01", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-02", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-03", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-04", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-05", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-06", "total_cost": 5.0, "task_count": 10},
         ]
         conn = _make_conn(fetch_rows=rows)
         db = _make_db(conn)
@@ -521,12 +515,12 @@ class TestGetHistoryTrends:
     @pytest.mark.asyncio
     async def test_trend_down_when_second_half_lower(self):
         rows = [
-            {"date": "2026-04-01", "total_cost": 5.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-02", "total_cost": 5.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-03", "total_cost": 5.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-04", "total_cost": 1.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-05", "total_cost": 1.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-06", "total_cost": 1.0, "total_kwh": 0.0001, "task_count": 10},
+            {"date": "2026-04-01", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-02", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-03", "total_cost": 5.0, "task_count": 10},
+            {"date": "2026-04-04", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-05", "total_cost": 1.0, "task_count": 10},
+            {"date": "2026-04-06", "total_cost": 1.0, "task_count": 10},
         ]
         conn = _make_conn(fetch_rows=rows)
         db = _make_db(conn)
@@ -538,10 +532,10 @@ class TestGetHistoryTrends:
     @pytest.mark.asyncio
     async def test_trend_stable_when_similar(self):
         rows = [
-            {"date": "2026-04-01", "total_cost": 2.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-02", "total_cost": 2.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-03", "total_cost": 2.0, "total_kwh": 0.0001, "task_count": 10},
-            {"date": "2026-04-04", "total_cost": 2.0, "total_kwh": 0.0001, "task_count": 10},
+            {"date": "2026-04-01", "total_cost": 2.0, "task_count": 10},
+            {"date": "2026-04-02", "total_cost": 2.0, "task_count": 10},
+            {"date": "2026-04-03", "total_cost": 2.0, "task_count": 10},
+            {"date": "2026-04-04", "total_cost": 2.0, "task_count": 10},
         ]
         conn = _make_conn(fetch_rows=rows)
         db = _make_db(conn)
@@ -554,7 +548,7 @@ class TestGetHistoryTrends:
     async def test_single_day_is_stable(self):
         """With only one data point, trend defaults to stable."""
         rows = [
-            {"date": "2026-04-01", "total_cost": 5.0, "total_kwh": 0.0001, "task_count": 10},
+            {"date": "2026-04-01", "total_cost": 5.0, "task_count": 10},
         ]
         conn = _make_conn(fetch_rows=rows)
         db = _make_db(conn)
@@ -567,7 +561,7 @@ class TestGetHistoryTrends:
     async def test_zero_tasks_avg_cost_is_zero(self):
         """A day with 0 tasks should report avg_cost=0, not divide by zero."""
         rows = [
-            {"date": "2026-04-01", "total_cost": 0.0, "total_kwh": 0.0001, "task_count": 0},
+            {"date": "2026-04-01", "total_cost": 0.0, "task_count": 0},
         ]
         conn = _make_conn(fetch_rows=rows)
         db = _make_db(conn)
@@ -580,7 +574,7 @@ class TestGetHistoryTrends:
     async def test_weekly_average_scaled_by_period(self):
         """weekly_average should be total_cost / weeks."""
         rows = [
-            {"date": f"2026-04-{i:02d}", "total_cost": 7.0, "total_kwh": 0.0001, "task_count": 1}
+            {"date": f"2026-04-{i:02d}", "total_cost": 7.0, "task_count": 1}
             for i in range(1, 8)
         ]
         conn = _make_conn(fetch_rows=rows)
@@ -603,8 +597,9 @@ class TestGetBudgetStatusProjection:
     async def test_projection_over_110_percent_adds_alert(self):
         """If projected cost > 110% of budget, a projection alert is added."""
         from unittest.mock import patch
+        conn = MagicMock()
         # amount_spent is high enough that daily_burn_rate * 30 > monthly_budget * 1.1
-        conn = _make_conn(fetchrow_value={"total_cost": 50.0, "total_kwh": 0.0001})
+        conn.fetchval = AsyncMock(return_value=50.0)
         db = _make_db(conn)
         svc = _make_service(db)
 

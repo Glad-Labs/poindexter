@@ -9,18 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.site_config import SiteConfig
 from services.web_research import WebResearcher
-
-
-def _sc() -> SiteConfig:
-    """Fresh SiteConfig — Phase H DI (GH#95)."""
-    return SiteConfig()
 
 
 class TestSearchSimple:
     async def test_returns_results(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         with patch("services.web_research.WebResearcher._ddg_search") as mock:
             mock.return_value = [
                 {"title": "Test", "url": "https://example.com", "snippet": "A test", "content": ""},
@@ -30,7 +24,7 @@ class TestSearchSimple:
             assert results[0]["title"] == "Test"
 
     async def test_empty_on_failure(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         with patch("services.web_research.WebResearcher._ddg_search") as mock:
             mock.return_value = []
             results = await researcher.search_simple("nonexistent", num_results=3)
@@ -39,17 +33,28 @@ class TestSearchSimple:
 
 class TestDDGSearch:
     async def test_handles_import_error(self):
-        researcher = WebResearcher(site_config=_sc())
-        with patch.dict("sys.modules", {"duckduckgo_search": None}):
-            # Should fail gracefully
+        """Both DDG client modules unavailable -> empty list, no network call.
+
+        Production code tries `ddgs` first then falls back to
+        `duckduckgo_search`. Patch BOTH to None so the test can never
+        accidentally hit the real DuckDuckGo network in any environment
+        where one of them is installed (closes #170).
+        """
+        researcher = WebResearcher()
+        with patch.dict(
+            "sys.modules",
+            {"ddgs": None, "duckduckgo_search": None},
+        ):
+            # Should fail gracefully — both imports raise ImportError
             results = await researcher._ddg_search("test", 3)
-            # May return empty or raise — just shouldn't crash
+            # Caller wraps in try/except and returns []
             assert isinstance(results, list)
+            assert results == []
 
 
 class TestExtractContent:
     async def test_extracts_from_html(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -71,7 +76,7 @@ class TestExtractContent:
             assert "main content" in content
 
     async def test_handles_404(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 404
@@ -85,14 +90,14 @@ class TestExtractContent:
             assert content == ""
 
     async def test_empty_url_returns_empty(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         content = await researcher._extract_content("")
         assert content == ""
 
 
 class TestFormatForPrompt:
     def test_formats_results(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         results = [
             {"title": "FastAPI Guide", "url": "https://fastapi.dev", "snippet": "Learn FastAPI", "content": "FastAPI is a modern framework."},
             {"title": "Django vs Flask", "url": "https://blog.dev", "snippet": "Comparison", "content": ""},
@@ -104,11 +109,11 @@ class TestFormatForPrompt:
         assert "Learn FastAPI" in formatted
 
     def test_empty_results(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         assert researcher.format_for_prompt([]) == ""
 
     def test_respects_max_chars(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         results = [
             {"title": f"Article {i}", "url": f"https://example.com/{i}", "snippet": "x" * 200, "content": "y" * 500}
             for i in range(20)
@@ -122,7 +127,7 @@ class TestSearchFullPipeline:
 
     @pytest.mark.asyncio
     async def test_returns_enriched_results(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
 
         async def fake_ddg(query, n):
             return [
@@ -145,7 +150,7 @@ class TestSearchFullPipeline:
 
     @pytest.mark.asyncio
     async def test_empty_ddg_returns_empty(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         with patch.object(WebResearcher, "_ddg_search", return_value=[]):
             results = await researcher.search("nothing", num_results=5)
         assert results == []
@@ -153,7 +158,7 @@ class TestSearchFullPipeline:
     @pytest.mark.asyncio
     async def test_extract_failures_filtered_out(self):
         """If one fetch raises, gather should not lose the others."""
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
 
         async def fake_ddg(query, n):
             return [
@@ -181,7 +186,7 @@ class TestDDGTimeoutPath:
     @pytest.mark.asyncio
     async def test_ddg_timeout_returns_empty(self):
         """When asyncio.wait_for times out, _ddg_search must return []."""
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
 
         # Patch run_in_executor to return a future that never completes
         # by raising TimeoutError directly on the wait_for.
@@ -216,7 +221,7 @@ class TestDDGTimeoutPath:
             "ddgs": MagicMock(DDGS=fake_ddgs),
             "duckduckgo_search": MagicMock(DDGS=fake_ddgs),
         }):
-            researcher = WebResearcher(site_config=_sc())
+            researcher = WebResearcher()
             results = await researcher._ddg_search("test", 3)
 
         assert len(results) == 2
@@ -231,7 +236,7 @@ class TestExtractContentEdgeCases:
     @pytest.mark.asyncio
     async def test_no_article_or_main_or_body_returns_empty(self):
         """If the page has none of the expected containers, extract returns ''."""
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -247,7 +252,7 @@ class TestExtractContentEdgeCases:
 
     @pytest.mark.asyncio
     async def test_strips_script_and_style(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -273,7 +278,7 @@ class TestExtractContentEdgeCases:
     @pytest.mark.asyncio
     async def test_truncates_to_max_chars(self):
         from services.web_research import MAX_CONTENT_CHARS
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         long_text = "lorem ipsum " * 1000  # ~12000 chars
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = MagicMock()
@@ -290,7 +295,7 @@ class TestExtractContentEdgeCases:
 
     @pytest.mark.asyncio
     async def test_network_error_returns_empty(self):
-        researcher = WebResearcher(site_config=_sc())
+        researcher = WebResearcher()
         with patch("httpx.AsyncClient") as mock_client:
             mock_instance = AsyncMock()
             mock_instance.get = AsyncMock(side_effect=Exception("connection refused"))

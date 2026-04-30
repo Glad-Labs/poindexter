@@ -34,14 +34,6 @@ from services.stages.generate_seo_metadata import (
 from services.stages.replace_inline_images import ReplaceInlineImagesStage
 from services.stages.source_featured_image import SourceFeaturedImageStage
 
-# Phase H step 5 (GH#95): stages read site_config from the context dict.
-_FAKE_SITE_CONFIG = SimpleNamespace(
-    get=lambda _k, _d=None: _d if _d is not None else "",
-    get_int=lambda _k, _d=0: _d,
-    get_float=lambda _k, _d=0.0: _d,
-    get_bool=lambda _k, _d=False: _d,
-)
-
 # ---------------------------------------------------------------------------
 # Protocol conformance — all six new stages in one sweep.
 # ---------------------------------------------------------------------------
@@ -152,10 +144,7 @@ class TestGenerateSeoMetadata:
                 "meta_keywords": ["ai", "tools", "productivity", "ai"],
             }),
         ))
-        ctx: dict[str, Any] = {
-            "topic": "AI", "content": "body", "tags": [],
-            "site_config": _FAKE_SITE_CONFIG,
-        }
+        ctx: dict[str, Any] = {"topic": "AI", "content": "body", "tags": []}
         with patch(
             "services.seo_content_generator.get_seo_content_generator",
             return_value=seo_gen,
@@ -191,8 +180,7 @@ class TestGenerateSeoMetadata:
         ):
             with pytest.raises(ValueError, match="invalid result"):
                 await GenerateSeoMetadataStage().execute(
-                    {"topic": "X", "content": "body", "site_config": _FAKE_SITE_CONFIG},
-                    {},
+                    {"topic": "X", "content": "body"}, {},
                 )
 
 
@@ -300,7 +288,6 @@ class TestFinalizeTask:
             "video_scenes": ["scene1", "scene2"],
             "short_summary_script": "short",
             "database_service": db,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
             "services.text_utils.normalize_text",
@@ -359,7 +346,6 @@ class TestFinalizeTask:
             "target_audience": "devs", "title": "T",
             "quality_result": _fake_quality_result(score=82),
             "database_service": db,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with (
             patch("services.text_utils.normalize_text", side_effect=lambda x: x),
@@ -409,7 +395,6 @@ class TestFinalizeTask:
             "target_audience": "devs", "title": "T",
             "quality_result": _fake_quality_result(score=82),
             "database_service": db,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with (
             patch("services.text_utils.normalize_text", side_effect=lambda x: x),
@@ -448,7 +433,6 @@ class TestFinalizeTask:
             "title": "T",
             "quality_result": _fake_quality_result(score=80),
             "database_service": db,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with (
             patch("services.text_utils.normalize_text", side_effect=lambda x: x),
@@ -496,7 +480,6 @@ class TestReplaceInlineImagesAdapter:
         ctx: dict[str, Any] = {
             "task_id": "t1", "topic": "T", "content": "no placeholders here",
             "database_service": db, "image_service": MagicMock(),
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
             "services.image_decision_agent.plan_images",
@@ -519,7 +502,6 @@ class TestReplaceInlineImagesAdapter:
         ctx: dict[str, Any] = {
             "task_id": "t1", "topic": "Cats", "content": "Intro\n\n[IMAGE-1: cat]\n\nOutro",
             "database_service": db, "image_service": image_service,
-            "site_config": _FAKE_SITE_CONFIG,
         }
 
         # Stage calls _normalize_text via lazy import into content_router_service
@@ -547,7 +529,6 @@ class TestReplaceInlineImagesAdapter:
             "task_id": "t1", "topic": "X",
             "content": "Intro [IMAGE-1: something] outro.",
             "database_service": db, "image_service": image_service,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
             "services.stages.replace_inline_images._try_sdxl",
@@ -606,7 +587,6 @@ class TestReplaceInlineImagesAltTextScrub:
             "task_id": "t1", "topic": "X",
             "content": f"Intro [IMAGE-1: {desc}] outro.",
             "database_service": db, "image_service": image_service,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
             "services.stages.replace_inline_images._try_sdxl",
@@ -648,7 +628,6 @@ class TestSourceFeaturedImageAdapter:
         ctx: dict[str, Any] = {
             "topic": "T", "tags": [], "generate_featured_image": False,
             "image_service": image_service,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         result = await SourceFeaturedImageStage().execute(ctx, {})
         assert result.ok is True
@@ -667,7 +646,6 @@ class TestSourceFeaturedImageAdapter:
         ctx: dict[str, Any] = {
             "topic": "Cats", "tags": ["kittens"],
             "generate_featured_image": True, "image_service": image_service,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         result = await SourceFeaturedImageStage().execute(ctx, {})
         assert result.ok is True
@@ -686,7 +664,6 @@ class TestSourceFeaturedImageAdapter:
         ctx: dict[str, Any] = {
             "task_id": "t1", "topic": "AI", "tags": [],
             "generate_featured_image": True, "image_service": image_service,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
             "services.stages.source_featured_image._try_sdxl_featured",
@@ -712,7 +689,6 @@ class TestSourceFeaturedImageAdapter:
         ctx: dict[str, Any] = {
             "task_id": "t1", "topic": "X", "tags": [],
             "generate_featured_image": True, "image_service": image_service,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
             "services.stages.source_featured_image._try_sdxl_featured",

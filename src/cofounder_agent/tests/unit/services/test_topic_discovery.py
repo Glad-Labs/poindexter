@@ -10,14 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from services.site_config import SiteConfig
 from services.topic_discovery import CATEGORY_SEARCHES, DiscoveredTopic, TopicDiscovery
-
-# Shared empty SiteConfig for tests that don't care about config values.
-# TopicDiscovery requires site_config (Phase H DI, GH#95) — tests that
-# exercise config-dependent branches should construct their own
-# SiteConfig(initial_config={...}) with the keys they need.
-_TEST_SC = SiteConfig(initial_config={})
 
 
 def _make_pool(published_titles=None, pending_topics=None):
@@ -37,35 +30,35 @@ def _make_pool(published_titles=None, pending_topics=None):
 
 class TestClassifyCategory:
     def test_security_topic(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._classify_category("Zero Trust Architecture for Developers") == "security"
 
     def test_startup_topic(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._classify_category("How to Launch Your MVP in a Weekend") == "startup"
 
     def test_engineering_topic(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._classify_category("Monorepo vs Polyrepo Architecture Patterns") == "engineering"
 
     def test_default_to_technology(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._classify_category("Something completely unrelated to anything") == "technology"
 
     def test_hardware_topic(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._classify_category("AMD vs NVIDIA GPU Benchmarks") == "hardware"
 
     def test_gaming_topic(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._classify_category("Indie Game Development with Godot Engine") == "gaming"
 
     def test_business_topic(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._classify_category("SaaS Metrics That Matter for Growth") == "business"
 
     def test_insights_topic(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._classify_category("State of Developer Productivity Survey Results") == "insights"
 
 
@@ -76,24 +69,24 @@ class TestClassifyCategory:
 
 class TestRewriteTitle:
     def test_removes_show_hn_prefix(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._rewrite_as_blog_topic("[Show HN] My Cool Project") == "My Cool Project"
 
     def test_removes_site_suffix(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._rewrite_as_blog_topic("Cool Article | TechCrunch") == "Cool Article"
 
     def test_clean_title_unchanged(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         assert d._rewrite_as_blog_topic("A Perfectly Normal Blog Title") == "A Perfectly Normal Blog Title"
 
     def test_removes_ask_hn_prefix(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         result = d._rewrite_as_blog_topic("[Ask HN] Best way to deploy ML models?")
         assert "[Ask HN]" not in result
 
     def test_removes_dash_site_suffix(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
         result = d._rewrite_as_blog_topic("Cool New Framework - InfoWorld")
         assert "InfoWorld" not in result
 
@@ -104,129 +97,38 @@ class TestRewriteTitle:
 
 
 class TestIsBrandRelevant:
-    """Default behaviour: when ``brand_keywords`` is not set in app_settings
-    (the empty-SiteConfig case used by these tests), the dispatcher falls
-    back to the hardcoded ``_BRAND_KEYWORDS`` set — Glad Labs's
-    AI/gaming/PC-hardware niche."""
-
-    def _td(self):
-        return TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
-
     def test_ai_topic_is_relevant(self):
-        assert self._td()._is_brand_relevant("Building AI Agents with LLMs") is True
+        assert TopicDiscovery._is_brand_relevant("Building AI Agents with LLMs") is True
 
     def test_gpu_topic_is_relevant(self):
-        assert self._td()._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is True
+        assert TopicDiscovery._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is True
 
     def test_gaming_topic_is_relevant(self):
-        assert self._td()._is_brand_relevant("Best Steam Games of 2026") is True
+        assert TopicDiscovery._is_brand_relevant("Best Steam Games of 2026") is True
 
     def test_self_hosted_topic_is_relevant(self):
-        assert self._td()._is_brand_relevant("Self-Hosted AI Content Pipeline for Solo Founders") is True
+        assert TopicDiscovery._is_brand_relevant("Self-Hosted AI Content Pipeline for Solo Founders") is True
 
     def test_local_inference_topic_is_relevant(self):
-        assert self._td()._is_brand_relevant("Running Local Inference with Ollama on Your Own Hardware") is True
+        assert TopicDiscovery._is_brand_relevant("Running Local Inference with Ollama on Your Own Hardware") is True
 
     def test_docker_topic_is_relevant(self):
-        assert self._td()._is_brand_relevant("Docker Kubernetes CI/CD Pipeline") is True
+        assert TopicDiscovery._is_brand_relevant("Docker Kubernetes CI/CD Pipeline") is True
 
     def test_unrelated_topic_not_relevant(self):
-        assert self._td()._is_brand_relevant("Best Recipes for Dinner Tonight") is False
+        assert TopicDiscovery._is_brand_relevant("Best Recipes for Dinner Tonight") is False
 
     def test_empty_string(self):
-        assert self._td()._is_brand_relevant("") is False
+        assert TopicDiscovery._is_brand_relevant("") is False
 
     def test_case_insensitive(self):
-        assert self._td()._is_brand_relevant("MACHINE LEARNING Trends") is True
+        assert TopicDiscovery._is_brand_relevant("MACHINE LEARNING Trends") is True
 
     def test_ollama_relevant(self):
-        assert self._td()._is_brand_relevant("Running Ollama Locally") is True
+        assert TopicDiscovery._is_brand_relevant("Running Ollama Locally") is True
 
     def test_self_hosted_relevant(self):
-        assert self._td()._is_brand_relevant("Self-Host Your Own Blog") is True
-
-
-# ===========================================================================
-# _is_brand_relevant — site_config override (gh#216)
-# ===========================================================================
-
-
-class TestIsBrandRelevantOverride:
-    """gh#216: brand_keywords is configurable via app_settings so non-Glad-Labs
-    niches (gardener, dentist, indie musician) aren't filtered out by the
-    AI/PC/gaming-niche hardcoded fallback."""
-
-    def test_empty_setting_falls_back_to_hardcoded(self):
-        """An empty (or whitespace-only) app_settings value must NOT swallow
-        the hardcoded set — otherwise existing Glad Labs deployments that
-        haven't explicitly set the setting would start rejecting every topic."""
-        sc = SiteConfig(initial_config={"brand_keywords": ""})
-        d = TopicDiscovery(AsyncMock(), site_config=sc)
-        assert d._is_brand_relevant("Building AI Agents with LLMs") is True
-        assert d._is_brand_relevant("Running Ollama Locally") is True
-
-        sc_ws = SiteConfig(initial_config={"brand_keywords": "   "})
-        d_ws = TopicDiscovery(AsyncMock(), site_config=sc_ws)
-        assert d_ws._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is True
-
-    def test_unset_setting_falls_back_to_hardcoded(self):
-        """When the key is absent entirely (not even an empty row), behaviour
-        is identical to the empty-string case — fall back to hardcoded."""
-        sc = SiteConfig(initial_config={})
-        d = TopicDiscovery(AsyncMock(), site_config=sc)
-        assert d._is_brand_relevant("Building AI Agents with LLMs") is True
-
-    def test_custom_keywords_replace_hardcoded(self):
-        """When the override IS set, it is the authoritative list — the
-        hardcoded Glad Labs niche must NOT bleed through (otherwise a
-        gardener customer would still match 'AI'/'GPU'/etc and produce
-        off-niche content)."""
-        sc = SiteConfig(
-            initial_config={"brand_keywords": "gardening,compost,heirloom tomato"}
-        )
-        d = TopicDiscovery(AsyncMock(), site_config=sc)
-        # Custom keywords match (word boundaries respected for single words)
-        assert d._is_brand_relevant("Compost Bin Setup for the Backyard") is True
-        assert d._is_brand_relevant("Heirloom Tomato Varieties for Zone 6") is True
-        assert d._is_brand_relevant("Container Gardening Tips") is True
-        # Glad Labs niche keywords no longer match
-        assert d._is_brand_relevant("Building AI Agents with LLMs") is False
-        assert d._is_brand_relevant("NVIDIA RTX 5090 Benchmarks") is False
-
-    def test_custom_keywords_case_insensitive(self):
-        """Override matching keeps the same case-insensitive semantics as the
-        hardcoded path — operators don't have to think about casing when
-        seeding their niche keywords."""
-        sc = SiteConfig(initial_config={"brand_keywords": "Gardening,Compost"})
-        d = TopicDiscovery(AsyncMock(), site_config=sc)
-        # Title-case keyword vs upper-case title
-        assert d._is_brand_relevant("GARDENING TIPS FOR BEGINNERS") is True
-        # Lower-case keyword vs mixed-case title
-        sc2 = SiteConfig(initial_config={"brand_keywords": "compost"})
-        d2 = TopicDiscovery(AsyncMock(), site_config=sc2)
-        assert d2._is_brand_relevant("How To Compost At Home") is True
-
-    def test_custom_keywords_handle_whitespace_and_empties(self):
-        """Operators will inevitably leave stray spaces / trailing commas in
-        the comma-separated string — those should be tolerated, not turn
-        into ghost keywords that match every title."""
-        sc = SiteConfig(
-            initial_config={"brand_keywords": " gardening , , compost ,"}
-        )
-        d = TopicDiscovery(AsyncMock(), site_config=sc)
-        assert d._is_brand_relevant("Gardening Tips") is True
-        assert d._is_brand_relevant("Compost Bin Setup") is True
-        # Empty string between commas must not match arbitrary text
-        assert d._is_brand_relevant("Best Recipes for Dinner Tonight") is False
-
-    def test_custom_keywords_word_boundary_for_single_word(self):
-        """Word-boundary matching is preserved through the override path —
-        a single-word keyword 'art' must not match 'cartoon' or 'smart'."""
-        sc = SiteConfig(initial_config={"brand_keywords": "art"})
-        d = TopicDiscovery(AsyncMock(), site_config=sc)
-        assert d._is_brand_relevant("Modern Art Movements") is True
-        assert d._is_brand_relevant("Smart Home Hubs Reviewed") is False
-        assert d._is_brand_relevant("Cartoon History") is False
+        assert TopicDiscovery._is_brand_relevant("Self-Host Your Own Blog") is True
 
 
 # ===========================================================================
@@ -238,7 +140,7 @@ class TestDeduplicate:
     @pytest.mark.asyncio
     async def test_marks_exact_duplicates(self):
         pool = _make_pool(published_titles=["Docker Best Practices"])
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title="Docker Best Practices", category="technology",
                            source="hn", source_url="http://example.com"),
@@ -252,7 +154,7 @@ class TestDeduplicate:
     @pytest.mark.asyncio
     async def test_marks_similar_titles(self):
         pool = _make_pool(published_titles=["how to use docker containers effectively"])
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title="how to use docker containers in production",
                            category="technology", source="hn", source_url=""),
@@ -262,7 +164,7 @@ class TestDeduplicate:
 
     @pytest.mark.asyncio
     async def test_no_pool_skips_dedup(self):
-        d = TopicDiscovery(None, site_config=_TEST_SC)
+        d = TopicDiscovery(None)
         topics = [DiscoveredTopic(title="Test", category="tech", source="hn", source_url="")]
         result = await d._deduplicate(topics)
         assert result[0].is_duplicate is False
@@ -270,7 +172,7 @@ class TestDeduplicate:
     @pytest.mark.asyncio
     async def test_marks_pending_task_duplicates(self):
         pool = _make_pool(pending_topics=["Kubernetes Scaling Guide"])
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title="Kubernetes Scaling Guide", category="engineering",
                            source="devto", source_url=""),
@@ -282,7 +184,7 @@ class TestDeduplicate:
     async def test_short_titles_not_fuzzy_matched(self):
         """Single content word titles skip fuzzy matching."""
         pool = _make_pool(published_titles=["advanced python tricks"])
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title="Python", category="technology",
                            source="hn", source_url=""),
@@ -294,70 +196,10 @@ class TestDeduplicate:
     async def test_db_error_doesnt_crash(self):
         pool = AsyncMock()
         pool.fetch = AsyncMock(side_effect=Exception("connection lost"))
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [DiscoveredTopic(title="Test", category="tech", source="hn", source_url="")]
         result = await d._deduplicate(topics)
         assert result[0].is_duplicate is False  # Graceful fallback
-
-    @pytest.mark.asyncio
-    async def test_distinct_events_share_keywords_but_not_dups(self):
-        """gitea#279: 'Join our DEV Weekend Challenge — $1,000' and
-        'Join the OpenClaw Challenge: $1,200 Prizes' share Challenge / 1 / Join
-        but reference different events. The previous hardcoded 0.4 threshold
-        flagged them as dups; the 0.7 default does not."""
-        pool = _make_pool(published_titles=["Join our DEV Weekend Challenge $1,000"])
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
-        topics = [
-            DiscoveredTopic(
-                title="Join the OpenClaw Challenge: $1,200 Prizes",
-                category="technology", source="devto", source_url="",
-            ),
-        ]
-        result = await d._deduplicate(topics)
-        assert result[0].is_duplicate is False
-
-    @pytest.mark.asyncio
-    async def test_existing_threshold_is_tunable(self):
-        """Override `topic_dedup_existing_threshold` so an unrelated pair
-        falls below the (now lower) threshold and gets flagged. Proves the
-        site_config plumbing reads the live value."""
-        sc = SiteConfig(initial_config={"topic_dedup_existing_threshold": "0.3"})
-        pool = _make_pool(published_titles=["Join our DEV Weekend Challenge $1,000"])
-        d = TopicDiscovery(pool, site_config=sc)
-        topics = [
-            DiscoveredTopic(
-                title="Join the OpenClaw Challenge: $1,200 Prizes",
-                category="technology", source="devto", source_url="",
-            ),
-        ]
-        result = await d._deduplicate(topics)
-        assert result[0].is_duplicate is True
-
-    @pytest.mark.asyncio
-    async def test_intra_batch_threshold_is_tunable(self):
-        """Two distinct candidates from the same batch share keywords. At the
-        loose default they're not flagged; lowering the intra-batch threshold
-        to 0.3 should mark the second as a dup of the first."""
-        sc_loose = SiteConfig(initial_config={})
-        sc_tight = SiteConfig(initial_config={"topic_dedup_intra_batch_threshold": "0.3"})
-        topics_loose = [
-            DiscoveredTopic(title="Top 7 Featured DEV Posts of the Week",
-                            category="business", source="devto", source_url=""),
-            DiscoveredTopic(title="What was your win this week?",
-                            category="business", source="devto", source_url=""),
-        ]
-        topics_tight = [
-            DiscoveredTopic(title="Top 7 Featured DEV Posts of the Week",
-                            category="business", source="devto", source_url=""),
-            DiscoveredTopic(title="What was your win this week?",
-                            category="business", source="devto", source_url=""),
-        ]
-        d_loose = TopicDiscovery(_make_pool(), site_config=sc_loose)
-        d_tight = TopicDiscovery(_make_pool(), site_config=sc_tight)
-        await d_loose._deduplicate(topics_loose)
-        await d_tight._deduplicate(topics_tight)
-        assert topics_loose[1].is_duplicate is False
-        assert topics_tight[1].is_duplicate is True
 
 
 # ===========================================================================
@@ -370,7 +212,7 @@ class TestQueueTopics:
     async def test_queues_to_database(self):
         pool = AsyncMock()
         pool.execute = AsyncMock()
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title="New Topic", category="technology",
                            source="hackernews", source_url="http://hn.com/123"),
@@ -383,7 +225,7 @@ class TestQueueTopics:
     async def test_handles_db_error(self):
         pool = AsyncMock()
         pool.execute = AsyncMock(side_effect=Exception("unique violation"))
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [DiscoveredTopic(title="Dup", category="tech", source="hn", source_url="")]
         queued = await d.queue_topics(topics)
         assert queued == 0
@@ -392,7 +234,7 @@ class TestQueueTopics:
     async def test_queues_multiple_topics(self):
         pool = AsyncMock()
         pool.execute = AsyncMock()
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title=f"Topic {i}", category="technology",
                            source="hn", source_url="")
@@ -412,7 +254,7 @@ class TestQueueTopics:
             if call_count == 2:
                 raise Exception("DB error on second topic")
         pool.execute = AsyncMock(side_effect=_side_effect)
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title=f"Topic {i}", category="tech", source="hn", source_url="")
             for i in range(3)
@@ -429,7 +271,7 @@ class TestQueueTopics:
 class TestScrapeHackerNews:
     @pytest.mark.asyncio
     async def test_returns_topics_from_hn(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         def _mock_response(url):
             resp = MagicMock()
@@ -458,7 +300,7 @@ class TestScrapeHackerNews:
 
     @pytest.mark.asyncio
     async def test_handles_network_error(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         # httpx is imported inside the source module after Phase F;
         # patch the source's httpx reference, not the legacy dispatcher's.
@@ -481,7 +323,7 @@ class TestScrapeHackerNews:
 class TestScrapeDevTo:
     @pytest.mark.asyncio
     async def test_returns_topics_from_devto(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         with patch("services.topic_sources.devto.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -503,7 +345,7 @@ class TestScrapeDevTo:
 
     @pytest.mark.asyncio
     async def test_handles_network_error(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         with patch("services.topic_sources.devto.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
@@ -560,65 +402,155 @@ class TestCategorySearches:
 
 
 class TestIsNewsOrJunk:
+    # gh#218: _is_news_or_junk is an instance method now (was @staticmethod)
+    # so the regex list can be sourced from app_settings via SiteConfig.
+    # Each test instantiates a TopicDiscovery — the kwargless ctor falls back
+    # to the module singleton, which in tests is unloaded so we get the
+    # hardcoded _NEWS_RE fallback path.
+
+    def _d(self):
+        return TopicDiscovery(AsyncMock())
+
     def test_too_short_title_rejected(self):
-        assert TopicDiscovery._is_news_or_junk("Short title") is True
-        assert TopicDiscovery._is_news_or_junk("AI Tools") is True
+        d = self._d()
+        assert d._is_news_or_junk("Short title") is True
+        assert d._is_news_or_junk("AI Tools") is True
 
     def test_long_title_not_rejected_for_length(self):
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Building Production-Ready Microservices with Go"
         ) is False
 
     def test_lawsuit_pattern_rejected(self):
         # Real pattern from _NEWS_PATTERNS — "lawsuit" matches
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Tech Giant Faces Major Lawsuit Over Privacy"
         ) is True
 
     def test_personal_anecdote_pattern_rejected(self):
         # "my experience" is in the news/junk pattern list
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "My experience building a startup from scratch"
         ) is True
 
     def test_merch_pattern_rejected(self):
-        assert TopicDiscovery._is_news_or_junk(
+        assert self._d()._is_news_or_junk(
             "Limited Edition Tech Merch and Sticker Pack"
         ) is True
 
-    def test_truncated_trailing_preposition_rejected(self):
-        """gitea#279 follow-up: scrape-truncated titles like
-        'Top Cybersecurity Threats in' must be rejected — the trailing
-        preposition is a strong signal the source cut off mid-phrase.
-        Real evergreen titles never end with these tokens."""
-        assert TopicDiscovery._is_news_or_junk("Top Cybersecurity Threats in") is True
-        assert TopicDiscovery._is_news_or_junk("Different Language Models Learn") is False  # ends with verb, not preposition
-        assert TopicDiscovery._is_news_or_junk("Best Practices for") is True
-        assert TopicDiscovery._is_news_or_junk("How to Deploy Apps with") is True
-        assert TopicDiscovery._is_news_or_junk("Choosing Frameworks Using") is True
 
-    def test_leading_emoji_rejected(self):
-        """gitea#279 follow-up: emoji-led devto/medium clickbait
-        ('🦸Let Superheroes Cheer You Up...') is junk that previously
-        slipped past brand-relevance on a coincidental 'AI' match."""
-        assert TopicDiscovery._is_news_or_junk(
-            "🦸Let Superheroes Cheer You Up (AI Avatar v6: Chrome Extension)"
+# ===========================================================================
+# gh#218 — DB-backed filter overrides (_resolved_news_re,
+# _resolved_category_searches)
+# ===========================================================================
+
+
+class _FakeSiteConfig:
+    """Minimal SiteConfig stand-in for gh#218 override tests.
+
+    Only exposes the surface ``TopicDiscovery._resolved_*`` calls reach
+    for: ``get(key, default)`` and ``all()``. Avoids importing the real
+    ``SiteConfig`` class so tests stay decoupled from any Phase H churn
+    on github/main.
+    """
+
+    def __init__(self, values: dict[str, str] | None = None):
+        self._values = values or {}
+
+    def get(self, key: str, default: str = "") -> str:
+        return self._values.get(key, default)
+
+    def all(self) -> dict[str, str]:
+        return dict(self._values)
+
+
+class TestResolvedCategorySearches:
+    def test_empty_falls_back_to_hardcoded(self):
+        sc = _FakeSiteConfig({"topic_discovery_category_searches": "{}"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Empty JSON object -> hardcoded CATEGORY_SEARCHES fallback
+        assert d._resolved_category_searches() is CATEGORY_SEARCHES
+
+    def test_json_override_used(self):
+        sc = _FakeSiteConfig({
+            "topic_discovery_category_searches":
+                '{"gardening": ["heirloom tomato varieties", "compost tea"]}',
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        resolved = d._resolved_category_searches()
+        assert "gardening" in resolved
+        assert resolved["gardening"] == ["heirloom tomato varieties", "compost tea"]
+        # Override replaces, doesn't merge
+        assert "technology" not in resolved
+
+    def test_malformed_json_falls_back(self):
+        sc = _FakeSiteConfig({
+            "topic_discovery_category_searches": "{not valid json",
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Bad JSON -> hardcoded fallback, no exception raised
+        assert d._resolved_category_searches() is CATEGORY_SEARCHES
+
+    def test_result_cached_on_instance(self):
+        sc = _FakeSiteConfig({"topic_discovery_category_searches": "{}"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        first = d._resolved_category_searches()
+        second = d._resolved_category_searches()
+        assert first is second  # cached, not re-parsed
+
+
+class TestResolvedNewsRe:
+    def test_empty_falls_back_to_hardcoded(self):
+        sc = _FakeSiteConfig({"topic_discovery_news_patterns": "[]"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        # Empty array -> hardcoded _NEWS_RE fallback
+        assert d._resolved_news_re() is TopicDiscovery._NEWS_RE
+
+    def test_json_override_used(self):
+        sc = _FakeSiteConfig({
+            "topic_discovery_news_patterns":
+                r'["\\b(?:foo|bar)\\b"]',
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        compiled = d._resolved_news_re()
+        # Operator's pattern, not the Glad Labs lawsuit/election set
+        assert len(compiled) == 1
+        assert compiled[0].search("things about foo here")
+
+    def test_invalid_regex_skipped(self):
+        # One bad pattern shouldn't break the rest — and shouldn't raise.
+        sc = _FakeSiteConfig({
+            "topic_discovery_news_patterns":
+                r'["[unclosed", "\\b(?:keepme)\\b"]',
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        compiled = d._resolved_news_re()
+        assert len(compiled) == 1
+        assert compiled[0].search("we should keepme out")
+
+    def test_malformed_json_falls_back(self):
+        sc = _FakeSiteConfig({
+            "topic_discovery_news_patterns": "[not valid json",
+        })
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._resolved_news_re() is TopicDiscovery._NEWS_RE
+
+    def test_override_changes_is_news_or_junk_behaviour(self):
+        # With an empty override, lawsuit titles still get rejected
+        sc = _FakeSiteConfig({"topic_discovery_news_patterns": "[]"})
+        d = TopicDiscovery(AsyncMock(), site_config=sc)
+        assert d._is_news_or_junk(
+            "Tech Giant Faces Major Lawsuit Over Privacy"
         ) is True
-        assert TopicDiscovery._is_news_or_junk(
-            "🚀Rocket-fast Startup Strategies for AI Founders"
-        ) is True
 
-    def test_bracket_prefix_not_rejected(self):
-        """[Show HN] / [Ask HN] prefixes are legitimate — those go through
-        the rewrite path, not the leading-emoji reject."""
-        assert TopicDiscovery._is_news_or_junk(
-            "[Show HN] My open-source tool for content automation"
-        ) is False
-
-    def test_normal_title_not_rejected(self):
-        """Sanity check: a perfectly normal title still passes."""
-        assert TopicDiscovery._is_news_or_junk(
-            "Building Production-Ready Microservices with Go"
+        # With a custom override that doesn't include "lawsuit",
+        # the same title should pass (real-estate/legal niche)
+        sc2 = _FakeSiteConfig({
+            "topic_discovery_news_patterns": r'["\\b(?:onlything)\\b"]',
+        })
+        d2 = TopicDiscovery(AsyncMock(), site_config=sc2)
+        assert d2._is_news_or_junk(
+            "Tech Giant Faces Major Lawsuit Over Privacy"
         ) is False
 
 
@@ -630,7 +562,7 @@ class TestIsNewsOrJunk:
 class TestSearchByCategory:
     @pytest.mark.asyncio
     async def test_returns_topics_from_research_results(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(return_value=[
@@ -647,7 +579,7 @@ class TestSearchByCategory:
 
     @pytest.mark.asyncio
     async def test_empty_results_returns_empty_list(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(return_value=[])
@@ -659,7 +591,7 @@ class TestSearchByCategory:
 
     @pytest.mark.asyncio
     async def test_unknown_category_skipped(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(return_value=[])
@@ -672,7 +604,7 @@ class TestSearchByCategory:
 
     @pytest.mark.asyncio
     async def test_research_exception_returns_empty(self):
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(side_effect=RuntimeError("ddg down"))
@@ -686,7 +618,7 @@ class TestSearchByCategory:
     @pytest.mark.asyncio
     async def test_filters_titles_that_rewrite_to_empty(self):
         """Titles rejected by _rewrite_as_blog_topic (e.g. Show HN) should not appear."""
-        d = TopicDiscovery(AsyncMock(), site_config=_TEST_SC)
+        d = TopicDiscovery(AsyncMock())
 
         fake_researcher = MagicMock()
         fake_researcher.search_simple = AsyncMock(return_value=[
@@ -714,7 +646,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_combines_sources_and_returns_top_n(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         # Stub all the source methods
@@ -740,7 +672,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_filters_brand_irrelevant(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[
@@ -760,7 +692,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_source_exception_does_not_crash(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[])
@@ -778,7 +710,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_max_topics_cap(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         # Generate 10 brand-relevant topics with distinct titles
@@ -814,7 +746,7 @@ class TestDiscover:
     @pytest.mark.asyncio
     async def test_category_filter_applied(self):
         pool = _make_pool()
-        d = TopicDiscovery(pool, site_config=_TEST_SC)
+        d = TopicDiscovery(pool)
         d._get_enabled_sources = AsyncMock(return_value=_ALL_SOURCES)
 
         d._discover_from_knowledge = AsyncMock(return_value=[

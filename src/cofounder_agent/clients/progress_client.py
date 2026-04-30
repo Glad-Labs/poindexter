@@ -5,11 +5,7 @@ Provides a client for interacting with the Workflow Progress Tracking API.
 Simplifies progress update operations and WebSocket subscription management.
 
 Usage:
-    # Explicit URL (preferred — pass from site_config.get("internal_api_base_url")):
-    client = WorkflowProgressClient("http://localhost:8002")
-
-    # Or rely on the bootstrap default (DEFAULT_WORKER_API_URL):
-    client = WorkflowProgressClient()
+    client = WorkflowProgressClient("http://localhost:8000")
 
     # Initialize progress
     await client.initialize_progress(
@@ -45,7 +41,6 @@ from typing import Any
 import aiohttp
 import websockets
 
-from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -54,20 +49,13 @@ logger = get_logger(__name__)
 class WorkflowProgressClient:
     """Client for interacting with Workflow Progress Tracking API"""
 
-    def __init__(self, base_url: str | None = None):
+    def __init__(self, base_url: str = "http://localhost:8000"):
         """
         Initialize the progress client.
 
         Args:
-            base_url: Base URL of the API. When ``None`` (default), falls
-                back to ``services.bootstrap_defaults.DEFAULT_WORKER_API_URL``
-                — the chicken-and-egg fallback used when no SiteConfig is
-                available. Callers that have a ``SiteConfig`` should pass
-                ``site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)``
-                explicitly so DB-tuned ports are honored.
+            base_url: Base URL of the API (default: localhost:8000)
         """
-        if base_url is None:
-            base_url = DEFAULT_WORKER_API_URL
         self.base_url = base_url.rstrip("/")
         self.api_base = f"{self.base_url}/api/workflow-progress"
         self.session: aiohttp.ClientSession | None = None
@@ -387,26 +375,16 @@ class WorkflowProgressClient:
 
             await client.subscribe_progress("exec_123", on_progress)
         """
-        # Derive the WebSocket URL from the configured base_url so DB-tuned
-        # ports (and TLS) are respected. http://host:port → ws://host:port,
-        # https://host:port → wss://host:port.
-        if self.base_url.startswith("https://"):
-            ws_scheme = "wss://"
-            host_port = self.base_url[len("https://"):]
-        elif self.base_url.startswith("http://"):
-            ws_scheme = "ws://"
-            host_port = self.base_url[len("http://"):]
-        else:
-            ws_scheme = "ws://"
-            host_port = self.base_url
-        ws_url = f"{ws_scheme}{host_port}/api/workflow-progress/ws/{execution_id}"
+        ws_url = f"ws://localhost:8000/api/workflow-progress/ws/{execution_id}".replace(
+            "http://", ""
+        ).replace("https://", "")
 
         backoff = 1
         max_backoff = 32
 
         while True:
             try:
-                async with websockets.connect(ws_url) as websocket:
+                async with websockets.connect(f"ws://{ws_url.split('ws://')[-1]}") as websocket:
                     logger.info(f"Connected to progress WebSocket for {execution_id}")
                     self.ws_connections[execution_id] = {"websocket": websocket}
                     backoff = 1  # Reset backoff on successful connection
@@ -454,16 +432,12 @@ class WorkflowProgressClient:
 
 
 # Convenience function for getting a client instance
-def get_progress_client(base_url: str | None = None) -> WorkflowProgressClient:
+def get_progress_client(base_url: str = "http://localhost:8000") -> WorkflowProgressClient:
     """
     Get a WorkflowProgressClient instance.
 
     Args:
-        base_url: Base URL of the API. When ``None``, falls back to
-            ``services.bootstrap_defaults.DEFAULT_WORKER_API_URL`` (the
-            chicken-and-egg fallback used when no SiteConfig is available).
-            Callers with a ``SiteConfig`` should pass
-            ``site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)``.
+        base_url: Base URL of the API
 
     Returns:
         WorkflowProgressClient instance

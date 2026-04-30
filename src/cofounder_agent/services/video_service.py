@@ -18,28 +18,15 @@ import asyncio
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
-def _poindexter_data_root() -> Path:
-    """Same layout as podcast_service._poindexter_data_root. See there for the
-    full rationale — tl;dr the worker container's bind mount lives at
-    /root/.poindexter regardless of which user the process runs as."""
-    override = os.environ.get("POINDEXTER_DATA_ROOT")
-    if override:
-        return Path(override)
-    root_mount = Path("/root/.poindexter")
-    if root_mount.is_dir():
-        return root_mount
-    return Path(os.path.expanduser("~")) / ".poindexter"
-
-
-VIDEO_DIR = _poindexter_data_root() / "video"
+VIDEO_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "video"
 
 
 def _write_bytes(path: str, content: bytes) -> None:
@@ -53,26 +40,19 @@ def _write_bytes(path: str, content: bytes) -> None:
         f.write(content)
 
 
-def _video_server_url(site_config: Any) -> str:
+def _video_server_url() -> str:
     """Resolve VIDEO_SERVER_URL from site_config per-call.
 
     Previously captured at module-import time. Since this module
     imports before site_config.load() completes, the cached value was
     always the hardcoded default — changing video_server_url in
     app_settings had no effect until worker restart.
-
-    Args:
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     return site_config.get("video_server_url", "http://host.docker.internal:9837")
 
 
-def _sdxl_server_url(site_config: Any) -> str:
-    """Resolve SDXL_SERVER_URL from site_config per-call (same rationale).
-
-    Args:
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
-    """
+def _sdxl_server_url() -> str:
+    """Resolve SDXL_SERVER_URL from site_config per-call (same rationale)."""
     return site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
 
 
@@ -88,18 +68,12 @@ class VideoResult:
 
 
 async def _generate_images_for_video(
-    title: str, content: str, num_images: int = 4, *, site_config: Any,
+    title: str, content: str, num_images: int = 4
 ) -> list[str]:
     """Generate SDXL images for the video slideshow.
 
     Uses Ollama to create topic-specific prompts, then SDXL to generate images.
     Returns list of local file paths to generated images.
-
-    Args:
-        title: Post title for prompt seed.
-        content: Post content for prompt context.
-        num_images: Target image count.
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     # Use llama3 for prompt generation — some models (glm, qwen thinking mode) return empty
@@ -157,13 +131,12 @@ async def _generate_images_for_video(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("[VIDEO] Generating %d SDXL images from %d prompts", len(prompts), len(prompts))
-    sdxl_url = _sdxl_server_url(site_config)
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
         for i, prompt in enumerate(prompts):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{sdxl_url}/generate",
+                    f"{_sdxl_server_url()}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         "steps": 4, "guidance_scale": 1.0,
@@ -228,16 +201,10 @@ async def _extract_images_from_content(content: str) -> list[str]:
     return image_paths
 
 
-async def _generate_images_from_scenes(
-    scenes: list[str], *, site_config: Any,
-) -> list[str]:
+async def _generate_images_from_scenes(scenes: list[str]) -> list[str]:
     """Generate SDXL images from pre-generated scene descriptions.
 
     Skips Ollama prompt generation since scenes are already written.
-
-    Args:
-        scenes: Pre-generated scene prompts.
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     neg = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
     output_dir = VIDEO_DIR / "frames"
@@ -245,13 +212,12 @@ async def _generate_images_from_scenes(
     image_paths = []
 
     logger.info("[VIDEO] Generating %d SDXL images from pre-generated scenes", len(scenes))
-    sdxl_url = _sdxl_server_url(site_config)
     async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
         for i, prompt in enumerate(scenes):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{sdxl_url}/generate",
+                    f"{_sdxl_server_url()}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         "steps": 4, "guidance_scale": 1.0,
@@ -272,45 +238,6 @@ async def _generate_images_from_scenes(
     return image_paths
 
 
-async def _maybe_generate_ambient_bed(
-    *, post_id: str, title: str, site_config: Any,
-) -> str | None:
-    """Opt-in ambient bed for the slideshow video (issue #125).
-
-    Returns ``None`` when the audio-generation layer is disabled
-    (default), the provider can't fulfill the request, or the call
-    raises. Never propagates — audio generation is strictly additive
-    and must not break existing video rendering.
-    """
-    try:
-        from services.audio_gen_service import generate_audio, is_audio_gen_enabled
-    except Exception as e:  # Defensive: import failures shouldn't break video
-        logger.debug("[VIDEO] audio_gen_service unavailable: %s", e)
-        return None
-
-    if not is_audio_gen_enabled(site_config):
-        return None
-
-    try:
-        prompt = (
-            site_config.get("video_audio_bed_prompt", "")
-            or f"warm cinematic ambient bed, gentle, no vocals, fits a video about: {title}"
-        )
-    except Exception:
-        prompt = f"warm cinematic ambient bed, gentle, no vocals, fits a video about: {title}"
-
-    bed_path = str(VIDEO_DIR / f"{post_id}-bed.wav")
-    result = await generate_audio(
-        prompt=prompt,
-        kind="ambient",
-        site_config=site_config,
-        output_path=bed_path,
-    )
-    if result and result.file_path:
-        return result.file_path
-    return None
-
-
 async def generate_video_for_post(
     post_id: str,
     title: str,
@@ -318,8 +245,6 @@ async def generate_video_for_post(
     podcast_path: str | None = None,
     force: bool = False,
     pre_generated_scenes: list[str] | None = None,
-    *,
-    site_config: Any,
 ) -> VideoResult:
     """Generate a video for a published post.
 
@@ -331,8 +256,6 @@ async def generate_video_for_post(
         content: Post content excerpt (context for image prompts).
         podcast_path: Path to podcast MP3 file. If None, checks default location.
         force: Regenerate even if video exists.
-        pre_generated_scenes: Optional pre-generated SDXL prompts.
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
 
     Returns:
         VideoResult with file path and duration info.
@@ -367,13 +290,9 @@ async def generate_video_for_post(
     new_images = []
     if supplement_count > 0:
         if pre_generated_scenes and len(pre_generated_scenes) >= 2:
-            new_images = await _generate_images_from_scenes(
-                pre_generated_scenes[:supplement_count], site_config=site_config,
-            )
+            new_images = await _generate_images_from_scenes(pre_generated_scenes[:supplement_count])
         else:
-            new_images = await _generate_images_for_video(
-                title, content, num_images=supplement_count, site_config=site_config,
-            )
+            new_images = await _generate_images_for_video(title, content, num_images=supplement_count)
 
     # Interleave: post image, new image, post image, new image...
     image_paths = []
@@ -389,39 +308,20 @@ async def generate_video_for_post(
     if not image_paths:
         return VideoResult(success=False, error="No images could be generated")
 
-    # Convert container paths to host paths for the video server.
-    # Two container users are in play:
-    #   SDXL container runs as root     → /root/.poindexter/...
-    #   Worker container runs as appuser → /home/appuser/.poindexter/...
-    # Both bind-mount into the host's .poindexter/ directory. Any path
-    # containing ".poindexter/..." is normalized to the host path.
+    # Convert container paths to host paths for the video server
+    # Container mount: /root/.poindexter → C:/Users/mattm/.poindexter (bind mount)
     host_home = site_config.get("host_home", "C:/Users/mattm")
     def _to_host_path(container_path: str) -> str:
-        return (
-            container_path
-            .replace("/root/.poindexter", f"{host_home}/.poindexter")
-            .replace("/home/appuser/.poindexter", f"{host_home}/.poindexter")
-        )
+        return container_path.replace("/root/.poindexter", f"{host_home}/.poindexter")
 
     host_image_paths = [_to_host_path(p) for p in image_paths]
     host_audio_path = _to_host_path(podcast_path)
 
-    # Optional ambient bed via the AudioGenProvider plugin. Default
-    # off — only activates when audio_gen_engine names a registered
-    # provider (Glad-Labs/poindexter#125). Best-effort: failures log
-    # and we proceed with the original podcast audio unchanged.
-    bed_path = await _maybe_generate_ambient_bed(
-        post_id=post_id, title=title, site_config=site_config,
-    )
-    if bed_path:
-        logger.info("[VIDEO] Generated ambient bed: %s", bed_path)
-
     # Call video server with host-side file paths
     logger.info("[VIDEO] Rendering video (%d images + audio)", len(image_paths))
-    video_url = _video_server_url(site_config)
     try:
         async with httpx.AsyncClient(timeout=600) as client:
-            resp = await client.post(f"{video_url}/generate", json={
+            resp = await client.post(f"{_video_server_url()}/generate", json={
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
@@ -441,21 +341,6 @@ async def generate_video_for_post(
                     "[VIDEO] Generated: %s (%d bytes, %ds, rendered in %ss)",
                     post_id, size, duration, elapsed,
                 )
-                # Glad-Labs/poindexter#161 — legacy video path now
-                # records the media_assets row that the V0 stitch
-                # Stage already lands. Best-effort.
-                await _record_video_asset(
-                    site_config=site_config,
-                    post_id=post_id,
-                    asset_type="video",
-                    output_path=str(output_path),
-                    duration_seconds=duration,
-                    file_size_bytes=size,
-                    width=1920,
-                    height=1080,
-                    images_used=len(image_paths),
-                    title=title,
-                )
                 return VideoResult(
                     success=True,
                     file_path=str(output_path),
@@ -474,65 +359,13 @@ async def generate_video_for_post(
         return VideoResult(success=False, error=str(e))
 
 
-async def _record_video_asset(
-    *,
-    site_config: Any,
-    post_id: str,
-    asset_type: str,
-    output_path: str,
-    duration_seconds: int,
-    file_size_bytes: int,
-    width: int,
-    height: int,
-    images_used: int,
-    title: str,
-) -> None:
-    """Best-effort ``media_assets`` insert for a legacy-pipeline video.
-
-    Closes Glad-Labs/poindexter#161 — the V0 stitch Stages already
-    write rows; this brings the legacy slideshow path to parity so
-    cleanup / retention / cost-attribution find every video.
-    """
-    try:
-        from services.media_asset_recorder import record_media_asset
-    except Exception as exc:  # noqa: BLE001 — defensive import guard
-        logger.debug("[VIDEO] media_asset_recorder unavailable: %s", exc)
-        return
-    pool = getattr(site_config, "_pool", None)
-    await record_media_asset(
-        pool=pool,
-        post_id=post_id,
-        asset_type=asset_type,
-        storage_path=output_path,
-        public_url="",  # uploaded separately via upload_video_episode
-        mime_type="video/mp4",
-        duration_ms=int(duration_seconds * 1000),
-        file_size_bytes=file_size_bytes,
-        width=width,
-        height=height,
-        provider_plugin="video.ken_burns_slideshow",
-        source="pipeline",
-        storage_provider="local",
-        metadata={
-            "title": title,
-            "images_used": images_used,
-        },
-    )
-
-
 async def _generate_short_summary_audio(
-    post_id: str, title: str, content: str, *, site_config: Any,
+    post_id: str, title: str, content: str,
 ) -> str | None:
     """Generate a 60-second summary TTS audio for the short-form video.
 
     Uses Ollama to write a tight ~150-word hook + key takeaways,
     then Edge TTS to convert to speech.
-
-    Args:
-        post_id: Post identifier (filename stem for the audio).
-        title: Post title for hook.
-        content: Post content.
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     model = "llama3:latest"
@@ -570,7 +403,7 @@ NARRATION:"""
             logger.warning("[SHORT] Summary script too short (%d chars)", len(summary_script))
             return None
 
-        summary_script = _normalize_for_speech(summary_script, site_config)
+        summary_script = _normalize_for_speech(summary_script)
         logger.info("[SHORT] Generated summary script: %d chars", len(summary_script))
 
         # Generate TTS audio
@@ -597,24 +430,12 @@ async def generate_short_video_for_post(
     pre_generated_scenes: list[str] | None = None,
     pre_generated_summary: str | None = None,
     force: bool = False,
-    *,
-    site_config: Any,
 ) -> VideoResult:
     """Generate a vertical short-form video (TikTok/YouTube Shorts).
 
     Generates a separate 60-second summary narration (not the full podcast).
     Uses post images + SDXL images for visuals.
     Output: 1080x1920 MP4, max 60 seconds.
-
-    Args:
-        post_id: Post identifier (filename stem).
-        title: Post title.
-        content: Post content excerpt.
-        podcast_path: Optional podcast MP3 path to fall back to.
-        pre_generated_scenes: Optional pre-generated SDXL prompts.
-        pre_generated_summary: Optional pre-generated summary script.
-        force: Regenerate even if file exists.
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     output_path = VIDEO_DIR / f"{post_id}-short.mp4"
@@ -635,7 +456,7 @@ async def generate_short_video_for_post(
             import edge_tts
 
             from services.podcast_service import _normalize_for_speech
-            script = _normalize_for_speech(pre_generated_summary, site_config)
+            script = _normalize_for_speech(pre_generated_summary)
             short_audio_path = str(VIDEO_DIR / f"{post_id}-short-audio.mp3")
             communicate = edge_tts.Communicate(script, "en-US-AndrewMultilingualNeural")
             await communicate.save(short_audio_path)
@@ -646,9 +467,7 @@ async def generate_short_video_for_post(
             logger.warning("[SHORT] Pre-generated summary TTS failed: %s", e)
 
     if not short_audio:
-        short_audio = await _generate_short_summary_audio(
-            post_id, title, content, site_config=site_config,
-        )
+        short_audio = await _generate_short_summary_audio(post_id, title, content)
     if not short_audio:
         # Fall back to full podcast if summary generation fails
         if not podcast_path:
@@ -665,13 +484,9 @@ async def generate_short_video_for_post(
     new_images = []
     if supplement_count > 0:
         if pre_generated_scenes and len(pre_generated_scenes) >= 2:
-            new_images = await _generate_images_from_scenes(
-                pre_generated_scenes[:supplement_count], site_config=site_config,
-            )
+            new_images = await _generate_images_from_scenes(pre_generated_scenes[:supplement_count])
         else:
-            new_images = await _generate_images_for_video(
-                title, content, num_images=supplement_count, site_config=site_config,
-            )
+            new_images = await _generate_images_for_video(title, content, num_images=supplement_count)
 
     image_paths = (post_images + new_images)[:4]
 
@@ -686,10 +501,9 @@ async def generate_short_video_for_post(
     host_audio_path = _to_host_path(short_audio)
 
     logger.info("[SHORT] Rendering short video (%d images, summary audio)", len(image_paths))
-    video_url = _video_server_url(site_config)
     try:
         async with httpx.AsyncClient(timeout=300) as client:
-            resp = await client.post(f"{video_url}/generate-short", json={
+            resp = await client.post(f"{_video_server_url()}/generate-short", json={
                 "image_paths": host_image_paths,
                 "audio_path": host_audio_path,
                 "title": title,
@@ -705,20 +519,6 @@ async def generate_short_video_for_post(
                 size = output_path.stat().st_size
 
                 logger.info("[SHORT] Generated: %s (%d bytes, %ds)", post_id, size, duration)
-                # Glad-Labs/poindexter#161 — short-form variant of the
-                # legacy slideshow path.
-                await _record_video_asset(
-                    site_config=site_config,
-                    post_id=post_id,
-                    asset_type="video_short",
-                    output_path=str(output_path),
-                    duration_seconds=duration,
-                    file_size_bytes=size,
-                    width=1080,
-                    height=1920,
-                    images_used=len(image_paths),
-                    title=title,
-                )
                 return VideoResult(
                     success=True,
                     file_path=str(output_path),
@@ -742,218 +542,15 @@ async def generate_video_episode(
     title: str,
     content: str,
     *,
-    site_config: Any,
     pre_generated_scenes: list[str] | None = None,
 ) -> None:
-    """Fire-and-forget full-length video generation. Logs errors but never raises.
-
-    Dispatches through :func:`dispatch_video_generation` so the active
-    engine is selected by ``app_settings.video_engine`` (default
-    ``ken_burns_slideshow``; flip to ``wan2.1-1.3b`` to opt in to true
-    text-to-video per GH#124).
-
-    Args:
-        post_id: Post identifier.
-        title: Post title.
-        content: Post content.
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
-        pre_generated_scenes: Optional pre-generated SDXL prompts.
-    """
+    """Fire-and-forget full-length video generation. Logs errors but never raises."""
     try:
-        result = await dispatch_video_generation(
-            post_id=post_id,
-            title=title,
-            content=content,
-            short=False,
-            site_config=site_config,
+        result = await generate_video_for_post(
+            post_id, title, content,
             pre_generated_scenes=pre_generated_scenes,
         )
         if not result.success:
             logger.warning("[VIDEO] Failed for post %s: %s", post_id, result.error)
     except Exception as e:
         logger.warning("[VIDEO] Unexpected error for post %s: %s", post_id, e)
-
-
-# ---------------------------------------------------------------------------
-# VideoProvider dispatch (GH#124)
-#
-# A thin selector that reads ``app_settings.video_engine``, looks up the
-# matching VideoProvider via ``plugins.registry``, and forwards through
-# the provider's ``fetch()`` method. Default = ``ken_burns_slideshow``
-# (the legacy pipeline) so existing behavior is preserved; flipping the
-# setting to ``wan2.1-1.3b`` opts in to the new T2V engine without any
-# code change. ``[]`` from the active provider falls back to the legacy
-# pipeline so a misconfigured/unreachable Wan server doesn't break the
-# video feed.
-# ---------------------------------------------------------------------------
-
-
-_DEFAULT_VIDEO_ENGINE = "ken_burns_slideshow"
-
-
-def _resolve_video_provider(name: str) -> Any | None:
-    """Look up a registered VideoProvider by name.
-
-    Mirrors :func:`services.image_service._resolve_image_provider`.
-    Core providers ship via ``plugins.registry.get_core_samples()``
-    while third-party providers register through entry_points and are
-    exposed via ``get_video_providers()``. Check both sources so a
-    community plugin can override a core provider by name.
-    """
-    try:
-        from plugins.registry import get_core_samples, get_video_providers
-    except Exception as e:
-        logger.warning("video provider registry unavailable: %s", e)
-        return None
-
-    providers: list[Any] = []
-    try:
-        providers.extend(get_video_providers())
-    except Exception as e:
-        logger.debug("get_video_providers failed: %s", e)
-    try:
-        providers.extend(get_core_samples().get("video_providers", []))
-    except Exception as e:
-        logger.debug("get_core_samples failed: %s", e)
-
-    for provider in providers:
-        if getattr(provider, "name", None) == name:
-            return provider
-    return None
-
-
-async def dispatch_video_generation(
-    *,
-    post_id: str,
-    title: str,
-    content: str = "",
-    short: bool = False,
-    site_config: Any,
-    podcast_path: str | None = None,
-    pre_generated_scenes: list[str] | None = None,
-    pre_generated_summary: str | None = None,
-    force: bool = False,
-) -> VideoResult:
-    """Generate a video using the engine selected in app_settings.
-
-    Reads ``app_settings.video_engine`` (default
-    ``ken_burns_slideshow``). When the configured engine is missing or
-    returns an empty result, falls back to ``ken_burns_slideshow`` so
-    the pipeline never silently drops a video.
-
-    Args:
-        post_id: Post identifier (filename stem).
-        title: Post title (also used as the T2V prompt for generation
-            providers).
-        content: Post body — used by composition providers for image
-            mining + by generation providers as additional prompt
-            context.
-        short: When True, render the 1080x1920 vertical Shorts variant.
-            Composition providers honor this directly; generation
-            providers render at portrait dimensions when set.
-        site_config: SiteConfig instance (DI).
-        podcast_path: Optional pre-rendered narration MP3.
-        pre_generated_scenes: Optional pre-rendered SDXL prompts.
-        pre_generated_summary: Optional pre-rendered Shorts summary
-            script. Composition-provider only.
-        force: Regenerate even if the file already exists.
-
-    Returns:
-        :class:`VideoResult` (legacy dataclass) so existing callers keep
-        their field names. The plugin
-        :class:`VideoResult <plugins.video_provider.VideoResult>`
-        returned by the active provider is adapted via
-        :func:`_adapt_plugin_result`.
-    """
-    engine = str(
-        site_config.get("video_engine", _DEFAULT_VIDEO_ENGINE)
-        or _DEFAULT_VIDEO_ENGINE,
-    )
-    logger.info("[VIDEO] dispatch engine=%s post_id=%s short=%s", engine, post_id, short)
-
-    provider = _resolve_video_provider(engine)
-    if provider is None:
-        logger.warning(
-            "[VIDEO] engine=%r not registered; falling back to %s",
-            engine, _DEFAULT_VIDEO_ENGINE,
-        )
-        provider = _resolve_video_provider(_DEFAULT_VIDEO_ENGINE)
-        engine = _DEFAULT_VIDEO_ENGINE
-
-    if provider is None:
-        # No registered provider at all — surface a clear failure so the
-        # operator knows the registry isn't loading.
-        return VideoResult(
-            success=False,
-            error="No VideoProvider registered (registry empty?)",
-        )
-
-    config: dict[str, Any] = {
-        "post_id": post_id,
-        "content": content,
-        "podcast_path": podcast_path,
-        "pre_generated_scenes": pre_generated_scenes,
-        "pre_generated_summary": pre_generated_summary,
-        "force": force,
-        "short": short,
-        "_site_config": site_config,
-    }
-
-    # Generation providers honor ``width``/``height``/``duration_s`` —
-    # composition providers ignore them. Pass through always; the
-    # provider documents what it consumes.
-    if short:
-        config.setdefault("width", 1080)
-        config.setdefault("height", 1920)
-    else:
-        config.setdefault("width", 1920)
-        config.setdefault("height", 1080)
-
-    try:
-        results = await provider.fetch(title, config)
-    except Exception as e:
-        logger.exception("[VIDEO] provider %r raised: %s", engine, e)
-        results = []
-
-    if not results and engine != _DEFAULT_VIDEO_ENGINE:
-        logger.warning(
-            "[VIDEO] engine=%r returned no results; falling back to %s",
-            engine, _DEFAULT_VIDEO_ENGINE,
-        )
-        fallback = _resolve_video_provider(_DEFAULT_VIDEO_ENGINE)
-        if fallback is not None:
-            try:
-                results = await fallback.fetch(title, config)
-            except Exception as e:
-                logger.exception(
-                    "[VIDEO] fallback provider raised: %s", e,
-                )
-
-    if not results:
-        return VideoResult(
-            success=False,
-            error=f"VideoProvider {engine!r} returned no results",
-        )
-
-    return _adapt_plugin_result(results[0])
-
-
-def _adapt_plugin_result(plugin_result: Any) -> VideoResult:
-    """Translate a plugin :class:`VideoResult` into the legacy
-    ``video_service.VideoResult`` so existing callers
-    (``publish_service``, ``backfill_videos``, the routes layer) don't
-    have to change. New callers SHOULD prefer the plugin VideoResult
-    directly via the provider.
-    """
-    metadata = getattr(plugin_result, "metadata", {}) or {}
-    return VideoResult(
-        success=bool(
-            getattr(plugin_result, "file_path", None)
-            or getattr(plugin_result, "file_url", None),
-        ),
-        file_path=getattr(plugin_result, "file_path", None),
-        duration_seconds=int(getattr(plugin_result, "duration_s", 0) or 0),
-        file_size_bytes=int(metadata.get("file_size_bytes", 0) or 0),
-        images_used=int(metadata.get("images_used", 0) or 0),
-        error=None,
-    )

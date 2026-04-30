@@ -15,7 +15,7 @@ scripts/run.sh "task_id"
 
 ## Parameters
 
-- task_id (required): The ID of the task to publish
+- **task_id** (string, required): The ID of the task to publish. Accepts a full UUID, a numeric legacy ID, or a short UUID prefix of 6 or more characters.
 
 ## Output
 

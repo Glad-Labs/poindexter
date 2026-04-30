@@ -115,7 +115,6 @@ class SourceFeaturedImageStage:
         tags = context.get("tags") or []
         generate_featured_image = bool(context.get("generate_featured_image", True))
         task_id = context.get("task_id")
-        post_id = context.get("post_id")
         image_service = context.get("image_service") or get_image_service()
 
         stages = context.setdefault("stages", {})
@@ -128,11 +127,6 @@ class SourceFeaturedImageStage:
                 detail="disabled via generate_featured_image flag",
                 context_updates={"stages": stages, "featured_image": None},
             )
-
-        # Phase H step 5 (GH#95): site_config is seeded on the pipeline
-        # context by content_router_service. Tests build context dicts
-        # with the fake site_config wired in explicitly.
-        _sc = context["site_config"]
 
         logger.info("STAGE 3: Sourcing featured image...")
 
@@ -158,7 +152,6 @@ class SourceFeaturedImageStage:
                 task_id=task_id,
                 on_style_picked=lambda s: updates.update({"image_style": s}),
                 style_tracker=style_tracker,
-                site_config=_sc,
             )
             if sdxl_image is not None:
                 stages["3_featured_image_found"] = True
@@ -173,24 +166,6 @@ class SourceFeaturedImageStage:
                     "featured_image_source": sdxl_image.source,
                     "stages": stages,
                 })
-                # Glad-Labs/poindexter#161: record media_assets row for
-                # cleanup / retention / cost-attribution. Best-effort —
-                # never breaks the Stage.
-                await _record_featured_image_asset(
-                    site_config=_sc,
-                    post_id=post_id,
-                    public_url=sdxl_image.url,
-                    width=1024,
-                    height=1024,
-                    provider_plugin=f"image.{sdxl_image.source}",
-                    metadata={
-                        "topic": topic,
-                        "task_id": str(task_id or ""),
-                        "photographer": sdxl_image.photographer,
-                        "image_style": updates.get("image_style", ""),
-                    },
-                    mime_type="image/png",
-                )
                 logger.info("Featured image generated via SDXL + R2")
                 return StageResult(
                     ok=True,
@@ -220,23 +195,6 @@ class SourceFeaturedImageStage:
                     "featured_image_source": pexels.source,
                     "stages": stages,
                 })
-                # Glad-Labs/poindexter#161 — same insert as the SDXL
-                # branch above; Pexels images need a media_assets row
-                # too so backfill scripts can find them.
-                await _record_featured_image_asset(
-                    site_config=_sc,
-                    post_id=post_id,
-                    public_url=pexels.url,
-                    width=getattr(pexels, "width", 650),
-                    height=getattr(pexels, "height", 433),
-                    provider_plugin="image.pexels",
-                    metadata={
-                        "topic": topic,
-                        "task_id": str(task_id or ""),
-                        "photographer": pexels.photographer,
-                    },
-                    mime_type="image/jpeg",
-                )
                 logger.info(
                     "Featured image found: %s (Pexels)", pexels.photographer,
                 )
@@ -263,57 +221,6 @@ class SourceFeaturedImageStage:
 
 
 # ---------------------------------------------------------------------------
-# media_assets persistence (Glad-Labs/poindexter#161)
-# ---------------------------------------------------------------------------
-
-
-async def _record_featured_image_asset(
-    *,
-    site_config: Any,
-    post_id: Any,
-    public_url: str,
-    width: int,
-    height: int,
-    provider_plugin: str,
-    metadata: dict[str, Any],
-    mime_type: str,
-) -> None:
-    """Best-effort ``media_assets`` insert for the featured image.
-
-    Wraps :func:`services.media_asset_recorder.record_media_asset` so
-    the call site stays one line and never propagates DB errors out
-    of the Stage. Used by both the SDXL and Pexels success branches.
-    """
-    try:
-        from services.media_asset_recorder import record_media_asset
-    except Exception as exc:  # noqa: BLE001 — defensive import guard
-        logger.debug(
-            "[STAGE3] media_asset_recorder unavailable: %s", exc,
-        )
-        return
-    pool = getattr(site_config, "_pool", None)
-    storage_provider = (
-        "cloudflare_r2"
-        if public_url and public_url.startswith("http") and "r2" in public_url
-        else ("local" if (public_url or "").startswith("/") else "external")
-    )
-    await record_media_asset(
-        pool=pool,
-        post_id=post_id,
-        asset_type="featured_image",
-        public_url=public_url,
-        storage_path="",
-        mime_type=mime_type,
-        width=width,
-        height=height,
-        provider_plugin=provider_plugin,
-        source="pipeline",
-        storage_provider=storage_provider,
-        metadata=metadata,
-    )
-
-
-# ---------------------------------------------------------------------------
 # SDXL: prompt building + rendering + R2 upload
 # ---------------------------------------------------------------------------
 
@@ -324,27 +231,24 @@ async def _try_sdxl_featured(
     task_id: str | None,
     on_style_picked: Any,  # callable that records the chosen style
     style_tracker: Any,    # ImageStyleTracker instance
-    site_config: Any,
 ) -> GeneratedImage | None:
     """Full SDXL path: pick style → build prompt → render → upload to R2."""
+    from services.site_config import site_config
+
     try:
         negative = site_config.get("image_negative_prompt", DEFAULT_NEGATIVE)
         sdxl_prompt = existing_prompt
         if not sdxl_prompt:
-            sdxl_prompt = await _build_sdxl_prompt(
-                topic, on_style_picked, style_tracker, site_config=site_config,
-            )
+            sdxl_prompt = await _build_sdxl_prompt(topic, on_style_picked, style_tracker)
 
         sdxl_url = site_config.get(
             "sdxl_server_url", "http://host.docker.internal:9836",
         )
-        output_path = await _render_sdxl(
-            sdxl_url, sdxl_prompt, negative, task_id=task_id, site_config=site_config,
-        )
+        output_path = await _render_sdxl(sdxl_url, sdxl_prompt, negative, task_id=task_id)
         if output_path is None:
             return None
 
-        image_url = await _upload_featured_to_r2(output_path, task_id, site_config=site_config)
+        image_url = await _upload_featured_to_r2(output_path, task_id)
         source = "sdxl_cloudinary" if "cloudinary" in image_url else "sdxl_local"
         return GeneratedImage(
             url=image_url,
@@ -360,12 +264,13 @@ async def _build_sdxl_prompt(
     topic: str,
     on_style_picked: Any,
     style_tracker: Any,
-    site_config: Any,
 ) -> str:
     """Pick a rotation style + ask Ollama for an editorial prompt."""
-    styles = _load_styles_from_settings(site_config=site_config) or list(DEFAULT_STYLES)
+    from services.site_config import site_config
 
-    recent = await _load_recent_published_styles(site_config=site_config)
+    styles = _load_styles_from_settings() or list(DEFAULT_STYLES)
+
+    recent = await _load_recent_published_styles()
     mem_recent = style_tracker.recent()
     all_recent = set(recent) | set(mem_recent)
 
@@ -414,8 +319,9 @@ async def _build_sdxl_prompt(
         return f"{chosen_style}, {style_tags}, no text, no faces"
 
 
-def _load_styles_from_settings(site_config: Any) -> list[tuple[str, str]]:
+def _load_styles_from_settings() -> list[tuple[str, str]]:
     """Read app_settings.image_styles (JSON array of {scene, tags})."""
+    from services.site_config import site_config
     raw = site_config.get("image_styles", "")
     if not raw:
         return []
@@ -426,12 +332,13 @@ def _load_styles_from_settings(site_config: Any) -> list[tuple[str, str]]:
     return [(s["scene"], s["tags"]) for s in parsed if "scene" in s and "tags" in s]
 
 
-async def _load_recent_published_styles(site_config: Any) -> list[str]:
+async def _load_recent_published_styles() -> list[str]:
     """Fetch the 5 most-recently-published posts' image_style from metadata."""
     try:
         import asyncpg
 
-        cloud_url = site_config.get("database_url", "")
+        from services.site_config import site_config as _sc
+        cloud_url = _sc.get("database_url", "")
         if not cloud_url:
             return []
         conn = await asyncpg.connect(cloud_url)
@@ -453,8 +360,7 @@ async def _render_sdxl(
     sdxl_url: str,
     sdxl_prompt: str,
     negative_prompt: str,
-    task_id: str | None,
-    site_config: Any,
+    task_id: str | None = None,
 ) -> str | None:
     """Call the SDXL server and return the local path of the generated image."""
     from services.gpu_scheduler import gpu
@@ -480,13 +386,13 @@ async def _render_sdxl(
     if resp.status_code != 200:
         return None
 
-    return _resolve_sdxl_featured_response(resp, site_config=site_config)
+    return _resolve_sdxl_featured_response(resp)
 
 
-def _resolve_sdxl_featured_response(
-    resp: httpx.Response, site_config: Any,
-) -> str | None:
+def _resolve_sdxl_featured_response(resp: httpx.Response) -> str | None:
     """Decode the SDXL server's response to a local path."""
+    from services.site_config import site_config
+
     ct = resp.headers.get("content-type", "")
     if ct.startswith("application/json"):
         data = resp.json()
@@ -515,17 +421,13 @@ def _resolve_sdxl_featured_response(
     return None
 
 
-async def _upload_featured_to_r2(
-    output_path: str, task_id: str | None, *, site_config: Any,
-) -> str:
+async def _upload_featured_to_r2(output_path: str, task_id: str | None) -> str:
     """Upload the featured image to R2 and return the final URL."""
     try:
         from services.r2_upload_service import upload_to_r2
         r2_id = task_id or uuid.uuid4().hex[:12]
         r2_key = f"images/featured/{r2_id}.jpg"
-        r2_url = await upload_to_r2(
-            output_path, r2_key, content_type="image/jpeg", site_config=site_config,
-        )
+        r2_url = await upload_to_r2(output_path, r2_key, content_type="image/jpeg")
         if r2_url:
             logger.info("Uploaded to R2: %s", r2_url[:80])
             with suppress(OSError):

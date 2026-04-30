@@ -78,11 +78,7 @@ async def probe_status_digest(pool, notify_fn) -> dict:
             health["worker_processed"] = worker.get("total_processed", 0)
             gpu = api_data.get("components", {}).get("gpu", {})
             health["gpu_busy"] = gpu.get("busy", False)
-        except Exception as e:
-            # Probe-internal — the digest already reports DOWN; preserve
-            # the reason at DEBUG so it shows up when the operator asks
-            # "why did the digest say API was down?".
-            logger.debug("[BUSINESS_PROBE] API health check failed: %s", e)
+        except Exception:
             health["api"] = "DOWN"
 
         # Site health
@@ -90,8 +86,7 @@ async def probe_status_digest(pool, notify_fn) -> dict:
             req = urllib.request.Request(site_url, headers={"User-Agent": "brain-probe"})
             resp = urllib.request.urlopen(req, timeout=10)
             health["site"] = "OK" if resp.status == 200 else f"HTTP {resp.status}"
-        except Exception as e:
-            logger.debug("[BUSINESS_PROBE] site health check failed: %s", e)
+        except Exception:
             health["site"] = "DOWN"
 
         # OpenClaw
@@ -99,8 +94,7 @@ async def probe_status_digest(pool, notify_fn) -> dict:
             req = urllib.request.Request(openclaw_url.rstrip("/") + "/", headers={"User-Agent": "brain-probe"})
             resp = urllib.request.urlopen(req, timeout=5)
             health["openclaw"] = "OK"
-        except Exception as e:
-            logger.debug("[BUSINESS_PROBE] OpenClaw health check failed: %s", e)
+        except Exception:
             health["openclaw"] = "DOWN"
 
         # --- DB queries ---

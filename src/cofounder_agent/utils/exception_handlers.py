@@ -128,17 +128,7 @@ async def http_exception_handler(request, exc: StarletteHTTPException):
             "request_id": request_id,
         }
 
-    # Include request method + path so triage doesn't require a separate
-    # access log when, e.g., port-scanners hit non-existent endpoints in
-    # bursts (caught a 404 storm at 14:24 UTC 2026-04-28 with no signal).
-    method = getattr(request, "method", "?")
-    path = getattr(getattr(request, "url", None), "path", "?")
-    client = getattr(getattr(request, "client", None), "host", "?")
-    logger.warning(
-        f"HTTP Error {exc.status_code}: {exc.detail} "
-        f"({method} {path} from {client})",
-        extra={"request_id": request_id, "path": path, "method": method, "client": client},
-    )
+    logger.warning(f"HTTP Error {exc.status_code}: {exc.detail}", extra={"request_id": request_id})
 
     return JSONResponse(
         status_code=exc.status_code, content=response, headers={"X-Request-ID": request_id}

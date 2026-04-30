@@ -1,10 +1,5 @@
 """
 Tests for video service — narrated slideshow video generation from posts.
-
-Post-Phase-H (GH#95): generate_video_for_post / generate_short_video_for_post /
-generate_video_episode / _generate_images_for_video / _generate_images_from_scenes /
-_generate_short_summary_audio all take site_config via DI. Tests build a
-MagicMock SiteConfig via ``_mock_sc()``.
 """
 
 import os
@@ -23,14 +18,6 @@ from services.video_service import (
     generate_video_episode,
     generate_video_for_post,
 )
-
-
-def _mock_sc(overrides: dict | None = None) -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for video_service tests."""
-    sc = MagicMock()
-    values = overrides or {}
-    sc.get.side_effect = lambda k, d="": values.get(k, d)
-    return sc
 
 # ---------------------------------------------------------------------------
 # VideoResult dataclass
@@ -86,8 +73,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 content="body",
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is True
         assert result.file_path == str(existing)
@@ -130,8 +116,7 @@ class TestGenerateVideoForPost:
                 content="body",
                 podcast_path=str(podcast_file),
                 force=True,
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is True
         assert result.duration_seconds == 90
@@ -149,8 +134,7 @@ class TestGenerateVideoForPost:
                 title="Test",
                 content="body",
                 podcast_path="/nonexistent/podcast.mp3",
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is False
         assert "Podcast not found" in result.error
@@ -171,8 +155,7 @@ class TestGenerateVideoForPost:
                 title="Test",
                 content="body",
                 podcast_path=str(podcast_file),
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is False
         assert "No images" in result.error
@@ -211,8 +194,7 @@ class TestGenerateVideoForPost:
                 title="Test Post",
                 content="Some content",
                 podcast_path=str(podcast_file),
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is True
         assert result.duration_seconds == 180
@@ -247,8 +229,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 podcast_path=str(podcast_file),
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is False
         assert "GPU OOM" in result.error
@@ -274,8 +255,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 podcast_path=str(podcast_file),
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is False
         assert "refused" in result.error
@@ -299,8 +279,7 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 content="body",
-                # podcast_path intentionally omitted,
-                site_config=_mock_sc(),
+                # podcast_path intentionally omitted
             )
 
         # It should find the podcast but fail on images
@@ -332,6 +311,7 @@ class TestGenerateVideoForPost:
         with patch("services.video_service.VIDEO_DIR", video_dir), \
              patch("services.video_service._generate_images_for_video", new_callable=AsyncMock) as mock_gen, \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
+             patch.dict(os.environ, {"HOST_HOME": "/host/home"}), \
              patch("services.video_service.os.path.exists", return_value=True):
             mock_gen.return_value = [
                 "/root/.poindexter/video/frames/frame_00.png",
@@ -341,7 +321,6 @@ class TestGenerateVideoForPost:
                 post_id="post123",
                 title="Test",
                 podcast_path="/root/.poindexter/podcast/post123.mp3",
-                site_config=_mock_sc({"host_home": "/host/home"}),
             )
 
         # Inspect the JSON payload sent to the video server
@@ -396,7 +375,7 @@ class TestGenerateImagesForVideo:
              patch("services.video_service.httpx.AsyncClient", side_effect=[
                  mock_client_ollama, mock_client_sdxl,
              ]):
-            paths = await _generate_images_for_video("GPU Computing", "content", num_images=2, site_config=_mock_sc())
+            paths = await _generate_images_for_video("GPU Computing", "content", num_images=2)
 
         assert len(paths) == 2
         # Ollama was called once, SDXL called twice (one per prompt)
@@ -428,7 +407,7 @@ class TestGenerateImagesForVideo:
              patch("services.video_service.httpx.AsyncClient", side_effect=[
                  mock_client_ollama, mock_client_sdxl,
              ]):
-            paths = await _generate_images_for_video("AI Tools", "content about AI", num_images=3, site_config=_mock_sc())
+            paths = await _generate_images_for_video("AI Tools", "content about AI", num_images=3)
 
         # Should get 3 images from fallback prompts
         assert len(paths) == 3
@@ -472,7 +451,7 @@ class TestGenerateImagesForVideo:
              patch("services.video_service.httpx.AsyncClient", side_effect=[
                  mock_client_ollama, mock_client_sdxl,
              ]):
-            paths = await _generate_images_for_video("Quantum AI", "content", num_images=2, site_config=_mock_sc())
+            paths = await _generate_images_for_video("Quantum AI", "content", num_images=2)
 
         # Only the first image should be in the list
         assert len(paths) == 1
@@ -501,7 +480,7 @@ class TestGenerateImagesForVideo:
              patch("services.video_service.httpx.AsyncClient", side_effect=[
                  mock_client_ollama, mock_client_sdxl,
              ]):
-            paths = await _generate_images_for_video("Test", "content", num_images=1, site_config=_mock_sc())
+            paths = await _generate_images_for_video("Test", "content", num_images=1)
 
         assert len(paths) == 0
 
@@ -537,7 +516,7 @@ class TestGenerateImagesForVideo:
              patch("services.video_service.httpx.AsyncClient", side_effect=[
                  mock_client_ollama, mock_client_sdxl,
              ]):
-            paths = await _generate_images_for_video("Test", "content", num_images=2, site_config=_mock_sc())
+            paths = await _generate_images_for_video("Test", "content", num_images=2)
 
         # Only 1 prompt passes the 20-char filter
         assert mock_client_sdxl.post.call_count == 1
@@ -549,60 +528,32 @@ class TestGenerateImagesForVideo:
 # ---------------------------------------------------------------------------
 
 class TestGenerateVideoEpisode:
-    """Fire-and-forget wrapper.
-
-    Post-GH#124: dispatches through ``dispatch_video_generation`` rather
-    than calling ``generate_video_for_post`` directly. The dispatcher
-    selects a VideoProvider based on ``app_settings.video_engine``
-    (default ``ken_burns_slideshow`` — preserves the legacy pipeline).
-    """
+    """Fire-and-forget wrapper."""
 
     @pytest.mark.asyncio
-    async def test_calls_dispatch_video_generation(self):
-        """Should delegate to dispatch_video_generation (the
-        VideoProvider selector)."""
-        sc = _mock_sc()
-        with patch(
-            "services.video_service.dispatch_video_generation",
-            new_callable=AsyncMock,
-        ) as mock_dispatch:
-            mock_dispatch.return_value = VideoResult(
-                success=True, file_path="/tmp/v.mp4",
-            )
-            await generate_video_episode("post1", "Title", "Content", site_config=sc)
+    async def test_calls_generate_video_for_post(self):
+        """Should delegate to generate_video_for_post."""
+        with patch("services.video_service.generate_video_for_post", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = VideoResult(success=True, file_path="/tmp/v.mp4")
+            await generate_video_episode("post1", "Title", "Content")
 
-        mock_dispatch.assert_awaited_once_with(
-            post_id="post1",
-            title="Title",
-            content="Content",
-            short=False,
-            site_config=sc,
-            pre_generated_scenes=None,
-        )
+        mock_gen.assert_awaited_once_with("post1", "Title", "Content", pre_generated_scenes=None)
 
     @pytest.mark.asyncio
     async def test_logs_failure_without_raising(self):
         """Failed result should be logged, not raised."""
-        with patch(
-            "services.video_service.dispatch_video_generation",
-            new_callable=AsyncMock,
-        ) as mock_dispatch:
-            mock_dispatch.return_value = VideoResult(
-                success=False, error="no images",
-            )
+        with patch("services.video_service.generate_video_for_post", new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = VideoResult(success=False, error="no images")
             # Should not raise
-            await generate_video_episode("post1", "Title", "Content", site_config=_mock_sc())
+            await generate_video_episode("post1", "Title", "Content")
 
     @pytest.mark.asyncio
     async def test_catches_unexpected_exception(self):
         """Unexpected exception should be caught, not propagated."""
-        with patch(
-            "services.video_service.dispatch_video_generation",
-            new_callable=AsyncMock,
-        ) as mock_dispatch:
-            mock_dispatch.side_effect = RuntimeError("unexpected crash")
+        with patch("services.video_service.generate_video_for_post", new_callable=AsyncMock) as mock_gen:
+            mock_gen.side_effect = RuntimeError("unexpected crash")
             # Should not raise
-            await generate_video_episode("post1", "Title", "Content", site_config=_mock_sc())
+            await generate_video_episode("post1", "Title", "Content")
 
 
 # ---------------------------------------------------------------------------
@@ -646,8 +597,7 @@ class TestToHostPath:
                 post_id="p1",
                 title="T",
                 podcast_path="/root/.poindexter/podcast/p1.mp3",
-            site_config=_mock_sc(),
-        )
+            )
 
         payload = mock_client.post.call_args.kwargs.get("json") or mock_client.post.call_args[1]["json"]
         assert payload["audio_path"] == "C:/Users/mattm/.poindexter/podcast/p1.mp3"
@@ -684,8 +634,7 @@ class TestToHostPath:
                 post_id="p2",
                 title="T",
                 podcast_path="/tmp/other/podcast.mp3",
-            site_config=_mock_sc(),
-        )
+            )
 
         payload = mock_client.post.call_args.kwargs.get("json") or mock_client.post.call_args[1]["json"]
         # Paths without /root/.poindexter should pass through unmodified
@@ -864,7 +813,7 @@ class TestGenerateImagesFromScenes:
         mock_client.post = AsyncMock()
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            result = await _generate_images_from_scenes([], site_config=_mock_sc())
+            result = await _generate_images_from_scenes([])
         assert result == []
         mock_client.post.assert_not_awaited()
 
@@ -887,7 +836,7 @@ class TestGenerateImagesFromScenes:
         ]
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            result = await _generate_images_from_scenes(scenes, site_config=_mock_sc())
+            result = await _generate_images_from_scenes(scenes)
 
         assert len(result) == 3
         assert mock_client.post.await_count == 3
@@ -913,7 +862,7 @@ class TestGenerateImagesFromScenes:
 
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            result = await _generate_images_from_scenes(["scene a", "scene b"], site_config=_mock_sc())
+            result = await _generate_images_from_scenes(["scene a", "scene b"])
 
         # Only the successful one is in the result
         assert len(result) == 1
@@ -927,7 +876,7 @@ class TestGenerateImagesFromScenes:
 
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            result = await _generate_images_from_scenes(["scene a"], site_config=_mock_sc())
+            result = await _generate_images_from_scenes(["scene a"])
 
         assert result == []
 
@@ -952,7 +901,7 @@ class TestGenerateShortSummaryAudio:
 
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            result = await _generate_short_summary_audio("p1", "Title", "Some content body here", site_config=_mock_sc())
+            result = await _generate_short_summary_audio("p1", "Title", "Some content body here")
 
         assert result is None
 
@@ -965,7 +914,7 @@ class TestGenerateShortSummaryAudio:
 
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
-            result = await _generate_short_summary_audio("p1", "Title", "Body", site_config=_mock_sc())
+            result = await _generate_short_summary_audio("p1", "Title", "Body")
 
         assert result is None
 
@@ -991,7 +940,7 @@ class TestGenerateShortSummaryAudio:
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
              patch.dict("sys.modules", {"edge_tts": fake_edge_tts}):
-            result = await _generate_short_summary_audio("p1", "Title", "Body" * 100, site_config=_mock_sc())
+            result = await _generate_short_summary_audio("p1", "Title", "Body" * 100)
 
         assert result is not None
         assert "p1-short-audio.mp3" in result
@@ -1019,7 +968,7 @@ class TestGenerateShortSummaryAudio:
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
              patch.dict("sys.modules", {"edge_tts": fake_edge_tts}):
-            result = await _generate_short_summary_audio("p1", "T", "Body" * 100, site_config=_mock_sc())
+            result = await _generate_short_summary_audio("p1", "T", "Body" * 100)
 
         assert result is None
 
@@ -1041,8 +990,7 @@ class TestGenerateShortVideoForPost:
         with patch("services.video_service.VIDEO_DIR", video_dir):
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is True
         assert result.file_path == str(existing)
@@ -1059,8 +1007,7 @@ class TestGenerateShortVideoForPost:
             mock_summary.return_value = None
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is False
         assert "audio" in (result.error or "").lower()
@@ -1085,8 +1032,7 @@ class TestGenerateShortVideoForPost:
             mock_gen.return_value = []
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is False
         assert "images" in (result.error or "").lower()
@@ -1125,8 +1071,7 @@ class TestGenerateShortVideoForPost:
             mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is True
         assert result.duration_seconds == 55
@@ -1165,8 +1110,7 @@ class TestGenerateShortVideoForPost:
             mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is False
         assert "ffmpeg" in (result.error or "")
@@ -1205,8 +1149,7 @@ class TestGenerateShortVideoForPost:
             await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
                 pre_generated_scenes=["scene a", "scene b"],
-            site_config=_mock_sc(),
-        )
+            )
 
         # When pre_generated_scenes is supplied, _generate_images_from_scenes
         # is called, not _generate_images_for_video
@@ -1251,266 +1194,9 @@ class TestGenerateShortVideoForPost:
             mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
             result = await generate_short_video_for_post(
                 post_id="p1", title="T", content="body",
-            site_config=_mock_sc(),
-        )
+            )
 
         assert result.success is True
         # The audio path passed to the video server should be the full podcast
         payload = mock_client.post.call_args.kwargs.get("json")
         assert "p1.mp3" in payload["audio_path"]
-
-
-# ---------------------------------------------------------------------------
-# dispatch_video_generation — VideoProvider selector (GH#124)
-# ---------------------------------------------------------------------------
-
-
-class TestDispatchVideoGeneration:
-    """Selects a VideoProvider based on ``app_settings.video_engine``.
-
-    The dispatcher is the integration seam between the existing
-    publish_service / backfill_videos callers and the new
-    VideoProvider plugin Protocol. Default = ``ken_burns_slideshow``
-    (legacy pipeline preserved); flip to ``wan2.1-1.3b`` to opt in to
-    the new T2V engine.
-    """
-
-    @pytest.mark.asyncio
-    async def test_default_engine_is_ken_burns_slideshow(self):
-        from plugins.video_provider import VideoResult as PluginVideoResult
-        from services.video_service import dispatch_video_generation
-
-        sc = _mock_sc()  # No video_engine setting → default
-
-        fake_provider = MagicMock()
-        fake_provider.name = "ken_burns_slideshow"
-        fake_provider.fetch = AsyncMock(
-            return_value=[
-                PluginVideoResult(
-                    file_url="file:///tmp/v.mp4",
-                    file_path="/tmp/v.mp4",
-                    duration_s=120,
-                    source="ken_burns_slideshow",
-                    metadata={"file_size_bytes": 4096, "images_used": 8},
-                ),
-            ],
-        )
-
-        with patch(
-            "services.video_service._resolve_video_provider",
-            return_value=fake_provider,
-        ) as mock_resolve:
-            result = await dispatch_video_generation(
-                post_id="p1", title="T", content="body", site_config=sc,
-            )
-
-        # Default engine name was looked up
-        mock_resolve.assert_called_with("ken_burns_slideshow")
-        # Returns adapted legacy VideoResult
-        assert result.success is True
-        assert result.file_path == "/tmp/v.mp4"
-        assert result.duration_seconds == 120
-        assert result.file_size_bytes == 4096
-        assert result.images_used == 8
-
-    @pytest.mark.asyncio
-    async def test_engine_setting_picks_wan21(self):
-        from plugins.video_provider import VideoResult as PluginVideoResult
-        from services.video_service import dispatch_video_generation
-
-        sc = _mock_sc({"video_engine": "wan2.1-1.3b"})
-
-        fake_provider = MagicMock()
-        fake_provider.name = "wan2.1-1.3b"
-        fake_provider.fetch = AsyncMock(
-            return_value=[
-                PluginVideoResult(
-                    file_url="file:///tmp/wan.mp4",
-                    file_path="/tmp/wan.mp4",
-                    duration_s=5,
-                    source="wan2.1-1.3b",
-                    metadata={"file_size_bytes": 2048},
-                ),
-            ],
-        )
-
-        with patch(
-            "services.video_service._resolve_video_provider",
-            return_value=fake_provider,
-        ) as mock_resolve:
-            result = await dispatch_video_generation(
-                post_id="p1", title="a robot", content="", site_config=sc,
-            )
-
-        mock_resolve.assert_called_with("wan2.1-1.3b")
-        # Provider received the title as the prompt + the dispatch
-        # config seeded with _site_config + post_id.
-        call_args = fake_provider.fetch.await_args
-        assert call_args.args[0] == "a robot"
-        cfg = call_args.args[1]
-        assert cfg["post_id"] == "p1"
-        assert cfg["_site_config"] is sc
-        assert result.success is True
-        assert result.file_path == "/tmp/wan.mp4"
-
-    @pytest.mark.asyncio
-    async def test_unknown_engine_falls_back_to_default(self):
-        from plugins.video_provider import VideoResult as PluginVideoResult
-        from services.video_service import dispatch_video_generation
-
-        sc = _mock_sc({"video_engine": "nonexistent-engine"})
-
-        default_provider = MagicMock()
-        default_provider.name = "ken_burns_slideshow"
-        default_provider.fetch = AsyncMock(
-            return_value=[
-                PluginVideoResult(
-                    file_url="file:///tmp/v.mp4",
-                    file_path="/tmp/v.mp4",
-                    source="ken_burns_slideshow",
-                ),
-            ],
-        )
-
-        # First lookup returns None (engine not registered), second
-        # returns the default provider.
-        def resolve(name):
-            if name == "nonexistent-engine":
-                return None
-            return default_provider
-
-        with patch(
-            "services.video_service._resolve_video_provider",
-            side_effect=resolve,
-        ):
-            result = await dispatch_video_generation(
-                post_id="p1", title="T", content="", site_config=sc,
-            )
-
-        assert result.success is True
-
-    @pytest.mark.asyncio
-    async def test_empty_results_fall_back_to_default(self):
-        """When the configured engine returns ``[]`` (e.g., Wan server
-        unreachable), the dispatcher falls back to ken_burns_slideshow
-        so the video pipeline never silently drops a post."""
-        from plugins.video_provider import VideoResult as PluginVideoResult
-        from services.video_service import dispatch_video_generation
-
-        sc = _mock_sc({"video_engine": "wan2.1-1.3b"})
-
-        wan_provider = MagicMock()
-        wan_provider.name = "wan2.1-1.3b"
-        wan_provider.fetch = AsyncMock(return_value=[])  # server down
-
-        ken_burns = MagicMock()
-        ken_burns.name = "ken_burns_slideshow"
-        ken_burns.fetch = AsyncMock(
-            return_value=[
-                PluginVideoResult(
-                    file_url="file:///tmp/v.mp4",
-                    file_path="/tmp/v.mp4",
-                    source="ken_burns_slideshow",
-                ),
-            ],
-        )
-
-        def resolve(name):
-            if name == "wan2.1-1.3b":
-                return wan_provider
-            return ken_burns
-
-        with patch(
-            "services.video_service._resolve_video_provider",
-            side_effect=resolve,
-        ):
-            result = await dispatch_video_generation(
-                post_id="p1", title="T", content="", site_config=sc,
-            )
-
-        # Both providers were tried; the Ken Burns fallback wrote the file.
-        wan_provider.fetch.assert_awaited_once()
-        ken_burns.fetch.assert_awaited_once()
-        assert result.success is True
-        assert result.file_path == "/tmp/v.mp4"
-
-    @pytest.mark.asyncio
-    async def test_no_provider_registered_returns_failure(self):
-        from services.video_service import dispatch_video_generation
-
-        sc = _mock_sc()
-        with patch(
-            "services.video_service._resolve_video_provider",
-            return_value=None,
-        ):
-            result = await dispatch_video_generation(
-                post_id="p1", title="T", content="", site_config=sc,
-            )
-
-        assert result.success is False
-        assert result.error and "No VideoProvider" in result.error
-
-    @pytest.mark.asyncio
-    async def test_short_flag_seeds_portrait_dimensions(self):
-        from plugins.video_provider import VideoResult as PluginVideoResult
-        from services.video_service import dispatch_video_generation
-
-        sc = _mock_sc({"video_engine": "wan2.1-1.3b"})
-
-        fake_provider = MagicMock()
-        fake_provider.name = "wan2.1-1.3b"
-        fake_provider.fetch = AsyncMock(
-            return_value=[
-                PluginVideoResult(
-                    file_url="file:///tmp/short.mp4",
-                    file_path="/tmp/short.mp4",
-                    source="wan2.1-1.3b",
-                ),
-            ],
-        )
-
-        with patch(
-            "services.video_service._resolve_video_provider",
-            return_value=fake_provider,
-        ):
-            await dispatch_video_generation(
-                post_id="p1", title="T", content="", short=True, site_config=sc,
-            )
-
-        cfg = fake_provider.fetch.await_args.args[1]
-        # Vertical Shorts dimensions
-        assert cfg["width"] == 1080
-        assert cfg["height"] == 1920
-        assert cfg["short"] is True
-
-    @pytest.mark.asyncio
-    async def test_landscape_dimensions_default(self):
-        from plugins.video_provider import VideoResult as PluginVideoResult
-        from services.video_service import dispatch_video_generation
-
-        sc = _mock_sc({"video_engine": "wan2.1-1.3b"})
-
-        fake_provider = MagicMock()
-        fake_provider.name = "wan2.1-1.3b"
-        fake_provider.fetch = AsyncMock(
-            return_value=[
-                PluginVideoResult(
-                    file_url="file:///tmp/v.mp4",
-                    file_path="/tmp/v.mp4",
-                    source="wan2.1-1.3b",
-                ),
-            ],
-        )
-
-        with patch(
-            "services.video_service._resolve_video_provider",
-            return_value=fake_provider,
-        ):
-            await dispatch_video_generation(
-                post_id="p1", title="T", content="", site_config=sc,
-            )
-
-        cfg = fake_provider.fetch.await_args.args[1]
-        assert cfg["width"] == 1920
-        assert cfg["height"] == 1080
-        assert cfg["short"] is False

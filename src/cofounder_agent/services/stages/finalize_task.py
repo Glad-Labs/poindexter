@@ -48,7 +48,6 @@ class FinalizeTaskStage:
         context: dict[str, Any],
         config: dict[str, Any],
     ) -> StageResult:
-        from services.markdown_normalizer import normalize_markdown as _normalize_markdown
         from services.text_utils import normalize_text as _normalize_text
 
         task_id = context.get("task_id")
@@ -83,11 +82,6 @@ class FinalizeTaskStage:
         if seo_description:
             seo_description = _normalize_text(seo_description)
         content_text = _normalize_text(content_text)
-        # gh#191 — writer often emits bullet groups without the required
-        # blank line above; python-markdown then renders them as literal
-        # asterisks inside a <p>. Idempotent fix at the persistence
-        # boundary so every awaiting_approval row lands well-formed.
-        content_text = _normalize_markdown(content_text)
 
         # Phase 6 / GH#54: if the writer cited external URLs inline but
         # didn't append a Sources section, add one automatically. Readers
@@ -98,10 +92,7 @@ class FinalizeTaskStage:
                 append_sources_section,
                 extract_urls,
             )
-            # Phase H step 5 (GH#95): site_config is seeded on the pipeline
-            # context by content_router_service. Tests build context dicts
-            # with the fake site_config wired in explicitly.
-            _sc_sources = context["site_config"]
+            from services.site_config import site_config as _sc_sources
             if (_sc_sources.get("auto_append_sources_section", "true") or "true").lower() not in ("false", "0", "no"):
                 _site_url = _sc_sources.get("site_url") or None
                 _urls = extract_urls(content_text, site_url=_site_url)
@@ -193,35 +184,8 @@ class FinalizeTaskStage:
             "short_summary_script": context.get("short_summary_script", ""),
         }
 
-        # Dry-run mode (Phase A of "open the floodgates" — gh #218).
-        # When ``pipeline_dry_run_mode`` is on, finalize lands the task
-        # at status='dry_run' instead of 'awaiting_approval'. Public
-        # site queries filter on status='published', so dry-run rows
-        # never leak. publish_service / scheduled_publisher also skip
-        # them. Dashboards show dry_run as a separate bucket so the
-        # operator can crank generation rate, exercise the entire
-        # pipeline (research, write, QA, SEO, image, finalize) without
-        # polluting the approval queue or the public site.
-        site_config = context.get("site_config")
-        dry_run = False
-        if site_config is not None:
-            try:
-                dry_run = bool(site_config.get_bool("pipeline_dry_run_mode", False))
-            except Exception:
-                try:
-                    v = site_config.get("pipeline_dry_run_mode", "")
-                    dry_run = str(v).strip().lower() in ("true", "1", "yes", "on")
-                except Exception:
-                    dry_run = False
-
-        terminal_status = "dry_run" if dry_run else "awaiting_approval"
-
         updates = {
-            "status": terminal_status,
-            # ``approval_status`` stays 'pending' even in dry-run so the
-            # operator's queue UI (which filters status='awaiting_approval')
-            # doesn't see them, but other tools that key off
-            # approval_status (audits, reports) keep functioning.
+            "status": "awaiting_approval",
             "approval_status": "pending",
             # Clear stale error_message from any prior auto-cancel attempt.
             "error_message": None,
@@ -256,7 +220,7 @@ class FinalizeTaskStage:
             try:
                 guard_result = await database_service.update_task_status_guarded(
                     task_id=task_id,
-                    new_status=terminal_status,
+                    new_status="awaiting_approval",
                     allowed_from=("in_progress", "pending"),
                 )
             except Exception as _guard_err:
@@ -316,9 +280,9 @@ class FinalizeTaskStage:
 
         return StageResult(
             ok=True,
-            detail=f"task finalized → {terminal_status}",
+            detail="task finalized → awaiting_approval",
             context_updates={
-                "status": terminal_status,
+                "status": "awaiting_approval",
                 "approval_status": "pending",
                 "post_id": None,
                 "post_slug": None,

@@ -29,15 +29,9 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from services.logger_config import get_logger
-
-# Default engine name. Matches the entry_point key registered for the
-# legacy edge-tts wrapper so existing installs keep working when
-# ``app_settings.podcast_tts_engine`` is unset (DB-first config — flip
-# the setting to opt into ``kokoro`` or any future provider).
-DEFAULT_TTS_ENGINE = "edge_tts"
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -45,30 +39,7 @@ logger = get_logger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-def _poindexter_data_root() -> Path:
-    """Locate the .poindexter data root that's bind-mounted to the host.
-
-    The worker container's bind mount lives at ``/root/.poindexter`` regardless
-    of which user the process runs as (the worker runs as ``appuser`` but the
-    mount target is owned by root). ``~`` expands to ``/home/appuser`` which
-    is NOT bind-mounted — writes there are invisible to the host, so the
-    video-server-on-host can't find audio files produced inside the worker.
-
-    Order of preference:
-    1. ``POINDEXTER_DATA_ROOT`` env var — explicit override
-    2. ``/root/.poindexter`` if it exists (standard docker-compose layout)
-    3. ``~/.poindexter`` as a last-resort fallback (tests, dev outside Docker)
-    """
-    override = os.environ.get("POINDEXTER_DATA_ROOT")
-    if override:
-        return Path(override)
-    root_mount = Path("/root/.poindexter")
-    if root_mount.is_dir():
-        return root_mount
-    return Path(os.path.expanduser("~")) / ".poindexter"
-
-
-PODCAST_DIR = _poindexter_data_root() / "podcast"
+PODCAST_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
 
 # Voice rotation pool — cycle through for variety across episodes
 VOICE_POOL = [
@@ -194,13 +165,8 @@ _DEFAULT_ACRONYM_REPLACEMENTS = {
 }
 
 
-def _get_tts_replacements(site_config: Any) -> list:
-    """Load TTS pronunciation replacements, merging DB overrides with defaults.
-
-    Args:
-        site_config: SiteConfig instance (DI — Phase H, GH#95). Required
-            after the module-level singleton import was removed.
-    """
+def _get_tts_replacements() -> list:
+    """Load TTS pronunciation replacements, merging DB overrides with defaults."""
     import json as _json
 
     # Simple replacements: DB key tts_pronunciations (JSON object: {"written": "spoken"})
@@ -220,12 +186,8 @@ def _get_tts_replacements(site_config: Any) -> list:
     return simple
 
 
-def _get_acronym_regex(site_config: Any) -> list:
-    """Load acronym replacements from DB, compile to regex list.
-
-    Args:
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
-    """
+def _get_acronym_regex() -> list:
+    """Load acronym replacements from DB, compile to regex list."""
     import json as _json
 
     db_acronyms = site_config.get("tts_acronym_replacements", "")
@@ -240,23 +202,17 @@ def _get_acronym_regex(site_config: Any) -> list:
     return [(re.compile(rf"\b{re.escape(k)}\b"), v) for k, v in acronyms.items()]
 
 
-def _normalize_for_speech(text: str, site_config: Any) -> str:
-    """Convert written English conventions to natural spoken form.
-
-    Args:
-        text: Input string to normalize.
-        site_config: SiteConfig instance (DI — Phase H, GH#95). Required
-            for DB-configurable pronunciation + acronym overrides.
-    """
+def _normalize_for_speech(text: str) -> str:
+    """Convert written English conventions to natural spoken form."""
     # Simple replacements (DB-configurable via tts_pronunciations)
-    for written, spoken in _get_tts_replacements(site_config):
+    for written, spoken in _get_tts_replacements():
         # Case-insensitive replace for pronunciation fixes
         text = re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
     # Structural regex patterns (static)
     for pattern, replacement in _SPOKEN_REGEX_STATIC:
         text = pattern.sub(replacement, text)
     # Acronym replacements (DB-configurable via tts_acronym_replacements)
-    for pattern, replacement in _get_acronym_regex(site_config):
+    for pattern, replacement in _get_acronym_regex():
         text = pattern.sub(replacement, text)
     # Smart quotes → straight quotes (TTS handles these better)
     text = text.replace("\u201c", '"').replace("\u201d", '"')
@@ -342,17 +298,12 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-async def _build_script_with_llm(title: str, content: str, site_config: Any) -> str:
+async def _build_script_with_llm(title: str, content: str) -> str:
     """Use Ollama to rewrite a blog post as a natural podcast script.
 
     The LLM handles all nuances: removing visual references, URLs, image credits,
     converting written style to conversational spoken English, restructuring for
     audio flow, etc. Falls back to regex stripping if Ollama is unavailable.
-
-    Args:
-        title: Post title.
-        content: Post content (markdown).
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
     """
     import httpx
 
@@ -420,17 +371,17 @@ PODCAST SCRIPT:"""
 
             if len(script_body) < 200:
                 logger.warning("[PODCAST] LLM script too short (%d chars), falling back to regex", len(script_body))
-                return _build_script_fallback(title, content, site_config)
+                return _build_script_fallback(title, content)
 
             logger.info("[PODCAST] LLM generated %d-char script for '%s'", len(script_body), title[:50])
 
     except Exception as e:
         logger.warning("[PODCAST] Ollama script generation failed (%s), falling back to regex", e)
-        return _build_script_fallback(title, content, site_config)
+        return _build_script_fallback(title, content)
 
     # Still apply speech normalization for TTS pronunciation fixes
-    script_body = _normalize_for_speech(script_body, site_config)
-    spoken_title = _normalize_for_speech(title, site_config)
+    script_body = _normalize_for_speech(script_body)
+    spoken_title = _normalize_for_speech(title)
 
     _pname = site_config.get("podcast_name", "the podcast")
     _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
@@ -443,17 +394,11 @@ PODCAST SCRIPT:"""
     return f"{intro}\n\n{script_body}\n\n{outro}"
 
 
-def _build_script_fallback(title: str, content: str, site_config: Any) -> str:
-    """Fallback: build script via regex stripping when Ollama is unavailable.
-
-    Args:
-        title: Post title.
-        content: Post content (markdown).
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
-    """
+def _build_script_fallback(title: str, content: str) -> str:
+    """Fallback: build script via regex stripping when Ollama is unavailable."""
     plain_text = _strip_markdown(content)
-    plain_text = _normalize_for_speech(plain_text, site_config)
-    spoken_title = _normalize_for_speech(title, site_config)
+    plain_text = _normalize_for_speech(plain_text)
+    spoken_title = _normalize_for_speech(title)
 
     _pname = site_config.get("podcast_name", "the podcast")
     _domain_tts = site_config.get("site_domain", "our site").replace(".", " dot ")
@@ -496,26 +441,9 @@ class EpisodeResult:
 class PodcastService:
     """Generate podcast MP3 episodes from blog post content using Edge TTS."""
 
-    def __init__(
-        self,
-        output_dir: Path | None = None,
-        *,
-        site_config: Any | None = None,
-    ):
-        """Construct the PodcastService.
-
-        Args:
-            output_dir: Where to write episode MP3s. Defaults to PODCAST_DIR.
-            site_config: SiteConfig instance (DI — Phase H, GH#95). Optional
-                for tests that exercise disk-only methods (get_episode_path,
-                episode_exists, list_episodes). Required when
-                generate_episode() falls into LLM script generation or any
-                path that reads TTS config from app_settings — will raise
-                AttributeError if ``None`` there.
-        """
+    def __init__(self, output_dir: Path | None = None):
         self.output_dir = output_dir or PODCAST_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._site_config = site_config
 
     def get_episode_path(self, post_id: str) -> Path:
         """Return the expected path for an episode MP3."""
@@ -577,12 +505,7 @@ class PodcastService:
             script = pre_generated_script
             logger.info("[PODCAST] Using pre-generated script (%d chars)", len(script))
         else:
-            if self._site_config is None:
-                raise RuntimeError(
-                    "PodcastService.generate_episode() requires site_config — "
-                    "pass it to the constructor (Phase H, GH#95)."
-                )
-            script = await _build_script_with_llm(title, content, self._site_config)
+            script = await _build_script_with_llm(title, content)
 
         if not script.strip():
             return EpisodeResult(success=False, error="Empty content after markdown stripping")
@@ -620,23 +543,6 @@ class PodcastService:
                         result.duration_seconds,
                         voice,
                     )
-                    # Opt-in intro / outro stings via AudioGenProvider plugin.
-                    # Default off — only fires when audio_gen_engine names a
-                    # registered provider (Glad-Labs/poindexter#125).
-                    # Best-effort: failures log and the episode ships
-                    # without stings.
-                    await self._maybe_generate_stings(
-                        post_id=post_id, title=title,
-                    )
-                    # Glad-Labs/poindexter#161 — record media_assets row
-                    # so cleanup / retention / cost-attribution find the
-                    # podcast file. Best-effort.
-                    await self._record_episode_asset(
-                        post_id=post_id,
-                        result=result,
-                        voice=voice,
-                        title=title,
-                    )
                     return result
                 last_error = result.error
             except Exception as e:
@@ -647,242 +553,42 @@ class PodcastService:
         logger.error("[PODCAST] %s", error_msg)
         return EpisodeResult(success=False, error=error_msg)
 
-    async def _record_episode_asset(
-        self,
-        *,
-        post_id: str,
-        result: "EpisodeResult",
-        voice: str,
-        title: str,
-    ) -> None:
-        """Best-effort ``media_assets`` insert for the rendered podcast.
-
-        Closes Glad-Labs/poindexter#161 — pre-fix, the legacy podcast
-        path produced an MP3 on disk but never wrote the DB row, so
-        cleanup / retention / cost-attribution missed it. Failures
-        here must NEVER bubble up; the episode itself is fine.
-        """
-        if self._site_config is None:
-            return
-        try:
-            from services.media_asset_recorder import record_media_asset
-        except Exception as exc:  # noqa: BLE001 — defensive import guard
-            logger.debug("[PODCAST] media_asset_recorder unavailable: %s", exc)
-            return
-        pool = getattr(self._site_config, "_pool", None)
-        engine = DEFAULT_TTS_ENGINE
-        try:
-            engine = (
-                self._site_config.get("podcast_tts_engine", DEFAULT_TTS_ENGINE)
-                or DEFAULT_TTS_ENGINE
-            )
-        except Exception:
-            engine = DEFAULT_TTS_ENGINE
-        await record_media_asset(
-            pool=pool,
-            post_id=post_id,
-            asset_type="podcast",
-            storage_path=result.file_path or "",
-            public_url="",  # podcasts upload separately via backfill / R2 sync
-            mime_type="audio/mpeg",
-            duration_ms=int((result.duration_seconds or 0) * 1000),
-            file_size_bytes=result.file_size_bytes or 0,
-            provider_plugin=f"tts.{engine}",
-            source="pipeline",
-            storage_provider="local",
-            metadata={
-                "voice": voice,
-                "title": title,
-                "engine": engine,
-            },
-        )
-
-    async def _maybe_generate_stings(
-        self, *, post_id: str, title: str,
-    ) -> None:
-        """Opt-in intro / outro stings via the AudioGenProvider plugin
-        (Glad-Labs/poindexter#125).
-
-        Renders two short clips next to the episode MP3:
-
-        - ``{post_id}-intro.wav`` — opener sting
-        - ``{post_id}-outro.wav`` — closer sting
-
-        Default OFF: ``app_settings.audio_gen_engine`` must name a
-        registered provider. Until then this method is a no-op so the
-        existing voice-only podcasts continue shipping unchanged.
-
-        Never raises. Stings are additive — a failure here must not
-        invalidate the successfully-rendered episode.
-        """
-        if self._site_config is None:
-            return
-        try:
-            from services.audio_gen_service import (
-                generate_audio,
-                is_audio_gen_enabled,
-            )
-        except Exception as e:  # Defensive: import failures don't break podcast
-            logger.debug(
-                "[PODCAST] audio_gen_service unavailable: %s", e,
-            )
-            return
-
-        if not is_audio_gen_enabled(self._site_config):
-            return
-
-        try:
-            intro_prompt = (
-                self._site_config.get("podcast_intro_sting_prompt", "")
-                or f"3-second podcast intro sting, energetic, no vocals, "
-                f"intro for an episode about: {title}"
-            )
-            outro_prompt = (
-                self._site_config.get("podcast_outro_sting_prompt", "")
-                or f"3-second podcast outro sting, gentle fade, no vocals, "
-                f"outro for an episode about: {title}"
-            )
-        except Exception:
-            intro_prompt = (
-                f"3-second podcast intro sting, energetic, no vocals, "
-                f"intro for an episode about: {title}"
-            )
-            outro_prompt = (
-                f"3-second podcast outro sting, gentle fade, no vocals, "
-                f"outro for an episode about: {title}"
-            )
-
-        intro_path = str(self.output_dir / f"{post_id}-intro.wav")
-        outro_path = str(self.output_dir / f"{post_id}-outro.wav")
-
-        try:
-            await generate_audio(
-                prompt=intro_prompt, kind="intro",
-                site_config=self._site_config,
-                output_path=intro_path, duration_s=3.0,
-            )
-            await generate_audio(
-                prompt=outro_prompt, kind="outro",
-                site_config=self._site_config,
-                output_path=outro_path, duration_s=3.0,
-            )
-        except Exception as e:
-            logger.warning("[PODCAST] sting generation failed: %s", e)
-
-    def _resolve_tts_provider(self, engine: str) -> Any | None:
-        """Look up a registered ``TTSProvider`` by name.
-
-        Mirrors ``services.image_service._resolve_image_provider`` —
-        check both the entry_point-discovered third-party plugins and
-        the imperatively-registered core samples. A community plugin
-        can override a core provider by registering under the same name.
-        """
-        try:
-            from plugins.registry import get_core_samples, get_tts_providers
-        except Exception as e:
-            logger.warning("[PODCAST] tts provider registry unavailable: %s", e)
-            return None
-
-        candidates: list[Any] = []
-        try:
-            candidates.extend(get_tts_providers())
-        except Exception as e:
-            logger.debug("[PODCAST] get_tts_providers failed: %s", e)
-        try:
-            candidates.extend(get_core_samples().get("tts_providers", []))
-        except Exception as e:
-            logger.debug("[PODCAST] get_core_samples failed: %s", e)
-
-        for provider in candidates:
-            if getattr(provider, "name", None) == engine:
-                return provider
-        return None
-
-    def _tts_provider_config(self, engine: str) -> dict[str, Any]:
-        """Read per-provider config from ``app_settings``.
-
-        Settings live under ``plugin.tts_provider.<name>`` per the
-        plugin convention (matches ImageProvider). Returns an empty
-        dict on any read error so a provider's own defaults take over.
-        """
-        if self._site_config is None:
-            return {}
-        try:
-            import json as _json
-
-            raw = self._site_config.get(f"plugin.tts_provider.{engine}", "")
-            if not raw:
-                return {}
-            parsed = _json.loads(raw)
-            return parsed if isinstance(parsed, dict) else {}
-        except Exception as e:
-            logger.debug("[PODCAST] tts provider config read failed for %s: %s", engine, e)
-            return {}
-
     async def _generate_with_voice(
-        self, script: str, voice: str, output_path: Path,
+        self, script: str, voice: str, output_path: Path
     ) -> EpisodeResult:
-        """Render ``script`` through the configured TTSProvider.
-
-        Selection is by name from ``app_settings.podcast_tts_engine``
-        (default: ``edge_tts``). Existing pronunciation / acronym
-        preprocessing already ran upstream — the provider only renders.
-        """
-        engine = DEFAULT_TTS_ENGINE
-        if self._site_config is not None:
-            try:
-                engine = (
-                    self._site_config.get("podcast_tts_engine", DEFAULT_TTS_ENGINE)
-                    or DEFAULT_TTS_ENGINE
-                )
-            except Exception:
-                engine = DEFAULT_TTS_ENGINE
-
-        provider = self._resolve_tts_provider(engine)
-        if provider is None:
-            # Operator misconfigured the engine name. Fall back to the
-            # default so the pipeline keeps producing episodes; loud log
-            # so the bad setting is visible.
-            logger.warning(
-                "[PODCAST] tts engine %r not registered; falling back to %r",
-                engine, DEFAULT_TTS_ENGINE,
-            )
-            engine = DEFAULT_TTS_ENGINE
-            provider = self._resolve_tts_provider(engine)
-        if provider is None:
+        """Generate audio using edge-tts with a specific voice."""
+        try:
+            import edge_tts
+        except ImportError:
             return EpisodeResult(
                 success=False,
-                error=f"No TTSProvider registered (tried {engine!r})",
+                error="edge-tts not installed. Run: pip install edge-tts",
             )
-
-        cfg = self._tts_provider_config(engine)
 
         try:
-            tts_result = await provider.synthesize(
-                script, output_path, voice=voice, config=cfg,
+            communicate = edge_tts.Communicate(script, voice)
+            await communicate.save(str(output_path))
+
+            if not output_path.exists() or output_path.stat().st_size == 0:
+                return EpisodeResult(
+                    success=False,
+                    error=f"edge-tts produced empty file with voice {voice}",
+                )
+
+            size = output_path.stat().st_size
+            duration = _estimate_duration_from_text(script)
+
+            return EpisodeResult(
+                success=True,
+                file_path=str(output_path),
+                duration_seconds=duration,
+                file_size_bytes=size,
             )
         except Exception as e:
+            # Clean up partial file
             if output_path.exists():
                 output_path.unlink(missing_ok=True)
             return EpisodeResult(success=False, error=f"{type(e).__name__}: {e}")
-
-        rendered_path = (
-            tts_result.audio_path if tts_result.audio_path is not None else output_path
-        )
-        if not rendered_path.exists() or rendered_path.stat().st_size == 0:
-            return EpisodeResult(
-                success=False,
-                error=f"{engine} produced empty file with voice {voice}",
-            )
-
-        return EpisodeResult(
-            success=True,
-            file_path=str(rendered_path),
-            duration_seconds=(
-                tts_result.duration_seconds or _estimate_duration_from_text(script)
-            ),
-            file_size_bytes=tts_result.file_size_bytes or rendered_path.stat().st_size,
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -895,20 +601,11 @@ async def generate_podcast_episode(
     title: str,
     content: str,
     *,
-    site_config: Any,
     pre_generated_script: str | None = None,
 ) -> None:
-    """Fire-and-forget podcast generation. Logs errors but never raises.
-
-    Args:
-        post_id: Post identifier (filename stem).
-        title: Post title.
-        content: Post content (markdown).
-        site_config: SiteConfig instance (DI — Phase H, GH#95).
-        pre_generated_script: Skip LLM and use this script directly.
-    """
+    """Fire-and-forget podcast generation. Logs errors but never raises."""
     try:
-        svc = PodcastService(site_config=site_config)
+        svc = PodcastService()
         result = await svc.generate_episode(
             post_id, title, content,
             pre_generated_script=pre_generated_script,

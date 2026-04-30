@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Final
 from urllib.parse import urlparse
 
 import httpx
@@ -150,20 +150,29 @@ class SeedURLError(Exception):
 # ---------------------------------------------------------------------------
 
 
-def _get_timeout_seconds(site_config: Any) -> float:
-    """Read fetch timeout from the injected site_config — Phase H (GH#95)."""
-    return site_config.get_float(_SETTING_TIMEOUT, _DEFAULT_TIMEOUT_SECONDS)
+def _get_timeout_seconds() -> float:
+    try:
+        from services.site_config import site_config as _sc
+        return _sc.get_float(_SETTING_TIMEOUT, _DEFAULT_TIMEOUT_SECONDS)
+    except Exception:  # pragma: no cover — site_config absent in bare imports
+        return _DEFAULT_TIMEOUT_SECONDS
 
 
-def _get_user_agent(site_config: Any) -> str:
-    """Read user-agent from the injected site_config — Phase H (GH#95)."""
-    ua = site_config.get(_SETTING_USER_AGENT, _DEFAULT_USER_AGENT)
-    return ua or _DEFAULT_USER_AGENT
+def _get_user_agent() -> str:
+    try:
+        from services.site_config import site_config as _sc
+        ua = _sc.get(_SETTING_USER_AGENT, _DEFAULT_USER_AGENT)
+        return ua or _DEFAULT_USER_AGENT
+    except Exception:  # pragma: no cover
+        return _DEFAULT_USER_AGENT
 
 
-def _get_max_bytes(site_config: Any) -> int:
-    """Read max-bytes cap from the injected site_config — Phase H (GH#95)."""
-    return site_config.get_int(_SETTING_MAX_BYTES, _DEFAULT_MAX_BYTES)
+def _get_max_bytes() -> int:
+    try:
+        from services.site_config import site_config as _sc
+        return _sc.get_int(_SETTING_MAX_BYTES, _DEFAULT_MAX_BYTES)
+    except Exception:  # pragma: no cover
+        return _DEFAULT_MAX_BYTES
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +253,6 @@ def _validate_url(url: str) -> None:
 async def fetch_seed_url(
     url: str,
     *,
-    site_config: Any,
     timeout_seconds: float | None = None,
     user_agent: str | None = None,
     max_bytes: int | None = None,
@@ -254,11 +262,6 @@ async def fetch_seed_url(
 
     Args:
         url: The URL to fetch. Must be http:// or https://.
-        site_config: SiteConfig instance (DI — Phase H, GH#95). Required
-            unless every tunable (``timeout_seconds`` / ``user_agent`` /
-            ``max_bytes``) is overridden explicitly. Threads through to
-            the ``_get_*`` helpers instead of the removed module-level
-            singleton lazy imports.
         timeout_seconds: Override fetch timeout. Default: from site_config
             ``seed_url_fetch_timeout_seconds`` (seeded at 10s).
         user_agent: Override User-Agent header. Default: from site_config
@@ -279,9 +282,9 @@ async def fetch_seed_url(
     """
     _validate_url(url)
 
-    timeout = timeout_seconds if timeout_seconds is not None else _get_timeout_seconds(site_config)
-    ua = user_agent if user_agent is not None else _get_user_agent(site_config)
-    cap = max_bytes if max_bytes is not None else _get_max_bytes(site_config)
+    timeout = timeout_seconds if timeout_seconds is not None else _get_timeout_seconds()
+    ua = user_agent if user_agent is not None else _get_user_agent()
+    cap = max_bytes if max_bytes is not None else _get_max_bytes()
 
     headers = {
         "User-Agent": ua,

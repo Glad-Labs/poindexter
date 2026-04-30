@@ -122,58 +122,6 @@ def _should_run_post_publish_hooks() -> bool:
     return bool(os.getenv("LOCAL_DATABASE_URL"))
 
 
-async def _finalize_publish(
-    db_service: DatabaseService,
-    task_id: str,
-    post_slug: str,
-    site_config: Any,
-) -> None:
-    """Belt-and-suspenders post-publish finalization.
-
-    Two failure modes have been observed in the wild despite
-    publish_service already attempting both of these:
-
-    1. content_tasks.status stays on 'approved' instead of moving to
-       'published' (the underlying status update inside publish_service
-       silently failed or was skipped on a code path).
-    2. The Next.js cache holds a null post.json fetched before R2 had
-       the file, so /posts/<slug> serves "Post Not Found" until TTL.
-
-    Both ops are non-blocking — failures are logged and swallowed so
-    the publish response is never gated on this finalization.
-    """
-    try:
-        # task_id column is character varying (see tasks_db.py canonical
-        # pattern: `WHERE task_id = $1`). The original ::uuid cast in this
-        # shim raised "operator does not exist: character varying = uuid"
-        # and was silently swallowed by the broad except below — meaning
-        # this defense-in-depth was a no-op until #299 fixed publish_service
-        # itself. Drop the cast.
-        await db_service.pool.execute(
-            "UPDATE content_tasks SET status='published', updated_at=NOW() WHERE task_id = $1",
-            task_id,
-        )
-    except Exception as e:
-        logger.warning(
-            "[publish_finalize] content_tasks status update failed for %s: %s",
-            task_id, e,
-        )
-
-    try:
-        from services.revalidation_service import trigger_nextjs_revalidation
-
-        await trigger_nextjs_revalidation(
-            paths=["/", "/archive", "/posts", f"/posts/{post_slug}"],
-            tags=["posts", "post-index", f"post:{post_slug}"],
-            site_config=site_config,
-        )
-    except Exception as e:
-        logger.warning(
-            "[publish_finalize] Next.js revalidation failed for %s: %s",
-            post_slug, e,
-        )
-
-
 # ============================================================================
 # CONTENT CLEANING UTILITIES
 # ============================================================================
@@ -252,11 +200,10 @@ async def approve_task(
     reviewer_id: str | None = None,
     featured_image_url: str | None = None,
     image_source: str | None = None,
-    auto_publish: bool = False,
+    auto_publish: bool = True,
     publish_at: str | None = None,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-    site_config_dep: Any = Depends(get_site_config_dependency),
 ):
     """
     Approve or reject a task for publishing.
@@ -272,9 +219,7 @@ async def approve_task(
     - reviewer_id: Optional ID of reviewer
     - featured_image_url: Optional featured image URL for the task
     - image_source: Optional source of image (pexels, sdxl)
-    - auto_publish: Automatically publish after approval (default: false — staging-only;
-      callers must POST /publish for the explicit go-live step). Flipped to false 2026-04-28
-      (gh#189) so batch curation flows can stage multiple posts without accidental go-lives.
+    - auto_publish: Automatically publish after approval (default: true - approve = publish)
 
     **Returns:**
     - Updated task with status 'approved' or 'rejected' (and 'published' if auto_publish=true)
@@ -290,7 +235,7 @@ async def approve_task(
         "reviewer_id": "user123",
         "featured_image_url": "https://...",
         "image_source": "pexels",
-        "auto_publish": false
+        "auto_publish": true
       }'
     ```
     """
@@ -461,7 +406,6 @@ async def approve_task(
 
                 pub_result = await publish_post_from_task(
                     db_service, task, task_id,
-                    site_config=site_config_dep,
                     publisher="operator",
                     trigger_revalidation=True,
                     queue_social=True,
@@ -500,10 +444,6 @@ async def approve_task(
                         logger.debug(
                             "[approve_task] mark_model_performance_outcome publish flip failed: %s",
                             mp_err,
-                        )
-                    if pub_result.post_slug:
-                        await _finalize_publish(
-                            db_service, task_id, pub_result.post_slug, site_config_dep,
                         )
                 else:
                     logger.warning(
@@ -567,7 +507,6 @@ async def publish_task(
     task_id: str,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-    site_config_dep: Any = Depends(get_site_config_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """
@@ -629,7 +568,6 @@ async def publish_task(
 
         pub_result = await publish_post_from_task(
             db_service, task, task_id,
-            site_config=site_config_dep,
             publisher="operator",
             trigger_revalidation=True,
             queue_social=True,
@@ -657,11 +595,6 @@ async def publish_task(
                 logger.warning(
                     "[publish_task] pipeline_distributions write failed for %s: %s",
                     task_id, dist_err,
-                )
-
-            if pub_result.post_slug:
-                await _finalize_publish(
-                    db_service, task_id, pub_result.post_slug, site_config_dep,
                 )
 
         # Fetch updated task
@@ -754,7 +687,6 @@ async def go_live(
                 "post-index",
                 f"post:{row['slug']}",
             ],
-            site_config=site_config_dep,
         )
         if reval_ok:
             logger.info("[GO-LIVE] ISR revalidation triggered for %s", row["slug"])
@@ -768,14 +700,9 @@ async def go_live(
         try:
             from services.task_executor import _notify_openclaw
             _site_url = site_config_dep.require("site_url")
-            # Discord-only per operator policy. Post-publish announcement
-            # is routine, not a critical alert. Was previously silently
-            # broken (missing site_config arg); fixed here in the same
-            # pass.
             await _notify_openclaw(
                 f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}",
-                site_config_dep,
-                critical=False,
+                critical=True,
             )
         except Exception:
             logger.warning("[GO-LIVE] Openclaw notification failed (non-fatal)", exc_info=True)

@@ -54,14 +54,7 @@ class GenerateSeoMetadataStage:
 
         logger.info("STAGE 4: Generating SEO metadata...")
 
-        # Phase H step 5 (GH#95): site_config is seeded on the pipeline
-        # context by content_router_service. Tests build context dicts
-        # with the fake site_config wired in explicitly.
-        _sc = context["site_config"]
-
-        seo_generator = get_seo_content_generator(
-            get_content_generator(site_config=_sc), site_config=_sc,
-        )
+        seo_generator = get_seo_content_generator(get_content_generator())
         seo_assets = seo_generator.metadata_gen.generate_seo_assets(
             title=topic, content=content_text, topic=topic,
         )

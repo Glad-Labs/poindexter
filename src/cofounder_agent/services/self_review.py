@@ -16,23 +16,14 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 async def self_review_and_revise(
-    draft: str, title: str, topic: str, site_config: Any,
+    draft: str, title: str, topic: str,
 ) -> tuple[str, dict]:
     """Ask the writer model to catch + fix cross-section contradictions.
-
-    Args:
-        draft: The raw writer output to review.
-        title: Post title (used in the reviewer prompt).
-        topic: Post topic (used in the reviewer prompt).
-        site_config: SiteConfig instance (DI — Phase H). Must be passed
-            explicitly — the module-level singleton import was removed
-            so tests can construct isolated mocks.
 
     Returns ``(possibly_revised_draft, stats_dict)`` where stats includes:
 
@@ -41,6 +32,7 @@ async def self_review_and_revise(
     - ``revised`` (bool) — True only when we accepted the revision.
     """
     from plugins.registry import get_llm_providers
+    from services.site_config import site_config
 
     stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
 

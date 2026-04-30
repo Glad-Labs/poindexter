@@ -72,11 +72,7 @@ class UrlValidationStage:
 
         try:
             from services.url_validator import get_url_validator
-            # Phase H step 5 (GH#95): site_config is seeded on the pipeline
-            # context by content_router_service. Tests build context dicts
-            # with the fake site_config wired in explicitly.
-            _sc = context["site_config"]
-            validator = get_url_validator(_sc)
+            validator = get_url_validator()
             urls = validator.extract_urls(content_text)
             if not urls:
                 return StageResult(

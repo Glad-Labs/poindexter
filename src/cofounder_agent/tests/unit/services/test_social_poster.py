@@ -1,9 +1,4 @@
-"""Unit tests for social_poster.py — social media post generation and distribution.
-
-Post-Phase-H, social_poster accepts site_config as a parameter rather
-than importing the module singleton. Tests build a ``MagicMock`` shaped
-like SiteConfig (via ``_mock_sc()``) and pass it through.
-"""
+"""Unit tests for social_poster.py — social media post generation and distribution."""
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -34,54 +29,6 @@ def _make_ollama_mock(text: str = "Great post about AI!") -> AsyncMock:
     return mock
 
 
-def _mock_sc(
-    site_url: str = "https://localhost:3000",
-    company_name: str = "",
-    social_model: str = "ollama/llama3:latest",
-    openclaw_url: str = "http://localhost:8787",
-    openclaw_token: str = "hooks-gladlabs",
-    telegram_bot_token: str = "",
-    discord_channel: str = "test-discord-channel-id",
-    distribution_platforms: str = "",
-    max_tokens: int = 300,
-) -> MagicMock:
-    """Build a MagicMock shaped like SiteConfig. Post-Phase-H, social_poster
-    takes site_config as a parameter rather than reading the module
-    singleton — tests pass this mock through.
-
-    Post-GH-107: openclaw_webhook_token and telegram_bot_token are
-    is_secret=true, so they're read via ``await get_secret(...)``. The
-    mock exposes ``get`` for non-secret keys and ``get_secret`` for the
-    encrypted ones; both side-effects share the same backing mapping.
-    """
-    sc = MagicMock()
-
-    secret_mapping = {
-        "openclaw_webhook_token": openclaw_token,
-        "telegram_bot_token": telegram_bot_token,
-    }
-
-    def _get(k: str, d: str = "") -> str:
-        return {
-            "site_url": site_url,
-            "company_name": company_name,
-            "social_poster_model": social_model,
-            "openclaw_gateway_url": openclaw_url,
-            "social_distribution_platforms": distribution_platforms,
-            # Kept here too in case any legacy non-secret reader survives.
-            "openclaw_webhook_token": openclaw_token,
-        }.get(k, d)
-
-    def _get_int(k: str, d: int = 0) -> int:
-        return {"social_poster_max_tokens": max_tokens}.get(k, d)
-
-    sc.get.side_effect = _get
-    sc.get_int.side_effect = _get_int
-    sc.get_secret = AsyncMock(side_effect=lambda k, d="": secret_mapping.get(k, d))
-    sc.require.side_effect = lambda k: discord_channel if k == "discord_ops_channel_id" else ""
-    return sc
-
-
 SAMPLE_TITLE = "Why Local LLMs Beat Cloud APIs"
 SAMPLE_SLUG = "why-local-llms-beat-cloud-apis"
 SAMPLE_EXCERPT = "A deep dive into cost, latency, and privacy."
@@ -97,31 +44,23 @@ class TestBuildTwitterPrompt:
     """Verify the Twitter prompt contains required elements."""
 
     def test_contains_title_and_excerpt(self):
-        prompt = _build_twitter_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, _mock_sc(),
-        )
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
         assert SAMPLE_TITLE in prompt
         assert SAMPLE_EXCERPT in prompt
 
     def test_contains_post_url(self):
-        prompt = _build_twitter_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, _mock_sc(),
-        )
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
         assert f"/posts/{SAMPLE_SLUG}" in prompt
 
     def test_contains_hashtags(self):
-        prompt = _build_twitter_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, _mock_sc(),
-        )
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
         assert "#LLM" in prompt
         assert "#Ollama" in prompt
         assert "#self-hosting" in prompt  # hyphen preserved, spaces removed
 
     def test_limits_to_three_hashtags(self):
         many_keywords = ["AI", "ML", "LLM", "GPU", "Cloud"]
-        prompt = _build_twitter_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, many_keywords, _mock_sc(),
-        )
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, many_keywords)
         # Only first 3 should appear in suggested hashtags line
         assert "#AI" in prompt
         assert "#ML" in prompt
@@ -129,15 +68,11 @@ class TestBuildTwitterPrompt:
         assert "#GPU" not in prompt
 
     def test_mentions_char_limit(self):
-        prompt = _build_twitter_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, _mock_sc(),
-        )
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
         assert str(TWITTER_CHAR_LIMIT) in prompt
 
     def test_empty_keywords(self):
-        prompt = _build_twitter_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, [], _mock_sc(),
-        )
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, [])
         assert "Suggested hashtags:" in prompt
 
 
@@ -145,28 +80,20 @@ class TestBuildLinkedInPrompt:
     """Verify the LinkedIn prompt contains required elements."""
 
     def test_contains_title_and_excerpt(self):
-        prompt = _build_linkedin_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, _mock_sc(),
-        )
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
         assert SAMPLE_TITLE in prompt
         assert SAMPLE_EXCERPT in prompt
 
     def test_contains_post_url(self):
-        prompt = _build_linkedin_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, _mock_sc(),
-        )
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
         assert f"/posts/{SAMPLE_SLUG}" in prompt
 
     def test_mentions_char_limit(self):
-        prompt = _build_linkedin_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, _mock_sc(),
-        )
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
         assert str(LINKEDIN_CHAR_LIMIT) in prompt
 
     def test_mentions_professional_tone(self):
-        prompt = _build_linkedin_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, _mock_sc(),
-        )
+        prompt = _build_linkedin_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS)
         assert "professional" in prompt.lower()
 
 
@@ -386,12 +313,9 @@ class TestNotify:
     """Test the _notify function with mocked httpx."""
 
     @pytest.mark.asyncio
+    @patch("services.social_poster._get_discord_ops_channel", return_value="test-discord-channel-id")
     @patch("services.social_poster.httpx.AsyncClient")
-    async def test_sends_to_discord_only_not_telegram(self, mock_client_cls):
-        """Social-post-ready notifications go to Discord (operator review
-        channel), NOT to Telegram (incident-alert channel). Both used to
-        fire; Telegram leg was removed 2026-04-26 to cut phone-noise.
-        """
+    async def test_sends_telegram_and_discord(self, mock_client_cls, mock_channel):
         from services.social_poster import _notify
 
         mock_client = AsyncMock()
@@ -399,36 +323,16 @@ class TestNotify:
         mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        await _notify("Test notification message", _mock_sc())
+        await _notify("Test notification message")
 
-        assert mock_client.post.call_count == 1, (
-            f"Expected exactly one call (Discord only), got {mock_client.post.call_count} "
-            f"calls: {[c.args[0] for c in mock_client.post.call_args_list]}"
-        )
-        only_call = mock_client.post.call_args_list[0]
-        assert "/hooks/agent" in only_call.args[0], (
-            "Sole call must be Discord via OpenClaw, not Telegram"
-        )
-        # Defense-in-depth: assert no Telegram URL in any call
-        for c in mock_client.post.call_args_list:
-            assert "api.telegram.org" not in c.args[0], (
-                "Social-post notifications must not hit Telegram"
-            )
-
-    @pytest.mark.asyncio
-    @patch("services.social_poster.httpx.AsyncClient")
-    async def test_skips_when_no_discord_channel_configured(self, mock_client_cls):
-        """When site_config has no discord_ops_channel_id, _notify logs and
-        returns rather than firing a half-broken request."""
-        from services.social_poster import _notify
-
-        mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        # site_config=None branch sets discord_channel=None
-        await _notify("Test", site_config=None)
-        assert mock_client.post.call_count == 0
+        assert mock_client.post.call_count == 2
+        # First call: Telegram
+        telegram_call = mock_client.post.call_args_list[0]
+        assert "api.telegram.org" in telegram_call.args[0]
+        assert telegram_call.kwargs["json"]["text"] == "Test notification message"
+        # Second call: Discord via OpenClaw
+        discord_call = mock_client.post.call_args_list[1]
+        assert "/hooks/agent" in discord_call.args[0]
 
     @pytest.mark.asyncio
     @patch("services.social_poster.httpx.AsyncClient")
@@ -441,7 +345,7 @@ class TestNotify:
         mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
         # Should not raise
-        await _notify("This should not crash", _mock_sc())
+        await _notify("This should not crash")
 
     @pytest.mark.asyncio
     @patch("services.social_poster.httpx.AsyncClient")
@@ -454,7 +358,7 @@ class TestNotify:
         mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
         # Should not raise
-        await _notify("Timeout test", _mock_sc())
+        await _notify("Timeout test")
 
 
 # ---------------------------------------------------------------------------
@@ -490,9 +394,7 @@ class TestCharacterLimitsAndHashtags:
 
     def test_hashtags_strip_spaces(self):
         keywords = ["machine learning", "deep learning", "natural language processing"]
-        prompt = _build_twitter_prompt(
-            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, keywords, _mock_sc(),
-        )
+        prompt = _build_twitter_prompt(SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, keywords)
         assert "#machinelearning" in prompt
         assert "#deeplearning" in prompt
         assert "#naturallanguageprocessing" in prompt

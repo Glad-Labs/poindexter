@@ -53,15 +53,38 @@ from typing import Any
 
 from plugins.config import PluginConfig
 from plugins.registry import get_llm_providers
-from plugins.tracing import get_tracer
 
 logger = logging.getLogger(__name__)
 
-# Tracer for LLM dispatch spans. Real tracer when opentelemetry-sdk is
-# installed (the common case via the cofounder-agent extras); a no-op
-# stub otherwise. Either way, call sites are identical — see
-# ``plugins.tracing`` module docstring for the rationale.
-_tracer = get_tracer("poindexter.llm_providers")
+# OpenTelemetry is optional — the dispatcher works with or without it.
+# When the opentelemetry SDK isn't installed, _tracer is a no-op
+# implementation that matches the real API's ``start_as_current_span``
+# contract.
+try:
+    from opentelemetry import trace as _otel_trace  # type: ignore[import-untyped]
+
+    _tracer = _otel_trace.get_tracer("poindexter.llm_providers")
+except ImportError:  # pragma: no cover - exercised in minimal dev envs
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _noop_span(_name: str, **_kwargs: Any):
+        class _NoopSpan:
+            def set_attribute(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+            def record_exception(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+            def set_status(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+        yield _NoopSpan()
+
+    class _NoopTracer:
+        start_as_current_span = staticmethod(_noop_span)
+
+    _tracer = _NoopTracer()
 
 
 # Default provider per tier if no app_settings override exists.

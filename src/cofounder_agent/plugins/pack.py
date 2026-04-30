@@ -13,7 +13,7 @@ on install:
 Distribution:
 
 - **Free (community):** ``poindexter-pack-community`` on public pypi,
-  Apache-2.0.
+  AGPL-3.
 - **Premium:** ``glad-labs-pack`` on private pypi, license-gated by
   Lemon Squeezy activation.
 

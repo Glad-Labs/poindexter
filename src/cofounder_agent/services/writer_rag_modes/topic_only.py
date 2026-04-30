@@ -1,0 +1,49 @@
+"""TOPIC_ONLY writer mode.
+
+Single embedding query, dump top-N internal snippets into the writer prompt
+as background context. Simplest of the four modes.
+
+Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
+Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 10)
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from uuid import UUID
+
+from services.logger_config import get_logger
+
+logger = get_logger(__name__)
+
+
+async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
+    from services.topic_ranking import embed_text
+
+    qvec = await embed_text(f"{topic} — {angle}")
+    async with pool.acquire() as conn:
+        # Top 8 internal snippets by cosine similarity. Uses pgvector.
+        rows = await conn.fetch(
+            """
+            SELECT source_table, source_id, text_preview,
+                   1 - (embedding <=> $1::vector) AS similarity
+              FROM embeddings
+             ORDER BY embedding <=> $1::vector
+             LIMIT 8
+            """,
+            qvec,
+        )
+    snippets = [
+        {
+            "source": r["source_table"],
+            "ref": str(r["source_id"]),
+            "snippet": r["text_preview"],
+            "similarity": float(r["similarity"]),
+        }
+        for r in rows
+    ]
+    # Hand off to the existing writer with the snippets in the prompt context.
+    from services.ai_content_generator import generate_with_context
+
+    draft = await generate_with_context(topic=topic, angle=angle, snippets=snippets)
+    return {"draft": draft, "snippets_used": snippets, "mode": "TOPIC_ONLY"}

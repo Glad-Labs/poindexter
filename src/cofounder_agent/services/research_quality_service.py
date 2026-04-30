@@ -8,7 +8,6 @@ from Serper API results to improve research quality.
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Any
 
 from services.logger_config import get_logger
 
@@ -52,13 +51,13 @@ class ResearchQualityService:
     # Weights for overall source score — tunable via app_settings so
     # different niches can prioritize differently (e.g. a news blog
     # weighs recency higher, a how-to site weighs credibility higher). (#198)
-    def _weight(self, key: str, default: float) -> float:
-        """Read a research_<key>_weight float from the injected site_config.
-
-        Phase H (GH#95) — instance method reading ``self._site_config``
-        instead of importing the module singleton.
-        """
-        return self._site_config.get_float(f"research_{key}_weight", default)
+    @staticmethod
+    def _weight(key: str, default: float) -> float:
+        try:
+            from services.site_config import site_config as _sc
+            return _sc.get_float(f"research_{key}_weight", default)
+        except Exception:
+            return default
 
     # Class-level snapshots, re-resolved on each instance init below.
     CREDIBILITY_WEIGHT = 0.4
@@ -103,45 +102,43 @@ class ResearchQualityService:
     # Similarity threshold for deduplication — tunable via app_settings.
     SIMILARITY_THRESHOLD = 0.7  # 70% similar = duplicate
 
-    def __init__(self, *, site_config: Any):
-        """Initialise ResearchQualityService.
-
-        Args:
-            site_config: SiteConfig instance (DI — Phase H, GH#95).
-                Required — the module-level singleton import was removed.
-                Thread through from app.state.site_config at the
-                orchestrator layer.
-        """
+    def __init__(self):
         self.logger = logger
-        self._site_config = site_config
         # Resolve tunables from app_settings on init. Re-instantiate the
         # service to pick up app_settings changes.
         self.credibility_weight = self._weight("credibility", self.CREDIBILITY_WEIGHT)
         self.snippet_quality_weight = self._weight("snippet_quality", self.SNIPPET_QUALITY_WEIGHT)
         self.recency_weight = self._weight("recency", self.RECENCY_WEIGHT)
         self.uniqueness_weight = self._weight("uniqueness", self.UNIQUENESS_WEIGHT)
-        _sc = self._site_config
-        self.min_snippet_length = _sc.get_int(
-            "research_min_snippet_length", self.MIN_SNIPPET_LENGTH
-        )
-        self.min_snippet_words = _sc.get_int(
-            "research_min_snippet_words", self.MIN_SNIPPET_WORDS
-        )
-        self.similarity_threshold = _sc.get_float(
-            "research_dedup_similarity_threshold", self.SIMILARITY_THRESHOLD
-        )
-        # Domain tier overrides — comma-separated, lowercased. Empty
-        # setting keeps shipped defaults.
-        _t1 = _sc.get("research_tier1_domains", "")
-        _t2 = _sc.get("research_tier2_domains", "")
-        self.tier1_domains = (
-            {d.strip().lower() for d in _t1.split(",") if d.strip()}
-            if _t1 else set(self._DEFAULT_TIER_1_DOMAINS)
-        )
-        self.tier2_domains = (
-            {d.strip().lower() for d in _t2.split(",") if d.strip()}
-            if _t2 else set(self._DEFAULT_TIER_2_DOMAINS)
-        )
+        try:
+            from services.site_config import site_config as _sc
+            self.min_snippet_length = _sc.get_int(
+                "research_min_snippet_length", self.MIN_SNIPPET_LENGTH
+            )
+            self.min_snippet_words = _sc.get_int(
+                "research_min_snippet_words", self.MIN_SNIPPET_WORDS
+            )
+            self.similarity_threshold = _sc.get_float(
+                "research_dedup_similarity_threshold", self.SIMILARITY_THRESHOLD
+            )
+            # Domain tier overrides — comma-separated, lowercased. Empty
+            # setting keeps shipped defaults.
+            _t1 = _sc.get("research_tier1_domains", "")
+            _t2 = _sc.get("research_tier2_domains", "")
+            self.tier1_domains = (
+                {d.strip().lower() for d in _t1.split(",") if d.strip()}
+                if _t1 else set(self._DEFAULT_TIER_1_DOMAINS)
+            )
+            self.tier2_domains = (
+                {d.strip().lower() for d in _t2.split(",") if d.strip()}
+                if _t2 else set(self._DEFAULT_TIER_2_DOMAINS)
+            )
+        except Exception:
+            self.min_snippet_length = self.MIN_SNIPPET_LENGTH
+            self.min_snippet_words = self.MIN_SNIPPET_WORDS
+            self.similarity_threshold = self.SIMILARITY_THRESHOLD
+            self.tier1_domains = set(self._DEFAULT_TIER_1_DOMAINS)
+            self.tier2_domains = set(self._DEFAULT_TIER_2_DOMAINS)
 
     def filter_and_score(
         self, results: list[dict], query: str | None = None

@@ -368,60 +368,47 @@ class TestNormalizeText:
 
 @pytest.mark.unit
 class TestScrubFabricatedLinks:
-    """Tests for link scrubbing that removes hallucinated URLs.
-
-    Phase H step 5 (GH#95): ``scrub_fabricated_links`` now requires
-    site_config. Each test imports the live singleton so behavior
-    mirrors production defaults.
-    """
-
-    def _sc(self):
-        # Dedicated SiteConfig per test class — phase-H cleanup removed
-        # the module-level singleton. Pass a minimal config; tests that
-        # need specific keys construct inline.
-        from services.site_config import SiteConfig
-        return SiteConfig(initial_config={"site_domain": "test-site.example.com"})
+    """Tests for link scrubbing that removes hallucinated URLs."""
 
     def test_keeps_trusted_markdown_links(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "Check out [this repo](https://github.com/user/project) for details."
-        assert "github.com/user/project" in _scrub_fabricated_links(content, site_config=self._sc())
+        assert "github.com/user/project" in _scrub_fabricated_links(content)
 
     def test_removes_fabricated_markdown_links(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "See [definition](https://www.dictionary.com/browse/example) for more."
-        result = _scrub_fabricated_links(content, site_config=self._sc())
+        result = _scrub_fabricated_links(content)
         assert "dictionary.com" not in result
         assert "definition" in result  # Link text preserved
 
     def test_removes_bare_fabricated_urls(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "Visit https://www.randomsite.com/fake-article for info."
-        result = _scrub_fabricated_links(content, site_config=self._sc())
+        result = _scrub_fabricated_links(content)
         assert "randomsite.com" not in result
 
     def test_keeps_bare_trusted_urls(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "See https://arxiv.org/abs/2301.12345 for the paper."
-        result = _scrub_fabricated_links(content, site_config=self._sc())
+        result = _scrub_fabricated_links(content)
         assert "arxiv.org" in result
 
     def test_keeps_own_domain_links(self):
-        from services.site_config import SiteConfig
+        from services.site_config import site_config
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
-        site_config = SiteConfig(initial_config={"site_domain": "test-site.example.com"})
         domain = site_config.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
-        assert domain in _scrub_fabricated_links(content, site_config=site_config)
+        assert domain in _scrub_fabricated_links(content)
 
     def test_empty_content_returns_empty(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
-        assert _scrub_fabricated_links("", site_config=self._sc()) == ""
+        assert _scrub_fabricated_links("") == ""
 
     def test_no_links_returns_unchanged(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         content = "This is plain text with no links at all."
-        assert _scrub_fabricated_links(content, site_config=self._sc()) == content
+        assert _scrub_fabricated_links(content) == content
 
     def test_multiple_fabricated_links_all_removed(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
@@ -429,7 +416,7 @@ class TestScrubFabricatedLinks:
             "See [tools](https://www.techtools.io/list) and "
             "[guide](https://www.fakesite.com/guide) for more."
         )
-        result = _scrub_fabricated_links(content, site_config=self._sc())
+        result = _scrub_fabricated_links(content)
         assert "techtools.io" not in result
         assert "fakesite.com" not in result
         assert "tools" in result  # Link texts kept
@@ -536,14 +523,6 @@ class TestParseModelPreferences:
 class TestCheckTitleOriginality:
     """Tests for title originality checking via web search."""
 
-    @staticmethod
-    def _mock_sc(enabled: bool = True, threshold: float = 0.6) -> MagicMock:
-        """Build a site_config mock matching the check_title_originality contract."""
-        mock_cfg = MagicMock()
-        mock_cfg.get_float.return_value = threshold
-        mock_cfg.get_bool.return_value = enabled
-        return mock_cfg
-
     @pytest.mark.asyncio
     async def test_original_title_passes(self):
         """Title with no web matches should be marked original."""
@@ -551,10 +530,12 @@ class TestCheckTitleOriginality:
         mock_researcher.search_simple = AsyncMock(return_value=[])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            result = await _check_title_originality(
-                "A Completely Unique Title Nobody Has Written",
-                site_config=self._mock_sc(),
-            )
+            with patch("services.site_config.site_config") as mock_cfg:
+                mock_cfg.get_float.return_value = 0.6
+                mock_cfg.get_bool.return_value = True
+                result = await _check_title_originality(
+                    "A Completely Unique Title Nobody Has Written"
+                )
 
         assert result["is_original"] is True
         assert result["similar_titles"] == []
@@ -569,10 +550,12 @@ class TestCheckTitleOriginality:
         ])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            result = await _check_title_originality(
-                "How AI Is Changing Healthcare in 2026",
-                site_config=self._mock_sc(),
-            )
+            with patch("services.site_config.site_config") as mock_cfg:
+                mock_cfg.get_float.return_value = 0.6
+                mock_cfg.get_bool.return_value = True
+                result = await _check_title_originality(
+                    "How AI Is Changing Healthcare in 2026"
+                )
 
         assert result["is_original"] is False
         assert len(result["similar_titles"]) >= 1
@@ -581,9 +564,10 @@ class TestCheckTitleOriginality:
     @pytest.mark.asyncio
     async def test_disabled_returns_original(self):
         """When disabled via config, should always return original."""
-        result = await _check_title_originality(
-            "Any Title", site_config=self._mock_sc(enabled=False),
-        )
+        with patch("services.site_config.site_config") as mock_cfg:
+            mock_cfg.get_float.return_value = 0.6
+            mock_cfg.get_bool.return_value = False
+            result = await _check_title_originality("Any Title")
 
         assert result["is_original"] is True
 
@@ -594,9 +578,10 @@ class TestCheckTitleOriginality:
         mock_researcher.search_simple = AsyncMock(side_effect=Exception("Network error"))
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            result = await _check_title_originality(
-                "Test Title", site_config=self._mock_sc(),
-            )
+            with patch("services.site_config.site_config") as mock_cfg:
+                mock_cfg.get_float.return_value = 0.6
+                mock_cfg.get_bool.return_value = True
+                result = await _check_title_originality("Test Title")
 
         assert result["is_original"] is True
 
@@ -609,10 +594,12 @@ class TestCheckTitleOriginality:
         ])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            result = await _check_title_originality(
-                "Understanding GPU Architecture for ML Workloads",
-                site_config=self._mock_sc(),
-            )
+            with patch("services.site_config.site_config") as mock_cfg:
+                mock_cfg.get_float.return_value = 0.6
+                mock_cfg.get_bool.return_value = True
+                result = await _check_title_originality(
+                    "Understanding GPU Architecture for ML Workloads"
+                )
 
         assert result["is_original"] is True
 
@@ -624,32 +611,26 @@ class TestCheckTitleOriginality:
 
 
 class TestScrubFabricatedLinksEdgeCases:
-    def _sc(self):
-        # Dedicated SiteConfig per test class — phase-H cleanup removed
-        # the module-level singleton. Pass a minimal config; tests that
-        # need specific keys construct inline.
-        from services.site_config import SiteConfig
-        return SiteConfig(initial_config={"site_domain": "test-site.example.com"})
-
     def test_subdomain_of_trusted_domain_kept(self):
         content = "[Wiki article](https://en.wikipedia.org/wiki/Python)"
-        result = _scrub_fabricated_links(content, site_config=self._sc())
+        result = _scrub_fabricated_links(content)
         assert "wikipedia.org" in result
 
     def test_link_inside_markdown_parens_not_double_processed(self):
         """Bare URL regex uses negative lookbehind to skip URLs inside markdown ()."""
         content = "[label](https://github.com/example/repo)"
-        result = _scrub_fabricated_links(content, site_config=self._sc())
+        result = _scrub_fabricated_links(content)
         # The full markdown link should pass through unchanged
         assert result == content
 
     def test_internal_post_link_with_no_slug_cache_kept(self):
         """Without a populated slug cache, internal /posts/ links pass through."""
-        from services.site_config import SiteConfig
-        site_config = SiteConfig(initial_config={"site_domain": "test-site.example.com"})
+        from services.site_config import site_config
         domain = site_config.get("site_domain", "")
+        if not domain:
+            return  # skip if no domain configured
         content = f"[older post](https://{domain}/posts/some-old-post)"
-        result = _scrub_fabricated_links(content, site_config=site_config)
+        result = _scrub_fabricated_links(content)
         assert "/posts/some-old-post" in result
 
 

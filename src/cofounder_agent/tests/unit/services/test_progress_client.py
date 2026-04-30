@@ -25,7 +25,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from clients.progress_client import WorkflowProgressClient, get_progress_client
-from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -67,27 +66,10 @@ def make_error_response():
 
 
 class TestWorkflowProgressClientInit:
-    def test_default_base_url_falls_back_to_bootstrap(self):
-        # No explicit URL → resolve from services.bootstrap_defaults
+    def test_default_base_url(self):
         client = WorkflowProgressClient()
-        assert client.base_url == DEFAULT_WORKER_API_URL.rstrip("/")
-        assert (
-            client.api_base
-            == f"{DEFAULT_WORKER_API_URL.rstrip('/')}/api/workflow-progress"
-        )
-
-    def test_default_base_url_uses_module_constant(self):
-        # If the bootstrap default changes, the client's default tracks it.
-        sentinel = "http://sentinel.invalid:9999"
-        with patch("clients.progress_client.DEFAULT_WORKER_API_URL", sentinel):
-            client = WorkflowProgressClient()
-        assert client.base_url == sentinel
-        assert client.api_base == f"{sentinel}/api/workflow-progress"
-
-    def test_explicit_none_resolves_to_bootstrap(self):
-        # Passing None explicitly should also pull from bootstrap.
-        client = WorkflowProgressClient(base_url=None)
-        assert client.base_url == DEFAULT_WORKER_API_URL.rstrip("/")
+        assert client.base_url == "http://localhost:8000"
+        assert client.api_base == "http://localhost:8000/api/workflow-progress"
 
     def test_custom_base_url(self):
         client = WorkflowProgressClient("http://api.example.com")
@@ -99,7 +81,7 @@ class TestWorkflowProgressClientInit:
         assert client.base_url == "http://api.example.com"
 
     def test_initial_state(self):
-        client = WorkflowProgressClient("http://api.example.com")
+        client = WorkflowProgressClient()
         assert client.session is None
         assert client.ws_connections == {}
 
@@ -112,7 +94,7 @@ class TestWorkflowProgressClientInit:
 class TestEnsureSession:
     @pytest.mark.asyncio
     async def test_creates_session_when_none(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
 
         with patch("aiohttp.ClientSession") as MockSession:
             MockSession.return_value = MagicMock()
@@ -123,7 +105,7 @@ class TestEnsureSession:
 
     @pytest.mark.asyncio
     async def test_reuses_open_session(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         mock_session = MagicMock()
         mock_session.closed = False
         client.session = mock_session
@@ -135,7 +117,7 @@ class TestEnsureSession:
 
     @pytest.mark.asyncio
     async def test_creates_new_session_if_closed(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         closed_session = MagicMock()
         closed_session.closed = True
         client.session = closed_session
@@ -156,7 +138,7 @@ class TestEnsureSession:
 class TestClose:
     @pytest.mark.asyncio
     async def test_close_with_no_connections(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         mock_session = MagicMock()
         mock_session.closed = False
         mock_session.close = AsyncMock()
@@ -167,7 +149,7 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_close_ws_connections(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         mock_ws = MagicMock()
         mock_ws.close = AsyncMock()
         client.ws_connections["exec-1"] = {"websocket": mock_ws}
@@ -182,7 +164,7 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_close_ignores_ws_close_error(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         mock_ws = MagicMock()
         mock_ws.close = AsyncMock(side_effect=Exception("ws error"))
         client.ws_connections["exec-1"] = {"websocket": mock_ws}
@@ -197,7 +179,7 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_close_skips_closed_session(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         mock_session = MagicMock()
         mock_session.closed = True
         mock_session.close = AsyncMock()
@@ -208,7 +190,7 @@ class TestClose:
 
     @pytest.mark.asyncio
     async def test_close_no_session(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         # Should not raise
         await client.close()
 
@@ -221,7 +203,7 @@ class TestClose:
 class TestInitializeProgress:
     @pytest.mark.asyncio
     async def test_sends_post_to_correct_url(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"status": "initialized"})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -237,7 +219,7 @@ class TestInitializeProgress:
 
     @pytest.mark.asyncio
     async def test_raises_on_http_error(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         import aiohttp
 
         cm = make_error_response()
@@ -259,7 +241,7 @@ class TestInitializeProgress:
 class TestStartExecution:
     @pytest.mark.asyncio
     async def test_sends_post_to_start_url(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"status": "running"})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -274,7 +256,7 @@ class TestStartExecution:
 
     @pytest.mark.asyncio
     async def test_default_message(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"status": "running"})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -295,7 +277,7 @@ class TestStartExecution:
 class TestStartPhase:
     @pytest.mark.asyncio
     async def test_sends_phase_params(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"current_phase": 1})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -313,7 +295,7 @@ class TestStartPhase:
 
     @pytest.mark.asyncio
     async def test_message_included_when_provided(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -327,7 +309,7 @@ class TestStartPhase:
 
     @pytest.mark.asyncio
     async def test_no_message_key_when_none(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -348,7 +330,7 @@ class TestStartPhase:
 class TestCompletePhase:
     @pytest.mark.asyncio
     async def test_sends_phase_output_in_body(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"completed_phases": 1})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -366,7 +348,7 @@ class TestCompletePhase:
 
     @pytest.mark.asyncio
     async def test_no_duration_when_none(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -387,7 +369,7 @@ class TestCompletePhase:
 class TestFailPhase:
     @pytest.mark.asyncio
     async def test_sends_error_param(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"status": "failed"})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -411,7 +393,7 @@ class TestFailPhase:
 class TestMarkComplete:
     @pytest.mark.asyncio
     async def test_sends_final_output_in_body(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"status": "completed"})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -429,7 +411,7 @@ class TestMarkComplete:
 
     @pytest.mark.asyncio
     async def test_default_message(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -450,7 +432,7 @@ class TestMarkComplete:
 class TestMarkFailed:
     @pytest.mark.asyncio
     async def test_sends_error_and_optional_phase(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"status": "failed"})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -467,7 +449,7 @@ class TestMarkFailed:
 
     @pytest.mark.asyncio
     async def test_no_failed_phase_when_omitted(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -488,7 +470,7 @@ class TestMarkFailed:
 class TestGetStatus:
     @pytest.mark.asyncio
     async def test_sends_get_to_status_url(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"status": "running", "progress_percent": 50})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -503,7 +485,7 @@ class TestGetStatus:
 
     @pytest.mark.asyncio
     async def test_raises_on_http_error(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         import aiohttp
 
         cm = make_error_response()
@@ -524,7 +506,7 @@ class TestGetStatus:
 class TestCleanup:
     @pytest.mark.asyncio
     async def test_sends_delete_to_cleanup_url(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         cm, resp = make_mock_response({"deleted": True})
         mock_session = MagicMock()
         mock_session.closed = False
@@ -546,7 +528,7 @@ class TestCleanup:
 class TestUnsubscribeProgress:
     @pytest.mark.asyncio
     async def test_closes_websocket_and_removes_connection(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         mock_ws = MagicMock()
         mock_ws.close = AsyncMock()
         client.ws_connections["exec-1"] = {"websocket": mock_ws}
@@ -558,13 +540,13 @@ class TestUnsubscribeProgress:
 
     @pytest.mark.asyncio
     async def test_does_nothing_for_unknown_execution(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         # Should not raise
         await client.unsubscribe_progress("nonexistent")
 
     @pytest.mark.asyncio
     async def test_removes_connection_even_if_close_fails(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         mock_ws = MagicMock()
         mock_ws.close = AsyncMock(side_effect=Exception("close error"))
         client.ws_connections["exec-1"] = {"websocket": mock_ws}
@@ -575,7 +557,7 @@ class TestUnsubscribeProgress:
 
     @pytest.mark.asyncio
     async def test_handles_missing_websocket_key(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         client.ws_connections["exec-1"] = {}  # No "websocket" key
 
         # Should not raise
@@ -591,7 +573,7 @@ class TestUnsubscribeProgress:
 class TestSubscribeProgress:
     @pytest.mark.asyncio
     async def test_raises_on_connect_failure_no_reconnect(self):
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
 
         async def dummy_callback(data):
             pass
@@ -605,7 +587,7 @@ class TestSubscribeProgress:
         """subscribe_progress calls sync callbacks directly."""
         import json as json_mod
 
-        client = WorkflowProgressClient("http://test.invalid")
+        client = WorkflowProgressClient()
         received = []
 
         def sync_cb(data):
@@ -639,13 +621,7 @@ class TestGetProgressClient:
     def test_returns_progress_client_instance(self):
         client = get_progress_client()
         assert isinstance(client, WorkflowProgressClient)
-        assert client.base_url == DEFAULT_WORKER_API_URL.rstrip("/")
-
-    def test_default_tracks_bootstrap_constant(self):
-        sentinel = "http://sentinel-helper.invalid:1234"
-        with patch("clients.progress_client.DEFAULT_WORKER_API_URL", sentinel):
-            client = get_progress_client()
-        assert client.base_url == sentinel
+        assert client.base_url == "http://localhost:8000"
 
     def test_custom_url_passed_through(self):
         client = get_progress_client("http://custom.example.com")

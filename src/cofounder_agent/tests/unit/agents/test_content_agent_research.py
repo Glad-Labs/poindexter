@@ -15,10 +15,6 @@ import pytest
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
 
-from services.site_config import SiteConfig  # noqa: E402
-
-_RA_SC = SiteConfig()
-
 
 # ---------------------------------------------------------------------------
 # ResearchAgent — initialization
@@ -33,7 +29,7 @@ class TestResearchAgentInit:
                 from agents.content_agent.agents.research_agent import ResearchAgent
 
                 with pytest.raises(ValueError, match="SERPER_API_KEY"):
-                    ResearchAgent(site_config=_RA_SC)
+                    ResearchAgent()
 
     def test_initializes_with_serper_api_key(self):
         with (
@@ -46,7 +42,7 @@ class TestResearchAgentInit:
 
             from agents.content_agent.agents.research_agent import ResearchAgent
 
-            agent = ResearchAgent(site_config=_RA_SC)
+            agent = ResearchAgent()
             assert agent.serper_api_key == "test-serper-key"
 
     def test_uses_empty_tools_when_factory_raises(self):
@@ -60,7 +56,7 @@ class TestResearchAgentInit:
 
             from agents.content_agent.agents.research_agent import ResearchAgent
 
-            agent = ResearchAgent(site_config=_RA_SC)
+            agent = ResearchAgent()
             assert agent.tools == []
 
 
@@ -84,7 +80,7 @@ class TestResearchAgentRun:
 
             from agents.content_agent.agents.research_agent import ResearchAgent
 
-            agent = ResearchAgent(site_config=_RA_SC)
+            agent = ResearchAgent()
 
             # Patch httpx.AsyncClient to raise HTTP error
             with patch(
@@ -113,7 +109,7 @@ class TestResearchAgentRun:
 
             from agents.content_agent.agents.research_agent import ResearchAgent
 
-            agent = ResearchAgent(site_config=_RA_SC)
+            agent = ResearchAgent()
 
             with patch(
                 "agents.content_agent.agents.research_agent.httpx.AsyncClient"
@@ -148,7 +144,7 @@ class TestResearchAgentRun:
 
             from agents.content_agent.agents.research_agent import ResearchAgent
 
-            agent = ResearchAgent(site_config=_RA_SC)
+            agent = ResearchAgent()
 
             mock_post_response = MagicMock()
             mock_post_response.raise_for_status.return_value = None

@@ -81,86 +81,12 @@ def get_gpu_metrics():
         return f"# error: {e}\n"
 
 
-def _escape_label_value(value: str) -> str:
-    """Escape a Prometheus label value: backslash, quote, newline."""
-    return (
-        value.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-    )
-
-
-def get_compute_apps_metrics():
-    """Query nvidia-smi for per-process VRAM use and emit metrics.
-
-    Lets the worker's gpu_scheduler distinguish "we're using our own
-    GPU" from "an external process (like a game) is using the GPU."
-    Without this, the scheduler pauses the pipeline whenever
-    wan-server / sdxl-server / ollama hold VRAM idle, which is a
-    false positive — they're ours, we asked for them.
-
-    Output is one ``nvidia_gpu_compute_apps_used_memory_mib`` gauge
-    per active GPU compute process, labeled with the PID and the
-    process name. The scheduler sums the memory of processes whose
-    name isn't in its whitelist; only a non-zero external sum
-    triggers a pause.
-    """
-    try:
-        result = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-compute-apps=pid,process_name,used_memory",
-                "--format=csv,noheader,nounits",
-            ],
-            capture_output=True, text=True, timeout=5, **_SUBPROCESS_KWARGS,
-        )
-        if result.returncode != 0:
-            return ""
-
-        lines = [
-            "# HELP nvidia_gpu_compute_apps_used_memory_mib VRAM in MiB used by each GPU compute process",
-            "# TYPE nvidia_gpu_compute_apps_used_memory_mib gauge",
-        ]
-        for entry in result.stdout.strip().splitlines():
-            entry = entry.strip()
-            if not entry:
-                continue
-            # CSV: "<pid>, <process_name>, <used_memory_mib>"
-            parts = [p.strip() for p in entry.split(",")]
-            if len(parts) < 3:
-                continue
-            pid, name, mem = parts[0], parts[1], parts[2]
-            try:
-                mem_val = float(mem)
-            except (TypeError, ValueError):
-                continue
-            lines.append(
-                f'nvidia_gpu_compute_apps_used_memory_mib{{pid="{_escape_label_value(pid)}",name="{_escape_label_value(name)}"}} {mem_val}'
-            )
-        return "\n".join(lines) + "\n"
-    except Exception:
-        return ""
-
-
 def get_cpu_power_metrics():
     """Read CPU power from Windows Energy Meter performance counters (AMD RAPL).
     Returns Prometheus-format metrics string.
     """
     if sys.platform != "win32":
         return ""
-    # 2026-04-25: this function used to shell out to
-    # ``powershell.exe Get-Counter '\Energy Meter(*)\Power'`` every
-    # scrape. Despite passing CREATE_NO_WINDOW + STARTUPINFO with
-    # SW_HIDE, the powershell.exe child still flashed a brief black
-    # console window in the top-left of the screen on every Prometheus
-    # scrape (~15s). Confirmed via process monitoring:
-    # ``powershell.exe parent=pythonw.exe`` was the only repeating
-    # offender. The CPU energy-meter readout is useful but not
-    # critical, and a long-lived ``Get-Counter`` over a separate
-    # background pipe would be more code than this earns. Disabled
-    # for now; revisit by reading RAPL counters via PDH/pywin32 if
-    # we want them back without the popup tax.
-    return "# cpu power: disabled (see comment in nvidia-smi-exporter.py)\n"
     try:
         ps_script = (
             "Get-Counter '\\Energy Meter(*)\\Power' -ErrorAction Stop | "
@@ -640,7 +566,6 @@ class MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/metrics":
             gpu = get_gpu_metrics()
-            apps = get_compute_apps_metrics()
             cpu = get_cpu_power_metrics()
             aida = get_aida64_metrics()
             hwinfo = get_hwinfo_metrics()
@@ -648,7 +573,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
             total = get_total_power_metrics(gpu, cpu)
             # Combine all sources — AIDA64/HWiNFO/lm-sensors complement each other
             # liquidctl removed: fights iCUE/AIDA64 for Corsair USB; HWiNFO covers PSU via shared memory
-            body = (gpu + apps + cpu + aida + hwinfo + lm + total).encode()
+            body = (gpu + cpu + aida + hwinfo + lm + total).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4")
             self.send_header("Content-Length", str(len(body)))

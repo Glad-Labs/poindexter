@@ -29,7 +29,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase
 
-from services.site_config import SiteConfig
+from services.site_config import site_config
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy base + engine (read-only reflection of asyncpg-managed tables)
@@ -343,12 +343,8 @@ class WritingSampleAdmin(ModelView, model=WritingSample):
 # ---------------------------------------------------------------------------
 
 
-def setup_admin(app, site_config: SiteConfig):
+def setup_admin(app):
     """Mount SQLAdmin on /admin. Call after FastAPI app is created.
-
-    ``site_config`` is the module-level SiteConfig instance owned by
-    ``main.py`` (Phase H step 5 — no more module singleton). Only used for
-    the admin-panel title.
 
     SECURITY: Disabled in production — no authentication backend configured.
     Only available when ENVIRONMENT != 'production' (i.e., local development).

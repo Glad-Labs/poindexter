@@ -51,7 +51,7 @@ export default function Hero() {
         fully autonomous. Ollama only — no paid APIs.
       </p>
       <div style={{ display: 'flex', gap: '0.625rem', marginTop: '1.5rem' }}>
-        <Button variant="primary">▶ Start 7-day free trial</Button>
+        <Button variant="primary">▶ Get the guide — $29</Button>
         <Button variant="secondary">Read the docs</Button>
       </div>
     </section>

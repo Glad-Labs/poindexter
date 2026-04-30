@@ -30,15 +30,6 @@ def _patch_validator(urls, results):
     return patch("services.url_validator.get_url_validator", return_value=v)
 
 
-# Phase H step 5 (GH#95): stages read site_config from the context dict.
-_FAKE_SITE_CONFIG = SimpleNamespace(
-    get=lambda _k, _d=None: _d,
-    get_int=lambda _k, _d=0: _d,
-    get_float=lambda _k, _d=0.0: _d,
-    get_bool=lambda _k, _d=False: _d,
-)
-
-
 @pytest.mark.asyncio
 class TestExecute:
     async def test_empty_content_returns_zero_counts(self):
@@ -51,7 +42,6 @@ class TestExecute:
             "task_id": "abc12345",
             "content": "check https://ok.example and https://bad.example",
             "database_service": MagicMock(pool=MagicMock()),
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with _patch_validator(
             urls=["https://ok.example", "https://bad.example"],
@@ -68,7 +58,6 @@ class TestExecute:
         ctx: dict[str, Any] = {
             "content": "no links here",
             "database_service": MagicMock(pool=MagicMock()),
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with _patch_validator(urls=[], results={}):
             result = await UrlValidationStage().execute(ctx, {})
@@ -80,7 +69,6 @@ class TestExecute:
         ctx: dict[str, Any] = {
             "content": "has urls",
             "database_service": MagicMock(pool=MagicMock()),
-            "site_config": _FAKE_SITE_CONFIG,
         }
         broken_v = SimpleNamespace(
             extract_urls=lambda _c: ["https://x.example"],

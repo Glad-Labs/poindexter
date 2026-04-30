@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -37,22 +38,8 @@ def _truncate(text: str, limit: int = _MAX_POST_CHARS) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
-async def post_to_bluesky(
-    text: str,
-    url: str,
-    *,
-    site_config: Any,
-    **kwargs: Any,
-) -> dict:
+async def post_to_bluesky(text: str, url: str, **kwargs: Any) -> dict:
     """Post a status to Bluesky.
-
-    Args:
-        text: post body text
-        url: URL to share (appended if not already in ``text``)
-        site_config: SiteConfig instance (DI — Phase H, GH#95). Must be
-            passed explicitly — the module-level singleton import was
-            removed so tests can construct isolated mocks and the adapter
-            never reads global state.
 
     Returns::
 

@@ -17,38 +17,16 @@ from services.quality_service import (
     get_content_quality_service,
     get_quality_service,
 )
-from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-def _sc() -> SiteConfig:
-    """Fresh SiteConfig instance — Phase H DI (GH#95).
-
-    Stand-alone SiteConfig reads env vars / falls back to defaults so
-    pattern scorers get deterministic thresholds without any DB
-    interaction.
-    """
-    return SiteConfig()
-
-
-def _make_svc_for_llm_patterns() -> UnifiedQualityService:
-    """Build a UnifiedQualityService with a fresh SiteConfig for
-    _score_llm_patterns tests.
-
-    _score_llm_patterns moved from a @staticmethod to an instance method
-    in Phase H (GH#95) — it now reads qa_llm_* tunables off the injected
-    site_config. This helper keeps the test call-sites short.
-    """
-    return UnifiedQualityService(site_config=_sc())
-
-
 @pytest.fixture
 def svc() -> UnifiedQualityService:
     """Service instance with no dependencies (no DB, no LLM)."""
-    return UnifiedQualityService(site_config=_sc())
+    return UnifiedQualityService()
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +180,7 @@ class TestTruncationDetection:
 
     def test_completeness_penalty_on_truncation(self, svc=None):
         """Truncated content should receive a completeness score penalty."""
-        svc = UnifiedQualityService(site_config=_sc())
+        svc = UnifiedQualityService()
         complete = " ".join(["word"] * 549) + " final sentence."
         truncated = " ".join(["word"] * 549) + " this sentence never finishes and keeps going"
         score_complete = svc._score_completeness(complete, {})
@@ -525,7 +503,7 @@ class TestEvaluateLLMPath:
             '"seo_quality": 7, "readability": 8, "engagement": 9, '
             '"feedback": "Good post overall.", "suggestions": ["add more examples"]}'
         ))
-        svc = UnifiedQualityService(llm_client=llm, site_config=_sc())
+        svc = UnifiedQualityService(llm_client=llm)
         result = await svc.evaluate(
             "Test content.",
             context={"topic": "x"},
@@ -545,7 +523,7 @@ class TestEvaluateLLMPath:
             '{"clarity": 15, "accuracy": -3, "completeness": 7, "relevance": 7, '
             '"seo_quality": 7, "readability": 7, "engagement": 7}'
         ))
-        svc = UnifiedQualityService(llm_client=llm, site_config=_sc())
+        svc = UnifiedQualityService(llm_client=llm)
         result = await svc.evaluate(
             "x",
             method=EvaluationMethod.LLM_BASED,
@@ -563,7 +541,7 @@ class TestEvaluateLLMPath:
             '{"clarity": "not a number", "accuracy": 8, "completeness": 7, '
             '"relevance": 7, "seo_quality": 7, "readability": 7, "engagement": 7}'
         ))
-        svc = UnifiedQualityService(llm_client=llm, site_config=_sc())
+        svc = UnifiedQualityService(llm_client=llm)
         result = await svc.evaluate(
             "x",
             method=EvaluationMethod.LLM_BASED,
@@ -576,7 +554,7 @@ class TestEvaluateLLMPath:
     async def test_llm_no_json_falls_back_to_pattern(self):
         llm = AsyncMock()
         llm.generate_text = AsyncMock(return_value="just some text without any JSON")
-        svc = UnifiedQualityService(llm_client=llm, site_config=_sc())
+        svc = UnifiedQualityService(llm_client=llm)
         result = await svc.evaluate(
             "Plain content.",
             method=EvaluationMethod.LLM_BASED,
@@ -589,7 +567,7 @@ class TestEvaluateLLMPath:
     async def test_llm_call_raises_falls_back_to_pattern(self):
         llm = AsyncMock()
         llm.generate_text = AsyncMock(side_effect=RuntimeError("ollama unreachable"))
-        svc = UnifiedQualityService(llm_client=llm, site_config=_sc())
+        svc = UnifiedQualityService(llm_client=llm)
         result = await svc.evaluate(
             "Plain content.",
             method=EvaluationMethod.LLM_BASED,
@@ -616,7 +594,7 @@ class TestEvaluateHybridPath:
             '{"clarity": 10, "accuracy": 10, "completeness": 10, "relevance": 10, '
             '"seo_quality": 10, "readability": 10, "engagement": 10}'
         ))
-        svc = UnifiedQualityService(llm_client=llm, site_config=_sc())
+        svc = UnifiedQualityService(llm_client=llm)
         result = await svc.evaluate(
             "Hybrid combined evaluation content for testing.",
             method=EvaluationMethod.HYBRID,
@@ -631,7 +609,7 @@ class TestEvaluateHybridPath:
         """If LLM fails inside hybrid, the pattern-based result is returned (not HYBRID)."""
         llm = AsyncMock()
         llm.generate_text = AsyncMock(side_effect=Exception("oops"))
-        svc = UnifiedQualityService(llm_client=llm, site_config=_sc())
+        svc = UnifiedQualityService(llm_client=llm)
         result = await svc.evaluate(
             "x",
             method=EvaluationMethod.HYBRID,
@@ -659,14 +637,14 @@ class TestEvaluateErrorPath:
 class TestStoreEvaluation:
     @pytest.mark.asyncio
     async def test_no_database_service_skips_persistence(self):
-        svc = UnifiedQualityService(database_service=None, site_config=_sc())
+        svc = UnifiedQualityService(database_service=None)
         await svc.evaluate("x", store_result=True)  # should not raise
 
     @pytest.mark.asyncio
     async def test_no_task_id_in_context_skips_persistence(self):
         db = AsyncMock()
         db.create_quality_evaluation = AsyncMock()
-        svc = UnifiedQualityService(database_service=db, site_config=_sc())
+        svc = UnifiedQualityService(database_service=db)
         await svc.evaluate("x", context={}, store_result=True)
         db.create_quality_evaluation.assert_not_awaited()
 
@@ -674,7 +652,7 @@ class TestStoreEvaluation:
     async def test_with_task_id_persists(self):
         db = AsyncMock()
         db.create_quality_evaluation = AsyncMock()
-        svc = UnifiedQualityService(database_service=db, site_config=_sc())
+        svc = UnifiedQualityService(database_service=db)
         await svc.evaluate(
             "Sample content for persistence test.",
             context={"task_id": "task-uuid-123", "topic": "x"},
@@ -692,7 +670,7 @@ class TestStoreEvaluation:
     async def test_falls_back_to_content_id(self):
         db = AsyncMock()
         db.create_quality_evaluation = AsyncMock()
-        svc = UnifiedQualityService(database_service=db, site_config=_sc())
+        svc = UnifiedQualityService(database_service=db)
         await svc.evaluate(
             "x",
             context={"content_id": "content-456"},
@@ -704,7 +682,7 @@ class TestStoreEvaluation:
     async def test_db_failure_does_not_propagate(self):
         db = AsyncMock()
         db.create_quality_evaluation = AsyncMock(side_effect=RuntimeError("db down"))
-        svc = UnifiedQualityService(database_service=db, site_config=_sc())
+        svc = UnifiedQualityService(database_service=db)
         # Should swallow the exception, not raise
         result = await svc.evaluate(
             "x",
@@ -860,7 +838,7 @@ class TestScoreLLMPatterns:
             "## Deployment\n\n"
             "Docker image size matters. Use python:3.12-slim as the base."
         )
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert penalty <= 0
         assert penalty >= -2.0
 
@@ -871,7 +849,7 @@ class TestScoreLLMPatterns:
             "In today's digital landscape, AI is transforming everything. "
             "Real content here."
         )
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("opener" in i.lower() for i in issues)
         assert penalty < 0
 
@@ -883,7 +861,7 @@ class TestScoreLLMPatterns:
             "Our robust, seamless, game-changing solution will revolutionize your workflow. "
             "This transformative, disruptive technology is truly next-generation."
         )
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("buzzword" in i.lower() for i in issues)
         assert penalty < -1.0
 
@@ -895,7 +873,7 @@ class TestScoreLLMPatterns:
             "it should be mentioned that needless to say, "
             "the bottom line is at the end of the day, you need a DB."
         )
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("filler" in i.lower() for i in issues)
 
     def test_generic_transitions_penalized(self):
@@ -907,7 +885,7 @@ class TestScoreLLMPatterns:
             "To summarize, use Python.\n\n"
             "Final thoughts: Python wins.\n"
         )
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("transition" in i.lower() for i in issues)
 
     def test_repetitive_starters_penalized(self):
@@ -918,25 +896,25 @@ class TestScoreLLMPatterns:
             "The system is secure. The system is maintained. The system is documented. "
             "The system runs nightly."
         )
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("repetitive" in i.lower() for i in issues)
 
     def test_listicle_title_penalized(self):
         from services.quality_service import UnifiedQualityService
         content = "# 10 Ways to Speed Up Your Python Code\n\nReal content."
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("listicle" in i.lower() or "guide" in i.lower() for i in issues)
 
     def test_ultimate_guide_title_penalized(self):
         from services.quality_service import UnifiedQualityService
         content = "# The Ultimate Guide to Docker\n\nReal content."
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("listicle" in i.lower() or "guide" in i.lower() for i in issues)
 
     def test_exclamation_spam_penalized(self):
         from services.quality_service import UnifiedQualityService
         content = "# Post\n\nThis is amazing! Really cool! Totally! Awesome! Incredible! Wow!"
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("exclamation" in i.lower() for i in issues)
 
     def test_over_hedging_penalized(self):
@@ -946,7 +924,7 @@ class TestScoreLLMPatterns:
             "Python might be potentially useful and perhaps arguably could "
             "possibly may be somewhat useful."
         )
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("hedg" in i.lower() for i in issues)
 
     def test_formulaic_structure_penalized(self):
@@ -959,21 +937,23 @@ class TestScoreLLMPatterns:
             f"## Section C\n{section}\n\n"
             f"## Section D\n{section}"
         )
-        penalty, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        penalty, issues = UnifiedQualityService._score_llm_patterns(content)
         assert any("formulaic" in i.lower() for i in issues)
 
     def test_penalty_returns_tuple_of_two(self):
-        result = _make_svc_for_llm_patterns()._score_llm_patterns("# Post\n\nClean content.")
+        from services.quality_service import UnifiedQualityService
+        result = UnifiedQualityService._score_llm_patterns("# Post\n\nClean content.")
         assert isinstance(result, tuple)
         assert len(result) == 2
 
     def test_penalty_is_float(self):
-        penalty, _ = _make_svc_for_llm_patterns()._score_llm_patterns("# Post\n\nClean.")
+        from services.quality_service import UnifiedQualityService
+        penalty, _ = UnifiedQualityService._score_llm_patterns("# Post\n\nClean.")
         assert isinstance(penalty, float)
 
     def test_issues_is_list_of_strings(self):
         from services.quality_service import UnifiedQualityService
         content = "# Top 10 Ways to Leverage Synergy\n\nIn today's digital landscape."
-        _, issues = _make_svc_for_llm_patterns()._score_llm_patterns(content)
+        _, issues = UnifiedQualityService._score_llm_patterns(content)
         assert isinstance(issues, list)
         assert all(isinstance(i, str) for i in issues)

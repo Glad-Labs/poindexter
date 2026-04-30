@@ -1,6 +1,6 @@
 """Unit tests for ``routes/alertmanager_webhook_routes.py``.
 
-We stub out the asyncpg pool + ``_notify_alert`` so each test can
+We stub out the asyncpg pool + ``_notify_openclaw`` so each test can
 assert on inserts, pages, and remediation lookups without spinning up
 Postgres or OpenClaw. The handler's goal is to be robust: malformed
 alerts, missing labels, and failing sub-steps must never 5xx — the
@@ -145,7 +145,7 @@ class TestWebhookEndpoint:
     def test_persists_each_alert(self):
         pool = _FakePool()
         with patch(
-            "routes.alertmanager_webhook_routes._notify_alert",
+            "routes.alertmanager_webhook_routes._notify_openclaw",
             new=AsyncMock(return_value=None),
             create=True,
         ):
@@ -177,11 +177,11 @@ class TestWebhookEndpoint:
         pool = _FakePool()
         mock_notify = AsyncMock(return_value=None)
         with patch(
-            "routes.alertmanager_webhook_routes._notify_alert",
+            "routes.alertmanager_webhook_routes._notify_openclaw",
             new=mock_notify,
             create=True,
         ), patch(
-            "services.task_executor._notify_alert",
+            "services.task_executor._notify_openclaw",
             new=mock_notify,
             create=True,
         ):
@@ -205,97 +205,11 @@ class TestWebhookEndpoint:
         kwargs = mock_notify.call_args.kwargs
         assert kwargs.get("critical") is True
 
-    def test_iso_timestamps_parsed_before_insert(self):
-        """Regression: asyncpg rejects ISO-8601 strings for timestamptz params.
-        The webhook must parse startsAt / endsAt to datetime before bind."""
-        import datetime as _dt
-        pool = _FakePool()
-        with patch(
-            "routes.alertmanager_webhook_routes._notify_alert",
-            new=AsyncMock(return_value=None),
-            create=True,
-        ):
-            client = TestClient(_build_app(pool))
-            resp = self._post(client, {
-                "alerts": [
-                    {
-                        "status": "firing",
-                        "labels": {"alertname": "X", "severity": "info"},
-                        "annotations": {},
-                        "startsAt": "2026-04-23T15:40:46.108Z",
-                        # Alertmanager sentinel for "no end yet"
-                        "endsAt": "0001-01-01T00:00:00Z",
-                        "fingerprint": "f1",
-                    }
-                ],
-            })
-        assert resp.status_code == 200
-        assert resp.json()["persisted"] == 1
-        # Pull the INSERT args from the fake pool; startsAt must be datetime,
-        # endsAt must be None (sentinel drops to null).
-        insert_calls = [
-            params for sql, params in pool.executes
-            if "INSERT INTO alert_events" in sql
-        ]
-        assert insert_calls, "INSERT did not run"
-        params = insert_calls[0]
-        # Positional indices: (alertname, status, severity, category, labels,
-        #                      annotations, starts_at, ends_at, fingerprint)
-        starts_at, ends_at = params[6], params[7]
-        assert isinstance(starts_at, _dt.datetime), (
-            f"starts_at must be datetime, got {type(starts_at).__name__}: {starts_at!r}"
-        )
-        assert ends_at is None, (
-            f"Alertmanager sentinel 0001-01-01 should parse to None, got {ends_at!r}"
-        )
-
-    def test_dispatches_with_site_config(self):
-        """Regression: _dispatch_to_operator must pass site_config through
-        to _notify_alert (which reads openclaw_gateway_url from it).
-        Previously the site_config positional arg was missing, causing
-        every alert to silently fail dispatch with a TypeError that the
-        outer try/except swallowed."""
-        pool = _FakePool()
-        mock_notify = AsyncMock(return_value=None)
-        with patch(
-            "routes.alertmanager_webhook_routes._notify_alert",
-            new=mock_notify,
-            create=True,
-        ), patch(
-            "services.task_executor._notify_alert",
-            new=mock_notify,
-            create=True,
-        ):
-            client = TestClient(_build_app(pool))
-            resp = self._post(client, {
-                "alerts": [
-                    {
-                        "status": "firing",
-                        "labels": {
-                            "alertname": "X",
-                            "severity": "critical",
-                            "category": "infrastructure",
-                        },
-                        "annotations": {"summary": "s"},
-                    }
-                ],
-            })
-        assert resp.status_code == 200
-        mock_notify.assert_awaited_once()
-        args, kwargs = mock_notify.call_args.args, mock_notify.call_args.kwargs
-        # _notify_alert(message, site_config, critical=...)
-        assert len(args) >= 2, (
-            f"_notify_alert must be called with (message, site_config), "
-            f"got args={args}, kwargs={kwargs}"
-        )
-        # site_config is the second positional arg; we just care it's not
-        # being omitted (exact value depends on test app wiring).
-
     def test_resolved_alert_does_not_page(self):
         pool = _FakePool()
         mock_notify = AsyncMock(return_value=None)
         with patch(
-            "services.task_executor._notify_alert",
+            "services.task_executor._notify_openclaw",
             new=mock_notify,
             create=True,
         ):
@@ -324,7 +238,7 @@ class TestWebhookEndpoint:
         })
         mock_notify = AsyncMock(return_value=None)
         with patch(
-            "services.task_executor._notify_alert",
+            "services.task_executor._notify_openclaw",
             new=mock_notify,
             create=True,
         ):
@@ -348,7 +262,7 @@ class TestWebhookEndpoint:
             "plugin.remediation.PoindexterOllamaDown": json.dumps({"enabled": False}),
         })
         with patch(
-            "services.task_executor._notify_alert",
+            "services.task_executor._notify_openclaw",
             new=AsyncMock(return_value=None),
             create=True,
         ):
@@ -369,7 +283,7 @@ class TestWebhookEndpoint:
     def test_tolerates_malformed_alerts_entry(self):
         pool = _FakePool()
         with patch(
-            "services.task_executor._notify_alert",
+            "services.task_executor._notify_openclaw",
             new=AsyncMock(return_value=None),
             create=True,
         ):

@@ -236,14 +236,8 @@ class TestWaitForGamingClear:
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=10.0)  # below threshold
 
-        # Phase H step 5.4 (GH#95): don't patch the module singleton. _cfg_int
-        # already falls back to the supplied default when site_config lacks the
-        # gpu_* keys (conftest seeds brand keys only), so the test just uses
-        # the hardcoded defaults — same behavior as `lambda k, d: d`.
-        # _cfg_str also needs forcing to "auto" — _DEFAULT_GAMING_MODE is "off"
-        # since GH#144, which short-circuits before _get_gpu_utilization is called.
-        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d), \
-             patch("services.gpu_scheduler._cfg_str", side_effect=lambda sc, k, d: "auto"):
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get_int.side_effect = lambda k, d: d  # use defaults
             await scheduler._wait_for_gaming_clear()
         # Did not enter gaming-detected state
         assert scheduler._gaming_detected is False
@@ -259,7 +253,8 @@ class TestWaitForGamingClear:
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=None)
 
-        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d):
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get_int.side_effect = lambda k, d: d
             await scheduler._wait_for_gaming_clear()
         # No exception, no gaming flag set
         assert scheduler._gaming_detected is False
@@ -275,8 +270,9 @@ class TestWaitForGamingClear:
         # First check: 90% (high), second check: 5% (idle)
         scheduler._get_gpu_utilization = AsyncMock(side_effect=[90.0, 5.0])
 
-        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d), \
+        with patch("services.site_config.site_config") as mock_sc, \
              patch("asyncio.sleep", new=AsyncMock()):
+            mock_sc.get_int.side_effect = lambda k, d: d
             await scheduler._wait_for_gaming_clear()
         # Was just a spike — gaming not flagged
         assert scheduler._gaming_detected is False
@@ -294,8 +290,8 @@ class TestWaitForGamingClear:
         scheduler._gaming_paused_since = time.monotonic() - 60.0
         scheduler._get_gpu_utilization = AsyncMock(return_value=5.0)
 
-        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d), \
-             patch("services.gpu_scheduler._cfg_str", side_effect=lambda sc, k, d: "auto"):
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get_int.side_effect = lambda k, d: d
             await scheduler._wait_for_gaming_clear()
 
         assert scheduler._gaming_detected is False
@@ -377,12 +373,8 @@ class TestUnloadSdxl:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from services.gpu_scheduler import GPUScheduler
-        from services.site_config import SiteConfig
 
-        # Phase H (GH#95): GPUScheduler now reads sdxl_server_url off
-        # self._site_config, not a module-level _sc_get helper.
-        sc = SiteConfig(initial_config={"sdxl_server_url": "http://localhost:9836"})
-        scheduler = GPUScheduler(site_config=sc)
+        scheduler = GPUScheduler()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
@@ -391,7 +383,8 @@ class TestUnloadSdxl:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.post = AsyncMock(return_value=mock_resp)
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
             await scheduler._unload_sdxl()
 
         mock_client.post.assert_awaited_once()
@@ -403,16 +396,15 @@ class TestUnloadSdxl:
         from unittest.mock import AsyncMock, patch
 
         from services.gpu_scheduler import GPUScheduler
-        from services.site_config import SiteConfig
 
-        sc = SiteConfig(initial_config={"sdxl_server_url": "http://localhost:9836"})
-        scheduler = GPUScheduler(site_config=sc)
+        scheduler = GPUScheduler()
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
             # Should not raise
             await scheduler._unload_sdxl()
 
@@ -440,9 +432,8 @@ class TestPropertiesAndConfig:
 
         from services.gpu_scheduler import GPUScheduler
         scheduler = GPUScheduler()
-        # Phase H step 5.4 (GH#95): patch the local _cfg_int helper instead
-        # of the module singleton so this test survives singleton deletion.
-        with patch("services.gpu_scheduler._cfg_int", side_effect=lambda sc, k, d: d):
+        with patch("services.site_config.site_config") as mock_sc:
+            mock_sc.get_int.side_effect = lambda k, d: d
             status = scheduler.status
         assert "config" in status
         assert "threshold_percent" in status["config"]
@@ -451,28 +442,33 @@ class TestPropertiesAndConfig:
         assert status["gaming_detected"] is False
 
     def test_cfg_int_defaults_when_site_config_missing(self):
-        """Phase H (GH#95): _cfg_int takes site_config explicitly and
-        returns the default when it's None."""
+        from unittest.mock import patch
+
         from services.gpu_scheduler import _cfg_int
 
-        result = _cfg_int(None, "any_key", 42)
+        with patch.dict("sys.modules", {"services.site_config": None}):
+            result = _cfg_int("any_key", 42)
+        # Falls back to default since import fails
         assert result == 42
 
     def test_cfg_float_defaults_when_site_config_missing(self):
-        """Phase H (GH#95): _cfg_float takes site_config explicitly and
-        returns the default when it's None."""
+        from unittest.mock import patch
+
         from services.gpu_scheduler import _cfg_float
 
-        result = _cfg_float(None, "any_key", 3.14)
+        with patch.dict("sys.modules", {"services.site_config": None}):
+            result = _cfg_float("any_key", 3.14)
         assert result == 3.14
 
     def test_cfg_int_uses_site_config_when_available(self):
-        """Phase H (GH#95): _cfg_int delegates to site_config.get_int."""
-        from unittest.mock import MagicMock
+        from unittest.mock import MagicMock, patch
 
         from services.gpu_scheduler import _cfg_int
 
-        fake_sc = MagicMock()
-        fake_sc.get_int = MagicMock(return_value=99)
-        result = _cfg_int(fake_sc, "threshold", 30)
+        fake_sc_module = MagicMock()
+        fake_sc_module.site_config = MagicMock()
+        fake_sc_module.site_config.get_int = MagicMock(return_value=99)
+
+        with patch.dict("sys.modules", {"services.site_config": fake_sc_module}):
+            result = _cfg_int("threshold", 30)
         assert result == 99

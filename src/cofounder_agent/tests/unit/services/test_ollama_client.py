@@ -652,30 +652,17 @@ class TestEmbed:
         assert payload["model"] == "custom-embed-model"
 
     @pytest.mark.asyncio
-    async def test_empty_embeddings_raises_after_retries_exhausted(self):
-        """Empty embeddings is treated as a transient failure (GH#153)
-        — the resilience layer retries before surfacing the error.
+    async def test_empty_embeddings_raises_ollama_error(self):
+        from services.ollama_client import OllamaError
 
-        With ``ollama_retry_max_attempts=1`` (no retry) the call goes
-        through the validate_result path and raises
-        ``OllamaEmptyResponseError``. This is the post-#153 contract:
-        empty content is no longer accepted as a successful response.
-        """
-        from services.ollama_resilience import OllamaEmptyResponseError
-        from services.site_config import SiteConfig
-
-        cfg = SiteConfig(initial_config={
-            "ollama_retry_max_attempts": "1",
-            "ollama_retry_base_seconds": "0",
-        })
-        c = OllamaClient(site_config=cfg)
+        c = OllamaClient()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"embeddings": []}
         mock_resp.raise_for_status = MagicMock()
         c.client = MagicMock()
         c.client.post = AsyncMock(return_value=mock_resp)
 
-        with pytest.raises(OllamaEmptyResponseError):
+        with pytest.raises(OllamaError, match="No embeddings"):
             await c.embed("text")
 
     @pytest.mark.asyncio
@@ -711,21 +698,10 @@ class TestEmbedBatch:
         assert result[2] == [0.5, 0.6]
 
     @pytest.mark.asyncio
-    async def test_count_mismatch_retries_then_raises(self):
-        """Count-mismatch is a partial-failure mode (likely a model
-        hiccup under VRAM pressure) — the resilience layer (GH#153)
-        retries before giving up. With ``ollama_retry_max_attempts=1``
-        the validate_result path raises ``OllamaEmptyResponseError``
-        with a descriptive message.
-        """
-        from services.ollama_resilience import OllamaEmptyResponseError
-        from services.site_config import SiteConfig
+    async def test_count_mismatch_raises_ollama_error(self):
+        from services.ollama_client import OllamaError
 
-        cfg = SiteConfig(initial_config={
-            "ollama_retry_max_attempts": "1",
-            "ollama_retry_base_seconds": "0",
-        })
-        c = OllamaClient(site_config=cfg)
+        c = OllamaClient()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "embeddings": [[0.1]]  # only 1 embedding for 3 texts
@@ -734,7 +710,7 @@ class TestEmbedBatch:
         c.client = MagicMock()
         c.client.post = AsyncMock(return_value=mock_resp)
 
-        with pytest.raises(OllamaEmptyResponseError):
+        with pytest.raises(OllamaError, match="Expected 3 embeddings, got 1"):
             await c.embed_batch(["a", "b", "c"])
 
     @pytest.mark.asyncio

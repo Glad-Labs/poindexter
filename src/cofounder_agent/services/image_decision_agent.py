@@ -13,18 +13,16 @@ is reusable for other decision points (model selection, topic scoring, etc.)
 
 Usage:
     from services.image_decision_agent import plan_images
-    # site_config comes from request.app.state / context["site_config"] /
-    # self._site_config — never from a module-level import.
-    plan = await plan_images(content, topic, category, site_config=site_config)
+    plan = await plan_images(content, topic, category)
     # plan.images = [{section, source, style, prompt, position}, ...]
 """
 
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -53,8 +51,6 @@ async def plan_images(
     topic: str,
     category: str = "technology",
     max_images: int = 4,
-    *,
-    site_config: Any,
 ) -> ImagePlanResult:
     """Analyze article content and plan image placement + sourcing.
 
@@ -66,19 +62,11 @@ async def plan_images(
         topic: Article topic/title
         category: Content category (technology, gaming, etc.)
         max_images: Maximum number of inline images (excluding featured)
-        site_config: SiteConfig instance — required (keyword-only).
-            Pass from the caller's context (stage context, request
-            app.state, etc.). No module-level fallback.
 
     Returns:
         ImagePlanResult with per-image decisions
     """
     import httpx
-
-    if site_config is None:
-        raise ValueError(
-            "plan_images: site_config is required (no module singleton fallback)"
-        )
 
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     model = site_config.get("model_role_image_decision", "qwen3:8b").removeprefix("ollama/")

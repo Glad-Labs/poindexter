@@ -153,22 +153,13 @@ class ContentDatabase(DatabaseServiceMixin):
                 # Also write to the post_tags junction table (authoritative source per migration 014).
                 # tag_ids on posts is kept in sync for backward compat but post_tags is canonical.
                 # Single INSERT with unnest() replaces N per-tag round-trips (issue #703).
-                # tag_id is a uuid column — cast unnest to uuid[] so postgres
-                # coerces the str list. ``::text[]`` was a leftover from when
-                # tag_ids lived in a text[] column on posts (pre-#703); after
-                # the post_tags split (migration 0037) the type stopped
-                # matching, and any approve-with-tags publish 500'd with
-                # ``column "tag_id" is of type uuid but expression is of
-                # type text``. Caught 2026-04-25 when the mem0 article was
-                # the first post to hit the publish path with non-empty
-                # tag_ids since the schema change.
                 if tag_ids:
                     clean_ids = [str(tid) for tid in tag_ids if tid]
                     if clean_ids:
                         await conn.execute(
                             """
                             INSERT INTO post_tags (post_id, tag_id)
-                            SELECT $1, unnest($2::uuid[])
+                            SELECT $1, unnest($2::text[])
                             ON CONFLICT (post_id, tag_id) DO NOTHING
                             """,
                             post_id,
@@ -540,16 +531,12 @@ class ContentDatabase(DatabaseServiceMixin):
                 # Calculate total cost from financial tracking (if implemented).
                 # Kept as a separate query because cost_logs is a different table and
                 # may not exist in all environments.
-                # Window is a fixed 30 days (matches Grafana Cost Analytics
-                # dashboard range). No site_config lookup needed here —
-                # this method runs from a context where threading SiteConfig
-                # in just to read one tunable is disproportionate.
                 total_cost = 0
                 try:
-                    cost_result = await conn.fetchrow(
-                        "SELECT SUM(cost_usd) as total FROM cost_logs "
-                        "WHERE created_at >= NOW() - INTERVAL '30 days'"
-                    )
+                    from services.site_config import site_config as _sc
+                    _cost_days = _sc.get_int("cost_summary_window_days", 30)
+                    cost_query = f"SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '{_cost_days} days'"
+                    cost_result = await conn.fetchrow(cost_query)
                     if cost_result and cost_result["total"]:
                         total_cost = round(float(cost_result["total"]), 2)
                 except (ValueError, TypeError, AttributeError) as e:

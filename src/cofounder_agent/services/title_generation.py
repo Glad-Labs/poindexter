@@ -18,7 +18,6 @@ generate_content stage uses back-to-back:
 from __future__ import annotations
 
 import logging
-from typing import Any
 import re
 from difflib import SequenceMatcher
 
@@ -101,13 +100,12 @@ async def generate_canonical_title(
     primary_keyword: str,
     content_excerpt: str,
     existing_titles: str = "",
-    *,
-    site_config: Any,
 ) -> str | None:
     """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles."""
     try:
         from plugins.registry import get_llm_providers
         from services.prompt_manager import get_prompt_manager
+        from services.site_config import site_config
 
         pm = get_prompt_manager()
         providers = {p.name: p for p in get_llm_providers()}
@@ -155,7 +153,7 @@ async def generate_canonical_title(
         return None
 
 
-async def check_title_originality(title: str, *, site_config: Any) -> dict:
+async def check_title_originality(title: str) -> dict:
     """Web-search the title; return similarity summary.
 
     Return shape::
@@ -199,6 +197,7 @@ async def check_title_originality(title: str, *, site_config: Any) -> dict:
     }
 
     try:
+        from services.site_config import site_config
         threshold = site_config.get_float("qa_title_similarity_threshold", 0.6)
         enabled = site_config.get_bool("qa_title_originality_enabled", True)
         if not enabled:
@@ -208,7 +207,7 @@ async def check_title_originality(title: str, *, site_config: Any) -> dict:
 
     try:
         from services.web_research import WebResearcher
-        researcher = WebResearcher(site_config=site_config)
+        researcher = WebResearcher()
         search_results = await researcher.search_simple(
             f'"{title}"', num_results=8,
         )
@@ -251,7 +250,7 @@ async def check_title_originality(title: str, *, site_config: Any) -> dict:
         from services.title_originality_external import (
             check_external_title_duplicates,
         )
-        ext = await check_external_title_duplicates(title, site_config=site_config)
+        ext = await check_external_title_duplicates(title)
         result["external_verbatim_match"] = ext.verbatim_match
         result["external_near_match"] = ext.near_match
         result["external_penalty"] = ext.penalty

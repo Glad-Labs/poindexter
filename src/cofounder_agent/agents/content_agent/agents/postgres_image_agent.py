@@ -7,7 +7,6 @@ Replaces Strapi image upload with direct database storage of image metadata and 
 import json
 from pathlib import Path
 
-from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
 from services.logger_config import get_logger
 
 from ..config import config
@@ -36,23 +35,12 @@ class PostgreSQLImageAgent:
         self,
         llm_client: LLMClient,
         pexels_client: PexelsClient,
-        api_url: str | None = None,
+        api_url: str = "http://localhost:8000",
     ):
-        """Initialize the PostgreSQL Image Agent.
-
-        Args:
-            llm_client: LLM client used to generate image metadata.
-            pexels_client: Pexels client used to search images.
-            api_url: Base URL of the worker API. When ``None`` (default),
-                falls back to ``services.bootstrap_defaults.DEFAULT_WORKER_API_URL``.
-                Callers with a ``SiteConfig`` should pass
-                ``site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)``
-                so DB-tuned ports are honored.
-        """
         logger.info("Initializing PostgreSQL Image Agent (no Strapi/GCS)...")
         self.llm_client = llm_client
         self.pexels_client = pexels_client
-        self.api_url = api_url if api_url is not None else DEFAULT_WORKER_API_URL
+        self.api_url = api_url
 
         try:
             self.prompts = load_prompts_from_file(config.PROMPTS_PATH)

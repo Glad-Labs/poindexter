@@ -138,11 +138,6 @@ async def load_stage_order(pool_or_conn: Any) -> list[str]:
 # the canonical pipeline out of the box; operators override by writing the
 # ORDER_KEY row.
 DEFAULT_STAGE_ORDER: list[str] = [
-    # HITL topic-decision gate — inert when pipeline_gate_topic_decision
-    # is off (default), pause-and-wait when on. Sits at position 0 so
-    # anticipation_engine and manual topic injection clear the gate
-    # before any LLM cycles burn (Glad-Labs/poindexter#146).
-    "topic_decision_gate",
     "verify_task",
     "generate_content",
     "writer_self_review",

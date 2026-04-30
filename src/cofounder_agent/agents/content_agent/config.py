@@ -32,6 +32,7 @@ del _fix_sys_path, _PathType
 import os
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 # --- Define Base Directory ---
 # Ensures that all file paths are relative to the project root, making the application more portable.
@@ -66,18 +67,10 @@ class Config:
     live in the ``app_settings`` DB table and are read via
     ``services.site_config``. This class only holds bootstrap values that
     have to exist *before* the DB is reachable.
-
-    Phase H DI (GH-128): ``site_config`` may be passed in by callers that
-    have already constructed the canonical ``SiteConfig`` instance; when
-    provided, settings that have migrated to ``app_settings`` (currently
-    only ``llm_provider``) are sourced through it. When omitted, a
-    transient ``SiteConfig`` is constructed for env-fallback so we never
-    call ``os.getenv`` directly for migrated keys.
     """
 
-    def __init__(self, site_config=None):
+    def __init__(self):
         from brain.bootstrap import resolve_database_url
-        from services.site_config import SiteConfig
 
         # --- Core Application Paths ---
         self.BASE_DIR = BASE_DIR
@@ -103,7 +96,18 @@ class Config:
 
         # --- External Services & APIs ---
         self.PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")  # For sourcing stock photos
-        self.SERPER_API_KEY = os.getenv("SERPER_API_KEY")  # For real-time web search capabilities
+        # SERPER_API_KEY: DB-first via site_config (GH-175). Marked is_secret=true
+        # in the migration, but read SYNCHRONOUSLY here for back-compat with
+        # callers that don't `await`. site_config.get() consults its in-memory
+        # cache first (populated from app_settings at startup) and falls back
+        # to env var. A future migration can switch to `await
+        # site_config.get_secret("serper_api_key")` once the read site is
+        # async-friendly — the schema is already in place for that.
+        self.SERPER_API_KEY = (
+            site_config.get("serper_api_key", "")
+            or os.getenv("SERPER_API_KEY", "")
+            or None
+        )
 
         # --- Local Image Generation & Storage ---
         self.IMAGE_STORAGE_PATH = os.path.join(self.BASE_DIR, "content-agent", "generated_images")
@@ -113,29 +117,33 @@ class Config:
         # Only 'ollama' / 'local' are accepted — paid-API providers (OpenAI,
         # Anthropic, Gemini) were removed in v2.8 per the no-paid-APIs policy.
         # LLMClient enforces this at runtime; this default just avoids a
-        # KeyError if the key is unset.
-        #
-        # GH-128: source from app_settings via the injected SiteConfig.
-        # When a caller hasn't passed one in (e.g. the module-level
-        # ``config = Config()`` singleton below, evaluated at import time
-        # before the canonical SiteConfig exists) we build a transient
-        # SiteConfig — its ``get()`` honors the DB > env > default chain
-        # without us touching os.getenv directly here.
-        _llm_provider_cfg = site_config or SiteConfig()
-        self.LLM_PROVIDER = _llm_provider_cfg.get("llm_provider", "ollama")
+        # KeyError if the env var is unset.
+        self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 
         # --- Local LLM (Ollama) Configuration ---
         # #198: no hardcoded localhost default. An empty string means
         # "Ollama not configured" and callers must handle that explicitly.
-        self.LOCAL_LLM_API_URL = os.getenv("LOCAL_LLM_API_URL", "")
-        self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "auto")
+        # GH-175: DB-first via site_config; env-var still wins as fallback
+        # because site_config.get() consults env when the key is absent
+        # from the in-memory cache.
+        self.LOCAL_LLM_API_URL = (
+            site_config.get("local_llm_api_url", "")
+            or os.getenv("LOCAL_LLM_API_URL", "")
+        )
+        self.LOCAL_LLM_MODEL_NAME = (
+            site_config.get("local_llm_model_name", "auto")
+            or os.getenv("LOCAL_LLM_MODEL_NAME", "auto")
+        )
 
         # --- Logging Configuration ---
         self.LOG_DIR = os.path.join(self.BASE_DIR, "content-agent", "logs")
         self.APP_LOG_FILE = os.path.join(self.LOG_DIR, "app.log")
         self.PROMPTS_LOG_FILE = os.path.join(self.LOG_DIR, "prompts.log")
-        self.MAX_LOG_SIZE_MB = int(os.getenv("MAX_LOG_SIZE_MB", "5"))
-        self.MAX_LOG_BACKUP_COUNT = int(os.getenv("MAX_LOG_BACKUP_COUNT", "3"))
+        # GH-175: DB-first via site_config.get_int; env still wins as
+        # fallback because site_config.get_int delegates to get() which
+        # consults env when the key is absent from the in-memory cache.
+        self.MAX_LOG_SIZE_MB = site_config.get_int("max_log_size_mb", 5)
+        self.MAX_LOG_BACKUP_COUNT = site_config.get_int("max_log_backup_count", 3)
 
 
 # --- Singleton Instance ---

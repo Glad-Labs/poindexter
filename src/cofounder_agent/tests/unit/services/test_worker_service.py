@@ -1,20 +1,8 @@
-"""Tests for worker_service.
-
-Post-Phase-H (GH#95): WorkerService takes site_config via DI. Tests build
-a MagicMock SiteConfig via ``_mock_sc()``.
-"""
+"""Tests for worker_service."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-
-def _mock_sc(overrides: dict | None = None) -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for worker_service tests."""
-    sc = MagicMock()
-    values = overrides or {}
-    sc.get.side_effect = lambda k, d="": values.get(k, d)
-    return sc
 
 
 @pytest.fixture
@@ -33,7 +21,7 @@ def service(mock_pool):
     from services.worker_service import WorkerService
 
     pool, _ = mock_pool
-    return WorkerService(pool, worker_type="test", site_config=_mock_sc())
+    return WorkerService(pool, worker_type="test")
 
 
 class TestInit:
@@ -60,14 +48,12 @@ class TestCapabilities:
         caps2 = service.capabilities
         assert caps1 is caps2
 
-    def test_sdxl_detected_when_configured(self):
-        """When site_config has sdxl_api_url set, capability is True."""
+    @patch.dict("os.environ", {"SDXL_API_URL": "http://localhost:5000"})
+    def test_sdxl_detected_from_env(self):
         from services.worker_service import WorkerService
 
         pool = MagicMock()
-        ws = WorkerService(
-            pool, site_config=_mock_sc({"sdxl_api_url": "http://localhost:5000"}),
-        )
+        ws = WorkerService(pool)
         assert ws.capabilities["sdxl"] is True
 
 

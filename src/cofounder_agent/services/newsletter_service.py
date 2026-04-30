@@ -17,45 +17,38 @@ All configuration is DB-first via app_settings keys:
 """
 
 import asyncio
-from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
 
-async def _cfg(site_config: Any) -> dict:
-    """Load newsletter config from the passed SiteConfig instance.
+def _site_url() -> str:
+    """Return the canonical site URL. Reads site_config lazily because
+    this module may be imported before site_config has been populated
+    from the DB. Fails loud (RuntimeError) if the setting is missing —
+    silently sending newsletters with broken links would be worse."""
+    return site_config.require("site_url")
 
-    Async because ``resend_api_key`` is ``is_secret=true`` in
-    app_settings — see GH-107 secret-keys-audit and
-    Glad-Labs/poindexter#156. The sync ``site_config.get(...)`` would
-    return the ``enc:v1:<ciphertext>`` blob and Resend's API would
-    401 every send.
 
-    Note: ``smtp_password`` is **not** currently flagged
-    ``is_secret=true`` in app_settings (the row doesn't exist in the
-    live DB as of 2026-04-27). When it gets seeded encrypted, this
-    callsite must also flip to ``await site_config.get_secret(...)``.
-    Tracked in the audit doc.
-    """
+def _cfg() -> dict:
+    """Load newsletter config from DB."""
+    from services.site_config import site_config
+
     return {
         "enabled": site_config.get_bool("newsletter_enabled", False),
         "provider": site_config.get("newsletter_provider", "resend"),
         "from_email": site_config.get("newsletter_from_email", ""),
         "from_name": site_config.get("newsletter_from_name", ""),
-        "resend_api_key": await site_config.get_secret("resend_api_key", ""),
+        "resend_api_key": site_config.get("resend_api_key", ""),
         "smtp_host": site_config.get("smtp_host", ""),
         "smtp_port": site_config.get_int("smtp_port", 587),
         "smtp_user": site_config.get("smtp_user", ""),
-        # smtp_password is not yet encrypted in app_settings — see docstring
         "smtp_password": site_config.get("smtp_password", ""),
         "smtp_use_tls": site_config.get_bool("smtp_use_tls", True),
         "batch_size": site_config.get_int("newsletter_batch_size", 50),
         "batch_delay": site_config.get_int("newsletter_batch_delay_seconds", 2),
-        "site_url": site_config.require("site_url"),
-        "company_name": site_config.get("company_name", ""),
-        "site_name": site_config.get("site_name", "our"),
     }
 
 
@@ -69,18 +62,11 @@ async def _get_active_subscribers(pool) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _build_html(
-    cfg: dict,
-    title: str,
-    excerpt: str,
-    slug: str,
-    first_name: str | None = None,
-) -> str:
+def _build_html(title: str, excerpt: str, slug: str, first_name: str | None = None) -> str:
     """Build a simple, clean newsletter email body."""
     greeting = f"Hi {first_name}," if first_name else "Hi there,"
-    site_url = cfg["site_url"]
-    post_url = f"{site_url}/posts/{slug}"
-    unsubscribe_url = f"{site_url}/newsletter/unsubscribe"
+    post_url = f"{_site_url()}/posts/{slug}"
+    unsubscribe_url = f"{_site_url()}/newsletter/unsubscribe"
 
     return f"""\
 <!DOCTYPE html>
@@ -88,7 +74,7 @@ def _build_html(
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a;">
   <div style="border-bottom: 2px solid #6366f1; padding-bottom: 16px; margin-bottom: 24px;">
-    <h2 style="margin: 0; color: #6366f1;">{cfg["company_name"]}</h2>
+    <h2 style="margin: 0; color: #6366f1;">{site_config.get("company_name", "")}</h2>
   </div>
 
   <p>{greeting}</p>
@@ -107,7 +93,7 @@ def _build_html(
 
   <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 32px 0;">
   <p style="font-size: 12px; color: #999;">
-    You're receiving this because you subscribed to {cfg["site_name"]} updates.<br>
+    You're receiving this because you subscribed to {site_config.get("site_name", "our")} updates.<br>
     <a href="{unsubscribe_url}" style="color: #999;">Unsubscribe</a>
   </p>
 </body>
@@ -149,7 +135,7 @@ async def _send_via_smtp(cfg: dict, to_email: str, subject: str, html: str) -> b
         msg["From"] = f"{cfg['from_name']} <{cfg['from_email']}>"
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg["List-Unsubscribe"] = f"<{cfg['site_url']}/newsletter/unsubscribe>"
+        msg["List-Unsubscribe"] = f"<{_site_url()}/newsletter/unsubscribe>"
         msg.attach(MIMEText(html, "html"))
 
         await aiosmtplib.send(
@@ -184,7 +170,6 @@ async def send_post_newsletter(
     title: str,
     excerpt: str,
     slug: str,
-    site_config: Any,
 ) -> dict:
     """Send newsletter to all active subscribers about a new post.
 
@@ -193,15 +178,12 @@ async def send_post_newsletter(
         title: post title
         excerpt: post excerpt/description
         slug: post URL slug
-        site_config: SiteConfig instance (DI — Phase H)
 
     Returns:
         dict with sent, failed, skipped counts
     """
-    cfg = await _cfg(site_config)
-    result: dict[str, Any] = {
-        "sent": 0, "failed": 0, "skipped": 0, "total_subscribers": 0,
-    }
+    cfg = _cfg()
+    result = {"sent": 0, "failed": 0, "skipped": 0, "total_subscribers": 0}
 
     if not cfg["enabled"]:
         logger.info("[NEWSLETTER] Disabled via app_settings (newsletter_enabled=false)")
@@ -240,7 +222,7 @@ async def send_post_newsletter(
         batch = subscribers[i : i + batch_size]
 
         for sub in batch:
-            html = _build_html(cfg, title, excerpt, slug, sub.get("first_name"))
+            html = _build_html(title, excerpt, slug, sub.get("first_name"))
             success = await send_fn(cfg, sub["email"], subject, html)
 
             if success:

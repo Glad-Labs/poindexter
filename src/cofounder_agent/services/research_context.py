@@ -24,8 +24,6 @@ async def build_rag_context(
     topic: str,
     source_tags: list[str] | None = None,
     source_category: str | None = None,
-    *,
-    site_config: Any = None,
 ) -> str | None:
     """Search pgvector for similar published posts. Returns None if unavailable.
 
@@ -73,13 +71,8 @@ async def build_rag_context(
                     if row:
                         slug = row.get("slug") or ""
                         excerpt = row.get("excerpt") or ""
-                except Exception as e:
-                    logger.warning(
-                        "[research_context] slug/excerpt lookup for "
-                        "post_id=%r failed; result will lack a real "
-                        "URL/excerpt: %s",
-                        post_id, e,
-                    )
+                except Exception:
+                    pass
             resolved.append({
                 "post_id": post_id,
                 "similarity": similarity,
@@ -107,7 +100,7 @@ async def build_rag_context(
                     for r in resolved
                     if r["slug"]
                 ]
-                filt = InternalLinkCoherenceFilter(pool=pool, site_config=site_config)
+                filt = InternalLinkCoherenceFilter(pool=pool)
                 kept = await filt.filter_candidates(
                     source_tags=list(source_tags or []),
                     candidates=candidates,

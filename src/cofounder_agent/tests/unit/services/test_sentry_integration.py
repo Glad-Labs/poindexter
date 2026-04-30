@@ -1,25 +1,11 @@
 """Tests for sentry_integration service."""
 
-import os
 from importlib.util import find_spec
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 _has_sentry = find_spec("sentry_sdk") is not None
-
-
-def _mock_sc() -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig. Post-Phase-H, initialize()
-    takes a site_config param rather than importing the module singleton.
-
-    Keeps the existing env-var-driven tests working by falling back to
-    ``os.getenv(KEY.upper())`` — the same contract the real SiteConfig.get
-    honors for optional settings.
-    """
-    sc = MagicMock()
-    sc.get.side_effect = lambda k, d="": os.getenv(k.upper(), d)
-    return sc
 
 
 @pytest.mark.skipif(not _has_sentry, reason="sentry-sdk not installed")
@@ -38,7 +24,7 @@ class TestSentryIntegration:
 
         app = MagicMock()
         with patch.dict("os.environ", {"SENTRY_DSN": ""}, clear=False):
-            result = SentryIntegration.initialize(app, _mock_sc())
+            result = SentryIntegration.initialize(app)
         assert result is False
         # _initialized intentionally stays False on the no-DSN path so the
         # lifespan re-init (after site_config loads) can retry once the DSN
@@ -55,7 +41,7 @@ class TestSentryIntegration:
             {"SENTRY_DSN": "https://key@sentry.io/123", "SENTRY_ENABLED": "false"},
             clear=False,
         ):
-            result = SentryIntegration.initialize(app, _mock_sc())
+            result = SentryIntegration.initialize(app)
         assert result is False
         assert SentryIntegration._sentry_enabled is False
 
@@ -74,7 +60,7 @@ class TestSentryIntegration:
             },
             clear=False,
         ):
-            result = SentryIntegration.initialize(app, _mock_sc())
+            result = SentryIntegration.initialize(app)
         assert result is True
         assert SentryIntegration._sentry_enabled is True
         mock_sentry.init.assert_called_once()
@@ -86,7 +72,7 @@ class TestSentryIntegration:
         SentryIntegration._initialized = True
         SentryIntegration._sentry_enabled = True
         app = MagicMock()
-        result = SentryIntegration.initialize(app, _mock_sc())
+        result = SentryIntegration.initialize(app)
         assert result is True
         mock_sentry.init.assert_not_called()
 
@@ -101,7 +87,7 @@ class TestSentryIntegration:
             {"SENTRY_DSN": "https://key@sentry.io/123", "SENTRY_ENABLED": "true"},
             clear=False,
         ):
-            result = SentryIntegration.initialize(app, _mock_sc())
+            result = SentryIntegration.initialize(app)
         assert result is False
         assert SentryIntegration._sentry_enabled is False
 
@@ -253,69 +239,6 @@ class TestBeforeSend:
             assert result["request"]["headers"][h] == "[REDACTED]"
 
 
-class TestFingerprintNormalization:
-    """Sentry's default fingerprint hashes the event message; structlog's
-    ConsoleRenderer prepends a colorized ISO timestamp to every record, so
-    identical errors fingerprint differently per occurrence and GlitchTip
-    spawns a new issue every time. _before_send must strip the ANSI prefix
-    and leading timestamp from message-shaped fields so the same logical
-    error groups properly. See gitea #290."""
-
-    def test_strips_ansi_and_iso_timestamp_from_logentry_message(self):
-        from services.sentry_integration import SentryIntegration
-
-        # Real example from a worker GlitchTip event (issue 994):
-        raw = (
-            "\x1b[2m2026-04-26T04:07:44.763943Z\x1b[0m [\x1b[31m\x1b[1mcritical \x1b[0m] "
-            "[task_executor] Executor has not signalled in 1800 seconds"
-        )
-        event = {"level": "error", "logentry": {"message": raw, "formatted": raw}}
-        result = SentryIntegration._before_send(event, {})
-        cleaned = "[critical ] [task_executor] Executor has not signalled in 1800 seconds"
-        assert result["logentry"]["message"] == cleaned
-        assert result["logentry"]["formatted"] == cleaned
-
-    def test_two_occurrences_normalize_to_identical_messages(self):
-        """The whole point of the fix: a recurring error must produce the
-        same Sentry event message regardless of when it happened."""
-        from services.sentry_integration import SentryIntegration
-
-        first = "\x1b[2m2026-04-26T04:07:44.763943Z\x1b[0m [task_executor] heartbeat lost"
-        second = "\x1b[2m2026-04-26T04:37:50.123456Z\x1b[0m [task_executor] heartbeat lost"
-
-        e1 = {"logentry": {"message": first}}
-        e2 = {"logentry": {"message": second}}
-        SentryIntegration._before_send(e1, {})
-        SentryIntegration._before_send(e2, {})
-        assert e1["logentry"]["message"] == e2["logentry"]["message"]
-
-    def test_normalizes_top_level_message_too(self):
-        """Manual capture_message() calls populate event['message'] directly,
-        bypassing logentry. Normalize there too."""
-        from services.sentry_integration import SentryIntegration
-
-        event = {
-            "message": "\x1b[2m2026-04-26T04:07:44.763943Z\x1b[0m [worker] something bad"
-        }
-        result = SentryIntegration._before_send(event, {})
-        assert result["message"] == "[worker] something bad"
-
-    def test_leaves_clean_message_untouched(self):
-        from services.sentry_integration import SentryIntegration
-
-        event = {"logentry": {"message": "plain message no prefix"}}
-        result = SentryIntegration._before_send(event, {})
-        assert result["logentry"]["message"] == "plain message no prefix"
-
-    def test_handles_missing_logentry_gracefully(self):
-        from services.sentry_integration import SentryIntegration
-
-        # Event with neither logentry nor message — must not raise.
-        event = {"level": "error", "request": {"headers": {}, "url": "https://x"}}
-        result = SentryIntegration._before_send(event, {"exc_info": True})
-        assert result is event  # mutated in place, returned as-is
-
-
 class TestSetupSentryConvenience:
     """Test the setup_sentry convenience function."""
 
@@ -323,20 +246,18 @@ class TestSetupSentryConvenience:
         from services.sentry_integration import SentryIntegration, setup_sentry
 
         app = MagicMock()
-        sc = _mock_sc()
         with patch.object(SentryIntegration, "initialize", return_value=True) as mock_init:
-            result = setup_sentry(app, sc, "test-service")
-        mock_init.assert_called_once_with(app, sc, "test-service")
+            result = setup_sentry(app, "test-service")
+        mock_init.assert_called_once_with(app, "test-service")
         assert result is True
 
     def test_setup_sentry_default_service_name(self):
         from services.sentry_integration import SentryIntegration, setup_sentry
 
         app = MagicMock()
-        sc = _mock_sc()
         with patch.object(SentryIntegration, "initialize", return_value=False) as mock_init:
-            setup_sentry(app, sc)
-        mock_init.assert_called_once_with(app, sc, "cofounder-agent")
+            setup_sentry(app)
+        mock_init.assert_called_once_with(app, "cofounder-agent")
 
 
 class TestCaptureExceptionEdgeCases:
@@ -607,7 +528,7 @@ class TestInitializeSdkUnavailable:
         from services.sentry_integration import SentryIntegration
 
         app = MagicMock()
-        result = SentryIntegration.initialize(app, _mock_sc())
+        result = SentryIntegration.initialize(app)
         assert result is False
         # Should not have set _initialized=True (returns early)
         assert SentryIntegration._initialized is False

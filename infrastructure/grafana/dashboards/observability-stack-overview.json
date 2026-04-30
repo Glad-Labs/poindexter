@@ -1,0 +1,240 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [
+    {
+      "title": "GlitchTip",
+      "url": "http://localhost:8080",
+      "type": "link",
+      "icon": "bolt",
+      "targetBlank": true
+    },
+    {
+      "title": "Uptime Kuma",
+      "url": "http://localhost:3002",
+      "type": "link",
+      "icon": "doc",
+      "targetBlank": true
+    },
+    {
+      "title": "Pyroscope UI",
+      "url": "http://localhost:4040",
+      "type": "link",
+      "icon": "bolt",
+      "targetBlank": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "row",
+      "title": "Scrape health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 10,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Scrape targets up/down",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 1 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "up",
+          "legendFormat": "{{job}} @ {{instance}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "DOWN", "color": "red" },
+                "1": { "text": "UP", "color": "green" }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "orientation": "horizontal",
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Tempo — traces",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 11,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Spans ingested / sec",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 8 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(rate(tempo_distributor_spans_received_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "rps" }, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "Active services (last 1h)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 8 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "count(count by (service_name) (traces_spanmetrics_calls_total))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Blocks flushed (1h)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 8 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "sum(increase(tempo_ingester_blocks_flushed_total[1h]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Pyroscope — profiling",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 12,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Profiles ingested / sec",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 14 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum(rate(pyroscope_distributor_received_decompressed_bytes_sum[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Pyroscope distributor CPU profile ingestion",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 14 },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "rate(pyroscope_distributor_received_decompressed_bytes_sum[5m])",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "Uptime — Kuma",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
+      "id": 13,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Monitors DOWN right now",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 22 },
+      "id": 7,
+      "targets": [
+        { "expr": "count(monitor_status == 0) or vector(0)", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background" }
+    },
+    {
+      "type": "timeseries",
+      "title": "Monitor response time (ms)",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 22 },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "monitor_response_time",
+          "legendFormat": "{{monitor_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "type": "row",
+      "title": "GlitchTip — errors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "id": 14,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "text",
+      "title": "GlitchTip issue tracker",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 30 },
+      "id": 9,
+      "options": {
+        "mode": "markdown",
+        "content": "GlitchTip is the Sentry-compatible error sink. Events ship from the worker via the DSN stored in `app_settings.sentry_dsn`.\n\n- **UI**: [http://localhost:8080](http://localhost:8080)\n- **Org**: Glad Labs → **Project**: cofounder-agent\n- **DSN**: `http://<public_key>@glitchtip-web:8000/1` (container-network form; browser-origin events should use `http://localhost:8080/1`)\n\nTrace → log → error correlation works when `sentry-trace` is propagated into OTEL spans. Click any error → **Open Trace** to jump into Tempo."
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["observability", "overview", "lgtm"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Stack — LGTM+P + GlitchTip + Kuma",
+  "uid": "obs-stack-overview",
+  "version": 1,
+  "weekStart": ""
+}

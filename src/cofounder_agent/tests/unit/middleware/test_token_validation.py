@@ -28,11 +28,6 @@ def _make_request(
     if upgrade_header is not None:
         headers["upgrade"] = upgrade_header
     req.headers = headers
-    # Phase H: the middleware reads site_config off ``request.app.state``,
-    # with an env-var fallback when it's None. Tests patch the env vars
-    # (DISABLE_AUTH_FOR_DEV / DEVELOPMENT_MODE) directly, so we set
-    # site_config to None so the fallback path runs.
-    req.app.state.site_config = None
     return req
 
 

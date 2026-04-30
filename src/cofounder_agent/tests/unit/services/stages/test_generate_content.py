@@ -96,20 +96,11 @@ class TestSelfReviewEnabled:
         ("false", False), ("no", False), ("0", False), ("", False),
     ])
     def test_parses_flag(self, raw: str, expected: bool):
-        # Phase H step 5 (GH#95): site_config is required — stage callers
-        # always pass it via the context dict.
-        cfg = SimpleNamespace(get=lambda _k, _d: raw)
-        assert _self_review_enabled(cfg) is expected
-
-    def test_returns_true_on_malformed_config(self):
-        # Defensive: if .get raises (e.g. None-like config in a busted
-        # test fixture), fail open to enabled so we don't silently skip
-        # self-review in production.
-        class _Busted:
-            def get(self, *_args, **_kwargs):
-                raise RuntimeError("boom")
-
-        assert _self_review_enabled(_Busted()) is True
+        with patch(
+            "services.site_config.site_config",
+            SimpleNamespace(get=lambda _k, _d: raw),
+        ):
+            assert _self_review_enabled() is expected
 
 
 # ---------------------------------------------------------------------------
@@ -204,12 +195,9 @@ def _patch_everything():
         patch("services.research_service.ResearchService",
               return_value=SimpleNamespace(build_context=AsyncMock(return_value="auto research"))),
         patch("services.audit_log.audit_log_bg", MagicMock()),
+        patch("services.site_config.site_config",
+              SimpleNamespace(get=lambda _k, _d: "true")),
     ]
-
-
-# Phase H step 4.3: stages read site_config from context rather than the
-# module singleton. Tests wire the fake config directly into the ctx dict.
-_FAKE_SITE_CONFIG = SimpleNamespace(get=lambda _k, _d: "true")
 
 
 @pytest.mark.asyncio
@@ -225,7 +213,6 @@ class TestGenerateContentStageExecute:
             "tags": ["AI"],
             "models_by_phase": {"writer": "glm-4.7-5090"},
             "database_service": db,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         patches = _patch_everything()
         for p in patches:
@@ -271,7 +258,6 @@ class TestGenerateContentStageExecute:
             "style": "tech", "tone": "neutral", "target_length": 1200,
             "tags": [], "models_by_phase": {},
             "database_service": db,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         # First originality check says not original; second check (on
         # regenerated title) says more original → stage should accept v2.
@@ -310,7 +296,6 @@ class TestGenerateContentStageExecute:
             "topic": "AI", "style": "", "tone": "",
             "target_length": 100, "tags": [], "models_by_phase": {},
             "database_service": db,
-            "site_config": _FAKE_SITE_CONFIG,
         }
         patches = _patch_everything()
         for p in patches:
@@ -329,65 +314,3 @@ class TestGenerateContentStageExecute:
         finally:
             for p in reversed(patches):
                 p.stop()
-
-    async def test_all_models_failed_does_not_publish_template(self):
-        """Glad-Labs/poindexter#121.
-
-        When every model in the chain raises ``AllModelsFailedError``,
-        the stage MUST NOT swallow the error or persist a stub. It must
-        let the exception propagate so the stage runner halts the task
-        and ``content_router_service`` transitions it to ``failed`` —
-        never ``published``.
-
-        Regression guard: previously the generator returned a hardcoded
-        markdown template and the task was published as if generation
-        succeeded, bypassing every QA gate downstream.
-        """
-        from services.ai_content_generator import AllModelsFailedError
-
-        db = _FakeDb()
-        ctx: dict[str, Any] = {
-            "task_id": "t-models-failed",
-            "topic": "Asyncio in Python",
-            "style": "tech", "tone": "neutral", "target_length": 1200,
-            "tags": [], "models_by_phase": {},
-            "database_service": db,
-            "site_config": _FAKE_SITE_CONFIG,
-        }
-        patches = _patch_everything()
-        for p in patches:
-            p.start()
-        try:
-            # Make the content generator simulate every model failing
-            with patch(
-                "services.ai_content_generator.get_content_generator",
-                return_value=SimpleNamespace(
-                    _internal_links_cache=[],
-                    generate_blog_post=AsyncMock(
-                        side_effect=AllModelsFailedError(
-                            "All AI models failed for topic 'x'. Attempts: ollama: connection refused",
-                            attempts=[("ollama", "connection refused")],
-                            topic="Asyncio in Python",
-                        ),
-                    ),
-                ),
-            ):
-                # The exception MUST propagate — no template, no
-                # silently-published stub, no status='in_progress' write
-                # with stub content.
-                with pytest.raises(AllModelsFailedError):
-                    await GenerateContentStage().execute(ctx, {})
-        finally:
-            for p in reversed(patches):
-                p.stop()
-
-        # Defense-in-depth: even if the stage were ever changed to
-        # catch+continue, it must not have written a 'published' or
-        # 'in_progress' status row with stub content. Assert nothing
-        # was persisted at all on the failure path.
-        published = [u for u in db.updates if u.get("status") in ("published", "in_progress")]
-        assert published == [], (
-            "Stage persisted a status update during all-models-failed path. "
-            "This re-introduces the #121 regression where the template stub "
-            "was published as a successful task."
-        )

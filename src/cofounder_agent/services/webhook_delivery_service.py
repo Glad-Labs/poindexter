@@ -8,11 +8,11 @@ or retried up to 3 times.
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any
 
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -21,55 +21,17 @@ POLL_INTERVAL = 5  # seconds
 
 
 class WebhookDeliveryService:
-    def __init__(self, pool, site_config: Any):
-        """Initialize the webhook delivery service.
-
-        Args:
-            pool: asyncpg pool for reading/updating webhook_events.
-            site_config: SiteConfig instance (DI — Phase H, GH#95). Must
-                be passed explicitly — the module-level singleton import
-                was removed. Supply from ``app.state.site_config``.
-
-        Note: ``openclaw_webhook_token`` is encrypted at rest
-        (``is_secret=true`` in app_settings) so we cannot read it here —
-        ``__init__`` is sync and ``site_config.get_secret(...)`` is
-        async. The token is fetched in ``start()`` (async) instead and
-        cached on ``self.webhook_token``. See GH-107 secret-keys-audit
-        and Glad-Labs/poindexter#156.
-        """
+    def __init__(self, pool):
         self.pool = pool
-        self._site_config = site_config
         self.webhook_url = site_config.get("openclaw_webhook_url", "")
-        # SYNC: cannot await — the encrypted token is loaded in start()
-        # (async) and overwritten there before the delivery loop spins up.
-        self.webhook_token = ""
+        self.webhook_token = site_config.get("openclaw_webhook_token", "")
         self._running = False
         self._client = None
         # Strong ref to the delivery loop task so asyncio doesn't GC it.
         self._delivery_task: asyncio.Task | None = None
 
     async def start(self):
-        """Start the delivery loop.
-
-        Loads the encrypted ``openclaw_webhook_token`` here (one-shot)
-        because ``__init__`` is sync and ``site_config.get_secret`` is
-        async — see GH-107 audit + poindexter#156.
-        """
-        # Resolve the encrypted Authorization-bearer token before the
-        # loop starts so every delivery uses plaintext, not ciphertext.
-        try:
-            self.webhook_token = (
-                await self._site_config.get_secret("openclaw_webhook_token", "")
-                or ""
-            )
-        except Exception as e:
-            logger.warning(
-                "[WEBHOOK] get_secret(openclaw_webhook_token) failed: %s — "
-                "delivery will run without an Authorization header",
-                e,
-            )
-            self.webhook_token = ""
-
+        """Start the delivery loop."""
         if not self.webhook_url:
             logger.info("[WEBHOOK] No OPENCLAW_WEBHOOK_URL configured, webhook delivery disabled")
             return

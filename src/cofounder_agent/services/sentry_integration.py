@@ -21,36 +21,11 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 """
 
 import logging
-import re
-from typing import Any
 
 from fastapi import FastAPI
 
 from services.logger_config import get_logger
-
-# structlog's ConsoleRenderer prefixes every record with a colorized ISO
-# timestamp. When the record propagates to stdlib logging and Sentry's
-# LoggingIntegration captures it, the rendered string (timestamp + ANSI +
-# message) becomes the event's `message` and `logentry.message`. Sentry's
-# default fingerprint hashes the message, so identical errors get a unique
-# fingerprint per timestamp — GlitchTip then creates a brand-new "issue"
-# every occurrence instead of grouping them. Normalizing here lets the
-# default fingerprint do its job. See gitea #290.
-_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
-_LEADING_ISO_TS_RE = re.compile(
-    r"^\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+"
-)
-
-
-def _strip_log_prefix(text: str) -> str:
-    """Remove ANSI color codes and a leading ISO-8601 timestamp from a
-    structlog-rendered message so the same logical error fingerprints
-    consistently across occurrences. Callers must pre-check the value is
-    actually a str.
-    """
-    cleaned = _ANSI_ESCAPE_RE.sub("", text)
-    cleaned = _LEADING_ISO_TS_RE.sub("", cleaned)
-    return cleaned
+from services.site_config import site_config
 
 try:
     import sentry_sdk
@@ -97,7 +72,6 @@ class SentryIntegration:
     def initialize(
         cls,
         app: FastAPI,  # noqa: ARG003 — main.py passes the app; FastApiIntegration hooks globally, doesn't need the instance
-        site_config: Any,
         service_name: str = "cofounder-agent",
     ):
         """
@@ -105,10 +79,6 @@ class SentryIntegration:
 
         Args:
             app: FastAPI application instance
-            site_config: SiteConfig instance (DI — Phase H). Must be passed
-                explicitly — the module-level singleton import was removed
-                so tests can construct isolated mocks and so this initializer
-                doesn't read empty values at import time.
             service_name: Name of the service for tracking
 
         Returns:
@@ -122,7 +92,7 @@ class SentryIntegration:
             logger.debug("Sentry already initialized")
             return cls._sentry_enabled
 
-        # Get configuration from the injected site_config.
+        # Get configuration from site_config (falls back to env vars).
         sentry_dsn = site_config.get("sentry_dsn", "").strip()
         sentry_enabled = site_config.get("sentry_enabled", "true").lower() in ("true", "1", "yes")
         environment = site_config.get("environment", "development") or "development"
@@ -157,12 +127,6 @@ class SentryIntegration:
             if SqlAlchemyIntegration is not None:
                 integrations.append(SqlAlchemyIntegration())  # type: ignore[misc]
 
-            # Debug mode floods stdout with `[sentry] DEBUG:` lines for
-            # every traced request — useful when first wiring up the
-            # SDK, painful as steady-state log noise. Default off,
-            # tunable via app_settings.sentry_debug for the rare cases
-            # we want it back.
-            sentry_debug = site_config.get_bool("sentry_debug", False)
             sentry_sdk.init(
                 dsn=sentry_dsn,
                 integrations=integrations,
@@ -182,17 +146,9 @@ class SentryIntegration:
                 include_local_variables=True,
                 # Error attachment configurations
                 max_value_length=4096,  # Max value length for variable inspection
-                debug=sentry_debug,
+                # Enable debug logging in development
+                debug=environment == "development",
             )
-
-            # Belt and suspenders: even with debug=False the SDK's
-            # internal logger occasionally emits at DEBUG (e.g. when
-            # samplers reject a transaction). Cap at WARNING so log
-            # streams stay readable.
-            for _name in ("sentry_sdk", "sentry_sdk.errors"):
-                logging.getLogger(_name).setLevel(
-                    logging.DEBUG if sentry_debug else logging.WARNING
-                )
 
             # Set user context for authenticated requests (if available)
             sentry_sdk.set_tag("service", service_name)
@@ -217,20 +173,17 @@ class SentryIntegration:
             return False
 
     @staticmethod
-    def _before_send(event: dict, hint: dict) -> dict:
+    def _before_send(event: dict, hint: dict) -> dict | None:
         """
         Filter events before sending to Sentry.
-        Remove sensitive data (passwords, tokens, etc.) and normalize
-        message-shaped fields so recurring errors fingerprint together.
+        Remove sensitive data (passwords, tokens, etc.)
 
         Args:
             event: The event dictionary
             hint: Additional hint information with exception details
 
         Returns:
-            The event dict (mutated in place). We never drop events here —
-            sampling lives in sentry_sdk.init's traces_sample_rate / event
-            quotas, not in this hook.
+            Modified event dict, or None to drop the event
         """
         # Check if this is an error event we should capture
         if event.get("level") == "error" or (hint and "exc_info" in hint):
@@ -249,22 +202,6 @@ class SentryIntegration:
                     event["request"]["url"] = url.replace(
                         url[url.find("api_key=") :], "api_key=[REDACTED]"
                     )
-
-        # Strip structlog's ANSI prefix + ISO timestamp from any message-shaped
-        # field BEFORE Sentry hashes it for fingerprinting. Without this, the
-        # same recurring error spawns a new GlitchTip "issue" every occurrence.
-        # Applied to every event (not just errors) so manual capture_message
-        # calls also benefit. See gitea #290.
-        logentry = event.get("logentry")
-        if isinstance(logentry, dict):
-            for key in ("message", "formatted"):
-                value = logentry.get(key)
-                if isinstance(value, str):
-                    logentry[key] = _strip_log_prefix(value)
-
-        top_message = event.get("message")
-        if isinstance(top_message, str):
-            event["message"] = _strip_log_prefix(top_message)
 
         return event
 
@@ -411,25 +348,19 @@ class SentryIntegration:
         return cls._sentry_enabled
 
 
-def setup_sentry(
-    app: FastAPI,
-    site_config: Any,
-    service_name: str = "cofounder-agent",
-) -> bool:
+def setup_sentry(app: FastAPI, service_name: str = "cofounder-agent") -> bool:
     """
     Convenience function to initialize Sentry.
 
     Usage in main.py:
         from services.sentry_integration import setup_sentry
-        from services.site_config import site_config
-        setup_sentry(app, site_config)
+        setup_sentry(app)
 
     Args:
         app: FastAPI application instance
-        site_config: SiteConfig instance (DI — Phase H)
         service_name: Name of the service
 
     Returns:
         bool: True if successfully initialized
     """
-    return SentryIntegration.initialize(app, site_config, service_name)
+    return SentryIntegration.initialize(app, service_name)

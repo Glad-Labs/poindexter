@@ -75,14 +75,9 @@ class WriterSelfReviewStage:
                 metrics={"skipped": True},
             )
 
-        # Phase H step 5 (GH#95): site_config is seeded on the pipeline
-        # context by content_router_service. Tests build context dicts
-        # with the fake site_config wired in explicitly.
-        _sc = context["site_config"]
-
         try:
             revised_text, stats = await _self_review_and_revise(
-                content_text, title, topic, _sc,
+                content_text, title, topic,
             )
         except Exception as e:
             logger.warning("[SELF_REVIEW] Stage failed (non-fatal): %s", e)

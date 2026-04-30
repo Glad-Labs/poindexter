@@ -8,21 +8,12 @@ sensibly.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from services.jobs._subprocess_runner import ScriptResult
 from services.jobs.auto_embed_posts import AutoEmbedPostsJob
-
-
-def _mock_sc() -> MagicMock:
-    """SiteConfig mock for post-Phase-H job.run() kwarg."""
-    sc = MagicMock()
-    sc.get.side_effect = lambda k, d="": d
-    sc.get_bool.side_effect = lambda k, d=False: d
-    sc.get_int.side_effect = lambda k, d=0: d
-    return sc
 
 
 class TestContract:
@@ -43,7 +34,7 @@ class TestRun:
             "services.jobs.auto_embed_posts.run_python_script", new=runner,
         ):
             job = AutoEmbedPostsJob()
-            result = await job.run(None, {}, site_config=_mock_sc())
+            result = await job.run(None, {})
         assert result.ok is True
         assert result.changes_made == 1
         assert "phase=posts" in result.detail
@@ -56,7 +47,7 @@ class TestRun:
             "services.jobs.auto_embed_posts.run_python_script", new=runner,
         ):
             job = AutoEmbedPostsJob()
-            await job.run(None, {}, site_config=_mock_sc())
+            await job.run(None, {})
         argv = runner.call_args.args
         # argv = (script_path, "--phase", "posts") positionally
         assert argv[1] == "--phase"
@@ -69,7 +60,7 @@ class TestRun:
             "services.jobs.auto_embed_posts.run_python_script", new=runner,
         ):
             job = AutoEmbedPostsJob()
-            result = await job.run(None, {"phase": "decisions"}, site_config=_mock_sc())
+            result = await job.run(None, {"phase": "decisions"})
         argv = runner.call_args.args
         assert argv[2] == "decisions"
         assert "phase=decisions" in result.detail
@@ -83,7 +74,7 @@ class TestRun:
             "services.jobs.auto_embed_posts.run_python_script", new=runner,
         ):
             job = AutoEmbedPostsJob()
-            result = await job.run(None, {}, site_config=_mock_sc())
+            result = await job.run(None, {})
         assert result.ok is False
         assert result.changes_made == 0
         assert "exited 1" in result.detail
@@ -95,7 +86,7 @@ class TestRun:
             "services.jobs.auto_embed_posts.run_python_script", new=runner,
         ):
             job = AutoEmbedPostsJob()
-            await job.run(None, {"script_path": "/custom/ae.py"}, site_config=_mock_sc())
+            await job.run(None, {"script_path": "/custom/ae.py"})
         argv = runner.call_args.args
         assert argv[0] == "/custom/ae.py"
 
@@ -106,5 +97,5 @@ class TestRun:
             "services.jobs.auto_embed_posts.run_python_script", new=runner,
         ):
             job = AutoEmbedPostsJob()
-            await job.run(None, {}, site_config=_mock_sc())
+            await job.run(None, {})
         assert runner.call_args.kwargs["timeout_s"] == 120

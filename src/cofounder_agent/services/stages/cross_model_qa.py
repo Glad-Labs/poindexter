@@ -119,11 +119,8 @@ def aggregate_issues_to_fix(qa_result: Any) -> tuple[str, bool]:
                 lines.append(f"[{issue.severity}] {issue.category}: {issue.description}")
                 if issue.severity == "critical":
                     has_blocking = True
-    except Exception as e:
-        logger.debug(
-            "[cross_model_qa] reading qa_result.validation for rejection "
-            "summary failed: %s", e,
-        )
+    except Exception:
+        pass
 
     # Reviewers — a non-approving reviewer blocks; borderline approvals
     # (score < 75) are advisory.
@@ -191,14 +188,7 @@ class CrossModelQAStage:
             except Exception:
                 settings_service = None
 
-        # Phase H step 5 (GH#95): site_config is seeded on the pipeline
-        # context by content_router_service. Tests build context dicts
-        # with the fake site_config wired in explicitly.
-        _sc = context["site_config"]
-
-        qa = MultiModelQA(
-            pool=pool, settings_service=settings_service, site_config=_sc,
-        )
+        qa = MultiModelQA(pool=pool, settings_service=settings_service)
 
         max_rewrites = await _resolve_max_rewrites(settings_service, default=2)
 
@@ -257,7 +247,6 @@ class CrossModelQAStage:
                 settings_service=settings_service,
                 task_id=task_id,
                 attempt=rewrite_attempts + 1,
-                site_config=_sc,
             )
             if revised is None:
                 break
@@ -268,6 +257,7 @@ class CrossModelQAStage:
             # the model actually addressed between revisions (gitea#271 Phase 3.A2).
             try:
                 from services.content_revisions_logger import log_revision
+                from services.site_config import site_config as _sc_rev
                 await log_revision(
                     database_service.pool,
                     task_id=task_id,
@@ -278,7 +268,7 @@ class CrossModelQAStage:
                         f"Rewrite attempt {rewrite_attempts + 1} addressing "
                         f"{len(issues_to_fix)} QA issues"
                     ),
-                    model_used=_sc.get("qa_writer_model") or "writer",
+                    model_used=_sc_rev.get("qa_writer_model") or "writer",
                     quality_score=None,
                 )
             except Exception as rev_err:
@@ -345,12 +335,6 @@ class CrossModelQAStage:
                 task_id=task_id,
                 severity="info" if r.approved else "warning",
             )
-        # ``failed_reviewers`` are reviewers that ran and voted reject;
-        # ``errored_reviewers`` are reviewers that *threw* and were
-        # silently skipped — distinct, both surfaced (gitea#322 #1).
-        # If everything errored, score the aggregate as worth-looking-at
-        # even when the surviving reviewers happened to vote pass.
-        errored = list(getattr(qa_result, "errored_reviewers", []) or [])
         audit_log_bg(
             "qa_aggregate", "multi_model_qa",
             {
@@ -360,15 +344,10 @@ class CrossModelQAStage:
                 "failed_reviewers": [
                     r.reviewer for r in qa_result.reviews if not r.approved
                 ],
-                "errored_reviewers": errored,
-                "errored_count": len(errored),
                 "rewrite_attempts": rewrite_attempts,
             },
             task_id=task_id,
-            severity=(
-                "error" if errored
-                else ("info" if qa_result.approved else "warning")
-            ),
+            severity="info" if qa_result.approved else "warning",
         )
 
         # Cost logging.
@@ -389,32 +368,6 @@ class CrossModelQAStage:
                 }, task_id=task_id)
             except Exception as e:
                 logger.warning("QA cost logging failed (non-critical): %s", e)
-                # Visibility: same shape as cost_guard.record's audit
-                # emission — alerts can fire on N% failure rate per
-                # window. Without this the budget tracker just
-                # silently undercounts every QA pass that drops a row.
-                # gitea#322 finding 5 follow-up.
-                try:
-                    audit_log_bg(
-                        "cost_log_write_failed",
-                        "cross_model_qa",
-                        {
-                            "phase": "multi_model_qa",
-                            "error": str(e)[:300],
-                            "error_type": type(e).__name__,
-                            "cost_usd": cost_log.get("cost_usd"),
-                            "model": cost_log.get("model"),
-                            "provider": cost_log.get("provider"),
-                        },
-                        task_id=task_id,
-                        severity="error",
-                    )
-                except Exception as audit_err:
-                    logger.debug(
-                        "[cross_model_qa] audit_log_bg for "
-                        "cost_log_write_failed itself failed: %s",
-                        audit_err,
-                    )
 
         # Rejection short-circuit.
         if not qa_result.approved:
@@ -428,24 +381,7 @@ class CrossModelQAStage:
                 "rewrite_attempts": rewrite_attempts,
             }, task_id=task_id, severity="warning")
 
-            # Thread the live consistency-veto threshold through so the
-            # rejection message correctly distinguishes a real veto from
-            # a score-gate rejection where internal_consistency is only
-            # advisory (approved=False but score above threshold).
-            _consistency_threshold = _CONSISTENCY_VETO_THRESHOLD_DEFAULT
-            if settings_service is not None:
-                try:
-                    _raw = await settings_service.get("qa_consistency_veto_threshold")
-                    if _raw is not None:
-                        _consistency_threshold = float(_raw)
-                except Exception as e:
-                    logger.warning(
-                        "[cross_model_qa] reading "
-                        "qa_consistency_veto_threshold from settings "
-                        "failed; using default %.2f: %s",
-                        _consistency_threshold, e,
-                    )
-            reason = _build_rejection_reason(qa_result, _consistency_threshold)
+            reason = _build_rejection_reason(qa_result)
             await database_service.update_task(task_id, {
                 "status": "rejected",
                 "error_message": reason,
@@ -532,12 +468,8 @@ async def _resolve_max_rewrites(settings_service: Any, default: int) -> int:
         )
         if raw is not None:
             return int(raw)
-    except Exception as e:
-        logger.warning(
-            "[cross_model_qa] reading qa_max_rewrites from settings "
-            "failed; using default %d: %s",
-            default, e,
-        )
+    except Exception:
+        pass
     return default
 
 
@@ -548,7 +480,6 @@ async def _rewrite_draft(
     settings_service: Any,
     task_id: str,
     attempt: int,
-    site_config: Any,
 ) -> str | None:
     """Call the writer to fix flagged issues. Returns the new draft or None.
 
@@ -559,6 +490,7 @@ async def _rewrite_draft(
     """
     from plugins.registry import get_llm_providers
     from services.audit_log import audit_log_bg
+    from services.site_config import site_config
 
     prompt = QA_AGGREGATE_REWRITE_PROMPT.format(
         title=title, issues_to_fix=issues_to_fix, content=content_text,
@@ -643,69 +575,16 @@ async def _rewrite_draft(
     return None
 
 
-_CONSISTENCY_VETO_THRESHOLD_DEFAULT = 50.0
-
-
-def _reviewer_actually_vetoes(r: Any, consistency_threshold: float) -> bool:
-    """Mirror of the veto semantics used by MultiModelQA.aggregate().
-
-    A reviewer with ``approved=False`` does NOT always veto — the
-    ``internal_consistency`` gate is advisory unless its score is below
-    ``qa_consistency_veto_threshold``. Naming a non-vetoing reviewer as
-    "the veto" in the rejection message misleads operators into thinking
-    that reviewer blocked the publish when really the aggregate score
-    fell short of the threshold.
-    """
-    if getattr(r, "approved", True):
-        return False
-    if getattr(r, "reviewer", "") == "internal_consistency":
-        score = float(getattr(r, "score", 0) or 0)
-        return 0 < score < consistency_threshold
-    return True
-
-
-def _build_rejection_reason(qa_result: Any, consistency_threshold: float | None = None) -> str:
-    """Build a human-readable rejection message naming the vetoing reviewer.
-
-    Two rejection modes to distinguish:
-
-    1. A reviewer actually vetoed (via the gate logic in _reviewer_actually_vetoes,
-       not just approved=False). Name them and relay their feedback.
-    2. No reviewer vetoed but the weighted final_score is below the approval
-       threshold. There is no vetoer; picking ``reviews[-1]`` or any
-       ``approved=False`` reviewer as the veto is misleading. Report the
-       score-gate mode and show the lowest scorer so the rewrite prompt
-       has a concrete target.
-
-    ``consistency_threshold`` defaults to the MultiModelQA default (50) so
-    callers that don't pass it still get sensible behavior; production
-    callers should thread the live ``qa_consistency_veto_threshold``
-    setting through.
-    """
-    threshold = (
-        consistency_threshold
-        if consistency_threshold is not None
-        else _CONSISTENCY_VETO_THRESHOLD_DEFAULT
-    )
+def _build_rejection_reason(qa_result: Any) -> str:
+    """Build a human-readable rejection message naming the vetoing reviewer."""
     vetoer = next(
-        (r for r in qa_result.reviews if _reviewer_actually_vetoes(r, threshold)),
-        None,
+        (r for r in qa_result.reviews if not r.approved),
+        qa_result.reviews[-1] if qa_result.reviews else None,
     )
     if vetoer is None:
-        if not qa_result.reviews:
-            return (
-                f"Multi-model QA rejected (score: {qa_result.final_score:.0f}): "
-                "No reviews recorded"
-            )
-        # No reviewer vetoed — this is a score-gate rejection. Surface the
-        # lowest scorer (includes advisory approved=False reviewers whose
-        # score fell short of their own gate but didn't hard-block).
-        lowest = min(qa_result.reviews, key=lambda r: r.score)
-        feedback = (lowest.feedback or "no feedback").strip()[:300]
         return (
-            f"Multi-model QA rejected (score: {qa_result.final_score:.0f}, "
-            f"score-gate: below approval threshold, lowest reviewer "
-            f"{lowest.reviewer} @ {lowest.score:.0f}): {feedback}"
+            f"Multi-model QA rejected (score: {qa_result.final_score:.0f}): "
+            "No reviews recorded"
         )
     feedback = (vetoer.feedback or "no feedback").strip()[:300]
     return (

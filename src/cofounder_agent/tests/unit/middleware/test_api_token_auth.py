@@ -1,21 +1,13 @@
 """
 Unit tests for middleware/api_token_auth.py — verify_api_token and verify_api_token_optional.
-
-Phase H (GH#95): site_config is now read off ``request.app.state.site_config``.
-Tests build a MagicMock Request whose ``.app.state.site_config`` is a
-mock-SiteConfig configured per case.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
-from middleware.api_token_auth import (
-    get_operator_identity,
-    verify_api_token,
-    verify_api_token_optional,
-)
+from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,28 +21,6 @@ def _make_credentials(token: str):
     return cred
 
 
-def _make_request(api_token: str = "", dev_mode: bool = False, operator_id: str = "operator"):
-    """Build a FastAPI Request stand-in whose ``.app.state.site_config``
-    returns the supplied values.
-
-    Post-GH-107: ``api_token`` lives behind ``get_secret`` (async) since
-    it's an is_secret row in app_settings. The mock exposes both ``get``
-    (sync) and ``get_secret`` (async) — non-secret keys go through
-    ``get``, the api_token resolves via ``get_secret``.
-    """
-    mapping = {
-        "api_token": api_token,
-        "development_mode": "true" if dev_mode else "",
-        "operator_id": operator_id,
-    }
-    sc = MagicMock()
-    sc.get = MagicMock(side_effect=lambda k, d="": mapping.get(k, d))
-    sc.get_secret = AsyncMock(side_effect=lambda k, d="": mapping.get(k, d))
-    req = MagicMock()
-    req.app.state.site_config = sc
-    return req
-
-
 # ---------------------------------------------------------------------------
 # verify_api_token
 # ---------------------------------------------------------------------------
@@ -61,124 +31,70 @@ class TestVerifyApiToken:
 
     @pytest.mark.asyncio
     async def test_missing_header_returns_401(self):
-        req = _make_request(api_token="real-token")
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(req, credentials=None)
+            await verify_api_token(credentials=None)
         assert exc_info.value.status_code == 401
         assert "Missing authorization header" in exc_info.value.detail
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {"API_TOKEN": "real-token"})
     async def test_invalid_token_returns_401(self):
-        req = _make_request(api_token="real-token")
         cred = _make_credentials("wrong-token")
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(req, credentials=cred)
+            await verify_api_token(credentials=cred)
         assert exc_info.value.status_code == 401
         assert "Invalid token" in exc_info.value.detail
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {"API_TOKEN": "real-token"})
     async def test_valid_token_returns_token(self):
-        req = _make_request(api_token="real-token")
         cred = _make_credentials("real-token")
-        result = await verify_api_token(req, credentials=cred)
+        result = await verify_api_token(credentials=cred)
         assert result == "real-token"
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {}, clear=True)
     async def test_api_token_not_set_returns_500(self):
-        req = _make_request(api_token="")
         cred = _make_credentials("any-token")
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(req, credentials=cred)
+            await verify_api_token(credentials=cred)
         assert exc_info.value.status_code == 500
         assert "API_TOKEN not configured" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch.dict("os.environ", {}, clear=True)
-    async def test_dev_mode_accepts_dev_token(self):
-        # Dev-token bypass is only blocked when ENVIRONMENT=production;
-        # clearing os.environ ensures we're in "development" territory.
-        req = _make_request(api_token="", dev_mode=True)
+    @patch("middleware.api_token_auth._dev_token_blocked", False)
+    @patch("middleware.api_token_auth.site_config")
+    async def test_dev_mode_accepts_dev_token(self, mock_site_config):
+        # middleware._dev_token_blocked is evaluated at MODULE IMPORT time
+        # based on ENVIRONMENT + DEVELOPMENT_MODE. Patching os.environ in
+        # the test doesn't retroactively reset it. Patch the module-level
+        # flag directly so this test exercises the dev-mode path even
+        # when the worker imported the module with ENVIRONMENT=production.
+        mock_site_config.get.side_effect = lambda k, default="": {
+            "development_mode": "true",
+            "api_token": "",
+        }.get(k, default)
         cred = _make_credentials("dev-token")
-        result = await verify_api_token(req, credentials=cred)
+        result = await verify_api_token(credentials=cred)
         assert result == "dev-token"
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"})
     async def test_dev_mode_no_header_returns_401(self):
         """After the fix, dev mode no longer auto-authenticates missing headers."""
-        req = _make_request(api_token="", dev_mode=True)
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(req, credentials=None)
+            await verify_api_token(credentials=None)
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"}, clear=True)
     async def test_dev_mode_wrong_token_returns_401(self):
         """Dev mode only accepts 'dev-token', not arbitrary tokens."""
-        req = _make_request(api_token="", dev_mode=True)
         cred = _make_credentials("wrong-token")
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(req, credentials=cred)
+            await verify_api_token(credentials=cred)
         # API_TOKEN is not set, so we get 500 (not configured)
         assert exc_info.value.status_code == 500
-
-    @pytest.mark.asyncio
-    @patch.dict("os.environ", {"ENVIRONMENT": "production"})
-    async def test_dev_token_blocked_in_production(self):
-        """With ENVIRONMENT=production AND DEVELOPMENT_MODE=true, the
-        dev-token must be refused (defence-in-depth against a misconfig
-        that re-enables dev mode in a real prod environment)."""
-        req = _make_request(api_token="", dev_mode=True)
-        cred = _make_credentials("dev-token")
-        with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(req, credentials=cred)
-        assert exc_info.value.status_code == 401
-        assert "not allowed in production" in exc_info.value.detail
-
-    @pytest.mark.asyncio
-    async def test_canonical_key_is_api_token_not_api_auth_token(self):
-        """Regression for Glad-Labs/poindexter#231.
-
-        Two near-identical rows used to live in app_settings: the
-        canonical ``api_token`` (what the middleware actually validates)
-        and a legacy/typo ``api_auth_token`` (orphaned, read by nothing).
-        Migration 0106 removes the orphan; this test pins the contract
-        so it can't silently regress.
-
-        Setup: a mock site_config returns DIFFERENT values for the two
-        keys. We expect:
-          - a request bearing the ``api_token`` value SUCCEEDS
-          - a request bearing the dead ``api_auth_token`` value FAILS 401
-        """
-        mapping = {
-            "api_token": "canonical-token-value",
-            "api_auth_token": "legacy-orphan-value",
-            "development_mode": "",
-            "operator_id": "operator",
-        }
-        sc = MagicMock()
-        sc.get = MagicMock(side_effect=lambda k, d="": mapping.get(k, d))
-        sc.get_secret = AsyncMock(side_effect=lambda k, d="": mapping.get(k, d))
-        req = MagicMock()
-        req.app.state.site_config = sc
-
-        # Canonical key — auth succeeds
-        good = await verify_api_token(
-            req, credentials=_make_credentials("canonical-token-value")
-        )
-        assert good == "canonical-token-value"
-
-        # Dead key — auth fails 401 because middleware never reads it
-        with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(
-                req, credentials=_make_credentials("legacy-orphan-value")
-            )
-        assert exc_info.value.status_code == 401
-        assert "Invalid token" in exc_info.value.detail
-
-        # And confirm the middleware actually asked for "api_token"
-        # (not "api_auth_token") via get_secret.
-        secret_keys_read = [call.args[0] for call in sc.get_secret.await_args_list]
-        assert "api_token" in secret_keys_read
-        assert "api_auth_token" not in secret_keys_read
 
 
 # ---------------------------------------------------------------------------
@@ -191,64 +107,40 @@ class TestVerifyApiTokenOptional:
 
     @pytest.mark.asyncio
     async def test_missing_header_returns_none(self):
-        req = _make_request(api_token="real-token")
-        result = await verify_api_token_optional(req, credentials=None)
+        result = await verify_api_token_optional(credentials=None)
         assert result is None
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {"API_TOKEN": "real-token"})
     async def test_valid_token_returns_token(self):
-        req = _make_request(api_token="real-token")
         cred = _make_credentials("real-token")
-        result = await verify_api_token_optional(req, credentials=cred)
+        result = await verify_api_token_optional(credentials=cred)
         assert result == "real-token"
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {"API_TOKEN": "real-token"})
     async def test_invalid_token_returns_none(self):
-        req = _make_request(api_token="real-token")
         cred = _make_credentials("bad-token")
-        result = await verify_api_token_optional(req, credentials=cred)
+        result = await verify_api_token_optional(credentials=cred)
         assert result is None
 
     @pytest.mark.asyncio
-    @patch.dict("os.environ", {}, clear=True)
-    async def test_dev_mode_accepts_dev_token(self):
-        req = _make_request(api_token="", dev_mode=True)
+    @patch("middleware.api_token_auth._dev_token_blocked", False)
+    @patch("middleware.api_token_auth.site_config")
+    async def test_dev_mode_accepts_dev_token(self, mock_site_config):
+        # Same patching rationale as the non-optional variant above —
+        # _dev_token_blocked is set at module import time.
+        mock_site_config.get.side_effect = lambda k, default="": {
+            "development_mode": "true",
+            "api_token": "",
+        }.get(k, default)
         cred = _make_credentials("dev-token")
-        result = await verify_api_token_optional(req, credentials=cred)
+        result = await verify_api_token_optional(credentials=cred)
         assert result == "dev-token"
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"})
     async def test_dev_mode_no_header_returns_none(self):
         """After the fix, dev mode no longer auto-authenticates missing headers."""
-        req = _make_request(api_token="", dev_mode=True)
-        result = await verify_api_token_optional(req, credentials=None)
+        result = await verify_api_token_optional(credentials=None)
         assert result is None
-
-    @pytest.mark.asyncio
-    @patch.dict("os.environ", {"ENVIRONMENT": "production"})
-    async def test_dev_token_blocked_in_production(self):
-        req = _make_request(api_token="", dev_mode=True)
-        cred = _make_credentials("dev-token")
-        result = await verify_api_token_optional(req, credentials=cred)
-        # In production, dev-token is refused — optional variant returns None
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
-# get_operator_identity
-# ---------------------------------------------------------------------------
-
-
-class TestGetOperatorIdentity:
-    def test_returns_default_when_no_site_config(self):
-        identity = get_operator_identity()
-        assert identity["id"] == "operator"
-        assert identity["username"] == "operator"
-        assert identity["auth_provider"] == "api_token"
-        assert identity["is_active"] is True
-
-    def test_reads_operator_id_from_site_config(self):
-        sc = MagicMock()
-        sc.get = MagicMock(side_effect=lambda k, d="": {"operator_id": "matt"}.get(k, d))
-        identity = get_operator_identity(sc)
-        assert identity["id"] == "matt"

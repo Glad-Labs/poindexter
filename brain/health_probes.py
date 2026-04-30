@@ -17,6 +17,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from typing import Any
 
 try:
     # When brain/ is on sys.path directly (container runtime), import bare.
@@ -27,6 +28,37 @@ except ImportError:
     from brain.docker_utils import localize_url, resolve_url
 
 logger = logging.getLogger("brain.probes")
+
+# OpenTelemetry is optional — health probes work with or without it.
+# When the opentelemetry SDK isn't installed, ``_tracer`` is a no-op
+# implementation that matches the real API's ``start_as_current_span``
+# contract. Same shape as src/cofounder_agent/services/llm_providers/dispatcher.py
+# so behavior stays uniform across the codebase.
+try:
+    from opentelemetry import trace as _otel_trace  # type: ignore[import-untyped]
+
+    _tracer = _otel_trace.get_tracer("poindexter.brain.probes")
+except ImportError:  # pragma: no cover - exercised in minimal dev envs
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _noop_span(_name: str, **_kwargs: Any):
+        class _NoopSpan:
+            def set_attribute(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+            def record_exception(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+            def set_status(self, *_a: Any, **_k: Any) -> None:
+                pass
+
+        yield _NoopSpan()
+
+    class _NoopTracer:
+        start_as_current_span = staticmethod(_noop_span)
+
+    _tracer = _NoopTracer()
 
 # Bootstrap defaults — overridden from app_settings on first probe run.
 # localize_url rewrites `localhost` to `host.docker.internal` when running
@@ -137,7 +169,6 @@ PROBE_SCHEDULES = {
     "public_site": 300,          # 5 min
     "scheduled_tasks": 3600,     # 1 hour
     "disk_space": 3600,          # 1 hour
-    "gpu_temperature": 60,       # 1 min — RTX 5090 thermal coverage (replaces retired Grafana "GPU Temperature High" alert)
     # P0 — pipeline health
     "stuck_tasks": 1800,         # 30 min
     "approval_queue": 3600,      # 1 hour
@@ -175,21 +206,10 @@ def _mark_run(probe_name: str):
 
 def _http_json(url: str, method: str = "GET", data: dict | None = None,
                timeout: int = 15) -> tuple[bool, dict]:
-    """Make an HTTP request and parse JSON response. Returns (ok, data_or_error).
-
-    Sets a descriptive User-Agent so Cloudflare's bot fight mode (which
-    rejects the urllib default ``Python-urllib/X.Y`` with 403) doesn't
-    misclassify probes. Without it, ``probe_public_site`` against
-    gladlabs.io fails every cycle even though the site is healthy.
-    """
+    """Make an HTTP request and parse JSON response. Returns (ok, data_or_error)."""
     try:
         body = json.dumps(data).encode() if data else None
-        req = urllib.request.Request(
-            url,
-            data=body,
-            method=method,
-            headers={"User-Agent": "Poindexter-Brain-Daemon/1.0 (+https://www.gladlabs.io)"},
-        )
+        req = urllib.request.Request(url, data=body, method=method)
         if body:
             req.add_header("Content-Type", "application/json")
         resp = urllib.request.urlopen(req, timeout=timeout)
@@ -529,37 +549,14 @@ async def probe_stuck_tasks(pool) -> dict:
 
 
 async def probe_approval_queue(pool) -> dict:
-    """Probe: Alert if approval queue backs up beyond threshold.
-
-    Threshold is tunable via ``app_settings.approval_queue_alert_threshold``
-    (default 15). Was hardcoded to 5 historically — a number from before
-    the throttle gate was introduced. With ``max_approval_queue`` defaulting
-    to 20, a static 5 fires constantly during normal pacing. The default
-    here is high enough that you only see the alert when the queue is
-    actively stalled (close to the throttle ceiling).
-    """
+    """Probe: Alert if approval queue backs up beyond threshold."""
     try:
-        threshold = 15
-        try:
-            row = await pool.fetchrow(
-                "SELECT value FROM app_settings WHERE key = "
-                "'approval_queue_alert_threshold'"
-            )
-            if row and row["value"]:
-                threshold = int(str(row["value"]).strip())
-        except Exception as e:  # pragma: no cover — defaults are fine
-            # DB hiccup or bad value — log so a real outage doesn't
-            # masquerade as "threshold defaults to 15".
-            logger.warning(
-                "[PROBES] approval_queue_alert_threshold lookup failed: %s — using default %d",
-                e, threshold,
-            )
-
         row = await pool.fetchrow("""
             SELECT COUNT(*) as c FROM pipeline_tasks_view
             WHERE status = 'awaiting_approval'
         """)
         count = row["c"] if row else 0
+        threshold = 5
         return {
             "ok": count <= threshold,
             "queue_size": count,
@@ -950,31 +947,22 @@ async def probe_topic_quality(pool) -> dict:
         # rejection-category audit events in the same 7d window. If a
         # task hits multiple gates, the first-written event wins — that
         # matches the operator-facing reality (what stopped it first).
-        #
-        # Filter list audited 2026-04-25: ``qa_rejected``,
-        # ``topic_rejected``, ``title_not_original``,
-        # ``content_validation_rejected`` were aspirational names that
-        # never made it into the production audit log. The actual
-        # event_types written today are ``qa_failed`` (multi-model QA
-        # fail), ``semantic_dedup_rejected``, and the generic ``error``
-        # event. Filtering on the right names so attribution is
-        # correct — previously the probe said "duplicate topics" was
-        # the only driver because that was the one event it could see,
-        # while ``qa_failed`` (~9x more common) was invisible to the
-        # query.
         driver_rows = await pool.fetch("""
-            SELECT event_type, COUNT(*) AS n
+            SELECT event, COUNT(*) AS n
             FROM audit_log
-            WHERE event_type IN (
-                'qa_failed',
-                'semantic_dedup_rejected'
+            WHERE event IN (
+                'semantic_dedup_rejected',
+                'qa_rejected',
+                'topic_rejected',
+                'title_not_original',
+                'content_validation_rejected'
             )
-              AND timestamp > NOW() - INTERVAL '7 days'
-            GROUP BY event_type
+              AND created_at > NOW() - INTERVAL '7 days'
+            GROUP BY event
             ORDER BY n DESC
             LIMIT 3
         """)
-        drivers = {r["event_type"]: r["n"] for r in driver_rows}
+        drivers = {r["event"]: r["n"] for r in driver_rows}
         top_driver = next(iter(drivers), None)
 
         healthy = rejection_rate <= 30
@@ -985,7 +973,10 @@ async def probe_topic_quality(pool) -> dict:
             # generic "low quality" claim when quality wasn't the issue.
             label = {
                 "semantic_dedup_rejected": "duplicate topics (feeds re-surfacing covered ground)",
-                "qa_failed": "multi-model QA failed (writer output below score gate)",
+                "qa_rejected": "QA threshold (tighten writer or loosen gate)",
+                "topic_rejected": "topic selector rejecting (filters too strict)",
+                "title_not_original": "titles colliding with web content",
+                "content_validation_rejected": "content validator failing",
             }.get(top_driver, top_driver)
             suffix = f" — driver: {label} ({drivers[top_driver]}/{rejected})"
         else:
@@ -1040,80 +1031,6 @@ async def probe_pipeline_throughput(pool) -> dict:
         return {"ok": False, "detail": str(e)[:200]}
 
 
-async def probe_gpu_temperature(_pool) -> dict:
-    """Probe: GPU core temperature via the nvidia-smi-exporter Prom metric.
-
-    Closes the only direct-alert coverage gap left when Grafana alert
-    rules were retired (2026-04-25): nothing else watches RTX 5090
-    thermals. Threshold tunable via
-    ``app_settings.gpu_temperature_high_threshold_c`` (default 85). The
-    RTX 5090 hard-throttles around 90 C, so 85 is the "phone Matt"
-    line — anything north of that and the GPU is silently dropping
-    boost clocks.
-    """
-    threshold = 85
-    if _pool is not None:
-        try:
-            row = await _pool.fetchrow(
-                "SELECT value FROM app_settings WHERE key = "
-                "'gpu_temperature_high_threshold_c'"
-            )
-            if row and row["value"]:
-                threshold = int(str(row["value"]).strip())
-        except Exception as e:  # pragma: no cover — defaults are fine
-            # Misconfigured threshold or DB hiccup — log so the operator
-            # sees the fallback rather than wondering why their tuned
-            # threshold isn't taking effect.
-            logger.warning(
-                "[PROBES] gpu_temperature_high_threshold_c lookup failed: %s — using default %dC",
-                e, threshold,
-            )
-
-    prom = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
-    try:
-        ok, data = _http_json(
-            f"{prom}/api/v1/query?query=nvidia_gpu_temperature_celsius",
-            timeout=5,
-        )
-    except Exception as exc:
-        return {"ok": True, "detail": f"prometheus unreachable, skipping: {exc}"}
-    if not ok:
-        return {"ok": True, "detail": f"prometheus query failed: {data.get('error', 'unknown')}"}
-
-    series = (data.get("data") or {}).get("result") or []
-    if not series:
-        # No data point — exporter probably down; not this probe's job to alarm.
-        return {"ok": True, "detail": "no nvidia_gpu_temperature_celsius series (exporter down?)"}
-
-    hottest = -1.0
-    hottest_gpu = ""
-    for s in series:
-        val_pair = s.get("value")
-        if not val_pair or len(val_pair) < 2:
-            continue
-        try:
-            t = float(val_pair[1])
-        except (TypeError, ValueError):
-            continue
-        if t > hottest:
-            hottest = t
-            hottest_gpu = s.get("metric", {}).get("gpu", "?")
-
-    if hottest < 0:
-        return {"ok": True, "detail": "no parseable temperature samples"}
-    healthy = hottest < threshold
-    return {
-        "ok": healthy,
-        "max_temp_c": hottest,
-        "threshold_c": threshold,
-        "gpu": hottest_gpu,
-        "detail": (
-            f"GPU{hottest_gpu} {hottest:.0f}C (threshold {threshold}C)"
-            + ("" if healthy else " — over threshold, may be throttling")
-        ),
-    }
-
-
 # All probes in execution order
 PROBES = {
     # Infrastructure
@@ -1125,7 +1042,6 @@ PROBES = {
     "scheduled_tasks": probe_scheduled_tasks,
     "disk_space": probe_disk_space,
     "r2_connectivity": probe_r2_connectivity,
-    "gpu_temperature": probe_gpu_temperature,
     # Pipeline health (P0)
     "stuck_tasks": probe_stuck_tasks,
     "approval_queue": probe_approval_queue,
@@ -1182,10 +1098,25 @@ async def run_health_probes(pool, notify_fn=None):
             continue
 
         _mark_run(name)
-        try:
-            result = await probe_fn(pool)
-        except Exception as e:
-            result = {"ok": False, "detail": f"probe crashed: {e}"}
+        # Per-probe child span — gives Tempo a flame-graph entry per probe so
+        # slow/failing probes are visible instead of aggregating under the
+        # parent run_health_probes span (issue #176).
+        with _tracer.start_as_current_span(
+            f"brain.probe.{name}",
+            attributes={"probe.name": name},
+        ) as span:
+            start = time.monotonic()
+            try:
+                try:
+                    result = await probe_fn(pool)
+                except Exception as e:
+                    result = {"ok": False, "detail": f"probe crashed: {e}"}
+                    span.record_exception(e)
+                span.set_attribute("probe.ok", bool(result.get("ok", False)))
+            finally:
+                span.set_attribute(
+                    "probe.duration_s", time.monotonic() - start,
+                )
 
         results[name] = result
         ok = result.get("ok", False)

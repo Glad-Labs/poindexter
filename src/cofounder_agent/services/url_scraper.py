@@ -1,32 +1,22 @@
 """URL scraper — extract title + content from any URL for topic seeding (#230).
 
 Supports:
-- Article pages (blog posts, news) — via trafilatura
+- Article pages (blog posts, news)
 - GitHub repos (via README endpoint)
 - arXiv papers (via abstract page)
 - Product pages (generic OG metadata)
 
-#204: generic article extraction now uses **trafilatura** (Apache 2.0)
-instead of hand-rolled BeautifulSoup heuristics. Trafilatura is a
-peer-reviewed library purpose-built for clean text + metadata
-extraction, used by NLP research groups for the same kind of corpus
-prep our research stage does. Github/arXiv routes still use bespoke
-scrapers because they're API-driven and don't benefit from trafilatura.
-
-Uses httpx for fetch (timeouts + user-agent control), trafilatura for
-HTML parsing on the generic path, BeautifulSoup4 retained for the
-arXiv route's structured-element selectors.
+Uses httpx + beautifulsoup4 (already deps). Respects timeouts, user-agent,
+and returns a structured dict compatible with DiscoveredTopic.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-import trafilatura
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
@@ -34,30 +24,16 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 15.0
 MAX_CONTENT_CHARS = 50000  # safety cap on extracted text
 
-# Fallback used when no site_config is passed (e.g. by legacy callers
-# mid-Phase-H rollout). Keeps the scraper running even if the DI chain
-# hasn't reached every call site yet — it just sends a generic UA.
-_FALLBACK_USER_AGENT = (
-    "Mozilla/5.0 (compatible; PoindexterBot/1.0; no-contact-configured) "
-    "AI content pipeline topic scraper"
-)
 
-
-def _build_user_agent(site_config: Any) -> str:
+def _build_user_agent() -> str:
     """Build the URL-scraper User-Agent string from site_config (#198).
 
     Uses site_contact_url for the bot identifier so operators can bring
     their own brand. Falls back to a neutral generic if unset.
-
-    Args:
-        site_config: SiteConfig instance (DI — Phase H). ``None`` returns
-            the generic fallback UA so legacy callers that haven't been
-            threaded through yet still work.
     """
-    if site_config is None:
-        return _FALLBACK_USER_AGENT
-    contact = site_config.get("site_contact_url", "").strip()
-    bot_name = site_config.get("scraper_bot_name", "PoindexterBot/1.0").strip()
+    from services.site_config import site_config as _sc
+    contact = _sc.get("site_contact_url", "").strip()
+    bot_name = _sc.get("scraper_bot_name", "PoindexterBot/1.0").strip()
     identifier = f"+{contact}" if contact else "no-contact-configured"
     return (
         f"Mozilla/5.0 (compatible; {bot_name}; {identifier}) "
@@ -65,16 +41,14 @@ def _build_user_agent(site_config: Any) -> str:
     )
 
 
+USER_AGENT = _build_user_agent()
+
+
 class URLScrapeError(Exception):
     """Raised when a URL cannot be scraped."""
 
 
-async def scrape_url(
-    url: str,
-    timeout: float = DEFAULT_TIMEOUT,
-    *,
-    site_config: Any = None,
-) -> dict:
+async def scrape_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """Scrape a URL and return structured content.
 
     Returns:
@@ -92,14 +66,6 @@ async def scrape_url(
 
     Raises:
         URLScrapeError: if the URL can't be fetched or parsed.
-
-    Args:
-        url: the URL to scrape.
-        timeout: HTTP request timeout in seconds.
-        site_config: SiteConfig instance (DI — Phase H). Used to build
-            the User-Agent string and to resolve ``arxiv_base_url`` for
-            the arXiv scraper. ``None`` falls back to sensible defaults
-            so callers mid-rollout still work.
     """
     if not url or not url.startswith(("http://", "https://")):
         raise URLScrapeError(f"Invalid URL: {url!r}")
@@ -109,20 +75,19 @@ async def scrape_url(
 
     # Route to specialized scrapers for known platforms
     if "github.com" in hostname:
-        return await _scrape_github(url, timeout, site_config=site_config)
+        return await _scrape_github(url, timeout)
     if "arxiv.org" in hostname:
-        return await _scrape_arxiv(url, timeout, site_config=site_config)
+        return await _scrape_arxiv(url, timeout)
 
     # Default: generic HTML article extraction
-    return await _scrape_generic(url, timeout, site_config=site_config)
+    return await _scrape_generic(url, timeout)
 
 
-async def _fetch(url: str, timeout: float, *, site_config: Any) -> str:
+async def _fetch(url: str, timeout: float) -> str:
     """Fetch HTML with a reasonable user agent."""
-    user_agent = _build_user_agent(site_config)
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout, connect=5.0),
-        headers={"User-Agent": user_agent},
+        headers={"User-Agent": USER_AGENT},
         follow_redirects=True,
     ) as client:
         resp = await client.get(url)
@@ -130,48 +95,54 @@ async def _fetch(url: str, timeout: float, *, site_config: Any) -> str:
         return resp.text
 
 
-async def _scrape_generic(url: str, timeout: float, *, site_config: Any) -> dict:
-    """Extract title + main content from a generic HTML page.
-
-    Uses trafilatura's bare_extraction for both metadata and body text.
-    Falls back to a BeautifulSoup minimum (just <title>) if trafilatura
-    can't make sense of the page — matches the legacy behavior of
-    "always return *something* with a title", needed by callers that
-    seed topics from arbitrary URLs an operator pasted.
-    """
+async def _scrape_generic(url: str, timeout: float) -> dict:
+    """Extract title + main content from a generic HTML page."""
     try:
-        html = await _fetch(url, timeout, site_config=site_config)
+        html = await _fetch(url, timeout)
     except httpx.HTTPError as e:
         raise URLScrapeError(f"Fetch failed: {e}") from e
 
-    doc = trafilatura.bare_extraction(html, output_format="python", with_metadata=True)
+    soup = BeautifulSoup(html, "html.parser")
 
-    if doc is not None:
-        # Trafilatura already runs the OG/twitter/H1/title precedence
-        # we used to do by hand, plus a much more thorough boilerplate
-        # stripper. Map its Document fields onto our existing dict shape
-        # so callers and tests see no API change.
-        title = (doc.title or "").strip() or "Untitled"
-        excerpt = (doc.description or "").strip()
-        author = doc.author or None
-        published_at = doc.date or None
-        # ``text`` is the cleaned narrative body (boilerplate removed,
-        # scripts/styles/nav/footer dropped); ``raw_text`` keeps more
-        # structure but includes some noise. Stick with ``text`` here.
-        body = (doc.text or "").strip()
-    else:
-        # Trafilatura couldn't parse — happens for bare-bones HTML like
-        # ``<html><body><p>orphan</p></body></html>``. Pull just the
-        # <title> tag with BS4 so we don't break the
-        # "scrape_url returns *something*" contract.
-        soup = BeautifulSoup(html, "html.parser")
-        title = (_first_text(soup, "title") or "Untitled").strip()
-        excerpt = ""
-        author = None
-        published_at = None
-        body = ""
+    # Title priority: og:title > <h1> > <title>
+    title = (
+        _meta_content(soup, "og:title")
+        or _meta_content(soup, "twitter:title")
+        or _first_text(soup, "h1")
+        or _first_text(soup, "title")
+        or "Untitled"
+    ).strip()
 
-    content_full = re.sub(r"\n{3,}", "\n\n", body)[:MAX_CONTENT_CHARS]
+    # Excerpt
+    excerpt = (
+        _meta_content(soup, "og:description")
+        or _meta_content(soup, "description")
+        or _meta_content(soup, "twitter:description")
+        or ""
+    ).strip()
+
+    # Author
+    author = _meta_content(soup, "article:author") or _meta_content(soup, "author")
+
+    # Published date
+    published_at = (
+        _meta_content(soup, "article:published_time")
+        or _meta_content(soup, "og:published_time")
+        or _meta_content(soup, "date")
+    )
+
+    # Main content: strip scripts/styles/nav/footer, extract text
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "form"]):
+        tag.decompose()
+
+    # Prefer <article> or <main>, fall back to body
+    main = soup.find("article") or soup.find("main") or soup.find("body")
+    content_full = ""
+    if main:
+        # Get text, collapse whitespace
+        text = main.get_text(separator="\n", strip=True)
+        content_full = re.sub(r"\n{3,}", "\n\n", text)[:MAX_CONTENT_CHARS]
+
     content_preview = content_full[:500]
     word_count = len(content_full.split())
 
@@ -188,24 +159,23 @@ async def _scrape_generic(url: str, timeout: float, *, site_config: Any) -> dict
     }
 
 
-async def _scrape_github(url: str, timeout: float, *, site_config: Any) -> dict:
+async def _scrape_github(url: str, timeout: float) -> dict:
     """Extract README + metadata from a GitHub repo URL.
 
     Accepts: https://github.com/owner/repo[/...]
     """
     parts = urlparse(url).path.strip("/").split("/")
     if len(parts) < 2:
-        return await _scrape_generic(url, timeout, site_config=site_config)
+        return await _scrape_generic(url, timeout)
 
     owner, repo = parts[0], parts[1]
     api_url = f"https://api.github.com/repos/{owner}/{repo}"
     readme_url = f"https://api.github.com/repos/{owner}/{repo}/readme"
 
-    user_agent = _build_user_agent(site_config)
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(timeout, connect=5.0),
-            headers={"User-Agent": user_agent, "Accept": "application/vnd.github+json"},
+            headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
         ) as client:
             repo_resp = await client.get(api_url)
             repo_data = repo_resp.json() if repo_resp.is_success else {}
@@ -234,17 +204,15 @@ async def _scrape_github(url: str, timeout: float, *, site_config: Any) -> dict:
     }
 
 
-async def _scrape_arxiv(url: str, timeout: float, *, site_config: Any) -> dict:
+async def _scrape_arxiv(url: str, timeout: float) -> dict:
     """Extract abstract from arXiv paper URL.
 
     Handles both /abs/ and /pdf/ URLs.
     arxiv_base_url setting lets operators point at a mirror or
     local-proxied instance (#198).
     """
-    if site_config is None:
-        _arxiv_base = "https://arxiv.org"
-    else:
-        _arxiv_base = site_config.get("arxiv_base_url", "https://arxiv.org").rstrip("/")
+    from services.site_config import site_config as _sc
+    _arxiv_base = _sc.get("arxiv_base_url", "https://arxiv.org").rstrip("/")
     # Normalize to /abs/ URL for HTML scraping
     m = re.search(r"arxiv\.org/(abs|pdf)/(\d+\.\d+)", url)
     if m:
@@ -254,7 +222,7 @@ async def _scrape_arxiv(url: str, timeout: float, *, site_config: Any) -> dict:
         abs_url = url
 
     try:
-        html = await _fetch(abs_url, timeout, site_config=site_config)
+        html = await _fetch(abs_url, timeout)
     except httpx.HTTPError as e:
         raise URLScrapeError(f"arXiv fetch failed: {e}") from e
 
@@ -281,6 +249,17 @@ async def _scrape_arxiv(url: str, timeout: float, *, site_config: Any) -> dict:
         "excerpt": abstract[:500],
         "word_count": len(abstract.split()),
     }
+
+
+def _meta_content(soup: BeautifulSoup, name: str) -> str:
+    """Extract <meta name=X> or <meta property=X> content attribute."""
+    el = soup.find("meta", attrs={"name": name})
+    if el and el.get("content"):
+        return el["content"]
+    el = soup.find("meta", attrs={"property": name})
+    if el and el.get("content"):
+        return el["content"]
+    return ""
 
 
 def _first_text(soup: BeautifulSoup, selector: str) -> str:

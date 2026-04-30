@@ -37,9 +37,7 @@ class AuditPublishedQualityJob:
     schedule = "every 6 hours"
     idempotent = True  # Writes are audit_log inserts (append-only) + Gitea issues (dedup'd)
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any = None,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         batch_size = int(config.get("batch_size", 5))
         cooldown_days = int(config.get("cooldown_days", 7))
         min_words = int(config.get("min_words", 500))
@@ -111,7 +109,6 @@ class AuditPublishedQualityJob:
             await create_gitea_issue(
                 f"quality: {len(issues)} issues in {len(rows)} audited posts",
                 body,
-                site_config=site_config,
             )
 
         detail = f"audited {len(rows)} post(s), found {len(issues)} issue(s)"

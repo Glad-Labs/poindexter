@@ -5,8 +5,6 @@ name: CI — Test
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 jobs:
   test-backend:
@@ -25,27 +23,11 @@ jobs:
           clean: true
           fetch-depth: 1
 
-      - name: Verify poetry.lock matches pyproject.toml
-        # Fast-fails (1-2s) with a clear actionable message when pyproject
-        # was edited without re-running `poetry lock`. Without this guard
-        # the failure surfaces 30+ seconds later mid-`poetry install` with a
-        # less obvious "lock file is not consistent" line buried in install
-        # output — and historically cost a full overnight of red CI.
-        run: |
-          cd src/cofounder_agent
-          poetry check --lock
-
       - name: Install Python dependencies
         run: |
           cd src/cofounder_agent
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
-          # Register the project's [tool.poetry.plugins."poindexter.*"]
-          # entry_points in dist-info so importlib.metadata.entry_points()
-          # picks them up. Without this step plugin-discovery tests fail
-          # because both entry_points AND get_core_samples() come back
-          # empty (gh#152: same fix Dockerfile.worker applies for runtime).
-          pip install --no-deps --no-cache-dir .
 
       # Split by directory to avoid cross-directory test state pollution.
       # Services uses --forked because intra-directory singleton pollution

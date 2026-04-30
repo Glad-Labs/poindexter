@@ -15,13 +15,13 @@ import json
 import os
 import random
 import re
+import tempfile
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import asyncpg
-
 from services.logger_config import get_logger
+from services.site_config import site_config
 from utils.text_utils import extract_title_from_content
 
 logger = get_logger(__name__)
@@ -117,25 +117,21 @@ async def _sync_published_post(post_id: str) -> None:
         logger.warning("[SYNC] Failed to sync published post (non-fatal): %s", e)
 
 
-async def _ping_search_engines(
-    site_url: str,
-    post_url: str,
-    site_config: Any,
-) -> None:
+async def _ping_search_engines(site_url: str, post_url: str) -> None:
     """Notify search engines about new content via IndexNow and Google ping."""
     import httpx
 
     # Tight caps on external SEO pings — they're fire-and-forget, we don't
     # want them to delay anything else if the target is slow.
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(10.0, connect=3.0),
+        timeout=httpx.Timeout(10.0, connect=3.0)
     ) as client:
         # IndexNow (Bing, Yandex, Naver, Seznam).
         # #198: both endpoint + key settings-backed. Setting the endpoint
         # to '' disables the ping without code changes.
         _indexnow_key = site_config.get("indexnow_key", "")
         _indexnow_url = site_config.get(
-            "indexnow_ping_url", "https://api.indexnow.org/indexnow",
+            "indexnow_ping_url", "https://api.indexnow.org/indexnow"
         )
         if _indexnow_url:
             try:
@@ -151,7 +147,7 @@ async def _ping_search_engines(
         # Search-engine sitemap ping (Google's /ping endpoint by default;
         # set google_sitemap_ping_url='' to skip).
         _sitemap_ping = site_config.get(
-            "google_sitemap_ping_url", "https://www.google.com/ping",
+            "google_sitemap_ping_url", "https://www.google.com/ping"
         )
         if _sitemap_ping:
             try:
@@ -334,7 +330,6 @@ async def publish_post_from_task(
     task: dict[str, Any],
     task_id: str,
     *,
-    site_config: Any,
     publisher: str = "operator",
     trigger_revalidation: bool = True,
     queue_social: bool = True,
@@ -579,64 +574,12 @@ async def publish_post_from_task(
         publish_meta["scheduled_publish_at"] = scheduled_at.isoformat()
     merged["publish_metadata"] = publish_meta
 
-    # gitea#118: this used to be wrapped in a broad try/except that
-    # logged at WARNING and swallowed every exception. The result was a
-    # silent failure mode: the post got created, social/sync/podcast
-    # background tasks were queued, but content_tasks.status stayed on
-    # 'approved' (or 'in_progress') forever — confusing dashboards and
-    # leaving downstream consumers blind to the publish event. The
-    # underlying schema-drift bug (UndefinedColumnError on a stale
-    # _VIEW_COLUMNS allowlist entry) was masked by the inner try/except
-    # in tasks_db.update_task_status, then masked again here.
-    #
-    # New contract:
-    #   - asyncpg.UndefinedColumnError → re-raise (real schema bug; fix it)
-    #   - update_task_status returns None → log ERROR + raise (no row
-    #     matched, the task row is gone or the task_id is wrong)
-    #   - any other DB error → log ERROR (not WARNING) with full traceback
-    #     so it shows up in Sentry/GlitchTip, then continue. The route's
-    #     _finalize_publish shim will re-run the status update; failures
-    #     of the result-payload write are not worth aborting publish for.
     try:
-        update_result = await db_service.update_task_status(
+        await db_service.update_task_status(
             task_id, "published", result=safe_json_dumps(convert_decimals(merged))
         )
-    except asyncpg.exceptions.UndefinedColumnError:
-        logger.exception(
-            "[publish_service] schema drift updating task %s — content_tasks "
-            "view is missing a column update_task_status tried to write. "
-            "This is a real bug; fix the SQL or migrate the schema rather "
-            "than catching the exception.",
-            task_id,
-        )
-        raise
-    except Exception:
-        # Non-schema errors (deadlock, conn drop, etc.) are real but
-        # transient — don't kill the publish, just surface them at ERROR
-        # so they hit Sentry instead of getting buried at WARNING.
-        logger.exception(
-            "[publish_service] update_task_status raised for task %s — post "
-            "is created but task row may be stuck. Route-level "
-            "_finalize_publish will retry status='published' write.",
-            task_id,
-        )
-        update_result = None
-
-    if update_result is None:
-        # The post is already in the posts table at this point; we just
-        # couldn't reflect that in content_tasks. The route-level
-        # _finalize_publish defense-in-depth runs an idempotent
-        # ``UPDATE content_tasks SET status='published'`` after this
-        # function returns successfully, so the operator sees a clean
-        # final state even when the result-payload write failed. Log
-        # loud so the underlying issue (transient failure or no-match
-        # WHERE) is visible in monitoring.
-        logger.error(
-            "[publish_service] update_task_status returned None for task %s "
-            "after post creation — route-level _finalize_publish will "
-            "retry the status transition",
-            task_id,
-        )
+    except Exception as e:
+        logger.warning("[publish_service] Failed to update task result: %s", e)
 
     # ---------------------------------------------------------------
     # 7. Emit webhook
@@ -690,14 +633,12 @@ async def publish_post_from_task(
                         generate_and_distribute_social_posts,
                         title=_title, slug=slug,
                         excerpt=seo_description, keywords=_seo_kw,
-                        site_config=site_config,
                     )
                 else:
                     _spawn_background(
                         generate_and_distribute_social_posts(
                             title=_title, slug=slug,
                             excerpt=seo_description, keywords=_seo_kw,
-                            site_config=site_config,
                         ),
                         name=f"social_posts({slug})",
                     )
@@ -711,10 +652,7 @@ async def publish_post_from_task(
     try:
         from services.devto_service import DevToCrossPostService
 
-        devto_svc = DevToCrossPostService(
-            getattr(db_service, "cloud_pool", None) or db_service.pool,
-            site_config,
-        )
+        devto_svc = DevToCrossPostService(getattr(db_service, "cloud_pool", None) or db_service.pool)
         if background_tasks:
             background_tasks.add_task(
                 devto_svc.cross_post_by_post_id, post_id
@@ -738,9 +676,7 @@ async def publish_post_from_task(
 
             reval_paths = ["/", "/archive", "/posts", f"/posts/{slug}"]
             reval_tags = ["posts", "post-index", f"post:{slug}"]
-            revalidation_success = await trigger_nextjs_revalidation(
-                reval_paths, reval_tags, site_config=site_config,
-            )
+            revalidation_success = await trigger_nextjs_revalidation(reval_paths, reval_tags)
             if not revalidation_success:
                 logger.warning("[publish_service] ISR revalidation returned failure for %s", slug)
         except Exception as reval_err:
@@ -754,10 +690,10 @@ async def publish_post_from_task(
 
         _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
         if background_tasks:
-            background_tasks.add_task(export_post, _pool, slug, site_config)
+            background_tasks.add_task(export_post, _pool, slug)
         else:
             _spawn_background(
-                export_post(_pool, slug, site_config), name=f"static_export({slug})"
+                export_post(_pool, slug), name=f"static_export({slug})"
             )
         logger.info("[STATIC_EXPORT] Queued export for %s", slug)
     except Exception as e:
@@ -769,7 +705,7 @@ async def publish_post_from_task(
     site_url = site_config.require("site_url")
     published_url_full = f"{site_url}/posts/{slug}"
     _spawn_background(
-        _ping_search_engines(site_url, published_url_full, site_config),
+        _ping_search_engines(site_url, published_url_full),
         name=f"ping_search_engines({slug})",
     )
 
@@ -786,13 +722,11 @@ async def publish_post_from_task(
             if background_tasks:
                 background_tasks.add_task(
                     generate_podcast_episode, post_id, post_title, post_content,
-                    site_config=site_config,
                     pre_generated_script=_pre_script,
                 )
             else:
                 _spawn_background(
                     generate_podcast_episode(post_id, post_title, post_content,
-                                            site_config=site_config,
                                             pre_generated_script=_pre_script),
                     name=f"podcast_episode({post_id})",
                 )
@@ -810,13 +744,11 @@ async def publish_post_from_task(
             if background_tasks:
                 background_tasks.add_task(
                     generate_video_episode, post_id, post_title, post_content,
-                    site_config=site_config,
                     pre_generated_scenes=_video_scenes,
                 )
             else:
                 _spawn_background(
                     generate_video_episode(post_id, post_title, post_content,
-                                          site_config=site_config,
                                           pre_generated_scenes=_video_scenes),
                     name=f"video_episode({post_id})",
                 )
@@ -835,16 +767,14 @@ async def publish_post_from_task(
                 """Wait for podcast, then generate short video."""
                 import asyncio as _aio
 
-                _delay = int(
-                    site_config.get("short_video_post_publish_delay_seconds", "180"),
-                )
+                from services.site_config import site_config as _scfg
+                _delay = int(_scfg.get("short_video_post_publish_delay_seconds", "180"))
                 await _aio.sleep(_delay)
                 try:
                     result = await generate_short_video_for_post(
                         pid, ptitle, pcontent,
                         pre_generated_scenes=scenes,
                         pre_generated_summary=short_script,
-                        site_config=site_config,
                     )
                     if not result.success:
                         logger.warning("[SHORT] Failed for post %s: %s", pid, result.error)
@@ -873,43 +803,43 @@ async def publish_post_from_task(
                 upload_to_r2,
                 upload_video_episode,
             )
+            from services.site_config import site_config as _scfg
             # Give podcast/video/short generation time to complete
-            _delay = int(site_config.get("media_r2_upload_delay_seconds", "240"))
+            _delay = int(_scfg.get("media_r2_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
-            await upload_podcast_episode(pid, site_config=site_config)
-            await upload_video_episode(pid, site_config=site_config)
+            await upload_podcast_episode(pid)
+            await upload_video_episode(pid)
             # Upload short video if it exists
             short_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}-short.mp4"
             if short_path.exists():
-                await upload_to_r2(
-                    str(short_path),
-                    f"video/{pid}-short.mp4",
-                    "video/mp4",
-                    site_config=site_config,
-                )
+                await upload_to_r2(str(short_path), f"video/{pid}-short.mp4", "video/mp4")
             # Regenerate public podcast RSS feed on R2
             try:
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                _api_base = site_config.get(
-                    "internal_api_base_url", DEFAULT_WORKER_API_URL,
-                )
-                async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                    _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
-                    _feed_path = "/tmp/podcast-feed.xml"
-                    # Blocking file I/O in async context — push to worker thread
-                    # so the event loop isn't stalled while we write the feed file.
-                    await asyncio.to_thread(
-                        _write_text_file, _feed_path, _feed.text,
-                    )
-                    await upload_to_r2(
-                        _feed_path,
-                        "podcast/feed.xml",
-                        "application/rss+xml",
-                        site_config=site_config,
-                    )
-                    logger.info("[R2] Podcast RSS feed regenerated on CDN")
+                from services.site_config import site_config as _scfg
+                _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                # Per-call temp file via tempfile.mkstemp avoids hardcoded
+                # /tmp paths (Bandit B108) and prevents collisions when
+                # multiple publishes run concurrently.
+                _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-podcast-")
+                try:
+                    os.close(_fd)  # _write_text_file reopens the path
+                    async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
+                        _feed = await _client.get(f"{_api_base}/api/podcast/feed.xml", timeout=30)
+                        # Blocking file I/O in async context — push to worker thread
+                        # so the event loop isn't stalled while we write the feed file.
+                        await asyncio.to_thread(
+                            _write_text_file, _feed_path, _feed.text,
+                        )
+                        await upload_to_r2(_feed_path, "podcast/feed.xml", "application/rss+xml")
+                        logger.info("[R2] Podcast RSS feed regenerated on CDN")
+                finally:
+                    try:
+                        os.unlink(_feed_path)
+                    except OSError:
+                        pass
             except Exception as _e:
                 logger.warning("[R2] Podcast feed regen failed (non-fatal): %s", _e)
 
@@ -918,28 +848,32 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                _api_base = site_config.get(
-                    "internal_api_base_url", DEFAULT_WORKER_API_URL,
-                )
-                async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
-                    _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
-                    _feed_path = "/tmp/video-feed.xml"
-                    await asyncio.to_thread(
-                        _write_text_file, _feed_path, _feed.text,
-                    )
-                    await upload_to_r2(
-                        _feed_path,
-                        "video/feed.xml",
-                        "application/rss+xml",
-                        site_config=site_config,
-                    )
-                    logger.info("[R2] Video RSS feed regenerated on CDN")
+                from services.site_config import site_config as _scfg
+                _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                # Per-call temp file via tempfile.mkstemp avoids hardcoded
+                # /tmp paths (Bandit B108).
+                _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-video-")
+                try:
+                    os.close(_fd)
+                    async with _hx.AsyncClient(timeout=_hx.Timeout(30.0, connect=5.0)) as _client:
+                        _feed = await _client.get(f"{_api_base}/api/video/feed.xml", timeout=30)
+                        await asyncio.to_thread(
+                            _write_text_file, _feed_path, _feed.text,
+                        )
+                        await upload_to_r2(_feed_path, "video/feed.xml", "application/rss+xml")
+                        logger.info("[R2] Video RSS feed regenerated on CDN")
+                finally:
+                    try:
+                        os.unlink(_feed_path)
+                    except OSError:
+                        pass
             except Exception as _e:
                 logger.warning("[R2] Video feed regen failed (non-fatal): %s", _e)
 
             # Upload video to YouTube if enabled
             try:
-                _platforms = site_config.get("social_distribution_platforms", "")
+                from services.site_config import site_config as _scfg_yt
+                _platforms = _scfg_yt.get("social_distribution_platforms", "")
                 if "youtube" in _platforms:
                     video_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}.mp4"
                     if video_path.exists():
@@ -951,7 +885,7 @@ async def publish_post_from_task(
                         ) if db_service and db_service.pool else None
                         _yt_title = _post["title"] if _post else "Poindexter Video"
                         _yt_slug = _post["slug"] if _post else ""
-                        _site_url = site_config.get("site_url", "https://www.gladlabs.io")
+                        _site_url = _scfg_yt.get("site_url", "https://www.gladlabs.io")
                         _yt_desc = (
                             f"{_post['excerpt'] or ''}\n\n"
                             f"Read the full article: {_site_url}/posts/{_yt_slug}\n\n"
@@ -987,9 +921,7 @@ async def publish_post_from_task(
             try:
                 from services.newsletter_service import send_post_newsletter
                 _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-                result = await send_post_newsletter(
-                    _pool, ptitle, pexcerpt, pslug, site_config,
-                )
+                result = await send_post_newsletter(_pool, ptitle, pexcerpt, pslug)
                 logger.info("[NEWSLETTER] Result: %s", result)
             except Exception as e:
                 logger.debug("[NEWSLETTER] Failed (non-fatal): %s", e)
@@ -1006,13 +938,9 @@ async def publish_post_from_task(
         from services.task_executor import _notify_openclaw
 
         _q_score = task.get("quality_score") or merged.get("quality_score") or "N/A"
-        # Discord-only per operator policy — publish announcements are
-        # routine, not critical alerts. Was previously silently broken
-        # (missing site_config arg); fixed in the same pass.
         await _notify_openclaw(
             f"Published: {post_title}\n/posts/{slug}\nScore: {_q_score}",
-            site_config,
-            critical=False,
+            critical=True,
         )
     except Exception:
         logger.debug("[publish_service] Notification failed (non-fatal)", exc_info=True)

@@ -48,38 +48,9 @@ def _print_post_summary(p: dict) -> None:
     is_flag=True,
     help="Include non-published posts (requires API token).",
 )
-@click.option(
-    "--status",
-    type=str,
-    default=None,
-    help=(
-        "Filter to a single pipeline_tasks.status value: e.g. "
-        "``dry_run``, ``awaiting_approval``, ``rejected_final``, "
-        "``published``. When set, queries pipeline_tasks directly "
-        "(via DSN) instead of the public /api/posts endpoint — surfaces "
-        "rows that are not yet posts (dry_run, rejected, etc)."
-    ),
-)
 @click.option("--json", "json_output", is_flag=True)
-def posts_list(
-    limit: int,
-    offset: int,
-    include_drafts: bool,
-    status: str | None,
-    json_output: bool,
-) -> None:
-    """List posts with pagination.
-
-    Default: queries the worker's public ``/api/posts`` endpoint
-    (status='published', or all statuses with --include-drafts).
-
-    With ``--status`` the command bypasses the API and queries
-    ``pipeline_tasks`` directly so the operator can inspect dry-run
-    output, rejected drafts, or any other intermediate state.
-    """
-    if status:
-        _list_by_status(status, limit=limit, offset=offset, json_output=json_output)
-        return
+def posts_list(limit: int, offset: int, include_drafts: bool, json_output: bool) -> None:
+    """List posts with pagination."""
     params = {
         "limit": limit,
         "offset": offset,
@@ -114,85 +85,6 @@ def posts_list(
     click.echo()
     for p in posts:
         _print_post_summary(p)
-
-
-def _list_by_status(
-    status: str, *, limit: int, offset: int, json_output: bool,
-) -> None:
-    """Query pipeline_tasks directly for a given status filter.
-
-    Used when ``--status`` is provided. Surfaces dry_run / rejected /
-    cancelled rows the public API hides.
-    """
-    async def _impl():
-        import asyncpg
-        import os
-
-        dsn = (
-            os.getenv("POINDEXTER_MEMORY_DSN")
-            or os.getenv("LOCAL_DATABASE_URL")
-            or os.getenv("DATABASE_URL")
-            or ""
-        )
-        if not dsn:
-            raise RuntimeError(
-                "No DSN — set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, "
-                "or DATABASE_URL.",
-            )
-        conn = await asyncpg.connect(dsn)
-        try:
-            rows = await conn.fetch(
-                """
-                SELECT
-                    task_id, topic, status, stage,
-                    quality_score, model_used,
-                    started_at, completed_at, updated_at
-                FROM content_tasks
-                WHERE status = $1
-                ORDER BY updated_at DESC NULLS LAST
-                LIMIT $2 OFFSET $3
-                """,
-                status, limit, offset,
-            )
-            total_row = await conn.fetchrow(
-                "SELECT COUNT(*) AS c FROM content_tasks WHERE status = $1",
-                status,
-            )
-            return [dict(r) for r in rows], int(total_row["c"]) if total_row else 0
-        finally:
-            await conn.close()
-
-    try:
-        rows, total = _run(_impl())
-    except Exception as e:
-        click.echo(f"Error: {type(e).__name__}: {e}", err=True)
-        sys.exit(1)
-
-    if json_output:
-        click.echo(json.dumps(rows, indent=2, default=str))
-        return
-
-    if not rows:
-        click.echo(f"(no tasks with status={status!r})")
-        return
-
-    click.secho(
-        f"Tasks status={status!r}: {len(rows)} shown / {total} total "
-        f"(offset={offset}, limit={limit})",
-        fg="cyan",
-    )
-    click.echo()
-    for r in rows:
-        tid = (r.get("task_id") or "?")[:8]
-        topic = (r.get("topic") or "(no topic)")[:65]
-        score = r.get("quality_score")
-        score_s = f"q={score}" if score is not None else "q=?"
-        click.secho(f"  {tid}  {score_s:>6}  {topic}", fg="white")
-        click.secho(
-            f"    stage={r.get('stage','?')}  model={r.get('model_used','?')}  "
-            f"updated={(r.get('updated_at') or '?')!s:.19}",
-            fg="bright_black",
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -391,71 +283,3 @@ def posts_retitle(post_id: str, title: str) -> None:
         f"Retitled: {post_id}  new title: {p.get('title', title)[:70]}",
         fg="green",
     )
-
-
-@posts_group.command("refresh")
-@click.argument("slug")
-@click.option("--json", "json_output", is_flag=True)
-def posts_refresh(slug: str, json_output: bool) -> None:
-    """Refresh a post's caches — fires Vercel ISR revalidation + R2 static export.
-
-    Use after a direct DB edit or any out-of-band change that didn't go
-    through PATCH /api/posts/{id}. The PATCH endpoint already triggers
-    this automatically (gh#193).
-
-    Example:
-
-        poindexter posts refresh the-ai-first-freelancer-building-...
-
-    Returns the per-step result so you can see which path succeeded.
-    """
-    import asyncio
-    import os
-
-    async def _impl():
-        import asyncpg
-        from services.site_config import SiteConfig
-
-        dsn = (
-            os.getenv("POINDEXTER_MEMORY_DSN")
-            or os.getenv("LOCAL_DATABASE_URL")
-            or os.getenv("DATABASE_URL")
-            or ""
-        )
-        if not dsn:
-            raise RuntimeError(
-                "No DSN — set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, or DATABASE_URL."
-            )
-        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
-        try:
-            cfg = SiteConfig(pool=pool)
-            try:
-                await cfg.load(pool)
-            except Exception:
-                pass
-            from routes.cms_routes import _refresh_post_caches
-            return await _refresh_post_caches(pool, slug, cfg)
-        finally:
-            await pool.close()
-
-    try:
-        result = asyncio.run(_impl())
-    except Exception as e:
-        click.echo(f"Error: {type(e).__name__}: {e}", err=True)
-        sys.exit(1)
-
-    if json_output:
-        click.echo(json.dumps(result, indent=2, default=str))
-        return
-
-    rev = result.get("revalidation")
-    exp = result.get("static_export")
-    rev_ok = "✓" if rev else "✗"
-    exp_ok = "✓" if exp else "✗"
-    click.secho(f"Refreshed: {slug}", fg="cyan", bold=True)
-    click.echo(f"  ISR revalidation:    {rev_ok} {rev}")
-    click.echo(f"  Static export (R2):  {exp_ok} {exp}")
-    if "revalidation_error" in result:
-        click.secho(f"  rev error: {result['revalidation_error']}", fg="yellow")
-    if "static_export_error" in result:
-        click.secho(f"  export error: {result['static_export_error']}", fg="yellow")

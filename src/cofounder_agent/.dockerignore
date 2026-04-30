@@ -47,11 +47,8 @@ htmlcov
 
 # Documentation
 docs
+README.md
 *.md
-# README.md must land in the container — pyproject.toml's `readme = "README.md"`
-# field is required for `pip install .` to build a wheel (gh#152). Don't
-# generalize this to *.md without fixing pyproject.toml's readme reference.
-!README.md
 !LICENSE.md
 
 # CI/CD

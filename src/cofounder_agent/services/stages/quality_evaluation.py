@@ -58,16 +58,6 @@ class QualityEvaluationStage:
         content_text = context.get("content", "")
         database_service = context.get("database_service")
 
-        # Phase H (GH#95): read site_config from pipeline context so the
-        # quality service's pattern-based scorers don't import the
-        # module singleton. content_router_service seeds this key.
-        site_config = context.get("site_config")
-        if site_config is None:
-            return StageResult(
-                ok=False,
-                detail="context missing site_config (Phase H / GH#95)",
-            )
-
         if not content_text:
             return StageResult(
                 ok=False,
@@ -79,10 +69,7 @@ class QualityEvaluationStage:
         # Orchestrator-level constructor — cheap, each invocation gets a
         # fresh instance (matches legacy behavior). Reusing would be a
         # future optimization but not part of this migration.
-        quality_service = UnifiedQualityService(
-            database_service=database_service,
-            site_config=site_config,
-        )
+        quality_service = UnifiedQualityService(database_service=database_service)
 
         quality_result = await quality_service.evaluate(
             content=content_text,

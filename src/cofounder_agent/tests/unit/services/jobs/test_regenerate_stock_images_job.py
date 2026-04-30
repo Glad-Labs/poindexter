@@ -10,21 +10,6 @@ import pytest
 from services.jobs.regenerate_stock_images import RegenerateStockImagesJob, _build_sdxl_prompt
 
 
-def _mock_sc() -> MagicMock:
-    """SiteConfig mock for post-Phase-H job.run() kwarg.
-
-    Post-GH-107: cloudinary_api_key/secret are read via ``get_secret``;
-    the mock exposes that as an AsyncMock that returns the same default
-    fallback as ``get`` to keep test bodies untouched.
-    """
-    sc = MagicMock()
-    sc.get.side_effect = lambda k, d="": d
-    sc.get_bool.side_effect = lambda k, d=False: d
-    sc.get_int.side_effect = lambda k, d=0: d
-    sc.get_secret = AsyncMock(side_effect=lambda k, d="": d)
-    return sc
-
-
 def _fake_asyncpg(pexels_rows: list[dict] | None = None):
     cloud = AsyncMock()
     cloud.fetch = AsyncMock(return_value=pexels_rows or [])
@@ -59,9 +44,8 @@ class TestRegenerateStockImagesJobMetadata:
 class TestRegenerateStockImagesJobRun:
     async def test_skips_when_no_database_url(self):
         job = RegenerateStockImagesJob()
-        sc = _mock_sc()
-        sc.get.side_effect = lambda k, d="": ""
-        result = await job.run(MagicMock(), {}, site_config=sc)
+        with patch("services.site_config.site_config.get", return_value=""):
+            result = await job.run(MagicMock(), {})
         assert result.ok is True
         assert "no database_url" in result.detail
 
@@ -69,10 +53,9 @@ class TestRegenerateStockImagesJobRun:
         job = RegenerateStockImagesJob()
         fake_asyncpg, _ = _fake_asyncpg(pexels_rows=[])
         pool = _pool()
-        sc = _mock_sc()
-        sc.get.side_effect = lambda k, d="": "postgres://cloud" if k == "database_url" else d
-        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}):
-            result = await job.run(pool, {}, site_config=sc)
+        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
+             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}):
+            result = await job.run(pool, {})
         assert result.ok is True
         assert result.changes_made == 0
         assert "no Pexels-backed posts" in result.detail
@@ -95,9 +78,11 @@ class TestRegenerateStockImagesJobRun:
         fake_cloudinary.uploader = MagicMock()
         fake_cloudinary.uploader.upload = MagicMock(return_value=fake_cloudinary_result)
 
-        sc = _mock_sc()
-        sc.get.side_effect = lambda k, d="": "postgres://cloud" if k == "database_url" else ""
-        with patch.dict("sys.modules", {
+        with patch(
+            "services.site_config.site_config.get",
+            side_effect=lambda k, d="": "postgres://cloud" if k == "database_url" else "",
+        ), \
+             patch.dict("sys.modules", {
                  "asyncpg": fake_asyncpg,
                  "cloudinary": fake_cloudinary,
                  "cloudinary.uploader": fake_cloudinary.uploader,
@@ -117,7 +102,7 @@ class TestRegenerateStockImagesJobRun:
             tmp_obj.name = str(output_file)
             mock_tmp.return_value.__enter__.return_value = tmp_obj
 
-            result = await job.run(pool, {}, site_config=sc)
+            result = await job.run(pool, {})
 
         assert result.ok is True
         # We generated 1 image, uploaded it, updated the DB.
@@ -143,15 +128,17 @@ class TestRegenerateStockImagesJobRun:
         fake_image_service = MagicMock()
         fake_image_service.get_image_service = MagicMock(return_value=svc)
 
-        sc = _mock_sc()
-        sc.get.side_effect = lambda k, d="": "postgres://cloud" if k == "database_url" else ""
-        with patch.dict(
+        with patch(
+            "services.site_config.site_config.get",
+            side_effect=lambda k, d="": "postgres://cloud" if k == "database_url" else "",
+        ), \
+             patch.dict(
                 "sys.modules",
                 {"asyncpg": fake_asyncpg, "services.image_service": fake_image_service},
              ), \
              patch("services.jobs.regenerate_stock_images._build_sdxl_prompt",
                    new=AsyncMock(return_value="a prompt")):
-            await job.run(pool, {}, site_config=sc)
+            await job.run(pool, {})
 
         # Both posts attempted: first raised, second succeeded.
         assert svc.generate_image.await_count == 2

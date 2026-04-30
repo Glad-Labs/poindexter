@@ -1,11 +1,8 @@
 """Unit tests for ``utils/gitea_issues.py``.
 
-httpx is mocked; site_config is built as a MagicMock per-case. Focus:
-opt-out when no password, dedup-by-prefix, error swallowing so a failed
-Gitea call doesn't break the caller.
-
-Phase H (GH#95): ``create_gitea_issue`` now takes ``site_config`` as a
-keyword-only argument; the module-level singleton import is gone.
+httpx is mocked; site_config is patched for different credential
+scenarios. Focus: opt-out when no password, dedup-by-prefix, error
+swallowing so a failed Gitea call doesn't break the caller.
 """
 
 from __future__ import annotations
@@ -32,29 +29,23 @@ class TestPrefix:
         assert _prefix("") == ""
 
 
-def _mock_sc(
+def _patched_site_config(
     password: str = "secret",
     user: str = "gladlabs",
     url: str = "http://gitea.example",
     repo: str = "gladlabs/codebase",
-) -> MagicMock:
-    """Build a SiteConfig mock with the given Gitea credentials.
-
-    Post-GH-107: gitea_password is is_secret=true, so it's read via
-    ``await site_config.get_secret(...)``. The mock exposes ``get`` for
-    non-secret keys (gitea_user/url/repo) and ``get_secret`` for the
-    password.
-    """
+):
+    """Context-manager friendly site_config.get patch."""
     mapping = {
         "gitea_password": password,
         "gitea_user": user,
         "gitea_url": url,
         "gitea_repo": repo,
     }
-    sc = MagicMock()
-    sc.get = MagicMock(side_effect=lambda k, d=None: mapping.get(k, d))
-    sc.get_secret = AsyncMock(side_effect=lambda k, d="": mapping.get(k, d))
-    return sc
+    return patch(
+        "utils.gitea_issues.site_config.get",
+        side_effect=lambda k, d=None: mapping.get(k, d),
+    )
 
 
 def _fake_response(status_code: int = 201, json_data: Any = None, text: str = "") -> MagicMock:
@@ -87,18 +78,18 @@ def _fake_client(
 class TestCreateGiteaIssue:
     @pytest.mark.asyncio
     async def test_skipped_when_no_password(self):
-        result = await create_gitea_issue(
-            "title", "body", site_config=_mock_sc(password=""),
-        )
+        with _patched_site_config(password=""):
+            result = await create_gitea_issue("title", "body")
         assert result is False
 
     @pytest.mark.asyncio
     async def test_creates_new_issue_when_no_dup(self):
         client = _fake_client(search_json=[])
-        with patch("utils.gitea_issues.httpx.AsyncClient", return_value=client):
+        with _patched_site_config(), patch(
+            "utils.gitea_issues.httpx.AsyncClient", return_value=client,
+        ):
             result = await create_gitea_issue(
                 "links: 3 broken URLs", "## broken\n- http://x",
-                site_config=_mock_sc(),
             )
         assert result is True
         client.post.assert_awaited_once()
@@ -108,10 +99,10 @@ class TestCreateGiteaIssue:
         """An open issue with the same prefix should block a new filing."""
         existing = [{"number": 7, "title": "links: 1 broken URL from last run"}]
         client = _fake_client(search_json=existing)
-        with patch("utils.gitea_issues.httpx.AsyncClient", return_value=client):
-            result = await create_gitea_issue(
-                "links: 99 broken URLs", "body", site_config=_mock_sc(),
-            )
+        with _patched_site_config(), patch(
+            "utils.gitea_issues.httpx.AsyncClient", return_value=client,
+        ):
+            result = await create_gitea_issue("links: 99 broken URLs", "body")
         assert result is False
         client.post.assert_not_awaited()
 
@@ -120,10 +111,10 @@ class TestCreateGiteaIssue:
         """Open issue under a different prefix must not block the new one."""
         existing = [{"number": 7, "title": "seo: missing meta"}]
         client = _fake_client(search_json=existing)
-        with patch("utils.gitea_issues.httpx.AsyncClient", return_value=client):
-            result = await create_gitea_issue(
-                "links: 3 broken", "body", site_config=_mock_sc(),
-            )
+        with _patched_site_config(), patch(
+            "utils.gitea_issues.httpx.AsyncClient", return_value=client,
+        ):
+            result = await create_gitea_issue("links: 3 broken", "body")
         assert result is True
         client.post.assert_awaited_once()
 
@@ -131,17 +122,17 @@ class TestCreateGiteaIssue:
     async def test_post_failure_returns_false_no_raise(self):
         """An httpx error from post() must not propagate to the caller."""
         client = _fake_client(post_raises=RuntimeError("network down"))
-        with patch("utils.gitea_issues.httpx.AsyncClient", return_value=client):
-            result = await create_gitea_issue(
-                "links: x", "body", site_config=_mock_sc(),
-            )
+        with _patched_site_config(), patch(
+            "utils.gitea_issues.httpx.AsyncClient", return_value=client,
+        ):
+            result = await create_gitea_issue("links: x", "body")
         assert result is False
 
     @pytest.mark.asyncio
     async def test_non_2xx_response_returns_false(self):
         client = _fake_client(post_response=_fake_response(422, text="bad payload"))
-        with patch("utils.gitea_issues.httpx.AsyncClient", return_value=client):
-            result = await create_gitea_issue(
-                "links: x", "body", site_config=_mock_sc(),
-            )
+        with _patched_site_config(), patch(
+            "utils.gitea_issues.httpx.AsyncClient", return_value=client,
+        ):
+            result = await create_gitea_issue("links: x", "body")
         assert result is False

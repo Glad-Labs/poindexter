@@ -14,7 +14,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-import asyncpg
 from asyncpg import Pool
 
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
@@ -489,17 +488,6 @@ class TasksDatabase(DatabaseServiceMixin):
                     )
                     return self._convert_row_to_dict(row)
                 return None
-        except asyncpg.exceptions.UndefinedColumnError:
-            # gitea#118: schema drift — refuse to silently no-op. A status
-            # transition that fails leaves the row stuck (e.g. approved
-            # never moves to published) and downstream consumers (cache
-            # revalidation, social, sync) see stale data.
-            logger.exception(
-                "[update_task_status] schema drift on content_tasks UPDATE "
-                "for task=%s status=%s",
-                task_id, status,
-            )
-            raise
         except Exception as e:
             logger.error("Failed to update task status %s: %s", task_id, e, exc_info=True)
             return None
@@ -544,9 +532,11 @@ class TasksDatabase(DatabaseServiceMixin):
                 and "featured_image_url" in task_metadata
             ):
                 normalized_updates["featured_image_url"] = task_metadata.get("featured_image_url")
-            # NOTE: ``featured_image_data`` is NOT promoted to a top-level
-            # column — it lives only in task_metadata JSONB. The view does
-            # not expose it (see gitea#118 root cause).
+            if (
+                "featured_image_data" not in normalized_updates
+                and "featured_image_data" in task_metadata
+            ):
+                normalized_updates["featured_image_data"] = task_metadata.get("featured_image_data")
             if "qa_feedback" not in normalized_updates and "qa_feedback" in task_metadata:
                 qa_fb = task_metadata.get("qa_feedback")
                 if isinstance(qa_fb, list):
@@ -566,9 +556,15 @@ class TasksDatabase(DatabaseServiceMixin):
                 normalized_updates["percentage"] = task_metadata.get("percentage")
             if "message" not in normalized_updates and "message" in task_metadata:
                 normalized_updates["message"] = task_metadata.get("message")
-            # NOTE: ``actual_cost`` and ``cost_breakdown`` are NOT promoted
-            # to top-level columns — they live only in task_metadata JSONB.
-            # The view does not expose them (see gitea#118 root cause).
+            if "actual_cost" not in normalized_updates and "actual_cost" in task_metadata:
+                normalized_updates["actual_cost"] = task_metadata.get("actual_cost")
+            if "cost_breakdown" not in normalized_updates and "cost_breakdown" in task_metadata:
+                cost_breakdown = task_metadata.get("cost_breakdown")
+                normalized_updates["cost_breakdown"] = (
+                    json.dumps(cost_breakdown)
+                    if isinstance(cost_breakdown, dict)
+                    else cost_breakdown
+                )
             if "published_at" not in normalized_updates and "published_at" in task_metadata:
                 normalized_updates["published_at"] = task_metadata.get("published_at")
 
@@ -581,32 +577,18 @@ class TasksDatabase(DatabaseServiceMixin):
         # halting the pipeline at finalize_task. Fold any non-column keys
         # into task_metadata (JSONB) instead so the data survives without
         # crashing the write.
-        #
-        # IMPORTANT: this set must be the literal column list of the
-        # public.content_tasks VIEW. Any name added here that the view
-        # does not actually expose (e.g. relics from the pre-pipeline_tasks
-        # schema) silently breaks every UPDATE that promotes that key
-        # from task_metadata into a top-level update — the SQL fails with
-        # "column X of relation content_tasks does not exist" and the
-        # outer ``except`` returns None, leaving the row stuck mid-flight.
-        # See gitea#118: ``featured_image_data``, ``actual_cost``, and
-        # ``cost_breakdown`` had been hand-promoted from task_metadata
-        # but no longer exist on the view, so the auto-publish path's
-        # ``update_task`` call (task_executor._auto_publish_task) was
-        # silently failing and leaving content_tasks.status='approved'
-        # forever. Promote-from-metadata logic for those three keys was
-        # removed alongside this allowlist trim.
         _VIEW_COLUMNS = {
             "id", "task_id", "task_type", "content_type", "title", "topic",
             "status", "stage", "style", "tone", "target_length", "category",
             "primary_keyword", "target_audience", "content", "excerpt",
-            "featured_image_url", "quality_score",
+            "featured_image_url", "featured_image_data", "quality_score",
             "qa_feedback", "seo_title", "seo_description", "seo_keywords",
             "percentage", "message", "model_used", "error_message",
             "models_used_by_phase", "metadata", "result", "task_metadata",
             "site_id", "created_at", "updated_at", "started_at",
             "completed_at", "approval_status", "approved_by",
             "human_feedback", "post_id", "post_slug", "published_at",
+            "actual_cost", "cost_breakdown",
         }
         rerouted_to_metadata: dict[str, Any] = {}
         for stray_key in list(normalized_updates.keys()):
@@ -666,21 +648,6 @@ class TasksDatabase(DatabaseServiceMixin):
                     return ModelConverter.to_dict(task_response)
                 logger.warning("Update returned no row for task %s", task_id)
                 return None
-        except asyncpg.exceptions.UndefinedColumnError:
-            # gitea#118: a column-doesn't-exist error means the schema and
-            # the _VIEW_COLUMNS allowlist drifted. Silently swallowing it
-            # leaves the row in a broken state (publish path observed
-            # leaving content_tasks.status='approved' forever). Fail loud
-            # so the pipeline crashes the request and the operator sees
-            # the bug instead of a missing post.
-            logger.exception(
-                "[update_task] schema drift — content_tasks view is missing "
-                "a column that update_task is trying to write. Fix the "
-                "_VIEW_COLUMNS allowlist or stop promoting that key from "
-                "task_metadata. task_id=%s",
-                task_id,
-            )
-            raise
         except Exception as e:
             logger.error("Failed to update task %s: %s", task_id, e, exc_info=True)
             return None

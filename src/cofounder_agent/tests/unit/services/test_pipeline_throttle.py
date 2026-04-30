@@ -8,10 +8,6 @@ Covers (per GH-89):
 - Metric toggles on/off as queue size crosses the limit
 - DB errors don't poison the caller — returns (False, 0, limit)
 - reset_for_tests clears module state between tests
-
-Phase H (GH#95): is_queue_full now takes site_config as an explicit
-parameter instead of importing the module-level singleton. Tests
-construct a mock and pass it in.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -46,19 +42,13 @@ def _make_failing_pool():
     return pool
 
 
-def _mock_sc(max_queue: int) -> MagicMock:
-    """SiteConfig mock passed to is_queue_full (post-Phase-H kwarg).
-
-    Phase H (GH#95) migrated pipeline_throttle off the module-level
-    singleton — tests now construct a mock and pass it in explicitly.
-    """
-    sc = MagicMock()
-    sc.get.side_effect = lambda k, d="": d
-    sc.get_bool.side_effect = lambda k, d=False: d
-    sc.get_int.side_effect = (
-        lambda key, default=0: max_queue if key == "max_approval_queue" else default
+def _patch_site_config(max_queue: int):
+    """Patch site_config.get_int to return a controlled max_approval_queue."""
+    mock_cfg = MagicMock()
+    mock_cfg.get_int = MagicMock(
+        side_effect=lambda key, default=0: max_queue if key == "max_approval_queue" else default
     )
-    return sc
+    return patch("services.site_config.site_config", mock_cfg)
 
 
 @pytest.mark.unit
@@ -76,28 +66,32 @@ class TestInitialState:
 class TestIsQueueFull:
     @pytest.mark.asyncio
     async def test_queue_below_limit_returns_false(self):
-        full, size, limit = await is_queue_full(_make_pool(2), _mock_sc(3))
+        with _patch_site_config(3):
+            full, size, limit = await is_queue_full(_make_pool(2))
         assert full is False
         assert size == 2
         assert limit == 3
 
     @pytest.mark.asyncio
     async def test_queue_at_limit_returns_true(self):
-        full, size, limit = await is_queue_full(_make_pool(3), _mock_sc(3))
+        with _patch_site_config(3):
+            full, size, limit = await is_queue_full(_make_pool(3))
         assert full is True
         assert size == 3
         assert limit == 3
 
     @pytest.mark.asyncio
     async def test_queue_above_limit_returns_true(self):
-        full, size, limit = await is_queue_full(_make_pool(7), _mock_sc(3))
+        with _patch_site_config(3):
+            full, size, limit = await is_queue_full(_make_pool(7))
         assert full is True
         assert size == 7
         assert limit == 3
 
     @pytest.mark.asyncio
     async def test_no_pool_returns_false(self):
-        full, size, limit = await is_queue_full(None, _mock_sc(3))
+        with _patch_site_config(3):
+            full, size, limit = await is_queue_full(None)
         assert full is False
         assert size == 0
         assert limit == 3
@@ -106,7 +100,8 @@ class TestIsQueueFull:
     async def test_db_error_returns_not_full_silently(self):
         """DB hiccup must NOT mark the pipeline throttled — otherwise a
         flaky connection poisons the whole queue (GH-89 observation (b))."""
-        full, size, limit = await is_queue_full(_make_failing_pool(), _mock_sc(3))
+        with _patch_site_config(3):
+            full, size, limit = await is_queue_full(_make_failing_pool())
         assert full is False
         assert size == 0
         assert limit == 3
@@ -116,31 +111,31 @@ class TestIsQueueFull:
 class TestMetricToggle:
     @pytest.mark.asyncio
     async def test_active_gauge_flips_on_when_queue_fills(self):
-        sc = _mock_sc(2)
-        assert get_state()["active"] is False
-        await is_queue_full(_make_pool(2), sc)
-        assert get_state()["active"] is True
-        # queue_size/limit reported accurately
-        state = get_state()
-        assert state["queue_size"] == 2
-        assert state["queue_limit"] == 2
+        with _patch_site_config(2):
+            assert get_state()["active"] is False
+            await is_queue_full(_make_pool(2))
+            assert get_state()["active"] is True
+            # queue_size/limit reported accurately
+            state = get_state()
+            assert state["queue_size"] == 2
+            assert state["queue_limit"] == 2
 
     @pytest.mark.asyncio
     async def test_active_gauge_flips_off_when_queue_drains(self):
-        sc = _mock_sc(2)
-        await is_queue_full(_make_pool(2), sc)
-        assert get_state()["active"] is True
-        await is_queue_full(_make_pool(1), sc)
-        assert get_state()["active"] is False
+        with _patch_site_config(2):
+            await is_queue_full(_make_pool(2))
+            assert get_state()["active"] is True
+            await is_queue_full(_make_pool(1))
+            assert get_state()["active"] is False
 
     @pytest.mark.asyncio
     async def test_active_state_is_idempotent(self):
         """Two consecutive full-queue checks keep a single active interval."""
-        sc = _mock_sc(2)
-        await is_queue_full(_make_pool(2), sc)
-        first_active_since = pipeline_throttle._STATE.active_since_ts
-        await is_queue_full(_make_pool(2), sc)
-        second_active_since = pipeline_throttle._STATE.active_since_ts
+        with _patch_site_config(2):
+            await is_queue_full(_make_pool(2))
+            first_active_since = pipeline_throttle._STATE.active_since_ts
+            await is_queue_full(_make_pool(2))
+            second_active_since = pipeline_throttle._STATE.active_since_ts
         assert first_active_since is not None
         assert first_active_since == second_active_since
 
@@ -155,21 +150,20 @@ class TestCounter:
         def _tick():
             return fake_now[0]
 
-        sc = _mock_sc(2)
-        with patch.object(pipeline_throttle, "_now", side_effect=_tick):
+        with _patch_site_config(2), patch.object(pipeline_throttle, "_now", side_effect=_tick):
             # Start throttled at t=1000
-            await is_queue_full(_make_pool(2), sc)
+            await is_queue_full(_make_pool(2))
             # Advance 5s while still throttled
             fake_now[0] = 1005.0
             # Drop below limit — closes the first interval at 5.0s
-            await is_queue_full(_make_pool(1), sc)
+            await is_queue_full(_make_pool(1))
             state = get_state()
             assert state["active"] is False
             assert abs(state["total_seconds"] - 5.0) < 0.01
 
             # Throttled again at t=1010, observe total includes the open interval
             fake_now[0] = 1010.0
-            await is_queue_full(_make_pool(2), sc)
+            await is_queue_full(_make_pool(2))
             fake_now[0] = 1013.0
             state = get_state()
             assert state["active"] is True
@@ -179,17 +173,16 @@ class TestCounter:
     @pytest.mark.asyncio
     async def test_total_seconds_monotonic_non_decreasing(self):
         fake_now = [2000.0]
-        sc = _mock_sc(2)
-        with patch.object(pipeline_throttle, "_now", side_effect=lambda: fake_now[0]):
-            await is_queue_full(_make_pool(2), sc)
+        with _patch_site_config(2), patch.object(pipeline_throttle, "_now", side_effect=lambda: fake_now[0]):
+            await is_queue_full(_make_pool(2))
             fake_now[0] = 2010.0
-            await is_queue_full(_make_pool(1), sc)
+            await is_queue_full(_make_pool(1))
             total_after_first = get_state()["total_seconds"]
             # A round of non-throttled checks should not decrease the counter
             fake_now[0] = 2020.0
-            await is_queue_full(_make_pool(0), sc)
+            await is_queue_full(_make_pool(0))
             fake_now[0] = 2030.0
-            await is_queue_full(_make_pool(1), sc)
+            await is_queue_full(_make_pool(1))
             assert get_state()["total_seconds"] >= total_after_first
 
 
@@ -197,7 +190,8 @@ class TestCounter:
 class TestResetForTests:
     @pytest.mark.asyncio
     async def test_reset_clears_all_state(self):
-        await is_queue_full(_make_pool(5), _mock_sc(2))
+        with _patch_site_config(2):
+            await is_queue_full(_make_pool(5))
         assert get_state()["active"] is True
         reset_for_tests()
         s = get_state()

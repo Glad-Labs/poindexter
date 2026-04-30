@@ -226,9 +226,8 @@ class TestQAReview:
     async def test_multi_model_qa_review(self):
         """MultiModelQA.review() returns a scored result using Ollama."""
         from services.multi_model_qa import MultiModelQA
-        from services.site_config import SiteConfig
 
-        qa = MultiModelQA(site_config=SiteConfig())
+        qa = MultiModelQA()
         result = await qa.review(
             title="Benefits of Unit Testing in Modern Software",
             content=SAMPLE_BLOG_CONTENT,
@@ -250,9 +249,8 @@ class TestQAReview:
     async def test_qa_ollama_critic_present(self):
         """When Ollama is running, the ollama_critic reviewer should participate."""
         from services.multi_model_qa import MultiModelQA
-        from services.site_config import SiteConfig
 
-        qa = MultiModelQA(site_config=SiteConfig())
+        qa = MultiModelQA()
         result = await qa.review(
             title="Benefits of Unit Testing",
             content=SAMPLE_BLOG_CONTENT,

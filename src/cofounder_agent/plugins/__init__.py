@@ -49,7 +49,6 @@ See also ``docs/architecture/plugin-architecture.md`` for the full
 design.
 """
 
-from .audio_gen_provider import AudioGenProvider, AudioGenResult, AudioKind
 from .config import PluginConfig
 from .job import Job, JobResult
 from .llm_provider import Completion, LLMProvider, Token
@@ -58,9 +57,7 @@ from .probe import Probe, ProbeResult
 from .registry import (
     ENTRY_POINT_GROUPS,
     get_adapters,
-    get_audio_gen_providers,
     get_core_samples,
-    get_image_providers,
     get_jobs,
     get_llm_providers,
     get_packs,
@@ -69,9 +66,6 @@ from .registry import (
     get_reviewers,
     get_stages,
     get_taps,
-    get_topic_sources,
-    get_tts_providers,
-    get_video_providers,
 )
 from .scheduler import PluginScheduler
 from .secrets import (
@@ -85,7 +79,6 @@ from .secrets import (
     set_secret,
 )
 from .stage import Adapter, Provider, Reviewer, Stage, StageResult
-from .video_provider import VideoProvider, VideoResult
 from .stage_runner import (
     DEFAULT_STAGE_ORDER,
     StageRunner,
@@ -94,7 +87,6 @@ from .stage_runner import (
     load_stage_order,
 )
 from .tap import Document, Tap
-from .tts_provider import TTSProvider, TTSResult
 
 __all__ = [
     # Protocols
@@ -107,8 +99,6 @@ __all__ = [
     "Provider",
     "Pack",
     "LLMProvider",
-    "TTSProvider",
-    "AudioGenProvider",
     # Dataclasses
     "Document",
     "ProbeResult",
@@ -116,10 +106,6 @@ __all__ = [
     "StageResult",
     "Completion",
     "Token",
-    "TTSResult",
-    "AudioGenResult",
-    # Type aliases
-    "AudioKind",
     # Config + registry
     "PluginConfig",
     "PluginScheduler",
@@ -147,13 +133,5 @@ __all__ = [
     "get_providers",
     "get_packs",
     "get_llm_providers",
-    "get_topic_sources",
-    "get_image_providers",
-    "get_tts_providers",
-    "get_video_providers",
-    "get_audio_gen_providers",
     "get_core_samples",
-    # VideoProvider (GH #124)
-    "VideoProvider",
-    "VideoResult",
 ]

@@ -1,15 +1,5 @@
 """
 Tests for WebhookDeliveryService — event emission and HTTP delivery to OpenClaw.
-
-Post-Phase-H (GH#95): WebhookDeliveryService.__init__ takes site_config via DI.
-Tests construct a MagicMock SiteConfig per case via _mock_sc().
-
-GH-107 / poindexter#156: ``openclaw_webhook_token`` is encrypted at rest
-(``is_secret=true``), so the production code now reads it inside
-``start()`` via ``await site_config.get_secret(...)``. The mock
-SiteConfig in this test file simulates the bug class — sync ``.get()``
-returns the ``enc:v1:<ciphertext>`` blob, async ``get_secret()``
-returns plaintext — and asserts production receives plaintext.
 """
 
 import json
@@ -27,35 +17,6 @@ from services.webhook_delivery_service import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _mock_sc(webhook_url: str = "", webhook_token: str = "") -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for WebhookDeliveryService(...).
-
-    The token is exposed via the async ``get_secret`` helper because
-    ``openclaw_webhook_token`` is ``is_secret=true`` in app_settings.
-    The sync ``.get(...)`` is wired to return ciphertext for that key
-    so any regression that drops the await would surface as a busted
-    Authorization header in the assertions.
-    """
-    sc = MagicMock()
-    sync_values = {
-        "openclaw_webhook_url": webhook_url,
-        # If a regression re-adds a sync .get() on this secret, the
-        # token shipped to OpenClaw would be this ciphertext blob —
-        # tests below assert plaintext, so the regression would fail.
-        "openclaw_webhook_token": (
-            f"enc:v1:CIPHERTEXT_FOR_{webhook_token}" if webhook_token else ""
-        ),
-    }
-    secret_values = {
-        "openclaw_webhook_token": webhook_token,
-    }
-    sc.get.side_effect = lambda k, d="": sync_values.get(k, d)
-    sc.get_secret = AsyncMock(
-        side_effect=lambda k, d="": secret_values.get(k, d)
-    )
-    return sc
 
 
 def _make_pool():
@@ -137,42 +98,31 @@ class TestEmitWebhookEvent:
 class TestServiceLifecycle:
     """Startup, shutdown, and URL configuration."""
 
-    def test_defaults_when_config_unset(self):
+    def test_defaults_when_env_unset(self):
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool, _mock_sc())
+        with patch.dict("os.environ", {}, clear=True):
+            svc = WebhookDeliveryService(pool)
         assert svc.webhook_url == ""
-        # Token is loaded inside start() now; before start() runs it's "".
         assert svc.webhook_token == ""
         assert svc._running is False
 
-    def test_init_reads_url_but_not_secret_token(self):
-        """``openclaw_webhook_token`` is is_secret=true — must NOT be
-        read in __init__ (sync). Only the non-secret URL goes here."""
+    def test_reads_url_and_token_from_env(self):
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(
-            pool,
-            _mock_sc(
-                webhook_url="https://openclaw.example.com",
-                webhook_token="secret123",
-            ),
-        )
+        env = {
+            "OPENCLAW_WEBHOOK_URL": "https://openclaw.example.com",
+            "OPENCLAW_WEBHOOK_TOKEN": "secret123",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            svc = WebhookDeliveryService(pool)
         assert svc.webhook_url == "https://openclaw.example.com"
-        # Token deferred to start() — empty in __init__ regardless of
-        # what site_config carries. This guards against regressions
-        # that re-add a sync .get() on the encrypted token and ship
-        # ``enc:v1:...`` to OpenClaw.
-        assert svc.webhook_token == ""
+        assert svc.webhook_token == "secret123"
 
     @pytest.mark.asyncio
     async def test_start_without_url_does_nothing(self):
-        """If no webhook URL is configured, start() returns immediately.
-
-        Even though we still resolve the secret first (so the cached
-        plaintext is correct if URL gets set later), we don't open the
-        HTTP client or spin up the loop.
-        """
+        """If no webhook URL is configured, start() returns immediately."""
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool, _mock_sc())
+        with patch.dict("os.environ", {}, clear=True):
+            svc = WebhookDeliveryService(pool)
         await svc.start()
         assert svc._running is False
         assert svc._client is None
@@ -180,7 +130,9 @@ class TestServiceLifecycle:
     @pytest.mark.asyncio
     async def test_start_with_url_sets_running(self):
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool, _mock_sc(webhook_url="https://hook.test"))
+        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
+        with patch.dict("os.environ", env, clear=True):
+            svc = WebhookDeliveryService(pool)
 
         with patch("asyncio.create_task"):
             await svc.start()
@@ -189,47 +141,10 @@ class TestServiceLifecycle:
         await svc.stop()
 
     @pytest.mark.asyncio
-    async def test_start_loads_encrypted_token_via_get_secret(self):
-        """GH-107 / poindexter#156 — start() must call get_secret(),
-        not get(), so the Authorization header carries plaintext, not
-        the ``enc:v1:<ciphertext>`` blob."""
-        pool, _ = _make_pool()
-        sc = _mock_sc(webhook_url="https://hook.test", webhook_token="real-token")
-        svc = WebhookDeliveryService(pool, sc)
-
-        # Before start(): token cache empty
-        assert svc.webhook_token == ""
-
-        with patch("asyncio.create_task"):
-            await svc.start()
-
-        # After start(): plaintext (NOT enc:v1:CIPHERTEXT_FOR_real-token)
-        assert svc.webhook_token == "real-token"
-        assert "enc:v1:" not in svc.webhook_token
-        sc.get_secret.assert_awaited_once_with("openclaw_webhook_token", "")
-        await svc.stop()
-
-    @pytest.mark.asyncio
-    async def test_start_handles_get_secret_failure_gracefully(self):
-        """If decryption fails, fall back to empty token (no auth
-        header) rather than crashing the whole worker on startup."""
-        pool, _ = _make_pool()
-        sc = _mock_sc(webhook_url="https://hook.test", webhook_token="x")
-        sc.get_secret = AsyncMock(side_effect=RuntimeError("decrypt failed"))
-        svc = WebhookDeliveryService(pool, sc)
-
-        with patch("asyncio.create_task"):
-            await svc.start()
-
-        assert svc.webhook_token == ""
-        assert svc._running is True
-        await svc.stop()
-
-    @pytest.mark.asyncio
     async def test_stop_closes_client(self):
         pool, _ = _make_pool()
         mock_client = AsyncMock()
-        svc = WebhookDeliveryService(pool, _mock_sc())
+        svc = WebhookDeliveryService(pool)
         svc._running = True
         svc._client = mock_client
 
@@ -248,7 +163,7 @@ class TestFormatMessage:
 
     def setup_method(self):
         pool, _ = _make_pool()
-        self.svc = WebhookDeliveryService(pool, _mock_sc())
+        self.svc = WebhookDeliveryService(pool)
 
     def test_task_completed(self):
         msg = self.svc._format_message(
@@ -336,7 +251,9 @@ class TestDeliverPending:
         pool, conn = _make_pool()
         conn.fetch = AsyncMock(return_value=[])
 
-        svc = WebhookDeliveryService(pool, _mock_sc(webhook_url="https://hook.test"))
+        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
+        with patch.dict("os.environ", env, clear=True):
+            svc = WebhookDeliveryService(pool)
 
         await svc._deliver_pending()
 
@@ -353,7 +270,9 @@ class TestDeliverPending:
         rows = [_make_row(event_id=1), _make_row(event_id=2)]
         conn.fetch = AsyncMock(return_value=rows)
 
-        svc = WebhookDeliveryService(pool, _mock_sc(webhook_url="https://hook.test"))
+        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
+        with patch.dict("os.environ", env, clear=True):
+            svc = WebhookDeliveryService(pool)
         svc._deliver_event = AsyncMock()
 
         await svc._deliver_pending()
@@ -373,17 +292,12 @@ class TestDeliverEvent:
 
     def setup_method(self):
         self.pool, self.conn = _make_pool()
-        self.svc = WebhookDeliveryService(
-            self.pool,
-            _mock_sc(
-                webhook_url="https://hook.test",
-                webhook_token="tok_secret",
-            ),
-        )
-        # Token is now loaded by start() — bypass the lifecycle for
-        # _deliver_event-only tests by setting it directly. This is
-        # the same plaintext the new start() flow caches.
-        self.svc.webhook_token = "tok_secret"
+        env = {
+            "OPENCLAW_WEBHOOK_URL": "https://hook.test",
+            "OPENCLAW_WEBHOOK_TOKEN": "tok_secret",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            self.svc = WebhookDeliveryService(self.pool)
         self.svc._client = AsyncMock()
 
     @pytest.mark.asyncio
@@ -435,10 +349,9 @@ class TestDeliverEvent:
 
     @pytest.mark.asyncio
     async def test_no_token_sends_no_auth_header(self):
-        svc = WebhookDeliveryService(
-            self.pool,
-            _mock_sc(webhook_url="https://hook.test"),
-        )
+        env = {"OPENCLAW_WEBHOOK_URL": "https://hook.test"}
+        with patch.dict("os.environ", env, clear=True):
+            svc = WebhookDeliveryService(self.pool)
         svc._client = AsyncMock()
         response = MagicMock()
         response.raise_for_status = MagicMock()
@@ -479,7 +392,7 @@ class TestDeliveryLoop:
     @pytest.mark.asyncio
     async def test_loop_calls_deliver_pending(self):
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool, _mock_sc())
+        svc = WebhookDeliveryService(pool)
         svc._running = True
 
         call_count = 0
@@ -500,7 +413,7 @@ class TestDeliveryLoop:
     async def test_loop_survives_exception(self):
         """Errors in _deliver_pending don't kill the loop."""
         pool, _ = _make_pool()
-        svc = WebhookDeliveryService(pool, _mock_sc())
+        svc = WebhookDeliveryService(pool)
         svc._running = True
 
         call_count = 0

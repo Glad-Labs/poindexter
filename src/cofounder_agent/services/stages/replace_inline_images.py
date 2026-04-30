@@ -100,7 +100,6 @@ class ReplaceInlineImagesStage:
         from services.image_service import get_image_service
 
         task_id = context.get("task_id")
-        post_id = context.get("post_id")
         topic = context.get("topic", "")
         content_text = context.get("content", "")
         database_service = context.get("database_service")
@@ -119,11 +118,6 @@ class ReplaceInlineImagesStage:
                 detail="context missing task_id or database_service",
             )
 
-        # Phase H step 5 (GH#95): site_config is seeded on the pipeline
-        # context by content_router_service. Tests build context dicts
-        # with the fake site_config wired in explicitly.
-        _sc = context["site_config"]
-
         stages = context.setdefault("stages", {})
         updates: dict[str, Any] = {}
 
@@ -131,17 +125,8 @@ class ReplaceInlineImagesStage:
         # the Image Decision Agent to plan + inject them.
         placeholders = _PLACEHOLDER_RE.findall(content_text)
         if not placeholders:
-            # Phase H step 5 (GH#95): thread site_config to the image
-            # decision agent. Stages receive site_config via the pipeline
-            # context dict (seeded by content_router_service step 4.1).
-            _sc = context.get("site_config")
-            if _sc is None:
-                raise RuntimeError(
-                    "replace_inline_images stage requires site_config in context — "
-                    "context_router_service must seed it under 'site_config'"
-                )
             content_text, plan = await _plan_and_inject_placeholders(
-                content_text, topic, category, site_config=_sc,
+                content_text, topic, category,
             )
             if plan is not None and plan.get("featured_image_plan"):
                 updates["featured_image_plan"] = plan["featured_image_plan"]
@@ -174,9 +159,6 @@ class ReplaceInlineImagesStage:
                 content_text=content_text,
                 image_service=image_service,
                 used_image_ids=used_image_ids,
-                site_config=_sc,
-                task_id=task_id,
-                post_id=post_id,
             )
 
         content_text = _cleanup_leaked_descriptions(content_text)
@@ -223,18 +205,12 @@ async def _plan_and_inject_placeholders(
     content_text: str,
     topic: str,
     category: str,
-    *,
-    site_config: Any,
 ) -> tuple[str, dict[str, Any] | None]:
     """Ask the Image Decision Agent to decide + inject [IMAGE-N] placeholders.
 
     Returns ``(content_text, info)`` where info may carry a
     ``featured_image_plan`` (if the agent recommends one) or an
     ``agent_error`` string (if the decision agent crashed).
-
-    Args:
-        site_config: SiteConfig instance threaded to ``plan_images``.
-            Required — no module singleton fallback.
     """
     try:
         from services.image_decision_agent import plan_images
@@ -243,9 +219,7 @@ async def _plan_and_inject_placeholders(
         return content_text, {"agent_error": str(e)}
 
     try:
-        plan = await plan_images(
-            content_text, topic, category, max_images=3, site_config=site_config,
-        )
+        plan = await plan_images(content_text, topic, category, max_images=3)
     except Exception as agent_err:
         logger.exception("[IMAGE_AGENT] Image Decision Agent FAILED: %s", agent_err)
         return content_text, {"agent_error": str(agent_err)}
@@ -303,22 +277,10 @@ async def _resolve_one_placeholder(
     content_text: str,
     image_service: Any,
     used_image_ids: set[str],
-    site_config: Any,
-    task_id: str,
-    post_id: Any = None,
 ) -> str:
-    """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it.
-
-    ``task_id`` is forwarded to :func:`_try_sdxl` so the GPU scheduler
-    can attribute Ollama-prompt + SDXL-render electricity cost back to
-    the originating pipeline task — see Glad-Labs/poindexter#157.
-
-    ``post_id`` is forwarded so a successful image generation lands a
-    ``media_assets`` row pinned to the post it belongs to (Glad-Labs/
-    poindexter#161). When ``post_id`` is None (early-pipeline calls
-    before the post is persisted), the row is skipped.
-    """
+    """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it."""
     from services.alt_text import sanitize_alt_text
+    from services.site_config import site_config as _sc_alt
     search_query = desc.strip() if desc else topic
     alt_text = desc.strip() if desc else f"{topic} illustration"
     # Normalize structural artefacts of the placeholder format.
@@ -328,13 +290,11 @@ async def _resolve_one_placeholder(
     # DB-configurable budget with word-boundary truncation (no mid-word chop).
     alt_text = sanitize_alt_text(
         alt_text,
-        budget=site_config.get_int("alt_text_budget", 120),
+        budget=_sc_alt.get_int("alt_text_budget", 120),
     )
 
     # Strategy 1: SDXL.
-    img_url = await _try_sdxl(
-        num, search_query, topic, site_config=site_config, task_id=task_id,
-    )
+    img_url = await _try_sdxl(num, search_query, topic)
     if img_url and img_url not in used_image_ids:
         used_image_ids.add(img_url)
         content_text = _inject_html_image(
@@ -342,21 +302,6 @@ async def _resolve_one_placeholder(
             width=1024, height=1024,
         )
         logger.info("  [IMAGE-%s] SDXL generated + R2 uploaded", num)
-        await _record_inline_image_asset(
-            site_config=site_config,
-            post_id=post_id,
-            public_url=img_url,
-            provider_plugin="image.sdxl",
-            width=1024,
-            height=1024,
-            mime_type="image/png",
-            metadata={
-                "placeholder_num": num,
-                "alt_text": alt_text,
-                "task_id": str(task_id or ""),
-                "search_query": search_query,
-            },
-        )
         return content_text
 
     # Strategy 2: Pexels.
@@ -374,21 +319,6 @@ async def _resolve_one_placeholder(
                 rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1,
             )
             logger.info("  [IMAGE-%s] Pexels image by %s", num, photographer)
-            await _record_inline_image_asset(
-                site_config=site_config,
-                post_id=post_id,
-                public_url=img_url,
-                provider_plugin="image.pexels",
-                width=650,
-                height=433,
-                mime_type="image/jpeg",
-                metadata={
-                    "placeholder_num": num,
-                    "alt_text": alt_text,
-                    "task_id": str(task_id or ""),
-                    "photographer": photographer,
-                },
-            )
             return content_text
 
     # Strategy 3: strip.
@@ -397,72 +327,10 @@ async def _resolve_one_placeholder(
     return content_text
 
 
-async def _record_inline_image_asset(
-    *,
-    site_config: Any,
-    post_id: Any,
-    public_url: str,
-    provider_plugin: str,
-    width: int,
-    height: int,
-    mime_type: str,
-    metadata: dict[str, Any],
-) -> None:
-    """Best-effort ``media_assets`` insert for one inline image.
-
-    Closes Glad-Labs/poindexter#161 — every inline image now lands a
-    DB row so cleanup / retention / cost-attribution can find it.
-    Failures log and never propagate (callers must keep going so the
-    pipeline doesn't break on a DB hiccup).
-    """
-    if post_id is None:
-        # Early pipeline runs (before the post row exists) skip the
-        # insert — backfill picks them up later from the rendered HTML.
-        return
-    try:
-        from services.media_asset_recorder import record_media_asset
-    except Exception as exc:  # noqa: BLE001 — defensive import guard
-        logger.debug("[STAGE2C] media_asset_recorder unavailable: %s", exc)
-        return
-    pool = getattr(site_config, "_pool", None)
-    storage_provider = (
-        "cloudflare_r2"
-        if public_url.startswith("http") and "r2" in public_url
-        else ("local" if public_url.startswith("/") else "external")
-    )
-    await record_media_asset(
-        pool=pool,
-        post_id=post_id,
-        asset_type="inline_image",
-        public_url=public_url,
-        storage_path="",
-        mime_type=mime_type,
-        width=width,
-        height=height,
-        provider_plugin=provider_plugin,
-        source="pipeline",
-        storage_provider=storage_provider,
-        metadata=metadata,
-    )
-
-
-async def _try_sdxl(
-    num: str,
-    search_query: str,
-    topic: str,
-    *,
-    site_config: Any,
-    task_id: str,
-) -> str | None:
-    """Generate an SDXL image and return its final URL (R2 or local).
-
-    ``task_id`` is threaded through to :meth:`gpu.lock` for both the
-    Ollama prompt-build and the SDXL render so ``gpu_task_sessions`` /
-    cost_logs rows attribute kWh + electricity cost to the originating
-    pipeline task. Without this, the inline-image phase logged un-
-    attributed sessions — see Glad-Labs/poindexter#157.
-    """
+async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
+    """Generate an SDXL image and return its final URL (R2 or local)."""
     from services.gpu_scheduler import gpu
+    from services.site_config import site_config
 
     try:
         sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
@@ -477,9 +345,7 @@ async def _try_sdxl(
         )
 
         # Step 1: ollama generates the SDXL prompt
-        async with gpu.lock(
-            "ollama", model=model, task_id=task_id, phase="inline_image_prompt",
-        ):
+        async with gpu.lock("ollama", model=model):
             async with httpx.AsyncClient(timeout=90) as client:
                 resp = await client.post(f"{ollama_url}/api/generate", json={
                     "model": model, "prompt": img_prompt_req, "stream": False,
@@ -494,10 +360,7 @@ async def _try_sdxl(
         logger.info("  [IMAGE-%s] SDXL prompt: %s...", num, sdxl_prompt[:60])
 
         # Step 2: SDXL renders the image
-        async with gpu.lock(
-            "sdxl", model="sdxl_lightning",
-            task_id=task_id, phase="inline_image",
-        ):
+        async with gpu.lock("sdxl", model="sdxl_lightning"):
             async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
                 img_resp = await client.post(
                     f"{sdxl_url}/generate",
@@ -513,17 +376,17 @@ async def _try_sdxl(
             logger.warning("  [IMAGE-%s] SDXL returned %s", num, img_resp.status_code)
             return None
 
-        tmp_path = _resolve_sdxl_response(img_resp, site_config=site_config)
+        tmp_path = _resolve_sdxl_response(img_resp)
         logger.info("  [IMAGE-%s] SDXL generated: %s", num, os.path.basename(tmp_path))
 
         # Step 3: R2 upload, with local-path fallback.
-        return await _upload_to_r2_with_fallback(tmp_path, site_config=site_config)
+        return await _upload_to_r2_with_fallback(tmp_path)
     except Exception as err:
         logger.warning("  [IMAGE-%s] SDXL inline failed: %s", num, err)
         return None
 
 
-def _resolve_sdxl_response(img_resp: httpx.Response, *, site_config: Any) -> str:
+def _resolve_sdxl_response(img_resp: httpx.Response) -> str:
     """Decode the SDXL server's response to a local image path.
 
     The server either:
@@ -535,6 +398,8 @@ def _resolve_sdxl_response(img_resp: httpx.Response, *, site_config: Any) -> str
     Raises RuntimeError on any other response shape or if the returned
     path escapes the allowed directories (path traversal guard).
     """
+    from services.site_config import site_config
+
     ct = img_resp.headers.get("content-type", "")
     if ct.startswith("application/json"):
         data = img_resp.json()
@@ -585,7 +450,7 @@ def _resolve_sdxl_response(img_resp: httpx.Response, *, site_config: Any) -> str
     raise RuntimeError(f"SDXL returned unexpected content-type: {ct}")
 
 
-async def _upload_to_r2_with_fallback(tmp_path: str, *, site_config: Any) -> str:
+async def _upload_to_r2_with_fallback(tmp_path: str) -> str:
     """Upload the image to R2 and return a public URL, or fall back to a local path.
 
     If R2 upload succeeds, the local file is cleaned up. Otherwise the
@@ -596,9 +461,7 @@ async def _upload_to_r2_with_fallback(tmp_path: str, *, site_config: Any) -> str
     try:
         from services.r2_upload_service import upload_to_r2
         r2_key = f"images/inline/{uuid.uuid4().hex[:12]}.png"
-        r2_url = await upload_to_r2(
-            tmp_path, r2_key, content_type="image/png", site_config=site_config,
-        )
+        r2_url = await upload_to_r2(tmp_path, r2_key, content_type="image/png")
         if r2_url:
             img_url = r2_url
             with suppress(OSError):

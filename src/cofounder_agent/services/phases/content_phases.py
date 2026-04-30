@@ -430,10 +430,6 @@ class GenerateSEOPhase(BasePhase):
 
         try:
             from .seo_content_generator import get_seo_content_generator  # type: ignore[import]
-            # Phase H step 5 (GH#95): site_config is seeded on the phase
-            # inputs by the caller (process_content_generation_task for
-            # the production path; tests wire it in explicitly).
-            _sc = inputs["site_config"]
 
             content = inputs.get("content")
             topic = inputs.get("topic")
@@ -441,7 +437,7 @@ class GenerateSEOPhase(BasePhase):
             logger.info("[GenerateSEOPhase] Generating SEO metadata for '%s'", topic)
 
             # Use existing SEO generator
-            seo_generator = get_seo_content_generator(site_config=_sc)
+            seo_generator = get_seo_content_generator()
             seo_assets = await seo_generator.generate_seo_assets(
                 title=topic, content=content, topic=topic
             )
@@ -546,11 +542,9 @@ class CaptureTrainingDataPhase(BasePhase):
         model_used = inputs.get("model_used", "unknown")
         scores = inputs.get("scores", {})
 
-        # Feature flag: opt-out via config or environment variable.
-        # Phase H step 5 (GH#95): site_config is seeded on inputs by
-        # the caller.
-        _sc_capture = inputs["site_config"]
-        _capture_flag = _sc_capture.get("enable_training_capture", "true")
+        # Feature flag: opt-out via config or environment variable
+        from services.site_config import site_config
+        _capture_flag = site_config.get("enable_training_capture", "true")
         if str(_capture_flag).lower() == "false":
             logger.info("[CaptureTrainingDataPhase] Skipped (ENABLE_TRAINING_CAPTURE=false)")
             self.status = "completed"

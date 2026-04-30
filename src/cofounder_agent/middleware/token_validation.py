@@ -9,7 +9,6 @@ Uses:
 - TokenManager for OAuth token status checking (optional)
 """
 
-import os
 from collections.abc import Callable
 
 from fastapi import Request, status
@@ -17,26 +16,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
-
-
-def _sc_get(request: Request, key: str, default: str = "") -> str:
-    """Read ``key`` off ``request.app.state.site_config`` when present,
-    otherwise fall back to the uppercased env var (matching
-    ``SiteConfig.get``'s env-var priority). Mirrors the defensive shim
-    in ``middleware/api_token_auth.py`` so minimal unit-test apps that
-    never seed ``app.state.site_config`` keep working.
-
-    Phase H (GH#95): replaces the module-level site_config import.
-    """
-    sc = getattr(request.app.state, "site_config", None)
-    if sc is not None:
-        return sc.get(key, default)
-    env_val = os.getenv(key.upper())
-    if env_val:
-        return env_val
-    return default
 
 
 class TokenValidationMiddleware(BaseHTTPMiddleware):
@@ -96,8 +78,8 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
             # Guard: DISABLE_AUTH_FOR_DEV only honoured when DEVELOPMENT_MODE=true,
             # ensuring it never works on staging or production (#1219).
             if (
-                _sc_get(request, "disable_auth_for_dev", "false").lower() == "true"
-                and _sc_get(request, "development_mode", "false").lower() == "true"
+                site_config.get("disable_auth_for_dev", "false").lower() == "true"
+                and site_config.get("development_mode", "false").lower() == "true"
             ):
                 path = request.url.path
                 if path.startswith(self._NOISY_PATH_PREFIXES):

@@ -82,9 +82,8 @@ class SyncNewsletterSubscribersJob:
     schedule = "every 30 minutes"
     idempotent = True  # Watermark + ON CONFLICT DO UPDATE
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
+        from services.site_config import site_config
         cloud_url = site_config.get("database_url", "") or ""
         if not cloud_url:
             return JobResult(

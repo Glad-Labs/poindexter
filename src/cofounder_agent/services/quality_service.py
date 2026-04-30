@@ -101,15 +101,7 @@ class UnifiedQualityService:
     - Complete audit trail
     """
 
-    def __init__(
-        self,
-        model_router=None,
-        database_service=None,
-        qa_agent=None,
-        llm_client=None,
-        *,
-        site_config=None,
-    ):
+    def __init__(self, model_router=None, database_service=None, qa_agent=None, llm_client=None):
         """
         Initialize quality service
 
@@ -118,19 +110,11 @@ class UnifiedQualityService:
             database_service: Optional DatabaseService for persistence
             qa_agent: Optional QA Agent for binary approval
             llm_client: Optional LLMClient for direct LLM evaluation calls
-            site_config: SiteConfig instance (DI — Phase H, GH#95).
-                Required for any evaluation path (pattern / LLM / hybrid);
-                left optional here so main.py lifespan can construct the
-                service before app.state.site_config is ready and wire it
-                afterwards via ``set_site_config()``. Evaluation will
-                raise RuntimeError if site_config is still None at
-                evaluate() time.
         """
         self.model_router = model_router
         self.database_service = database_service
         self.qa_agent = qa_agent
         self.llm_client = llm_client
-        self._site_config = site_config
 
         # Statistics
         self.total_evaluations = 0
@@ -140,29 +124,13 @@ class UnifiedQualityService:
 
         logger.info("UnifiedQualityService initialized")
 
-    def set_site_config(self, site_config) -> None:
-        """Rebind site_config after construction — Phase H (GH#95).
+    @staticmethod
+    def _qa_cfg() -> dict:
+        """Load all QA pipeline thresholds from DB via site_config.
 
-        main.py lifespan instantiates UnifiedQualityService before
-        ``app.state.site_config`` is wired; TaskExecutor calls this once
-        site_config is ready so the pipeline always evaluates against
-        the DB-loaded instance.
+        Delegates to :func:`quality_scorers.qa_cfg`.
         """
-        self._site_config = site_config
-
-    def _qa_cfg(self) -> dict:
-        """Load all QA pipeline thresholds from the injected site_config.
-
-        Delegates to :func:`quality_scorers.qa_cfg`. ``site_config`` must
-        have been wired via ctor kwarg or ``set_site_config()`` first.
-        """
-        if self._site_config is None:
-            raise RuntimeError(
-                "UnifiedQualityService._qa_cfg() called before site_config "
-                "was wired. Pass site_config= to the constructor or call "
-                "set_site_config() first (Phase H / GH#95)."
-            )
-        return _qa_cfg_fn(self._site_config)
+        return _qa_cfg_fn()
 
     async def evaluate(
         self,
@@ -500,12 +468,12 @@ class UnifiedQualityService:
     # ========================================================================
 
     def _score_clarity(self, content: str, sentence_count: int, word_count: int) -> float:
-        """Score clarity. Delegates to quality_scorers (threads cfg)."""
-        return _score_clarity_fn(content, sentence_count, word_count, self._qa_cfg())
+        """Score clarity. Delegates to quality_scorers."""
+        return _score_clarity_fn(content, sentence_count, word_count)
 
     def _score_accuracy(self, content: str, context: dict[str, Any]) -> float:
-        """Score accuracy. Delegates to quality_scorers (threads cfg)."""
-        return _score_accuracy_fn(content, context, self._qa_cfg())
+        """Score accuracy. Delegates to quality_scorers."""
+        return _score_accuracy_fn(content, context)
 
     @staticmethod
     def detect_truncation(content: str) -> bool:
@@ -513,16 +481,16 @@ class UnifiedQualityService:
         return _detect_truncation_fn(content)
 
     def _score_completeness(self, content: str, context: dict[str, Any]) -> float:
-        """Score completeness. Delegates to quality_scorers (threads cfg)."""
-        return _score_completeness_fn(content, context, self._qa_cfg())
+        """Score completeness. Delegates to quality_scorers."""
+        return _score_completeness_fn(content, context)
 
     def _score_relevance(self, content: str, context: dict[str, Any]) -> float:
-        """Score relevance. Delegates to quality_scorers (threads cfg)."""
-        return _score_relevance_fn(content, context, self._qa_cfg())
+        """Score relevance. Delegates to quality_scorers."""
+        return _score_relevance_fn(content, context)
 
     def _score_seo(self, content: str, context: dict[str, Any]) -> float:
-        """Score SEO quality. Delegates to quality_scorers (threads cfg)."""
-        return _score_seo_fn(content, context, self._qa_cfg())
+        """Score SEO quality. Delegates to quality_scorers."""
+        return _score_seo_fn(content, context)
 
     def _score_readability(self, content: str) -> float:
         """Score readability. Delegates to quality_scorers."""
@@ -604,24 +572,16 @@ class UnifiedQualityService:
 
         return artifacts
 
-    def _score_llm_patterns(self, content: str) -> tuple[float, list[str]]:
+    @staticmethod
+    def _score_llm_patterns(content: str) -> tuple[float, list[str]]:
         """Detect and penalize common LLM-generated content patterns.
 
         Returns (penalty, list_of_issues) where penalty is a NEGATIVE number
         to subtract from the overall score (0 to -25 range).
 
         All thresholds are tunable via app_settings (key prefix: qa_llm_).
-        Phase H (GH#95) — now an instance method reading from the
-        injected ``self._site_config`` (previously a @staticmethod with
-        a function-body lazy import).
         """
-        if self._site_config is None:
-            raise RuntimeError(
-                "UnifiedQualityService._score_llm_patterns() called "
-                "before site_config was wired. Pass site_config= to the "
-                "constructor or call set_site_config() first (Phase H / GH#95)."
-            )
-        site_config = self._site_config
+        from services.site_config import site_config
 
         # Load tunable thresholds from DB (with sensible defaults)
         _t = {
@@ -807,8 +767,8 @@ class UnifiedQualityService:
         return penalty, issues
 
     def _score_engagement(self, content: str) -> float:
-        """Score engagement. Delegates to quality_scorers (threads cfg)."""
-        return _score_engagement_fn(content, self._qa_cfg())
+        """Score engagement. Delegates to quality_scorers."""
+        return _score_engagement_fn(content)
 
     # ========================================================================
     # UTILITY METHODS
@@ -909,30 +869,21 @@ class UnifiedQualityService:
 
 
 def get_quality_service(
-    model_router=None, database_service=None, llm_client=None, *, site_config=None,
+    model_router=None, database_service=None, llm_client=None
 ) -> UnifiedQualityService:
-    """Factory function for UnifiedQualityService dependency injection.
-
-    ``site_config`` threads through to the class (Phase H / GH#95).
-    """
+    """Factory function for UnifiedQualityService dependency injection"""
     return UnifiedQualityService(
-        model_router=model_router,
-        database_service=database_service,
-        llm_client=llm_client,
-        site_config=site_config,
+        model_router=model_router, database_service=database_service, llm_client=llm_client
     )
 
 
 # Backward compatibility alias
 def get_content_quality_service(
-    model_router=None, database_service=None, llm_client=None, *, site_config=None,
+    model_router=None, database_service=None, llm_client=None
 ) -> UnifiedQualityService:
     """Backward compatibility alias for get_quality_service"""
     return UnifiedQualityService(
-        model_router=model_router,
-        database_service=database_service,
-        llm_client=llm_client,
-        site_config=site_config,
+        model_router=model_router, database_service=database_service, llm_client=llm_client
     )
 
 

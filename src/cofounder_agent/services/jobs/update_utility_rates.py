@@ -37,6 +37,7 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from services.site_config import site_config
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ DEFAULT_GPU_TDP_MAP: dict[str, int] = {
 }
 
 
-def _load_gpu_tdp_map(site_config: Any) -> dict[str, int]:
+def _load_gpu_tdp_map() -> dict[str, int]:
     """Load GPU TDP map from site_config if set, otherwise use defaults."""
     raw = site_config.get("gpu_tdp_map", "")
     if not raw:
@@ -197,9 +198,7 @@ class UpdateUtilityRatesJob:
     schedule = "every 24 hours"
     idempotent = True
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         drift_threshold = float(config.get("drift_threshold", 0.10))
         skip_electricity = bool(config.get("skip_electricity", False))
         skip_gpu = bool(config.get("skip_gpu", False))
@@ -225,7 +224,7 @@ class UpdateUtilityRatesJob:
 
         if not skip_gpu:
             try:
-                tdp_map = _load_gpu_tdp_map(site_config)
+                tdp_map = _load_gpu_tdp_map()
                 change = await _refresh_gpu_tdp(pool, tdp_map)
                 if change:
                     changes["gpu_power_watts"] = change

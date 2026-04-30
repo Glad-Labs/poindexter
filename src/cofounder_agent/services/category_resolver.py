@@ -69,14 +69,8 @@ async def select_category_for_topic(
                 )
             if cat_id:
                 return cat_id
-        except Exception as e:
-            # DB unreachable / categories table missing / similar — fall
-            # through to keyword matching so the post still routes
-            # somewhere, but log so a real outage isn't invisible.
-            logger.warning(
-                "[category_resolver] DB lookup for slug=%r failed: %s",
-                requested_category, e,
-            )
+        except Exception:
+            pass
 
     # Priority 2: keyword matching.
     topic_lower = topic.lower()

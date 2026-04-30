@@ -10,7 +10,7 @@ Covers the four cases the issue asks for:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -21,17 +21,6 @@ from services.internal_link_coherence import (
     get_tag_slugs_for_post,
     normalize_tag_set,
 )
-
-
-def _mock_sc() -> MagicMock:
-    """SiteConfig mock — ``get`` returns the caller's default for every key.
-
-    The filter's tunable kwargs win over app_settings reads in every
-    test; this just satisfies the DI requirement.
-    """
-    sc = MagicMock()
-    sc.get.side_effect = lambda k, d="": d
-    return sc
 
 # ---------------------------------------------------------------------------
 # normalize_tag_set — input cleaning
@@ -191,7 +180,6 @@ class TestFilterCandidates:
     @pytest.mark.asyncio
     async def test_pass_overlapping_tags(self):
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,  # disable cap for this test
@@ -211,7 +199,6 @@ class TestFilterCandidates:
     async def test_fail_no_tag_overlap(self):
         """The GH-88 scenario: asyncio post shouldn't link to CadQuery."""
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,
@@ -231,7 +218,6 @@ class TestFilterCandidates:
     @pytest.mark.asyncio
     async def test_fail_target_has_no_tags(self):
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,
@@ -247,7 +233,6 @@ class TestFilterCandidates:
     async def test_fail_source_has_no_tags(self):
         """Source with no tags can't prove coherence → reject (no silent pass)."""
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,
@@ -265,7 +250,6 @@ class TestFilterCandidates:
     async def test_cap_rejects_over_limit(self):
         """Same target beyond the cap is rejected."""
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=False,  # isolate cap behaviour
             cap_enabled=True,
@@ -287,7 +271,6 @@ class TestFilterCandidates:
     @pytest.mark.asyncio
     async def test_cap_accepts_under_limit(self):
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=False,
             cap_enabled=True,
@@ -310,7 +293,6 @@ class TestFilterCandidates:
         """Simulate N+1 attempts at the same target — the N+1th is rejected."""
         # Fresh filter with cap=3.
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=False,
             cap_enabled=True,
@@ -343,7 +325,6 @@ class TestFilterCandidates:
     async def test_both_gates_applied(self):
         """Tag gate is applied before cap; rejection_reason reflects first fail."""
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=True,
@@ -369,7 +350,6 @@ class TestFilterCandidates:
         # Called by get_tag_slugs_for_post.
         pool.fetch = AsyncMock(return_value=[{"slug": "python"}])
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=pool,
             tag_coherence_required=True,
             cap_enabled=False,
@@ -391,23 +371,9 @@ class TestFilterCandidates:
 # ---------------------------------------------------------------------------
 
 
-def _find_audit_script() -> Path | None:
-    """Locate scripts/audit_internal_link_coherence.py regardless of how
-    deep the test file sits in the checkout.
-
-    The test ran from the host where parents[5] landed on the repo root;
-    in the docker worker only `src/cofounder_agent` is mounted as /app so
-    parents[5] raises IndexError. Walk up until we find a scripts/ dir.
-    """
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / "scripts" / "audit_internal_link_coherence.py"
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-_AUDIT_SCRIPT = _find_audit_script()
+_AUDIT_SCRIPT = (
+    Path(__file__).resolve().parents[5] / "scripts" / "audit_internal_link_coherence.py"
+)
 
 
 def _load_audit_module():
@@ -421,11 +387,6 @@ def _load_audit_module():
     return mod
 
 
-@pytest.mark.skipif(
-    _AUDIT_SCRIPT is None,
-    reason="scripts/audit_internal_link_coherence.py not mounted — docker worker "
-    "only sees src/cofounder_agent as /app; this test runs on the host.",
-)
 class TestAuditScanner:
     def test_cadquery_phrase_matches_live_pattern(self):
         """Real content from GH-88 published post `0b5e81ef`."""
@@ -491,7 +452,6 @@ class TestRealisticRagScenario:
     async def test_cadquery_stripped_from_asyncio_post_candidates(self):
         """End-to-end: CadQuery-like candidate rejected; on-topic kept."""
         filt = InternalLinkCoherenceFilter(
-            site_config=_mock_sc(),
             pool=None,
             tag_coherence_required=True,
             cap_enabled=False,

@@ -99,17 +99,9 @@ class GenerateContentStage:
                 detail="context missing task_id or database_service",
             )
 
-        # Phase H (GH#95): site_config is seeded on the pipeline context
-        # by content_router_service. Tests build context dicts with the
-        # fake site_config wired in explicitly.
-        _sc = context["site_config"]
-
         logger.info("STAGE 2: Generating blog content...")
 
-        # Phase H (GH#95): thread site_config through the factory so the
-        # singleton's app_settings reads bind to the injected instance
-        # instead of raising from _require_site_config().
-        content_generator = get_content_generator(site_config=_sc)
+        content_generator = get_content_generator()
         preferred_model, preferred_provider = _parse_model_preferences(models_by_phase)
 
         # Fetch active writing style samples for voice/tone matching.
@@ -121,7 +113,6 @@ class GenerateContentStage:
         # built context, then RAG-from-pgvector.
         research_context = await self._collect_research_context(
             database_service, task_id, topic,
-            site_config=_sc,
             source_tags=context.get("tags") or [],
             source_category=context.get("category") or "",
         )
@@ -131,23 +122,44 @@ class GenerateContentStage:
         # same sources the writer consulted.
         context["research_context"] = research_context
 
-        # Generate content (GPU-locked to ollama mode).
-        from services.gpu_scheduler import gpu
-        async with gpu.lock(
-            "ollama", model=preferred_model,
-            task_id=task_id, phase="generate_content",
-        ):
-            content_text, model_used, metrics = await content_generator.generate_blog_post(
+        # Task 14 (RAG pivot): if the task carries a writer_rag_mode set by
+        # the niche topic-discovery handoff, route to the new writer-mode
+        # dispatcher instead of the legacy generator. The legacy path stays
+        # intact for tasks with no writer_rag_mode (column is nullable per
+        # migration 0114, so pre-niche tasks remain backward-compatible).
+        writer_rag_mode = await self._read_writer_rag_mode(database_service, task_id)
+        if writer_rag_mode:
+            logger.info(
+                "STAGE 2: writer_rag_mode=%s — dispatching to writer_rag_modes",
+                writer_rag_mode,
+            )
+            content_text, model_used, metrics = await self._generate_via_writer_mode(
+                writer_rag_mode=writer_rag_mode,
                 topic=topic,
                 style=style,
                 tone=tone,
-                target_length=target_length,
                 tags=tags,
-                preferred_model=preferred_model,
-                preferred_provider=preferred_provider,
-                writing_style_context=writing_style_context,
-                research_context=research_context,
+                database_service=database_service,
+                task_id=task_id,
             )
+        else:
+            # Generate content (GPU-locked to ollama mode).
+            from services.gpu_scheduler import gpu
+            async with gpu.lock(
+                "ollama", model=preferred_model,
+                task_id=task_id, phase="generate_content",
+            ):
+                content_text, model_used, metrics = await content_generator.generate_blog_post(
+                    topic=topic,
+                    style=style,
+                    tone=tone,
+                    target_length=target_length,
+                    tags=tags,
+                    preferred_model=preferred_model,
+                    preferred_provider=preferred_provider,
+                    writing_style_context=writing_style_context,
+                    research_context=research_context,
+                )
 
         if not content_text:
             logger.error("Content generation returned None or empty")
@@ -158,15 +170,14 @@ class GenerateContentStage:
         primary_keyword = tags[0] if tags else topic
         existing_titles = await self._fetch_existing_titles(database_service)
         title = await _generate_canonical_title(
-            topic, primary_keyword, content_text[:500],
-            existing_titles=existing_titles, site_config=_sc,
+            topic, primary_keyword, content_text[:500], existing_titles=existing_titles,
         ) or topic
         logger.info("Title generated: %s", title)
 
         # Title originality: if the title collides with something on the
         # web, regenerate with a stronger avoidance list. Only take the
         # regenerated version if it's actually more original.
-        originality = await _check_title_originality(title, site_config=_sc)
+        originality = await _check_title_originality(title)
         if not originality["is_original"]:
             logger.warning(
                 "[TITLE] Title too similar to existing content — regenerating with stronger uniqueness prompt"
@@ -176,10 +187,10 @@ class GenerateContentStage:
                 avoid_list += f"\n- {dup_title}"
             title_v2 = await _generate_canonical_title(
                 topic, primary_keyword, content_text[:500],
-                existing_titles=avoid_list, site_config=_sc,
+                existing_titles=avoid_list,
             )
             if title_v2:
-                originality_v2 = await _check_title_originality(title_v2, site_config=_sc)
+                originality_v2 = await _check_title_originality(title_v2)
                 # GH-87: prefer the regenerated title if it drops below
                 # either the internal-corpus similarity threshold OR the
                 # external-duplicate flag. Previously we only looked at
@@ -221,25 +232,19 @@ class GenerateContentStage:
                     slug = link_line.split("/posts/")[-1].strip().strip('"')
                     if slug:
                         real_slug_set.add(slug)
-        except Exception as e:
-            logger.debug(
-                "[generate_content] building real-slug allowlist from "
-                "_internal_links_cache failed; scrub will treat all "
-                "/posts/ links as fabricated: %s", e,
-            )
-        content_text = scrub_fabricated_links(
-            content_text, known_slugs=real_slug_set, site_config=_sc,
-        )
+        except Exception:
+            pass
+        content_text = scrub_fabricated_links(content_text, known_slugs=real_slug_set)
 
         # Strip leaked image prompts / descriptions. LLMs sometimes emit
         # visual placeholders that we don't want in the body.
         content_text = _strip_leaked_image_prompts(content_text)
 
         # Writer self-review pass (opt-in via enable_writer_self_review).
-        if _self_review_enabled(_sc):
+        if _self_review_enabled():
             try:
                 revised, sr_meta = await _self_review_and_revise(
-                    content_text, title, topic, _sc,
+                    content_text, title, topic,
                 )
                 if sr_meta.get("revised"):
                     logger.info(
@@ -308,31 +313,6 @@ class GenerateContentStage:
                 )
             except Exception as e:
                 logger.warning("Cost logging failed (non-critical): %s", e)
-                # Visibility for the silent-cost-drop pattern (gitea#322
-                # finding 5). Mirror to audit_log so alerts can fire on
-                # write-failure rate; original swallow is preserved so a
-                # transient DB hiccup never breaks a content generation.
-                try:
-                    audit_log_bg(
-                        "cost_log_write_failed",
-                        "generate_content",
-                        {
-                            "phase": "generate_content",
-                            "error": str(e)[:300],
-                            "error_type": type(e).__name__,
-                            "cost_usd": cost_log.get("cost_usd"),
-                            "model": cost_log.get("model"),
-                            "provider": cost_log.get("provider"),
-                        },
-                        task_id=task_id,
-                        severity="error",
-                    )
-                except Exception as audit_err:
-                    logger.debug(
-                        "[generate_content] audit_log_bg for "
-                        "cost_log_write_failed itself failed: %s",
-                        audit_err,
-                    )
 
         # Snapshot the initial draft into content_revisions so the feedback
         # loop can later diff this against the QA-revised + finalized
@@ -368,7 +348,6 @@ class GenerateContentStage:
         database_service: Any,
         task_id: str,
         topic: str,
-        site_config: Any,
         source_tags: list[str] | None = None,
         source_category: str | None = None,
     ) -> str:
@@ -397,8 +376,7 @@ class GenerateContentStage:
         try:
             from services.research_service import ResearchService
             research_svc = ResearchService(
-                pool=database_service.pool if database_service else None,
-                site_config=site_config,
+                pool=database_service.pool if database_service else None
             )
             auto = await research_svc.build_context(topic)
             if auto:
@@ -430,6 +408,105 @@ class GenerateContentStage:
             logger.warning("RAG context skipped (non-fatal): %s", e)
 
         return research_context
+
+    async def _read_writer_rag_mode(
+        self, database_service: Any, task_id: str,
+    ) -> str | None:
+        """Return the task's writer_rag_mode if set, else None.
+
+        Task 14: niches set this column when handing tasks off via
+        TopicBatchService; legacy/manual tasks leave it NULL and stay on the
+        legacy generator path.
+        """
+        try:
+            task_row = await database_service.get_task(task_id)
+            if not task_row:
+                return None
+            mode = task_row.get("writer_rag_mode")
+            if not mode:
+                return None
+            return str(mode).strip().upper() or None
+        except Exception as e:
+            logger.warning(
+                "Failed to read writer_rag_mode for task %s: %s — falling back to legacy path",
+                task_id, e,
+            )
+            return None
+
+    async def _generate_via_writer_mode(
+        self,
+        *,
+        writer_rag_mode: str,
+        topic: str,
+        style: str,
+        tone: str,
+        tags: list[str],
+        database_service: Any,
+        task_id: str,
+    ) -> tuple[str, str, dict[str, Any]]:
+        """Run dispatch_writer_mode and shape the result into the
+        (content_text, model_used, metrics) tuple the rest of this stage
+        already expects.
+
+        The dispatcher returns a richer dict ({draft, snippets_used, mode,
+        ...}); we surface mode-specific extras inside ``metrics`` so the
+        downstream QA / persistence stages can see them but the main flow
+        stays unchanged.
+        """
+        from services.writer_rag_modes import dispatch_writer_mode
+
+        # The writer modes use "angle" rather than separate style/tone/tags;
+        # collapse the available descriptors into a single angle string.
+        angle_parts = [p for p in (style, tone) if p]
+        if tags:
+            angle_parts.append("tags: " + ", ".join(tags))
+        angle = " | ".join(angle_parts) or "general"
+
+        pool = getattr(database_service, "pool", None)
+        if pool is None:
+            raise ValueError(
+                "writer_rag_mode dispatch requires database_service.pool but it is None"
+            )
+
+        # niche_id is not strictly needed by the modes themselves — the modes
+        # query the global embeddings table by topic+angle similarity. If a
+        # downstream mode wants to scope to a niche it can look the niche_id
+        # up via the task row's niche_slug.
+        from services.gpu_scheduler import gpu
+        async with gpu.lock(
+            "ollama", model="glm-4.7-5090:latest",
+            task_id=task_id, phase="generate_content",
+        ):
+            result = await dispatch_writer_mode(
+                mode=writer_rag_mode,
+                topic=topic,
+                angle=angle,
+                niche_id=None,
+                pool=pool,
+            )
+
+        draft = result.get("draft") or ""
+        # The writer-mode helpers all call _ollama_chat_json with this model.
+        # If a future mode picks a different model it should put it on the
+        # result dict so we can surface the real value.
+        model_used = result.get("model_used") or "glm-4.7-5090:latest"
+        metrics: dict[str, Any] = {
+            "writer_rag_mode": writer_rag_mode,
+            "snippets_used_count": len(result.get("snippets_used") or []),
+            "models_used_by_phase": {"generate_content": model_used},
+            "model_selection_log": {
+                "generate_content": {
+                    "preferred": model_used,
+                    "actual": model_used,
+                    "source": "writer_rag_mode_dispatch",
+                },
+            },
+        }
+        # TWO_PASS-specific extras (LangGraph state machine output).
+        for k in ("external_lookups", "revision_loops", "loop_capped", "spine"):
+            if k in result:
+                metrics[k] = result[k]
+        return draft, model_used, metrics
 
     async def _fetch_existing_titles(self, database_service: Any) -> str:
         """Return newline-separated recent published titles for avoidance prompt."""
@@ -500,14 +577,10 @@ def _extract_caller_research(task_row: dict[str, Any]) -> str:
     )
 
 
-def _self_review_enabled(site_config: Any) -> bool:
-    """Read the ``enable_writer_self_review`` feature flag from site_config.
-
-    ``site_config`` is the config object threaded through the pipeline
-    context (Phase H step 4). Required — the caller must pass the config
-    wired onto the context dict.
-    """
+def _self_review_enabled() -> bool:
+    """Read the ``enable_writer_self_review`` feature flag from site_config."""
     try:
+        from services.site_config import site_config
         raw = site_config.get("enable_writer_self_review", "true")
         return str(raw).lower() in ("true", "1", "yes")
     except Exception:

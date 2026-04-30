@@ -16,81 +16,24 @@ Pull models: ollama pull qwen3:8b
 
 import asyncio
 import json
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
-from plugins.tracing import get_tracer
 from services.logger_config import get_logger
-from services.ollama_resilience import (
-    OllamaCircuitOpenError,
-    OllamaEmptyResponseError,
-    OllamaResilienceManager,
-)
 
 logger = get_logger(__name__)
-
-# Tracer for Ollama HTTP-call spans. Spans land under name
-# ``ollama.<method>`` (generate / chat / embed) with semantic
-# attributes (llm.model, llm.tokens.*, llm.duration_s, llm.cost_usd)
-# the Tempo→Grafana view groups by. See plugins/tracing.py for the
-# import-or-noop rationale.
-_tracer = get_tracer("poindexter.ollama_client")
-
-# Phase H finish (GH#95): the module-level
-# ``from services.site_config import site_config as _site_config`` is
-# gone. That import bound a stale reference to the empty singleton
-# constructed at site_config import time — when ``main.py``'s lifespan
-# rebound ``services.site_config.site_config`` to a DB-loaded instance,
-# the OllamaClient defaults here kept reading the empty original
-# (wrong base_url, wrong default model, wrong timeout).
-#
-# Two ways the right SiteConfig reaches us now:
-#
-# 1. ``OllamaClient.__init__(..., site_config=...)`` — preferred for
-#    new callers. The ctor reads its defaults off ``self._site_config``.
-# 2. ``ollama_client.set_site_config(site_cfg)`` — called by
-#    ``main.py``'s lifespan to bind the module-level fallback. Existing
-#    callers that build ``OllamaClient()`` with no args still get the
-#    DB-loaded values once the lifespan has run.
-#
-# Pre-lifespan / no-binding: the ``_sc_get`` helper falls back to env
-# vars + the documented hardcoded defaults (e.g. host.docker.internal
-# for ollama_base_url, "auto" for default_ollama_model).
-_site_config: Any = None
-
-
-def set_site_config(site_config: Any) -> None:
-    """Bind the SiteConfig instance ``OllamaClient()`` (no-arg) reads from.
-
-    Called by ``main.py``'s lifespan once the DB-loaded SiteConfig is
-    available. New callers should pass ``site_config=`` to the ctor
-    directly instead of relying on this module-level binding.
-    """
-    global _site_config
-    _site_config = site_config
 
 
 # ============================================================================
 # CONSTANTS
 # ============================================================================
 
-def _sc_get(key: str, default: str = "", *, site_config: Any = None) -> str:
-    """Get from site_config (falls back to module binding, then env, then default).
-
-    ``site_config`` kwarg lets per-instance ``OllamaClient`` calls read
-    from their own ctor-injected SiteConfig before the module-level one
-    is bound by the lifespan.
-    """
-    sc = site_config if site_config is not None else _site_config
-    if sc is not None:
-        return sc.get(key, default)
-    env_val = os.getenv(key.upper())
-    if env_val:
-        return env_val
-    return default
+def _sc_get(key: str, default: str = "") -> str:
+    """Get from site_config (falls back to env automatically)."""
+    from services.site_config import site_config
+    return site_config.get(key, default)
 
 # All config below is resolved lazily via _default_*() helpers because
 # site_config is empty at module-import time (loaded later in the lifespan).
@@ -98,42 +41,42 @@ def _sc_get(key: str, default: str = "", *, site_config: Any = None) -> str:
 # ignore any app_settings overrides set after first import.
 
 
-def _default_model(site_config: Any = None) -> str:
-    return _sc_get("default_ollama_model", "auto", site_config=site_config)
+def _default_model() -> str:
+    return _sc_get("default_ollama_model", "auto")
 
 
-def _default_base_url(site_config: Any = None) -> str:
+def _default_base_url() -> str:
     return (
-        _sc_get("ollama_base_url", site_config=site_config)
-        or _sc_get("ollama_host", site_config=site_config)
+        _sc_get("ollama_base_url")
+        or _sc_get("ollama_host")
         or "http://host.docker.internal:11434"
     )
 
 
-def _default_gpu_power_watts(site_config: Any = None) -> float:
+def _default_gpu_power_watts() -> float:
     """GPU electricity cost default (RTX 5090: 575W TDP, ~300W typical inference)."""
     try:
-        return float(_sc_get("gpu_inference_watts", "300", site_config=site_config))
+        return float(_sc_get("gpu_inference_watts", "300"))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for gpu_inference_watts: {exc}"
         ) from exc
 
 
-def _default_electricity_rate_kwh(site_config: Any = None) -> float:
+def _default_electricity_rate_kwh() -> float:
     try:
-        return float(_sc_get("electricity_rate_kwh", "0.12", site_config=site_config))
+        return float(_sc_get("electricity_rate_kwh", "0.12"))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for electricity_rate_kwh: {exc}"
         ) from exc
 
 
-def _default_num_ctx(site_config: Any = None) -> int:
+def _default_num_ctx() -> int:
     """Context window limit — prevents models from allocating massive KV caches.
     Default 8192 is plenty for article generation and saves ~15GB VRAM vs 65K context."""
     try:
-        return int(_sc_get("ollama_num_ctx", "8192", site_config=site_config))
+        return int(_sc_get("ollama_num_ctx", "8192"))
     except (ValueError, TypeError) as exc:
         raise RuntimeError(
             f"Invalid app_settings value for ollama_num_ctx: {exc}"
@@ -190,21 +133,9 @@ class OllamaClient:
     Model profiles are discovered dynamically from the Ollama server.
     """
 
-    def __init__(
-        self,
-        base_url: str | None = None,
-        model: str | None = None,
-        timeout: int | None = None,
-        *,
-        site_config: Any = None,
-    ):
-        # Phase H finish (GH#95): callers may pass an explicit
-        # ``site_config`` so the client reads its defaults from that
-        # instance instead of the module-level fallback. Used by
-        # services that already accept site_config via ctor.
-        self._site_config = site_config
-        self.base_url = (base_url or _default_base_url(site_config=site_config)).rstrip("/")
-        self.model = model or _default_model(site_config=site_config)
+    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int | None = None):
+        self.base_url = (base_url or _default_base_url()).rstrip("/")
+        self.model = model or _default_model()
         # Default timeout is high (600s) because a 70B+ writer model can
         # easily take 3-10 minutes to generate a long blog post on a
         # single GPU. The old default of 120s silently dropped big-model
@@ -214,9 +145,7 @@ class OllamaClient:
         # gemma3:27b the whole time. Callers can still override for
         # short-timeout use cases (health checks, quick list calls).
         if timeout is None:
-            timeout = int(_sc_get(
-                "ollama_client_timeout_seconds", "600", site_config=site_config,
-            ) or 600)
+            timeout = int(_sc_get("ollama_client_timeout_seconds", "600") or 600)
         self.timeout = timeout
         self.client = httpx.AsyncClient(timeout=timeout)
         self._model_cache: dict[str, dict[str, Any]] = {}
@@ -224,20 +153,8 @@ class OllamaClient:
         self._resolved_default: str | None = None  # Lazily resolved from installed models
 
         # Electricity cost parameters — updated at runtime via configure_electricity()
-        self._gpu_power_watts: float = _default_gpu_power_watts(site_config=site_config)
-        self._electricity_rate_kwh: float = _default_electricity_rate_kwh(site_config=site_config)
-
-        # Resilience layer (GH#153, generalized in GH#192) — retry +
-        # queue + circuit breaker. Every generate/chat/embed call goes
-        # through ``self._resilience.run()`` so transient Ollama failures
-        # (timeouts, 503s, empty content under GPU contention) get
-        # backoff-and-retry instead of being surfaced as a hard failure
-        # that publishes stub content. The manager is lazily
-        # reconfigured per call from app_settings, so changing
-        # ``llm_ollama_max_concurrent_calls`` or
-        # ``llm_ollama_circuit_breaker_*`` (legacy ``ollama_*`` keys
-        # still honored for one release) takes effect without a restart.
-        self._resilience = OllamaResilienceManager(site_config=site_config)
+        self._gpu_power_watts: float = _default_gpu_power_watts()
+        self._electricity_rate_kwh: float = _default_electricity_rate_kwh()
 
         logger.info("Ollama client initialized", base_url=self.base_url, model=self.model)
 
@@ -281,7 +198,7 @@ class OllamaClient:
             installed_names = {m.get("name", "") for m in models}
 
             # Check config first — user knows which model is best for their hardware
-            preferred = _sc_get("preferred_ollama_model", "", site_config=self._site_config)
+            preferred = _sc_get("preferred_ollama_model", "")
             if preferred and preferred in installed_names:
                 self._resolved_default = preferred
                 logger.info("Auto-resolved model from PREFERRED_OLLAMA_MODEL: %s", preferred)
@@ -457,114 +374,77 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": stream,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
         }
 
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
-        with _tracer.start_as_current_span("ollama.generate") as span:
-            span.set_attribute("llm.model", model)
-            span.set_attribute("llm.prompt_chars", len(prompt))
-            span.set_attribute("llm.system_chars", len(system) if system else 0)
-            span.set_attribute("llm.temperature", temperature)
-            span.set_attribute("llm.max_tokens", max_tokens or 0)
-            span.set_attribute("llm.stream", stream)
-            try:
-                async def _do_post() -> dict[str, Any]:
-                    resp = await self.client.post(
-                        f"{self.base_url}/api/chat",
-                        json=payload,
-                        timeout=call_timeout,
-                    )
-                    resp.raise_for_status()
-                    return resp.json()
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/chat", json=payload, timeout=call_timeout
+            )
+            response.raise_for_status()
+            result = response.json()
 
-                # The validator catches Ollama's "200 OK with empty
-                # message.content" failure mode (thinking-trace
-                # overflow under GPU contention) and converts it into
-                # a retryable OllamaEmptyResponseError so the
-                # resilience layer retries instead of accepting the
-                # stub. Returns True (accept) if there's any content
-                # OR a non-empty thinking trace we can salvage from.
-                def _has_usable_content(r: dict[str, Any]) -> bool:
-                    msg = r.get("message") or {}
-                    return bool(msg.get("content") or msg.get("thinking"))
-
-                result = await self._resilience.run(
-                    _do_post,
-                    op_name="generate",
-                    validate_result=_has_usable_content,
+            # Extract text from chat response format
+            msg = result.get("message") or {}
+            # Ollama occasionally returns "content": null (not missing)
+            # on thinking-model empty-response failures. The .get default
+            # only triggers when the key is absent, so we coalesce None
+            # to "" here so every downstream caller can assume text is a
+            # plain string and not have to defensively (result.get("text")
+            # or "").
+            text = msg.get("content") or ""
+            # Thinking models (qwen3, qwen3.5, glm-4.7) split output into
+            # `message.content` (final answer) and `message.thinking`
+            # (reasoning trace). When num_predict is too small, the thinking
+            # phase eats the entire budget and content comes back empty.
+            _thinking = msg.get("thinking") or ""
+            if not text and _thinking:
+                logger.warning(
+                    "Ollama thinking-model returned empty content with %d-char thinking trace — extracting last paragraph from thinking as fallback",
+                    len(_thinking),
                 )
+                # Try to salvage the answer from the thinking trace.
+                # Thinking models often reach their conclusion in the final
+                # lines before the budget runs out.
+                lines = [ln.strip() for ln in _thinking.strip().splitlines() if ln.strip()]
+                if lines:
+                    # Take the last non-empty line as the likely answer
+                    text = lines[-1]
+                    logger.info("Salvaged %d-char answer from thinking trace", len(text))
 
-                # Extract text from chat response format
-                msg = result.get("message") or {}
-                # Ollama occasionally returns "content": null (not missing)
-                # on thinking-model empty-response failures. The .get default
-                # only triggers when the key is absent, so we coalesce None
-                # to "" here so every downstream caller can assume text is a
-                # plain string and not have to defensively (result.get("text")
-                # or "").
-                text = msg.get("content") or ""
-                # Thinking models (qwen3, qwen3.5, glm-4.7) split output into
-                # `message.content` (final answer) and `message.thinking`
-                # (reasoning trace). When num_predict is too small, the thinking
-                # phase eats the entire budget and content comes back empty.
-                _thinking = msg.get("thinking") or ""
-                if not text and _thinking:
-                    logger.warning(
-                        "Ollama thinking-model returned empty content with %d-char thinking trace — extracting last paragraph from thinking as fallback",
-                        len(_thinking),
-                    )
-                    # Try to salvage the answer from the thinking trace.
-                    # Thinking models often reach their conclusion in the final
-                    # lines before the budget runs out.
-                    lines = [ln.strip() for ln in _thinking.strip().splitlines() if ln.strip()]
-                    if lines:
-                        # Take the last non-empty line as the likely answer
-                        text = lines[-1]
-                        logger.info("Salvaged %d-char answer from thinking trace", len(text))
+            duration_s = result.get("total_duration", 0) / 1e9
+            electricity_cost = calculate_electricity_cost(
+                duration_s,
+                gpu_power_watts=self._gpu_power_watts,
+                electricity_rate_kwh=self._electricity_rate_kwh,
+            )
 
-                duration_s = result.get("total_duration", 0) / 1e9
-                electricity_cost = calculate_electricity_cost(
-                    duration_s,
-                    gpu_power_watts=self._gpu_power_watts,
-                    electricity_rate_kwh=self._electricity_rate_kwh,
-                )
+            logger.info(
+                "Ollama generation complete",
+                model=model,
+                tokens=result.get("eval_count", 0),
+                duration=duration_s,
+                electricity_cost_usd=electricity_cost,
+            )
 
-                eval_count = result.get("eval_count", 0)
-                prompt_eval = result.get("prompt_eval_count", 0)
-                span.set_attribute("llm.tokens.completion", eval_count)
-                span.set_attribute("llm.tokens.prompt", prompt_eval)
-                span.set_attribute("llm.tokens.total", eval_count + prompt_eval)
-                span.set_attribute("llm.duration_s", duration_s)
-                span.set_attribute("llm.cost_usd", electricity_cost)
-                span.set_attribute("llm.response_chars", len(text))
+            return {
+                "text": text,
+                "response": text,  # Legacy key for callers using response.get("response")
+                "model": model,
+                "tokens": result.get("eval_count", 0),
+                "prompt_tokens": result.get("prompt_eval_count", 0),
+                "total_tokens": result.get("eval_count", 0) + result.get("prompt_eval_count", 0),
+                "duration_seconds": duration_s,
+                "cost": electricity_cost,
+                "done": result.get("done", False),
+            }
 
-                logger.info(
-                    "Ollama generation complete",
-                    model=model,
-                    tokens=eval_count,
-                    duration=duration_s,
-                    electricity_cost_usd=electricity_cost,
-                )
-
-                return {
-                    "text": text,
-                    "response": text,  # Legacy key for callers using response.get("response")
-                    "model": model,
-                    "tokens": eval_count,
-                    "prompt_tokens": prompt_eval,
-                    "total_tokens": eval_count + prompt_eval,
-                    "duration_seconds": duration_s,
-                    "cost": electricity_cost,
-                    "done": result.get("done", False),
-                }
-
-            except httpx.HTTPError as e:
-                span.record_exception(e)
-                logger.error("[generate] Ollama generation failed: %s", e, exc_info=True, model=model)
-                raise
+        except httpx.HTTPError as e:
+            logger.error("[generate] Ollama generation failed: %s", e, exc_info=True, model=model)
+            raise
 
     async def chat(
         self,
@@ -583,77 +463,50 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
         }
 
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
-        with _tracer.start_as_current_span("ollama.chat") as span:
-            span.set_attribute("llm.model", model)
-            span.set_attribute("llm.messages_count", len(messages))
-            span.set_attribute("llm.temperature", temperature)
-            span.set_attribute("llm.max_tokens", max_tokens or 0)
-            try:
-                async def _do_post() -> dict[str, Any]:
-                    resp = await self.client.post(
-                        f"{self.base_url}/api/chat",
-                        json=payload,
-                        timeout=self.timeout,
-                    )
-                    resp.raise_for_status()
-                    return resp.json()
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
+            )
+            response.raise_for_status()
+            result = response.json()
 
-                def _has_usable_content(r: dict[str, Any]) -> bool:
-                    msg_check = r.get("message") or {}
-                    return bool(msg_check.get("content") or msg_check.get("thinking"))
+            msg = result.get("message", {})
 
-                result = await self._resilience.run(
-                    _do_post,
-                    op_name="chat",
-                    validate_result=_has_usable_content,
-                )
+            duration_s = result.get("total_duration", 0) / 1e9
+            electricity_cost = calculate_electricity_cost(
+                duration_s,
+                gpu_power_watts=self._gpu_power_watts,
+                electricity_rate_kwh=self._electricity_rate_kwh,
+            )
 
-                msg = result.get("message", {})
+            logger.info(
+                "Ollama chat complete",
+                model=model,
+                tokens=result.get("eval_count", 0),
+                electricity_cost_usd=electricity_cost,
+            )
 
-                duration_s = result.get("total_duration", 0) / 1e9
-                electricity_cost = calculate_electricity_cost(
-                    duration_s,
-                    gpu_power_watts=self._gpu_power_watts,
-                    electricity_rate_kwh=self._electricity_rate_kwh,
-                )
+            return {
+                "role": msg.get("role", "assistant"),
+                "content": msg.get("content", ""),
+                "model": model,
+                "tokens": result.get("eval_count", 0),
+                "prompt_tokens": result.get("prompt_eval_count", 0),
+                "total_tokens": result.get("eval_count", 0) + result.get("prompt_eval_count", 0),
+                "duration_seconds": duration_s,
+                "cost": electricity_cost,
+                "done": result.get("done", False),
+            }
 
-                eval_count = result.get("eval_count", 0)
-                prompt_eval = result.get("prompt_eval_count", 0)
-                span.set_attribute("llm.tokens.completion", eval_count)
-                span.set_attribute("llm.tokens.prompt", prompt_eval)
-                span.set_attribute("llm.tokens.total", eval_count + prompt_eval)
-                span.set_attribute("llm.duration_s", duration_s)
-                span.set_attribute("llm.cost_usd", electricity_cost)
-
-                logger.info(
-                    "Ollama chat complete",
-                    model=model,
-                    tokens=eval_count,
-                    electricity_cost_usd=electricity_cost,
-                )
-
-                return {
-                    "role": msg.get("role", "assistant"),
-                    "content": msg.get("content", ""),
-                    "model": model,
-                    "tokens": eval_count,
-                    "prompt_tokens": prompt_eval,
-                    "total_tokens": eval_count + prompt_eval,
-                    "duration_seconds": duration_s,
-                    "cost": electricity_cost,
-                    "done": result.get("done", False),
-                }
-
-            except httpx.HTTPError as e:
-                span.record_exception(e)
-                logger.error("[chat] Ollama chat failed: %s", e, exc_info=True, model=model)
-                raise
+        except httpx.HTTPError as e:
+            logger.error("[chat] Ollama chat failed: %s", e, exc_info=True, model=model)
+            raise
 
     # ========================================================================
     # Model Management
@@ -765,7 +618,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": temperature, "num_ctx": _default_num_ctx(site_config=self._site_config)},
+            "options": {"temperature": temperature, "num_ctx": _default_num_ctx()},
         }
 
         if max_tokens:
@@ -807,48 +660,29 @@ class OllamaClient:
         Returns:
             Embedding vector as list of floats.
         """
-        with _tracer.start_as_current_span("ollama.embed") as span:
-            span.set_attribute("llm.model", model)
-            span.set_attribute("llm.input_chars", len(text))
-            try:
-                async def _do_post() -> dict[str, Any]:
-                    resp = await self.client.post(
-                        f"{self.base_url}/api/embed",
-                        json={"model": model, "input": text},
-                        timeout=self.timeout,
-                    )
-                    resp.raise_for_status()
-                    return resp.json()
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/api/embed",
+                json={"model": model, "input": text},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            result = response.json()
 
-                # Empty embeddings array means the model wasn't loaded
-                # cleanly (transient under VRAM pressure) — let the
-                # resilience layer retry before surfacing as fatal.
-                def _has_embeddings(r: dict[str, Any]) -> bool:
-                    return bool(r.get("embeddings"))
+            embeddings = result.get("embeddings", [])
+            if not embeddings:
+                raise OllamaError("No embeddings returned from Ollama")
 
-                result = await self._resilience.run(
-                    _do_post,
-                    op_name="embed",
-                    validate_result=_has_embeddings,
-                )
+            logger.info(
+                "Ollama embedding complete",
+                model=model,
+                dimensions=len(embeddings[0]),
+            )
+            return embeddings[0]
 
-                embeddings = result.get("embeddings", [])
-                if not embeddings:
-                    raise OllamaError("No embeddings returned from Ollama")
-
-                span.set_attribute("llm.embedding.dimensions", len(embeddings[0]))
-
-                logger.info(
-                    "Ollama embedding complete",
-                    model=model,
-                    dimensions=len(embeddings[0]),
-                )
-                return embeddings[0]
-
-            except httpx.HTTPError as e:
-                span.record_exception(e)
-                logger.error("[embed] Ollama embedding failed: %s", e, exc_info=True, model=model)
-                raise
+        except httpx.HTTPError as e:
+            logger.error("[embed] Ollama embedding failed: %s", e, exc_info=True, model=model)
+            raise
 
     async def embed_batch(
         self, texts: list[str], model: str = "nomic-embed-text"
@@ -863,23 +697,13 @@ class OllamaClient:
             List of embedding vectors.
         """
         try:
-            async def _do_post() -> dict[str, Any]:
-                resp = await self.client.post(
-                    f"{self.base_url}/api/embed",
-                    json={"model": model, "input": texts},
-                    timeout=self.timeout,
-                )
-                resp.raise_for_status()
-                return resp.json()
-
-            def _has_all_embeddings(r: dict[str, Any]) -> bool:
-                return len(r.get("embeddings") or []) == len(texts)
-
-            result = await self._resilience.run(
-                _do_post,
-                op_name="embed_batch",
-                validate_result=_has_all_embeddings,
+            response = await self.client.post(
+                f"{self.base_url}/api/embed",
+                json={"model": model, "input": texts},
+                timeout=self.timeout,
             )
+            response.raise_for_status()
+            result = response.json()
 
             embeddings = result.get("embeddings", [])
             if len(embeddings) != len(texts):
@@ -907,9 +731,6 @@ class OllamaClient:
 
 # Initialize function for easy integration
 async def initialize_ollama_client(
-    base_url: str | None = None,
-    model: str | None = None,
-    *,
-    site_config: Any = None,
+    base_url: str | None = None, model: str | None = None
 ) -> OllamaClient:
-    return OllamaClient(base_url=base_url, model=model, site_config=site_config)
+    return OllamaClient(base_url=base_url, model=model)

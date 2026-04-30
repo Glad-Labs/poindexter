@@ -19,7 +19,7 @@ from middleware.api_token_auth import verify_api_token
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from services.url_scraper import URLScrapeError, scrape_url
-from utils.route_utils import get_database_dependency, get_site_config_dependency
+from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
 
@@ -61,7 +61,6 @@ async def from_url(
     request: FromUrlRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-    site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Scrape a URL and queue a content task with it as the research seed.
 
@@ -69,7 +68,7 @@ async def from_url(
     source instead of doing general web search.
     """
     try:
-        scraped = await scrape_url(request.url, site_config=site_config)
+        scraped = await scrape_url(request.url)
     except URLScrapeError as e:
         raise HTTPException(status_code=400, detail=f"Could not scrape URL: {e}") from e
     except Exception as e:
@@ -140,7 +139,6 @@ async def from_urls(
     request: FromUrlsRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-    site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
     """Scrape multiple URLs and queue the top N as content tasks.
 
@@ -152,7 +150,7 @@ async def from_urls(
 
     async def safe_scrape(u: str) -> tuple[str, dict | None, str | None]:
         try:
-            return (u, await scrape_url(u, site_config=site_config), None)
+            return (u, await scrape_url(u), None)
         except URLScrapeError as e:
             return (u, None, str(e))
         except Exception as e:

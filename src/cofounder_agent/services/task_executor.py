@@ -12,100 +12,23 @@ from typing import Any
 import httpx as _httpx
 
 from services.logger_config import get_logger
-from services.telegram_config import get_telegram_chat_id
-
-# Kept importable (not instantiated) so tests can
-# patch("services.task_executor.AIContentGenerator") and verify no
-# production path actually constructs one. Pipeline uses
-# get_content_generator() from the generate_content stage.
-from .ai_content_generator import AIContentGenerator  # noqa: F401
 
 # Import AI content generator for fallback
+from .ai_content_generator import AIContentGenerator
 from .error_handler import ServiceError
 from .quality_service import UnifiedQualityService
+from .usage_tracker import get_usage_tracker
 from .webhook_delivery_service import emit_webhook_event
 
 # Telegram notifications now routed through OpenClaw gateway (no direct bot token needed)
 
 
-async def _try_outbound_deliver(
-    row_name: str, message: str, site_config: Any
-) -> bool:
-    """Attempt to route a notification through the declarative integrations
-    framework.
-
-    Returns ``True`` if the framework handled it (success or silent skip
-    because the row isn't enabled yet isn't a success — that returns
-    ``False`` so the caller falls back). Returns ``False`` if the
-    framework isn't available, the row doesn't exist/isn't enabled, or
-    the handler raised.
-
-    Success path: framework took ownership, counters bumped on the row,
-    Integration Health dashboard reflects it.
-
-    Fallback path: caller proceeds with direct-API behavior.
-    """
-    from services.integrations.outbound_dispatcher import (
-        OutboundWebhookError,
-        deliver,
-    )
-    from services.integrations.shared_context import get_database_service
-
-    db_service = get_database_service()
-    if db_service is None or db_service.pool is None:
-        return False
-
-    try:
-        await deliver(row_name, message, db_service=db_service, site_config=site_config)
-        return True
-    except OutboundWebhookError:
-        # Row missing or disabled — the two cases where the legacy path
-        # is the right fallback. Don't log loudly; the legacy path will
-        # log its own outcome.
-        return False
-    except Exception as exc:
-        # Handler raised after we got past the enabled check — this is
-        # a real delivery failure. Log it, but still fall back to the
-        # legacy path so the notification isn't lost while the operator
-        # debugs the framework-side configuration.
-        _logger = get_logger(__name__)
-        _logger.warning(
-            "[NOTIFY:%s] declarative deliver() failed (%s) — falling back to direct API",
-            row_name, exc,
-        )
-        return False
-
-
-async def _notify_discord(message: str, site_config: Any) -> None:
-    """Send ops notification to Discord #ops channel.
-
-    Routing preference:
-
-    1. If the ``discord_ops`` row in ``webhook_endpoints`` is enabled AND
-       the integrations framework has a registered DB service, go through
-       :func:`services.integrations.outbound_dispatcher.deliver`. This
-       bumps the row's counters, surfaces failures on the Integration
-       Health dashboard, and uses the row's URL (which may differ from
-       ``discord_ops_webhook_url`` if the operator wants to point at a
-       different channel).
-    2. Otherwise fall back to the direct-API path: load the webhook URL
-       from ``app_settings.discord_ops_webhook_url`` and POST.
-
-    The fallback stays in place so that (a) early-boot paths before the
-    integrations framework is registered still send notifications, and
-    (b) operators who haven't enabled the declarative row see no change.
-    """
+async def _notify_discord(message: str) -> None:
+    """Send ops notification to Discord #ops channel via webhook."""
     _logger = get_logger(__name__)
-    if site_config is None:
-        _logger.debug("[NOTIFY:discord] site_config is None — skipping")
-        return
-
-    # (1) Try the declarative path first.
-    if await _try_outbound_deliver("discord_ops", message, site_config):
-        return
-
-    # (2) Direct-API fallback.
     try:
+        # Load webhook URL from app_settings (DB-first config)
+        from services.site_config import site_config
         webhook_url = site_config.get("discord_ops_webhook_url", "")
         if not webhook_url:
             _logger.debug("[NOTIFY:discord] No discord_ops_webhook_url configured — skipping")
@@ -121,110 +44,35 @@ async def _notify_discord(message: str, site_config: Any) -> None:
         _logger.warning("[NOTIFY:discord] Failed: %s", e)
 
 
-async def _notify_telegram(message: str, site_config: Any) -> None:
-    """Send ops notification directly to Telegram bot API.
+async def _notify_openclaw(message: str, critical: bool = False) -> None:
+    """Send pipeline notification via OpenClaw gateway (routes to Telegram + Discord).
 
-    Bypasses OpenClaw so the worker has zero gateway dependencies for
-    alerting. Silently skips if Telegram isn't configured (bot_token
-    or chat_id missing) — caller decides whether that's acceptable.
-
-    Uses POST /botTOKEN/sendMessage with timeout=10. Telegram's API
-    is 2xx on success, 4xx on bad request (chat_id wrong, token
-    invalid), 5xx when Telegram is having a bad day.
+    No direct bot tokens needed — OpenClaw owns all messaging channels.
+    Falls back to Discord webhook if OpenClaw is unavailable.
     """
     _logger = get_logger(__name__)
-    if site_config is None:
-        _logger.debug("[NOTIFY:telegram] site_config is None — skipping")
-        return
 
-    # Try the declarative path first (same pattern as _notify_discord).
-    if await _try_outbound_deliver("telegram_ops", message, site_config):
-        return
-
-    # The bot token is a secret — stored encrypted in app_settings with
-    # an 'enc:v1:...' prefix. Must go through get_secret() to decrypt;
-    # site_config.get() returns the ciphertext which doesn't belong in a
-    # URL. Chat ID is not a secret, regular .get() is fine. Strip both
-    # to survive accidental trailing whitespace from pgAdmin paste.
-    try:
-        bot_token = (await site_config.get_secret("telegram_bot_token") or "").strip()
-    except Exception as e:
-        _logger.debug("[NOTIFY:telegram] get_secret failed: %s — skipping", e)
-        return
-    chat_id = (get_telegram_chat_id(site_config) or "").strip()
-    if not bot_token or not chat_id:
-        _logger.debug("[NOTIFY:telegram] bot_token or chat_id empty — skipping")
-        return
-
-    try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": message,
-                    # Disable preview to keep alerts compact
-                    "disable_web_page_preview": True,
-                },
-            )
-            if resp.status_code < 300:
-                _logger.info("[NOTIFY:telegram] %s", message[:80])
-            else:
-                _logger.warning(
-                    "[NOTIFY:telegram] HTTP %d: %s",
-                    resp.status_code, resp.text[:200],
+    # Try OpenClaw gateway first (routes to both Telegram + Discord)
+    if critical:
+        try:
+            from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
+            from services.site_config import site_config
+            openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
+            openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
+            async with _httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{openclaw_url}/api/hooks/pipeline",
+                    json={"text": message, "critical": True},
+                    headers={"Authorization": f"Bearer {openclaw_token}"},
                 )
-    except Exception as e:
-        _logger.warning("[NOTIFY:telegram] Failed: %s", e)
+                if resp.status_code < 300:
+                    _logger.info("[NOTIFY:openclaw] %s", message[:80])
+                    return
+        except Exception as e:
+            _logger.debug("[NOTIFY:openclaw] Gateway unavailable, falling back to Discord: %s", e)
 
-
-async def _notify_alert(
-    message: str, site_config: Any, critical: bool = False,
-) -> None:
-    """Fan out an operator alert to Discord + Telegram directly.
-
-    Post-2026-04-24 rewrite. Previously this went through an OpenClaw
-    gateway; two silent-failure bugs in that path (ISO timestamps,
-    Phase-H DI migration arg drop) killed every Telegram alert for
-    weeks and we only caught it by accident. Direct-to-API is:
-
-    - **Simpler** — two calls, no shared service between them.
-    - **Debuggable** — each target's success/failure is independent.
-    - **No SPOF** — if OpenClaw is down, alerts still fire.
-
-    Behavior:
-    - Always posts to Discord #ops via webhook.
-    - If ``critical=True`` OR ``telegram_alerts_enabled=true``, also
-      posts to Telegram via direct bot API.
-
-    OpenClaw remains available for its own features (operator UI,
-    channel pairing, pipeline control) — it's just no longer on the
-    alerting critical path.
-    """
-    # Discord: always
-    await _notify_discord(message, site_config)
-
-    # Telegram: on critical, OR when operator has opted in for routine
-    # alerts. Both conditions produce a direct API call — no gateway.
-    # site_config can be None in early-boot paths (pre-lifespan) or in
-    # older tests — in that case we can't know the opt-in preference
-    # and only fire on critical so operators never miss a real alert.
-    if site_config is None:
-        if critical:
-            await _notify_telegram(message, site_config)
-        return
-
-    telegram_enabled = (
-        str(site_config.get("telegram_alerts_enabled", "false")).lower() == "true"
-    )
-    if critical or telegram_enabled:
-        await _notify_telegram(message, site_config)
-
-
-# Back-compat alias. Pre-2026-04-24 code called ``_notify_openclaw``;
-# existing call sites keep working without edits. New code should call
-# ``_notify_alert`` directly — the name now matches what it does.
-_notify_openclaw = _notify_alert
+    # Fallback: Discord webhook (always works, no bot token needed)
+    await _notify_discord(message)
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: E402,F401
@@ -247,33 +95,12 @@ class TaskExecutor:
         orchestrator=None,
         poll_interval: int = 5,
         app_state=None,
-        *,
-        site_config=None,
     ):
         self.database_service = database_service
         self.orchestrator_initial = orchestrator  # Initial orchestrator from startup
         self.app_state = app_state  # Reference to app.state for dynamic orchestrator updates
-        # Phase H step 4.2 (#95): site_config threads through to the content
-        # pipeline so stages can read context.get("site_config") instead of
-        # touching the module singleton. Usually resolved lazily via app_state
-        # because startup_manager constructs TaskExecutor before the lifespan
-        # has stashed site_config on app.state.
-        self._site_config = site_config
-        # Phase H (GH#95): wire site_config through the quality service so
-        # its qa_cfg() lookups hit the injected SiteConfig instead of the
-        # module singleton. self._site_config may be None here (worker
-        # startup constructs TaskExecutor before app.state.site_config is
-        # ready); the lifespan rebinds via set_site_config() once ready.
-        self.quality_service = UnifiedQualityService(
-            site_config=self._site_config,
-        )
-        # ``self.content_generator`` is initialized for test patchability
-        # only — the pipeline uses ``get_content_generator()`` from the
-        # generate_content stage, so this instance is never read in
-        # production. Kept as None to avoid the pre-site_config
-        # AIContentGenerator() construction that used to crash with a
-        # Phase H RuntimeError.
-        self.content_generator = None
+        self.quality_service = UnifiedQualityService()  # Quality validation service
+        self.content_generator = AIContentGenerator()  # Fallback content generation
         self.poll_interval = poll_interval
         self.running = False
         self.task_count = 0
@@ -281,42 +108,21 @@ class TaskExecutor:
         self.error_count = 0
         self.published_count = 0
         self._processor_task = None
-        # `self.usage_tracker = get_usage_tracker()` removed in #199
-        # Phase 2 — set but never read. The tracker module was deleted
-        # alongside; per-call cost lookup now goes through services.
-        # cost_lookup directly (LiteLLM-backed, 2.6k+ models).
+        self.usage_tracker = get_usage_tracker()  # Initialize usage tracking
         self.critique_loop: Any | None = (
             None  # Optional critique loop (not wired in current version)
         )
         self.last_poll_at: float | None = None  # monotonic timestamp of last poll
         self._poll_cycle: int = 0  # incremented each loop iteration
         # Monotonic timestamp of the last time a task was picked up for processing.
-        # Exposed via get_stats() for external health monitors (issue #841).
+        # Used to detect executor stalls (issue #841).
         self._last_task_started_at: float | None = None
-        # Monotonic timestamp of when the executor FIRST observed pending
-        # tasks in the current "non-empty queue" window. Reset to None
-        # whenever the executor either picks up a task or observes an empty
-        # queue. The stall alert fires when this window exceeds
-        # _IDLE_ALERT_THRESHOLD_S — i.e. pending tasks have been visible
-        # for that long without ANY of them being claimed.
-        #
-        # Why not just `now - _last_task_started_at`? That measures
-        # "wall-clock time since the executor last did work" which grows
-        # unbounded across natural idle gaps (no scheduler activity at
-        # night, between batch arrivals, etc). With the threshold tuned
-        # below the inter-batch arrival interval, every newly-arrived
-        # batch would trip a false-positive CRITICAL on the very first
-        # poll cycle that sees it, even though the executor is healthy
-        # and is about to claim the task in this same cycle (issue #119).
-        self._pending_visible_since: float | None = None
         # How long (seconds) the queue may have pending tasks without any being
         # picked up before we fire a CRITICAL alert. Tunable via
         # app_settings.task_executor_idle_alert_threshold_seconds (#198).
-        _idle_sc = self.site_config
-        self._IDLE_ALERT_THRESHOLD_S: int = (
-            _idle_sc.get_int("task_executor_idle_alert_threshold_seconds", 300)
-            if _idle_sc is not None
-            else 300
+        from services.site_config import site_config as _sc_idle
+        self._IDLE_ALERT_THRESHOLD_S: int = _sc_idle.get_int(
+            "task_executor_idle_alert_threshold_seconds", 300
         )
         # Timestamp tracker for stale task sweeping (FIX: was dead code)
         self._last_sweep: float = 0.0
@@ -334,24 +140,6 @@ class TaskExecutor:
             if orch is not None:
                 return orch
         return self.orchestrator_initial
-
-    @property
-    def site_config(self):
-        """Resolve site_config from ctor → app.state → None.
-
-        Phase H step 5 (GH#95): content_router_service now requires a
-        real SiteConfig. StartupManager doesn't wire site_config through
-        the TaskExecutor ctor yet — tracked as the final piece of the
-        task_executor → content_router handoff migration. Until then,
-        the module singleton is imported at the call site (see
-        ``process_content_generation_task`` invocation below) rather
-        than silently threading None through the pipeline.
-        """
-        if self._site_config is not None:
-            return self._site_config
-        if self.app_state is not None:
-            return getattr(self.app_state, "site_config", None)
-        return None
 
     def inject_orchestrator(self, orchestrator) -> None:
         """Inject or replace the orchestrator at runtime."""
@@ -416,12 +204,9 @@ class TaskExecutor:
                 # emit a structured "we are throttled" signal — see GH-89.
                 try:
                     from services.pipeline_throttle import is_queue_full
-                    # Phase H (GH#95): site_config comes through the
-                    # ctor → app.state chain on `self.site_config`. The
-                    # enclosing try/except falls through cleanly if the
-                    # property returns None (e.g. legacy test harness).
+
                     _full, _queue_size, _queue_limit = await is_queue_full(
-                        self.database_service.pool, self.site_config,
+                        self.database_service.pool
                     )
                     if _full and pending_tasks:
                         # WARN (not INFO) so this shows up in the default log
@@ -450,26 +235,16 @@ class TaskExecutor:
                             idx, task.get("id"), task.get("task_name"), task.get("status"),
                         )
 
-                    # Stall detection (#841, fixed in #119): the alert must
-                    # measure how long THIS batch of pending tasks has been
-                    # visible without any of them being picked up. Wall-clock
-                    # time since the executor last did work is the wrong
-                    # signal — that grows unbounded across natural idle gaps
-                    # and produces false positives the moment a new batch
-                    # lands after threshold seconds of empty queue.
-                    now_mono = time.monotonic()
-                    if self._pending_visible_since is None:
-                        # First poll where this contiguous run of pending
-                        # tasks is visible — start the clock.
-                        self._pending_visible_since = now_mono
-                    else:
-                        pending_visible_s = now_mono - self._pending_visible_since
-                        if pending_visible_s > self._IDLE_ALERT_THRESHOLD_S:
+                    # Check whether this executor has been sitting on pending tasks
+                    # without starting any for longer than the idle threshold (#841).
+                    if self._last_task_started_at is not None:
+                        idle_s = time.monotonic() - self._last_task_started_at
+                        if idle_s > self._IDLE_ALERT_THRESHOLD_S:
                             logger.critical(
                                 "[task_executor] Executor has not started a task in "
                                 "%.0fs with %s pending task(s) "
                                 "in the queue — possible stall or hang",
-                                pending_visible_s, len(pending_tasks),
+                                idle_s, len(pending_tasks),
                             )
 
                     # Process each task
@@ -483,10 +258,6 @@ class TaskExecutor:
                         try:
                             logger.info("[TASK_EXEC_LOOP] Starting to process task: %s", task_id)
                             self._last_task_started_at = time.monotonic()
-                            # Progress made — reset the stall window so the
-                            # next contiguous run of pending tasks gets a
-                            # fresh clock (#119).
-                            self._pending_visible_since = None
                             await self._process_single_task(task)
                             self.success_count += 1
                             logger.info(
@@ -530,22 +301,17 @@ class TaskExecutor:
                             self.task_count += 1
                 else:
                     logger.debug(
-                        "[TASK_EXEC_LOOP] No pending tasks"
+                        "[TASK_EXEC_LOOP] No pending tasks - running idle work"
                     )
-                    # Empty queue is positive evidence that the executor is
-                    # alive and not stalling — clear the stall window so the
-                    # next batch's clock starts fresh when it arrives (#119).
-                    self._pending_visible_since = None
-                    # Background maintenance lives entirely on apscheduler
-                    # via PluginScheduler now (Phase C, #67). The legacy
-                    # IdleWorker fallback was deleted in #151 once every
-                    # task it owned had a services/jobs/ counterpart:
-                    # topic_discovery_signals (port of the discovery
-                    # signals), the prune_*_embeddings jobs (TTL +
-                    # orphan), scheduled_publisher (post-level publish
-                    # slot polling). Empty pending queue here is now
-                    # just a "no pending work" signal — apscheduler
-                    # decides what runs next.
+                    # Run background maintenance when pipeline is idle
+                    try:
+                        from services.idle_worker import IdleWorker
+                        if self.database_service and self.database_service.pool:
+                            if not hasattr(self, '_idle_worker'):
+                                self._idle_worker = IdleWorker(self.database_service.pool)
+                            await self._idle_worker.run_cycle()
+                    except Exception as idle_err:
+                        logger.debug("[TASK_EXEC_LOOP] Idle worker error (non-critical): %s", idle_err)
 
                 # Sweep stale tasks on a schedule (every SWEEP_INTERVAL_SECONDS)
                 if time.time() - self._last_sweep > SWEEP_INTERVAL_SECONDS:
@@ -637,32 +403,12 @@ class TaskExecutor:
                 if isinstance(_inner, dict):
                     _task_meta = _inner
             _user_seeded = _task_meta.get("discovered_by") in ("url_seed", "url_list")
-
-            # gh#216: brand_keywords is now site_config-aware. When a
-            # site_config is wired up, instantiate TopicDiscovery so the
-            # customer-tunable override (app_settings.brand_keywords) takes
-            # effect; the dispatcher falls back to the hardcoded set only
-            # when the override is empty. During early boot (before
-            # app.state.site_config is bound) site_config can be None — in
-            # that case fall back directly to the hardcoded set so we
-            # still reject obviously off-brand topics rather than crashing.
-            def _check_brand_relevance(_topic: str) -> bool:
-                if self._site_config is None:
-                    return TopicDiscovery._match_brand_keywords(
-                        _topic, TopicDiscovery._BRAND_KEYWORDS,
-                    )
-                _td = TopicDiscovery(
-                    self.database_service.pool, site_config=self._site_config,
-                )
-                return _td._is_brand_relevant(_topic)
-
-            if topic and not _user_seeded and not _check_brand_relevance(topic):
+            if topic and not _user_seeded and not TopicDiscovery._is_brand_relevant(topic):
                 _reason = (
                     f"Off-brand: topic '{topic[:80]}' did not match any keyword in "
-                    f"the configured brand_keywords (app_settings) or the fallback "
                     f"TopicDiscovery._BRAND_KEYWORDS. Add the relevant niche keyword "
-                    f"to the 'brand_keywords' app_settings key (comma-separated) "
-                    f"if this topic should have passed."
+                    f"to the whitelist (topic_discovery.py) or to the 'brand_keywords' "
+                    f"app_settings key if this topic should have passed."
                 )
                 logger.info("[TASK_SINGLE] Rejecting off-brand topic: %s", topic[:60])
                 # Populate BOTH error_message and result.reason so the
@@ -769,12 +515,8 @@ class TaskExecutor:
             try:
                 _tts = await self._get_setting("task_timeout_seconds", "900")
                 TASK_TIMEOUT_SECONDS = int(_tts)
-            except Exception as e:
-                logger.warning(
-                    "[task_executor] reading task_timeout_seconds from "
-                    "settings failed; using default %ds: %s",
-                    TASK_TIMEOUT_SECONDS, e,
-                )
+            except Exception:
+                pass
 
             # 1. Update task status to 'in_progress'
             logger.info("[TASK_SINGLE] Marking task as in_progress...")
@@ -794,10 +536,7 @@ class TaskExecutor:
             logger.info("[OK] [TASK_SINGLE] Task marked as in_progress")
 
             # Notify Discord #ops that a task started generating
-            await _notify_discord(
-                f"Generating: \"{topic[:80]}\" ({category or 'uncategorized'})",
-                self.site_config,
-            )
+            await _notify_discord(f"Generating: \"{topic[:80]}\" ({category or 'uncategorized'})")
 
             # 2. Run through content router pipeline (the full 6-stage pipeline)
             logger.info(
@@ -822,7 +561,6 @@ class TaskExecutor:
                         quality_preference=task.get("quality_preference", "balanced"),
                         category=task.get("category", "general"),
                         target_audience=task.get("target_audience", "General"),
-                        site_config=self.site_config,
                     )
 
                 # GH-90 AC #2: run a background heartbeat for the entire duration
@@ -967,10 +705,9 @@ class TaskExecutor:
                                WHERE task_id = $2""",
                             preview_token, task_id,
                         )
+                        from services.site_config import site_config as _sc
                         # Use worker's own URL for HTML preview (accessible via Tailscale)
-                        _preview_base = self.site_config.get(
-                            "preview_base_url", "http://100.81.93.12:8002",
-                        )
+                        _preview_base = _sc.get("preview_base_url", "http://100.81.93.12:8002")
                         preview_url = f"{_preview_base}/preview/{preview_token}"
                     except Exception:
                         logger.debug("[PREVIEW] Failed to create preview token", exc_info=True)
@@ -997,7 +734,6 @@ class TaskExecutor:
                             _pqa = MultiModelQA(
                                 pool=self.database_service.pool,
                                 settings_service=_settings_svc,
-                                site_config=self.site_config,
                             )
                             _pqa_review = await _pqa._check_rendered_preview(
                                 title=topic,
@@ -1044,9 +780,7 @@ class TaskExecutor:
                     if preview_url:
                         msg += f"Preview: {preview_url}\n"
                     msg += f"Approve: /approve-post {task_id[:8]}"
-                    # Routine pipeline event — Discord-only per operator policy.
-                    # Telegram is reserved for severity=critical infra alerts.
-                    await _notify_openclaw(msg, self.site_config, critical=False)
+                    await _notify_openclaw(msg, critical=True)
 
                 return
 
@@ -1151,10 +885,7 @@ class TaskExecutor:
                     })
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
-                await _notify_openclaw(
-                    f"Failed: \"{topic}\" - {str(error_msg)[:100]}",
-                    self.site_config, critical=False,
-                )
+                await _notify_openclaw(f"Failed: \"{topic}\" - {str(error_msg)[:100]}", critical=True)
             else:
                 logger.info(
                     "[OK] [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
@@ -1275,13 +1006,8 @@ class TaskExecutor:
                     )
                     if row and row["slug"]:
                         slug = row["slug"]
-                except Exception as e:
-                    logger.warning(
-                        "[task_executor] dedup-match slug lookup for "
-                        "source_id=%r failed; rejection reason will show "
-                        "raw post id: %s",
-                        source_id, e,
-                    )
+                except Exception:
+                    pass
             url = f"/posts/{slug}" if slug else f"(post id: {source_id})"
             match_lines.append(f"  - {sim:.3f}  {title[:80]}  {url}")
 
@@ -1307,13 +1033,8 @@ class TaskExecutor:
             if row and row["model_selections"]:
                 ms = row["model_selections"]
                 return _json.loads(ms) if isinstance(ms, str) else ms
-        except Exception as e:
-            logger.warning(
-                "[task_executor] reading model_selections for task_id=%s "
-                "failed; downstream stages will see no per-stage model "
-                "overrides: %s",
-                task_id[:8], e,
-            )
+        except Exception:
+            pass
         return {}
 
     async def _heartbeat_loop(self, task_id: str) -> None:
@@ -1557,13 +1278,6 @@ class TaskExecutor:
         last_task_age: float | None = None
         if self._last_task_started_at is not None:
             last_task_age = time.monotonic() - self._last_task_started_at
-        # How long the current contiguous run of pending tasks has been
-        # visible to the executor. None when the queue is empty or the
-        # executor has not yet completed a poll cycle. This is the value
-        # the stall alert is gated on (#119, refines #841).
-        pending_visible_age: float | None = None
-        if self._pending_visible_since is not None:
-            pending_visible_age = time.monotonic() - self._pending_visible_since
         return {
             "running": self.running,
             "task_count": self.task_count,
@@ -1577,7 +1291,6 @@ class TaskExecutor:
             # Time since last task was picked up; None if no tasks have run yet.
             # Exposed for external health monitors (issue #841).
             "last_task_started_age_s": last_task_age,
-            "pending_visible_age_s": pending_visible_age,
             "idle_alert_threshold_s": self._IDLE_ALERT_THRESHOLD_S,
             "critique_stats": self.critique_loop.get_stats() if self.critique_loop else {},
         }
@@ -1653,7 +1366,6 @@ class TaskExecutor:
             self.database_service,
             task,
             task_id,
-            site_config=self.site_config,
             publisher="auto_publish",
             trigger_revalidation=True,
             queue_social=True,

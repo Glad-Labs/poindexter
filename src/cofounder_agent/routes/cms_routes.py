@@ -108,49 +108,6 @@ _STRIP_MD_RE = __import__("re").compile(
 _LINK_TEXT_RE = __import__("re").compile(r"\[([^\]]+)\]\([^)]*\)")
 
 
-async def _refresh_post_caches(pool: Any, slug: str, site_config: Any) -> dict[str, Any]:
-    """Fire ISR revalidation + R2 static export for a single post.
-
-    Used by PATCH /api/posts/{id} after a successful UPDATE and by the
-    ``poindexter posts refresh`` CLI for out-of-band edits (gh#193).
-    Both calls are best-effort — failures log + return an error key in
-    the result dict, but never raise. Returns a dict the caller can
-    surface in its response::
-
-        {"slug": "...", "revalidation": True/False, "static_export": True/False}
-
-    The revalidation path mirrors what publish_service does on first
-    publish so cache lifetimes match between publish and post-edit.
-    """
-    result: dict[str, Any] = {"slug": slug}
-
-    # 1. Vercel ISR revalidation
-    try:
-        from services.revalidation_service import trigger_nextjs_revalidation
-
-        reval_paths = ["/", "/archive", "/posts", f"/posts/{slug}"]
-        reval_tags = ["posts", "post-index", f"post:{slug}"]
-        result["revalidation"] = await trigger_nextjs_revalidation(
-            reval_paths, reval_tags, site_config=site_config,
-        )
-    except Exception as e:
-        logger.warning("[posts.refresh] ISR revalidation failed for %s: %s", slug, e)
-        result["revalidation"] = False
-        result["revalidation_error"] = f"{type(e).__name__}: {e}"
-
-    # 2. Static export to R2 (re-uploads the post's JSON + the index)
-    try:
-        from services.static_export_service import export_post
-
-        result["static_export"] = await export_post(pool, slug, site_config)
-    except Exception as e:
-        logger.warning("[posts.refresh] static export failed for %s: %s", slug, e)
-        result["static_export"] = False
-        result["static_export_error"] = f"{type(e).__name__}: {e}"
-
-    return result
-
-
 def generate_excerpt_from_content(content: str, length: int = 200) -> str:
     """Generate a plain-text excerpt from markdown content."""
     if not content:
@@ -414,11 +371,11 @@ async def preview_post_html(preview_token: str):
     quality = post.get("quality_score", "?")
     excerpt = post.get("excerpt", "")
     from html import escape as _esc
-    featured_img = _esc(post.get("featured_image_url") or "")
+    featured_img = _esc(post.get("featured_image_url", ""))
     has_podcast = post.get("has_podcast", False)
     has_video = post.get("has_video", False)
-    podcast_url = _esc(post.get("podcast_url") or "")
-    video_url = _esc(post.get("video_url") or "")
+    podcast_url = _esc(post.get("podcast_url", ""))
+    video_url = _esc(post.get("video_url", ""))
     safe_title = _esc(title)
 
     # Build podcast/video players
@@ -663,7 +620,6 @@ async def get_post_by_slug(
 async def update_post(
     post_id: str,
     updates: dict,
-    request: Request,
     token: str = Depends(verify_api_token),
 ):
     """
@@ -674,11 +630,6 @@ async def update_post(
     When status is set to 'scheduled', published_at must be a valid future
     ISO 8601 datetime. When status is 'published' and published_at is not
     provided, it defaults to the current UTC time.
-
-    On success, fires Vercel ISR revalidation + R2 static export refresh
-    for the updated post so the public site reflects the change without
-    a manual cache bust (gh#193). Both fire-and-forget — failures log
-    but never fail the API call.
     """
     try:
         allowed = {
@@ -754,33 +705,13 @@ async def update_post(
 
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            # RETURNING slug so we can invalidate by-slug paths + tags
-            # below without a separate fetch.
-            row = await conn.fetchrow(
-                f"UPDATE posts SET {set_clause}, updated_at = NOW() "
-                f"WHERE id = ${len(params)} RETURNING slug",
+            result = await conn.execute(
+                f"UPDATE posts SET {set_clause}, updated_at = NOW() WHERE id = ${len(params)}",
                 *params,
             )
-            if row is None:
+            if result == "UPDATE 0":
                 raise HTTPException(status_code=404, detail="Post not found")
-            slug = row["slug"]
-
-        # Fire revalidation + static export so the public site reflects
-        # the change without waiting for ISR's natural max-age (gh#193).
-        # Pull site_config off app.state directly (not via Depends) so
-        # tests with a bare TestClient still work — _refresh_post_caches
-        # is best-effort anyway.
-        site_config = getattr(request.app.state, "site_config", None)
-        if site_config is not None:
-            try:
-                await _refresh_post_caches(pool, slug, site_config)
-            except Exception as reval_err:
-                logger.warning(
-                    "[update_post] cache refresh failed for %s (non-fatal): %s",
-                    slug, reval_err,
-                )
-
-        return {"success": True, "message": "Post updated", "slug": slug}
+        return {"success": True, "message": "Post updated"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1015,10 +946,7 @@ async def get_view_stats(
 
 
 @router.post("/api/export/rebuild", dependencies=[Depends(verify_api_token)])
-async def rebuild_static_export(
-    db_service=Depends(get_database_dependency),
-    site_config=Depends(get_site_config_dependency),
-):
+async def rebuild_static_export(db_service=Depends(get_database_dependency)):
     """Full rebuild of all static JSON files on CDN.
 
     Regenerates: posts index, individual post files, JSON feed,
@@ -1028,7 +956,7 @@ async def rebuild_static_export(
 
     try:
         from services.static_export_service import export_full_rebuild
-        result = await export_full_rebuild(pool, site_config)
+        result = await export_full_rebuild(pool)
         status_code = 200 if result.get("success") else 207
         return JSONResponse(content=result, status_code=status_code)
     except Exception as e:

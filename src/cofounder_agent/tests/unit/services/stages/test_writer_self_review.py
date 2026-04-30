@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,14 +9,6 @@ import pytest
 
 from plugins.stage import Stage
 from services.stages.writer_self_review import WriterSelfReviewStage
-
-# Phase H step 5 (GH#95): stages read site_config from the context dict.
-_FAKE_SITE_CONFIG = SimpleNamespace(
-    get=lambda _k, _d=None: "true",
-    get_int=lambda _k, _d=0: _d,
-    get_float=lambda _k, _d=0.0: _d,
-    get_bool=lambda _k, _d=False: _d,
-)
 
 
 class TestProtocol:
@@ -38,7 +29,6 @@ class TestExecute:
             "topic": "Topic",
             "title": "Title",
             "content": "Old content.",
-            "site_config": _FAKE_SITE_CONFIG,
         }
         stats = {"revised": True, "contradictions_found": 2, "skipped": False}
         with patch(
@@ -58,7 +48,6 @@ class TestExecute:
             "topic": "T",
             "title": "Ti",
             "content": "Keep me.",
-            "site_config": _FAKE_SITE_CONFIG,
         }
         stats = {"revised": False, "contradictions_found": 0, "skipped": False}
         with patch(
@@ -81,7 +70,6 @@ class TestExecute:
             "topic": "T",
             "title": "Ti",
             "content": "something",
-            "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
             "services.self_review.self_review_and_revise",

@@ -45,7 +45,6 @@ def _discover_memory_dirs(
     claude_projects_dir: str | None = None,
     openclaw_memory_dir: str | None = None,
     shared_context_dir: str | None = None,
-    site_config: Any = None,
 ) -> list[tuple[Path, str, str]]:
     """Return the list of ``(path, origin, scope)`` tuples to scan.
 
@@ -59,14 +58,12 @@ def _discover_memory_dirs(
     ``shared_context_dir`` override the defaults; config args override
     site_config. Passing the sentinel ``"__skip__"`` disables that source
     entirely — useful for tests that shouldn't touch real home dirs.
-
-    ``site_config`` is injected by the runner (Phase H, GH#95) so this
-    module no longer reaches for the module-level singleton. When ``None``
-    (legacy test callers), only config-arg values are honored — no
-    site_config key lookups.
     """
 
-    _sc = site_config
+    try:
+        from services.site_config import site_config as _sc
+    except Exception:
+        _sc = None
 
     def _resolve(cfg_value, sc_key, default):
         if cfg_value == _SENTINEL_SKIP:
@@ -147,7 +144,6 @@ class MemoryFilesTap:
             claude_projects_dir=config.get("claude_projects_dir"),
             openclaw_memory_dir=config.get("openclaw_memory_dir"),
             shared_context_dir=config.get("shared_context_dir"),
-            site_config=config.get("_site_config"),
         )
 
         total_files = 0

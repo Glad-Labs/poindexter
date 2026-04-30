@@ -122,17 +122,10 @@ class TestDatabaseServiceLifecycle:
         MockWS.assert_called_once_with(mock_pool)
 
     @pytest.mark.asyncio
-    async def test_pool_sizes_read_from_env_vars(self, monkeypatch):
-        """Pool sizing is read from ``DATABASE_POOL_MIN_SIZE`` /
-        ``DATABASE_POOL_MAX_SIZE`` env vars at ``initialize()`` time.
-
-        Cannot be in app_settings because ``site_config`` itself loads
-        from the pool we're sizing here — chicken-and-egg. The env-var
-        path lives at ``services/database_service.py:144-149``.
-        """
-        monkeypatch.setenv("DATABASE_POOL_MIN_SIZE", "3")
-        monkeypatch.setenv("DATABASE_POOL_MAX_SIZE", "42")
-
+    async def test_pool_sizes_read_from_app_settings(self):
+        """GH-92: database_pool_min_size / database_pool_max_size come from
+        app_settings via site_config — never hardcoded, never from raw env.
+        Set an app_settings value and prove asyncpg.create_pool receives it."""
         svc = make_service()
         mock_pool = AsyncMock()
         created_kwargs: dict = {}
@@ -141,17 +134,30 @@ class TestDatabaseServiceLifecycle:
             created_kwargs.update(kwargs)
             return mock_pool
 
+        # Build a SiteConfig-like stub that returns app_settings values.
+        fake_site_config = MagicMock()
+        fake_site_config.get = MagicMock(
+            side_effect=lambda key, default=None: {
+                "database_pool_min_size": "3",
+                "database_pool_max_size": "42",
+            }.get(key, default)
+        )
+
         with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.database_service.UsersDatabase"
-        ), patch("services.database_service.TasksDatabase"), patch(
-            "services.database_service.ContentDatabase"
-        ), patch("services.database_service.AdminDatabase"), patch(
-            "services.database_service.WritingStyleDatabase"
-        ):
+            "services.site_config.site_config", fake_site_config
+        ), patch("services.database_service.UsersDatabase"), patch(
+            "services.database_service.TasksDatabase"
+        ), patch("services.database_service.ContentDatabase"), patch(
+            "services.database_service.AdminDatabase"
+        ), patch("services.database_service.WritingStyleDatabase"):
             await svc.initialize()
 
         assert created_kwargs["min_size"] == 3
         assert created_kwargs["max_size"] == 42
+        # Confirm both keys were consulted.
+        consulted = {call.args[0] for call in fake_site_config.get.call_args_list}
+        assert "database_pool_min_size" in consulted
+        assert "database_pool_max_size" in consulted
 
     @pytest.mark.asyncio
     async def test_pool_min_size_defaults_are_small(self):
@@ -399,12 +405,6 @@ class TestAdminDelegation:
 
 
 class TestDualPoolInitialize:
-    # Production fix: services/database_service.py:166-167 used to reference
-    # a bare ``site_config`` name (Phase H leftover) and crashed
-    # ``NameError`` whenever ``LOCAL_DATABASE_URL`` was set. Now reads the
-    # local-pool sizing from ``LOCAL_DATABASE_POOL_MIN_SIZE`` /
-    # ``LOCAL_DATABASE_POOL_MAX_SIZE`` env vars with sensible defaults,
-    # mirroring the cloud-pool pattern at lines 144-149.
     @pytest.mark.asyncio
     async def test_local_database_url_creates_separate_pool(self, monkeypatch):
         """When LOCAL_DATABASE_URL is set, a second pool is created."""

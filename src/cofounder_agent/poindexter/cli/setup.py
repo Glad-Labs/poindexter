@@ -74,54 +74,34 @@ async def _test_db_connection(dsn: str) -> tuple[bool, str]:
 
 
 async def _run_migrations(dsn: str) -> tuple[bool, str]:
-    """Apply pending migrations against the target DB.
-
-    Earlier this function only checked whether the ``app_settings``
-    table existed and called that "migrations done." That was a lie —
-    a customer with a half-migrated DB (older schema_migrations row
-    set) would see "OK" and proceed, then hit weird runtime errors
-    when newer code tried to query columns that hadn't landed yet.
-
-    Now actually invokes the same migration runner the worker uses,
-    against a temporary asyncpg pool. Idempotent — already-applied
-    migrations are skipped via the schema_migrations tracker.
-    """
+    """Run pending migrations against the target DB."""
     try:
         import asyncpg
     except Exception as e:
         return False, f"asyncpg not installed: {e}"
 
-    pool = None
     try:
-        # Make the worker's services.* importable. The CLI lives in
-        # src/cofounder_agent/poindexter/cli/setup.py, so the worker
-        # package root is two levels up from poindexter/.
-        cli_dir = Path(__file__).resolve().parent
-        worker_root = cli_dir.parent.parent  # src/cofounder_agent
-        if str(worker_root) not in sys.path:
-            sys.path.insert(0, str(worker_root))
-
-        from services.migrations import run_migrations as _runner  # type: ignore[import-not-found]
-
-        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=8)
-
-        # The runner wants an object with a ``.pool`` attribute — wrap
-        # the asyncpg pool minimally rather than instantiating the full
-        # DatabaseService (which drags in a lot of transitive imports).
-        class _PoolShim:
-            def __init__(self, p): self.pool = p
-        ok = await _runner(_PoolShim(pool))
-        if ok:
-            return True, "migrations applied"
-        return False, "runner reported failures (check logs above)"
+        # The migrations runner lives in services.migrations and expects a
+        # DatabaseService-shaped object with a .pool. For setup we want a
+        # minimal, dependency-free path, so we just check whether
+        # app_settings exists as a proxy for "previously migrated".
+        conn = await asyncpg.connect(dsn, timeout=8)
+        try:
+            exists = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_name = 'app_settings')"
+            )
+            if exists:
+                return True, "app_settings table already present — migrations already run"
+            return (
+                False,
+                "app_settings table missing. Start the worker once to let it run "
+                "migrations, or run `alembic upgrade head` inside src/cofounder_agent.",
+            )
+        finally:
+            await conn.close()
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
-    finally:
-        if pool is not None:
-            try:
-                await pool.close()
-            except Exception:
-                pass
 
 
 _DOCKER_INTERNAL_HOSTS = {"worker", "host.docker.internal", "poindexter-worker"}
@@ -200,15 +180,7 @@ async def _setting_value(dsn: str, key: str) -> str:
             return str(row["value"]) if row and row["value"] is not None else ""
         finally:
             await conn.close()
-    except Exception as e:
-        # Surface so a real DB outage / missing app_settings table doesn't
-        # look like "operator never set this key" in `poindexter setup --check`.
-        # CLI module has no logger — use click.secho yellow to match the
-        # bootstrap.toml-resolution warning style at the bottom of this file.
-        click.secho(
-            f"  could not read app_settings.{key} ({type(e).__name__}: {e})",
-            fg="yellow",
-        )
+    except Exception:
         return ""
 
 
@@ -401,14 +373,8 @@ def _auto_provision() -> str:
                     "(the password stays what it was)", fg="green",
                 )
                 return existing_dsn
-        except Exception as e:
-            # Surface the underlying reason so the operator can tell a
-            # genuinely-missing bootstrap.toml apart from a malformed one.
-            click.secho(
-                f"  could not read existing bootstrap.toml ({type(e).__name__}: {e}); "
-                "falling back to fresh-credential path",
-                fg="yellow",
-            )
+        except Exception:
+            pass
         raise click.ClickException(
             f"Container '{_AUTO_CONTAINER}' already exists but the password "
             "isn't recoverable from bootstrap.toml. Either remove it "

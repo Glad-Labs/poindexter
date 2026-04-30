@@ -133,20 +133,16 @@ class DatabaseService:
                 "dev",
                 "local",
             )
-            # Pool sizing is the one bootstrap config that has to resolve
-            # BEFORE the pool exists (chicken-and-egg with site_config which
-            # loads from that pool). Read env vars directly — these are the
-            # same uppercase keys site_config would have fallen through to.
+            from services.site_config import site_config
             # GH-92: keep ``min_size`` small in every environment. Pools that
             # pre-warm 20 connections reserve them against ``max_connections``
             # even when the worker is idle — a direct contributor to the
             # TooManyConnectionsError stress test that motivated GH-92.
-            min_size = int(
-                os.getenv("DATABASE_POOL_MIN_SIZE") or ("2" if is_dev else "5")
-            )
-            max_size = int(
-                os.getenv("DATABASE_POOL_MAX_SIZE") or ("20" if is_dev else "50")
-            )
+            # ``max_size`` stays higher so bursts can grow the pool on demand.
+            # Reads from app_settings (no silent env-var drift); defaults
+            # preserve backward compat for max_size.
+            min_size = int(site_config.get("database_pool_min_size", "2" if is_dev else "5"))
+            max_size = int(site_config.get("database_pool_max_size", "20" if is_dev else "50"))
 
             self.pool = await asyncpg.create_pool(
                 self.database_url,
@@ -163,20 +159,8 @@ class DatabaseService:
             if self.local_database_url:
                 # GH-92: local pool min stays at 2 — rarely-called paths
                 # (tasks, writing_style, embeddings) shouldn't hoard.
-                # Same chicken-and-egg constraint as the cloud pool above:
-                # site_config can't be consulted here because it loads FROM
-                # the pool we're about to create. Read env vars directly.
-                # Phase H follow-up: the previous code referenced a bare
-                # `site_config` name (no import) and would raise NameError
-                # whenever LOCAL_DATABASE_URL was set, crashing every worker
-                # boot. Surfaced by tests skipped in PR#281.
-                local_min = int(
-                    os.getenv("LOCAL_DATABASE_POOL_MIN_SIZE") or "2"
-                )
-                local_max = int(
-                    os.getenv("LOCAL_DATABASE_POOL_MAX_SIZE")
-                    or ("10" if is_dev else "20")
-                )
+                local_min = int(site_config.get("local_database_pool_min_size", "2" if is_dev else "2"))
+                local_max = int(site_config.get("local_database_pool_max_size", "10" if is_dev else "20"))
                 self.local_pool = await asyncpg.create_pool(
                     self.local_database_url,
                     min_size=local_min,

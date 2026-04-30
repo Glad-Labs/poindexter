@@ -59,9 +59,11 @@ _DEFAULT_SINGLE_TARGET_CAP = 3
 _DEFAULT_CAP_ENABLED = True
 
 
-def _get_bool_setting(site_config: Any, key: str, default: bool) -> bool:
-    """Read a bool-ish setting from ``site_config``, never raising."""
+def _get_bool_setting(key: str, default: bool) -> bool:
+    """Read a bool-ish setting from site_config, never raising."""
     try:
+        from services.site_config import site_config
+
         raw = site_config.get(key, "")
         if raw == "" or raw is None:
             return default
@@ -70,9 +72,11 @@ def _get_bool_setting(site_config: Any, key: str, default: bool) -> bool:
         return default
 
 
-def _get_int_setting(site_config: Any, key: str, default: int) -> int:
-    """Read an int-ish setting from ``site_config``, never raising."""
+def _get_int_setting(key: str, default: int) -> int:
+    """Read an int-ish setting from site_config, never raising."""
     try:
+        from services.site_config import site_config
+
         raw = site_config.get(key, "")
         if raw == "" or raw is None:
             return default
@@ -247,51 +251,26 @@ class InternalLinkCoherenceFilter:
     def __init__(
         self,
         *,
-        site_config: Any,
         pool=None,
         tag_coherence_required: bool | None = None,
         single_target_cap: int | None = None,
         cap_enabled: bool | None = None,
     ) -> None:
-        """Initialize the filter.
-
-        Args:
-            site_config: SiteConfig instance (DI — Phase H, GH#95). Used
-                to resolve the three tunables when the corresponding
-                override kwargs are ``None``. Required — the previous
-                lazy singleton imports inside ``_get_bool_setting`` /
-                ``_get_int_setting`` were removed.
-            pool: asyncpg pool for target-tag + inbound-count lookups.
-            tag_coherence_required: Explicit override. When ``None``,
-                read from ``internal_link_tag_coherence_required`` in
-                app_settings (default ``True``).
-            single_target_cap: Explicit override. When ``None``, read
-                from ``internal_link_single_target_cap`` (default 3).
-            cap_enabled: Explicit override. When ``None``, read from
-                ``internal_link_single_target_cap_enabled`` (default
-                ``True``).
-        """
         self.pool = pool
         self.tag_coherence_required = (
             _get_bool_setting(
-                site_config,
-                _SETTING_TAG_COHERENCE_REQUIRED,
-                _DEFAULT_TAG_COHERENCE_REQUIRED,
+                _SETTING_TAG_COHERENCE_REQUIRED, _DEFAULT_TAG_COHERENCE_REQUIRED
             )
             if tag_coherence_required is None
             else tag_coherence_required
         )
         self.single_target_cap = (
-            _get_int_setting(
-                site_config, _SETTING_SINGLE_TARGET_CAP, _DEFAULT_SINGLE_TARGET_CAP,
-            )
+            _get_int_setting(_SETTING_SINGLE_TARGET_CAP, _DEFAULT_SINGLE_TARGET_CAP)
             if single_target_cap is None
             else single_target_cap
         )
         self.cap_enabled = (
-            _get_bool_setting(
-                site_config, _SETTING_CAP_ENABLED, _DEFAULT_CAP_ENABLED,
-            )
+            _get_bool_setting(_SETTING_CAP_ENABLED, _DEFAULT_CAP_ENABLED)
             if cap_enabled is None
             else cap_enabled
         )

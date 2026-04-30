@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -60,7 +61,7 @@ _JANITOR_TARGETS: list[tuple[str, str, int]] = [
 ]
 
 
-def _retention_days_for(site_config: Any, table: str, default_days: int) -> int:
+def _retention_days_for(table: str, default_days: int) -> int:
     """Resolve retention window for a single table.
 
     ``retention_days__<table>`` is the canonical key. A missing or zero
@@ -102,18 +103,15 @@ async def _prune_one(pool: Any, table: str, ts_col: str, days: int) -> int:
         return deleted
 
 
-async def run_once(pool: Any, site_config: Any) -> dict[str, int]:
+async def run_once(pool: Any) -> dict[str, int]:
     """Run a single pass over every janitor target. Returns per-table
     rows-deleted counts. Never raises — pruning is additive ops; a
     single-table failure shouldn't tank the cycle.
-
-    Phase H (GH#95): ``site_config`` is an explicit parameter instead of
-    the module-level singleton. Retention windows are read from it.
     """
     results: dict[str, int] = {}
     for table, ts_col, default_days in _JANITOR_TARGETS:
         try:
-            days = _retention_days_for(site_config, table, default_days)
+            days = _retention_days_for(table, default_days)
             deleted = await _prune_one(pool, table, ts_col, days)
             results[table] = deleted
             if deleted:
@@ -129,19 +127,10 @@ async def run_once(pool: Any, site_config: Any) -> dict[str, int]:
     return results
 
 
-async def run_forever(
-    pool: Any,
-    site_config: Any,
-    *,
-    interval_hours_default: float = 24.0,
-) -> None:
+async def run_forever(pool: Any, *, interval_hours_default: float = 24.0) -> None:
     """Long-running loop — awaits ``retention_janitor_interval_hours``
     between cycles. Intended to be launched as a background task from
     startup_manager.
-
-    Phase H (GH#95): ``site_config`` is an explicit parameter instead of
-    the module-level singleton. Interval and per-table retention windows
-    are read from it.
     """
     while True:
         try:
@@ -155,7 +144,7 @@ async def run_forever(
 
         started = datetime.now(timezone.utc)
         try:
-            results = await run_once(pool, site_config)
+            results = await run_once(pool)
             total_deleted = sum(v for v in results.values() if v > 0)
             logger.info(
                 "[retention_janitor] Cycle complete: %s total rows deleted across %s tables (started %s)",

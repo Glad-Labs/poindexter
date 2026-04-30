@@ -5,28 +5,22 @@ import: publish_service → routes was violating the one-way dependency
 rule (routes should import services, not vice versa).
 """
 
-from typing import Any
-
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import site_config
 
 logger = get_logger(__name__)
 
 
 async def trigger_nextjs_revalidation(
-    paths: list | None = None,
-    tags: list | None = None,
-    *,
-    site_config: Any,
+    paths: list | None = None, tags: list | None = None
 ) -> bool:
     """Trigger Next.js ISR revalidation on the public site.
 
     Args:
         paths: List of paths to revalidate. Defaults to ["/", "/archive"].
         tags: List of cache tags to revalidate. Defaults to ["posts", "post-index"].
-        site_config: SiteConfig instance (DI — Phase H). Keyword-only so
-            callers don't pass it positionally by mistake.
 
     Returns:
         True if revalidation succeeded, False otherwise.
@@ -35,41 +29,6 @@ async def trigger_nextjs_revalidation(
         paths = ["/", "/archive"]
     if tags is None:
         tags = ["posts", "post-index"]
-
-    # (1) Try the declarative integrations path first. If the vercel_isr
-    # row in webhook_endpoints is enabled, the outbound dispatcher owns
-    # the delivery — counters get updated on the row and failures show
-    # up on the Integration Health dashboard. Falls back to the legacy
-    # direct-POST below if the row is disabled, missing, or the
-    # framework isn't registered (early boot, CLI one-shots).
-    try:
-        from services.integrations.outbound_dispatcher import (
-            OutboundWebhookError,
-            deliver,
-        )
-        from services.integrations.shared_context import get_database_service
-
-        _db = get_database_service()
-        if _db is not None and _db.pool is not None:
-            try:
-                await deliver(
-                    "vercel_isr",
-                    {"paths": paths, "tags": tags},
-                    db_service=_db,
-                    site_config=site_config,
-                )
-                logger.info("ISR revalidation via declarative framework")
-                return True
-            except OutboundWebhookError:
-                # Row missing or disabled — fall through to legacy.
-                pass
-            except Exception as exc:
-                logger.warning(
-                    "ISR declarative deliver failed (%s); falling back to direct POST",
-                    exc,
-                )
-    except ImportError:
-        pass
 
     from services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
     nextjs_url = (
@@ -83,16 +42,23 @@ async def trigger_nextjs_revalidation(
 
     revalidate_url = f"{nextjs_url}/api/revalidate"
 
-    # revalidate_secret is is_secret=true in app_settings — must use
-    # get_secret() for decryption. Previously we did a raw SELECT here
-    # (which bypassed decryption entirely) and a .get() fallback (which
-    # returned the enc:v1:<ciphertext> blob); both shipped the wrong
-    # value as the x-revalidate-secret header and the public site 401'd
-    # every revalidation (GH-107, prod incident 2026-04-23).
-    revalidate_secret = await site_config.get_secret("revalidate_secret", "")
-    environment = (
-        site_config.get("environment", "development") or "development"
-    ).lower()
+    revalidate_secret = ""
+    try:
+        from utils.route_utils import get_database_dependency
+        db_service = get_database_dependency()
+        pool = getattr(db_service, "pool", None)
+        if pool:
+            row = await pool.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'revalidate_secret'"
+            )
+            if row and row["value"]:
+                revalidate_secret = row["value"]
+    except Exception as e:
+        logger.warning("Failed to fetch revalidate_secret from DB: %s", e)
+
+    if not revalidate_secret:
+        revalidate_secret = site_config.get("revalidate_secret", "")
+    environment = (site_config.get("environment", "development") or "development").lower()
 
     if not revalidate_secret:
         logger.error("REVALIDATE_SECRET is not set — refusing to revalidate in %s", environment)

@@ -28,7 +28,7 @@ from services.quality_service import UnifiedQualityService
 try:
     from services.sentry_integration import setup_sentry
 except ImportError:
-    def setup_sentry(*_args, **_kwargs):  # type: ignore[misc]
+    def setup_sentry(*_args, **_kwargs):
         """Stub when Sentry is not installed."""
         return
 
@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
     Uses StartupManager to orchestrate all service initialization
     in the correct order with proper error handling.
     """
-    startup_manager = StartupManager(site_config=_site_cfg)
+    startup_manager = StartupManager()
     scheduled_publisher_task = None
     pool_health_task = None
 
@@ -93,15 +93,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
         logger.debug("[LIFESPAN] ✅ All services injected into app.state")
-
-        # Register the DatabaseService with the integrations framework so
-        # legacy helper functions (task_executor._notify_*,
-        # revalidation_service.trigger_nextjs_revalidation) can
-        # opportunistically route through outbound_dispatcher.deliver()
-        # when the corresponding webhook_endpoints row is enabled.
-        from services.integrations.shared_context import set_database_service
-        set_database_service(services["database"])
-        logger.debug("[LIFESPAN] integrations.shared_context registered")
 
         # Capability system removed (dead code, no consumers)
 
@@ -156,110 +147,52 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # Stash on app.state so routes + stages can Depends() it instead of
         # reaching into the module-level singleton (Gitea #242).
         try:
+            from services.site_config import site_config
             db_pool = services["database"].pool
-            loaded = await _site_cfg.load(db_pool)
-            app.state.site_config = _site_cfg
+            loaded = await site_config.load(db_pool)
+            app.state.site_config = site_config
             logger.info("[LIFESPAN] Site config loaded: %d settings from DB", loaded)
         except Exception as e:
             logger.warning("[LIFESPAN] Site config load failed (using env fallbacks): %s", e)
-            # Attach the env-loaded instance so Depends() still works — it
-            # returns env/defaults for missed keys until the DB is reachable.
-            app.state.site_config = _site_cfg
-
-        # Phase H step 5 (GH#95): point the module-level `site_config`
-        # attribute at the same loaded instance so legacy function-body
-        # imports (~40+ services still pending migration) see the same
-        # DB-loaded values as `app.state.site_config`. Without this, every
-        # ``from services.site_config import site_config`` reaches for a
-        # separate env-default-only instance — a silent regression that
-        # makes the pipeline generate content using the WRONG model /
-        # prompt config. The follow-up migration will remove each lazy
-        # importer; this shim just keeps them pointing at the right
-        # instance until then.
-        import services.site_config as _site_config_mod
-        _site_config_mod.site_config = _site_cfg
-
-        # Phase H (GH#95): bind the GPU scheduler singleton to the
-        # DB-loaded site_config so its lock() / status() / _unload_sdxl()
-        # paths read DB-backed tunables (thresholds, nvidia_exporter_url,
-        # ollama_base_url) instead of module-level defaults.
-        try:
-            from services.gpu_scheduler import gpu as _gpu
-            _gpu.set_site_config(_site_cfg)
-        except Exception as e:
-            logger.warning("[LIFESPAN] gpu.set_site_config failed: %s", e)
-
-        # Phase H finish (GH#95): bind the same DB-loaded SiteConfig into
-        # ``services.decorators`` and ``services.ollama_client``. These
-        # two modules used to import the singleton at module load — that
-        # captured a stale reference to the empty pre-lifespan singleton.
-        # Lifespan now wires them explicitly via setters.
-        try:
-            from services import decorators as _decorators
-            _decorators.set_site_config(_site_cfg)
-        except Exception as e:
-            logger.warning("[LIFESPAN] decorators.set_site_config failed: %s", e)
-        try:
-            from services import ollama_client as _ollama_client_mod
-            _ollama_client_mod.set_site_config(_site_cfg)
-        except Exception as e:
-            logger.warning("[LIFESPAN] ollama_client.set_site_config failed: %s", e)
-
-        # Phase H (GH#95): wire site_config into the TaskExecutor that
-        # startup_manager built. startup_manager runs before the DB pool
-        # exists so it can't construct TaskExecutor with site_config
-        # directly. Without this rebind TaskExecutor.site_config resolves
-        # to None, the pipeline seeds ``context["site_config"]=None``,
-        # and the first stage that calls get_content_generator(...) hits
-        # AIContentGenerator._require_site_config() → RuntimeError +
-        # task fails.
-        _te = services.get("task_executor")
-        if _te is not None:
-            _te._site_config = _site_cfg
-            _te.app_state = app.state
+            # Still attach the module singleton so Depends() works — it will
+            # fall back to env/defaults for misses until the DB is reachable.
             try:
-                _te.quality_service.set_site_config(_site_cfg)
-            except Exception as e:
-                logger.warning(
-                    "[LIFESPAN] task_executor.quality_service.set_site_config failed: %s", e,
-                )
+                from services.site_config import site_config
+                app.state.site_config = site_config
+            except Exception:
+                app.state.site_config = None
 
         # Re-initialize observability stack now that site_config is loaded from
         # DB. Module-level setup() calls earlier saw empty values — this is the
         # first point where sentry_dsn / enable_pyroscope / enable_tracing are
         # actually populated. Each setup is guarded internally.
         try:
-            setup_sentry(app, _site_cfg, service_name="cofounder-agent")
+            setup_sentry(app, service_name="cofounder-agent")
         except Exception as e:
             logger.warning("[LIFESPAN] sentry re-init failed: %s", e)
         try:
-            setup_telemetry(app, _site_cfg)
+            setup_telemetry(app)
         except Exception as e:
             logger.warning("[LIFESPAN] telemetry re-init failed: %s", e)
         try:
             from services.profiling import setup_pyroscope
-            setup_pyroscope(_site_cfg)
+            setup_pyroscope()
         except Exception as e:
             logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
 
-        # Load prompt templates from DB (overrides YAML files). Pass
-        # site_config so the Pro tier (gitea#225) can read
-        # ``premium_active`` live on every ``get_prompt`` call without
-        # restarting the worker after license activation.
+        # Load prompt templates from DB (overrides YAML files)
         try:
             from services.prompt_manager import get_prompt_manager
             pm = get_prompt_manager()
             db_pool = services["database"].pool
-            loaded = await pm.load_from_db(db_pool, site_config=_site_cfg)
+            loaded = await pm.load_from_db(db_pool)
             logger.info("[LIFESPAN] Prompt templates loaded from DB: %d", loaded)
         except Exception as e:
             logger.warning("[LIFESPAN] Prompt DB load failed (using YAML fallback): %s", e)
 
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
-        # Phase H (GH#95): thread site_config through ctor so pattern-
-        # based + LLM scorers don't import the module singleton.
-        quality_service = UnifiedQualityService(site_config=_site_cfg)
+        quality_service = UnifiedQualityService()
         service_container.register("quality", quality_service)
         logger.info("[LIFESPAN] ✅ Quality service initialized")
 
@@ -300,10 +233,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             try:
                 from services.worker_service import WorkerService
 
-                worker_service = WorkerService(
-                    services["database"].pool,
-                    site_config=app.state.site_config,
-                )
+                worker_service = WorkerService(services["database"].pool)
                 await worker_service.register()
                 await worker_service.start_heartbeat()
                 app.state.worker_service = worker_service
@@ -324,10 +254,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             try:
                 from services.webhook_delivery_service import WebhookDeliveryService
 
-                webhook_service = WebhookDeliveryService(
-                    services["database"].pool,
-                    app.state.site_config,
-                )
+                webhook_service = WebhookDeliveryService(services["database"].pool)
                 await webhook_service.start()
                 app.state.webhook_service = webhook_service
                 logger.info("[LIFESPAN] Coordinator: webhook delivery started")
@@ -344,9 +271,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             async def _get_pool():
                 return db_pool
 
-            scheduled_publisher_task = asyncio.create_task(
-                run_scheduled_publisher(_get_pool, site_config=_site_cfg)
-            )
+            scheduled_publisher_task = asyncio.create_task(run_scheduled_publisher(_get_pool))
             logger.info("[LIFESPAN] Coordinator: scheduled post publisher started")
 
         # Start connection pool health monitor (#819)
@@ -357,12 +282,19 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             app.state.pool_health = pool_health
             logger.info("[LIFESPAN] Connection pool health monitor started")
 
-        # ModelRouter init removed in #199 Phase 2 — the singleton was
-        # initialized here only so seed_spend_from_db could log a one-line
-        # snapshot of month-to-date cloud spend at startup. Nothing read
-        # the resulting in-memory counter (callers query cost_aggregation_
-        # service or cost_guard directly, both of which hit cost_logs
-        # fresh on every call). Audit confirmed zero production readers.
+        # Initialize global model router singleton and seed spend counter from
+        # cost_logs so budget enforcement survives restarts (issue #1385).
+        try:
+            from services.model_router import get_model_router, initialize_model_router
+
+            _router = get_model_router()
+            if _router is None:
+                _router = initialize_model_router()
+            if _router and getattr(db_service, "pool", None):
+                await _router.seed_spend_from_db(db_service.pool)
+                logger.info("[LIFESPAN] Model router spend seeded from cost_logs")
+        except Exception as e:
+            logger.warning(f"[LIFESPAN] Failed to seed model router spend: {e}", exc_info=True)
 
         # Plugin scheduler — apscheduler + entry_point + core-sample Jobs.
         # Runs housekeeping (sync_page_views, db_backup, render_prometheus_rules, ...)
@@ -375,7 +307,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 from plugins.registry import get_core_samples, get_jobs
                 from plugins.scheduler import PluginScheduler
 
-                scheduler = PluginScheduler(db_service.pool, site_config=_site_cfg)
+                scheduler = PluginScheduler(db_service.pool)
                 # entry_point-discovered jobs (third-party installs) + core
                 # samples loaded imperatively (see registry.get_core_samples).
                 jobs = list(get_jobs()) + list(get_core_samples().get("jobs", []))
@@ -400,50 +332,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                     "[LIFESPAN] PluginScheduler failed (non-critical): %s", e,
                     exc_info=True,
                 )
-
-        # Cross-encoder warmup (#210 Phase C). Pre-load the rerank
-        # model at boot so the first query that hits hybrid+rerank
-        # doesn't pay the 3-5s lazy-load latency. Skipped silently
-        # when ``rag_rerank_enabled`` is off.
-        try:
-            _site_cfg_for_warm = getattr(app.state, "site_config", None)
-            _rerank_on = bool(
-                _site_cfg_for_warm and _site_cfg_for_warm.get_bool(
-                    "rag_rerank_enabled", False,
-                )
-            )
-            if _rerank_on:
-                # Run in background so worker startup isn't blocked on
-                # the 80MB model download (first-ever boot only) +
-                # ~3-5s load. After this completes the rerank cache is
-                # populated in the same process.
-                async def _warm_reranker():
-                    try:
-                        from services.rag_engine import (
-                            _build_rerank_retriever_class,
-                            _RERANKER_CACHE,
-                        )
-                        cls = _build_rerank_retriever_class()
-                        # Synthesize a stub inner retriever so we can
-                        # construct + warm the model without running a
-                        # real query path.
-                        class _NullInner:
-                            async def _aretrieve(self, _qb):
-                                return []
-                        inst = cls(inner=_NullInner(), top_k=1, site_config=_site_cfg_for_warm)
-                        inst._get_model()  # forces SentenceTransformer load
-                        logger.info(
-                            "[LIFESPAN] Cross-encoder reranker warmed: %s",
-                            list(_RERANKER_CACHE.keys()),
-                        )
-                    except Exception as warm_err:
-                        logger.warning(
-                            "[LIFESPAN] Cross-encoder warmup failed (non-critical): %s",
-                            warm_err,
-                        )
-                asyncio.create_task(_warm_reranker())
-        except Exception as e:
-            logger.warning("[LIFESPAN] reranker warmup dispatch failed: %s", e)
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
@@ -504,12 +392,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 _deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
 _is_production = config.environment == "production"
 
-# Phase H step 5 (GH#95): construct a fresh SiteConfig instance locally.
-# Pre-lifespan reads come from env/defaults; lifespan calls `.load(pool)`
-# on this same instance to pull DB values and then attaches it to
-# ``app.state.site_config`` for route handlers + DI.
-from services.site_config import SiteConfig  # noqa: E402
-_site_cfg = SiteConfig()
+# Late import — site_config depends on services/database_service which
+# can't load until config is ready above, which in turn pulls env vars.
+from services.site_config import site_config as _site_cfg  # noqa: E402
 
 _site_name = _site_cfg.get("site_name", "AI Content Pipeline")
 
@@ -546,36 +431,30 @@ Admin panel at `/admin`.
         "email": _site_cfg.get("support_email", "support@example.com"),
         "url": _site_cfg.get("site_url", "https://localhost:3000"),
     },
-    license_info={"name": "Apache-2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
+    license_info={"name": "AGPL-3.0", "url": "https://www.gnu.org/licenses/agpl-3.0.html"},
     openapi_url=None if _is_production else "/api/openapi.json",
     docs_url=None if _is_production else "/api/docs",
     redoc_url=None if _is_production else "/api/redoc",
     swagger_ui_parameters={"defaultModelsExpandDepth": 1},
 )
 
-# Initialize OpenTelemetry tracing FIRST — before any other code path
-# touches the middleware stack. SQLAdmin / setup_admin below mounts a
-# Starlette sub-app, which forces FastAPI to finalize its middleware
-# stack; once finalized, FastAPIInstrumentor.instrument_app fails with
-# "Cannot add middleware after an application has started". Putting
-# the OTel hookup here keeps the stack mutable when the instrumenter
-# wraps it.
-setup_telemetry(app, _site_cfg)
-
 # Initialize SQLAdmin panel at /admin
 try:
     from admin import setup_admin
 
-    setup_admin(app, _site_cfg)
+    setup_admin(app)
     logger.info("[ADMIN] SQLAdmin panel mounted at /admin")
 except Exception as e:
     logger.warning(f"[ADMIN] SQLAdmin not available: {e}")
+
+# Initialize OpenTelemetry tracing
+setup_telemetry(app)
 
 # Initialize Pyroscope continuous profiling (opt-in via
 # app_settings.enable_pyroscope). LGTM+P stack, GH #75.
 try:
     from services.profiling import setup_pyroscope
-    setup_pyroscope(_site_cfg)
+    setup_pyroscope()
 except Exception as _e:
     logger.debug(f"[PYROSCOPE] setup skipped: {_e}")
 
@@ -584,27 +463,13 @@ except Exception as _e:
 register_exception_handlers(app)
 
 # ===== ERROR TRACKING: SENTRY INTEGRATION =====
-# Captures exceptions, performance metrics, and error tracking.
-# main.py still reads the module singleton at module-import time (pending
-# its own Phase H migration); pass it through so sentry_integration no
-# longer imports it at module scope.
-try:
-    setup_sentry(app, _site_cfg, service_name="cofounder-agent")
-except Exception as _e:
-    logger.warning("[MODULE] sentry module-level init failed: %s", _e)
+# Captures exceptions, performance metrics, and error tracking
+setup_sentry(app, service_name="cofounder-agent")
 
 # ===== MIDDLEWARE CONFIGURATION =====
-# Register all middleware (centralized in utils.middleware_config). Uses
-# main.py's local _site_cfg — the same instance `app.state.site_config`
-# gets rebound to after `_site_cfg.load(pool)` in the lifespan.
+# Register all middleware (centralized in utils.middleware_config)
 middleware_config = MiddlewareConfig()
-middleware_config.register_all_middleware(app, site_config=_site_cfg)
-
-# ===== INTEGRATIONS FRAMEWORK HANDLER LOAD =====
-# Must run before route registration so the catch-all webhooks_router has
-# every handler available when the first request lands.
-from services.integrations.handlers import load_all as _load_integration_handlers
-_load_integration_handlers()
+middleware_config.register_all_middleware(app)
 
 # ===== ROUTE REGISTRATION =====
 # Register API routes based on deployment mode (coordinator or worker)
@@ -709,14 +574,8 @@ async def api_health():
                         task_counts = await database_service.tasks.get_task_counts()
                         pending_count = getattr(task_counts, "pending", 0)
                         in_progress_count = getattr(task_counts, "in_progress", 0)
-                    except Exception as e:  # pylint: disable=broad-except
-                        # Non-critical — executor stats still returned with
-                        # zero counts. Log so a real DB outage that turns
-                        # queue-depth metrics into "always 0" is visible.
-                        logger.warning(
-                            "[health] task_counts DB read failed (queue-depth "
-                            "metrics will read as 0): %s", e,
-                        )
+                    except Exception:  # pylint: disable=broad-except
+                        pass  # Non-critical — executor stats still returned
                 health_data["components"]["task_executor"] = {
                     "running": executor_stats.get("running", False),
                     "pending_task_count": pending_count,
@@ -742,79 +601,59 @@ async def api_health():
         else:
             health_data["components"]["task_executor"] = "unavailable"
 
-        # LLM resilience layer (GH#192, generalized from GH#153) —
-        # surface circuit state and in-flight call count for every
-        # registered LLM provider's resilience manager. Visible in the
-        # Grafana ops dashboard that scrapes this endpoint.
-        #
-        # The shape is now ``components.llm_resilience.<provider>``
-        # (e.g. ``components.llm_resilience.ollama``,
-        # ``...anthropic``, ``...openai_compat``, ``...gemini``).
-        # Each provider's manager registers itself on construction with
-        # ``ResilienceRegistry``; the health endpoint walks the registry
-        # so adding a provider doesn't need a code change here.
-        #
-        # Backwards compat: the old top-level ``components.ollama_resilience``
-        # key is preserved for one release so dashboards / alerts that
-        # parse the old shape keep working — it points at the same
-        # snapshot data that lives under ``components.llm_resilience.ollama``.
-        try:
-            from plugins.llm_resilience import ResilienceRegistry
-            from services.ollama_resilience import get_default_manager
-
-            site_cfg = getattr(app.state, "site_config", None)
-            # Ensure the Ollama default manager is registered even when
-            # nobody has constructed an OllamaClient yet (warm start
-            # path). Calling get_default_manager wires the registration.
-            try:
-                get_default_manager(site_config=site_cfg)
-            except Exception as e:  # pragma: no cover — defensive
-                logger.debug(
-                    "[health] could not warm Ollama default manager: %s", e,
-                )
-
-            per_provider = ResilienceRegistry.snapshot_all()
-            health_data["components"]["llm_resilience"] = per_provider
-
-            # Degrade overall status if any provider's breaker is open.
-            for provider_name, snapshot in per_provider.items():
-                if snapshot.get("state") == "open":
-                    if health_data["status"] == "healthy":
-                        health_data["status"] = "degraded"
-                    snapshot["degraded_reason"] = "circuit_breaker_open"
-                    snapshot.setdefault("provider", provider_name)
-
-            # Legacy alias — keep ``components.ollama_resilience`` for
-            # one release so existing alert rules / dashboards survive
-            # the rename. Drop in a follow-up once consumers migrate.
-            ollama_snapshot = per_provider.get("ollama")
-            if ollama_snapshot is not None:
-                health_data["components"]["ollama_resilience"] = ollama_snapshot
-        except Exception as e:  # pylint: disable=broad-except
-            logger.warning(
-                "LLM resilience health probe failed: %s", e, exc_info=True,
-            )
-            health_data["components"]["llm_resilience"] = {
-                "status": "error",
-                "reason": str(e)[:200],
-                "error_type": type(e).__name__,
-            }
-
-        # GPU scheduler status (gaming detection).
-        # Any failure here used to be swallowed silently — leaving the
-        # gpu key absent from the response. A monitor/alert that
-        # depended on `components.gpu` would then never fire on a real
-        # GPU outage. Record the failure as an explicit error state
-        # instead so the health endpoint stays the source of truth.
+        # GPU scheduler status (gaming detection)
         try:
             from services.gpu_scheduler import gpu
             health_data["components"]["gpu"] = gpu.status
+        except Exception:
+            pass
+
+        # Migration drift detection (#230)
+        # Compares applied (schema_migrations table) vs available (.py files in
+        # services/migrations/) so external monitors can detect schema drift.
+        try:
+            from pathlib import Path
+
+            migrations_dir = Path(__file__).parent / "services" / "migrations"
+            available = sorted(
+                p.name
+                for p in migrations_dir.glob("*.py")
+                if p.name != "__init__.py"
+            )
+
+            pool = getattr(database_service, "pool", None) if database_service else None
+            if pool is None:
+                health_data["components"]["migrations"] = {
+                    "status": "unknown",
+                    "error": "database pool unavailable",
+                }
+            else:
+                async with pool.acquire() as conn:
+                    applied = await conn.fetchval(
+                        "SELECT COUNT(*) FROM schema_migrations"
+                    )
+                    latest_applied = await conn.fetchval(
+                        "SELECT name FROM schema_migrations "
+                        "ORDER BY applied_at DESC LIMIT 1"
+                    )
+                applied = int(applied or 0)
+                pending = max(len(available) - applied, 0)
+                drift = pending > 0
+                health_data["components"]["migrations"] = {
+                    "applied": applied,
+                    "pending": pending,
+                    "latest_applied": latest_applied,
+                    "drift": drift,
+                }
+                if drift and health_data["status"] == "healthy":
+                    health_data["status"] = "degraded"
         except Exception as e:  # pylint: disable=broad-except
-            logger.warning("GPU scheduler status probe failed: %s", e, exc_info=True)
-            health_data["components"]["gpu"] = {
-                "status": "error",
-                "reason": str(e)[:200],
-                "error_type": type(e).__name__,
+            logger.warning(
+                "Migration health check failed in /api/health: %s", str(e), exc_info=True
+            )
+            health_data["components"]["migrations"] = {
+                "status": "unknown",
+                "error": str(e),
             }
 
         return health_data
@@ -859,17 +698,11 @@ async def prometheus_metrics_canonical():
     # app.state.database is the DatabaseService; its .pool is the asyncpg pool.
     db_service = getattr(app.state, "database", None)
     pool = getattr(db_service, "pool", None) if db_service else None
-    # Ollama URL: read from app_settings via app.state.site_config if wired,
-    # else fall back to the module-level _site_cfg (env/defaults only).
+    # Ollama URL: read from app_settings via site_config if wired, else default
     try:
-        sc = getattr(app.state, "site_config", None) or _site_cfg
-        ollama_url = sc.get("ollama_base_url", "http://host.docker.internal:11434")
-    except Exception as e:
-        # SiteConfig.get is sync and reads from in-memory cache, so this
-        # path is defensive — but if it ever fires, surface it as DEBUG so
-        # we know the cache is misbehaving rather than thinking the
-        # operator never set ollama_base_url.
-        logger.debug("[metrics] site_config.get(ollama_base_url) failed: %s", e)
+        from services.site_config import site_config
+        ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+    except Exception:
         ollama_url = "http://host.docker.internal:11434"
 
     if pool is not None:

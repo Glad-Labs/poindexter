@@ -1,114 +1,17 @@
 """Unit tests for ``services/image_providers/sdxl.py``.
 
-Post-Phase-G (GH#71) the SdxlProvider owns the full generation
-lifecycle — host SDXL sidecar HTTP path + in-process diffusers
-fallback + upload targets. These tests mock ``httpx.AsyncClient`` to
-avoid touching the real sidecar and mock the in-process pipeline state
-to avoid loading a 6GB model.
+The underlying ImageService (torch/diffusers/GPU) is mocked so the
+tests run without a GPU. Focus: Protocol conformance, empty-prompt
+handling, failure paths, and the upload_to knob.
 """
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.image_provider import ImageProvider, ImageResult
-from services.image_providers import sdxl as sdxl_mod
 from services.image_providers.sdxl import SdxlProvider
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _image_response(content: bytes = b"\x89PNG fake", elapsed: str = "1.2"):
-    """Fake httpx Response representing a successful SDXL sidecar reply."""
-    resp = MagicMock()
-    resp.status_code = 200
-    resp.headers = {"content-type": "image/png", "X-Elapsed-Seconds": elapsed}
-    resp.content = content
-    return resp
-
-
-def _error_response(status: int = 500, text: str = "internal error"):
-    resp = MagicMock()
-    resp.status_code = status
-    resp.headers = {"content-type": "text/plain"}
-    resp.text = text
-    resp.content = b""
-    return resp
-
-
-def _html_response():
-    resp = MagicMock()
-    resp.status_code = 200
-    resp.headers = {"content-type": "text/html"}
-    resp.text = "<html>error</html>"
-    resp.content = b""
-    return resp
-
-
-def _json_sidecar_response(image_path: str, width: int = 1024, elapsed_ms: int = 900):
-    """Fake httpx response matching the real SDXL sidecar's JSON format."""
-    resp = MagicMock()
-    resp.status_code = 200
-    resp.headers = {"content-type": "application/json"}
-    resp.json = MagicMock(
-        return_value={
-            "image_path": image_path,
-            "filename": image_path.rsplit("/", 1)[-1],
-            "width": width,
-            "height": width,
-            "model": "sdxl_lightning",
-            "generation_time_ms": elapsed_ms,
-            "seed": 42,
-        },
-    )
-    return resp
-
-
-@contextmanager
-def _mock_httpx_post(response):
-    """Patch httpx.AsyncClient to yield a client whose .post returns ``response``.
-
-    Used to simulate the host SDXL sidecar — when ``response`` raises,
-    the provider's sidecar path falls through to diffusers.
-    """
-    client = AsyncMock()
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=False)
-    if isinstance(response, Exception):
-        client.post = AsyncMock(side_effect=response)
-    else:
-        client.post = AsyncMock(return_value=response)
-    with patch("services.image_providers.sdxl.httpx.AsyncClient", return_value=client):
-        yield client
-
-
-@contextmanager
-def _diffusers_unavailable():
-    """Disable the in-process diffusers fallback for a test.
-
-    Patches ``_state`` so ``_try_in_process_diffusers`` short-circuits to
-    False without touching torch/diffusers. Restores state after.
-    """
-    original_state = sdxl_mod._state
-    fresh = sdxl_mod._SdxlPipelineState()
-    fresh.initialized = True
-    fresh.available = False
-    sdxl_mod._state = fresh
-    try:
-        yield
-    finally:
-        sdxl_mod._state = original_state
-
-
-# ---------------------------------------------------------------------------
-# Metadata / Protocol conformance
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -121,244 +24,151 @@ class TestSdxlProviderMetadata:
 
 
 @pytest.mark.unit
-class TestContract:
-    def test_conforms_to_image_provider_protocol(self):
-        provider = SdxlProvider()
-        assert isinstance(provider, ImageProvider)
-
-    def test_fetch_is_coroutine(self):
-        import inspect
-        assert inspect.iscoroutinefunction(SdxlProvider.fetch)
-
-
-# ---------------------------------------------------------------------------
-# SdxlProvider.fetch — sidecar happy path + fallback matrix
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
 @pytest.mark.asyncio
 class TestSdxlProviderFetch:
     async def test_empty_prompt_returns_empty(self):
-        assert await SdxlProvider().fetch("", {}) == []
+        result = await SdxlProvider().fetch("", {})
+        assert result == []
 
     async def test_whitespace_prompt_returns_empty(self):
-        assert await SdxlProvider().fetch("   ", {}) == []
+        result = await SdxlProvider().fetch("   ", {})
+        assert result == []
 
-    async def test_host_sidecar_success_returns_file_url(self, tmp_path):
-        """Sidecar returns image bytes → bytes written to output_path,
-        ImageResult carries file:// URL."""
-        output_path = str(tmp_path / "out.png")
-        resp = _image_response(content=b"\x89PNG_generated")
-        with _mock_httpx_post(resp):
-            results = await SdxlProvider().fetch(
-                "a cinematic scene",
-                {"output_path": output_path},
-            )
+    async def test_generate_success_returns_file_url(self, tmp_path):
+        svc = MagicMock()
+        svc.generate_image = AsyncMock(return_value=True)
 
-        assert len(results) == 1
-        r = results[0]
-        assert isinstance(r, ImageResult)
-        assert r.url == f"file://{output_path}"
-        assert r.source == "sdxl"
-        assert r.search_query == "a cinematic scene"
-        assert r.metadata["local_path"] == output_path
-        # File was actually written
-        assert (tmp_path / "out.png").read_bytes() == b"\x89PNG_generated"
+        fake_tmp = MagicMock()
+        fake_tmp.name = str(tmp_path / "out.png")
 
-    async def test_sidecar_500_with_diffusers_unavailable_returns_empty(
-        self, tmp_path,
-    ):
-        with _mock_httpx_post(_error_response(500)), _diffusers_unavailable():
-            results = await SdxlProvider().fetch(
-                "x", {"output_path": str(tmp_path / "x.png")},
-            )
-        assert results == []
+        fake_ctx = MagicMock()
+        fake_ctx.__enter__ = MagicMock(return_value=fake_tmp)
+        fake_ctx.__exit__ = MagicMock(return_value=False)
 
-    async def test_sidecar_exception_with_diffusers_unavailable_returns_empty(
-        self, tmp_path,
-    ):
-        with (
-            _mock_httpx_post(RuntimeError("connection refused")),
-            _diffusers_unavailable(),
-        ):
-            results = await SdxlProvider().fetch(
-                "x", {"output_path": str(tmp_path / "x.png")},
-            )
-        assert results == []
+        # The generator writes the file so the post-call existence check passes.
+        (tmp_path / "out.png").write_bytes(b"fake png")
 
-    async def test_sidecar_wrong_content_type_with_diffusers_unavailable_returns_empty(
-        self, tmp_path,
-    ):
-        """200 with text/html is a sidecar error page — fall through."""
-        with _mock_httpx_post(_html_response()), _diffusers_unavailable():
-            results = await SdxlProvider().fetch(
-                "x", {"output_path": str(tmp_path / "x.png")},
-            )
-        assert results == []
+        fake_image_service = MagicMock()
+        fake_image_service.get_image_service = MagicMock(return_value=svc)
 
-    async def test_tempfile_used_when_output_path_not_set(self, tmp_path):
-        """No output_path in config → provider uses a tempfile."""
-        resp = _image_response(content=b"\x89PNG_tempfile")
-
-        captured_path: dict[str, str] = {}
-
-        orig_open = open
-
-        def spy_open(path, *args, **kwargs):  # noqa: ANN001 — passthrough
-            captured_path["path"] = str(path)
-            return orig_open(path, *args, **kwargs)
-
-        with _mock_httpx_post(resp), patch(
-            "services.image_providers.sdxl.open", spy_open, create=True,
-        ):
-            results = await SdxlProvider().fetch("x", {})
+        with patch.dict(
+            "sys.modules",
+            {"services.image_service": fake_image_service},
+        ), \
+             patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
+            results = await SdxlProvider().fetch("a cinematic scene", {})
 
         assert len(results) == 1
-        # URL should reference a tempfile path the provider created
         assert results[0].url.startswith("file://")
-        assert "local_path" in results[0].metadata
+        assert results[0].source == "sdxl"
+        assert results[0].search_query == "a cinematic scene"
+        svc.generate_image.assert_awaited_once()
+
+    async def test_generate_failure_returns_empty(self):
+        svc = MagicMock()
+        svc.generate_image = AsyncMock(return_value=False)
+
+        fake_tmp = MagicMock()
+        fake_tmp.name = "/tmp/fake.png"
+
+        fake_ctx = MagicMock()
+        fake_ctx.__enter__ = MagicMock(return_value=fake_tmp)
+        fake_ctx.__exit__ = MagicMock(return_value=False)
+
+        fake_image_service = MagicMock()
+        fake_image_service.get_image_service = MagicMock(return_value=svc)
+
+        with patch.dict(
+            "sys.modules",
+            {"services.image_service": fake_image_service},
+        ), \
+             patch("tempfile.NamedTemporaryFile", return_value=fake_ctx), \
+             patch("os.path.exists", return_value=False):
+            results = await SdxlProvider().fetch("a scene", {})
+
+        assert results == []
+
+    async def test_generate_exception_returns_empty(self, tmp_path):
+        svc = MagicMock()
+        svc.generate_image = AsyncMock(side_effect=RuntimeError("GPU OOM"))
+
+        fake_tmp = MagicMock()
+        fake_tmp.name = str(tmp_path / "out.png")
+
+        fake_ctx = MagicMock()
+        fake_ctx.__enter__ = MagicMock(return_value=fake_tmp)
+        fake_ctx.__exit__ = MagicMock(return_value=False)
+
+        fake_image_service = MagicMock()
+        fake_image_service.get_image_service = MagicMock(return_value=svc)
+
+        with patch.dict(
+            "sys.modules",
+            {"services.image_service": fake_image_service},
+        ), \
+             patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
+            results = await SdxlProvider().fetch("a scene", {})
+
+        assert results == []
 
     async def test_negative_prompt_from_config_wins(self, tmp_path):
-        captured: dict = {}
+        svc = MagicMock()
+        svc.generate_image = AsyncMock(return_value=True)
 
-        async def capture_post(url, json=None, timeout=None):
-            captured["json"] = json
-            return _image_response(content=b"\x89PNG")
+        fake_tmp = MagicMock()
+        fake_tmp.name = str(tmp_path / "out.png")
+        (tmp_path / "out.png").write_bytes(b"fake png")
 
-        client = AsyncMock()
-        client.__aenter__ = AsyncMock(return_value=client)
-        client.__aexit__ = AsyncMock(return_value=False)
-        client.post = AsyncMock(side_effect=capture_post)
+        fake_ctx = MagicMock()
+        fake_ctx.__enter__ = MagicMock(return_value=fake_tmp)
+        fake_ctx.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            "services.image_providers.sdxl.httpx.AsyncClient", return_value=client,
-        ):
-            await SdxlProvider().fetch(
-                "a scene",
-                {
-                    "output_path": str(tmp_path / "o.png"),
-                    "negative_prompt": "no watermark",
-                },
-            )
+        fake_image_service = MagicMock()
+        fake_image_service.get_image_service = MagicMock(return_value=svc)
 
-        assert captured["json"]["negative_prompt"] == "no watermark"
+        with patch.dict(
+            "sys.modules",
+            {"services.image_service": fake_image_service},
+        ), \
+             patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
+            await SdxlProvider().fetch("x", {"negative_prompt": "no watermark"})
 
-    async def test_steps_and_guidance_forwarded_to_sidecar(self, tmp_path):
-        captured: dict = {}
-
-        async def capture_post(url, json=None, timeout=None):
-            captured["json"] = json
-            return _image_response(content=b"\x89PNG")
-
-        client = AsyncMock()
-        client.__aenter__ = AsyncMock(return_value=client)
-        client.__aexit__ = AsyncMock(return_value=False)
-        client.post = AsyncMock(side_effect=capture_post)
-
-        with patch(
-            "services.image_providers.sdxl.httpx.AsyncClient", return_value=client,
-        ):
-            await SdxlProvider().fetch(
-                "a scene",
-                {
-                    "output_path": str(tmp_path / "o.png"),
-                    "num_inference_steps": 12,
-                    "guidance_scale": 3.5,
-                },
-            )
-
-        assert captured["json"]["steps"] == 12
-        assert captured["json"]["guidance_scale"] == 3.5
+        # The negative_prompt from config was forwarded to generate_image.
+        call = svc.generate_image.await_args
+        assert call.kwargs["negative_prompt"] == "no watermark"
 
     async def test_upload_to_cloudinary_triggers_upload(self, tmp_path):
-        resp = _image_response(content=b"\x89PNG")
-        with _mock_httpx_post(resp), patch(
-            "services.image_providers.sdxl._upload_to_cloudinary",
-            new=AsyncMock(return_value="https://cdn.cloudinary/x.png"),
-        ) as up:
-            results = await SdxlProvider().fetch(
-                "x",
-                {
-                    "output_path": str(tmp_path / "o.png"),
-                    "upload_to": "cloudinary",
-                },
-            )
+        svc = MagicMock()
+        svc.generate_image = AsyncMock(return_value=True)
+
+        fake_tmp = MagicMock()
+        fake_tmp.name = str(tmp_path / "out.png")
+        (tmp_path / "out.png").write_bytes(b"fake png")
+
+        fake_ctx = MagicMock()
+        fake_ctx.__enter__ = MagicMock(return_value=fake_tmp)
+        fake_ctx.__exit__ = MagicMock(return_value=False)
+
+        fake_image_service = MagicMock()
+        fake_image_service.get_image_service = MagicMock(return_value=svc)
+
+        with patch.dict(
+            "sys.modules",
+            {"services.image_service": fake_image_service},
+        ), \
+             patch("tempfile.NamedTemporaryFile", return_value=fake_ctx), \
+             patch(
+                "services.image_providers.sdxl._upload_to_cloudinary",
+                new=AsyncMock(return_value="https://cdn.cloudinary/x.png"),
+             ) as up:
+            results = await SdxlProvider().fetch("x", {"upload_to": "cloudinary"})
 
         assert results[0].url == "https://cdn.cloudinary/x.png"
         up.assert_awaited_once()
 
-    async def test_upload_to_r2_triggers_upload(self, tmp_path):
-        resp = _image_response(content=b"\x89PNG")
-        with _mock_httpx_post(resp), patch(
-            "services.image_providers.sdxl._upload_to_r2",
-            new=AsyncMock(return_value="https://cdn.r2/x.png"),
-        ) as up:
-            results = await SdxlProvider().fetch(
-                "x",
-                {
-                    "output_path": str(tmp_path / "o.png"),
-                    "upload_to": "r2",
-                },
-            )
-
-        assert results[0].url == "https://cdn.r2/x.png"
-        up.assert_awaited_once()
-
-    async def test_sidecar_json_response_materializes_file(self, tmp_path):
-        """Real sidecar returns JSON with ``image_path`` pointing at a file
-        it wrote on the host. The provider copies it to output_path."""
-        sidecar_src = tmp_path / "sdxl_abc.png"
-        sidecar_src.write_bytes(b"\x89PNG_sidecar_generated")
-        output_path = str(tmp_path / "caller-out.png")
-
-        resp = _json_sidecar_response(str(sidecar_src))
-        with _mock_httpx_post(resp):
-            results = await SdxlProvider().fetch(
-                "a scene", {"output_path": output_path},
-            )
-
-        assert len(results) == 1
-        assert results[0].url == f"file://{output_path}"
-        # File was actually materialized to the caller's path
-        assert (tmp_path / "caller-out.png").read_bytes() == b"\x89PNG_sidecar_generated"
-
-    async def test_sidecar_json_missing_image_path_returns_empty(self, tmp_path):
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.headers = {"content-type": "application/json"}
-        resp.json = MagicMock(return_value={"error": "oom"})
-        resp.text = '{"error": "oom"}'
-
-        with _mock_httpx_post(resp), _diffusers_unavailable():
-            results = await SdxlProvider().fetch(
-                "x", {"output_path": str(tmp_path / "x.png")},
-            )
+    async def test_image_service_missing_returns_empty(self, tmp_path):
+        """If services.image_service can't be imported (torch missing etc.),
+        the provider must return [] instead of raising."""
+        with patch.dict("sys.modules", {"services.image_service": None}):
+            results = await SdxlProvider().fetch("x", {})
         assert results == []
-
-    async def test_sidecar_json_source_file_missing_returns_empty(self, tmp_path):
-        """Sidecar advertises a path that doesn't exist → fall through."""
-        resp = _json_sidecar_response("/nonexistent/path/image.png")
-        with _mock_httpx_post(resp), _diffusers_unavailable():
-            results = await SdxlProvider().fetch(
-                "x", {"output_path": str(tmp_path / "x.png")},
-            )
-        assert results == []
-
-    async def test_cloudinary_upload_failure_falls_back_to_file_url(
-        self, tmp_path,
-    ):
-        """When the upload raises, the provider keeps the local file:// URL."""
-        output_path = str(tmp_path / "o.png")
-        resp = _image_response(content=b"\x89PNG")
-        with _mock_httpx_post(resp), patch(
-            "services.image_providers.sdxl._upload_to_cloudinary",
-            new=AsyncMock(side_effect=RuntimeError("auth failed")),
-        ):
-            results = await SdxlProvider().fetch(
-                "x",
-                {"output_path": output_path, "upload_to": "cloudinary"},
-            )
-
-        assert len(results) == 1
-        assert results[0].url == f"file://{output_path}"

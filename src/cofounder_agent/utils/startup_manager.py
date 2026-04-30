@@ -26,17 +26,8 @@ logger = get_logger(__name__)
 class StartupManager:
     """Manages all startup and shutdown operations for the FastAPI application"""
 
-    def __init__(self, site_config: Any):
-        """Initialize startup manager with empty service references.
-
-        Args:
-            site_config: SiteConfig instance — threaded from main.py lifespan
-                into every sub-service that needs DB-backed config at startup
-                (Redis cache, retention janitor, SDXL warmup). Phase H (GH#95)
-                dropped the transitional module-singleton imports in favour
-                of this single construction site.
-        """
-        self._site_config = site_config
+    def __init__(self):
+        """Initialize startup manager with empty service references"""
         self.database_service = None
         self.redis_cache = None
         self.orchestrator = None
@@ -134,9 +125,7 @@ class StartupManager:
                 from services.retention_janitor import run_forever as _retention_loop
                 if self.database_service and self.database_service.pool:
                     asyncio.create_task(
-                        _retention_loop(
-                            self.database_service.pool, self._site_config,
-                        ),
+                        _retention_loop(self.database_service.pool),
                         name="retention_janitor",
                     )
                     logger.info("[retention_janitor] Started background loop")
@@ -316,7 +305,7 @@ class StartupManager:
         try:
             from services.redis_cache import RedisCache
 
-            self.redis_cache = await RedisCache.create(self._site_config)
+            self.redis_cache = await RedisCache.create()
             if self.redis_cache._enabled:
                 logger.info(
                     "   [OK] Redis cache initialized (query performance optimization enabled)"
@@ -360,7 +349,6 @@ class StartupManager:
                 database_service=self.database_service,
                 orchestrator=None,  # Will be injected in main.py AFTER UnifiedOrchestrator is created
                 poll_interval=5,  # Poll every 5 seconds
-                site_config=self._site_config,
             )
             logger.debug(f"  [DEBUG] TaskExecutor created: {self.task_executor}")
             logger.debug(
@@ -473,7 +461,8 @@ class StartupManager:
         import os
 
         # Skip warmup unless explicitly enabled (lazy loading is the default)
-        if self._site_config.get("enable_sdxl_warmup", "").lower() not in ("true", "1", "yes"):
+        from services.site_config import site_config
+        if site_config.get("enable_sdxl_warmup", "").lower() not in ("true", "1", "yes"):
             logger.info(
                 "  SDXL warmup: Skipped (lazy loading on first request). Set ENABLE_SDXL_WARMUP=true to pre-load."
             )

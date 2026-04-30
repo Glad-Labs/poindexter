@@ -1,7 +1,7 @@
 {
   "_meta": {
     "name": "Poindexter core seed",
-    "description": "Free-tier starter settings. The brain bootstraps this into app_settings on first boot when the table is empty. Designed to be the minimum viable config to make the pipeline runnable — docker compose up, visit /api/health, submit a task. For the optimized production seed (site-specific models, tuned QA workflows, image styles, writing styles), see Poindexter Pro on Lemon Squeezy.",
+    "description": "Free-tier starter settings. The brain bootstraps this into app_settings on first boot when the table is empty. Designed to be the minimum viable config to make the pipeline runnable — docker compose up, visit /api/health, submit a task. For the optimized production seed (site-specific models, tuned QA workflows, image styles, writing styles), see the premium Quick Start Guide product on Lemon Squeezy.",
     "version": "1",
     "tier": "free",
     "last_updated": "2026-04-18"
@@ -254,12 +254,6 @@
       "value": "3",
       "category": "quality",
       "description": "Points subtracted from final QA score per validator warning (GH-91)"
-    },
-    {
-      "key": "multi_model_qa_max_reviewer_error_rate",
-      "value": "0.5",
-      "category": "quality",
-      "description": "Auto-reject the QA pass when this fraction (>=) of reviewers errored. Default 0.5 = reject when >=50% of reviewers threw exceptions. Tighten to 0.3 (require 70% to succeed) or relax to 0.8 per niche. (gh#162)"
     },
 
     {

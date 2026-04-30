@@ -56,19 +56,13 @@ async def _load_source_config(pool: Any, source_name: str) -> tuple[bool, dict[s
     return cfg.enabled, cfg.config
 
 
-async def run_all(pool: Any, site_config: Any = None) -> RunnerSummary:
+async def run_all(pool: Any) -> RunnerSummary:
     """Invoke every registered TopicSource in parallel and aggregate.
 
     Per-source errors are captured into ``SourceStats.error`` and
     do NOT propagate — one failing source should never starve the
     whole discovery pass. Aggregated topics are passed through to
     the caller for dedup + ranking.
-
-    Phase H step 4.7 (GH#95): ``site_config`` is seeded into each
-    source's config dict under ``_site_config`` so sources can read
-    it without importing the module-level singleton. Callers that
-    haven't migrated may pass ``None`` — sources still fall back to
-    the singleton until step 5 deletes it.
     """
     from plugins.registry import get_core_samples, get_topic_sources
 
@@ -93,13 +87,6 @@ async def run_all(pool: Any, site_config: Any = None) -> RunnerSummary:
         if not enabled:
             stats.enabled = False
             return stats, []
-
-        # Seed site_config into the per-source config dict so sources
-        # can read it via config.get("_site_config") without reaching
-        # for the module-level singleton. Only set when provided —
-        # sources have a transitional singleton fallback until step 5.
-        if site_config is not None:
-            source_config = {**source_config, "_site_config": site_config}
 
         start = time.monotonic()
         topics: list[DiscoveredTopic] = []

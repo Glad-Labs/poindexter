@@ -20,7 +20,7 @@ from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency, get_site_config_dependency
+from utils.route_utils import get_database_dependency
 
 # Configure logging
 logger = get_logger(__name__)
@@ -95,7 +95,7 @@ def _check_task_ownership(task: dict, current_user: Any) -> None:
 # the Herrington-pattern reasoning behind the "Source article:" block.
 
 
-async def _resolve_seed_url(task_request: UnifiedTaskRequest, site_config: Any) -> None:
+async def _resolve_seed_url(task_request: UnifiedTaskRequest) -> None:
     """If ``seed_url`` is set, fetch it and populate topic + research context.
 
     Mutates ``task_request`` in place:
@@ -112,12 +112,6 @@ async def _resolve_seed_url(task_request: UnifiedTaskRequest, site_config: Any) 
     On any fetch/parse failure, raises HTTPException 400 with a clear
     reason — we do NOT create a task and fall back to autodiscovery,
     because the caller explicitly asked for this URL.
-
-    Args:
-        task_request: The unified task request (mutated in place).
-        site_config: SiteConfig instance (DI — Phase H, GH#95) threaded
-            down into the seed-URL fetcher's timeout / UA / max-bytes
-            lookups.
     """
     seed_url = (task_request.seed_url or "").strip()
     if not seed_url:
@@ -133,7 +127,7 @@ async def _resolve_seed_url(task_request: UnifiedTaskRequest, site_config: Any) 
     )
 
     try:
-        result = await fetch_seed_url(seed_url, site_config=site_config)
+        result = await fetch_seed_url(seed_url)
     except SeedURLError as exc:
         logger.info(
             "[SEED_URL] Fetch rejected for %s (reason=%s): %s",
@@ -217,7 +211,6 @@ async def discover_topics(
     queue: bool = Query(True, description="Queue fresh topics as content tasks"),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-    site_config: Any = Depends(get_site_config_dependency),
 ):
     """Run TopicDiscovery on demand instead of waiting for the 8-hour idle cycle.
 
@@ -231,8 +224,7 @@ async def discover_topics(
         pool = db_service.pool
         if not pool:
             raise HTTPException(status_code=503, detail="Database pool unavailable")
-        # Phase H step 5 (GH#95): thread site_config explicitly.
-        discovery = TopicDiscovery(pool, site_config=site_config)
+        discovery = TopicDiscovery(pool)
         topics = await discovery.discover(max_topics=max_topics)
         fresh = [t for t in topics if not getattr(t, "is_duplicate", False)]
 
@@ -273,7 +265,6 @@ async def create_task(
     task_request: UnifiedTaskRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-    site_config: Any = Depends(get_site_config_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """Unified task creation endpoint - routes to appropriate handler based on task_type.
@@ -289,7 +280,7 @@ async def create_task(
         # Failures bubble up as HTTPException 400 with a clear reason —
         # we deliberately do NOT fall back to autodiscovery, because the
         # caller asked for THIS specific URL.
-        await _resolve_seed_url(task_request, site_config=site_config)
+        await _resolve_seed_url(task_request)
 
         # Validate required fields (belt-and-suspenders — Pydantic also
         # enforces this, but the check keeps the 422 message specific).
@@ -311,13 +302,6 @@ async def create_task(
             )
         # Solo-operator: pass a dict with "id" for backward compat with handlers
         operator_user = {"id": "operator"}
-        # Blog handler needs site_config for the throttle check (Phase H).
-        # Other handlers ignore extra kwargs via signature inspection below;
-        # we pass it only to the blog handler to keep other signatures stable.
-        if task_request.task_type == "blog_post":
-            return await handler(
-                task_request, operator_user, db_service, site_config=site_config,
-            )
         return await handler(task_request, operator_user, db_service)
 
     except HTTPException:
@@ -336,18 +320,9 @@ async def create_task(
 
 
 async def _handle_blog_post_creation(
-    request: UnifiedTaskRequest,
-    current_user: dict,
-    db_service: DatabaseService,
-    *,
-    site_config: Any,
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
 ) -> dict[str, Any]:
-    """Handle blog post task creation.
-
-    ``site_config`` is required (kw-only). Phase H (GH#95) finished the
-    migration off the module-singleton fallback — every caller threads
-    site_config through explicitly.
-    """
+    """Handle blog post task creation"""
     task_id = str(uuid_lib.uuid4())
 
     # Log model selections (#952) so we can confirm user choices are applied
@@ -367,8 +342,7 @@ async def _handle_blog_post_creation(
         try:
             from services.topic_discovery import TopicDiscovery
             pool = db_service.pool if db_service else None
-            # Phase H step 5 (GH#95): thread site_config explicitly.
-            discovery = TopicDiscovery(pool, site_config=site_config)
+            discovery = TopicDiscovery(pool)
             topics = await discovery.discover(max_topics=3)
             fresh = [t for t in topics if not t.is_duplicate]
             if fresh:
@@ -419,12 +393,8 @@ async def _handle_blog_post_creation(
     try:
         from services.pipeline_throttle import is_queue_full
 
-        # Phase H (GH#95): is_queue_full requires site_config as an
-        # explicit parameter. ``site_config`` is the kw-only arg threaded
-        # through from create_task's Depends(get_site_config_dependency).
         queue_full, queue_position, queue_limit = await is_queue_full(
-            db_service.pool if db_service else None,
-            site_config,
+            db_service.pool if db_service else None
         )
     except Exception as e:
         logger.debug("[create_task] Throttle state check failed: %s", e)

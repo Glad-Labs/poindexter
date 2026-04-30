@@ -99,6 +99,27 @@ jobs:
           format: table
           skip-dirs: '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
 
+  poetry-lock:
+    name: poetry check --lock (src/cofounder_agent)
+    runs-on: ubuntu-latest
+    # GH#180 defense-in-depth — the same check runs locally as a pre-commit
+    # hook (.pre-commit-config.yaml) AND in the test workflow on Gitea
+    # (.gitea/workflows/ci.yml). Mirroring it here protects the public
+    # GitHub mirror in case a contributor opens a PR without pre-commit
+    # installed and without going through Gitea CI first.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Poetry
+        run: pipx install poetry
+      - name: Verify poetry.lock matches pyproject.toml
+        run: |
+          cd src/cofounder_agent
+          poetry check --lock
+
   sbom:
     name: SBOM + grype scan
     runs-on: ubuntu-latest

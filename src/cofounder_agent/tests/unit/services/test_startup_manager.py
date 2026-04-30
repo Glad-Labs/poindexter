@@ -20,9 +20,7 @@ from utils.startup_manager import StartupManager
 
 
 def _make_manager() -> StartupManager:
-    from services.site_config import SiteConfig
-
-    return StartupManager(site_config=SiteConfig())
+    return StartupManager()
 
 
 # ---------------------------------------------------------------------------

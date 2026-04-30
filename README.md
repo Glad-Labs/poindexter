@@ -2,7 +2,7 @@
 
 **Your PC is a content factory.** Poindexter is an open-source AI content pipeline that researches, writes, reviews, and publishes — autonomously. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-5%2C000%2B_passing-brightgreen)]()
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
@@ -111,7 +111,7 @@ Poindexter is in **alpha**. Honestly:
 - The legacy `bootstrap.sh` has been replaced by `poindexter setup` (interactive wizard with `--auto` mode). If you're using bootstrap.sh from an older clone, switch to the new flow.
 - No managed/hosted Poindexter offering. Self-host only.
 - No multi-tenant deployment recipe. One operator, one machine.
-- 1 Grafana dashboard ships free (Pipeline Operations). 5 additional dashboards (Cost Analytics, Quality, Infrastructure, Approval Queue, Link Registry) ship with Pro.
+- 1 Grafana dashboard ships free (Pipeline Operations). 5 additional dashboards (Cost Analytics, Quality, Infrastructure, Approval Queue, Link Registry) available with the Seed Package.
 - Native Windows cmd / PowerShell is not supported. Use Git Bash or WSL.
 - Database schema is not yet considered stable across releases. Read the CHANGELOG before upgrading.
 
@@ -132,7 +132,7 @@ _Screenshots coming. In the meantime, see [gladlabs.io](https://www.gladlabs.io)
 ```
 Your PC (the engine)
 ├── Content Pipeline (FastAPI)     — researches, writes, scores, publishes
-├── Brain Daemon                   — monitors health, self-heals, auto-restarts
+├── Brain Daemon                   — monitors health, self-heals, probes operator URLs (see brain/README.md)
 ├── MCP Server                     — control from Claude Desktop / Telegram
 ├── Static Export                  — pushes JSON/RSS/Feed to any S3-compatible storage
 ├── Grafana + Prometheus           — 1 free dashboard + 5 premium, alerting
@@ -246,31 +246,30 @@ dive into specific areas:
 - **[Multi-agent pipeline](docs/architecture/multi-agent-pipeline.md)** — the content pipeline + cross-model QA
 - **[Database schema](docs/architecture/database-schema.md)** — every table + migration system
 - **[API reference](docs/api/README.md)** — REST endpoints exposed by the worker
-- **[CLI reference](docs/operations/cli-reference.md)** — every `poindexter` subcommand with flags + examples
-- **[Services reference](docs/reference/services.md)** — catalog of every service in the worker
-- **[Extending Poindexter](docs/operations/extending-poindexter.md)** — how to add stages, reviewers, adapters, taps, jobs, and probes
 - **[Local development setup](docs/operations/local-development-setup.md)** — end-to-end setup walkthrough
 - **[Environment variables](docs/operations/environment-variables.md)** — bootstrap-layer config
 - **[Troubleshooting](docs/operations/troubleshooting.md)** — production issues we've hit
+- **[Feature status](docs/feature-status.md)** — honest inventory of what works
 
 The docs are written for operators and contributors who want to
 master the system. They take hours to read end-to-end. If you want
-a guided shortcut, Pro (below) includes the full Poindexter book
-so you skip the reading and get straight to publishing.
+a guided shortcut, the paid Quick Start Guide (below) skips the
+reading.
 
-## Pricing
+## Premium Add-Ons
 
-The engine is free and open-source. Pro is a subscription for operators who want production-grade output without tuning from scratch.
+The engine is free and open-source. For production-quality output:
 
-| Tier     | Price                                                 | What You Get                                                                                                                                                               |
-| -------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free** | $0                                                    | Full pipeline engine, basic prompts, 1 Grafana dashboard (Pipeline Operations), GitHub issues support                                                                      |
-| **Pro**  | $9/mo or $89/year (save ~17%)<br>**7-day free trial** | Premium prompts (anti-hallucination, SEO, QA, research), 5 additional Grafana dashboards, prompt updates as Matt tunes them, private VIP Discord, the full Poindexter book |
+| Tier                  | Price        | What You Get                                                                                                                                       |
+| --------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Free**              | $0           | Full pipeline engine, basic prompts, 1 Grafana dashboard (Pipeline Operations)                                                                     |
+| **Quick Start Guide** | $29 one-time | Production-tuned config (235+ settings), anti-hallucination rules, writing samples, 5 premium dashboards, Matt's exact deploy steps                |
+| **Premium**           | $9.99/mo     | Everything in Quick Start + monthly updated prompts, private repo access, new fact-check rules, premium Discord, AI Content Pipeline book chapters |
 
-The free tier runs the pipeline end-to-end. Pro gives you months of tuning in a single install — the difference between default output and content that actually ranks.
+The free tier runs the pipeline end-to-end. The paid tiers give you months of tuning in a single install — the difference between default output and content that actually ranks.
 
-- **[Start your 7-day Pro trial — $9/mo](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)**
-- [Subscribe annually — $89/year](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)
+- [Buy the Quick Start Guide — $29](https://gladlabs.lemonsqueezy.com/checkout/buy/ece7930f-f35e-44dc-93d2-6f56709b5f52)
+- [Subscribe to Premium — $9.99/mo](https://gladlabs.lemonsqueezy.com/checkout/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9)
 - [Compare tiers on gladlabs.io/product](https://www.gladlabs.io/product)
 
 ## Contributing
@@ -285,6 +284,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-[Apache License 2.0](LICENSE) — Copyright 2025-2026 Matthew M. Gladding
+[GNU Affero General Public License v3.0](LICENSE) — Copyright 2025-2026 Matthew M. Gladding
 
-Relicensed from AGPL-3.0 to Apache 2.0 on 2026-04-29 — see CHANGELOG.
+For commercial licensing inquiries: sales@gladlabs.io

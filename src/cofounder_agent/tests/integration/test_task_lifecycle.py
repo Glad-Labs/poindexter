@@ -20,8 +20,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
-from services.site_config import SiteConfig
-from utils.route_utils import get_database_dependency, get_site_config_dependency
+from utils.route_utils import get_database_dependency
 
 # ---------------------------------------------------------------------------
 # Test constants
@@ -97,9 +96,6 @@ def _build_task_app(mock_db: AsyncMock, user=TEST_USER_A, skip_auth=True) -> Fas
         # Override the API token auth to return a valid token string
         app.dependency_overrides[verify_api_token] = lambda: "test-token"
     app.dependency_overrides[get_database_dependency] = lambda: mock_db
-    # Phase H (GH#95): strict DI — supply a fresh SiteConfig for routes
-    # that Depend(get_site_config_dependency).
-    app.dependency_overrides[get_site_config_dependency] = lambda: SiteConfig()
 
     return app
 

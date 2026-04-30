@@ -21,6 +21,7 @@ import logging
 import os
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any
@@ -80,9 +81,44 @@ from pathlib import Path as _Path_boot
 _repo_root_boot = _Path_boot(__file__).resolve().parents[1]
 if str(_repo_root_boot) not in _sys_boot.path:
     _sys_boot.path.insert(0, str(_repo_root_boot))
+# Also expose src/cofounder_agent so we can import services.logger_config
+# without altering the rest of the import shape (#259).
+_cofounder_root = _repo_root_boot / "src" / "cofounder_agent"
+if _cofounder_root.is_dir() and str(_cofounder_root) not in _sys_boot.path:
+    _sys_boot.path.insert(0, str(_cofounder_root))
 from brain.bootstrap import require_database_url
 
 LOCAL_DB_DSN = require_database_url(source="mcp_server")
+
+# --- Tool error formatting helper (#259) -----------------------------------
+# Anti-pattern being replaced: ``return f"X failed: {e}"`` swallowed the
+# exception class and produced empty messages whenever ``str(e) == ""``
+# (common with chained ``raise ... from None`` and some asyncpg / network
+# errors). Every MCP tool now routes errors through ``_format_tool_error``
+# so callers see the exception class, a correlation id, and the server logs
+# carry the full traceback under that same id.
+import traceback  # noqa: E402, F401  (traceback is used by logger.exception)
+import uuid as _uuid  # noqa: E402
+
+try:  # pragma: no cover - import-shape only
+    from services.logger_config import get_logger as _get_logger
+
+    _log = _get_logger(__name__)
+except Exception:  # pragma: no cover - structlog/services optional
+    _log = logging.getLogger(__name__)
+
+
+def _format_tool_error(tool_name: str, e: Exception) -> str:
+    """Return a user-visible error string and log the full traceback.
+
+    The returned string always includes the exception class name and a short
+    request id (``rid``); the server log carries the full traceback under the
+    same id so an operator can grep for it. Use this in every MCP tool's
+    ``except Exception`` block instead of ``f"... failed: {e}"``.
+    """
+    rid = _uuid.uuid4().hex[:8]
+    _log.exception("[mcp-tool] %s failed [rid=%s]", tool_name, rid)
+    return f"{tool_name} failed (rid={rid}): {type(e).__name__}: {e}"
 
 OLLAMA_URL = _require_env("OLLAMA_URL")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
@@ -133,13 +169,7 @@ Search before asking the user — the answer may already be in memory.
 
 
 def _api(method: str, path: str, data: dict | None = None) -> dict:
-    """Call the Poindexter API. Raises RuntimeError on non-2xx or network errors.
-
-    Previously this returned ``{"error": ...}`` on failure, which several
-    callers swallowed as a fake-success status string (e.g. "Rejected: HTTP
-    401 — <reason>" when auth failed). Failures must propagate so the MCP
-    framework surfaces them to the client.
-    """
+    """Call the Poindexter API."""
     url = f"{API_URL}{path}"
     headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
     body = json.dumps(data).encode() if data else None
@@ -148,14 +178,14 @@ def _api(method: str, path: str, data: dict | None = None) -> dict:
         resp = urllib.request.urlopen(req, timeout=15)
         return json.loads(resp.read())
     except urllib.error.HTTPError as e:
+        # Capture the response body — it contains the actual error details
         try:
-            err_body = json.loads(e.read())
-            detail = err_body.get("detail") or json.dumps(err_body)
+            error_body = json.loads(e.read())
+            return {"error": f"HTTP {e.code}", **error_body}
         except Exception:
-            detail = str(e)[:200]
-        raise RuntimeError(f"API {method} {path} failed: HTTP {e.code} {detail}") from e
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"API {method} {path} unreachable: {e.reason}") from e
+            return {"error": f"HTTP {e.code}: {str(e)[:200]}"}
+    except Exception as e:
+        return {"error": str(e)[:200]}
 
 
 # ============================================================================
@@ -227,16 +257,10 @@ async def _resolve_task_id(task_id: str) -> str:
 
 @mcp.tool()
 async def approve_post(task_id: str) -> str:
-    """Stage a content task for publishing (does NOT publish — call publish_post for that).
-
-    As of gh#189, /api/tasks/{id}/approve defaults to auto_publish=false so
-    batch curation flows ("approve the best 3 from awaiting_approval") stage
-    without accidental go-lives. Use publish_post() to push an approved task
-    live on the configured site.
-    """
+    """Approve a content task for publishing."""
     full_id = await _resolve_task_id(task_id)
     result = _api("POST", f"/api/tasks/{full_id}/approve")
-    return f"Status: {result.get('status', '?')}"
+    return f"Status: {result.get('status', result.get('error', '?'))}"
 
 
 @mcp.tool()
@@ -248,7 +272,8 @@ async def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str
         "feedback": reason,
         "allow_revisions": False,
     })
-    return f"Rejected: {result.get('status', '?')} — {reason}"
+    status = result.get("status", result.get("error", "?"))
+    return f"Rejected: {status} — {reason}"
 
 
 @mcp.tool()
@@ -256,7 +281,7 @@ async def publish_post(task_id: str) -> str:
     """Publish an approved content task to the configured site."""
     full_id = await _resolve_task_id(task_id)
     result = _api("POST", f"/api/tasks/{full_id}/publish")
-    return f"Status: {result.get('status', '?')}"
+    return f"Status: {result.get('status', result.get('error', '?'))}"
 
 
 @mcp.tool()
@@ -353,16 +378,46 @@ async def get_budget() -> str:
 # SETTINGS TOOLS
 # ============================================================================
 
+def _strip_category_prefix(key: str) -> tuple[str, str | None]:
+    """Strip an optional ``<category>/`` prefix from a settings key.
+
+    ``list_settings`` renders rows as ``category/key`` (e.g.
+    ``site/public_site_url``), so operators copy-paste that form into
+    ``get_setting`` / ``set_setting``. The DB only stores the bare key,
+    so we strip the prefix before lookup. The supplied prefix is
+    returned alongside so callers can warn when it disagrees with the
+    row's actual ``category`` column (Glad-Labs/poindexter#253).
+    """
+    if "/" not in key:
+        return key, None
+    cat, _, bare = key.partition("/")
+    return bare, cat
+
+
 @mcp.tool()
 async def get_setting(key: str) -> str:
-    """Get a configuration setting value from the database."""
+    """Get a configuration setting value from the database.
+
+    Accepts either a bare ``key`` or the ``category/key`` form printed by
+    :func:`list_settings`. If a category prefix is supplied but does not
+    match the row's actual category, a warning is logged and the value
+    is still returned (the supplied prefix is informational only).
+    """
     try:
         pool = await _get_pool()
+        bare_key, declared_category = _strip_category_prefix(key)
         row = await pool.fetchrow(
-            "SELECT key, value, category, is_secret FROM app_settings WHERE key = $1", key
+            "SELECT key, value, category, is_secret FROM app_settings WHERE key = $1",
+            bare_key,
         )
         if not row:
             return f"Setting '{key}' not found."
+        if declared_category and declared_category != (row["category"] or ""):
+            logger.warning(
+                "get_setting: supplied category prefix %r does not match "
+                "row's actual category %r for key %r — proceeding anyway",
+                declared_category, row["category"] or "", bare_key,
+            )
         val = "********" if row["is_secret"] else row["value"]
         return f"{row['key']} = {val} (category: {row['category'] or '?'})"
     except Exception as e:
@@ -373,8 +428,15 @@ async def get_setting(key: str) -> str:
 async def set_setting(key: str, value: str) -> str:
     """Update a configuration setting in the database.
 
+    Accepts either a bare ``key`` or the ``category/key`` form printed by
+    :func:`list_settings`. If a category prefix is supplied but does not
+    match the row's existing category, a warning is logged and the
+    update proceeds against the bare key.
+
     Respects agent_permissions table — checks if mcp_server is allowed to write app_settings.
     """
+    bare_key, declared_category = _strip_category_prefix(key)
+
     # Permission check
     try:
         pool = await _get_pool()
@@ -387,21 +449,31 @@ async def set_setting(key: str, value: str) -> str:
                 await pool.execute(
                     "INSERT INTO approval_queue (agent_name, resource, action, proposed_change, reason) "
                     "VALUES ('mcp_server', 'app_settings', 'write', $1, 'MCP set_setting tool')",
-                    json.dumps({"key": key, "value": value}),
+                    json.dumps({"key": bare_key, "value": value}),
                 )
-                return f"Permission denied: change to {key} queued for approval"
+                return f"Permission denied: change to {bare_key} queued for approval"
             return f"Permission denied: mcp_server cannot write to app_settings"
     except Exception:
         pass  # Permission check failed — fall through to direct DB write
 
     try:
         pool = await _get_pool()
+        if declared_category:
+            existing_category = await pool.fetchval(
+                "SELECT category FROM app_settings WHERE key = $1", bare_key
+            )
+            if existing_category is not None and declared_category != (existing_category or ""):
+                logger.warning(
+                    "set_setting: supplied category prefix %r does not match "
+                    "row's existing category %r for key %r — updating value anyway",
+                    declared_category, existing_category or "", bare_key,
+                )
         await pool.execute(
             "INSERT INTO app_settings (key, value) VALUES ($1, $2) "
             "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
-            key, value,
+            bare_key, value,
         )
-        return f"Updated: {key} = {value}"
+        return f"Updated: {bare_key} = {value}"
     except Exception as e:
         return f"Error: {e}"
 
@@ -522,7 +594,7 @@ async def search_memory(
         return "\n".join(lines)
 
     except Exception as e:
-        return f"Memory search failed: {e}"
+        return _format_tool_error("Memory search", e)
 
 
 @mcp.tool()
@@ -648,7 +720,7 @@ async def store_memory(
             f"  Queryable via search_memory immediately."
         )
     except Exception as e:
-        return f"store_memory failed: {e}"
+        return _format_tool_error("store_memory", e)
 
 
 @mcp.tool()
@@ -739,7 +811,7 @@ async def get_audit_log(event_type: str = "", severity: str = "", limit: int = 2
             )
         return "\n".join(lines)
     except Exception as e:
-        return f"Audit log query failed: {e}"
+        return _format_tool_error("Audit log query", e)
 
 
 @mcp.tool()
@@ -764,7 +836,7 @@ async def get_audit_summary(hours: int = 24) -> str:
             lines.append(f"  {row['event_type']:30s} {row['severity']:8s} x{row['count']}")
         return "\n".join(lines)
     except Exception as e:
-        return f"Audit summary failed: {e}"
+        return _format_tool_error("Audit summary", e)
 
 
 # ============================================================================
@@ -850,754 +922,100 @@ async def get_brain_knowledge(entity: str = "", attribute: str = "", limit: int 
             )
         return "\n".join(lines)
     except Exception as e:
-        return f"Brain knowledge query failed: {e}"
+        return _format_tool_error("Brain knowledge query", e)
 
 
 # ============================================================================
-# HITL APPROVAL GATE TOOLS (Glad-Labs/poindexter#145)
+# NICHE TOPIC-DISCOVERY TOOLS
 # ============================================================================
-#
-# Thin wrappers over services.approval_service. Mirror the
-# `poindexter approve / reject / list-pending / show-pending / gates list /
-# gates set` CLI commands so an operator on Claude Desktop / Claude Code can
-# drive the same gates. CLI is canonical; these are convenience surface for
-# bot consumers. Per the CLI-first directive, both paths call into the same
-# service module — single source of truth.
-
-
-def _ensure_poindexter_on_path() -> None:
-    """Add the cofounder_agent source root to ``sys.path`` so we can import
-    ``services.approval_service`` and friends from this MCP server.
-
-    The poindexter package isn't installed into this server's venv (we run
-    via ``uv --directory mcp-server run server.py``), so we rely on the
-    side-by-side checkout layout: ``mcp-server/server.py`` and
-    ``src/cofounder_agent/`` live in the same repo.
-    """
-    import sys as _sys
-    here = os.path.dirname(os.path.abspath(__file__))
-    candidate = os.path.normpath(os.path.join(here, "..", "src", "cofounder_agent"))
-    if candidate not in _sys.path:
-        _sys.path.insert(0, candidate)
-
-
-async def _make_site_config(pool):
-    """Construct a SiteConfig the approval-service helpers can consume."""
-    _ensure_poindexter_on_path()
-    from services.site_config import SiteConfig  # type: ignore[import-not-found]
-
-    cfg = SiteConfig(pool=pool)
-    try:
-        await cfg.load(pool)
-    except Exception as exc:  # pragma: no cover — best-effort load
-        logger.warning("Failed to load SiteConfig in MCP wrapper: %s", exc)
-    return cfg
+# Mirror the ``poindexter topics ...`` CLI commands so an MCP client can drive
+# the discover -> rank -> batch -> gate flow exposed by
+# ``services.topic_batch_service.TopicBatchService``.
 
 
 @mcp.tool()
-async def approve(
-    task_id: str,
-    gate_name: str = "",
-    feedback: str = "",
-) -> str:
-    """Approve a content_tasks row at its current (or named) HITL gate.
-
-    Clears the gate and re-queues the pipeline. Same behavior as
-    ``poindexter approve <task_id>`` on the CLI.
-
-    Args:
-        task_id: UUID of the content_tasks row.
-        gate_name: Optional — assert which gate is being approved.
-            When empty, the active gate is cleared.
-        feedback: Optional operator note recorded in audit_log.
-
-    Returns:
-        JSON-encoded result dict, or a human-readable error string.
-    """
-    _ensure_poindexter_on_path()
-    from services.approval_service import (  # type: ignore[import-not-found]
-        ApprovalServiceError,
-        approve as approve_service,
-    )
-
+async def topics_show_batch(niche: str) -> str:
+    """Show the current open batch for a niche, sorted by effective_score."""
     try:
         pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await approve_service(
-            task_id=task_id,
-            gate_name=gate_name or None,
-            feedback=feedback or None,
-            site_config=site_config,
-            pool=pool,
-        )
-        return json.dumps(result, default=str)
-    except ApprovalServiceError as e:
-        return f"approve failed: {e}"
-    except Exception as e:
-        return f"approve unexpected: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def reject(
-    task_id: str,
-    gate_name: str = "",
-    reason: str = "",
-) -> str:
-    """Reject a content_tasks row at its current (or named) HITL gate.
-
-    Sets the task to the gate's reject status (default: ``rejected``).
-    Same behavior as ``poindexter reject <task_id>`` on the CLI.
-    """
-    _ensure_poindexter_on_path()
-    from services.approval_service import (  # type: ignore[import-not-found]
-        ApprovalServiceError,
-        reject as reject_service,
-    )
-
-    try:
-        pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await reject_service(
-            task_id=task_id,
-            gate_name=gate_name or None,
-            reason=reason or None,
-            site_config=site_config,
-            pool=pool,
-        )
-        return json.dumps(result, default=str)
-    except ApprovalServiceError as e:
-        return f"reject failed: {e}"
-    except Exception as e:
-        return f"reject unexpected: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def list_pending(gate_name: str = "", limit: int = 100) -> str:
-    """List every task currently paused at any HITL approval gate.
-
-    Args:
-        gate_name: Optional filter to a single gate.
-        limit: Max rows (default 100).
-
-    Returns:
-        JSON-encoded list of pending rows.
-    """
-    _ensure_poindexter_on_path()
-    from services.approval_service import list_pending as list_pending_service  # type: ignore[import-not-found]
-
-    try:
-        pool = await _get_pool()
-        rows = await list_pending_service(
-            pool=pool, gate_name=gate_name or None, limit=limit,
-        )
-        return json.dumps(rows, default=str)
-    except Exception as e:
-        return f"list_pending failed: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def show_pending(task_id: str) -> str:
-    """Return the full gate state + artifact for one paused task."""
-    _ensure_poindexter_on_path()
-    from services.approval_service import (  # type: ignore[import-not-found]
-        ApprovalServiceError,
-        show_pending as show_pending_service,
-    )
-
-    try:
-        pool = await _get_pool()
-        row = await show_pending_service(pool=pool, task_id=task_id)
-        return json.dumps(row, default=str)
-    except ApprovalServiceError as e:
-        return f"show_pending failed: {e}"
-    except Exception as e:
-        return f"show_pending unexpected: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def gates_list() -> str:
-    """List every known HITL gate + enabled state + pending count."""
-    _ensure_poindexter_on_path()
-    from services.approval_service import list_gates  # type: ignore[import-not-found]
-
-    try:
-        pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        rows = await list_gates(pool=pool, site_config=site_config)
-        return json.dumps(rows, default=str)
-    except Exception as e:
-        return f"gates_list failed: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def gates_set(gate_name: str, enabled: bool) -> str:
-    """Toggle a HITL gate on or off. Writes ``app_settings``.
-
-    Args:
-        gate_name: Stable slug, e.g. ``"topic_decision"``.
-        enabled: True → ``"on"``, False → ``"off"``.
-    """
-    _ensure_poindexter_on_path()
-    from services.approval_service import set_gate_enabled  # type: ignore[import-not-found]
-
-    try:
-        pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await set_gate_enabled(
-            gate_name=gate_name,
-            enabled=bool(enabled),
-            pool=pool,
-            site_config=site_config,
-        )
-        return json.dumps(result, default=str)
-    except Exception as e:
-        return f"gates_set failed: {type(e).__name__}: {e}"
-
-
-# ============================================================================
-# TOPIC-DECISION QUEUE TOOLS (Glad-Labs/poindexter#146)
-# ============================================================================
-#
-# Thin wrappers around services.approval_service (read/approve/reject paths)
-# and services.topic_proposal_service (manual injection). Mirror the
-# `poindexter topics ...` CLI.
-
-
-@mcp.tool()
-async def topics_list(source: str = "", limit: int = 100) -> str:
-    """List every topic currently paused at the topic_decision gate.
-
-    Args:
-        source: Optional filter — match ``artifact->>'source'``
-            (e.g. ``"manual"`` or ``"anticipation_engine"``).
-        limit: Max rows (default 100).
-
-    Returns:
-        JSON-encoded list of pending topic rows.
-    """
-    _ensure_poindexter_on_path()
-    from services.approval_service import (  # type: ignore[import-not-found]
-        list_pending,
-    )
-
-    try:
-        pool = await _get_pool()
-        rows = await list_pending(
-            pool=pool, gate_name="topic_decision", limit=limit,
-        )
-        if source:
-            rows = [
-                r for r in rows
-                if (r.get("artifact") or {}).get("source") == source
-            ]
-        return json.dumps(rows, default=str)
-    except Exception as e:
-        return f"topics_list failed: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def topics_show(task_id: str) -> str:
-    """Pretty-print the artifact for a single queued topic.
-
-    Returns the same dict shape as ``poindexter topics show --json``.
-    """
-    _ensure_poindexter_on_path()
-    from services.approval_service import (  # type: ignore[import-not-found]
-        ApprovalServiceError,
-        show_pending,
-    )
-
-    try:
-        pool = await _get_pool()
-        row = await show_pending(pool=pool, task_id=task_id)
-        if row.get("gate_name") and row["gate_name"] != "topic_decision":
-            return (
-                f"topics_show: task {task_id} is paused at gate "
-                f"{row['gate_name']!r}, not 'topic_decision'."
+        from services.niche_service import NicheService
+        from services.topic_batch_service import TopicBatchService
+        n = await NicheService(pool).get_by_slug(niche)
+        if not n:
+            return f"unknown niche: {niche}"
+        async with pool.acquire() as conn:
+            bid = await conn.fetchval(
+                "SELECT id FROM topic_batches WHERE niche_id = $1 AND status = 'open'",
+                n.id,
             )
-        return json.dumps(row, default=str)
-    except ApprovalServiceError as e:
-        return f"topics_show failed: {e}"
+        if bid is None:
+            return f"No open batch for niche {niche}."
+        view = await TopicBatchService(pool).show_batch(batch_id=bid)
+        lines = [f"Batch {view.id} (status={view.status}, niche={niche})"]
+        for c in view.candidates:
+            marker = f"#{c.operator_rank}" if c.operator_rank else f"sys#{c.rank_in_batch}"
+            lines.append(
+                f"  {marker:6s} [{c.kind:8s}] eff={c.effective_score:5.1f} | {c.id} | {c.title}"
+            )
+        return "\n".join(lines)
     except Exception as e:
-        return f"topics_show unexpected: {type(e).__name__}: {e}"
+        return _format_tool_error("topics_show_batch", e)
 
 
 @mcp.tool()
-async def topics_approve(task_id: str, feedback: str = "") -> str:
-    """Approve a queued topic — flips it to ``pending`` so the pipeline resumes.
-
-    Equivalent to ``poindexter topics approve <task_id>`` on the CLI.
-    """
-    _ensure_poindexter_on_path()
-    from services.approval_service import (  # type: ignore[import-not-found]
-        ApprovalServiceError,
-        approve as approve_service,
-    )
-
+async def topics_rank_batch(batch_id: str, ordered_candidate_ids: list[str]) -> str:
+    """Set operator ranking for a batch's candidates. Pass IDs in best-first order."""
     try:
         pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await approve_service(
-            task_id=task_id,
-            gate_name="topic_decision",
-            feedback=feedback or None,
-            site_config=site_config,
-            pool=pool,
+        from services.topic_batch_service import TopicBatchService
+        await TopicBatchService(pool).rank_batch(
+            batch_id=batch_id, ordered_candidate_ids=ordered_candidate_ids,
         )
-        return json.dumps(result, default=str)
-    except ApprovalServiceError as e:
-        return f"topics_approve failed: {e}"
+        return f"Ranked {len(ordered_candidate_ids)} candidates in batch {batch_id}"
     except Exception as e:
-        return f"topics_approve unexpected: {type(e).__name__}: {e}"
+        return _format_tool_error("topics_rank_batch", e)
 
 
 @mcp.tool()
-async def topics_reject(task_id: str, reason: str = "") -> str:
-    """Reject a queued topic — flips it to ``dismissed`` and ends the task.
-
-    Equivalent to ``poindexter topics reject <task_id>`` on the CLI.
-    """
-    _ensure_poindexter_on_path()
-    from services.approval_service import (  # type: ignore[import-not-found]
-        ApprovalServiceError,
-        reject as reject_service,
-    )
-
+async def topics_edit_winner(batch_id: str, topic: str = "", angle: str = "") -> str:
+    """Edit the title/angle of the rank-1 candidate before resolution."""
+    if not topic and not angle:
+        return "topics_edit_winner failed: provide topic and/or angle"
     try:
         pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await reject_service(
-            task_id=task_id,
-            gate_name="topic_decision",
-            reason=reason or None,
-            site_config=site_config,
-            pool=pool,
+        from services.topic_batch_service import TopicBatchService
+        await TopicBatchService(pool).edit_winner(
+            batch_id=batch_id,
+            topic=topic or None,
+            angle=angle or None,
         )
-        return json.dumps(result, default=str)
-    except ApprovalServiceError as e:
-        return f"topics_reject failed: {e}"
+        return "Edited winner."
     except Exception as e:
-        return f"topics_reject unexpected: {type(e).__name__}: {e}"
+        return _format_tool_error("topics_edit_winner", e)
 
 
 @mcp.tool()
-async def topics_propose(
-    topic: str,
-    keyword: str = "",
-    tags: str = "",
-    category: str = "",
-    source: str = "manual",
-    target_length: int = 1500,
-    style: str = "technical",
-    tone: str = "professional",
-) -> str:
-    """Manually inject a topic into the topic-decision queue.
-
-    Creates a ``pipeline_tasks`` row and routes it through the gate so
-    it lands at ``awaiting_gate='topic_decision'`` (when the gate is
-    enabled). Manual proposals share the operator's queue with the
-    anticipation engine's auto-proposals.
-
-    Args:
-        topic: The topic to inject (required, non-empty).
-        keyword: Optional primary keyword. Falls back to first tag.
-        tags: Comma-separated tag list (``"ai,llm,local-inference"``).
-        category: Optional category slug.
-        source: Origin label recorded on the artifact (default ``"manual"``).
-        target_length: Word-count target for the eventual draft.
-        style: ``technical`` | ``narrative`` | ``listicle`` | ``educational``.
-        tone: ``professional`` | ``casual``.
-
-    Returns:
-        JSON-encoded result dict — task_id, awaiting_gate, status,
-        gate_enabled, queue_full.
-    """
-    _ensure_poindexter_on_path()
-    from services.topic_proposal_service import (  # type: ignore[import-not-found]
-        propose_topic,
-    )
-
-    if not topic or not topic.strip():
-        return "topics_propose failed: topic must be a non-empty string"
-
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-
+async def topics_resolve_batch(batch_id: str) -> str:
+    """Resolve a batch — advance the rank-1 candidate into the content pipeline."""
     try:
         pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await propose_topic(
-            topic=topic,
-            primary_keyword=keyword or None,
-            tags=tag_list,
-            category=category or None,
-            source=source or "manual",
-            target_length=int(target_length),
-            style=style,
-            tone=tone,
-            site_config=site_config,
-            pool=pool,
-        )
-        return json.dumps(result, default=str)
-    except ValueError as e:
-        return f"topics_propose failed: {e}"
+        from services.topic_batch_service import TopicBatchService
+        await TopicBatchService(pool).resolve_batch(batch_id=batch_id)
+        return f"Resolved {batch_id}"
     except Exception as e:
-        return f"topics_propose unexpected: {type(e).__name__}: {e}"
-
-
-# ============================================================================
-# SCHEDULED PUBLISHING TOOLS (Glad-Labs/poindexter#147)
-# ============================================================================
-#
-# Thin wrappers over services/scheduling_service.py. Mirror the
-# `poindexter schedule ...` and `poindexter publish-at ...` CLI commands.
-
-
-def _result_to_jsonable(result) -> dict:
-    """Serialise a ScheduleResult dataclass into a plain dict."""
-    return {
-        "ok": result.ok,
-        "detail": result.detail,
-        "count": result.count,
-        "rows": result.rows,
-    }
+        return _format_tool_error("topics_resolve_batch", e)
 
 
 @mcp.tool()
-async def schedule_batch(
-    count: int,
-    interval: str,
-    start: str,
-    quiet_hours: str = "",
-    ordered_by: str = "approved_at",
-    force: bool = False,
-) -> str:
-    """Bulk-assign publish slots to the approved-post queue.
-
-    Reads up to ``count`` approved posts in ``ordered_by`` order and
-    walks the slot calendar starting from ``start`` stepping by
-    ``interval``. Slots inside the quiet-hours window are skipped to
-    the next allowed time. Same behaviour as
-    ``poindexter schedule batch`` on the CLI.
-
-    Args:
-        count: Number of approved posts to schedule.
-        interval: Slot spacing — ``30m``, ``1h``, ``1h30m``, ``1d``…
-        start: First slot — ISO 8601, ``now``, ``tomorrow 9am``,
-            ``next monday 14:00``.
-        quiet_hours: ``HH:MM-HH:MM``; empty falls back to the
-            ``publish_quiet_hours`` app_setting.
-        ordered_by: ``approved_at`` (default) | ``created_at`` |
-            ``id`` | ``title``.
-        force: Re-schedule posts even if they already have a slot.
-
-    Returns:
-        JSON-encoded result envelope.
-    """
-    _ensure_poindexter_on_path()
-    from services.scheduling_service import (  # type: ignore[import-not-found]
-        assign_batch as assign_batch_service,
-    )
-
+async def topics_reject_batch(batch_id: str, reason: str = "") -> str:
+    """Reject a batch — discard candidates, allow a fresh sweep."""
     try:
         pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await assign_batch_service(
-            count=count,
-            interval=interval,
-            start=start,
-            quiet_hours=quiet_hours or None,
-            ordered_by=ordered_by,
-            pool=pool,
-            site_config=site_config,
-            force=force,
-        )
-        return json.dumps(_result_to_jsonable(result), default=str)
+        from services.topic_batch_service import TopicBatchService
+        await TopicBatchService(pool).reject_batch(batch_id=batch_id, reason=reason)
+        return f"Rejected {batch_id}"
     except Exception as e:
-        return f"schedule_batch failed: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def schedule_list(upcoming_only: bool = True) -> str:
-    """List every post with a populated publish schedule."""
-    _ensure_poindexter_on_path()
-    from services.scheduling_service import (  # type: ignore[import-not-found]
-        list_scheduled,
-    )
-
-    try:
-        pool = await _get_pool()
-        result = await list_scheduled(
-            pool=pool, upcoming_only=upcoming_only,
-        )
-        return json.dumps(_result_to_jsonable(result), default=str)
-    except Exception as e:
-        return f"schedule_list failed: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def schedule_show(post_id: str) -> str:
-    """Return the schedule detail for a single post."""
-    _ensure_poindexter_on_path()
-    from services.scheduling_service import (  # type: ignore[import-not-found]
-        show_scheduled,
-    )
-
-    try:
-        pool = await _get_pool()
-        result = await show_scheduled(post_id, pool=pool)
-        return json.dumps(_result_to_jsonable(result), default=str)
-    except Exception as e:
-        return f"schedule_show failed: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def schedule_clear(post_id: str = "", clear_all: bool = False) -> str:
-    """Drop the schedule on one post or every still-future scheduled post.
-
-    Pass ``post_id`` for a single post, or ``clear_all=True`` for the
-    whole upcoming queue. Refuses both at once.
-    """
-    if (not post_id and not clear_all) or (post_id and clear_all):
-        return (
-            "schedule_clear: provide either post_id OR clear_all=True, "
-            "not both / neither."
-        )
-
-    _ensure_poindexter_on_path()
-    from services.scheduling_service import (  # type: ignore[import-not-found]
-        clear as clear_service,
-    )
-
-    try:
-        pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        ids = None if clear_all else [post_id]
-        result = await clear_service(
-            post_ids=ids, pool=pool, site_config=site_config,
-        )
-        return json.dumps(_result_to_jsonable(result), default=str)
-    except Exception as e:
-        return f"schedule_clear failed: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def publish_at(
-    post_id: str,
-    when: str = "",
-    in_delta: str = "",
-    force: bool = False,
-) -> str:
-    """Schedule a single post at a specific time.
-
-    Provide ``when`` (ISO 8601, ``now``, ``tomorrow 9am``, ``next monday
-    14:00``) OR ``in_delta`` (``2h``, ``7d``, ``1h30m``) — exactly one.
-    """
-    if (not when and not in_delta) or (when and in_delta):
-        return (
-            "publish_at: provide either when=... OR in_delta=..., "
-            "not both / neither."
-        )
-
-    _ensure_poindexter_on_path()
-    from services.scheduling_service import (  # type: ignore[import-not-found]
-        assign_slot,
-        parse_duration,
-        parse_when,
-    )
-
-    try:
-        target = (
-            parse_when(when)
-            if when
-            else datetime.now(timezone.utc) + parse_duration(in_delta)
-        )
-    except ValueError as e:
-        return f"publish_at parse error: {e}"
-
-    try:
-        pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await assign_slot(
-            post_id, target, pool=pool, site_config=site_config, force=force,
-        )
-        return json.dumps(_result_to_jsonable(result), default=str)
-    except Exception as e:
-        return f"publish_at failed: {type(e).__name__}: {e}"
-
-
-# ============================================================================
-# FINAL-PUBLISH-APPROVAL GATE TOOLS (Matt's 2026-04-27 ask)
-#
-# Operates on the ``posts`` table — fires when a scheduled post hits its
-# publish slot but BEFORE the publisher flips it to ``published``. Mirrors
-# the mid-pipeline approve/reject tools above; routed to a separate service
-# module because ``posts`` and ``pipeline_tasks`` are different tables.
-#
-# Enable the gate with:
-#     poindexter gates set final_publish_approval on
-# (the existing gates_set MCP tool also works — it writes the same
-# ``pipeline_gate_*`` app_settings key both gate kinds use.)
-# ============================================================================
-
-
-@mcp.tool()
-async def approve_publish(
-    post_id: str,
-    gate_name: str = "",
-    feedback: str = "",
-) -> str:
-    """Approve a scheduled post at the final-publish-approval gate.
-
-    Clears the publish-gate columns; the next ``scheduled_publisher``
-    tick flips the post to ``status='published'``. Same behavior as
-    ``poindexter approve-publish <post_id>`` on the CLI.
-
-    Args:
-        post_id: UUID of the ``posts`` row.
-        gate_name: Optional — assert which publish gate is being
-            approved. When empty, the active gate is cleared.
-        feedback: Optional operator note recorded in audit_log.
-
-    Returns:
-        JSON-encoded result dict, or a human-readable error string.
-    """
-    _ensure_poindexter_on_path()
-    from services.posts_approval_service import (  # type: ignore[import-not-found]
-        PostsApprovalServiceError,
-        approve_publish as approve_publish_service,
-    )
-
-    try:
-        pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await approve_publish_service(
-            post_id=post_id,
-            gate_name=gate_name or None,
-            feedback=feedback or None,
-            site_config=site_config,
-            pool=pool,
-        )
-        return json.dumps(_result_to_jsonable(result), default=str)
-    except PostsApprovalServiceError as e:
-        return f"approve_publish failed: {e}"
-    except Exception as e:
-        return f"approve_publish unexpected: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def reject_publish(
-    post_id: str,
-    gate_name: str = "",
-    reason: str = "",
-) -> str:
-    """Reject a scheduled post at the final-publish-approval gate.
-
-    Moves the row to the gate's reject status (``rejected`` by default).
-    Same behavior as ``poindexter reject-publish <post_id>`` on the CLI.
-
-    Args:
-        post_id: UUID of the ``posts`` row.
-        gate_name: Optional — assert which publish gate is being
-            rejected.
-        reason: Optional operator-supplied veto reason recorded in
-            audit_log.
-
-    Returns:
-        JSON-encoded result dict, or a human-readable error string.
-    """
-    _ensure_poindexter_on_path()
-    from services.posts_approval_service import (  # type: ignore[import-not-found]
-        PostsApprovalServiceError,
-        reject_publish as reject_publish_service,
-    )
-
-    try:
-        pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await reject_publish_service(
-            post_id=post_id,
-            gate_name=gate_name or None,
-            reason=reason or None,
-            site_config=site_config,
-            pool=pool,
-        )
-        return json.dumps(_result_to_jsonable(result), default=str)
-    except PostsApprovalServiceError as e:
-        return f"reject_publish failed: {e}"
-    except Exception as e:
-        return f"reject_publish unexpected: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def list_pending_publish(gate_name: str = "", limit: int = 100) -> str:
-    """List every scheduled post currently paused at any publish gate.
-
-    Same data as ``poindexter list-pending-publish``. Ordered
-    oldest-first.
-
-    Args:
-        gate_name: Optional gate-name filter.
-        limit: Max rows to return.
-    """
-    _ensure_poindexter_on_path()
-    from services.posts_approval_service import (  # type: ignore[import-not-found]
-        list_pending_publish as list_pending_publish_service,
-    )
-
-    try:
-        pool = await _get_pool()
-        rows = await list_pending_publish_service(
-            pool=pool, gate_name=gate_name or None, limit=limit,
-        )
-        return json.dumps([_result_to_jsonable(r) for r in rows], default=str)
-    except Exception as e:
-        return f"list_pending_publish failed: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def show_pending_publish(post_id: str) -> str:
-    """Show the publish-gate state + full artifact for one post."""
-    _ensure_poindexter_on_path()
-    from services.posts_approval_service import (  # type: ignore[import-not-found]
-        PostsApprovalServiceError,
-        show_pending_publish as show_pending_publish_service,
-    )
-
-    try:
-        pool = await _get_pool()
-        row = await show_pending_publish_service(pool=pool, post_id=post_id)
-        return json.dumps(_result_to_jsonable(row), default=str)
-    except PostsApprovalServiceError as e:
-        return f"show_pending_publish failed: {e}"
-    except Exception as e:
-        return f"show_pending_publish unexpected: {type(e).__name__}: {e}"
-
-
-@mcp.tool()
-async def refresh_post(slug: str) -> str:
-    """Force-refresh a published post's caches — fires Vercel ISR revalidation + R2 static export.
-
-    Use after a direct DB edit or out-of-band content change that didn't
-    go through PATCH /api/posts/{id}. The PATCH endpoint triggers this
-    automatically (gh#193). Same behavior as ``poindexter posts refresh
-    <slug>``.
-
-    Args:
-        slug: Post slug (e.g. "the-ai-first-freelancer-building-...").
-
-    Returns:
-        JSON with per-step success/failure: revalidation, static_export.
-    """
-    _ensure_poindexter_on_path()
-    from routes.cms_routes import _refresh_post_caches  # type: ignore[import-not-found]
-
-    try:
-        pool = await _get_pool()
-        site_config = await _make_site_config(pool)
-        result = await _refresh_post_caches(pool, slug, site_config)
-        return json.dumps(_result_to_jsonable(result), default=str)
-    except Exception as e:
-        return f"refresh_post failed: {type(e).__name__}: {e}"
+        return _format_tool_error("topics_reject_batch", e)
 
 
 if __name__ == "__main__":

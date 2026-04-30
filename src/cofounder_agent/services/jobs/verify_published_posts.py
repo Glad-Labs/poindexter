@@ -30,6 +30,7 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from services.site_config import site_config
 from utils.gitea_issues import create_gitea_issue
 
 logger = logging.getLogger(__name__)
@@ -41,9 +42,7 @@ class VerifyPublishedPostsJob:
     schedule = "every 30 minutes"
     idempotent = True  # Read-only on the live site
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         window_hours = int(config.get("window_hours", 24))
         batch_size = int(config.get("batch_size", 20))
         file_issue = bool(config.get("file_gitea_issue", True))
@@ -128,7 +127,6 @@ class VerifyPublishedPostsJob:
             await create_gitea_issue(
                 f"publish-verify: {len(failures)}/{len(rows)} recent posts not reachable",
                 "## Failed to verify\n\n" + "\n".join(body_lines),
-                site_config=site_config,
             )
 
         detail = (

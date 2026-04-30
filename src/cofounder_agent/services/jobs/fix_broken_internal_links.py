@@ -73,9 +73,7 @@ class FixBrokenInternalLinksJob:
     schedule = "every 24 hours"
     idempotent = True  # Re-running is a no-op once stale links are gone
 
-    async def run(
-        self, pool: Any, config: dict[str, Any], *, site_config: Any = None,
-    ) -> JobResult:
+    async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         file_issue = bool(config.get("file_gitea_issue", True))
 
         try:
@@ -130,7 +128,6 @@ class FixBrokenInternalLinksJob:
                 f"links: removed broken internal links from {fixed} posts",
                 "Auto-cleaned links to unpublished/deleted posts. "
                 "Anchor text preserved; sidebar list items removed wholesale.",
-                site_config=site_config,
             )
 
         detail = f"scanned {len(candidates)} post(s), rewrote {fixed}"

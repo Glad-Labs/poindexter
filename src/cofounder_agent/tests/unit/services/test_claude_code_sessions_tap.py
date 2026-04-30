@@ -342,22 +342,6 @@ class TestRenderSession:
 # ---------------------------------------------------------------------------
 
 
-class _FakeSiteConfig:
-    """Dict-backed stand-in for services.site_config.site_config.
-
-    Mirrors the ``.get(key, default)`` shape the Tap relies on. Used in
-    tests so the injected site_config path can be exercised without
-    depending on the real module-level singleton (Phase H step 4.6,
-    GH#95).
-    """
-
-    def __init__(self, values: dict[str, Any] | None = None):
-        self._values = values or {}
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._values.get(key, default)
-
-
 class TestResolveProjectsDir:
     def test_config_override_wins(self, tmp_path: Path):
         custom = tmp_path / "custom"
@@ -365,28 +349,15 @@ class TestResolveProjectsDir:
         result = _resolve_projects_dir({"claude_projects_dir": str(custom)})
         assert result == custom
 
-    def test_injected_site_config_used(self, tmp_path: Path):
-        """When the runner seeds ``_site_config`` into the config dict, the
-        Tap should read ``claude_projects_dir`` from it instead of importing
-        the module singleton."""
-        custom = tmp_path / "from-sc"
+    def test_env_var_fallback(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        custom = tmp_path / "from-env"
         custom.mkdir()
-        sc = _FakeSiteConfig({"claude_projects_dir": str(custom)})
-        result = _resolve_projects_dir({"_site_config": sc})
+        monkeypatch.setenv("CLAUDE_PROJECTS_DIR", str(custom))
+        result = _resolve_projects_dir({})
         assert result == custom
 
-    def test_config_override_beats_injected_site_config(self, tmp_path: Path):
-        override = tmp_path / "override"
-        override.mkdir()
-        sc = _FakeSiteConfig({"claude_projects_dir": str(tmp_path / "ignored")})
-        result = _resolve_projects_dir(
-            {"claude_projects_dir": str(override), "_site_config": sc}
-        )
-        assert result == override
-
-    def test_default_home_path(self):
-        """With no overrides and no injected site_config, falls back to the
-        legacy singleton or the home-dir default."""
+    def test_default_home_path(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("CLAUDE_PROJECTS_DIR", raising=False)
         result = _resolve_projects_dir({})
         # We don't assert the exact value — home-dependent — just the shape.
         assert result.name == "projects"

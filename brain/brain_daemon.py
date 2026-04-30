@@ -50,24 +50,18 @@ try:
 except ImportError:
     _HAS_BUSINESS_PROBES = False
 
-# OpenTelemetry tracing — module is no-op until setup_brain_telemetry()
-# runs at startup, so the import here is safe even when the SDK isn't
-# installed (telemetry.py defers all OTel imports to inside the setup
-# function).
 try:
-    from telemetry import (  # type: ignore[import-not-found]
-        get_tracer,
-        setup_brain_telemetry,
-        traced_step,
-    )
+    # GH#214 — operator-facing URL/IP drift probe. Runs on its own 15-min
+    # cadence, gated inside maybe_run_operator_url_probe so we don't need
+    # a separate scheduler.
+    from operator_url_probe import maybe_run_operator_url_probe
+    _HAS_OPERATOR_URL_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified for tests
-    from brain.telemetry import (  # type: ignore[import-not-found]
-        get_tracer,
-        setup_brain_telemetry,
-        traced_step,
-    )
-
-_tracer = get_tracer("poindexter.brain")
+    try:
+        from brain.operator_url_probe import maybe_run_operator_url_probe
+        _HAS_OPERATOR_URL_PROBE = True
+    except ImportError:
+        _HAS_OPERATOR_URL_PROBE = False
 
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -144,25 +138,10 @@ async def _setting_int(pool, key: str, default: int) -> int:
         val = await pool.fetchval(
             "SELECT value FROM app_settings WHERE key = $1", key
         )
-    except Exception as e:
-        # DB read failed — log so an outage doesn't masquerade as
-        # "everything's on defaults".
-        logger.warning(
-            "[BRAIN] _setting_int(%s) DB read failed: %s — using default %d",
-            key, e, default,
-        )
-        return default
-    if val is None:
-        return default
-    try:
+        if val is None:
+            return default
         return int(val)
-    except (ValueError, TypeError) as e:
-        # Value is set but unparseable — that's a real misconfiguration
-        # the operator should see, not a silent fallback.
-        logger.warning(
-            "[BRAIN] _setting_int(%s) unparseable value %r: %s — using default %d",
-            key, val, e, default,
-        )
+    except (ValueError, TypeError, Exception):
         return default
 
 
@@ -203,23 +182,11 @@ CYCLE_SECONDS = 300  # 5 minutes between full cycles
 _alert_sync_cycle_counter = 0
 
 
-# Identifying User-Agent for every outbound brain probe. Cloudflare's bot
-# fight mode (and most modern WAFs) reject the urllib default
-# `Python-urllib/X.Y`, surfacing as 403 Forbidden — that's how the persistent
-# `service: site, code: 403, critical: true` issues in brain_decisions slipped
-# in despite the public site being healthy. A descriptive UA with a contact
-# URL passes Cloudflare while making the request source obvious in logs.
-_PROBE_UA = "Poindexter-Brain-Daemon/1.0 (+https://www.gladlabs.io)"
-
-
-def _probe_request(url: str) -> "urllib.request.Request":
-    return urllib.request.Request(url, headers={"User-Agent": _PROBE_UA})
-
-
 def check_http(url: str, timeout: int = 10) -> tuple:
     """Check if an HTTP endpoint responds. Returns (ok, status_code, detail)."""
     try:
-        resp = urllib.request.urlopen(_probe_request(url), timeout=timeout)
+        req = urllib.request.Request(url)
+        resp = urllib.request.urlopen(req, timeout=timeout)
         return True, resp.status, "ok"
     except urllib.error.HTTPError as e:
         return False, e.code, str(e.reason)[:100]
@@ -230,7 +197,7 @@ def check_http(url: str, timeout: int = 10) -> tuple:
 def check_statuspage(url: str, timeout: int = 10) -> tuple:
     """Check an Atlassian Statuspage API. Returns (ok, indicator, description)."""
     try:
-        resp = urllib.request.urlopen(_probe_request(url), timeout=timeout)
+        resp = urllib.request.urlopen(url, timeout=timeout)
         data = json.loads(resp.read())
         indicator = data.get("status", {}).get("indicator", "unknown")
         description = data.get("status", {}).get("description", "unknown")
@@ -243,7 +210,7 @@ def check_statuspage(url: str, timeout: int = 10) -> tuple:
 def check_instatus(url: str, timeout: int = 10) -> tuple:
     """Check an Instatus summary endpoint. Returns (ok, status, description)."""
     try:
-        resp = urllib.request.urlopen(_probe_request(url), timeout=timeout)
+        resp = urllib.request.urlopen(url, timeout=timeout)
         data = json.loads(resp.read())
         status = data.get("page", {}).get("status", "UNKNOWN")
         ok = status in ("UP", "HASISSUES")  # UP = good, HASISSUES = degraded but alive
@@ -255,7 +222,7 @@ def check_instatus(url: str, timeout: int = 10) -> tuple:
 def check_json_status(url: str, timeout: int = 10) -> tuple:
     """Check a JSON health endpoint. Returns (ok, status, detail)."""
     try:
-        resp = urllib.request.urlopen(_probe_request(url), timeout=timeout)
+        resp = urllib.request.urlopen(url, timeout=timeout)
         data = json.loads(resp.read())
         status = data.get("status", "unknown")
         ok = status in ("healthy", "degraded", "ok")
@@ -318,45 +285,8 @@ def notify(message: str):
         send_discord(message)  # fallback to lab-logs if ops not configured
 
 
-# Per-service restart cooldown to prevent hot-restart loops when a
-# service is genuinely broken. Without this, monitor_services calls
-# restart_service every cycle (every 5 minutes) for as long as the
-# service stays down — fine for a one-off blip, but if a config error
-# is preventing startup we'd respawn the process every cycle while it
-# fails to bind. 15-minute cooldown matches REMEDIATION_COOLDOWN in
-# health_probes.py for consistency. Tunable via app_settings would be
-# nice but the brain daemon's restart paths run on critical-failure
-# scenarios where a hardcoded floor is safer than hoping the DB is up.
-_RESTART_COOLDOWN_SECONDS = 15 * 60
-_last_restart_attempt: dict[str, float] = {}
-
-
-def _restart_in_cooldown(name: str) -> tuple[bool, float]:
-    """Return (in_cooldown, seconds_remaining). seconds_remaining is 0
-    when not in cooldown."""
-    last = _last_restart_attempt.get(name, 0.0)
-    elapsed = time.time() - last
-    if elapsed < _RESTART_COOLDOWN_SECONDS:
-        return True, _RESTART_COOLDOWN_SECONDS - elapsed
-    return False, 0.0
-
-
 def restart_service(name: str):
-    """Attempt to restart a local service on the operator's PC.
-
-    Backed off via ``_RESTART_COOLDOWN_SECONDS`` so a service stuck in
-    a crash loop doesn't trigger a fresh restart attempt every cycle.
-    First failure within the cooldown window logs at INFO and bails.
-    """
-    in_cooldown, remaining = _restart_in_cooldown(name)
-    if in_cooldown:
-        logger.info(
-            "[BRAIN] Restart of %s suppressed — cooldown %.0fs remaining",
-            name, remaining,
-        )
-        return
-    _last_restart_attempt[name] = time.time()
-
+    """Attempt to restart a local service on the operator's PC."""
     if IS_DOCKER:
         # Docker socket is mounted — restart sibling containers directly.
         _container_map = {
@@ -465,10 +395,10 @@ async def monitor_services(pool) -> list:
             issues.append({"service": name, "code": code, "detail": detail, "critical": config["critical"]})
             logger.warning("[BRAIN] Service %s is DOWN: %s", name, detail)
 
-            # Auto-restart local services (cooldown-gated inside restart_service
-            # so a stuck service doesn't get respawned every cycle).
+            # Auto-restart local services
             if name in ("worker", "openclaw"):
                 restart_service(name)
+                logger.info("[BRAIN] Auto-restarted %s", name)
 
             # Auto-triage: check alert_actions table before escalating
             if config["critical"]:
@@ -842,11 +772,8 @@ async def generate_daily_digest(pool):
                 today = now.strftime("%Y-%m-%d")
                 if last_date == today:
                     return  # Already sent today
-            except Exception as e:
-                logger.debug(
-                    "[BRAIN] digest last_sent parse failed for %r: %s — proceeding",
-                    last_sent, e,
-                )
+            except Exception:
+                pass
 
         # Only send between 13:00-14:00 UTC (~9 AM ET)
         if not (13 <= now.hour < 14):
@@ -862,9 +789,7 @@ async def generate_daily_digest(pool):
                 (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'pending') as pending,
                 (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'failed'
                     AND updated_at > NOW() - INTERVAL '{_digest_h} hours') as failed_24h,
-                (SELECT COUNT(*) FROM posts
-                    WHERE status = 'published'
-                      AND published_at > NOW() - INTERVAL '{_digest_h} hours') as published_24h,
+                (SELECT COUNT(*) FROM posts WHERE published_at > NOW() - INTERVAL '{_digest_h} hours') as published_24h,
                 (SELECT COUNT(*) FROM page_views WHERE created_at >= date_trunc('day', NOW())) as views_today,
                 (SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs
                     WHERE created_at >= date_trunc('month', NOW())) as month_spend
@@ -973,11 +898,8 @@ async def log_electricity_cost(pool):
             elif estimate_watts:
                 watts = estimate_watts
                 power_source = "estimate"
-        except Exception as e:
-            # Exporter not running — fall through to default estimate.
-            # DEBUG only: this is normal control flow when nvidia-smi-exporter
-            # isn't deployed (e.g., headless / non-GPU host).
-            logger.debug("[BRAIN] nvidia-smi-exporter unreachable (%s) — using default watts", e)
+        except Exception:
+            pass  # Exporter not running, use estimate
 
         if watts is None:
             # Fallback estimate: local PC idles around 150W
@@ -991,14 +913,8 @@ async def log_electricity_cost(pool):
             )
             if row:
                 rate_per_kwh = float(row["value"])
-        except Exception as e:
-            # DB read or float() parse failed — log so an operator-visible
-            # rate misconfig (e.g., a typo in app_settings) doesn't quietly
-            # lock us to the default $0.29/kWh.
-            logger.warning(
-                "[BRAIN] electricity_rate_kwh lookup failed: %s — using default $%.2f",
-                e, rate_per_kwh,
-            )
+        except Exception:
+            pass
 
         # Calculate cost for this 5-minute interval
         hours = CYCLE_SECONDS / 3600.0
@@ -1048,10 +964,8 @@ async def log_electricity_cost(pool):
                 VALUES ('psu_watchdog', 'last_source', $1, 1.0, 'brain_daemon')
                 ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
             """, power_source)
-        except Exception as e:
-            # PSU watchdog is best-effort — DEBUG so an exporter blip doesn't
-            # noisy up Loki, but still surfaces during real DB outages.
-            logger.debug("[BRAIN] PSU watchdog write failed: %s", e)
+        except Exception:
+            pass  # watchdog is best-effort
 
     except Exception as e:
         logger.debug("[BRAIN] Electricity cost logging failed: %s", e)
@@ -1081,155 +995,67 @@ async def _maybe_sync_grafana_alerts(pool) -> None:
         logger.warning("[BRAIN] Grafana alert sync failed: %s", e, exc_info=True)
 
 
-async def run_cycle(pool) -> dict:
-    """One full brain cycle: monitor → process → maintain → update.
-
-    Returns a dict with the cycle's health stats so the outer loop can
-    feed them into the heartbeat (so a watchdog/operator can see *which*
-    cycle was bad, not just "stale heartbeat"):
-
-        {
-            "issues": int,            # internal + external service issues
-            "probe_failures": int,    # health/business probes that failed
-            "step_failed": str|None,  # name of the step that crashed, if any
-        }
-
-    Never raises: every step is wrapped so one slow / broken sub-task
-    can't take down the whole cycle. Per-step failures are logged at
-    WARNING and surfaced in the brain_decisions row + heartbeat so a
-    persistent failure in (e.g.) ``log_electricity_cost`` doesn't silently
-    skip the rest of the cycle.
-
-    Tracing: one parent ``brain.cycle`` span + one child span per
-    ``_step`` so the Tempo flame graph shows the full cadence and
-    timing.
-    """
-    cycle_span_cm = _tracer.start_as_current_span("brain.cycle")
-    cycle_span = cycle_span_cm.__enter__()
-    try:
-        return await _run_cycle_inner(pool, cycle_span)
-    except Exception as e:
-        cycle_span.record_exception(e)
-        raise
-    finally:
-        cycle_span_cm.__exit__(None, None, None)
-
-
-async def _run_cycle_inner(pool, cycle_span) -> dict:
+async def run_cycle(pool):
+    """One full brain cycle: monitor → process → maintain → update."""
     logger.info("[BRAIN] === Cycle start ===")
 
-    step_failed: str | None = None
-    issues: list = []
-    ext_issues: list = []
-    probe_results: dict = {}
-
-    async def _step(name: str, coro):
-        """Run a cycle step, capture failures, keep going.
-
-        Each step gets its own span (``brain.<step_name>``) so the
-        Tempo→Grafana view shows a flame graph of the cycle: which
-        sub-tasks ran, which slowed, which crashed. Span-name
-        prefix mirrors the existing log [BRAIN] tag for grep-ability.
-        """
-        nonlocal step_failed
-        with _tracer.start_as_current_span(f"brain.step.{name}") as span:
-            try:
-                return await coro
-            except Exception as e:
-                span.record_exception(e)
-                # First failure wins for the step_failed label so the
-                # heartbeat points operators at the original culprit.
-                if step_failed is None:
-                    step_failed = name
-                logger.warning("[BRAIN] Cycle step '%s' failed: %s", name, e, exc_info=True)
-                return None
-
-    monitor_result = await _step("monitor_services", monitor_services(pool))
-    issues = monitor_result or []
-    ext_result = await _step("monitor_external_services", monitor_external_services(pool))
-    ext_issues = ext_result or []
-    await _step("process_queue", process_queue(pool))
-    await _step("auto_remediate", auto_remediate(pool))
-    await _step("self_maintain", self_maintain(pool))
-    await _step("update_system_metrics", update_system_metrics(pool))
-    await _step("log_electricity_cost", log_electricity_cost(pool))
-    await _step("generate_daily_digest", generate_daily_digest(pool))
-    await _step("_maybe_sync_grafana_alerts", _maybe_sync_grafana_alerts(pool))
+    issues = await monitor_services(pool)
+    ext_issues = await monitor_external_services(pool)
+    await process_queue(pool)
+    await auto_remediate(pool)
+    await self_maintain(pool)
+    await update_system_metrics(pool)
+    await log_electricity_cost(pool)
+    await generate_daily_digest(pool)
+    await _maybe_sync_grafana_alerts(pool)
 
     # Health probes — exercise services with real inputs (each on its own schedule)
-    probes_out = await _step(
-        "run_health_probes", run_health_probes(pool, notify_fn=notify)
-    )
-    probe_results = probes_out or {}
+    probe_results = await run_health_probes(pool, notify_fn=notify)
     probe_failures = [name for name, r in probe_results.items() if not r.get("ok")]
 
     # Business probes — operator-level monitoring (Glad Labs private, #215)
     if _HAS_BUSINESS_PROBES:
-        biz_results = await _step(
-            "run_business_probes", run_business_probes(pool, notify_fn=notify)
-        )
-        if biz_results:
+        try:
+            biz_results = await run_business_probes(pool, notify_fn=notify)
             probe_results.update(biz_results)
+        except Exception as e:
+            logger.warning("[BRAIN] Business probes failed: %s", e)
+
+    # Operator URL/IP drift probe (#214). Internally gated to ~15 min so it
+    # doesn't run every 5-min cycle. Returns None when the gate skips, a
+    # summary dict on real runs.
+    if _HAS_OPERATOR_URL_PROBE:
+        try:
+            url_summary = await maybe_run_operator_url_probe(pool, notify_fn=None)
+            if url_summary is not None:
+                probe_results["operator_url_probe"] = {
+                    "ok": (
+                        url_summary.get("url_failures", 0) == 0
+                        and url_summary.get("tailscale_drift_count", 0) == 0
+                    ),
+                    "detail": (
+                        f"{url_summary.get('url_failures', 0)} URL failures, "
+                        f"{url_summary.get('tailscale_drift_count', 0)} drifted device(s)"
+                    ),
+                    "summary": url_summary,
+                }
+        except Exception as e:
+            logger.warning("[BRAIN] operator_url_probe failed: %s", e)
 
     all_issues = issues + ext_issues
 
-    # Log cycle result — including step_failed so an operator can grep
-    # brain_decisions for cycles where a specific sub-task crashed.
-    decision_text = (
-        f"Cycle complete: {len(all_issues)} issues "
-        f"({len(issues)} internal, {len(ext_issues)} external), "
-        f"{len(probe_results)} probes ({len(probe_failures)} failed)"
-    )
-    if step_failed:
-        decision_text += f" — step '{step_failed}' crashed"
-    try:
-        await pool.execute("""
-            INSERT INTO brain_decisions (decision, reasoning, context, confidence)
-            VALUES ($1, $2, $3::jsonb, $4)
-        """, decision_text,
-            f"Monitored {len(SERVICES)} internal + {len(EXTERNAL_SERVICES)} external services, ran {len(probe_results)} probes, processed queue, updated metrics",
-            json.dumps({
-                "issues": issues,
-                "external_issues": ext_issues,
-                "probe_failures": probe_failures,
-                "step_failed": step_failed,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }),
-            # Confidence drops when any step crashed — the cycle ran but
-            # produced incomplete data, so downstream consumers can spot
-            # degraded heartbeats by filtering on confidence < 1.0.
-            0.5 if step_failed else 1.0,
-        )
-    except Exception as e:
-        # If even brain_decisions write fails, the heartbeat path is still
-        # the last line of defence. Don't crash run_cycle for this.
-        logger.warning("[BRAIN] brain_decisions write failed: %s", e, exc_info=True)
-
-    logger.info(
-        "[BRAIN] === Cycle end: %d issues (%d internal, %d external), %d probes (%d failed)%s ===",
-        len(all_issues), len(issues), len(ext_issues),
-        len(probe_results), len(probe_failures),
-        f", step_failed={step_failed}" if step_failed else "",
+    # Log cycle result
+    await pool.execute("""
+        INSERT INTO brain_decisions (decision, reasoning, context, confidence)
+        VALUES ($1, $2, $3::jsonb, $4)
+    """, f"Cycle complete: {len(all_issues)} issues ({len(issues)} internal, {len(ext_issues)} external), {len(probe_results)} probes ({len(probe_failures)} failed)",
+        f"Monitored {len(SERVICES)} internal + {len(EXTERNAL_SERVICES)} external services, ran {len(probe_results)} probes, processed queue, updated metrics",
+        json.dumps({"issues": issues, "external_issues": ext_issues, "probe_failures": probe_failures, "timestamp": datetime.now(timezone.utc).isoformat()}),
+        1.0,
     )
 
-    # Stamp summary attrs on the parent cycle span so the Tempo
-    # service-graph view groups cycles by health (issues, probe
-    # failures, which step crashed).
-    try:
-        cycle_span.set_attribute("brain.issues", len(all_issues))
-        cycle_span.set_attribute("brain.probes_total", len(probe_results))
-        cycle_span.set_attribute("brain.probe_failures", len(probe_failures))
-        if step_failed:
-            cycle_span.set_attribute("brain.step_failed", step_failed)
-    except Exception:
-        # Span attribute writes shouldn't block cycle return.
-        pass
-
-    return {
-        "issues": len(all_issues),
-        "probe_failures": len(probe_failures),
-        "step_failed": step_failed,
-    }
+    logger.info("[BRAIN] === Cycle end: %d issues (%d internal, %d external), %d probes (%d failed) ===",
+                len(all_issues), len(issues), len(ext_issues), len(probe_results), len(probe_failures))
 
 
 async def main():
@@ -1263,18 +1089,6 @@ async def main():
     # Load config from DB (site URLs, Telegram tokens, etc.)
     await _load_config_from_db(pool)
 
-    # Configure OpenTelemetry tracing if enable_tracing=true in
-    # app_settings. Idempotent — second call is a no-op. The brain
-    # cycle's _step wrapper and the parent run_cycle span only emit
-    # real spans when this returns True.
-    global _tracer
-    try:
-        await setup_brain_telemetry(pool)
-        # Refresh module-level tracer in case it was a no-op stub before.
-        _tracer = get_tracer("poindexter.brain")
-    except Exception as e:
-        logger.warning("[BRAIN] telemetry setup failed (non-fatal): %s", e)
-
     # Fallback: load Telegram token from OpenClaw .env if not in DB
     global TELEGRAM_BOT_TOKEN
     env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
@@ -1307,31 +1121,15 @@ async def main():
     # Also keep Docker path for container healthcheck compatibility
     _docker_heartbeat = "/tmp/brain_heartbeat" if IS_DOCKER else None
 
-    def _touch_heartbeat(cycle_issues=0, probe_failures=0,
-                         step_failed: str | None = None,
-                         cycle_crashed: str | None = None):
-        """Write structured heartbeat — timestamp + cycle stats.
-
-        ``cycle_ok`` is true iff the cycle ran clean: zero issues, zero
-        probe failures, no per-step crash, no top-level cycle crash.
-        Watchdogs can read the JSON and either (a) ignore content and
-        watch ``ts`` freshness or (b) actively flag ``cycle_ok=false``
-        even when the file is fresh.
-        """
+    def _touch_heartbeat(cycle_issues=0, probe_failures=0):
+        """Write structured heartbeat — timestamp + cycle stats."""
         data = json.dumps({
             "ts": time.time(),
             "iso": datetime.now(timezone.utc).isoformat(),
             "pid": os.getpid(),
-            "cycle_ok": (
-                cycle_issues == 0
-                and probe_failures == 0
-                and step_failed is None
-                and cycle_crashed is None
-            ),
+            "cycle_ok": cycle_issues == 0 and probe_failures == 0,
             "issues": cycle_issues,
             "probe_failures": probe_failures,
-            "step_failed": step_failed,
-            "cycle_crashed": cycle_crashed,
         })
         try:
             with open(_heartbeat_path, "w") as hb:
@@ -1347,24 +1145,11 @@ async def main():
 
     while not shutdown.is_set():
         try:
-            cycle_stats = await run_cycle(pool)
-            # Surface the actual cycle health in the heartbeat. A watchdog
-            # reading {"cycle_ok": false} can decide whether stale-but-failing
-            # warrants a restart sooner than the file-age check would.
-            _touch_heartbeat(
-                cycle_issues=cycle_stats.get("issues", 0),
-                probe_failures=cycle_stats.get("probe_failures", 0),
-                step_failed=cycle_stats.get("step_failed"),
-            )
+            await run_cycle(pool)
+            # Update heartbeat after successful cycle
+            _touch_heartbeat()
         except Exception as e:
-            # run_cycle itself crashed — still touch the heartbeat so the
-            # OS-level watchdog doesn't restart us in the middle of debugging,
-            # but mark ``cycle_ok=false`` and capture the exception type so
-            # a Grafana panel reading the heartbeat JSON can flag it.
             logger.error("[BRAIN] Cycle failed: %s", e, exc_info=True)
-            _touch_heartbeat(
-                cycle_crashed=f"{type(e).__name__}: {str(e)[:200]}",
-            )
 
         if one_shot:
             break

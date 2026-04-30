@@ -91,14 +91,6 @@ class _FakeDb:
         self.costs.append(cost_log)
 
 
-# Phase H step 5 (GH#95): stages read site_config from the context dict.
-_FAKE_SITE_CONFIG = SimpleNamespace(
-    get=lambda _k, _d=None: _d if _d is not None else "",
-    get_int=lambda _k, _d=0: _d,
-    get_float=lambda _k, _d=0.0: _d,
-)
-
-
 # ---------------------------------------------------------------------------
 # Protocol conformance
 # ---------------------------------------------------------------------------
@@ -200,63 +192,6 @@ class TestBuildRejectionReason:
         msg = _build_rejection_reason(qr)
         assert "No reviews recorded" in msg
 
-    def test_score_gate_rejection_names_lowest_reviewer_not_last(self):
-        """Regression: when no reviewer vetoes but final_score is below the
-        approval threshold, the message must NOT name the last-added reviewer
-        (typically url_verifier with a positive "+bonus" feedback that reads
-        absurd as a rejection reason). Instead point at the lowest scorer."""
-        reviews = [
-            _reviewer("critic", 70, True, feedback="solid article"),
-            _reviewer("programmatic", 65, True, feedback="minor filler"),
-            _reviewer("url_verifier", 90, True,
-                      feedback="2 verified external citations (+10 bonus)"),
-        ]
-        qr = _qa_rejected(score=75.0, reviews=reviews)
-        msg = _build_rejection_reason(qr)
-        assert "score-gate" in msg
-        assert "url_verifier" not in msg  # not the vetoer — passed
-        assert "programmatic" in msg  # lowest score should be surfaced
-        assert "65" in msg
-
-    def test_real_veto_still_takes_precedence_over_score_gate(self):
-        """If ANY reviewer is approved=False, name them — even if the score
-        gate would also fire. The reviewer veto is the more specific signal."""
-        reviews = [
-            _reviewer("topic_delivery", 30, False, feedback="off-topic"),
-            _reviewer("critic", 60, True, feedback="ok"),
-        ]
-        qr = _qa_rejected(score=55.0, reviews=reviews)
-        msg = _build_rejection_reason(qr)
-        assert "veto: topic_delivery" in msg
-        assert "score-gate" not in msg
-
-    def test_internal_consistency_advisory_above_threshold_is_not_veto(self):
-        """Regression: internal_consistency has special veto semantics —
-        approved=False but score >= threshold is ADVISORY, not a veto.
-        The rejection is score-gate."""
-        reviews = [
-            _reviewer("internal_consistency", 60, False,
-                      feedback="minor section tension"),
-            _reviewer("critic", 65, True, feedback="ok"),
-        ]
-        qr = _qa_rejected(score=66.0, reviews=reviews)
-        msg = _build_rejection_reason(qr, consistency_threshold=50.0)
-        assert "score-gate" in msg
-        assert "veto: internal_consistency" not in msg
-
-    def test_internal_consistency_below_threshold_is_real_veto(self):
-        """Regression: internal_consistency with score < threshold IS a real
-        veto — message must name it."""
-        reviews = [
-            _reviewer("internal_consistency", 30, False,
-                      feedback="major contradictions"),
-            _reviewer("critic", 70, True, feedback="ok"),
-        ]
-        qr = _qa_rejected(score=60.0, reviews=reviews)
-        msg = _build_rejection_reason(qr, consistency_threshold=50.0)
-        assert "veto: internal_consistency" in msg
-        assert "30" in msg
-
 
 @pytest.mark.asyncio
 class TestResolveMaxRewrites:
@@ -320,7 +255,6 @@ class TestExecuteGate:
             "task_id": "t1", "topic": "T", "content": "body",
             "database_service": db,
             "quality_result": _early_quality_result(score=73),
-            "site_config": _FAKE_SITE_CONFIG,
         }
         patches, _ = _patch_stage_imports(_qa_approved(score=88))
         for p in patches:
@@ -343,7 +277,6 @@ class TestExecuteApproved:
             "database_service": db,
             "quality_result": _early_quality_result(score=70),
             "quality_score": 70,  # early eval score
-            "site_config": _FAKE_SITE_CONFIG,
         }
         qa = _qa_approved(score=88, reviews=[
             _reviewer("critic", 90, True), _reviewer("validator", 85, True),
@@ -374,7 +307,6 @@ class TestExecuteRejected:
             "task_id": "t1", "topic": "T", "content": "body",
             "database_service": db,
             "quality_result": _early_quality_result(score=70),
-            "site_config": _FAKE_SITE_CONFIG,
         }
         # Rejected, with a topic_delivery failure → bail after first pass
         # (no rewrite attempted).
@@ -407,7 +339,6 @@ class TestExecuteTimeout:
             "task_id": "t1", "topic": "T", "content": "body",
             "database_service": db,
             "quality_result": _early_quality_result(score=71),
-            "site_config": _FAKE_SITE_CONFIG,
         }
         patches, _ = _patch_stage_imports(None)  # review returns None
         for p in patches:

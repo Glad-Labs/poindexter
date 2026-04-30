@@ -5,9 +5,6 @@ Tests RedisCache get/set/delete lifecycle, TTL handling, key prefixing,
 JSON serialization/deserialization, connection failure handling, cache miss
 behavior, get_or_set, incr, health_check, clear_all, delete_pattern,
 exists, close, and the @cached decorator.
-
-Post-Phase-H (GH#95): RedisCache.create() takes site_config via DI.
-Tests construct a MagicMock SiteConfig per case via _mock_sc().
 """
 
 import json
@@ -16,24 +13,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.redis_cache import CacheConfig, RedisCache, cached
-
-
-def _mock_sc(
-    redis_url: str = "redis://localhost:6379/0",
-    redis_enabled: str = "true",
-) -> MagicMock:
-    """Return a MagicMock shaped like SiteConfig for RedisCache.create().
-
-    Post-GH-107: redis_url is is_secret=true (it can carry an AUTH
-    password), so RedisCache.create() reads it via ``get_secret`` rather
-    than ``get``. The mock exposes both — ``get`` for redis_enabled and
-    ``get_secret`` for redis_url.
-    """
-    sc = MagicMock()
-    values = {"redis_url": redis_url, "redis_enabled": redis_enabled}
-    sc.get.side_effect = lambda k, d="": values.get(k, d)
-    sc.get_secret = AsyncMock(side_effect=lambda k, d="": values.get(k, d))
-    return sc
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -512,14 +491,15 @@ class TestClose:
 class TestCreate:
     @pytest.mark.asyncio
     async def test_create_disabled_via_env(self):
-        with patch("services.redis_cache.REDIS_AVAILABLE", True):
-            instance = await RedisCache.create(_mock_sc(redis_enabled="false"))
-            assert instance._enabled is False
+        with patch.dict("os.environ", {"REDIS_ENABLED": "false"}):
+            with patch("services.redis_cache.REDIS_AVAILABLE", True):
+                instance = await RedisCache.create()
+                assert instance._enabled is False
 
     @pytest.mark.asyncio
     async def test_create_when_redis_not_available(self):
         with patch("services.redis_cache.REDIS_AVAILABLE", False):
-            instance = await RedisCache.create(_mock_sc())
+            instance = await RedisCache.create()
             assert instance._enabled is False
             assert instance._instance is None
 
@@ -529,8 +509,9 @@ class TestCreate:
         mock_aioredis.from_url = AsyncMock(side_effect=ConnectionError("refused"))
         with patch("services.redis_cache.REDIS_AVAILABLE", True):
             with patch("services.redis_cache.aioredis", mock_aioredis):
-                instance = await RedisCache.create(_mock_sc())
-                assert instance._enabled is False
+                with patch.dict("os.environ", {"REDIS_ENABLED": "true"}):
+                    instance = await RedisCache.create()
+                    assert instance._enabled is False
 
     @pytest.mark.asyncio
     async def test_create_success(self):
@@ -540,9 +521,10 @@ class TestCreate:
         mock_aioredis.from_url = AsyncMock(return_value=mock_redis_inst)
         with patch("services.redis_cache.REDIS_AVAILABLE", True):
             with patch("services.redis_cache.aioredis", mock_aioredis):
-                instance = await RedisCache.create(_mock_sc())
-                assert instance._enabled is True
-                assert instance._instance is mock_redis_inst
+                with patch.dict("os.environ", {"REDIS_ENABLED": "true"}):
+                    instance = await RedisCache.create()
+                    assert instance._enabled is True
+                    assert instance._instance is mock_redis_inst
 
 
 # ---------------------------------------------------------------------------
