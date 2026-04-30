@@ -683,6 +683,232 @@ def _detect_hallucinated_references(
     return issues
 
 
+# ---------------------------------------------------------------------------
+# Code-block density check (GH-234)
+# ---------------------------------------------------------------------------
+#
+# Tech blogs without runnable code feel like surface summaries — "talks
+# about Docker" rather than "shows Docker working." Pure-prose tech posts
+# score worse on EEAT signals because they don't demonstrate first-hand
+# expertise.
+#
+# This rule runs only when the post carries one of the configured tech
+# tags (default: technical, ai, programming, ml, python, javascript,
+# rust, go). It compares the number of fenced code blocks against the
+# post's word count and emits a WARNING — never critical — when either
+# threshold is missed:
+#
+#   (a) at least 1 fenced code block per N words (default N=700), AND
+#   (b) at least P% of non-empty content lines live inside a fenced
+#       code block (default P=20%, only applied to posts > 300 words).
+#
+# Intentionally a soft signal: operators may genuinely write a non-code
+# tech post (architecture overview, postmortem). The warning surfaces in
+# the multi_model_qa critique via the existing programmatic_validator
+# review, which lets the human approver decide whether to override.
+
+# Match an opening fenced code block (``` or ~~~), captured as group 1
+# so we can find the matching closer with the same fence character.
+_FENCE_RE = re.compile(r"^(\s*)(```|~~~)([^\n`~]*)$", re.MULTILINE)
+
+
+def _count_code_blocks_and_lines(content: str) -> tuple[int, int, int]:
+    """Walk ``content`` line-by-line and tally fenced code blocks.
+
+    Returns ``(block_count, code_line_count, total_non_empty_lines)``.
+
+    A "block" is any well-formed ``` ... ``` (or ~~~ ... ~~~) pair. An
+    unterminated fence at EOF still counts as one block because the
+    writer's intent was clear; we'd rather count it than reject the
+    post for malformed markdown alone.
+
+    "Code lines" are non-fence lines that sit between an opening and
+    closing fence — used for the line-ratio sub-check.
+    """
+    if not content:
+        return (0, 0, 0)
+    block_count = 0
+    code_lines = 0
+    total_non_empty = 0
+    in_block = False
+    fence_char: str | None = None
+    for raw in content.split("\n"):
+        stripped = raw.strip()
+        if not stripped:
+            # Blank lines are excluded from the denominator so a heavily
+            # paragraph-padded post doesn't dilute the ratio artificially.
+            continue
+        # Fence detection — must start the line (after optional whitespace)
+        # and use only ``` or ~~~ for the fence itself.
+        is_fence = False
+        if stripped.startswith("```") and set(stripped[:3]) == {"`"}:
+            is_fence = True
+            this_fence = "```"
+        elif stripped.startswith("~~~") and set(stripped[:3]) == {"~"}:
+            is_fence = True
+            this_fence = "~~~"
+        if is_fence:
+            if not in_block:
+                in_block = True
+                fence_char = this_fence
+                block_count += 1
+            elif fence_char == this_fence:
+                in_block = False
+                fence_char = None
+            # Fence lines themselves don't count as code or prose for the
+            # ratio; they're structural punctuation.
+            continue
+        total_non_empty += 1
+        if in_block:
+            code_lines += 1
+    return (block_count, code_lines, total_non_empty)
+
+
+def _strip_code_blocks_for_word_count(content: str) -> str:
+    """Return ``content`` with the inside of every fenced block removed.
+
+    Word count for the density ratio is *prose words only* — counting
+    the words inside a code sample would let a single 200-line code
+    block satisfy the per-700-words threshold trivially.
+    """
+    if not content:
+        return ""
+    out: list[str] = []
+    in_block = False
+    fence_char: str | None = None
+    for raw in content.split("\n"):
+        stripped = raw.strip()
+        is_fence = False
+        if stripped.startswith("```") and set(stripped[:3]) == {"`"}:
+            is_fence = True
+            this_fence = "```"
+        elif stripped.startswith("~~~") and set(stripped[:3]) == {"~"}:
+            is_fence = True
+            this_fence = "~~~"
+        if is_fence:
+            if not in_block:
+                in_block = True
+                fence_char = this_fence
+            elif fence_char == this_fence:
+                in_block = False
+                fence_char = None
+            continue
+        if not in_block:
+            out.append(raw)
+    return "\n".join(out)
+
+
+def _is_tech_post(tags: list[str], topic: str, tech_tags: set[str]) -> bool:
+    """Return True if any tag/topic token matches the configured tech-tag set.
+
+    Matching is lowercase + whitespace/dash/underscore-tolerant so the
+    operator can list ``"ai"`` and still catch tags like ``"AI/ML"``,
+    ``"Artificial-Intelligence"`` (when "artificial intelligence" is on
+    the list), etc. Empty inputs return False.
+    """
+    if not tech_tags:
+        return False
+    haystack: set[str] = set()
+    for source in (*(tags or ()), topic or ""):
+        if not source:
+            continue
+        token = str(source).strip().lower()
+        if not token:
+            continue
+        haystack.add(token)
+        for piece in re.split(r"[\s,/\-_]+", token):
+            piece = piece.strip()
+            if piece:
+                haystack.add(piece)
+    return any(t in haystack for t in tech_tags)
+
+
+def _check_code_block_density(
+    content: str,
+    topic: str,
+    tags: list[str],
+) -> list[ValidationIssue]:
+    """GH-234: warn when tech-tagged posts ship without enough code.
+
+    All thresholds + the tag list are read from ``app_settings`` via
+    ``site_config`` so operators can tune per niche without redeploys.
+    Returns warnings only — never critical.
+    """
+    if not _sc.get_bool("code_density_check_enabled", True):
+        return []
+    tech_tags = {
+        t.strip().lower()
+        for t in _sc.get_list(
+            "code_density_tag_filter",
+            "technical,ai,programming,ml,python,javascript,rust,go",
+        )
+        if t and t.strip()
+    }
+    if not _is_tech_post(tags, topic, tech_tags):
+        return []
+
+    min_blocks_per_700w = _sc.get_int("code_density_min_blocks_per_700w", 1)
+    min_line_ratio_pct = _sc.get_int("code_density_min_line_ratio_pct", 20)
+    long_post_floor_words = _sc.get_int("code_density_long_post_floor_words", 300)
+
+    block_count, code_lines, total_non_empty = _count_code_blocks_and_lines(content)
+    prose_text = _strip_code_blocks_for_word_count(content)
+    word_count = len(re.findall(r"\b[\w'-]+\b", prose_text))
+
+    issues: list[ValidationIssue] = []
+
+    # Sub-check (a): blocks-per-N-words floor. Only meaningful when the
+    # post is long enough that "zero code blocks" is genuinely a signal —
+    # a 200-word note doesn't need a snippet.
+    if (
+        min_blocks_per_700w > 0
+        and word_count >= 200
+    ):
+        # Round up so a 701-word post still requires the floor count.
+        expected_blocks = max(
+            min_blocks_per_700w,
+            -(-word_count * min_blocks_per_700w // 700),
+        )
+        if block_count < expected_blocks:
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="code_block_density",
+                description=(
+                    f"Tech post has {block_count} fenced code block(s) for "
+                    f"{word_count} prose words; expected at least "
+                    f"{expected_blocks} (threshold: "
+                    f"{min_blocks_per_700w} per 700 words). Consider adding "
+                    "a runnable example — pure-prose tech posts hurt EEAT signals."
+                ),
+                matched_text=f"blocks={block_count}, prose_words={word_count}",
+            ))
+
+    # Sub-check (b): code-line ratio floor for longer posts. Independent
+    # of (a) — a post can have one giant block but still flunk this if
+    # the code share is buried under prose.
+    if (
+        min_line_ratio_pct > 0
+        and total_non_empty > 0
+        and word_count >= long_post_floor_words
+    ):
+        ratio_pct = (code_lines * 100) // total_non_empty
+        if ratio_pct < min_line_ratio_pct:
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="code_block_density",
+                description=(
+                    f"Tech post code-line ratio is {ratio_pct}% "
+                    f"({code_lines}/{total_non_empty} non-empty lines); "
+                    f"threshold is {min_line_ratio_pct}%. Add or expand "
+                    "code samples so the post demonstrates the technique, "
+                    "not just describes it."
+                ),
+                matched_text=f"code_lines={code_lines}, total_lines={total_non_empty}",
+            ))
+
+    return issues
+
+
 def validate_content(
     title: str,
     content: str,
@@ -766,6 +992,14 @@ def validate_content(
     # to critical if the same category fires > N times (same plumbing as
     # #91's unlinked_citation path).
     issues.extend(_detect_hallucinated_references(title, content, topic, tags))
+
+    # 5d. Code-block density (GH-234). Soft signal — tech-tagged posts
+    # with too little runnable code get a warning (never critical) so
+    # the human approver in multi_model_qa can decide whether the post
+    # legitimately doesn't need code (architecture overview, postmortem)
+    # or whether the writer surface-summarized a topic that needed
+    # demonstration. Tag list + thresholds are DB-tunable.
+    issues.extend(_check_code_block_density(content, topic, tags))
 
     # 6. Check for brand contradictions (promoting paid cloud APIs)
     issues.extend(_check_patterns(
