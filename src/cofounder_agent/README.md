@@ -89,3 +89,26 @@ Bootstrap config loaded from `~/.poindexter/bootstrap.toml` (created by `poindex
 - `database_url` — in bootstrap.toml (the only disk-based config)
 - `api_token` — in bootstrap.toml (auto-generated)
 - Everything else — in app_settings via the settings API
+
+### Content-agent runtime settings
+
+The content agent (`agents/content_agent/config.py`) reads the keys below from `app_settings` first and falls back to the matching environment variable for back-compat. Set them with `poindexter settings set <key> <value>` — no worker restart required.
+
+| `app_settings` key     | Env-var fallback       | Default      | What it controls                                                                       |
+| ---------------------- | ---------------------- | ------------ | -------------------------------------------------------------------------------------- |
+| `serper_api_key`       | `SERPER_API_KEY`       | *(empty)*    | Serper search API key for real-time web search. Empty disables web search safely. Stored with `is_secret=true`. |
+| `local_llm_api_url`    | `LOCAL_LLM_API_URL`    | *(empty)*    | Ollama base URL (e.g. `http://localhost:11434`). Empty means "Ollama not configured" — callers handle that explicitly. |
+| `local_llm_model_name` | `LOCAL_LLM_MODEL_NAME` | `auto`       | Ollama model fallback when no per-task model is configured. `auto` lets `OllamaClient` pick the first pulled model. |
+| `max_log_size_mb`      | `MAX_LOG_SIZE_MB`      | `5`          | Rotating log file size cap in MB.                                                      |
+| `max_log_backup_count` | `MAX_LOG_BACKUP_COUNT` | `3`          | Number of rotated log backups to retain.                                               |
+
+```bash
+# Example — point the content agent at a remote Ollama host without restarting:
+poindexter settings set local_llm_api_url http://gpu-box.lan:11434
+poindexter settings set local_llm_model_name qwen3:30b
+
+# Rotate the Serper key:
+poindexter settings set serper_api_key sk_xxx
+```
+
+Migration `0116_seed_content_agent_app_settings.py` seeds these rows from your current env-vars at apply time, so existing deployments keep their tuned values.
