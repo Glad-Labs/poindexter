@@ -1,0 +1,312 @@
+/* Glad Labs brand system (E3) — tokens + component styles.
+   See packages/brand/README.md for the system, patterns, and colorblind notes. */
+@import '@glad-labs/brand/tokens';
+@import '@glad-labs/brand/components/components.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color-scheme: dark;
+  }
+  html[data-scroll-behavior='smooth'] {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--gl-font-body);
+    color: var(--gl-text);
+    background: var(--gl-base);
+    font-feature-settings: 'rlig' 1 'calt' 1;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--gl-font-display);
+    font-weight: 700;
+    line-height: var(--gl-leading-snug);
+    letter-spacing: -0.015em;
+  }
+
+  h1 {
+    font-size: var(--gl-size-h1);
+    line-height: var(--gl-leading-tight);
+    letter-spacing: var(--gl-tracking-tight);
+    color: var(--gl-text);
+  }
+  /* Uppercase is applied only via <Display> / .gl-display, never by default
+     — article h1s and legal-page h1s need to stay mixed-case for readability. */
+  h1 em, h1 .gl-accent { font-style: normal; color: var(--gl-amber); }
+
+  /* Top-nav link — mono, uppercase, cyan on hover. */
+  .nav-link {
+    color: var(--gl-text-muted);
+    transition: color 150ms ease;
+    text-decoration: none;
+  }
+  .nav-link:hover { color: var(--gl-cyan); }
+
+  h2 {
+    @apply text-3xl md:text-4xl lg:text-5xl;
+  }
+
+  h3 {
+    @apply text-xl md:text-2xl;
+  }
+
+  h4 {
+    @apply text-lg md:text-xl;
+  }
+
+  p {
+    @apply leading-relaxed text-slate-300;
+  }
+
+  a {
+    @apply transition-colors duration-200 hover:text-cyan-400;
+  }
+
+  /* Smooth, modern scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-slate-900/50;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--gl-cyan);
+    border-radius: 0;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--gl-amber);
+  }
+
+  /* Selection — cyan fill, dark foreground so text stays legible */
+  ::selection {
+    background: var(--gl-cyan);
+    color: var(--gl-on-cyan);
+  }
+}
+
+@layer components {
+  /* Backdrop blur effect — still used by fixed overlays (cookie banner, modals) */
+  .backdrop-blur-xl {
+    backdrop-filter: blur(16px);
+  }
+}
+
+/* Advanced animations and effects */
+@layer utilities {
+  /* Timing delays */
+  .delay-100 {
+    animation-delay: 100ms;
+  }
+  .delay-200 {
+    animation-delay: 200ms;
+  }
+  .delay-300 {
+    animation-delay: 300ms;
+  }
+  .delay-500 {
+    animation-delay: 500ms;
+  }
+  .delay-700 {
+    animation-delay: 700ms;
+  }
+  .delay-1000 {
+    animation-delay: 1000ms;
+  }
+
+  /* Animated gradient background - smooth and continuous */
+  .animate-gradient {
+    background-size: 300% 300%;
+    animation: gradientShift 8s ease infinite;
+  }
+
+  @keyframes gradientShift {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  /* Floating animation - natural, subtle movement */
+  .animate-float {
+    animation: float 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-12px);
+    }
+  }
+
+  /* Pulsing glow effect */
+  .animate-glow {
+    animation: glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes glow {
+    0%,
+    100% {
+      box-shadow: 0 0 20px rgba(34, 197, 94, 0);
+    }
+    50% {
+      box-shadow: 0 0 30px rgba(34, 197, 94, 0.5);
+    }
+  }
+
+  /* Fade in animation */
+  .animate-fade-in {
+    animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    opacity: 0;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Slide in from left */
+  .animate-slide-in-left {
+    animation: slideInLeft 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  @keyframes slideInLeft {
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  /* Slide in from right */
+  .animate-slide-in-right {
+    animation: slideInRight 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  @keyframes slideInRight {
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  /* Scale and fade in */
+  .animate-scale-in {
+    animation: scaleIn 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  @keyframes scaleIn {
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Smooth enter animation for interactive elements */
+  .animate-enter {
+    animation: enter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @keyframes enter {
+    from {
+      opacity: 0;
+      transform: scale(0.98) translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* Shimmer loading effect */
+  .animate-shimmer {
+    animation: shimmer 2s infinite;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0),
+      rgba(255, 255, 255, 0.1),
+      rgba(255, 255, 255, 0)
+    );
+    background-size: 200% 100%;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  /* Pulse with color */
+  .animate-pulse-glow {
+    animation: pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulseGlow {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
+  /* Bounce animation */
+  .animate-bounce-sm {
+    animation: bounceSm 1s cubic-bezier(0.36, 0, 0.66, -0.56) infinite;
+  }
+
+  @keyframes bounceSm {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-4px);
+    }
+  }
+}
+
+/* Respect user motion preferences (WCAG 2.3.3) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

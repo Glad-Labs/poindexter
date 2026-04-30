@@ -1,0 +1,1067 @@
+# Poindexter — Self-Hosted Operations Stack
+# Everything local, open source, $0/month
+#
+# Start all:  docker compose -f docker-compose.local.yml up -d
+# Start core: docker compose -f docker-compose.local.yml up -d postgres-local grafana
+# Start git:  docker compose -f docker-compose.local.yml up -d gitea gitea-runner
+
+services:
+  postgres-local:
+    image: pgvector/pgvector:pg16
+    container_name: poindexter-postgres-local
+    restart: unless-stopped
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
+    command:
+      - "postgres"
+      # GH-92: max_connections raised from the 100 default to 300. Each
+      # connection is ~5-10 MB resident, so 300 × ~10 MB ≈ 1.5-3 GB worst
+      # case — well within the 64 GB host budget. Headroom reasoning:
+      #   worker primary pool  (max)        = 50
+      #   worker local pool    (max)        = 20
+      #   brain-daemon                       = 3
+      #   auto-embed                         = 4
+      #   memory client per tap (shared)     = ~5
+      #   gitea / pgadmin / psql ad-hoc      = ~10
+      #   ancillary (voice-bot, sdxl, etc.)  = ~10
+      #   --- steady state ~100, transient peaks to ~150 under stress.
+      # 300 gives 2× headroom for concurrent stress tests + future SaaS
+      # auth fan-out. Revisit if pgbouncer is added (deferred, GH-92).
+      - "-c"
+      - "max_connections=300"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "effective_cache_size=2GB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "checkpoint_timeout=10min"
+      - "-c"
+      - "max_wal_size=2GB"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.track=all"
+    shm_size: "256mb"
+    volumes:
+      - postgres-local-data:/var/lib/postgresql/data
+      - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-poindexter}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # Prometheus — scrapes nvidia-smi exporter for GPU metrics
+  # ===========================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: poindexter-prometheus
+    restart: unless-stopped
+    # Startup sidecar: chmod the shared rules volume world-writable so
+    # RenderPrometheusRulesJob (runs as appuser uid 1001 in the worker)
+    # can drop dynamic.yml into it. Fresh Docker volumes come owned by
+    # root with 0755 perms, which would lock the worker out otherwise.
+    user: root
+    entrypoint: ["sh", "-c", "chmod 0777 /etc/prometheus/rules && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles --web.enable-lifecycle --web.enable-remote-write-receiver"]
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus-rules:/etc/prometheus/rules
+      - prometheus-data:/prometheus
+      # Uptime Kuma metrics API key, sourced from ~/.poindexter/bootstrap.toml
+      # by scripts/start-stack.sh. Read by basic_auth.password_file in
+      # prometheus.yml. See poindexter#136.
+      - ${USERPROFILE:-.}/.poindexter/uptime-kuma-api-key:/etc/prometheus/secrets/uptime-kuma-api-key:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Alertmanager — Phase D (GitHub #68).
+  # Consumes Prometheus alert rules, routes them to Telegram/Discord webhooks.
+  # Brain daemon will subscribe to the webhook endpoint for auto-remediation
+  # once parallel-run with legacy probes is verified.
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: poindexter-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./infrastructure/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+      # Bearer token for the Poindexter webhook receiver. Must match
+      # app_settings.alertmanager_webhook_token. Rotate via:
+      #   UPDATE app_settings ... ; echo -n <new> > file ; docker restart poindexter-alertmanager
+      - ${USERPROFILE:-.}/.poindexter/alertmanager-webhook-token:/etc/alertmanager/webhook-token:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: poindexter-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Run 'poindexter setup' or 'bash scripts/start-stack.sh'}
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+      LOCAL_POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      DISCORD_OPS_WEBHOOK_URL: ${DISCORD_OPS_WEBHOOK_URL:-}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+
+  # ===========================================
+  # Gitea — self-hosted git (replaces GitHub)
+  # ===========================================
+  gitea:
+    image: gitea/gitea:latest
+    container_name: gladlabs-gitea
+    restart: unless-stopped
+    # Operator-only: customers fork the public Poindexter repo on GitHub.
+    # Start explicitly: docker compose --profile operator up -d gitea
+    profiles: ["operator"]
+    ports:
+      - "3001:3000"
+      - "2222:22"
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: postgres-local:5432
+      GITEA__database__NAME: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      GITEA__database__USER: ${LOCAL_POSTGRES_USER:-poindexter}
+      GITEA__database__PASSWD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
+      GITEA__server__ROOT_URL: http://localhost:3001
+      # LOCAL_ROOT_URL is the URL Gitea advertises to internal callers
+      # (OAuth callbacks, CI link generation). Distinct from ROOT_URL which
+      # is the browser-facing UI URL. Setting both keeps internal and
+      # external URLs cleanly separated. Note: this does NOT redirect the
+      # Actions artifact upload endpoint — Gitea constructs that from
+      # setting.AppURL (= ROOT_URL), so actions/upload-artifact@v3 still
+      # hits localhost:3001 and fails from inside the runner's network
+      # namespace (Glad-Labs/poindexter#131). The workflow-level workaround
+      # lives in .gitea/workflows/security.yml.
+      GITEA__server__LOCAL_ROOT_URL: http://gitea:3000/
+      GITEA__server__SSH_DOMAIN: localhost
+      GITEA__server__SSH_PORT: 2222
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - gitea-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/v1/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+  # ===========================================
+  # Gitea Actions Runner — native CI (replaces Woodpecker)
+  # ===========================================
+  gitea-runner:
+    build:
+      context: ./infrastructure/gitea-runner
+    container_name: gladlabs-gitea-runner
+    restart: unless-stopped
+    # Operator-only: only runs alongside gitea
+    profiles: ["operator"]
+    environment:
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${GITEA_RUNNER_TOKEN:-}
+      GITEA_RUNNER_NAME: local-runner
+      GITEA_RUNNER_LABELS: "ubuntu-latest:host"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gitea-runner-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - gitea
+
+  # ===========================================
+  # Brain Daemon — standalone monitor, self-healer, knowledge graph
+  # ===========================================
+  brain-daemon:
+    build:
+      context: ./brain
+      dockerfile: Dockerfile
+    container_name: poindexter-brain-daemon
+    restart: unless-stopped
+    environment:
+      # Primary DB is local Postgres.
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      # CLOUD_DATABASE_URL removed — Railway eliminated. All data on local Postgres + R2.
+      # No Telegram tokens — OpenClaw owns Telegram/Discord connections
+      API_URL: "http://worker:8002"
+      WORKER_API_URL: "http://worker:8002"
+      SITE_URL: ${SITE_URL:-https://www.gladlabs.io}
+      OLLAMA_URL: "http://host.docker.internal:11434"
+      GRAFANA_URL: "http://grafana:3000"
+      GRAFANA_PASSWORD: ${GRAFANA_PASSWORD:?Run 'poindexter setup' — GRAFANA_PASSWORD is generated in bootstrap.toml}
+      # GITEA_* env vars removed — brain now reads gitea_url/user/password
+      # from app_settings and translates URLs with docker_utils.localize_url
+      # when IN_DOCKER=true (GitHub #61). Other URLs (API, OLLAMA, GRAFANA)
+      # are separately tracked for the same DB-first treatment.
+      DISCORD_LAB_LOGS_WEBHOOK_URL: ${DISCORD_LAB_LOGS_WEBHOOK_URL:-}
+      DISCORD_OPS_WEBHOOK_URL: ${DISCORD_OPS_WEBHOOK_URL:-}
+      IN_DOCKER: "true"
+      # Mirror of bootstrap.toml poindexter_secret_key — needed so the
+      # brain can read is_secret=true rows via get_secret().
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./brain:/brain:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os,signal; os.kill(1, 0)' 2>/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+  # ===========================================
+  # Content Pipeline Worker — claims tasks, runs Ollama inference
+  # ===========================================
+  worker:
+    build:
+      context: ./src/cofounder_agent
+      dockerfile: Dockerfile.worker
+    container_name: poindexter-worker
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    environment:
+      DEPLOYMENT_MODE: worker
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEVELOPMENT_MODE: "true"
+      PORT: "8002"
+      # Secrets loaded from DB (app_settings) at startup — no env vars needed
+      # Primary DB is local Postgres.
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      # CLOUD_DATABASE_URL removed — Railway eliminated. All data on local Postgres + R2.
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      # OLLAMA_URL was historically set separately because MemoryClient +
+      # auto-embed only read OLLAMA_URL. GH#93 Phase 1: MemoryClient now
+      # falls back to OLLAMA_BASE_URL when OLLAMA_URL isn't set, so the
+      # duplicate is retired. Standalone CLI paths (outside the worker
+      # container) can still set OLLAMA_URL directly if preferred.
+      PEXELS_API_KEY: ${PEXELS_API_KEY:-}
+      # No Telegram tokens — OpenClaw owns Telegram/Discord connections.
+      # SITE_NAME / SITE_DOMAIN / SITE_URL / COMPANY_NAME / DEFAULT_OLLAMA_MODEL
+      # are DB-first settings in app_settings (site_name, site_domain, site_url,
+      # company_name, default_ollama_model). GH-93 audit 2026-04-21 confirmed
+      # no code reads these env vars; removed from the worker env to keep the
+      # "no env-var drift, app_settings is the single source" contract clean.
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8002}
+      HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
+      API_TOKEN: ${API_TOKEN:?Run 'poindexter setup' — API_TOKEN is generated in bootstrap.toml}
+      # Symmetric key for decrypting is_secret=true rows in app_settings.
+      # Mirrored from ~/.poindexter/bootstrap.toml poindexter_secret_key.
+      # Without this, plugins/secrets.py raises SecretsError on read.
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
+      # The /app mount is read-only, so file logging inside the container
+      # fails silently. Rely on stdout — Docker's log driver captures it
+      # and ``docker logs poindexter-worker`` plus any centralized log
+      # shipper (Loki/Promtail later) can read from there.
+      LOG_TO_FILE: "false"
+      PYTHONDONTWRITEBYTECODE: "1"
+      # brain/ is a sibling package imported by config/__init__.py +
+      # services/* for the resolve_database_url() bootstrap-toml fallback.
+      # Mounted at /opt/poindexter/brain below; add /opt/poindexter to
+      # sys.path so `from brain.bootstrap import ...` resolves.
+      PYTHONPATH: "/app:/opt/poindexter"
+      # Prefect 3 — content pipeline orchestration (#206). Worker
+      # imports the @flow decorated entry point and submits flow runs
+      # to the local Prefect server for observability + retry plumbing.
+      # Server runs in `prefect-server` service, postgres-backed via
+      # the shared postgres-local container's `prefect` database.
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+      # Langfuse v3 — LLM observability (#202, #203). SDK reads these
+      # to authenticate against the local langfuse-web container.
+      # Headless-init creates this org/project/key pair on first boot.
+      LANGFUSE_HOST: "http://langfuse-web:3000"
+      LANGFUSE_PUBLIC_KEY: "pk-lf-KCi8EdrTVh6kg4_YNmB63UD6N7E"
+      LANGFUSE_SECRET_KEY: "sk-lf-gXIcHW6U_krse_PC5rP4BZT8fl6aYF9X7H9ki-aJQXE"
+    volumes:
+      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
+      - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
+      # Dev mount: edit Python files on host, restart worker to pick up changes.
+      # No docker cp needed. Read-only to prevent __pycache__ writes to source.
+      - ./src/cofounder_agent:/app:ro
+      - ./brain:/opt/poindexter/brain:ro
+      - ./scripts:/opt/scripts:ro
+      # Shared with the prometheus container — RenderPrometheusRulesJob
+      # writes the DB-sourced rule YAML here; prometheus reads it.
+      - prometheus-rules:/etc/prometheus/rules
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Worker reads every tunable from app_settings (models, prompts, QA
+    # thresholds). Wait for brain-daemon to seed + validate before booting
+    # so we don't start a pipeline that silently falls through to defaults.
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      brain-daemon:
+        condition: service_healthy
+      # Prefect server is non-blocking — pipeline still runs without it
+      # (we wrap the flow submission in best-effort), so use service_started
+      # not service_healthy to avoid a startup deadlock if Prefect is down.
+      prefect-server:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,json; r=json.loads(urllib.request.urlopen('http://localhost:8002/api/health').read()); e=r.get('components',{}).get('task_executor',{}); exit(1 if isinstance(e,dict) and e.get('success_count',0)==0 and e.get('error_count',0)>5 else 0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # Prefect 3 — content pipeline orchestration (#206)
+  # ===========================================
+  # Three services per the canonical 3-latest self-host pattern:
+  #   prefect-redis    — messaging broker (event bus between server + services)
+  #   prefect-server   — API + UI on :4200, postgres-backed via shared
+  #                      postgres-local container (`prefect` database)
+  #   prefect-services — background workers that run inside Prefect (event
+  #                      processor, scheduler, etc). Separate container
+  #                      because `prefect server start` needs --no-services
+  #                      when paired with a dedicated services process.
+  #
+  # We do NOT run a `prefect-worker` (no work pool). Flows execute
+  # in-process inside our existing worker container — Prefect server
+  # just records runs for observability + retry coordination.
+  prefect-redis:
+    image: redis:7
+    container_name: poindexter-prefect-redis
+    restart: unless-stopped
+    volumes:
+      - prefect-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    container_name: poindexter-prefect-server
+    restart: unless-stopped
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      prefect-redis:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/prefect"
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      # The UI's bundled JS calls this URL from the BROWSER, so it has
+      # to be an address the browser can reach — not a service-network
+      # name. Workstation's tailscale IP works from both the host's own
+      # browser and from any phone on the tailnet (verified via
+      # `tailscale status`: nightrider = 100.81.93.12). Plain
+      # `localhost:4200/api` breaks the moment the operator opens the
+      # UI from their phone — the browser resolves "localhost" against
+      # the phone, not against the server.
+      PREFECT_SERVER_UI_API_URL: "http://100.81.93.12:4200/api"
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+      PREFECT_MESSAGING_BROKER: prefect_redis.messaging
+      PREFECT_MESSAGING_CACHE: prefect_redis.messaging
+      PREFECT_REDIS_MESSAGING_HOST: prefect-redis
+      PREFECT_REDIS_MESSAGING_PORT: "6379"
+      PREFECT_REDIS_MESSAGING_DB: "0"
+    command: prefect server start --no-services
+    ports:
+      - "4200:4200"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:4200/api/health', timeout=2)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  prefect-services:
+    image: prefecthq/prefect:3-latest
+    container_name: poindexter-prefect-services
+    restart: unless-stopped
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/prefect"
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+      PREFECT_MESSAGING_BROKER: prefect_redis.messaging
+      PREFECT_MESSAGING_CACHE: prefect_redis.messaging
+      PREFECT_REDIS_MESSAGING_HOST: prefect-redis
+      PREFECT_REDIS_MESSAGING_PORT: "6379"
+      PREFECT_REDIS_MESSAGING_DB: "0"
+    command: prefect server services start
+
+  # ===========================================
+  # Langfuse v3 — LLM observability + prompt management + experiments (#202, #203)
+  # ===========================================
+  # Six containers per the canonical v3 self-host pattern:
+  #   langfuse-clickhouse — OLAP store for traces/observations/scores
+  #   langfuse-minio      — S3-compatible blob store for events + media
+  #   langfuse-redis      — messaging broker between web + worker
+  #   langfuse-worker     — async ingestion + batch jobs
+  #   langfuse-web        — UI on :3010 + REST API
+  #
+  # Postgres is shared via the existing postgres-local container (separate
+  # `langfuse` database, created at deploy time).
+  #
+  # Heavy stack on purpose: per Matt's "learning industry standards" goal,
+  # operating ClickHouse + MinIO + Langfuse v3 is part of the curriculum,
+  # not the cost. See feedback_learning_is_primary_goal.md.
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: poindexter-langfuse-clickhouse
+    restart: unless-stopped
+    user: "101:101"
+    # Memory cap. Docs recommend 8G for production scale; we run 50
+    # LLM calls/day so a 4G ceiling is plenty. Cap means a runaway
+    # query restarts this one container instead of starving the rest
+    # of the stack on Matt's 64G workstation.
+    mem_limit: 4g
+    mem_reservation: 1g
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  langfuse-minio:
+    image: minio/minio
+    container_name: poindexter-langfuse-minio
+    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports:
+      # MinIO console — browse buckets + verify uploads. Bind to localhost
+      # only; not exposed off-host. Worker + web reach it via the
+      # service-network name on port 9000.
+      - "127.0.0.1:9091:9001"
+    volumes:
+      - langfuse-minio-data:/data
+    # `mc ready local` (the canonical Langfuse health pattern) needs
+    # an `mc alias set` first — which we don't run in the entrypoint
+    # override above. The image has no wget either. curl IS present;
+    # use it against MinIO's health endpoint.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  langfuse-redis:
+    image: redis:7
+    container_name: poindexter-langfuse-redis
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
+    command: --requirepass langfuseredis --maxmemory 384mb --maxmemory-policy allkeys-lru
+    volumes:
+      - langfuse-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a langfuseredis ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: poindexter-langfuse-worker
+    restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 512m
+    depends_on: &langfuse-depends-on
+      postgres-local:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+    environment: &langfuse-env
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/langfuse"
+      # SALT + ENCRYPTION_KEY persist across restarts. If you rotate
+      # them, existing encrypted rows become unreadable. Generated
+      # with python -c "import secrets; print(secrets.token_urlsafe(16))"
+      # / token_hex(32). Move to bootstrap.toml later (#198 secrets pattern).
+      SALT: "l7H7UXNRb28w4zO1TwYQmw"
+      ENCRYPTION_KEY: "2b83ac6518cde3b06b9f146462a8a65ae50920fa05cbb753f41f7b02db2e5394"
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+      CLICKHOUSE_MIGRATION_URL: "clickhouse://langfuse-clickhouse:9000"
+      CLICKHOUSE_URL: "http://langfuse-clickhouse:8123"
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: "http://langfuse-minio:9000"
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: "events/"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: "http://langfuse-minio:9000"
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: "media/"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: langfuseredis
+      REDIS_TLS_ENABLED: "false"
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: poindexter-langfuse-web
+    restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 512m
+    depends_on: *langfuse-depends-on
+    ports:
+      # Avoid the existing :3000 binding (Grafana). Map :3010 → :3000
+      # so the operator browses to localhost:3010 / tailscale-ip:3010.
+      - "3010:3000"
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_URL: "http://localhost:3010"
+      NEXTAUTH_SECRET: "-3GzsWxnEMJwRzAtNygOyxLmOsrS4EQ-0th-RJhdzug"
+      # Headless initialization (Langfuse 2024-09-04). The first boot
+      # creates the org, project, owner user, and API key pair from
+      # these vars. After they exist, the env vars become inert
+      # (Langfuse skips already-initialized resources).
+      LANGFUSE_INIT_ORG_ID: glad-labs
+      LANGFUSE_INIT_ORG_NAME: "Glad Labs"
+      LANGFUSE_INIT_PROJECT_ID: poindexter
+      LANGFUSE_INIT_PROJECT_NAME: "Poindexter Pipeline"
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "pk-lf-KCi8EdrTVh6kg4_YNmB63UD6N7E"
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: "sk-lf-gXIcHW6U_krse_PC5rP4BZT8fl6aYF9X7H9ki-aJQXE"
+      LANGFUSE_INIT_USER_EMAIL: "mattg@gladlabs.io"
+      LANGFUSE_INIT_USER_NAME: "Matt Gladding"
+      LANGFUSE_INIT_USER_PASSWORD: "x4vYr3CB3edQ1PToKQunRw"
+
+  # ===========================================
+  # SDXL Image Server — GPU-accelerated image generation
+  # ===========================================
+  sdxl-server:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.sdxl
+    container_name: poindexter-sdxl-server
+    restart: unless-stopped
+    ports:
+      - "9836:9836"
+    environment:
+      POINDEXTER_BRAIN_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+    volumes:
+      - ${USERPROFILE:-.}/.poindexter/generated-images:/root/.poindexter/generated-images
+      - ${USERPROFILE:-.}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # SDXL reads image_generation_model / image_negative_prompt / style
+    # settings from app_settings. Wait for brain to seed them first.
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      brain-daemon:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9836/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # Wan 2.1 1.3B Video Server — GPU-accelerated text-to-video
+  # Sidecar mate of sdxl-server. Listens on 9840; the
+  # ``Wan21Provider`` plugin POSTs to it via host.docker.internal:9840.
+  # Idle timeout (~120s) auto-unloads the model so SDXL / Ollama can
+  # reclaim VRAM when no video work is queued.
+  # ===========================================
+  wan-server:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.wan
+    container_name: poindexter-wan-server
+    restart: unless-stopped
+    ports:
+      - "9840:9840"
+    environment:
+      WAN_MODEL_ID: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+      WAN_IDLE_TIMEOUT_S: "900"
+    volumes:
+      - ${USERPROFILE:-.}/.poindexter/generated-videos:/root/.poindexter/generated-videos
+      - ${USERPROFILE:-.}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9840/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # pgAdmin — PostgreSQL web UI
+  # ===========================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: poindexter-pgadmin
+    restart: unless-stopped
+    # Optional DB GUI — start with: docker compose --profile operator up -d pgadmin
+    profiles: ["operator"]
+    ports:
+      - "5480:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@gladlabs.io}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?Run 'poindexter setup' — PGADMIN_PASSWORD is generated in bootstrap.toml}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./infrastructure/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./infrastructure/pgadmin/pgpass:/tmp/pgpass_src:ro
+    entrypoint: >
+      /bin/sh -c "
+      cp /tmp/pgpass_src /tmp/pgpass &&
+      chmod 0600 /tmp/pgpass &&
+      /entrypoint.sh
+      "
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/misc/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+  # ===========================================
+  # Discord Voice Bot — hands-free voice meetings with Claude
+  # ===========================================
+  voice-bot:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.voice-bot
+    container_name: poindexter-voice-bot
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      # Symmetric key for pgcrypto-encrypted app_settings rows
+      # (discord_bot_token + discord_voice_bot_token both use is_secret=true).
+      # Without this, the bot reads the raw `enc:v1:<base64>` ciphertext as
+      # the Discord token and discord.py rejects it for containing
+      # newlines/control bytes — a crash-loop that hid behind unhelpful
+      # "Newline in headers" tracebacks.
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+    volumes:
+      - ./scripts/discord-voice-bot.py:/app/discord-voice-bot.py:ro
+      - ./brain:/brain:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os,signal; os.kill(1, 0)' 2>/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    # Voice bot reads discord_voice_bot_token + LLM config from app_settings.
+    # Wait for brain to seed before booting.
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      brain-daemon:
+        condition: service_healthy
+
+  # ===========================================
+  # Auto-Embed — hourly pgvector embedding sync
+  # ===========================================
+  auto-embed:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.auto-embed
+    container_name: poindexter-auto-embed
+    restart: unless-stopped
+    environment:
+      # Only DATABASE_URL is an env var by policy; everything else — ollama_url,
+      # gitea_url, etc. — lives in the app_settings DB and is loaded at runtime.
+      # The script translates `localhost:PORT` to in-network service names when
+      # it detects it's running inside Docker (IN_DOCKER=true).
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      IN_DOCKER: "true"
+      # Point the script at the container-mount locations instead of Path.home().
+      # Mounting the whole projects/ dir means every C--* scope gets embedded
+      # automatically — no more silent skips when cwd changes (2026-04-18 incident).
+      CLAUDE_PROJECTS_DIR: /memory/claude-projects
+      OPENCLAW_MEMORY_DIR: /memory/openclaw
+      # auto-embed calls get_secret('gitea_password') to auth against
+      # the local Gitea tap. Needs the symmetric key to decrypt it.
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+    volumes:
+      - ./scripts/auto-embed.py:/app/auto-embed.py:ro
+      - ./brain:/brain:ro
+      - ${USERPROFILE:-.}/.claude/projects:/memory/claude-projects:ro
+      - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
+      # Persist ~/.gladlabs/auto-embed.log to the host so `tail -f` works
+      # without needing `docker exec`. Script writes to Path.home()/.gladlabs
+      # which resolves to /root/.gladlabs inside the container (GitHub #62).
+      - ${USERPROFILE:-.}/.gladlabs:/root/.gladlabs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Boot order: postgres (data) → brain-daemon (seeds + self-checks) → auto-embed
+    # (populates pgvector) → everything else. Per 2026-04-18 architecture discussion.
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      brain-daemon:
+        condition: service_healthy
+
+  # ===========================================
+  # Loki — log aggregation (stdout from every container, queryable in Grafana)
+  # ===========================================
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: poindexter-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infrastructure/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3100/ready | grep -q ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================
+  # Promtail — tails every container's json log file and ships to Loki
+  # ===========================================
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: poindexter-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./infrastructure/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # Read-only access to Docker's container log files.
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Docker socket for service discovery (container labels, names).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Promtail remembers where it left off across restarts.
+      - promtail-positions:/var/log
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  # ===========================================
+  # Uptime Kuma — uptime monitoring + public status page
+  # ===========================================
+  # Covers GH #74. Pings the worker /api/health, Grafana, Postgres,
+  # Ollama, and any external dependencies on a schedule. Exposes a
+  # Prometheus /metrics endpoint so Grafana can graph uptime history
+  # alongside the rest of the poindexter dashboards. Status page
+  # served on 3002 for humans.
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: poindexter-uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3002:3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "extra/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================
+  # Tempo — distributed tracing (OTLP) backend
+  # ===========================================
+  # Receives OTLP spans from the worker (services/telemetry.py wires
+  # FastAPIInstrumentor + the LLM-dispatcher spans from v2.7). Grafana
+  # reads from Tempo via the provisioned datasource. No public port —
+  # only Grafana and the worker need to reach it, and they do so via
+  # the shared docker network.
+  tempo:
+    image: grafana/tempo:2.7.0
+    container_name: poindexter-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo-config.yml"]
+    ports:
+      - "3200:3200"   # Tempo HTTP (Grafana datasource)
+      - "4317:4317"   # OTLP gRPC (worker exports traces here)
+      - "4318:4318"   # OTLP HTTP (alt path)
+    volumes:
+      - ./infrastructure/tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo-data:/var/tempo
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3200/ready | grep -q ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================
+  # Pyroscope — continuous profiling (the P in LGTM+P)
+  # ===========================================
+  # Covers GH #75. Accepts pprof samples from the worker when the
+  # Python agent is enabled (enable_pyroscope=true in app_settings).
+  # Grafana reads profiles via the provisioned datasource. No external
+  # port — only Grafana and the worker need to reach it.
+  pyroscope:
+    image: grafana/pyroscope:1.9.1
+    container_name: poindexter-pyroscope
+    restart: unless-stopped
+    command: ["server"]
+    ports:
+      - "4040:4040"   # Pyroscope HTTP (Grafana datasource + worker ingest)
+    volumes:
+      - pyroscope-data:/var/lib/pyroscope
+    # Pyroscope's image ships the pyroscope binary only — no shell, no wget,
+    # no curl — so there's no in-container way to probe the /ready endpoint.
+    # The service is reachable on port 4040 (Grafana + worker verify this on
+    # every scrape/ingest). Keeping `disable: true` is the honest state —
+    # silent "unhealthy" would hide real outages behind cosmetic green.
+    healthcheck:
+      disable: true
+
+  # ===========================================
+  # GlitchTip — Sentry-compatible error tracking (OSS)
+  # ===========================================
+  # Covers GH #77. Runs three containers: web (Django), worker (Celery),
+  # and its own Postgres. The worker is intentionally separate from the
+  # poindexter Postgres to keep error-tracking state isolated from
+  # business data (different backup cadence, different retention).
+  # DSN lives in app_settings.sentry_dsn — services/sentry_integration.py
+  # already reads it and points the existing SDK at whatever URL is
+  # there. Set it to http://glitchtip:8000/<project_id>/<public_key> to
+  # route worker exceptions to GlitchTip instead of Sentry SaaS.
+  glitchtip-db:
+    image: postgres:16-alpine
+    container_name: poindexter-glitchtip-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD:?Run 'poindexter setup' — GLITCHTIP_DB_PASSWORD is generated in bootstrap.toml}
+      POSTGRES_DB: glitchtip
+    volumes:
+      - glitchtip-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    container_name: poindexter-glitchtip-redis
+    restart: unless-stopped
+    volumes:
+      - glitchtip-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:latest
+    container_name: poindexter-glitchtip-web
+    restart: unless-stopped
+    ports:
+      - "8080:8000"
+    environment:
+      DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?}@glitchtip-db:5432/glitchtip"
+      REDIS_URL: "redis://glitchtip-redis:6379/0"
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?Run 'poindexter setup' — GLITCHTIP_SECRET_KEY is generated in bootstrap.toml}
+      PORT: "8000"
+      EMAIL_URL: "consolemail://"   # drops emails into container logs; swap for real SMTP when you want invites
+      GLITCHTIP_DOMAIN: "${GLITCHTIP_DOMAIN:-http://localhost:8080}"
+      DEFAULT_FROM_EMAIL: "glitchtip@localhost"
+      CELERY_WORKER_AUTOSCALE: "1,3"
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_healthy
+    # GlitchTip's base image has neither curl nor wget; it does have Python.
+    # /api/0/ returns {"version":"0", ...} without auth — solid liveness signal.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/0/', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:latest
+    container_name: poindexter-glitchtip-worker
+    restart: unless-stopped
+    command: ./bin/run-celery-with-beat.sh
+    environment:
+      DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?}@glitchtip-db:5432/glitchtip"
+      REDIS_URL: "redis://glitchtip-redis:6379/0"
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?}
+      EMAIL_URL: "consolemail://"
+      DEFAULT_FROM_EMAIL: "glitchtip@localhost"
+      CELERY_WORKER_AUTOSCALE: "1,3"
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_healthy
+
+  # ===========================================
+  # GPU Metrics Exporter — nvidia-smi + HWiNFO to Prometheus
+  # ===========================================
+  gpu-exporter:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.gpu-exporter
+    container_name: poindexter-gpu-exporter
+    restart: unless-stopped
+    ports:
+      - "9835:9835"
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+    volumes:
+      - ./scripts/nvidia-smi-exporter.py:/app/nvidia-smi-exporter.py:ro
+      - ./brain:/brain:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+
+# Volumes deliberately keep the gladlabs-* prefix from the pre-rebrand era.
+# Renaming a docker volume in compose creates a fresh empty volume and
+# orphans the old one — that means data loss for any existing instance.
+# Volumes are rarely customer-visible (only in `docker volume ls`) so the
+# name mismatch is acceptable to preserve user data across the rebrand.
+volumes:
+  prefect-redis-data:
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
+  langfuse-minio-data:
+  langfuse-redis-data:
+  postgres-local-data:
+    name: gladlabs-postgres-local-data
+  grafana-data:
+    name: gladlabs-grafana-data
+  gitea-data:
+    name: gladlabs-gitea-data
+  gitea-runner-data:
+    name: gladlabs-gitea-runner-data
+  prometheus-data:
+    name: gladlabs-prometheus-data
+  prometheus-rules:
+    name: gladlabs-prometheus-rules
+  alertmanager-data:
+    name: gladlabs-alertmanager-data
+  pgadmin-data:
+    name: gladlabs-pgadmin-data
+  loki-data:
+    name: gladlabs-loki-data
+  promtail-positions:
+    name: gladlabs-promtail-positions
+  uptime-kuma-data:
+    name: gladlabs-uptime-kuma-data
+  tempo-data:
+    name: gladlabs-tempo-data
+  glitchtip-db-data:
+    name: gladlabs-glitchtip-db-data
+  glitchtip-redis-data:
+    name: gladlabs-glitchtip-redis-data
+  pyroscope-data:
+    name: gladlabs-pyroscope-data

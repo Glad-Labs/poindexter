@@ -1,0 +1,20 @@
+{
+  "name": "Glad Labs - AI & Digital Innovation",
+  "short_name": "Glad Labs",
+  "description": "Autonomous AI agents, intelligent content creation, and digital transformation solutions powered by advanced machine learning.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#00d4ff",
+  "background_color": "#111827",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "32x32",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["technology", "artificial intelligence", "business"],
+  "screenshots": []
+}

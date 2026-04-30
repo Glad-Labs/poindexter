@@ -1,0 +1,15 @@
+.git
+.gitignore
+README.md
+.env.example
+.env.local
+.env._.example
+node_modules
+.next
+.swc
+.pytest_cache
+**tests**
+jest.config.js
+jest.setup.js
+_.test.js
+.docker\*

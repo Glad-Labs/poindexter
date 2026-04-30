@@ -1,0 +1,11 @@
+{
+  "ignore_dirs": [
+    ".next",
+    "node_modules",
+    ".git",
+    "coverage",
+    "dist",
+    "build",
+    ".vercel"
+  ]
+}

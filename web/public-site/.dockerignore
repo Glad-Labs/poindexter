@@ -1,0 +1,54 @@
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Build artifacts
+.next
+out
+build
+.cache
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Logs
+logs
+*.log
+
+# Testing
+coverage
+.nyc_output
+__tests__
+
+# Documentation
+docs
+README.md
+*.md
+!LICENSE.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Temporary files
+.tmp
+tmp
+temp
