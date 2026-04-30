@@ -4,6 +4,10 @@
 
 ### Week of 2026-04-29
 
+#### Release
+
+- **Poindexter 1.0.0 is out.** First stable release. Tag [`v1.0.0`](https://github.com/Glad-Labs/poindexter/releases/tag/v1.0.0) cuts a snapshot of every feature shipped to date — the full content pipeline (topic discovery → writer → multi-model QA → publish), the brain daemon and operator probes, the MCP server, social distribution adapters, and the niche-aware / RAG writer modes added this week. Existing installs can pin to `v1.0.0` for a stable upgrade target. ([#268](https://github.com/Glad-Labs/poindexter/pull/268))
+
 #### New features
 
 - **Niche-aware topic discovery + RAG writer modes.** Poindexter now treats your install as one of many possible niches instead of defaulting to an evergreen-tech voice — run the same engine on real estate, fashion, finance, or any other editorial voice. Topic batches replace one-off proposals: a ranked top-5 of candidates is presented for you to rank, edit, and resolve into a content task, with near-misses carrying forward across cycles. The writer ships with four configurable RAG modes (topic-only, citation-budget, story-spine, two-pass) so you can dial how aggressively each niche grounds drafts in your own corpus. New CLI (`poindexter topics …`, `poindexter niche …`) and matching MCP tools let Claude Code drive the whole gate end-to-end. ([#278](https://github.com/Glad-Labs/poindexter/pull/278))
