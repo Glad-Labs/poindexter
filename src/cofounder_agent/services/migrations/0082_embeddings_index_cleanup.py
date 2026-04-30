@@ -41,6 +41,24 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_collapse_candidates
 
 async def up(pool) -> None:
     async with pool.acquire() as conn:
+        # The ``embeddings`` table is created by ``infrastructure/local-db/init.sql``
+        # at container startup, NOT by a migration (predates the migration
+        # runner). On fresh CI databases without init.sql (the migration
+        # smoke test, GH-229), the table is absent — so this index-cleanup
+        # migration has nothing to operate on. Same defensive pattern as
+        # migration 0075 (``_table_exists`` skip).
+        table_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_tables WHERE schemaname='public' "
+            "AND tablename='embeddings'"
+        )
+        if not table_exists:
+            logger.info(
+                "0082: embeddings table missing (fresh DB without init.sql) — "
+                "skipping index cleanup. Will run on next deploy after the "
+                "table is created."
+            )
+            return
+
         dead_exists = await conn.fetchval(
             "SELECT 1 FROM pg_indexes WHERE schemaname='public' "
             "AND indexname='idx_embeddings_collapse_candidates'"

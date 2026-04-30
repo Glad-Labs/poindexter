@@ -56,6 +56,42 @@ _TRIGGERS = [
 
 async def up(pool) -> None:
     async with pool.acquire() as conn:
+        # INSTEAD OF triggers can only be attached to views. On fresh DBs
+        # (migration smoke test, GH-229) content_tasks is a TABLE — see
+        # the long note in 0098 for why the view recreation is skipped on
+        # the post-niche-pivot canonical state. Without a view there's
+        # nothing for these triggers to bind to. Skip cleanly so the
+        # smoke test passes; the triggers are only meaningful on
+        # deployments that still carry the view-based content_tasks
+        # shape (legacy production prior to the niche pivot).
+        is_view = await conn.fetchval(
+            "SELECT 1 FROM information_schema.views "
+            "WHERE table_schema='public' AND table_name='content_tasks'"
+        )
+        if not is_view:
+            logger.info(
+                "0102: content_tasks is a TABLE (post-niche-pivot canonical "
+                "state) — INSTEAD OF triggers don't apply to tables. "
+                "Skipping (operations write directly to pipeline_tasks)."
+            )
+            return
+
+        # Also guard on the trigger functions existing — they may have
+        # been dropped if the view shape was abandoned in a prior step.
+        funcs_exist = await conn.fetchval(
+            "SELECT COUNT(*) FROM pg_proc WHERE proname IN "
+            "('content_tasks_update_redirect','content_tasks_insert_redirect',"
+            "'content_tasks_delete_redirect')"
+        )
+        if (funcs_exist or 0) < len(_TRIGGERS):
+            logger.info(
+                "0102: trigger redirect functions missing (only %s of %s "
+                "present) — skipping. Re-apply migrations 0068/0077/0078 "
+                "first if the view-based path is needed.",
+                funcs_exist, len(_TRIGGERS),
+            )
+            return
+
         for trigger_name, when_clause, function_name in _TRIGGERS:
             await conn.execute(
                 f"DROP TRIGGER IF EXISTS {trigger_name} ON content_tasks"

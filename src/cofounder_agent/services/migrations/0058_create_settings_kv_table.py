@@ -25,9 +25,16 @@ CREATE TABLE IF NOT EXISTS app_settings (
     category VARCHAR(100) NOT NULL DEFAULT 'general',
     description TEXT,
     is_secret BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure is_active exists on databases that pre-date this column being part
+-- of CREATE TABLE (added retroactively for fresh-DB migration smoke parity —
+-- migrations 0093/0099/0101/0104/0105 INSERT INTO app_settings (..., is_active)).
+ALTER TABLE app_settings
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_app_settings_category ON app_settings(category);
 """

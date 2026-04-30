@@ -177,13 +177,37 @@ async def up(pool) -> None:
             "WHERE awaiting_gate IS NOT NULL"
         )
 
-        await _recreate_content_tasks_view(conn)
-
-        logger.info(
-            "0098: extended pipeline_tasks with %d HITL approval-gate "
-            "columns + re-created content_tasks view",
-            len(_NEW_COLUMNS),
+        # Only recreate the view if content_tasks IS already a view. On
+        # fresh DBs (migration smoke test, GH-229) content_tasks is a
+        # TABLE created by 0000_base_schema and later extended by 0114
+        # for niche columns — production reality is that the table-based
+        # path is the canonical one going forward (see migrations 0114+,
+        # which ALTER TABLE content_tasks). Dropping the table here would
+        # break 0114. So we only re-bind the view if a view already
+        # exists (i.e. an older deployment that did the manual
+        # table->view conversion). On fresh DBs the gate columns live on
+        # pipeline_tasks where the approval_service reads them — the view
+        # was a convenience, not a contract.
+        is_view = await conn.fetchval(
+            "SELECT 1 FROM information_schema.views "
+            "WHERE table_schema='public' AND table_name='content_tasks'"
         )
+        if is_view:
+            await _recreate_content_tasks_view(conn)
+            logger.info(
+                "0098: extended pipeline_tasks with %d HITL approval-gate "
+                "columns + re-created content_tasks view",
+                len(_NEW_COLUMNS),
+            )
+        else:
+            logger.info(
+                "0098: extended pipeline_tasks with %d HITL approval-gate "
+                "columns; content_tasks is a TABLE (post-niche-pivot "
+                "canonical state), so view recreation is skipped — "
+                "approval_service reads gate columns straight from "
+                "pipeline_tasks.",
+                len(_NEW_COLUMNS),
+            )
 
 
 async def down(pool) -> None:

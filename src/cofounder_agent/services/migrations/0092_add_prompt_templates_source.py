@@ -41,6 +41,26 @@ ALTER TABLE prompt_templates DROP COLUMN IF EXISTS source;
 
 async def up(pool) -> None:
     async with pool.acquire() as conn:
+        # The ``prompt_templates`` table is created at runtime by
+        # ``services.prompt_manager`` when it loads YAML prompts and no
+        # corresponding DB table exists, NOT by a migration. On fresh CI
+        # databases (migration smoke test, GH-229) the table is absent
+        # because the prompt_manager hasn't run yet. Skip cleanly so the
+        # smoke test passes; the next prompt_manager call will create the
+        # table fresh, and a follow-up application start will re-run the
+        # migration once the table exists (it is idempotent).
+        table_exists = await conn.fetchval(
+            "SELECT 1 FROM pg_tables WHERE schemaname='public' "
+            "AND tablename='prompt_templates'"
+        )
+        if not table_exists:
+            logger.info(
+                "0092: prompt_templates table missing (fresh DB before "
+                "prompt_manager has loaded YAML prompts) — skipping. The "
+                "ALTER TABLE will run on a later boot once the table exists."
+            )
+            return
+
         await conn.execute(SQL_UP)
         # Existing rows get the DEFAULT value automatically. Confirm count
         # for ops visibility — non-zero means the migration is informative
