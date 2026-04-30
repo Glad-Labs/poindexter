@@ -14,6 +14,7 @@ from .settings import settings_group
 from .setup import setup_command
 from .sprint import sprint_group
 from .tasks import tasks_group
+from .topics import topics_group
 from .vercel import vercel_group
 
 # Quiet down the client's own info-level logs unless the user asks for -v.
@@ -47,6 +48,7 @@ main.add_command(costs_group, name="costs")
 main.add_command(sprint_group, name="sprint")
 main.add_command(vercel_group, name="vercel")
 main.add_command(premium_group, name="premium")
+main.add_command(topics_group, name="topics")
 
 
 if __name__ == "__main__":
