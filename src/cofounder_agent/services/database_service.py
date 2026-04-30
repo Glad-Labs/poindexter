@@ -73,7 +73,22 @@ class DatabaseService:
             # #198: check ~/.poindexter/bootstrap.toml FIRST so worker can
             # start on a fresh clone without a .env file. Falls back to
             # DATABASE_URL env var for Docker/CI contexts.
+            #
+            # Issue #169: when DATABASE_URL is unset AND bootstrap.toml has
+            # the wrong key (e.g. ``database_dsn`` instead of
+            # ``database_url``), this used to fall through to a plain
+            # ``ValueError``. That was loud enough at the call site but
+            # bypassed the operator-notification pipeline (Telegram /
+            # Discord / alerts.log) the rest of the codebase relies on for
+            # missing-config failures. Worse, callers that swallowed the
+            # exception would end up dereferencing ``self.pool`` while it
+            # was still None — the silent boot crash described in #169.
+            # Match the "Fail loud + notify" principle in CLAUDE.md by
+            # routing through ``brain.bootstrap.require_database_url``,
+            # which calls ``notify_operator()`` then ``sys.exit(2)``.
             resolved = None
+            _require = None
+            _resolve = None
             try:
                 import sys as _sys
                 from pathlib import Path as _Path
@@ -84,22 +99,32 @@ class DatabaseService:
                         if str(_p) not in _sys.path:
                             _sys.path.insert(0, str(_p))
                         break
+                from brain.bootstrap import require_database_url as _require
                 from brain.bootstrap import resolve_database_url as _resolve
 
                 resolved = _resolve()
             except Exception:
-                # Bootstrap module unavailable (odd) — fall through to env.
+                # Bootstrap module unavailable (odd — Docker test contexts
+                # without the brain mount). Fall through to env var.
                 resolved = None
 
             if not resolved:
                 resolved = os.getenv("DATABASE_URL")
 
             if not resolved:
-                raise ValueError(
-                    "DATABASE_URL is not configured. PostgreSQL is REQUIRED. "
-                    "Run `poindexter setup` to create ~/.poindexter/bootstrap.toml, "
-                    "or set DATABASE_URL in the environment."
-                )
+                if _require is not None:
+                    # Fail loud + notify operator (Telegram → Discord →
+                    # alerts.log → stderr) then sys.exit(2). Does not
+                    # return.
+                    resolved = _require(source="services.database_service")
+                else:
+                    # Bootstrap unavailable — at minimum raise so callers
+                    # can't dereference a None pool downstream (#169).
+                    raise ValueError(
+                        "DATABASE_URL is not configured. PostgreSQL is REQUIRED. "
+                        "Run `poindexter setup` to create ~/.poindexter/bootstrap.toml, "
+                        "or set DATABASE_URL in the environment."
+                    )
             self.database_url = resolved
 
         # Local database URL (optional — falls back to primary pool when unset)

@@ -6,8 +6,18 @@ Tests DatabaseService: initialization (requires DATABASE_URL), delegation patter
 and a representative cross-section of all 5 module domains.
 
 DB connections are never actually made — asyncpg.create_pool is always mocked.
+
+Issue #169: the bootstrap-resolution tests below previously skipped behind
+``pytest.mark.skipif(not _has_brain_module())`` because they imported
+``brain.bootstrap`` directly. That hid the production fail-loud path
+(``DATABASE_URL`` unset + bootstrap.toml typo → silent ``None`` pool +
+later deref). The tests now stub ``brain.bootstrap`` via ``sys.modules``
+so they exercise the production code path unconditionally.
 """
 
+import sys
+from importlib.util import find_spec
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,9 +25,60 @@ import pytest
 from services.database_service import DatabaseService
 
 
-def _has_brain_module():
-    from importlib.util import find_spec
+def _has_brain_module() -> bool:
     return find_spec("brain.bootstrap") is not None
+
+
+def _ensure_brain_bootstrap_stub(monkeypatch) -> ModuleType:
+    """Guarantee ``brain.bootstrap`` is importable for the duration of a test.
+
+    On dev hosts the real module is on the path. In Docker test contexts
+    the brain mount is absent — install a stdlib-only stub so the
+    production code path that does ``from brain.bootstrap import ...``
+    inside ``DatabaseService.__init__`` exercises real behavior instead
+    of silently skipping. The stub is unregistered on test teardown by
+    the ``monkeypatch`` fixture.
+    """
+    if _has_brain_module():
+        # Real module is present; tests can monkeypatch its attributes
+        # directly. Return it so callers can patch BOOTSTRAP_FILE.
+        import brain.bootstrap as _real_boot
+        return _real_boot
+
+    # Build a stand-in package + submodule pair that mimics the public
+    # surface DatabaseService imports.
+    from pathlib import Path
+
+    brain_pkg = ModuleType("brain")
+    brain_pkg.__path__ = []  # mark as a package so importlib is happy
+
+    bootstrap_mod = ModuleType("brain.bootstrap")
+    bootstrap_mod.BOOTSTRAP_DIR = Path("/nonexistent")
+    bootstrap_mod.BOOTSTRAP_FILE = Path("/nonexistent/bootstrap.toml")
+
+    def _resolve_database_url(*, explicit: str | None = None) -> str | None:
+        if explicit:
+            return explicit
+        for var in ("DATABASE_URL", "LOCAL_DATABASE_URL", "POINDEXTER_MEMORY_DSN"):
+            import os as _os
+            v = (_os.getenv(var) or "").strip()
+            if v:
+                return v
+        return None
+
+    def _require_database_url(*, explicit: str | None = None, source: str = "unknown") -> str:
+        url = _resolve_database_url(explicit=explicit)
+        if url:
+            return url
+        # Match the real require_database_url contract: notify + sys.exit(2).
+        raise SystemExit(2)
+
+    bootstrap_mod.resolve_database_url = _resolve_database_url
+    bootstrap_mod.require_database_url = _require_database_url
+
+    monkeypatch.setitem(sys.modules, "brain", brain_pkg)
+    monkeypatch.setitem(sys.modules, "brain.bootstrap", bootstrap_mod)
+    return bootstrap_mod
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,30 +116,40 @@ class TestDatabaseServiceInit:
         svc = DatabaseService(database_url="postgresql://user:pass@host:5432/db")
         assert svc.database_url == "postgresql://user:pass@host:5432/db"
 
-    @pytest.mark.skipif(
-        not _has_brain_module(),
-        reason="brain module not available (Docker container missing brain/ mount)",
-    )
     def test_reads_database_url_env_var(self, monkeypatch):
-        # #198: when bootstrap.toml has no URL, fall back to env var.
-        import brain.bootstrap as _boot
+        """#198: when bootstrap.toml has no URL, fall back to env var.
+
+        #169 follow-up: this test used to ``skipif`` when brain.bootstrap
+        was not importable (Docker context). Now uses
+        ``_ensure_brain_bootstrap_stub`` so it always exercises the
+        production resolution path.
+        """
+        _boot = _ensure_brain_bootstrap_stub(monkeypatch)
         monkeypatch.setattr(_boot, "BOOTSTRAP_FILE", _boot.BOOTSTRAP_DIR / "nonexistent.toml")
         monkeypatch.setenv("DATABASE_URL", "postgresql://env:env@host/envdb")
         svc = DatabaseService()
         assert svc.database_url == "postgresql://env:env@host/envdb"
 
-    @pytest.mark.skipif(
-        not _has_brain_module(),
-        reason="brain module not available (Docker container missing brain/ mount)",
-    )
     def test_raises_when_no_url(self, monkeypatch):
-        # #198: with bootstrap.toml missing AND env vars unset, we should raise.
-        import brain.bootstrap as _boot
+        """#198 + #169: with bootstrap.toml missing AND env vars unset,
+        the constructor must fail loud — never silently leave ``self.pool``
+        as None for a downstream caller to dereference.
+
+        Production calls ``brain.bootstrap.require_database_url`` which
+        notifies the operator (Telegram → Discord → alerts.log) then
+        ``sys.exit(2)``. The ``SystemExit`` surfaces here.
+        """
+        _boot = _ensure_brain_bootstrap_stub(monkeypatch)
         monkeypatch.setattr(_boot, "BOOTSTRAP_FILE", _boot.BOOTSTRAP_DIR / "nonexistent.toml")
         for var in ("DATABASE_URL", "LOCAL_DATABASE_URL", "POINDEXTER_MEMORY_DSN"):
             monkeypatch.delenv(var, raising=False)
-        with pytest.raises(ValueError, match="DATABASE_URL"):
-            DatabaseService()
+        # ``require_database_url`` raises SystemExit(2) after notifying
+        # the operator. Patch the operator notifier so the test does not
+        # try to hit Telegram/Discord during the run.
+        with patch("brain.operator_notifier.notify_operator", create=True):
+            with pytest.raises(SystemExit) as excinfo:
+                DatabaseService()
+        assert excinfo.value.code == 2
 
     def test_pool_starts_as_none(self):
         svc = make_service()
