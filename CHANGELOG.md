@@ -7,6 +7,7 @@
 #### Release
 
 - **Poindexter 1.0.0 is out.** First stable release. Tag [`v1.0.0`](https://github.com/Glad-Labs/poindexter/releases/tag/v1.0.0) cuts a snapshot of every feature shipped to date — the full content pipeline (topic discovery → writer → multi-model QA → publish), the brain daemon and operator probes, the MCP server, social distribution adapters, and the niche-aware / RAG writer modes added this week. Existing installs can pin to `v1.0.0` for a stable upgrade target. ([#268](https://github.com/Glad-Labs/poindexter/pull/268))
+- **Patch release 1.0.1.** Ships the RSS feed collision-safety fix (see Bug fixes below) on top of `v1.0.0`. Pin to [`v1.0.1`](https://github.com/Glad-Labs/poindexter/releases/tag/v1.0.1) if you want the fix without tracking `main`. ([#288](https://github.com/Glad-Labs/poindexter/pull/288))
 
 #### New features
 
