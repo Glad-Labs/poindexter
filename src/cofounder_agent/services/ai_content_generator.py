@@ -1041,5 +1041,70 @@ async def test_generation():
     logger.info("First 500 characters:\n%s...", content[:500])
 
 
+# ---------------------------------------------------------------------------
+# Writer-RAG-mode helpers (Task 14 of the niche-discovery RAG pivot)
+# ---------------------------------------------------------------------------
+#
+# The four writer modes in services/writer_rag_modes/* call into these two
+# functions to render a draft from a topic + angle + retrieved snippets.
+# They are deliberately thin wrappers around _ollama_chat_json so unit tests
+# can monkeypatch this module to avoid a real Ollama call.
+#
+# Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
+# Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 14)
+
+
+async def generate_with_context(
+    *, topic: str, angle: str, snippets: list[dict],
+    extra_instructions: str | None = None,
+) -> str:
+    """Build a prompt using the snippets as background context, generate the
+    draft. Wraps the existing generation path; tests can monkeypatch here."""
+    snippet_block = "\n".join(
+        f"[{s['source']}/{s['ref']}] {s['snippet'][:500]}"
+        for s in snippets if s.get('snippet')
+    )
+    instructions = extra_instructions or ""
+    from services.topic_ranking import _ollama_chat_json
+    prompt = f"""Write a blog post on the topic: "{topic}" with this angle: "{angle}".
+
+{instructions}
+
+Background context (cite where relevant):
+{snippet_block}
+
+Return the full post body in Markdown.
+"""
+    return await _ollama_chat_json(prompt, model="glm-4.7-5090:latest")
+
+
+async def generate_with_outline(
+    *, topic: str, outline: dict, snippets: list[dict],
+) -> str:
+    """Expand a structured outline into a full blog post draft.
+
+    Used by the STORY_SPINE writer mode after it preprocesses the top
+    snippets into a {hook, what_happened, why_it_matters, ...} skeleton.
+    """
+    snippet_block = "\n".join(
+        f"[{s['source']}/{s['ref']}] {s['snippet'][:500]}"
+        for s in snippets if s.get('snippet')
+    )
+    outline_block = "\n".join(f"{k.replace('_',' ').title()}: {v}" for k, v in outline.items())
+    from services.topic_ranking import _ollama_chat_json
+    prompt = f"""Expand the following outline into a full blog post.
+
+Topic: {topic}
+Outline:
+{outline_block}
+
+Background snippets to draw on:
+{snippet_block}
+
+Return the full post body in Markdown.
+"""
+    return await _ollama_chat_json(prompt, model="glm-4.7-5090:latest")
+
+
 if __name__ == "__main__":
     asyncio.run(test_generation())

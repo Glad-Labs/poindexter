@@ -287,3 +287,48 @@ class ResearchService:
         except Exception as e:
             logger.debug("[RESEARCH] Web search failed: %s", e)
             return []
+
+
+# ---------------------------------------------------------------------------
+# Module-level shim for the TWO_PASS writer mode (Task 14)
+# ---------------------------------------------------------------------------
+
+
+async def research_topic(query: str, max_sources: int = 2) -> str:
+    """Shim for the TWO_PASS writer mode's external fact-augmentation step.
+
+    Wraps ``ResearchService.build_context`` so the writer can ask for a
+    single fact lookup without instantiating the full service with a DB
+    pool. Constructed with ``pool=None`` — that disables the
+    ``_find_internal_links`` step (returns []) but keeps the known-references
+    lookup and the free DuckDuckGo web search, which are the two sources
+    that matter for filling [EXTERNAL_NEEDED] markers.
+
+    ``max_sources`` is currently advisory: the underlying ``build_context``
+    method caps internally (5 web results, 8 references). Plumbing a true
+    cap requires refactoring ``ResearchService.build_context`` itself,
+    which is out of scope for Task 14.
+
+    Spec: docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md
+    Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 14)
+    """
+    try:
+        svc = ResearchService(pool=None)
+        ctx = await svc.build_context(query)
+        if not ctx:
+            logger.info(
+                "[RESEARCH] research_topic('%s') produced no context — "
+                "returning empty stub", query[:60],
+            )
+            return ""
+        return ctx
+    except Exception as e:
+        # Don't crash the TWO_PASS revise loop if research is unavailable
+        # (e.g. DuckDuckGo rate-limited, no network). Return a clearly-marked
+        # stub so the LLM can still produce a coherent revision and the
+        # downstream validator can flag the missing citation.
+        logger.warning(
+            "[RESEARCH] research_topic('%s') failed: %s — returning stub",
+            query[:60], e,
+        )
+        return f"[research stub for: {query}]"
