@@ -33,12 +33,23 @@ class TestSearchSimple:
 
 class TestDDGSearch:
     async def test_handles_import_error(self):
+        """Both DDG client modules unavailable -> empty list, no network call.
+
+        Production code tries `ddgs` first then falls back to
+        `duckduckgo_search`. Patch BOTH to None so the test can never
+        accidentally hit the real DuckDuckGo network in any environment
+        where one of them is installed (closes #170).
+        """
         researcher = WebResearcher()
-        with patch.dict("sys.modules", {"duckduckgo_search": None}):
-            # Should fail gracefully
+        with patch.dict(
+            "sys.modules",
+            {"ddgs": None, "duckduckgo_search": None},
+        ):
+            # Should fail gracefully — both imports raise ImportError
             results = await researcher._ddg_search("test", 3)
-            # May return empty or raise — just shouldn't crash
+            # Caller wraps in try/except and returns []
             assert isinstance(results, list)
+            assert results == []
 
 
 class TestExtractContent:

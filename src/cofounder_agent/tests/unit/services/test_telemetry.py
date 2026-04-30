@@ -113,7 +113,16 @@ class TestModuleConstants:
         assert isinstance(telemetry_mod.OPENTELEMETRY_AVAILABLE, bool)
 
     def test_openai_instrumentor_is_none_or_class(self):
-        oi = getattr(telemetry_mod, "OpenAIInstrumentor", None)
+        """Guard against silent removal/rename of OpenAIInstrumentor.
+
+        telemetry.py always assigns ``OpenAIInstrumentor`` at module
+        import time (either the imported class or ``None``). Use direct
+        attribute access (not ``getattr(..., None)``) so a future
+        opentelemetry-instrumentation-openai upgrade that drops or
+        renames the symbol fails this test loudly instead of passing
+        silently (closes #171).
+        """
+        oi = telemetry_mod.OpenAIInstrumentor
         # Either None (if not installed) or a class
         assert oi is None or callable(oi)
 
