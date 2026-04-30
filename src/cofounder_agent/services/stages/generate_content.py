@@ -122,23 +122,44 @@ class GenerateContentStage:
         # same sources the writer consulted.
         context["research_context"] = research_context
 
-        # Generate content (GPU-locked to ollama mode).
-        from services.gpu_scheduler import gpu
-        async with gpu.lock(
-            "ollama", model=preferred_model,
-            task_id=task_id, phase="generate_content",
-        ):
-            content_text, model_used, metrics = await content_generator.generate_blog_post(
+        # Task 14 (RAG pivot): if the task carries a writer_rag_mode set by
+        # the niche topic-discovery handoff, route to the new writer-mode
+        # dispatcher instead of the legacy generator. The legacy path stays
+        # intact for tasks with no writer_rag_mode (column is nullable per
+        # migration 0114, so pre-niche tasks remain backward-compatible).
+        writer_rag_mode = await self._read_writer_rag_mode(database_service, task_id)
+        if writer_rag_mode:
+            logger.info(
+                "STAGE 2: writer_rag_mode=%s — dispatching to writer_rag_modes",
+                writer_rag_mode,
+            )
+            content_text, model_used, metrics = await self._generate_via_writer_mode(
+                writer_rag_mode=writer_rag_mode,
                 topic=topic,
                 style=style,
                 tone=tone,
-                target_length=target_length,
                 tags=tags,
-                preferred_model=preferred_model,
-                preferred_provider=preferred_provider,
-                writing_style_context=writing_style_context,
-                research_context=research_context,
+                database_service=database_service,
+                task_id=task_id,
             )
+        else:
+            # Generate content (GPU-locked to ollama mode).
+            from services.gpu_scheduler import gpu
+            async with gpu.lock(
+                "ollama", model=preferred_model,
+                task_id=task_id, phase="generate_content",
+            ):
+                content_text, model_used, metrics = await content_generator.generate_blog_post(
+                    topic=topic,
+                    style=style,
+                    tone=tone,
+                    target_length=target_length,
+                    tags=tags,
+                    preferred_model=preferred_model,
+                    preferred_provider=preferred_provider,
+                    writing_style_context=writing_style_context,
+                    research_context=research_context,
+                )
 
         if not content_text:
             logger.error("Content generation returned None or empty")
@@ -387,6 +408,105 @@ class GenerateContentStage:
             logger.warning("RAG context skipped (non-fatal): %s", e)
 
         return research_context
+
+    async def _read_writer_rag_mode(
+        self, database_service: Any, task_id: str,
+    ) -> str | None:
+        """Return the task's writer_rag_mode if set, else None.
+
+        Task 14: niches set this column when handing tasks off via
+        TopicBatchService; legacy/manual tasks leave it NULL and stay on the
+        legacy generator path.
+        """
+        try:
+            task_row = await database_service.get_task(task_id)
+            if not task_row:
+                return None
+            mode = task_row.get("writer_rag_mode")
+            if not mode:
+                return None
+            return str(mode).strip().upper() or None
+        except Exception as e:
+            logger.warning(
+                "Failed to read writer_rag_mode for task %s: %s — falling back to legacy path",
+                task_id, e,
+            )
+            return None
+
+    async def _generate_via_writer_mode(
+        self,
+        *,
+        writer_rag_mode: str,
+        topic: str,
+        style: str,
+        tone: str,
+        tags: list[str],
+        database_service: Any,
+        task_id: str,
+    ) -> tuple[str, str, dict[str, Any]]:
+        """Run dispatch_writer_mode and shape the result into the
+        (content_text, model_used, metrics) tuple the rest of this stage
+        already expects.
+
+        The dispatcher returns a richer dict ({draft, snippets_used, mode,
+        ...}); we surface mode-specific extras inside ``metrics`` so the
+        downstream QA / persistence stages can see them but the main flow
+        stays unchanged.
+        """
+        from services.writer_rag_modes import dispatch_writer_mode
+
+        # The writer modes use "angle" rather than separate style/tone/tags;
+        # collapse the available descriptors into a single angle string.
+        angle_parts = [p for p in (style, tone) if p]
+        if tags:
+            angle_parts.append("tags: " + ", ".join(tags))
+        angle = " | ".join(angle_parts) or "general"
+
+        pool = getattr(database_service, "pool", None)
+        if pool is None:
+            raise ValueError(
+                "writer_rag_mode dispatch requires database_service.pool but it is None"
+            )
+
+        # niche_id is not strictly needed by the modes themselves — the modes
+        # query the global embeddings table by topic+angle similarity. If a
+        # downstream mode wants to scope to a niche it can look the niche_id
+        # up via the task row's niche_slug.
+        from services.gpu_scheduler import gpu
+        async with gpu.lock(
+            "ollama", model="glm-4.7-5090:latest",
+            task_id=task_id, phase="generate_content",
+        ):
+            result = await dispatch_writer_mode(
+                mode=writer_rag_mode,
+                topic=topic,
+                angle=angle,
+                niche_id=None,
+                pool=pool,
+            )
+
+        draft = result.get("draft") or ""
+        # The writer-mode helpers all call _ollama_chat_json with this model.
+        # If a future mode picks a different model it should put it on the
+        # result dict so we can surface the real value.
+        model_used = result.get("model_used") or "glm-4.7-5090:latest"
+        metrics: dict[str, Any] = {
+            "writer_rag_mode": writer_rag_mode,
+            "snippets_used_count": len(result.get("snippets_used") or []),
+            "models_used_by_phase": {"generate_content": model_used},
+            "model_selection_log": {
+                "generate_content": {
+                    "preferred": model_used,
+                    "actual": model_used,
+                    "source": "writer_rag_mode_dispatch",
+                },
+            },
+        }
+        # TWO_PASS-specific extras (LangGraph state machine output).
+        for k in ("external_lookups", "revision_loops", "loop_capped", "spine"):
+            if k in result:
+                metrics[k] = result[k]
+        return draft, model_used, metrics
 
     async def _fetch_existing_titles(self, database_service: Any) -> str:
         """Return newline-separated recent published titles for avoidance prompt."""
