@@ -132,6 +132,57 @@ The returned summary looks like:
 - **You retired a service** — links left behind in old dashboards surface as failing probes; remove them or update them.
 - **You added a new internal service** — add its `app_settings` URL key to `INTERNAL_COMPOSE_URL_KEYS` if it doesn't end in `_url`, and the probe picks it up automatically.
 
+## Per-probe tracing in Tempo
+
+Each probe inside `run_health_probes` runs in its own OpenTelemetry
+child span (added in
+[#291](https://github.com/Glad-Labs/poindexter/pull/291), closes
+[#176](https://github.com/Glad-Labs/poindexter/issues/176)). Without
+this, every probe ran under the parent `run_health_probes` span and a
+single slow or crashing probe was invisible against the aggregate —
+you'd see a 30-second cycle in Tempo with no way to tell which check
+caused it.
+
+### What gets emitted
+
+For every probe in `PROBES` that's due on a given cycle, the daemon
+opens a span named `brain.probe.<name>` (for example,
+`brain.probe.db_ping`, `brain.probe.ollama_models`,
+`brain.probe.embeddings_freshness`). Each span carries three
+attributes:
+
+| Attribute         | Type    | Meaning                                          |
+| ----------------- | ------- | ------------------------------------------------ |
+| `probe.name`      | string  | The probe key (matches the `PROBES` registry)    |
+| `probe.ok`        | bool    | Final pass/fail result returned by the probe     |
+| `probe.duration_s`| float   | Wall-clock seconds the probe took to run         |
+
+Probes that raise call `span.record_exception(e)` so the stack trace
+shows up on the span in Tempo.
+
+### When to use it
+
+- **A probe cycle is slow but you don't know which probe.** Open Tempo,
+  filter on service `poindexter.brain.probes`, and the
+  `brain.probe.*` flame graph shows per-probe duration directly.
+- **A probe is intermittently failing.** Filter spans on
+  `probe.ok = false` to see only failed runs and their attached
+  exceptions.
+- **You're tuning probe timeouts.** `probe.duration_s` over time is
+  the data point — long tails indicate the probe needs a tighter
+  timeout or a faster implementation.
+
+### Configuration
+
+No configuration is required. Tracing is automatic when the
+`opentelemetry` SDK is installed (it's part of the worker image). On
+minimal dev environments without the SDK, the daemon falls back to a
+no-op tracer and probes still run normally — there's just no Tempo
+output.
+
+If you've wired up your own OpenTelemetry exporter, the tracer is
+named `poindexter.brain.probes`.
+
 ## Files in this directory
 
 | File                          | Purpose                                                               |
