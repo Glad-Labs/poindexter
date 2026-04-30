@@ -41,6 +41,13 @@
 
 ---
 
+## [1.0.1](https://github.com/Glad-Labs/poindexter/compare/v1.0.0...v1.0.1) (2026-04-30)
+
+
+### Bug Fixes
+
+* **publish:** use tempfile.mkstemp for RSS feed regen (closes [#284](https://github.com/Glad-Labs/poindexter/issues/284)) ([#287](https://github.com/Glad-Labs/poindexter/issues/287)) ([dcfbdfb](https://github.com/Glad-Labs/poindexter/commit/dcfbdfbcf643a9c74f96becdcc687b607fe02df4))
+
 ## 1.0.0 (2026-04-30)
 
 
