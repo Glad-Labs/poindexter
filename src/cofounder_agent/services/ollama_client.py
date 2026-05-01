@@ -14,12 +14,19 @@ Install Ollama: https://ollama.ai/download
 Pull models: ollama pull qwen3:8b
 """
 
-import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
+from aiolimiter import AsyncLimiter
+from tenacity import (
+    AsyncRetrying,
+    RetryError,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from services.logger_config import get_logger
 
@@ -81,6 +88,95 @@ def _default_num_ctx() -> int:
         raise RuntimeError(
             f"Invalid app_settings value for ollama_num_ctx: {exc}"
         ) from exc
+
+
+def _get_int_setting(key: str, default: int) -> int:
+    """Read a positive int from app_settings, falling back to ``default`` on
+    missing / invalid values. Wraps bad config in a warning log instead of
+    raising so a typo in app_settings can't silently take down the worker.
+    """
+    raw = _sc_get(key, "")
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+        return value if value > 0 else default
+    except (ValueError, TypeError):
+        logger.warning(
+            "Invalid app_settings value for %s=%r — using default %d",
+            key, raw, default,
+        )
+        return default
+
+
+# ============================================================================
+# CONCURRENCY LIMITER
+# ============================================================================
+# An aiolimiter.AsyncLimiter caps the number of concurrent in-flight requests
+# this client process makes against the local Ollama server. Without it, a
+# burst of pipeline tasks (or a forked stage that fans out) can pile work on
+# the GPU faster than it can drain — leading to VRAM thrash, OOM kills, and
+# the silent-fallback failure mode where the writer model gets evicted and
+# the next call lands on a smaller model.
+#
+# The limit is read from app_settings (`ollama_concurrency_limit`) on first
+# call. Tenacity's stop/wait config is decorator-level and frozen at module
+# import; the concurrency limiter is rebuildable at runtime via
+# ``rebuild_concurrency_limiter()`` for operators who want to tune live
+# without restarting the worker.
+
+_CONCURRENCY_DEFAULT = 10
+_concurrency_limiter: AsyncLimiter | None = None
+
+
+def _get_concurrency_limiter() -> AsyncLimiter:
+    """Lazy-init the module-level concurrency limiter.
+
+    Resolved on first use because site_config is empty at module-import
+    time — reading it here lets the operator change
+    ``ollama_concurrency_limit`` in app_settings before the worker has
+    made its first Ollama call without needing a restart.
+    """
+    global _concurrency_limiter
+    if _concurrency_limiter is None:
+        limit = _get_int_setting("ollama_concurrency_limit", _CONCURRENCY_DEFAULT)
+        # AsyncLimiter is a leaky-bucket rate limiter. With time_period=0
+        # (or any small interval) and max_rate=N, it caps in-flight
+        # entries to N. We want a true semaphore-style cap, so use a
+        # 1-second window — sustainably allows N parallel calls.
+        _concurrency_limiter = AsyncLimiter(max_rate=limit, time_period=1.0)
+        logger.info(
+            "Ollama concurrency limiter initialised",
+            ollama_concurrency_limit=limit,
+        )
+    return _concurrency_limiter
+
+
+def rebuild_concurrency_limiter() -> AsyncLimiter:
+    """Force a re-read of ``ollama_concurrency_limit`` and rebuild the
+    limiter. Call from an admin endpoint / settings-changed hook to apply
+    a new concurrency cap without restarting the worker. In-flight
+    requests against the old limiter complete normally; new requests go
+    through the new one.
+    """
+    global _concurrency_limiter
+    _concurrency_limiter = None
+    return _get_concurrency_limiter()
+
+
+def _log_retry_attempt(retry_state: Any) -> None:
+    """Tenacity ``before_sleep`` hook — log every retry attempt as a
+    structured warning. Uses our structlog wrapper so the event lands
+    in the same audit pipeline as the rest of the worker logs.
+    """
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    sleep_for = getattr(retry_state.next_action, "sleep", 0.0)
+    logger.warning(
+        "[generate_with_retry] Attempt %d failed, retrying in %.2fs",
+        retry_state.attempt_number,
+        sleep_for,
+        error=str(exc) if exc else "unknown",
+    )
 
 
 # ============================================================================
@@ -381,9 +477,10 @@ class OllamaClient:
             payload["options"]["num_predict"] = max_tokens
 
         try:
-            response = await self.client.post(
-                f"{self.base_url}/api/chat", json=payload, timeout=call_timeout
-            )
+            async with _get_concurrency_limiter():
+                response = await self.client.post(
+                    f"{self.base_url}/api/chat", json=payload, timeout=call_timeout
+                )
             response.raise_for_status()
             result = response.json()
 
@@ -470,9 +567,10 @@ class OllamaClient:
             payload["options"]["num_predict"] = max_tokens
 
         try:
-            response = await self.client.post(
-                f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
-            )
+            async with _get_concurrency_limiter():
+                response = await self.client.post(
+                    f"{self.base_url}/api/chat", json=payload, timeout=self.timeout
+                )
             response.raise_for_status()
             result = response.json()
 
@@ -539,63 +637,73 @@ class OllamaClient:
         system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        max_retries: int = 3,
-        base_delay: float = 1.0,
+        max_retries: int | None = None,
+        base_delay: float | None = None,
     ) -> dict[str, Any]:
-        """Generate completion with exponential backoff retry."""
+        """Generate completion with exponential-backoff retry on transient errors.
+
+        Retry policy is owned by ``tenacity`` — only ``httpx.HTTPError``
+        (network timeouts, connect errors, transient 5xx) and our own
+        ``OllamaConnectionError`` are retried. Non-retryable failures
+        (4xx, ValueError, programming bugs) propagate immediately.
+
+        ``max_retries`` and ``base_delay`` accept legacy explicit values
+        for backwards compatibility with existing callers (e.g.
+        ``script_for_video.py``). When omitted, they fall back to
+        ``app_settings`` keys ``ollama_max_retries`` (default 3) /
+        ``ollama_retry_initial_seconds`` (default 1) so operators can
+        tune the policy at runtime without redeploying.
+
+        Trade-off: tenacity's stop/wait config is read here once per
+        call (cheap), so app_settings changes apply on the next call —
+        no worker restart needed for these values. The module-level
+        concurrency limiter is rebuildable separately via
+        ``rebuild_concurrency_limiter()``.
+        """
         model = model or self.model
-        last_error = None
-
-        for attempt in range(max_retries):
-            try:
-                result = await self.generate(
-                    prompt=prompt,
-                    model=model,
-                    system=system,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=False,
-                )
-                if result and result.get("text"):
-                    return result
-
-            except (httpx.ConnectError, httpx.ReadTimeout) as e:
-                last_error = e
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2**attempt)
-                    logger.warning(
-                        "[generate_with_retry] Attempt %d failed, retrying in %ss",
-                        attempt + 1,
-                        delay,
-                        error=str(e),
-                        model=model,
-                    )
-                    await asyncio.sleep(delay)
-
-            except Exception as e:
-                last_error = e
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2**attempt)
-                    logger.warning(
-                        "[generate_with_retry] Attempt %d failed, retrying in %ss",
-                        attempt + 1,
-                        delay,
-                        error=str(e),
-                        model=model,
-                    )
-                    await asyncio.sleep(delay)
-
-        # Pass the captured exception explicitly — we're outside the except
-        # block by the time we reach here, so ``exc_info=True`` would look
-        # at sys.exc_info() which may be stale.
-        logger.error(
-            "[generate_with_retry] All attempts exhausted",
-            error=str(last_error),
-            max_retries=max_retries,
-            model=model,
-            exc_info=last_error,
+        attempts = (
+            max_retries if max_retries is not None
+            else _get_int_setting("ollama_max_retries", 3)
         )
-        raise last_error if last_error else OllamaError("Generation failed after all retries")
+        initial = (
+            base_delay if base_delay is not None
+            else float(_sc_get("ollama_retry_initial_seconds", "1") or 1)
+        )
+        max_wait = float(_sc_get("ollama_retry_max_seconds", "30") or 30)
+
+        try:
+            async for attempt in AsyncRetrying(
+                retry=retry_if_exception_type((httpx.HTTPError, OllamaConnectionError)),
+                stop=stop_after_attempt(attempts),
+                wait=wait_exponential_jitter(initial=initial, max=max_wait, jitter=2.0),
+                before_sleep=_log_retry_attempt,
+                reraise=True,
+            ):
+                with attempt:
+                    result = await self.generate(
+                        prompt=prompt,
+                        model=model,
+                        system=system,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        stream=False,
+                    )
+                    return result
+        except RetryError as exc:
+            # Defensive — reraise=True should surface the original exception,
+            # but a RetryError wrapping a non-retryable check still surfaces
+            # here. Unwrap so callers see the real cause.
+            logger.error(
+                "[generate_with_retry] All attempts exhausted",
+                error=str(exc),
+                max_retries=attempts,
+                model=model,
+            )
+            raise exc.last_attempt.exception() from exc
+
+        # AsyncRetrying with reraise=True always either returns or raises
+        # — this fallback only fires if the loop never iterated (attempts<1).
+        raise OllamaError("Generation failed: no attempts were made")
 
     async def stream_generate(
         self,
