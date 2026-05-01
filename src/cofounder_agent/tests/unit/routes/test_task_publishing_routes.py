@@ -341,7 +341,7 @@ class TestApproveTask:
                 return_value="cat-1",
             ),
             patch(
-                "services.task_executor._notify_openclaw",
+                "services.integrations.operator_notify.notify_operator",
                 new_callable=AsyncMock,
             ),
         ):

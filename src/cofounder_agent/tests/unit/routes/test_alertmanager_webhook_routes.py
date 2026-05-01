@@ -1,10 +1,10 @@
 """Unit tests for ``routes/alertmanager_webhook_routes.py``.
 
-We stub out the asyncpg pool + ``_notify_openclaw`` so each test can
+We stub out the asyncpg pool + ``notify_operator`` so each test can
 assert on inserts, pages, and remediation lookups without spinning up
-Postgres or OpenClaw. The handler's goal is to be robust: malformed
-alerts, missing labels, and failing sub-steps must never 5xx — the
-webhook is a hot path Alertmanager will retry.
+Postgres or the outbound dispatcher. The handler's goal is to be
+robust: malformed alerts, missing labels, and failing sub-steps must
+never 5xx — the webhook is a hot path Alertmanager will retry.
 """
 
 from __future__ import annotations
@@ -145,9 +145,8 @@ class TestWebhookEndpoint:
     def test_persists_each_alert(self):
         pool = _FakePool()
         with patch(
-            "routes.alertmanager_webhook_routes._notify_openclaw",
+            "services.integrations.operator_notify.notify_operator",
             new=AsyncMock(return_value=None),
-            create=True,
         ):
             client = TestClient(_build_app(pool))
             resp = self._post(client, {
@@ -177,13 +176,8 @@ class TestWebhookEndpoint:
         pool = _FakePool()
         mock_notify = AsyncMock(return_value=None)
         with patch(
-            "routes.alertmanager_webhook_routes._notify_openclaw",
+            "services.integrations.operator_notify.notify_operator",
             new=mock_notify,
-            create=True,
-        ), patch(
-            "services.task_executor._notify_openclaw",
-            new=mock_notify,
-            create=True,
         ):
             client = TestClient(_build_app(pool))
             resp = self._post(client, {
@@ -209,9 +203,8 @@ class TestWebhookEndpoint:
         pool = _FakePool()
         mock_notify = AsyncMock(return_value=None)
         with patch(
-            "services.task_executor._notify_openclaw",
+            "services.integrations.operator_notify.notify_operator",
             new=mock_notify,
-            create=True,
         ):
             client = TestClient(_build_app(pool))
             resp = self._post(client, {
@@ -238,9 +231,8 @@ class TestWebhookEndpoint:
         })
         mock_notify = AsyncMock(return_value=None)
         with patch(
-            "services.task_executor._notify_openclaw",
+            "services.integrations.operator_notify.notify_operator",
             new=mock_notify,
-            create=True,
         ):
             client = TestClient(_build_app(pool))
             resp = self._post(client, {
@@ -262,9 +254,8 @@ class TestWebhookEndpoint:
             "plugin.remediation.PoindexterOllamaDown": json.dumps({"enabled": False}),
         })
         with patch(
-            "services.task_executor._notify_openclaw",
+            "services.integrations.operator_notify.notify_operator",
             new=AsyncMock(return_value=None),
-            create=True,
         ):
             client = TestClient(_build_app(pool))
             resp = self._post(client, {
@@ -283,9 +274,8 @@ class TestWebhookEndpoint:
     def test_tolerates_malformed_alerts_entry(self):
         pool = _FakePool()
         with patch(
-            "services.task_executor._notify_openclaw",
+            "services.integrations.operator_notify.notify_operator",
             new=AsyncMock(return_value=None),
-            create=True,
         ):
             client = TestClient(_build_app(pool))
             # alerts not a list

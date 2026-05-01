@@ -937,10 +937,10 @@ async def publish_post_from_task(
     # 12. Send notification
     # ---------------------------------------------------------------
     try:
-        from services.task_executor import _notify_openclaw
+        from services.integrations.operator_notify import notify_operator
 
         _q_score = task.get("quality_score") or merged.get("quality_score") or "N/A"
-        await _notify_openclaw(
+        await notify_operator(
             f"Published: {post_title}\n/posts/{slug}\nScore: {_q_score}",
             critical=True,
         )

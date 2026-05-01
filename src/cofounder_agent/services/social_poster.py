@@ -59,7 +59,10 @@ def _openclaw_url() -> str:
 
 
 async def _openclaw_token() -> str:
-    # Same key as task_executor._notify_openclaw uses; unifying here.
+    # Legacy OpenClaw key — task_executor._notify_openclaw used to use
+    # this too before it was migrated to the outbound dispatcher
+    # framework. Social poster still goes through OpenClaw directly
+    # pending its own migration.
     # is_secret=true row — must use async get_secret to read plaintext.
     # Sync .get() would return enc:v1:<ciphertext> for is_secret rows
     # (#325 bug class), and the bearer-token comparison upstream would

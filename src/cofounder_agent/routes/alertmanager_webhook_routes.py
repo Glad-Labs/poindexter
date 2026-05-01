@@ -6,8 +6,9 @@ in order:
 
 1. **Persist** every inbound alert to ``alert_events`` so the brain + operator
    UI + future audit queries have a historical record.
-2. **Dispatch to the operator** (OpenClaw gateway → Telegram + Discord)
-   for anything ``severity=critical`` or ``category=infrastructure``.
+2. **Dispatch to the operator** (outbound dispatcher → Telegram for
+   critical / Discord otherwise) for anything ``severity=critical`` or
+   ``category=infrastructure``.
 3. **Remediation scaffold** — look up ``plugin.remediation.<alertname>``
    in ``app_settings``. If present + enabled, hand off to a registry
    dispatcher. Phase D4 ships the hook; concrete remediation handlers
@@ -195,23 +196,24 @@ def _format_alert_message(alert: dict[str, Any]) -> str:
 
 
 async def _dispatch_to_operator(alert: dict[str, Any]) -> None:
-    """Send the alert to the OpenClaw gateway.
+    """Send the alert to the operator via the outbound dispatcher.
 
-    Uses the existing ``_notify_openclaw`` helper — OpenClaw owns the
-    Telegram + Discord bot tokens, the worker just POSTs a message.
-    Critical severity gets the ``critical=True`` flag so OpenClaw routes
-    to the high-urgency channel.
+    Routes through ``services.integrations.operator_notify.notify_operator``
+    which selects the ``telegram_ops`` row for critical severity and
+    ``discord_ops`` otherwise. ``notify_operator`` is best-effort and
+    never raises, so this wrapper just exists to hold the legacy log
+    line shape used by the surrounding ingest path.
     """
     try:
-        from services.task_executor import _notify_openclaw
+        from services.integrations.operator_notify import notify_operator
     except Exception as e:
-        logger.warning("alertmanager webhook: _notify_openclaw unavailable: %s", e)
+        logger.warning("alertmanager webhook: notify_operator unavailable: %s", e)
         return
 
     severity = (alert.get("labels") or {}).get("severity", "info").lower()
     message = _format_alert_message(alert)
     try:
-        await _notify_openclaw(message, critical=severity == "critical")
+        await notify_operator(message, critical=severity == "critical")
     except Exception as e:
         logger.warning("alertmanager webhook: operator dispatch failed: %s", e)
 

@@ -693,14 +693,14 @@ async def go_live(
     # Queue social/podcast/video (they check for existing files)
     if _should_run_post_publish_hooks():
         try:
-            from services.task_executor import _notify_openclaw
+            from services.integrations.operator_notify import notify_operator
             _site_url = site_config_dep.require("site_url")
-            await _notify_openclaw(
+            await notify_operator(
                 f"🚀 Published: \"{row['title']}\"\n{_site_url}/posts/{row['slug']}",
                 critical=True,
             )
         except Exception:
-            logger.warning("[GO-LIVE] Openclaw notification failed (non-fatal)", exc_info=True)
+            logger.warning("[GO-LIVE] Operator notification failed (non-fatal)", exc_info=True)
 
     logger.info("[GO-LIVE] Post %s promoted to published: %s", post_id, row["slug"])
     return {

@@ -11,8 +11,10 @@ When a writer is past threshold AND hasn't been alerted in the last
 
 1. Fire a ``memory_sync_stale`` audit_log event (visible on /pipeline
    + Grafana dashboards).
-2. Send a Discord ops-channel notification via the existing
-   ``services.task_executor._notify_openclaw`` helper.
+2. Send a Discord ops-channel notification via
+   ``services.integrations.operator_notify.notify_operator``
+   (which routes the ``discord_ops`` row through the outbound
+   dispatcher framework).
 
 Dedup state lives in ``app_settings.memory_stale_last_alerts`` as a
 JSON blob: ``{writer_name: last_alert_iso_timestamp}``.
@@ -161,7 +163,7 @@ class CheckMemoryStalenessJob:
 
             # Discord ops-channel notification.
             try:
-                from services.task_executor import _notify_openclaw
+                from services.integrations.operator_notify import notify_operator
                 age_hours = age_seconds / 3600
                 msg = (
                     f"[MEMORY STALE] writer `{writer}` hasn't been embedded in "
@@ -169,7 +171,7 @@ class CheckMemoryStalenessJob:
                     f"{data.get('count', 0)} rows in pgvector, newest={newest.isoformat()}. "
                     f"Check /memory dashboard."
                 )
-                await _notify_openclaw(msg, critical=False)
+                await notify_operator(msg, critical=False)
                 alerts_fired.append(writer)
             except Exception as e:
                 logger.debug("[MEMORY_STALE] discord notify failed: %s", e)

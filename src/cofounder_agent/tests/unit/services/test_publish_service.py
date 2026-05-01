@@ -147,9 +147,11 @@ def _stub_lazy_imports():
     legacy_reval_routes = MagicMock()
     legacy_reval_routes.trigger_nextjs_revalidation = AsyncMock(return_value=True)
 
-    # services.task_executor
-    task_executor_mod = MagicMock()
-    task_executor_mod._notify_openclaw = AsyncMock()
+    # services.integrations.operator_notify — replaces the legacy
+    # services.task_executor._notify_openclaw stub. publish_service now
+    # imports notify_operator from this module.
+    operator_notify_mod = MagicMock()
+    operator_notify_mod.notify_operator = AsyncMock()
 
     # services.podcast_service
     podcast_mod = MagicMock()
@@ -164,7 +166,7 @@ def _stub_lazy_imports():
         "services.devto_service": devto_mod,
         "services.revalidation_service": reval_mod,
         "routes.revalidate_routes": legacy_reval_routes,
-        "services.task_executor": task_executor_mod,
+        "services.integrations.operator_notify": operator_notify_mod,
         "services.podcast_service": podcast_mod,
     }
 

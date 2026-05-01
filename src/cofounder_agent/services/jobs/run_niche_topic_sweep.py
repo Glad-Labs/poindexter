@@ -147,27 +147,16 @@ async def _notify_new_batch(pool: Any, niche: Any, snapshot: Any) -> None:
 
 
 async def _send_to_operator_channels(pool: Any, message: str) -> None:
-    """Send to Telegram + Discord ops channels via existing infrastructure.
+    """Send to the operator via the outbound dispatcher.
 
-    Uses ``services.task_executor._notify_openclaw`` if available (routes
-    through OpenClaw to both channels at once), falling back to direct
-    Discord webhook + Telegram bot API. All optional — if no channel is
-    configured the message is logged and dropped.
+    Routes through ``services.integrations.operator_notify.notify_operator``,
+    which selects the ``discord_ops`` row for non-critical messages. The
+    helper is best-effort and silently falls back to a direct Discord
+    webhook if the dispatcher framework isn't wired up yet (early boot,
+    tests, CLI one-shots).
     """
     try:
-        from services.task_executor import _notify_openclaw  # type: ignore
-        await _notify_openclaw(message, critical=False)
-        return
-    except Exception as e:
-        logger.debug(
-            "[niche-topic-sweep] _notify_openclaw unavailable, falling back: %s", e,
-        )
-
-    # Fallback path — direct Discord webhook (always works without
-    # OpenClaw being up). Telegram bot API requires the encrypted token,
-    # handled inside the helper if available.
-    try:
-        from services.task_executor import _notify_discord  # type: ignore
-        await _notify_discord(message)
+        from services.integrations.operator_notify import notify_operator
+        await notify_operator(message, critical=False)
     except Exception as e:
         logger.warning("[niche-topic-sweep] no notification path available: %s", e)

@@ -95,7 +95,7 @@ class TestCheckMemoryStalenessJobRun:
         audit_mock = MagicMock()
 
         with patch("poindexter.memory.MemoryClient", memory_cls), \
-             patch("services.task_executor._notify_openclaw", new=notify_mock), \
+             patch("services.integrations.operator_notify.notify_operator", new=notify_mock), \
              patch("services.audit_log.audit_log_bg", new=audit_mock):
             result = await CheckMemoryStalenessJob().run(pool, {})
 
@@ -115,7 +115,7 @@ class TestCheckMemoryStalenessJobRun:
 
         notify_mock = AsyncMock()
         with patch("poindexter.memory.MemoryClient", memory_cls), \
-             patch("services.task_executor._notify_openclaw", new=notify_mock):
+             patch("services.integrations.operator_notify.notify_operator", new=notify_mock):
             result = await CheckMemoryStalenessJob().run(pool, {})
 
         assert result.ok is True
@@ -133,7 +133,7 @@ class TestCheckMemoryStalenessJobRun:
 
         notify_mock = AsyncMock()
         with patch("poindexter.memory.MemoryClient", memory_cls), \
-             patch("services.task_executor._notify_openclaw", new=notify_mock):
+             patch("services.integrations.operator_notify.notify_operator", new=notify_mock):
             result = await CheckMemoryStalenessJob().run(pool, {})
 
         assert result.ok is True
@@ -153,7 +153,7 @@ class TestCheckMemoryStalenessJobRun:
 
         notify_mock = AsyncMock()
         with patch("poindexter.memory.MemoryClient", memory_cls), \
-             patch("services.task_executor._notify_openclaw", new=notify_mock):
+             patch("services.integrations.operator_notify.notify_operator", new=notify_mock):
             result = await CheckMemoryStalenessJob().run(pool, {})
 
         assert result.changes_made == 1

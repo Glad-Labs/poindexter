@@ -2,8 +2,6 @@
 
 import asyncio
 import json
-
-# Local OpenClaw notification — worker sends messages through the local gateway
 import time
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -20,7 +18,9 @@ from .quality_service import UnifiedQualityService
 from .usage_tracker import get_usage_tracker
 from .webhook_delivery_service import emit_webhook_event
 
-# Telegram notifications now routed through OpenClaw gateway (no direct bot token needed)
+# Operator notifications now route through services.integrations.outbound_dispatcher
+# (rows: discord_ops, telegram_ops). The OpenClaw gateway dependency was retired —
+# see services/integrations/operator_notify.py.
 
 
 async def _notify_discord(message: str) -> None:
@@ -45,37 +45,21 @@ async def _notify_discord(message: str) -> None:
 
 
 async def _notify_openclaw(message: str, critical: bool = False) -> None:
-    """Send pipeline notification via OpenClaw gateway (routes to Telegram + Discord).
+    """DEPRECATED — kept only as a thin shim over :func:`notify_operator`.
 
-    No direct bot tokens needed — OpenClaw owns all messaging channels.
-    Falls back to Discord webhook if OpenClaw is unavailable.
+    OpenClaw was retired as a load-bearing dependency. New call sites
+    should import :func:`services.integrations.operator_notify.notify_operator`
+    directly. This shim exists for the brief migration window during
+    which a few external integrations may still import this name; it
+    will be deleted once the next session confirms zero importers.
+
+    Routes ``critical=True`` through the ``telegram_ops`` row and
+    ``critical=False`` through the ``discord_ops`` row, matching the
+    historical OpenClaw behavior of paging Telegram for critical
+    severity and using Discord as the durable record.
     """
-    _logger = get_logger(__name__)
-
-    # Try OpenClaw gateway first (routes to both Telegram + Discord)
-    if critical:
-        try:
-            from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
-            from services.site_config import site_config
-            openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
-            # is_secret=true row — sync .get() returns ciphertext (#325 bug class)
-            openclaw_token = await site_config.get_secret(
-                "openclaw_webhook_token", "hooks-gladlabs"
-            )
-            async with _httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    f"{openclaw_url}/api/hooks/pipeline",
-                    json={"text": message, "critical": True},
-                    headers={"Authorization": f"Bearer {openclaw_token}"},
-                )
-                if resp.status_code < 300:
-                    _logger.info("[NOTIFY:openclaw] %s", message[:80])
-                    return
-        except Exception as e:
-            _logger.debug("[NOTIFY:openclaw] Gateway unavailable, falling back to Discord: %s", e)
-
-    # Fallback: Discord webhook (always works, no bot token needed)
-    await _notify_discord(message)
+    from services.integrations.operator_notify import notify_operator
+    await notify_operator(message, critical=critical)
 
 # Import WebSocket progress emission (re-exported so tests can patch at this module)
 from .websocket_event_broadcaster import emit_notification, emit_task_progress  # noqa: E402,F401
@@ -758,7 +742,10 @@ class TaskExecutor:
                     if preview_url:
                         msg += f"Preview: {preview_url}\n"
                     msg += f"Approve: /approve-post {task_id[:8]}"
-                    await _notify_openclaw(msg, critical=True)
+                    from services.integrations.operator_notify import (
+                        notify_operator,
+                    )
+                    await notify_operator(msg, critical=True)
 
                 return
 
@@ -863,7 +850,13 @@ class TaskExecutor:
                     })
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
-                await _notify_openclaw(f"Failed: \"{topic}\" - {str(error_msg)[:100]}", critical=True)
+                from services.integrations.operator_notify import (
+                    notify_operator,
+                )
+                await notify_operator(
+                    f"Failed: \"{topic}\" - {str(error_msg)[:100]}",
+                    critical=True,
+                )
             else:
                 logger.info(
                     "[OK] [TASK_SINGLE] Task %s: task_id=%s user_id=%s category=%s quality_score=%s",
