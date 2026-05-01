@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 "jwt_secret_key": ("JWT_SECRET_KEY", "auth"),
                 "jwt_secret": ("JWT_SECRET", "auth"),
                 "revalidate_secret": ("REVALIDATE_SECRET", "integrations"),
-                "api_auth_token": ("API_TOKEN", "security"),
+                "api_token": ("API_TOKEN", "security"),
             }
             secrets_loaded = 0
             secrets_saved = 0

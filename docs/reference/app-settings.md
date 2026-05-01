@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-04-22.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 296 active rows across 34 categories. 31 stored encrypted via pgcrypto (`is_secret=true`); an additional 3 values are redacted in the preview below as defense-in-depth against secret-shaped strings that weren't classified as secrets in the DB.
+> 295 active rows across 34 categories. 30 stored encrypted via pgcrypto (`is_secret=true`); an additional 3 values are redacted in the preview below as defense-in-depth against secret-shaped strings that weren't classified as secrets in the DB.
 
 > This file is checked into `docs/` which is **excluded from the public Poindexter sync** (`scripts/sync-to-github.sh` strips `docs/`). Safe to regenerate from operator state. Not safe to publish outside the private mirror.
 
@@ -52,7 +52,7 @@ The worker re-reads on every poll; no restart needed.
 - [prometheus](#prometheus) (4 keys)
 - [qa_workflows](#qa-workflows) (3 keys)
 - [quality](#quality) (5 keys)
-- [security](#security) (2 keys)
+- [security](#security) (1 key)
 - [seo](#seo) (1 key)
 - [site](#site) (1 key)
 - [social](#social) (8 keys)
@@ -476,7 +476,6 @@ The worker re-reads on every poll; no restart needed.
 | Key                          | Default         | Classification | Description                                                      |
 | ---------------------------- | --------------- | -------------- | ---------------------------------------------------------------- |
 | `alertmanager_webhook_token` | `*(encrypted)*` | encrypted      | Bearer token that Alertmanager must send with every webhook POST |
-| `api_auth_token`             | `*(encrypted)*` | encrypted      |                                                                  |
 
 ## seo
 
