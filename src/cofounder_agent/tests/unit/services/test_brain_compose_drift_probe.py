@@ -852,3 +852,76 @@ class TestDiffService:
             },
         )
         assert diff["drifted"] is False
+
+
+# ---------------------------------------------------------------------------
+# Env-var expansion in volume/port specs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestExpandComposeValue:
+    """Compose YAML uses `${VAR:-default}` interpolation in mount paths and
+    ports. PyYAML doesn't expand it; the running container has the resolved
+    value in its inspect output. Without expansion the probe reports false
+    drift on every service that uses env-var paths."""
+
+    def test_simple_var_substitution(self, monkeypatch):
+        monkeypatch.setenv("HOME", "/Users/matt")
+        assert cdp._expand_compose_value("${HOME}/x") == "/Users/matt/x"
+
+    def test_bare_var(self, monkeypatch):
+        monkeypatch.setenv("HOME", "/Users/matt")
+        assert cdp._expand_compose_value("$HOME/x") == "/Users/matt/x"
+
+    def test_default_when_unset(self, monkeypatch):
+        monkeypatch.delenv("MISSING_VAR", raising=False)
+        assert cdp._expand_compose_value("${MISSING_VAR:-/fallback}/x") == "/fallback/x"
+
+    def test_default_ignored_when_set(self, monkeypatch):
+        monkeypatch.setenv("HOME", "/Users/matt")
+        assert cdp._expand_compose_value("${HOME:-/fallback}/x") == "/Users/matt/x"
+
+    def test_default_when_empty(self, monkeypatch):
+        monkeypatch.setenv("EMPTY_VAR", "")
+        assert cdp._expand_compose_value("${EMPTY_VAR:-/fallback}/x") == "/fallback/x"
+
+    def test_no_var_passthrough(self):
+        assert cdp._expand_compose_value("/literal/path") == "/literal/path"
+
+    def test_unset_no_default_empty(self, monkeypatch):
+        monkeypatch.delenv("UNSET", raising=False)
+        # Compose treats unset-without-default as warning + empty string.
+        # We mirror that — an empty path won't match any container mount,
+        # which is correct (operator config bug, not drift).
+        assert cdp._expand_compose_value("${UNSET}/x") == "/x"
+
+
+@pytest.mark.unit
+class TestVolumeEnvVarExpansion:
+    def test_volume_target_with_env_var_in_source(self, monkeypatch):
+        # Real prod case: `${HOME:-.}/.poindexter/x:/inside/y`.
+        # Pre-fix the parser splits on `:` and grabs the colon inside
+        # `${HOME:-.}` as the separator, returning garbage like `-.}/.x`.
+        monkeypatch.setenv("HOME", "/Users/matt")
+        targets = cdp._yaml_volume_targets(
+            ["${HOME:-.}/.poindexter/x:/inside/y"]
+        )
+        assert targets == {"/inside/y"}
+
+    def test_volume_with_var_in_source_no_default(self, monkeypatch):
+        monkeypatch.setenv("HOME", "/Users/matt")
+        targets = cdp._yaml_volume_targets(
+            ["${HOME}/.cache/huggingface:/cache:ro"]
+        )
+        assert targets == {"/cache"}
+
+    def test_port_with_env_var_in_host_port(self, monkeypatch):
+        monkeypatch.setenv("METRICS_PORT", "9090")
+        ports = cdp._yaml_port_host_publishings(["${METRICS_PORT:-9090}:9090"])
+        assert ports == {"9090"}
+
+    def test_port_default_when_var_unset(self, monkeypatch):
+        monkeypatch.delenv("METRICS_PORT", raising=False)
+        ports = cdp._yaml_port_host_publishings(["${METRICS_PORT:-9090}:9090"])
+        assert ports == {"9090"}

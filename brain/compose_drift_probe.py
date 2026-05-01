@@ -60,9 +60,51 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import time
 from typing import Any, Iterable
+
+# Compose env-var interpolation: ${VAR}, ${VAR:-default}, $VAR.
+# Matches Docker Compose's variable substitution rules — see
+# https://docs.docker.com/compose/compose-file/12-interpolation/.
+# We support the two most common forms (the bare and `:-default` ones);
+# the rarer `:?error` and `:+replacement` forms aren't expanded —
+# they degrade to empty string, which manifests as missing-mount drift
+# the operator can fix by setting the var.
+_ENV_VAR_RE = re.compile(
+    r"""
+    \$\{
+        (?P<name1>[A-Za-z_][A-Za-z0-9_]*)
+        (?: :- (?P<default>[^}]*) )?
+    \}
+    |
+    \$ (?P<name2>[A-Za-z_][A-Za-z0-9_]*)
+    """,
+    re.VERBOSE,
+)
+
+
+def _expand_compose_value(s: str) -> str:
+    """Expand ``${VAR}``, ``${VAR:-default}``, and ``$VAR`` in a compose value.
+
+    Compose YAML uses env-var interpolation in mount paths and ports
+    (``${HOME:-.}/.cache/x:/cache``). PyYAML doesn't expand it, but the
+    running container's docker-inspect output has the resolved value.
+    Without expansion, the per-service diff sees `${HOME` and `/cache` as
+    separate colon-split parts and reports false drift.
+    """
+    def _replace(m: re.Match) -> str:
+        name = m.group("name1") or m.group("name2")
+        if not name:  # pragma: no cover — re shouldn't match nothing
+            return m.group(0)
+        val = os.environ.get(name, "")
+        if val:
+            return val
+        default = m.group("default")
+        return default if default is not None else ""
+
+    return _ENV_VAR_RE.sub(_replace, s)
 
 try:  # PyYAML is the only new dep (#213).
     import yaml as _yaml
@@ -200,8 +242,11 @@ def _yaml_volume_targets(volumes_block: Any) -> set[str]:
         return targets
     for entry in volumes_block:
         if isinstance(entry, str):
+            # Expand ${VAR:-default} env vars BEFORE splitting on `:`,
+            # otherwise the colon inside `${HOME:-.}` butchers the parse.
+            expanded = _expand_compose_value(entry)
             # "src:target[:mode]"
-            parts = entry.split(":")
+            parts = expanded.split(":")
             if len(parts) >= 2:
                 target = parts[1]
                 if target:
@@ -209,7 +254,7 @@ def _yaml_volume_targets(volumes_block: Any) -> set[str]:
         elif isinstance(entry, dict):
             t = entry.get("target") or entry.get("destination")
             if t:
-                targets.add(str(t))
+                targets.add(_expand_compose_value(str(t)))
     return targets
 
 
@@ -230,7 +275,8 @@ def _yaml_port_host_publishings(ports_block: Any) -> set[str]:
     out: set[str] = set()
     for entry in ports_block:
         if isinstance(entry, (int, str)):
-            text = str(entry)
+            # Expand env vars first — see _yaml_volume_targets for why.
+            text = _expand_compose_value(str(entry))
             # "host:container" or "ip:host:container"
             parts = text.split(":")
             if len(parts) == 1:
@@ -242,7 +288,7 @@ def _yaml_port_host_publishings(ports_block: Any) -> set[str]:
         elif isinstance(entry, dict):
             published = entry.get("published")
             if published is not None:
-                out.add(str(published))
+                out.add(_expand_compose_value(str(published)))
     return out
 
 
