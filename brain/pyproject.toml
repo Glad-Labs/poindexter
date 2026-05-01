@@ -1,0 +1,56 @@
+[tool.poetry]
+# Standalone package for the Poindexter brain daemon.
+#
+# Why a separate pyproject.toml from src/cofounder_agent?
+# -------------------------------------------------------
+# The brain is intentionally isolated from the worker (FastAPI / cofounder
+# agent) so that a broken worker venv or pyproject can never take the
+# watchdog down with it. See brain/telemetry.py for the original write-up of
+# this boundary — the same reasoning applies to dependency management.
+#
+# Operationally, the docker-compose build context for `brain-daemon` is
+# `./brain` (not the repo root), so the brain Dockerfile cannot reach
+# `src/cofounder_agent/pyproject.toml` without widening the build context.
+# Widening the context would defeat the isolation principle and force the
+# brain image to receive the entire worker source tree on every rebuild.
+#
+# A small, self-contained pyproject + lockfile keeps:
+#   - the dep set lockable + auditable (closes Glad-Labs/poindexter#173)
+#   - the brain image small (only what it actually imports)
+#   - the boundary explicit (brain != worker)
+name = "poindexter-brain"
+version = "0.1.0"
+description = "Poindexter brain daemon — standalone monitor, self-healer, knowledge graph supervisor."
+authors = ["Matthew M. Gladding <hello@gladlabs.io>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.14"
+
+# Database — required. Brain reads/writes Postgres directly via asyncpg
+# (no SQLAlchemy, no ORM). Pin matches src/cofounder_agent/pyproject.toml
+# so the two containers stay on the same client.
+asyncpg = "^0.31"
+
+# HTTP client — used by operator_url_probe.py to hit operator-facing URLs
+# (Grafana dashboards, Tailscale-routed services, app_settings *_url keys).
+# Without this the probe silently degrades to "httpx dependency missing"
+# for every target. Matches the worker's httpx pin.
+httpx = "^0.28"
+
+[tool.poetry.group.tracing]
+# Optional OpenTelemetry stack for brain spans -> Tempo. Brain telemetry
+# (brain/telemetry.py) imports these inside a try/except and falls back to
+# no-op tracers when the SDK is missing, so the brain still boots without
+# this group. Install with `poetry install --with tracing` to enable.
+optional = true
+
+[tool.poetry.group.tracing.dependencies]
+opentelemetry-api = ">=1.33,<2"
+opentelemetry-sdk = ">=1.33,<2"
+opentelemetry-exporter-otlp-proto-grpc = ">=1.33,<2"
+
+[build-system]
+requires = ["poetry-core>=1.8"]
+build-backend = "poetry.core.masonry.api"

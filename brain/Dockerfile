@@ -9,9 +9,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apt-get remove -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir asyncpg
+# Brain has its own pyproject.toml + poetry.lock so the dep set is lockable
+# and auditable independently of the worker (closes Glad-Labs/poindexter#173).
+# See pyproject.toml for the rationale on keeping brain isolated from
+# src/cofounder_agent. Poetry is installed transiently and uninstalled after
+# resolving deps system-wide, so the runtime image only carries the deps.
+COPY pyproject.toml poetry.lock /app/
+RUN pip install --no-cache-dir 'poetry==2.2.1' && \
+    poetry config virtualenvs.create false && \
+    poetry install --no-root --no-interaction --no-ansi && \
+    pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
+    rm -rf /root/.cache/pip /root/.cache/pypoetry
 
-COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py ./
+COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py telemetry.py ./
 COPY seed_app_settings.json /app/seed_app_settings.json
 
 # brain_daemon.py imports `from brain.bootstrap import ...` so the files
@@ -28,6 +38,7 @@ RUN mkdir -p /app/brain && \
     cp /app/seed_loader.py /app/brain/seed_loader.py && \
     cp /app/docker_utils.py /app/brain/docker_utils.py && \
     cp /app/alert_sync.py /app/brain/alert_sync.py && \
+    cp /app/telemetry.py /app/brain/telemetry.py && \
     touch /app/brain/__init__.py
 
 # Non-root user with docker group (needs socket access for container restarts)
