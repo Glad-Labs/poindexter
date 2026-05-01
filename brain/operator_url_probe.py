@@ -56,6 +56,25 @@ try:
 except ImportError:  # pragma: no cover — package-qualified path for tests
     from brain.operator_notifier import notify_operator
 
+# Module-level import so monkey-patching `brain.docker_utils.IN_DOCKER`
+# in tests reaches the function. Importing inside the function would
+# re-resolve through the import system each call, but pytest patches
+# the package-qualified module — having the reference here pinned to
+# the same module makes the test deterministic across local + CI.
+try:
+    from docker_utils import localize_url as _localize_url_impl
+    from docker_utils import IN_DOCKER as _IN_DOCKER  # noqa: F401 — re-export for clarity
+except ImportError:  # pragma: no cover — package-qualified path
+    from brain.docker_utils import localize_url as _localize_url_impl  # type: ignore[no-redef]
+    from brain.docker_utils import IN_DOCKER as _IN_DOCKER  # type: ignore[no-redef] # noqa: F401
+
+
+def _localize(url: str) -> str:
+    """Adapter so tests can monkey-patch this module's `_localize`
+    without caring which import path the probe used internally."""
+    return _localize_url_impl(url)
+
+
 logger = logging.getLogger("brain.operator_url_probe")
 
 # ---------------------------------------------------------------------------
@@ -321,9 +340,20 @@ async def collect_app_setting_urls(pool) -> list[dict[str, str]]:
     """Return ``[{surface, key, url}, ...]`` for every probable URL in app_settings.
 
     "Probable URL" = the key ends in ``_url`` OR it's in
-    ``INTERNAL_COMPOSE_URL_KEYS``. We skip empty strings and entries that
-    don't look like URLs (no ``://``) so misconfigured rows don't clutter
-    the report.
+    ``INTERNAL_COMPOSE_URL_KEYS``, AND the value is an http/https URL.
+
+    Skips:
+      * Empty strings + values without ``://`` (misconfigured rows).
+      * Non-HTTP schemes — postgresql://, redis://, ws://, amqp://, etc.
+        These are valid URIs but HEAD/GET can't probe them and they'd
+        fail every cycle.
+      * Keys named in ``operator_url_probe_skip_keys`` (comma-separated
+        app_setting). Operator-controlled mute list for surfaces like
+        social profiles that are bot-protected and return 403.
+
+    Localhost / 127.0.0.1 URLs are rewritten via ``localize_url()`` so
+    URLs that work from the host become reachable from inside the brain
+    container too.
     """
     try:
         rows = await pool.fetch(
@@ -333,11 +363,27 @@ async def collect_app_setting_urls(pool) -> list[dict[str, str]]:
         logger.warning("[OPERATOR_URL_PROBE] app_settings read failed: %s", exc)
         return []
 
+    # Operator skip-list. Comma-separated, whitespace-tolerant. Empty
+    # default keeps the probe behavior fully discoverable — operator
+    # explicitly opts in to muting individual keys.
+    try:
+        skip_raw = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "operator_url_probe_skip_keys",
+        )
+    except Exception:
+        skip_raw = None
+    skip_keys: set[str] = {
+        s.strip() for s in (skip_raw or "").split(",") if s.strip()
+    }
+
     explicit = set(INTERNAL_COMPOSE_URL_KEYS)
     out: list[dict[str, str]] = []
     seen_urls: set[tuple[str, str]] = set()
     for row in rows:
         key = row["key"]
+        if key in skip_keys:
+            continue
         if not (key.endswith(URL_KEY_SUFFIX) or key in explicit):
             continue
         value = (row["value"] or "").strip()
@@ -345,6 +391,15 @@ async def collect_app_setting_urls(pool) -> list[dict[str, str]]:
         # something HEAD/GET can hit reliably.
         if "://" not in value:
             continue
+        # Only http/https are HEAD/GET-probable. Database, message-broker,
+        # and websocket URIs are valid but unreachable via this probe.
+        scheme = value.split("://", 1)[0].lower()
+        if scheme not in ("http", "https"):
+            continue
+        # Translate host-side URLs (localhost, 127.0.0.1) into the
+        # container-reachable host.docker.internal equivalent. No-op when
+        # the brain runs on the host (IN_DOCKER not set).
+        value = _localize(value)
         dedup_key = (key, value)
         if dedup_key in seen_urls:
             continue

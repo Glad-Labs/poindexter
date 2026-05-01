@@ -194,6 +194,75 @@ class TestCollectAppSettingUrls:
         out = await oup.collect_app_setting_urls(pool)
         assert out == []
 
+    @pytest.mark.asyncio
+    async def test_skips_non_http_schemes(self):
+        # postgresql://, redis://, amqp:// etc are valid URIs but not
+        # things HEAD/GET can hit. Probing them returns ConnectError every
+        # cycle and clutters the report. They have keys ending in _url
+        # (local_database_url) so the existing filter doesn't catch them.
+        pool = _make_pool([
+            {"key": "site_url", "value": "https://gladlabs.io"},
+            {"key": "local_database_url", "value": "postgresql://u:p@db:5432/x"},
+            {"key": "redis_url", "value": "redis://cache:6379/0"},
+            {"key": "ws_url", "value": "ws://server:8080/socket"},
+            {"key": "amqp_url", "value": "amqp://broker:5672"},
+        ])
+        out = await oup.collect_app_setting_urls(pool)
+        urls = {i["url"] for i in out}
+        assert urls == {"https://gladlabs.io"}
+
+    @pytest.mark.asyncio
+    async def test_skips_keys_in_app_settings_skip_list(self):
+        # Operator can mute specific keys via
+        # `operator_url_probe_skip_keys` (comma-separated). Useful for
+        # social profiles (bot-protected, return 403) and any URL that
+        # legitimately shouldn't be HEAD/GET probed.
+        async def fetchval_skip_keys(_query, key):
+            if key == "operator_url_probe_skip_keys":
+                return "social_x_url,social_linkedin_url"
+            return None
+
+        pool = _make_pool([
+            {"key": "site_url", "value": "https://gladlabs.io"},
+            {"key": "social_x_url", "value": "https://x.com/_gladlabs"},
+            {"key": "social_linkedin_url", "value": "https://www.linkedin.com/in/m"},
+        ])
+        pool.fetchval = AsyncMock(side_effect=fetchval_skip_keys)
+        out = await oup.collect_app_setting_urls(pool)
+        keys = {i["key"] for i in out}
+        assert keys == {"site_url"}
+
+    @pytest.mark.asyncio
+    async def test_localizes_localhost_when_in_docker(self, monkeypatch):
+        # Brain runs in docker, so localhost loops back to the brain
+        # container itself — every probe of a host service via
+        # http://localhost: will fail. localize_url() rewrites these to
+        # host.docker.internal which IS reachable from the brain.
+        # Monkey-patch the probe's `_localize` adapter directly rather
+        # than chasing IN_DOCKER through whichever import path landed —
+        # the probe imports docker_utils at module load time, and the
+        # path varies between local pytest (flat `docker_utils` on path)
+        # and CI (`brain.docker_utils` only).
+        def fake_localize(url: str) -> str:
+            return (
+                url.replace("://localhost:", "://host.docker.internal:")
+                   .replace("://127.0.0.1:", "://host.docker.internal:")
+            )
+        monkeypatch.setattr(oup, "_localize", fake_localize)
+
+        pool = _make_pool([
+            {"key": "grafana_url", "value": "http://localhost:3000"},
+            {"key": "ollama_url", "value": "http://127.0.0.1:11434"},
+            {"key": "remote_url", "value": "https://gladlabs.io"},
+        ])
+        out = await oup.collect_app_setting_urls(pool)
+        urls = sorted(i["url"] for i in out)
+        assert urls == [
+            "http://host.docker.internal:11434",
+            "http://host.docker.internal:3000",
+            "https://gladlabs.io",
+        ]
+
 
 # ---------------------------------------------------------------------------
 # Tailscale drift detection
