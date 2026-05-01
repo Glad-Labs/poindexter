@@ -142,7 +142,11 @@ async def test_builtin_topic_source_delegates_to_topic_runner(monkeypatch):
         def total(self) -> int:
             return len(self.topics)
 
-    async def _fake_run_all(pool, site_config):
+    async def _fake_run_all(pool):
+        # Signature matches services.topic_sources.runner.run_all after
+        # the fix in PR #134 (handler calls run_all(pool) — site_config
+        # was dropped because each TopicSource plugin reads its own
+        # config from the plugin registry).
         return _Summary(
             per_source=[
                 _SourceStats(name="hackernews", topics_returned=5),
@@ -183,7 +187,9 @@ async def test_builtin_topic_source_raises_on_source_error(monkeypatch):
         def total(self) -> int:
             return len(self.topics)
 
-    async def _fake_run_all(pool, site_config):
+    async def _fake_run_all(pool):
+        # Signature matches the handler's run_all(pool) call (see comment
+        # in the sibling test for context — fixed alongside PR #134).
         return _Summary(
             per_source=[_SourceStats(name="hackernews", error="429 rate limited")],
             topics=[],
