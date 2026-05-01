@@ -53,7 +53,12 @@ async def builtin_topic_source(
     # Lazy import to avoid loading topic_sources until this handler fires.
     from services.topic_sources.runner import run_all as _topic_run_all
 
-    summary = await _topic_run_all(pool, site_config)
+    # The runner's signature is ``run_all(pool)`` — site_config is unused
+    # because each TopicSource plugin reads its own config from the
+    # plugin registry / DB at construction time. Earlier versions of
+    # this handler passed site_config as a second arg and crashed at
+    # dispatch with TypeError; fixed 2026-05-01.
+    summary = await _topic_run_all(pool)
 
     # Filter the per-source stats to our source_name. When the operator
     # has multiple taps each targeting a different topic_source, each
