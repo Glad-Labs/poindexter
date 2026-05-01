@@ -13,6 +13,7 @@ records the error on that row and continues. The policy's
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -144,7 +145,23 @@ async def _load_enabled_policies(
               ORDER BY name
                 """,
             )
-    return [dict(r) for r in rows]
+    # asyncpg returns JSONB columns as raw JSON strings unless a codec
+    # is registered on the pool. Handlers expect dicts (downsample reads
+    # `row["downsample_rule"]["aggregations"]`, summarize_to_table reads
+    # `row["config"]["bucket"]`), so parse JSONB columns once here. Same
+    # fix as outbound_dispatcher._load_row (PR #133).
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("downsample_rule", "config", "metadata"):
+            v = d.get(k)
+            if isinstance(v, str) and v:
+                try:
+                    d[k] = json.loads(v)
+                except json.JSONDecodeError:
+                    pass
+        out.append(d)
+    return out
 
 
 async def _record_success(

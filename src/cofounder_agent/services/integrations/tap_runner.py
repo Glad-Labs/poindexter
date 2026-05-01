@@ -7,6 +7,7 @@ counters recorded on the row.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -126,7 +127,21 @@ async def _load_enabled_taps(
               ORDER BY name
                 """,
             )
-    return [dict(r) for r in rows]
+    # Same JSONB-string parsing fix as outbound_dispatcher and
+    # retention_runner. Tap handlers expect dict-typed config/metadata
+    # but asyncpg returns raw JSON strings without a registered codec.
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("config", "metadata"):
+            v = d.get(k)
+            if isinstance(v, str) and v:
+                try:
+                    d[k] = json.loads(v)
+                except json.JSONDecodeError:
+                    pass
+        out.append(d)
+    return out
 
 
 async def _record_success(
