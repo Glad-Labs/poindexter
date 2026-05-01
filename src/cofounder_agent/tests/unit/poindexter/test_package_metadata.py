@@ -21,20 +21,28 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 import tomllib
 
 
-def _repo_root() -> Path:
+def _repo_root() -> Path | None:
     here = Path(__file__).resolve()
     for parent in here.parents:
         if (parent / ".release-please-manifest.json").is_file():
             return parent
-    raise RuntimeError("could not locate repo root (.release-please-manifest.json)")
+    return None
 
 
 REPO_ROOT = _repo_root()
-PKG_DIR = REPO_ROOT / "src" / "cofounder_agent" / "poindexter"
-PKG_PYPROJECT = PKG_DIR / "pyproject.toml"
+
+pytestmark = pytest.mark.skipif(
+    REPO_ROOT is None,
+    reason=".release-please-manifest.json not visible — docker worker "
+    "mounts only src/cofounder_agent as /app; this test runs on the host.",
+)
+
+PKG_DIR = (REPO_ROOT / "src" / "cofounder_agent" / "poindexter") if REPO_ROOT else None
+PKG_PYPROJECT = (PKG_DIR / "pyproject.toml") if PKG_DIR else None
 
 
 def test_standalone_pyproject_exists() -> None:
@@ -52,7 +60,7 @@ def test_standalone_pyproject_has_required_metadata() -> None:
     assert project.get("version"), "project.version must be set"
     assert project.get("description")
     assert project.get("readme") == "README.md"
-    assert project.get("license", {}).get("text", "").startswith("AGPL")
+    assert project.get("license", {}).get("text", "") == "Apache-2.0"
     # requires-python should cover the same range as the umbrella repo.
     assert "3.1" in project.get("requires-python", "")
 

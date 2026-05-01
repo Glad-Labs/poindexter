@@ -2,7 +2,7 @@
   "name": "@glad-labs/brand",
   "version": "0.1.0",
   "description": "Glad Labs brand system — colors, typography, effects, components. Shared across gladlabs.io (publishing) and gladlabs.ai (storefront).",
-  "license": "AGPL-3.0-or-later",
+  "license": "Apache-2.0",
   "author": "Glad Labs, LLC",
   "private": true,
   "type": "module",

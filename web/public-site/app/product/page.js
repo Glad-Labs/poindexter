@@ -206,7 +206,7 @@ export default function ProductPage() {
             </Button>
           </div>
           <p className="gl-mono gl-mono--upper opacity-50 mt-6" style={{ fontSize: '0.6875rem' }}>
-            Free and open-source · AGPL · Premium prompts + guides available
+            Free and open-source · Apache 2.0 · Premium prompts + guides available
           </p>
         </div>
       </section>

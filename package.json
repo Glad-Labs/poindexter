@@ -1,9 +1,9 @@
 {
   "name": "poindexter-monorepo",
-  "version": "1.2.0",
+  "version": "0.10.0",
   "private": true,
   "description": "Poindexter — AI content pipeline with autonomous agents. Built by Glad Labs LLC.",
-  "license": "AGPL-3.0-or-later",
+  "license": "Apache-2.0",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
     "packages/brand",

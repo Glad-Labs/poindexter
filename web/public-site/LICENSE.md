@@ -1,38 +1,36 @@
-# GNU AFFERO GENERAL PUBLIC LICENSE v3.0
+# Apache License 2.0
 
-**Glad Labs AI Co-Founder System - Public Site**
+**Glad Labs Public Site (built by Glad Labs LLC)**
 
-Copyright (C) 2025 Matthew M. Gladding (Glad Labs, LLC)
+Copyright 2025-2026 Matthew M. Gladding (Glad Labs, LLC)
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published
-by the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
+> http://www.apache.org/licenses/LICENSE-2.0
 
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
-
----
-
-## Full License Terms
-
-The complete GNU AGPL 3.0 license text is available at: [https://www.gnu.org/licenses/agpl-3.0.html](https://www.gnu.org/licenses/agpl-3.0.html)
-
-## Commercial & Proprietary Use
-
-**The Glad Labs platform is licensed under the GNU AGPL 3.0.** This means it is free to use for any project that also complies with the AGPL 3.0.
-
-A **commercial license** is required for any use of this software in a closed-source, proprietary application or for any use that does not comply with the terms of the AGPL 3.0.
-
-To purchase a commercial license or inquire about licensing options, please contact:
-
-📧 **sales@gladlabs.io**
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
 ---
 
-For more information, see the root [LICENSE.md](../../LICENSE.md) file.
+## Why Apache 2.0?
+
+Previously licensed under AGPL-3.0-or-later. **Relicensed to Apache 2.0
+on 2026-04-29** as part of the broader Glad Labs / Poindexter relicense.
+The patent grant + no-copyleft terms match the rest of the modern web
+stack and let downstream users embed the site code in their own
+operator overlays without source-disclosure obligations.
+
+For the full root LICENSE: see [../../LICENSE](../../LICENSE).
+
+---
+
+## Important Notice
+
+This software is provided AS-IS without warranty of any kind. Users are
+responsible for ensuring compliance with all applicable laws and licenses.
