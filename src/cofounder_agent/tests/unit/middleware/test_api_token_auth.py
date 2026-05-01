@@ -2,7 +2,7 @@
 Unit tests for middleware/api_token_auth.py — verify_api_token and verify_api_token_optional.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -74,6 +74,9 @@ class TestVerifyApiToken:
             "development_mode": "true",
             "api_token": "",
         }.get(k, default)
+        # PR #325 made the production code call `await site_config.get_secret(...)`
+        # for the encrypted api_token row. Mock as AsyncMock so the await resolves.
+        mock_site_config.get_secret = AsyncMock(return_value="")
         cred = _make_credentials("dev-token")
         result = await verify_api_token(credentials=cred)
         assert result == "dev-token"
@@ -134,6 +137,8 @@ class TestVerifyApiTokenOptional:
             "development_mode": "true",
             "api_token": "",
         }.get(k, default)
+        # See note in TestVerifyApiToken — get_secret must be AsyncMock per #325.
+        mock_site_config.get_secret = AsyncMock(return_value="")
         cred = _make_credentials("dev-token")
         result = await verify_api_token_optional(credentials=cred)
         assert result == "dev-token"

@@ -37,8 +37,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
-from services.site_config import site_config
-from utils.route_utils import get_database_dependency
+from services.site_config import SiteConfig
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
 
@@ -50,12 +50,20 @@ external_webhooks_router = APIRouter(prefix="/api/webhooks", tags=["External Web
 # ---------------------------------------------------------------------------
 
 
-def _verify_lemon_squeezy_signature(body: bytes, provided_signature: str | None) -> bool:
+async def _verify_lemon_squeezy_signature(
+    body: bytes, provided_signature: str | None, site_config: SiteConfig
+) -> bool:
     """Lemon Squeezy signs payloads with HMAC-SHA256 using the webhook secret.
+
+    The secret row is ``is_secret=true`` (encrypted with ``enc:v1:`` prefix);
+    sync ``site_config.get`` returns the ciphertext, so we MUST use the async
+    ``get_secret`` accessor to compare against plaintext. Same bug class as
+    Glad-Labs/poindexter#325 — without this, every webhook silently fails
+    signature verification and revenue events are dropped.
 
     See https://docs.lemonsqueezy.com/help/webhooks for the scheme.
     """
-    secret = site_config.get("lemon_squeezy_webhook_secret", "") or ""
+    secret = await site_config.get_secret("lemon_squeezy_webhook_secret", "") or ""
     if not secret:
         logger.warning(
             "[LemonSqueezy] lemon_squeezy_webhook_secret not set — refusing webhook",
@@ -85,6 +93,7 @@ async def lemon_squeezy_webhook(
     request: Request,
     x_signature: str | None = Header(default=None, alias="X-Signature"),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
 ):
     """Receive Lemon Squeezy webhooks and record a revenue_events row.
 
@@ -93,7 +102,7 @@ async def lemon_squeezy_webhook(
     for audit completeness.
     """
     body = await request.body()
-    if not _verify_lemon_squeezy_signature(body, x_signature):
+    if not await _verify_lemon_squeezy_signature(body, x_signature, site_config):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
@@ -161,12 +170,18 @@ async def lemon_squeezy_webhook(
 # ---------------------------------------------------------------------------
 
 
-def _verify_resend_signature(body: bytes, provided_signature: str | None) -> bool:
+async def _verify_resend_signature(
+    body: bytes, provided_signature: str | None, site_config: SiteConfig
+) -> bool:
     """Resend uses Svix-style HMAC signatures — Authorization-style header.
+
+    Same async/get_secret pattern as ``_verify_lemon_squeezy_signature`` —
+    ``resend_webhook_secret`` is ``is_secret=true`` so sync ``.get()``
+    returns ciphertext and HMAC against ciphertext silently fails.
 
     https://resend.com/docs/dashboard/webhooks/verify-webhooks
     """
-    secret = site_config.get("resend_webhook_secret", "") or ""
+    secret = await site_config.get_secret("resend_webhook_secret", "") or ""
     if not secret:
         logger.warning(
             "[Resend] resend_webhook_secret not set — refusing webhook",
@@ -187,6 +202,7 @@ async def resend_webhook(
     request: Request,
     svix_signature: str | None = Header(default=None, alias="Svix-Signature"),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
 ):
     """Receive Resend webhooks and record a subscriber_events row.
 
@@ -194,7 +210,7 @@ async def resend_webhook(
     email.clicked, email.bounced, email.complained.
     """
     body = await request.body()
-    if not _verify_resend_signature(body, svix_signature):
+    if not await _verify_resend_signature(body, svix_signature, site_config):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:

@@ -49,23 +49,44 @@ See also ``docs/architecture/plugin-architecture.md`` for the full
 design.
 """
 
+from .audio_gen_provider import AudioGenProvider, AudioGenResult, AudioKind
+from .caption_provider import CaptionProvider, CaptionResult, CaptionSegment
 from .config import PluginConfig
+from .image_provider import ImageProvider, ImageResult
 from .job import Job, JobResult
 from .llm_provider import Completion, LLMProvider, Token
+from .media_compositor import (
+    CompositionRequest,
+    CompositionResult,
+    CompositionScene,
+    MediaCompositor,
+)
 from .pack import Pack
 from .probe import Probe, ProbeResult
+from .publish_adapter import PublishAdapter, PublishResult
+from .topic_source import DiscoveredTopic, TopicSource
+from .tts_provider import TTSProvider, TTSResult
+from .video_provider import VideoProvider, VideoResult
 from .registry import (
     ENTRY_POINT_GROUPS,
     get_adapters,
+    get_audio_gen_providers,
+    get_caption_providers,
     get_core_samples,
+    get_image_providers,
     get_jobs,
     get_llm_providers,
+    get_media_compositors,
     get_packs,
     get_probes,
     get_providers,
+    get_publish_adapters,
     get_reviewers,
     get_stages,
     get_taps,
+    get_topic_sources,
+    get_tts_providers,
+    get_video_providers,
 )
 from .scheduler import PluginScheduler
 from .secrets import (
@@ -99,6 +120,14 @@ __all__ = [
     "Provider",
     "Pack",
     "LLMProvider",
+    "AudioGenProvider",
+    "CaptionProvider",
+    "ImageProvider",
+    "MediaCompositor",
+    "PublishAdapter",
+    "TopicSource",
+    "TTSProvider",
+    "VideoProvider",
     # Dataclasses
     "Document",
     "ProbeResult",
@@ -106,6 +135,18 @@ __all__ = [
     "StageResult",
     "Completion",
     "Token",
+    "AudioGenResult",
+    "AudioKind",
+    "CaptionResult",
+    "CaptionSegment",
+    "CompositionRequest",
+    "CompositionResult",
+    "CompositionScene",
+    "DiscoveredTopic",
+    "ImageResult",
+    "PublishResult",
+    "TTSResult",
+    "VideoResult",
     # Config + registry
     "PluginConfig",
     "PluginScheduler",
@@ -133,5 +174,13 @@ __all__ = [
     "get_providers",
     "get_packs",
     "get_llm_providers",
+    "get_topic_sources",
+    "get_image_providers",
+    "get_audio_gen_providers",
+    "get_video_providers",
+    "get_tts_providers",
+    "get_caption_providers",
+    "get_publish_adapters",
+    "get_media_compositors",
     "get_core_samples",
 ]

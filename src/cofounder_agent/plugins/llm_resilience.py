@@ -705,11 +705,15 @@ class LLMResilienceManager:
         # Circuit breaker gate (before queueing — fail fast)
         await self.circuit.allow()
 
-        from opentelemetry import trace as _trace_api  # cheap, plugin-installed
-
+        # OpenTelemetry is intentionally optional (not in pyproject core deps).
+        # In minimal dev envs / unit tests without the otel SDK installed, the
+        # import itself raises ModuleNotFoundError. Match the defensive pattern
+        # used in plugins/tracing.py and services/telemetry.py — fall through
+        # to no-span behavior so the resilience layer keeps working.
         try:
+            from opentelemetry import trace as _trace_api  # type: ignore[import-untyped]
             current_span = _trace_api.get_current_span()
-        except Exception:  # pragma: no cover — defensive only
+        except Exception:  # pragma: no cover — exercised in dev envs without otel
             current_span = None
 
         last_exc: BaseException | None = None

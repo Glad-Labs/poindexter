@@ -70,7 +70,15 @@ class _RecordingTracer:
 
 class TestGetTracer:
     def test_returns_real_tracer_when_otel_available(self):
-        # opentelemetry-api is in the project deps, so this path should hit.
+        # opentelemetry-api is intentionally optional (not in pyproject core
+        # deps — see services/telemetry.py for the same pattern). When the
+        # SDK is installed (full prod install, observability stack on) this
+        # asserts the real tracer; otherwise we skip rather than fail
+        # because get_tracer correctly falls back to _NoopTracer.
+        try:
+            import opentelemetry  # type: ignore[import-untyped]  # noqa: F401
+        except ImportError:
+            pytest.skip("opentelemetry not installed — get_tracer correctly returns _NoopTracer")
         tracer = get_tracer("test.module")
         # Real tracer has start_as_current_span; that's enough for our use.
         assert hasattr(tracer, "start_as_current_span")
