@@ -101,6 +101,23 @@ PROBE_INTERVAL_SECONDS = 300
 # ``None`` when drift clears so a fresh drift event re-triggers a notify.
 _last_notify_drift_count: int | None = None
 
+# Expected ``pg_class.relkind`` per relation, post-migration. Migration
+# 0125 (closes Glad-Labs/poindexter#329) unified ``content_tasks`` to be
+# a VIEW in both dev and prod — relkind 'v'. Add new entries here as
+# similar table-vs-view contracts get codified by future migrations. The
+# probe checks each entry on every cycle and notifies when actual
+# != expected so a stale environment can't silently drift back into the
+# split state.
+_EXPECTED_RELKINDS: dict[str, str] = {
+    "content_tasks": "v",
+}
+
+# Module-level dedupe for relkind-mismatch notifications — same shape as
+# the drift-count dedupe. A tuple of (relname, expected, actual) so a
+# different relation's mismatch triggers a fresh notify even if the
+# previous one is still outstanding.
+_last_relkind_notify_key: tuple[str, str, str] | None = None
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -201,6 +218,66 @@ def _drift_from_health(health: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _check_relkind_mismatches(pool) -> list[dict[str, str]]:
+    """Compare actual ``pg_class.relkind`` against the expected shape for
+    each relation in :data:`_EXPECTED_RELKINDS`.
+
+    Returns a list of mismatches, each with ``relname``, ``expected``,
+    and ``actual`` keys (``actual`` is the empty string when the
+    relation is missing entirely). An empty list means every relation
+    matches its expected shape — the contract is intact.
+
+    Closes Glad-Labs/poindexter#329 follow-up: this is the early-warning
+    signal that a future migration silently regressed the post-#329
+    table/view contract. The probe doesn't auto-fix relkind mismatches
+    (a wrong shape usually means data needs to be re-imported / converted
+    by hand) — it just notifies so the operator can investigate.
+
+    Best-effort — never raises. A query failure here just logs and
+    returns ``[]`` so the rest of the drift probe keeps working.
+    """
+    if not _EXPECTED_RELKINDS:
+        return []
+
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT c.relname, c.relkind
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public'
+               AND c.relname = ANY($1::text[])
+            """,
+            list(_EXPECTED_RELKINDS.keys()),
+        )
+    except Exception as exc:
+        logger.warning(
+            "[MIGRATION_DRIFT] relkind probe query failed: %s", exc
+        )
+        return []
+
+    # asyncpg returns relkind as bytes on some driver versions
+    # (Postgres "char" type); normalise to str. Same coercion 0114 + 0125
+    # do — keep this in sync.
+    actual_by_name: dict[str, str] = {}
+    for row in rows:
+        rk = row["relkind"]
+        if isinstance(rk, (bytes, bytearray)):
+            rk = rk.decode("ascii")
+        actual_by_name[row["relname"]] = rk or ""
+
+    mismatches: list[dict[str, str]] = []
+    for relname, expected in _EXPECTED_RELKINDS.items():
+        actual = actual_by_name.get(relname, "")
+        if actual != expected:
+            mismatches.append({
+                "relname": relname,
+                "expected": expected,
+                "actual": actual,
+            })
+    return mismatches
+
+
 async def _read_auto_recover_enabled(pool) -> bool:
     """Read ``migration_drift_auto_recover_enabled`` from app_settings.
 
@@ -224,6 +301,93 @@ async def _read_auto_recover_enabled(pool) -> bool:
     if val is None:
         return False
     return str(val).strip().lower() in ("true", "1", "yes", "on")
+
+
+async def _emit_relkind_audit_and_notify(
+    pool,
+    mismatches: list[dict[str, str]],
+    *,
+    notify_fn,
+) -> None:
+    """Emit audit + notify_operator when ``_check_relkind_mismatches``
+    finds anything. Capped via :data:`_last_relkind_notify_key` so a
+    persistent mismatch doesn't blast Telegram every cycle.
+
+    Best-effort — never raises so the caller's drift probe keeps
+    running even if audit / notify is temporarily broken.
+    """
+    global _last_relkind_notify_key
+
+    if not mismatches:
+        # Reset the dedupe key so a fresh mismatch re-notifies later.
+        if _last_relkind_notify_key is not None:
+            logger.info(
+                "[MIGRATION_DRIFT] Relkind contract restored (was %s)",
+                _last_relkind_notify_key,
+            )
+            _last_relkind_notify_key = None
+        return
+
+    # Audit every mismatch every cycle — cheap and useful for the
+    # post-incident timeline. Notification is the rate-limited part.
+    for m in mismatches:
+        await _emit_audit_event(
+            pool,
+            "probe.migration_relkind_mismatch",
+            (
+                f"Relation '{m['relname']}' has relkind="
+                f"{m['actual']!r}, expected {m['expected']!r}"
+            ),
+            extra=m,
+        )
+
+    # Dedupe key is the SET of mismatches — any change re-notifies.
+    key = tuple(
+        (m["relname"], m["expected"], m["actual"])
+        for m in mismatches
+    )
+    # Reduce to a stable tuple-of-tuples for comparison; we store just
+    # the first one for the human-friendly comparison field below.
+    first = mismatches[0]
+    new_key = (first["relname"], first["expected"], first["actual"])
+
+    if _last_relkind_notify_key == new_key and len(mismatches) == 1:
+        # Same single mismatch as last cycle — already notified.
+        logger.debug(
+            "[MIGRATION_DRIFT] Relkind mismatch unchanged (%s) — "
+            "skipping duplicate notification",
+            key,
+        )
+        return
+
+    summary_lines = [
+        f"- {m['relname']}: actual={m['actual']!r}, expected={m['expected']!r}"
+        for m in mismatches
+    ]
+    detail = (
+        "Database schema drift detected — table/view contract regressed:\n"
+        + "\n".join(summary_lines)
+        + "\n\nUsually means a migration was hand-edited or skipped. "
+        "Check `pg_class.relkind` in the live DB and re-apply the "
+        "migration that originally established this contract "
+        "(see migration 0125 for content_tasks)."
+    )
+
+    try:
+        notify_fn(
+            title=(
+                f"Schema relkind mismatch on {len(mismatches)} relation(s)"
+            ),
+            detail=detail,
+            source="brain.migration_drift_probe",
+            severity="warning",
+        )
+        _last_relkind_notify_key = new_key
+    except Exception as exc:
+        logger.warning(
+            "[MIGRATION_DRIFT] notify_fn failed for relkind mismatch: %s",
+            exc,
+        )
 
 
 async def _emit_audit_event(
@@ -405,6 +569,16 @@ async def run_migration_drift_probe(
                 _last_notify_drift_count,
             )
             _last_notify_drift_count = None
+
+        # Even with zero pending migrations, the post-migration shape
+        # contract can drift (e.g. someone hand-edits prod via psql). The
+        # relkind probe catches that early — closes the table-vs-view
+        # gap that #329 exposed.
+        relkind_mismatches = await _check_relkind_mismatches(pool)
+        await _emit_relkind_audit_and_notify(
+            pool, relkind_mismatches, notify_fn=notify_fn
+        )
+
         await _emit_audit_event(
             pool,
             "probe.migration_drift_ok",
@@ -422,6 +596,7 @@ async def run_migration_drift_probe(
             "applied": drift["applied"],
             "latest_applied": drift["latest_applied"],
             "auto_recover_enabled": auto_recover_enabled,
+            "relkind_mismatches": relkind_mismatches,
         }
 
     # ---- 3) Drift > 0 — always audit it ------------------------------------

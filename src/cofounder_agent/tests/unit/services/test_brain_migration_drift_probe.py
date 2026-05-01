@@ -21,8 +21,19 @@ from brain import migration_drift_probe as mdp
 
 
 def _make_pool():
+    """Build a minimal asyncpg pool mock.
+
+    Defaults make the relkind probe (#329 follow-up) report no
+    mismatches so pre-existing tests don't have to know about it.
+    Tests that exercise the relkind probe override ``pool.fetch``
+    explicitly.
+    """
     pool = MagicMock()
-    pool.fetch = AsyncMock(return_value=[])
+    # Default: every expected relation has its expected relkind.
+    pool.fetch = AsyncMock(return_value=[
+        {"relname": name, "relkind": expected.encode("ascii")}
+        for name, expected in mdp._EXPECTED_RELKINDS.items()
+    ])
     pool.fetchrow = AsyncMock()
     pool.fetchval = AsyncMock(return_value=None)
     pool.execute = AsyncMock()
@@ -46,8 +57,10 @@ def _health_with_drift(pending: int, applied: int = 5, latest: str = "0121.py") 
 @pytest.fixture(autouse=True)
 def _reset_module_state():
     mdp._last_notify_drift_count = None
+    mdp._last_relkind_notify_key = None
     yield
     mdp._last_notify_drift_count = None
+    mdp._last_relkind_notify_key = None
 
 
 # ---------------------------------------------------------------------------
@@ -555,3 +568,165 @@ class TestReadAutoRecoverEnabled:
         pool = _make_pool()
         pool.fetchval = AsyncMock(side_effect=Exception("db down"))
         assert await mdp._read_auto_recover_enabled(pool) is False
+
+
+# ---------------------------------------------------------------------------
+# Relkind contract probe (Glad-Labs/poindexter#329 follow-up).
+# Verifies that the post-migration shape of relations in
+# ``_EXPECTED_RELKINDS`` is the early-warning signal the docstring
+# promises.
+# ---------------------------------------------------------------------------
+
+
+def _row(relname: str, relkind):
+    """Build a fake asyncpg row-like for ``_check_relkind_mismatches``."""
+    return {"relname": relname, "relkind": relkind}
+
+
+@pytest.mark.unit
+class TestCheckRelkindMismatches:
+    @pytest.mark.asyncio
+    async def test_no_mismatches_when_view_shape_matches(self):
+        """The canonical post-#329 prod state — content_tasks is 'v'."""
+        pool = _make_pool()
+        pool.fetch = AsyncMock(return_value=[_row("content_tasks", b"v")])
+        assert await mdp._check_relkind_mismatches(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_str_relkind_normalises_same_as_bytes(self):
+        """asyncpg version drift — both str and bytes returns must
+        compare as equal to the expected ``'v'``."""
+        pool = _make_pool()
+        pool.fetch = AsyncMock(return_value=[_row("content_tasks", "v")])
+        assert await mdp._check_relkind_mismatches(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_table_shape_is_flagged(self):
+        """The bug #329 was filed for — content_tasks as a TABLE in dev
+        when prod has it as a VIEW. This is the contract violation the
+        probe must surface."""
+        pool = _make_pool()
+        pool.fetch = AsyncMock(return_value=[_row("content_tasks", b"r")])
+        mismatches = await mdp._check_relkind_mismatches(pool)
+        assert mismatches == [{
+            "relname": "content_tasks",
+            "expected": "v",
+            "actual": "r",
+        }]
+
+    @pytest.mark.asyncio
+    async def test_missing_relation_is_flagged(self):
+        """If pg_class returns no row at all for content_tasks, the
+        probe reports actual='' (empty) rather than silently passing."""
+        pool = _make_pool()
+        pool.fetch = AsyncMock(return_value=[])
+        mismatches = await mdp._check_relkind_mismatches(pool)
+        assert mismatches == [{
+            "relname": "content_tasks",
+            "expected": "v",
+            "actual": "",
+        }]
+
+    @pytest.mark.asyncio
+    async def test_query_failure_returns_empty_not_raise(self):
+        """If pg_class is unreachable, degrade gracefully — the rest of
+        the drift probe must keep running."""
+        pool = _make_pool()
+        pool.fetch = AsyncMock(side_effect=Exception("connection lost"))
+        # Should not raise.
+        assert await mdp._check_relkind_mismatches(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_empty_expected_table_returns_empty(self, monkeypatch):
+        """Sanity guard — if the expected mapping is empty (future
+        cleanup), the probe should exit cheap without any DB query."""
+        pool = _make_pool()
+        pool.fetch = AsyncMock()
+        monkeypatch.setattr(mdp, "_EXPECTED_RELKINDS", {})
+        assert await mdp._check_relkind_mismatches(pool) == []
+        # Critically — no query was issued.
+        pool.fetch.assert_not_called()
+
+
+@pytest.mark.unit
+class TestNoDriftWithRelkindMismatch:
+    """The probe runs the relkind check INSIDE the no-drift happy path,
+    so verify the integration: pending=0 + relkind mismatch => still ok=True
+    overall but mismatches surfaced + notify_operator fired."""
+
+    @pytest.mark.asyncio
+    async def test_no_drift_but_relkind_mismatch_notifies(self):
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(return_value="false")
+        # pg_class probe returns a TABLE-shaped content_tasks (the bug).
+        pool.fetch = AsyncMock(return_value=[_row("content_tasks", b"r")])
+
+        notifies: list[dict] = []
+
+        def fake_notify(**kwargs):
+            notifies.append(kwargs)
+
+        summary = await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=fake_notify,
+            restart_fn=lambda: (True, ""),
+            wait_fn=lambda: (True, {}),
+            health_fetcher=lambda: _health_with_drift(0),
+        )
+
+        # Drift itself is fine — pending=0.
+        assert summary["status"] == "no_drift"
+        assert summary["ok"] is True
+        # But the relkind mismatch surfaced in the result + a notify fired.
+        assert summary["relkind_mismatches"] == [{
+            "relname": "content_tasks",
+            "expected": "v",
+            "actual": "r",
+        }]
+        assert len(notifies) == 1
+        assert "relkind" in notifies[0]["title"].lower() or "schema" in notifies[0]["title"].lower()
+
+    @pytest.mark.asyncio
+    async def test_repeat_cycle_with_same_mismatch_does_not_renotify(self):
+        """Persistent mismatch shouldn't blast Telegram every cycle —
+        same dedupe contract as drift notifications."""
+        # Pre-load the dedupe key as if a prior cycle already notified.
+        mdp._last_relkind_notify_key = ("content_tasks", "v", "r")
+
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(return_value="false")
+        pool.fetch = AsyncMock(return_value=[_row("content_tasks", b"r")])
+
+        notifies: list[dict] = []
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: notifies.append(k),
+            restart_fn=lambda: (True, ""),
+            wait_fn=lambda: (True, {}),
+            health_fetcher=lambda: _health_with_drift(0),
+        )
+
+        # No new notification — same mismatch as last cycle.
+        assert notifies == []
+
+    @pytest.mark.asyncio
+    async def test_mismatch_clearing_resets_dedupe(self):
+        """When the mismatch resolves (operator fixes the schema),
+        the dedupe key resets so a NEW mismatch triggers a fresh notify."""
+        mdp._last_relkind_notify_key = ("content_tasks", "v", "r")
+
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(return_value="false")
+        # Now it matches — relkind == 'v'.
+        pool.fetch = AsyncMock(return_value=[_row("content_tasks", b"v")])
+
+        await mdp.run_migration_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            restart_fn=lambda: (True, ""),
+            wait_fn=lambda: (True, {}),
+            health_fetcher=lambda: _health_with_drift(0),
+        )
+
+        assert mdp._last_relkind_notify_key is None
