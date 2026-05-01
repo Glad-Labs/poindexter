@@ -99,7 +99,7 @@ prometheus-client = "^0.25.0"
 # — required for Matt's Windows host `poetry install --extras profiling`
 # to skip cleanly instead of falling through to a Rust source build.
 pyroscope-io = { version = "^0.8.5", optional = true, markers = "sys_platform != 'win32'" }
-langgraph = ">=0.2,<1.0"
+langgraph = ">=0.2,<2.0"
 # datasets pinned to ^3.0 to override the legacy 1.1.1 transitive dep
 # pulled in by ragas — 1.1.1 calls `pyarrow.PyExtensionType` which was
 # removed in pyarrow 14, breaking topic_discovery_signals at runtime
