@@ -171,6 +171,15 @@ services:
       dockerfile: Dockerfile
     container_name: poindexter-brain-daemon
     restart: unless-stopped
+    # Run as root so the brain can read the host's docker.sock (root-owned
+    # on Docker Desktop). The Dockerfile creates appuser:docker, but on
+    # Docker Desktop the in-container socket is `srw-rw---- root:root`,
+    # so docker-group membership doesn't help. Without root the
+    # compose-drift + restart paths silently lose access (PR #141 added
+    # a pre-flight check that surfaces this clearly). Brain already has
+    # docker-socket-equivalent privilege via the bind-mount, so root vs
+    # appuser is no real security boundary in this container.
+    user: "0:0"
     environment:
       # Primary DB is local Postgres.
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
