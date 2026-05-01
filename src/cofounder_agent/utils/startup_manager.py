@@ -26,8 +26,18 @@ logger = get_logger(__name__)
 class StartupManager:
     """Manages all startup and shutdown operations for the FastAPI application"""
 
-    def __init__(self):
-        """Initialize startup manager with empty service references"""
+    def __init__(self, site_config=None):
+        """Initialize startup manager with empty service references.
+
+        Args:
+            site_config: SiteConfig instance — threaded from main.py lifespan
+                into every sub-service that needs DB-backed config at startup
+                (Redis cache, retention janitor, SDXL warmup). Phase H (GH#95)
+                dropped the transitional module-singleton imports in favour
+                of this single construction site. Defaults to None so any
+                test that constructs StartupManager() bare still works.
+        """
+        self._site_config = site_config
         self.database_service = None
         self.redis_cache = None
         self.task_executor = None

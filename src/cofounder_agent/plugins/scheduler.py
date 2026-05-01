@@ -67,13 +67,17 @@ def _parse_schedule(schedule: str):
 class PluginScheduler:
     """Thin wrapper around apscheduler that understands our Job Protocol."""
 
-    def __init__(self, pool: Any):
+    def __init__(self, pool: Any, *, site_config: Any = None):
         """Create the scheduler bound to a DB pool.
 
         ``pool`` is passed into each Job.run() call so Jobs can read/write
         to the same Postgres the rest of Poindexter uses.
+
+        ``site_config`` (Phase H DI seam, GH#95) is stored for jobs that
+        need DB-backed config at scheduling time. Optional for back-compat.
         """
         self._pool = pool
+        self._site_config = site_config
         self._scheduler = AsyncIOScheduler()
         self._registered: list[str] = []
 

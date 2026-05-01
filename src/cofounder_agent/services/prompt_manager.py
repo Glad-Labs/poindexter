@@ -166,14 +166,20 @@ class UnifiedPromptManager:
         )
         logger.debug("Registered prompt: %s (%s)", key, category.value)
 
-    async def load_from_db(self, pool) -> int:
+    async def load_from_db(self, pool, *, site_config=None) -> int:
         """Load prompt overrides from the prompt_templates database table.
 
         Call this once at app startup (after DB pool is ready).
         DB prompts take priority over YAML prompts — enabling runtime editing.
 
+        ``site_config`` is accepted for Phase H call-site compatibility
+        (GH#95) but isn't read by this method — the prompt_templates query
+        uses the pool directly. Stored on the instance for any future
+        site-aware filtering.
+
         Returns number of prompts loaded from DB.
         """
+        self._site_config = site_config
         if pool is None:
             return 0
         try:

@@ -101,7 +101,7 @@ class UnifiedQualityService:
     - Complete audit trail
     """
 
-    def __init__(self, model_router=None, database_service=None, qa_agent=None, llm_client=None):
+    def __init__(self, model_router=None, database_service=None, qa_agent=None, llm_client=None, site_config=None):
         """
         Initialize quality service
 
@@ -110,11 +110,15 @@ class UnifiedQualityService:
             database_service: Optional DatabaseService for persistence
             qa_agent: Optional QA Agent for binary approval
             llm_client: Optional LLMClient for direct LLM evaluation calls
+            site_config: Optional SiteConfig — Phase H DI seam (GH#95).
+                Stored on the instance for any sub-method that needs
+                DB-backed config without re-importing the singleton.
         """
         self.model_router = model_router
         self.database_service = database_service
         self.qa_agent = qa_agent
         self.llm_client = llm_client
+        self._site_config = site_config
 
         # Statistics
         self.total_evaluations = 0

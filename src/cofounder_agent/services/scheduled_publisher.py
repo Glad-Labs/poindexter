@@ -20,18 +20,26 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
-async def run_scheduled_publisher(get_pool):
+async def run_scheduled_publisher(get_pool, *, site_config=None):
     """
     Background loop that checks for posts with status='scheduled'
     and published_at <= NOW(), then publishes them.
 
     Args:
         get_pool: Callable that returns the asyncpg connection pool
+        site_config: Optional SiteConfig (Phase H DI seam — GH#95). When
+            provided, used to read ``scheduled_publisher_poll_seconds``;
+            falls back to the module singleton for back-compat.
     """
     # Poll interval tunable via app_settings.scheduled_publisher_poll_seconds (#198)
     try:
-        from services.site_config import site_config as _sc
-        _poll_interval = _sc.get_int("scheduled_publisher_poll_seconds", 60)
+        if site_config is not None:
+            _poll_interval = int(
+                site_config.get("scheduled_publisher_poll_seconds", 60)
+            )
+        else:
+            from services.site_config import site_config as _sc
+            _poll_interval = _sc.get_int("scheduled_publisher_poll_seconds", 60)
     except Exception:
         _poll_interval = 60
     logger.info(

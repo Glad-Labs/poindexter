@@ -24,13 +24,14 @@ WORKER_TIMEOUT = 120  # seconds — worker considered offline after this
 
 
 class WorkerService:
-    def __init__(self, pool, worker_type: str = "local"):
+    def __init__(self, pool, worker_type: str = "local", *, site_config=None):
         self.pool = pool
         self.worker_type = worker_type
         self.worker_id = f"{worker_type}-{socket.gethostname()}-{os.getpid()}"
         self._running = False
         self._capabilities = {}
         self._current_task_id = None
+        self._site_config = site_config  # Phase H DI seam (GH#95)
         # Strong ref to the heartbeat task so asyncio doesn't GC it.
         self._heartbeat_task: asyncio.Task | None = None
 

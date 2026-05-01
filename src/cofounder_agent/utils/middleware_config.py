@@ -10,6 +10,8 @@ Configures:
 All middleware can be optionally enabled/disabled and configured via environment variables.
 """
 
+from typing import Any
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,7 +19,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import get_config
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -29,7 +30,7 @@ class MiddlewareConfig:
         self.limiter = None
         self.profiling_middleware = None
 
-    def register_all_middleware(self, app: FastAPI) -> None:
+    def register_all_middleware(self, app: FastAPI, *, site_config: Any = None) -> None:
         """
         Register all middleware with the FastAPI application.
 
@@ -61,7 +62,7 @@ class MiddlewareConfig:
         self._setup_rate_limiting(app)
         self._setup_token_validation(app)
         self._setup_security_headers(app)
-        self._setup_cors(app)
+        self._setup_cors(app, site_config=site_config)
         # Request ID must execute before profiling so the ID is available when
         # the profiling middleware logs request completion.
         self._setup_request_id(app)
@@ -146,7 +147,7 @@ class MiddlewareConfig:
         except ImportError as e:
             logger.warning(f"⚠️  Input validation middleware not available: {e}", exc_info=True)
 
-    def _setup_cors(self, app: FastAPI) -> None:
+    def _setup_cors(self, app: FastAPI, *, site_config: Any = None) -> None:
         """
         Setup CORS (Cross-Origin Resource Sharing) middleware.
 
@@ -161,12 +162,20 @@ class MiddlewareConfig:
 
         ⚠️  WARNING: Never use allow_origins=["*"] in production!
         """
-        # Get allowed origins from environment, with safe defaults
-        # Includes ports 3000, 3001, 3002, 3003, 3004 for development (in case of port conflicts)
-        allowed_origins = site_config.get(
-            "allowed_origins",
-            "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:3004",
-        ).split(",")
+        # Get allowed origins from site_config (DI — Phase H, GH#95) with
+        # env-var fallback for tests that don't wire up an instance.
+        default_origins = (
+            "http://localhost:3000,http://localhost:3001,http://localhost:3002,"
+            "http://localhost:3003,http://localhost:3004,http://127.0.0.1:3000,"
+            "http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,"
+            "http://127.0.0.1:3004"
+        )
+        if site_config is not None:
+            raw_origins = site_config.get("allowed_origins", default_origins)
+        else:
+            import os
+            raw_origins = os.getenv("ALLOWED_ORIGINS", default_origins)
+        allowed_origins = raw_origins.split(",")
 
         # Strip whitespace and trailing slashes from origins
         allowed_origins = [origin.strip().rstrip("/") for origin in allowed_origins]
