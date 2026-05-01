@@ -39,6 +39,11 @@ asyncpg = "^0.31"
 # for every target. Matches the worker's httpx pin.
 httpx = "^0.28"
 
+# YAML parser — used by compose_drift_probe.py (#213) to read
+# docker-compose.local.yml. Without this the probe silently degrades
+# to "PyYAML missing — skipping" instead of actually checking drift.
+pyyaml = "^6.0"
+
 [tool.poetry.group.tracing]
 # Optional OpenTelemetry stack for brain spans -> Tempo. Brain telemetry
 # (brain/telemetry.py) imports these inside a try/except and falls back to

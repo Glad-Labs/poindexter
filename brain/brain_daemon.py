@@ -77,6 +77,20 @@ except ImportError:  # pragma: no cover — package-qualified for tests
     except ImportError:
         _HAS_MIGRATION_DRIFT_PROBE = False
 
+try:
+    # GH#213 — compose-spec drift probe + optional auto-recreate. Runs
+    # on the standard 5-min cycle; reads docker-compose.local.yml from
+    # the bind-mounted path, compares against `docker inspect` for each
+    # service, and notifies (or recreates) on drift.
+    from compose_drift_probe import run_compose_drift_probe
+    _HAS_COMPOSE_DRIFT_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified for tests
+    try:
+        from brain.compose_drift_probe import run_compose_drift_probe
+        _HAS_COMPOSE_DRIFT_PROBE = True
+    except ImportError:
+        _HAS_COMPOSE_DRIFT_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1069,6 +1083,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] migration_drift probe failed: %s", e)
+
+    # Compose-spec drift probe (#213). Runs every cycle (5-min); compares
+    # docker-compose.local.yml against `docker inspect` for each service
+    # to catch the "compose was edited but the container was never
+    # recreated" failure mode. Optionally auto-recreates drifted services
+    # when compose_drift_auto_recover_enabled=true.
+    if _HAS_COMPOSE_DRIFT_PROBE:
+        try:
+            cd_summary = await run_compose_drift_probe(pool)
+            probe_results["compose_drift"] = {
+                "ok": bool(cd_summary.get("ok", False)),
+                "detail": cd_summary.get("detail", ""),
+                "summary": cd_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] compose_drift probe failed: %s", e)
 
     all_issues = issues + ext_issues
 
