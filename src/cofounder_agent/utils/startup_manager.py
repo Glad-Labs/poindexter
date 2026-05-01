@@ -30,7 +30,6 @@ class StartupManager:
         """Initialize startup manager with empty service references"""
         self.database_service = None
         self.redis_cache = None
-        self.orchestrator = None
         self.task_executor = None
         self.custom_workflows_service = None
         self.template_execution_service = None
@@ -338,7 +337,6 @@ class StartupManager:
 
             self.task_executor = TaskExecutor(
                 database_service=self.database_service,
-                orchestrator=None,  # See follow-up: orchestrator plumbing is dead, slated for removal
                 poll_interval=5,
             )
             logger.info("   Background task executor initialized (not started yet)")
@@ -518,7 +516,6 @@ class StartupManager:
         logger.info(
             f"  - Redis Cache: {self.redis_cache is not None and self.redis_cache._enabled}"
         )
-        logger.info(f"  - Orchestrator: {self.orchestrator is not None}")
         logger.info(
             f"  - Task Executor: {self.task_executor is not None and self.task_executor.running}"
         )

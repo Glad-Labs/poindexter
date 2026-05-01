@@ -55,7 +55,13 @@ def _make_task(task_id=TASK_ID, status="pending"):
     }
 
 
-def _make_executor(db=None, orchestrator=None, poll_interval=1):
+def _make_executor(db=None, poll_interval=1):
+    """Construct a TaskExecutor for tests with the heavy collaborators stubbed.
+
+    Note: the legacy `orchestrator=` kwarg was removed when the dead UnifiedOrchestrator
+    scaffolding was deleted (Glad-Labs/poindexter#333). Tests that used to mock
+    `executor.orchestrator` should drop those assertions.
+    """
     if db is None:
         db = _make_db()
     with (
@@ -65,7 +71,6 @@ def _make_executor(db=None, orchestrator=None, poll_interval=1):
     ):
         executor = TaskExecutor(
             database_service=db,
-            orchestrator=orchestrator,
             poll_interval=poll_interval,
         )
     # Default _get_setting mock — returns the default arg so callers like
@@ -98,17 +103,9 @@ class TestTaskExecutorInit:
         assert executor.last_poll_at is None
         assert executor._poll_cycle == 0
 
-    def test_inject_orchestrator_sets_orchestrator(self):
-        executor = _make_executor()
-        assert executor.orchestrator is None
-        mock_orch = MagicMock()
-        executor.inject_orchestrator(mock_orch)
-        assert executor.orchestrator is mock_orch
-
-    def test_orchestrator_property_returns_injected(self):
-        mock_orch = MagicMock()
-        executor = _make_executor(orchestrator=mock_orch)
-        assert executor.orchestrator is mock_orch
+    # `inject_orchestrator` / `executor.orchestrator` / `orchestrator_available`
+    # were removed when the dead UnifiedOrchestrator scaffolding was deleted
+    # (#333). The tests for them are gone with them.
 
     def test_get_stats_not_running(self):
         executor = _make_executor()
@@ -118,15 +115,8 @@ class TestTaskExecutorInit:
         assert stats["success_count"] == 0
         assert stats["error_count"] == 0
         assert stats["published_count"] == 0
-        assert stats["orchestrator_available"] is False
         assert stats["quality_service_available"] is True
         assert stats["last_poll_age_s"] is None
-
-    def test_get_stats_with_orchestrator(self):
-        mock_orch = MagicMock()
-        executor = _make_executor(orchestrator=mock_orch)
-        stats = executor.get_stats()
-        assert stats["orchestrator_available"] is True
 
     def test_get_stats_last_poll_age_computed(self):
         import time

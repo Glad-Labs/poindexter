@@ -27,9 +27,7 @@ class TestServiceContainerInit:
     def test_all_named_attrs_start_as_none(self):
         c = self.container
         assert c.get_database() is None
-        assert c.get_orchestrator() is None
         assert c.get_task_executor() is None
-        assert c.get_intelligent_orchestrator() is None
         assert c.get_workflow_history() is None
         assert c.get_workflow_engine() is None
         assert c.get_redis_cache() is None
@@ -53,20 +51,10 @@ class TestServiceContainerSetGet:
         self.container.set_database(mock)
         assert self.container.get_database() is mock
 
-    def test_set_and_get_orchestrator(self):
-        mock = MagicMock(name="orch")
-        self.container.set_orchestrator(mock)
-        assert self.container.get_orchestrator() is mock
-
     def test_set_and_get_task_executor(self):
         mock = MagicMock(name="executor")
         self.container.set_task_executor(mock)
         assert self.container.get_task_executor() is mock
-
-    def test_set_and_get_intelligent_orchestrator(self):
-        mock = MagicMock(name="io")
-        self.container.set_intelligent_orchestrator(mock)
-        assert self.container.get_intelligent_orchestrator() is mock
 
     def test_set_and_get_workflow_history(self):
         mock = MagicMock(name="wh")
@@ -105,9 +93,7 @@ class TestServiceContainerSetGet:
         all_svcs = self.container.get_all_services()
         expected_keys = {
             "database",
-            "orchestrator",
             "task_executor",
-            "intelligent_orchestrator",
             "workflow_history",
             "workflow_engine",
             "redis_cache",
@@ -190,29 +176,6 @@ class TestDependencyFunctions:
         finally:
             self._restore_services(orig)
 
-    def test_get_orchestrator_dependency_returns_orchestrator(self):
-        from utils.route_utils import get_orchestrator_dependency
-
-        c = self._fresh_container()
-        mock_o = MagicMock()
-        c.set_orchestrator(mock_o)
-        orig = self._patch_services(c)
-        try:
-            assert get_orchestrator_dependency() is mock_o
-        finally:
-            self._restore_services(orig)
-
-    def test_get_orchestrator_dependency_raises_when_none(self):
-        from utils.route_utils import get_orchestrator_dependency
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            with pytest.raises(RuntimeError, match="Orchestrator not initialized"):
-                get_orchestrator_dependency()
-        finally:
-            self._restore_services(orig)
-
     def test_get_task_executor_dependency_returns_executor(self):
         from utils.route_utils import get_task_executor_dependency
 
@@ -233,29 +196,6 @@ class TestDependencyFunctions:
         try:
             with pytest.raises(RuntimeError, match="Task executor not initialized"):
                 get_task_executor_dependency()
-        finally:
-            self._restore_services(orig)
-
-    def test_get_intelligent_orchestrator_dependency_returns_io(self):
-        from utils.route_utils import get_intelligent_orchestrator_dependency
-
-        c = self._fresh_container()
-        mock_io = MagicMock()
-        c.set_intelligent_orchestrator(mock_io)
-        orig = self._patch_services(c)
-        try:
-            assert get_intelligent_orchestrator_dependency() is mock_io
-        finally:
-            self._restore_services(orig)
-
-    def test_get_intelligent_orchestrator_dependency_raises_when_none(self):
-        from utils.route_utils import get_intelligent_orchestrator_dependency
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            with pytest.raises(RuntimeError, match="Intelligent orchestrator not initialized"):
-                get_intelligent_orchestrator_dependency()
         finally:
             self._restore_services(orig)
 
@@ -484,9 +424,9 @@ class TestInitializeServices:
         mod._services = c
         try:
             app = MagicMock()
-            initialize_services(app, database_service=None, orchestrator=None)
+            initialize_services(app, database_service=None, task_executor=None)
             assert c.get_database() is None
-            assert c.get_orchestrator() is None
+            assert c.get_task_executor() is None
         finally:
             mod._services = orig
 
@@ -518,9 +458,7 @@ class TestInitializeServices:
                 name: MagicMock(name=name)
                 for name in [
                     "database_service",
-                    "orchestrator",
                     "task_executor",
-                    "intelligent_orchestrator",
                     "workflow_history",
                     "redis_cache",
                     "custom_workflows_service",
@@ -529,9 +467,7 @@ class TestInitializeServices:
             }
             initialize_services(app, **svcs)
             assert c.get_database() is svcs["database_service"]
-            assert c.get_orchestrator() is svcs["orchestrator"]
             assert c.get_task_executor() is svcs["task_executor"]
-            assert c.get_intelligent_orchestrator() is svcs["intelligent_orchestrator"]
             assert c.get_workflow_history() is svcs["workflow_history"]
             assert c.get_redis_cache() is svcs["redis_cache"]
             assert c.get_custom_workflows_service() is svcs["custom_workflows_service"]

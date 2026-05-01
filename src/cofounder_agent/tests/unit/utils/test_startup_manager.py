@@ -62,7 +62,6 @@ class TestInit:
         mgr = _make_manager()
         assert mgr.database_service is None
         assert mgr.redis_cache is None
-        assert mgr.orchestrator is None
         assert mgr.task_executor is None
         assert mgr.custom_workflows_service is None
         assert mgr.template_execution_service is None
@@ -352,7 +351,6 @@ class TestInitializeTaskExecutor:
         mgr = _make_manager()
         mgr.database_service = MagicMock()
         mgr.database_service.tasks = MagicMock()
-        mgr.orchestrator = None
 
         mock_executor = MagicMock()
         mock_executor_cls = MagicMock(return_value=mock_executor)
@@ -363,8 +361,8 @@ class TestInitializeTaskExecutor:
 
         assert mgr.task_executor is mock_executor
 
-    def test_executor_created_with_none_orchestrator(self):
-        """Orchestrator is injected later; task executor starts without it."""
+    def test_executor_created_with_expected_kwargs(self):
+        """TaskExecutor takes only database_service + poll_interval (#333)."""
         mgr = _make_manager()
         mgr.database_service = MagicMock()
         mgr.database_service.tasks = MagicMock()
@@ -377,7 +375,10 @@ class TestInitializeTaskExecutor:
             _run(mgr._initialize_task_executor())
 
         call_kwargs = mock_executor_cls.call_args.kwargs
-        assert call_kwargs["orchestrator"] is None
+        assert call_kwargs["database_service"] is mgr.database_service
+        assert call_kwargs["poll_interval"] == 5
+        # `orchestrator` kwarg removed in #333; assert it was not passed.
+        assert "orchestrator" not in call_kwargs
 
     def test_exception_sets_none_does_not_raise(self):
         mgr = _make_manager()
@@ -574,10 +575,8 @@ class TestLogStartupSummary:
         mgr.database_service = MagicMock()
         mgr.redis_cache = MagicMock()
         mgr.redis_cache._enabled = True
-        mgr.orchestrator = MagicMock()
         mgr.task_executor = MagicMock()
         mgr.task_executor.running = True
-        mgr.fine_tuning_service = MagicMock()
         mgr._log_startup_summary()  # Must not raise
 
 

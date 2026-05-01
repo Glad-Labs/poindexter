@@ -213,9 +213,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         initialize_services(
             app,
             database_service=services["database"],
-            orchestrator=services.get("orchestrator"),
             task_executor=services["task_executor"],
-            intelligent_orchestrator=services.get("intelligent_orchestrator"),
             workflow_history=services.get("workflow_history"),
             custom_workflows_service=services.get("custom_workflows_service"),
             template_execution_service=template_execution_service,

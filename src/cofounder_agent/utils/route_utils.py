@@ -42,7 +42,7 @@ class ServiceContainer:
         # In main.py during startup
         services = ServiceContainer()
         services.set_database(db_service)
-        services.set_orchestrator(orchestrator)
+        services.set_task_executor(task_executor)
 
         # In route files
         @app.get("/tasks")
@@ -55,9 +55,7 @@ class ServiceContainer:
     def __init__(self):
         """Initialize service container with None values"""
         self._database_service = None
-        self._orchestrator = None
         self._task_executor = None
-        self._intelligent_orchestrator = None
         self._workflow_history = None
         self._workflow_engine = None
         self._redis_cache = None
@@ -70,20 +68,10 @@ class ServiceContainer:
         self._database_service = service
         logger.info("Database service registered with ServiceContainer")
 
-    def set_orchestrator(self, service: Any) -> None:
-        """Set the orchestrator service"""
-        self._orchestrator = service
-        logger.info("Orchestrator service registered with ServiceContainer")
-
     def set_task_executor(self, service: Any) -> None:
         """Set the task executor service"""
         self._task_executor = service
         logger.info("Task executor service registered with ServiceContainer")
-
-    def set_intelligent_orchestrator(self, service: Any) -> None:
-        """Set the intelligent orchestrator service"""
-        self._intelligent_orchestrator = service
-        logger.info("Intelligent orchestrator service registered with ServiceContainer")
 
     def set_workflow_history(self, service: Any) -> None:
         """Set the workflow history service"""
@@ -119,17 +107,9 @@ class ServiceContainer:
         """Get the database service"""
         return self._database_service
 
-    def get_orchestrator(self) -> Any | None:
-        """Get the orchestrator service"""
-        return self._orchestrator
-
     def get_task_executor(self) -> Any | None:
         """Get the task executor service"""
         return self._task_executor
-
-    def get_intelligent_orchestrator(self) -> Any | None:
-        """Get the intelligent orchestrator service"""
-        return self._intelligent_orchestrator
 
     def get_workflow_history(self) -> Any | None:
         """Get the workflow history service"""
@@ -159,9 +139,7 @@ class ServiceContainer:
         """Get all registered services"""
         return {
             "database": self._database_service,
-            "orchestrator": self._orchestrator,
             "task_executor": self._task_executor,
-            "intelligent_orchestrator": self._intelligent_orchestrator,
             "workflow_history": self._workflow_history,
             "workflow_engine": self._workflow_engine,
             "redis_cache": self._redis_cache,
@@ -251,14 +229,6 @@ def get_site_config_dependency(request: Request) -> Any:
     return sc
 
 
-def get_orchestrator_dependency() -> Any:
-    """FastAPI dependency for orchestrator service"""
-    orchestrator = _services.get_orchestrator()
-    if orchestrator is None:
-        raise RuntimeError("Orchestrator not initialized")
-    return orchestrator
-
-
 def get_task_executor_dependency() -> Any:
     """FastAPI dependency for task executor service"""
     executor = _services.get_task_executor()
@@ -282,14 +252,6 @@ def get_enhanced_status_change_service() -> Any:
 
     # Create and return EnhancedStatusChangeService
     return EnhancedStatusChangeService(task_db)
-
-
-def get_intelligent_orchestrator_dependency() -> Any:
-    """FastAPI dependency for intelligent orchestrator service"""
-    io = _services.get_intelligent_orchestrator()
-    if io is None:
-        raise RuntimeError("Intelligent orchestrator not initialized")
-    return io
 
 
 def get_workflow_history_dependency() -> Any:
@@ -385,9 +347,7 @@ def register_legacy_db_service(service: Any) -> None:
 def initialize_services(
     app: FastAPI,
     database_service: Any = None,
-    orchestrator: Any = None,
     task_executor: Any = None,
-    intelligent_orchestrator: Any = None,
     workflow_history: Any = None,
     redis_cache: Any = None,
     custom_workflows_service: Any = None,
@@ -402,9 +362,7 @@ def initialize_services(
     Args:
         app: FastAPI application instance
         database_service: Database service instance
-        orchestrator: Orchestrator instance
         task_executor: Task executor instance
-        intelligent_orchestrator: Intelligent orchestrator instance
         workflow_history: Workflow history service instance
         redis_cache: Redis cache service instance
         custom_workflows_service: Custom workflows service instance
@@ -422,9 +380,7 @@ def initialize_services(
         initialize_services(
             app,
             database_service=services['database'],
-            orchestrator=services['orchestrator'],
             task_executor=services['task_executor'],
-            intelligent_orchestrator=services['intelligent_orchestrator'],
             workflow_history=services['workflow_history'],
             redis_cache=services['redis_cache'],
             custom_workflows_service=services['custom_workflows_service'],
@@ -434,14 +390,8 @@ def initialize_services(
     if database_service:
         _services.set_database(database_service)
 
-    if orchestrator:
-        _services.set_orchestrator(orchestrator)
-
     if task_executor:
         _services.set_task_executor(task_executor)
-
-    if intelligent_orchestrator:
-        _services.set_intelligent_orchestrator(intelligent_orchestrator)
 
     if workflow_history:
         _services.set_workflow_history(workflow_history)
