@@ -583,64 +583,6 @@ class TestKnownWrongHardwareFacts:
 
 
 # ============================================================================
-# First-Person Title Patterns (added 2026-04-11)
-# ============================================================================
-
-
-class TestFirstPersonTitle:
-    """Regression tests for the first-person-pronoun title validator.
-
-    Matt: 'Another issue I found is one of the posts uses we in the title.'
-    The pipeline is a solo+AI operation — titles like "How We Built X"
-    imply a team that doesn't exist. Marked as CRITICAL.
-    """
-
-    def test_how_we_built_caught(self):
-        result = validate_content("How We Built a Self-Operating Content Business", "body", "")
-        fp = [i for i in result.issues if i.category == "first_person_title"]
-        assert len(fp) == 1
-        assert result.passed is False
-
-    def test_my_journey_caught(self):
-        result = validate_content("My Journey Into Local LLMs", "body", "")
-        fp = [i for i in result.issues if i.category == "first_person_title"]
-        assert len(fp) == 1
-
-    def test_our_caught(self):
-        result = validate_content("How We Reduced Our Cloud Bill by 80%", "body", "")
-        fp = [i for i in result.issues if i.category == "first_person_title"]
-        assert len(fp) >= 1
-
-    def test_works_on_my_machine_idiom_not_caught(self):
-        """Quoted idiom 'Works on My Machine' should be stripped before matching."""
-        result = validate_content(
-            "Beyond 'Works on My Machine': The Architecture of a Bulletproof PostgreSQL System",
-            "body", "",
-        )
-        fp = [i for i in result.issues if i.category == "first_person_title"]
-        assert fp == []
-
-    def test_it_works_on_my_machine_double_quotes_not_caught(self):
-        result = validate_content(
-            'The "It Works on My Machine" Myth: How to Ship FastAPI Apps',
-            "body", "",
-        )
-        fp = [i for i in result.issues if i.category == "first_person_title"]
-        assert fp == []
-
-    def test_clean_third_person_title_ok(self):
-        result = validate_content("Why VRAM Bandwidth Trumps Compute", "body", "")
-        fp = [i for i in result.issues if i.category == "first_person_title"]
-        assert fp == []
-
-    def test_io_performance_not_caught(self):
-        """'I/O' in a title should NOT trigger the 'I' pattern."""
-        result = validate_content("Optimizing I/O Performance for Database Workloads", "body", "")
-        fp = [i for i in result.issues if i.category == "first_person_title"]
-        assert fp == []
-
-
-# ============================================================================
 # Filler Phrase Patterns (added 2026-04-11)
 # ============================================================================
 

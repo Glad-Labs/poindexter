@@ -184,22 +184,13 @@ LEAKED_IMAGE_PROMPT_PATTERNS = [
     r"(?:^|\n)\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*",  # standalone `*A description...*`
 ]
 
-# First-person pronouns in titles. Matt 2026-04-11: "Another issue I found
-# is one of the posts uses we in the title." The pipeline is a solo + AI
-# operation — titles like "How We Built X" are corporate/team-speak that
-# implies a team the author doesn't have. It's the same class of problem
-# as FABRICATED_EXPERIENCE_PATTERNS (which handles the post body), just
-# applied specifically to the title line.
-#
-# Matched bare — an issue here is CRITICAL because titles are the first
-# thing readers see and sharing a title like "How We Built..." to an
-# audience that knows you're solo is an immediate credibility hit.
-FIRST_PERSON_TITLE_PATTERNS = [
-    r"\b(?:we|our|us|my|mine)\b",
-    # Standalone "I" needs a negative lookahead for "/" so "I/O" doesn't match.
-    r"\bi(?!/)(?:'ve|'m|'ll|'d)?\b",
-    r"\bwe(?:'ve|'re|'ll|'d)\b",
-]
+# Removed 2026-05-01: FIRST_PERSON_TITLE_PATTERNS — Matt killed the title
+# pronoun gate after it became the dominant rejection reason (65 of 91
+# programmatic-validator vetoes in a 24h window were "Title contains
+# first-person pronoun"). The body-side voice rules in quality_scorers
+# (`first_person_claims` for "I/we built/created/etc") still enforce
+# newsroom voice in the post body — only the *title* check is gone.
+# Original rule + tests preserved in git history if revival is needed.
 
 # Known-wrong facts are now loaded from the `fact_overrides` DB table.
 # Manage via pgAdmin or API — no redeployment needed.
@@ -1035,39 +1026,8 @@ def validate_content(
                     line_number=_hw_line_idx,
                 ))
 
-    # 7c-bis. First-person pronouns in TITLE only. The body has its own
-    # fabricated_experience check; this one specifically guards the headline.
-    #
-    # Strip quoted substrings first so idioms like "It Works on My Machine"
-    # don't false-positive. Both curly and straight quotes (single and
-    # double) are handled. If the pronoun survives quote-stripping, it's
-    # a real first-person claim.
-    _title_str = title or ""
-    _quote_stripped = re.sub(
-        r"""(?x)
-        (?: \"[^\"]*\"      # "double quoted"
-          | '[^']*'         # 'single quoted'
-          | \u201c[^\u201d]*\u201d   # curly-double quoted
-          | \u2018[^\u2019]*\u2019   # curly-single quoted
-        )
-        """,
-        " ",
-        _title_str,
-    )
-    for _fp_pat in FIRST_PERSON_TITLE_PATTERNS:
-        _fp_match = re.search(_fp_pat, _quote_stripped, re.IGNORECASE)
-        if _fp_match:
-            issues.append(ValidationIssue(
-                severity="critical",
-                category="first_person_title",
-                description=(
-                    f"Title contains first-person pronoun '{_fp_match.group(0)}'. "
-                    f"Titles must be third-person — Glad Labs is a solo+AI operation, "
-                    f"'How We Built X' implies a team that doesn't exist."
-                ),
-                matched_text=_title_str[:100],
-            ))
-            break  # one hit is enough; don't spam multiple issues for the same title
+    # 7c-bis. Removed 2026-05-01 — first-person title gate killed (see
+    # FIRST_PERSON_TITLE_PATTERNS removal note at module top for context).
 
     # 7d. Filler phrases — "many organizations have found...", "the journey
     # is rewarding", etc. Warning level, score penalty only.

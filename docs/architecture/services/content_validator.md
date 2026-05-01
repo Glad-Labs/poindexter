@@ -57,7 +57,7 @@ so the sync path stays sync.
   `FABRICATED_EXPERIENCE_PATTERNS`, `HALLUCINATED_LINK_PATTERNS`,
   `UNLINKED_CITATION_PATTERNS`, `BRAND_CONTRADICTION_PATTERNS`,
   `LEAKED_IMAGE_PROMPT_PATTERNS`, `IMAGE_PLACEHOLDER_PATTERNS`,
-  `FILLER_PHRASE_PATTERNS`, `FIRST_PERSON_TITLE_PATTERNS`.
+  `FILLER_PHRASE_PATTERNS`.
 
 ### Rule categories
 
@@ -71,7 +71,6 @@ so the sync path stays sync.
 | `hallucinated_link`      | critical  | "our guide on X", "see our post"                       |
 | `image_placeholder`      | critical  | `[IMAGE-1: ...]`, `[FIGURE: ...]`                      |
 | `truncated_content`      | critical  | Doesn't end with sentence punctuation                  |
-| `first_person_title`     | critical  | "we"/"our"/"I" in the title (after quote-strip)        |
 | `unlinked_citation`      | warning\* | Promoted to critical when source is named without URL  |
 | `hallucinated_reference` | warning\* | Library/API reference not in stdlib/PyPI/Ollama lists  |
 | `code_block_density`     | warning   | Tech-tagged post with insufficient code                |
@@ -208,9 +207,6 @@ threshold of T)`. The original warning categories are still emitted
   list markers, so most cases are handled. Posts that legitimately
   end on a quote or parenthesis also pass (the closing-bracket set
   includes `"`, `'`, `)`, `”`, `’`).
-- **Title quote-stripping** — first-person title detection strips
-  quoted substrings first so idioms like "It Works on My Machine"
-  don't match. Both straight and curly quotes (single + double).
 - **Company name with regex metacharacters** — the rules use
   `re.escape(_COMPANY_NAME)` so brand names with `.` / `+` / `*` etc.
   don't blow up the patterns.
