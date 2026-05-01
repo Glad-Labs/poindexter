@@ -179,8 +179,11 @@ async def trigger_nextjs_revalidation(
 
 # Canonical paths that EVERY publish must revalidate, in addition to
 # the slug-specific path. These are the indexes that list/feature the
-# new post.
-_CANONICAL_PATHS = ("/", "/archive", "/posts", "/sitemap.xml")
+# new post. /feed.xml was missing pre-2026-05-01 — without it, dlvr.it /
+# IFTTT / RSS subscribers saw 17+ days of stale content because the
+# Vercel ISR cache for /feed.xml only refreshed on its natural 5-min
+# inner fetch TTL, never on publish.
+_CANONICAL_PATHS = ("/", "/archive", "/posts", "/sitemap.xml", "/feed.xml")
 # Canonical tags that EVERY publish must invalidate. These match the
 # `next: { tags: [...] }` keys set in web/public-site/lib/posts.ts.
 _CANONICAL_TAGS = ("posts", "post-index")

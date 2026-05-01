@@ -61,9 +61,19 @@ async def run_scheduled_publisher(get_pool, *, site_config=None):
                 # post-specific path. Previously only id/title were
                 # returned and the loop never triggered ISR busting,
                 # so promoted posts sat invisible for ≤5 min.
+                # `distributed_at` gates both the RSS feed
+                # (app/feed.xml/route.ts) and the static R2 index export
+                # (static_export_service.export_posts_index). Posts
+                # promoted via this loop sat invisible from both surfaces
+                # because the original UPDATE only flipped status — see
+                # https://github.com/Glad-Labs/poindexter (RSS staleness
+                # + missing-from-/posts bug, 2026-05-01). COALESCE
+                # preserves any pre-set value (re-promotion edge case).
                 rows = await conn.fetch("""
                     UPDATE posts
-                    SET status = 'published', updated_at = NOW()
+                    SET status = 'published',
+                        updated_at = NOW(),
+                        distributed_at = COALESCE(distributed_at, NOW())
                     WHERE status = 'scheduled' AND published_at <= NOW()
                     RETURNING id, title, slug
                     """)
