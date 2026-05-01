@@ -265,6 +265,41 @@ def _yaml_image_tag(service_block: dict[str, Any], service_name: str) -> str | N
 # ---------------------------------------------------------------------------
 
 
+def _docker_reachable() -> tuple[bool, str]:
+    """Pre-flight check that the docker daemon is actually reachable.
+
+    Without this, a brain container that has the socket bind-mounted but
+    can't read it (root-owned socket, brain runs as non-root) treats every
+    service as "container missing" and writes one audit_log row per
+    service per cycle. Matt's prod hit 2117 such rows in 6h before this
+    guard.
+
+    Returns ``(True, "")`` on success or ``(False, reason)`` so the
+    caller can short-circuit and surface the reason in audit_log.
+    """
+    try:
+        kwargs: dict[str, Any] = {
+            "capture_output": True,
+            "text": True,
+            "timeout": DOCKER_COMMAND_TIMEOUT_SECONDS,
+        }
+        if os.name == "nt":  # pragma: no cover
+            kwargs["creationflags"] = 0x08000000
+        result = subprocess.run(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            **kwargs,
+        )
+        if result.returncode == 0 and (result.stdout or "").strip():
+            return True, ""
+        return False, (result.stderr or result.stdout or "no output").strip()[:200]
+    except FileNotFoundError:
+        return False, "docker CLI not on PATH"
+    except subprocess.TimeoutExpired:
+        return False, f"docker version timed out after {DOCKER_COMMAND_TIMEOUT_SECONDS}s"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {str(exc)[:160]}"
+
+
 def _docker_inspect(container_name: str) -> dict[str, Any] | None:
     """Run ``docker inspect`` and return the parsed JSON body.
 
@@ -601,6 +636,7 @@ async def run_compose_drift_probe(
     recreate_fn=None,
     yaml_loader=None,
     sleep_fn=time.sleep,
+    docker_reachable_fn=None,
 ) -> dict[str, Any]:
     """Single execution of the compose-spec drift probe.
 
@@ -626,10 +662,40 @@ async def run_compose_drift_probe(
     inspect_fn = inspect_fn or _docker_inspect
     recreate_fn = recreate_fn or _recreate_services
     yaml_loader = yaml_loader or _load_compose_yaml
+    docker_reachable_fn = docker_reachable_fn or _docker_reachable
 
     compose_path = await _read_compose_path(pool)
     skip_services = await _read_skip_services(pool)
     auto_recover_enabled = await _read_auto_recover_enabled(pool)
+
+    # ---- 0) Pre-flight: docker daemon reachable? ----------------------------
+    # Without this, an unreachable docker daemon (socket bind-mounted but
+    # not readable, daemon stopped, CLI missing) makes every per-service
+    # `docker inspect` return None, which the diff treats as "container
+    # missing" and writes one audit_log row per service per cycle. Matt's
+    # prod hit 2117 such rows in 6h before this guard.
+    docker_ok, docker_reason = docker_reachable_fn()
+    if not docker_ok:
+        detail = (
+            f"Docker daemon unreachable from brain — can't check drift. "
+            f"Reason: {docker_reason}. Most common cause is the docker "
+            f"socket being root-owned while the brain runs as a non-root "
+            f"user; bind-mount with the right group or grant the brain "
+            f"user access to /var/run/docker.sock."
+        )
+        logger.info("[COMPOSE_DRIFT] %s", detail)
+        await _emit_audit_event(
+            pool, "probe.compose_drift_unknown", detail
+        )
+        return {
+            "ok": True,  # not OUR failure to surface
+            "status": "unknown",
+            "detail": detail,
+            "compose_path": compose_path,
+            "auto_recover_enabled": auto_recover_enabled,
+            "docker_reachable": False,
+            "docker_unreachable_reason": docker_reason,
+        }
 
     # ---- 1) Load + parse compose --------------------------------------------
     spec = yaml_loader(compose_path)

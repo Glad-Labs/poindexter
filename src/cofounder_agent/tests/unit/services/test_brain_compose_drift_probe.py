@@ -532,6 +532,91 @@ class TestEdgeCases:
         assert summary["status"] == "unknown"
 
     @pytest.mark.asyncio
+    async def test_docker_unreachable_returns_unknown_no_per_service_spam(self):
+        # Brain container's docker socket is bind-mounted but unreadable
+        # (root-owned socket, brain runs as non-root). Without a pre-flight
+        # check, the probe interprets every container as "missing" and
+        # writes one audit_log row per service per cycle — Matt's prod
+        # generated 2117 such rows in 6h before this guard. The fix:
+        # detect docker-unreachable up front, emit ONE compose_drift_unknown
+        # event, and return without iterating services.
+        pool = _make_pool({"compose_drift_auto_recover_enabled": "false"})
+
+        # Spec with multiple services so the test would clearly fail if
+        # the per-service loop runs.
+        spec = _compose_spec({
+            f"svc{i}": {
+                "container_name": f"poindexter-svc{i}",
+                "image": f"poindexter/svc{i}:latest",
+            }
+            for i in range(5)
+        })
+
+        notifies: list[dict] = []
+        inspect_calls: list[str] = []
+
+        def fake_inspect(name):
+            inspect_calls.append(name)
+            return None  # would normally be treated as drift
+
+        summary = await cdp.run_compose_drift_probe(
+            pool,
+            notify_fn=lambda **k: notifies.append(k),
+            inspect_fn=fake_inspect,
+            recreate_fn=lambda _p, _s: (True, ""),
+            yaml_loader=lambda _p: spec,
+            sleep_fn=lambda _s: None,
+            # Pre-flight reports docker unreachable.
+            docker_reachable_fn=lambda: (
+                False, "permission denied connecting to docker socket"
+            ),
+        )
+
+        assert summary["status"] == "unknown"
+        assert summary["ok"] is True  # not OUR failure to surface
+        assert notifies == []
+        # The pre-flight check short-circuits — per-service inspect must
+        # not run, otherwise we'd write per-service audit rows.
+        assert inspect_calls == []
+
+        # Exactly one audit_log row should be written, with event
+        # probe.compose_drift_unknown.
+        audit_events = [
+            call.args[1] for call in pool.execute.call_args_list
+            if "audit_log" in call.args[0]
+        ]
+        assert audit_events == ["probe.compose_drift_unknown"]
+        # Detail mentions docker-unreachable so an operator can diagnose.
+        audit_detail = pool.execute.call_args_list[-1].args[3]
+        assert "docker" in audit_detail.lower()
+        assert "permission denied" in audit_detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_docker_reachable_default_does_not_short_circuit(self):
+        # Without an explicit docker_reachable_fn the probe should default
+        # to "reachable" and run the normal flow — no behavior change for
+        # callers that don't care about the new pre-flight.
+        pool = _make_pool({"compose_drift_auto_recover_enabled": "false"})
+
+        inspect_calls: list[str] = []
+
+        def fake_inspect(name):
+            inspect_calls.append(name)
+            return _matching_inspect()
+
+        summary = await cdp.run_compose_drift_probe(
+            pool,
+            notify_fn=lambda **k: None,
+            inspect_fn=fake_inspect,
+            recreate_fn=lambda _p, _s: (True, ""),
+            yaml_loader=lambda _p: _compose_spec(),
+            sleep_fn=lambda _s: None,
+        )
+
+        assert summary["status"] == "no_drift"
+        assert inspect_calls == ["poindexter-worker"]
+
+    @pytest.mark.asyncio
     async def test_container_missing_counts_as_drift(self):
         # docker inspect returns None (container doesn't exist) → drift.
         pool = _make_pool({"compose_drift_auto_recover_enabled": "false"})
