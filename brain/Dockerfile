@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir asyncpg
 
-COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py seed_loader.py docker_utils.py alert_sync.py ./
+COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py ./
 COPY seed_app_settings.json /app/seed_app_settings.json
 
 # brain_daemon.py imports `from brain.bootstrap import ...` so the files
@@ -22,6 +22,9 @@ RUN mkdir -p /app/brain && \
     cp /app/health_probes.py /app/brain/health_probes.py && \
     cp /app/business_probes.py /app/brain/business_probes.py && \
     cp /app/operator_notifier.py /app/brain/operator_notifier.py && \
+    cp /app/operator_url_probe.py /app/brain/operator_url_probe.py && \
+    cp /app/migration_drift_probe.py /app/brain/migration_drift_probe.py && \
+    cp /app/probe_interface.py /app/brain/probe_interface.py && \
     cp /app/seed_loader.py /app/brain/seed_loader.py && \
     cp /app/docker_utils.py /app/brain/docker_utils.py && \
     cp /app/alert_sync.py /app/brain/alert_sync.py && \

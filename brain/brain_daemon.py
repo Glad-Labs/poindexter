@@ -63,6 +63,20 @@ except ImportError:  # pragma: no cover — package-qualified for tests
     except ImportError:
         _HAS_OPERATOR_URL_PROBE = False
 
+try:
+    # GH#228 — migration-drift probe + auto-restart workflow. Runs on
+    # the standard 5-min cycle; checks worker /api/health migrations
+    # block, optionally restarts the worker if drift is detected and
+    # the operator opted in via app_settings.
+    from migration_drift_probe import run_migration_drift_probe
+    _HAS_MIGRATION_DRIFT_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified for tests
+    try:
+        from brain.migration_drift_probe import run_migration_drift_probe
+        _HAS_MIGRATION_DRIFT_PROBE = True
+    except ImportError:
+        _HAS_MIGRATION_DRIFT_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1041,6 +1055,20 @@ async def run_cycle(pool):
                 }
         except Exception as e:
             logger.warning("[BRAIN] operator_url_probe failed: %s", e)
+
+    # Migration drift probe (#228). Runs every cycle (5-min); detects drift
+    # via worker /api/health migrations block and optionally auto-restarts
+    # the worker when migration_drift_auto_recover_enabled=true.
+    if _HAS_MIGRATION_DRIFT_PROBE:
+        try:
+            md_summary = await run_migration_drift_probe(pool)
+            probe_results["migration_drift"] = {
+                "ok": bool(md_summary.get("ok", False)),
+                "detail": md_summary.get("detail", ""),
+                "summary": md_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] migration_drift probe failed: %s", e)
 
     all_issues = issues + ext_issues
 
