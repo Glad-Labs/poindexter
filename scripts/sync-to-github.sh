@@ -66,7 +66,7 @@ git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # 
 git rm --cached --quiet skills/openclaw/gladlabs-config.json 2>/dev/null || true
 git rm --cached --quiet .env.example 2>/dev/null || true                      # Legacy; customers use poindexter setup
 
-# === Premium Grafana dashboards (Seed Package — keep only pipeline-operations free) ===
+# === Premium Grafana dashboards (Seed Package — keep only pipeline-merged free) ===
 git rm --cached --quiet infrastructure/grafana/dashboards/approval-queue.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/cost-analytics.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/infrastructure-data.json 2>/dev/null || true

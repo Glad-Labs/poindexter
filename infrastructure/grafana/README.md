@@ -20,9 +20,9 @@ setup needed — `bash scripts/start-stack.sh` brings it up.
 
 ### Free (ships in this repo)
 
-| File                                  | Description                                   |
-| ------------------------------------- | --------------------------------------------- |
-| `dashboards/pipeline-operations.json` | Pipeline status, queue depth, recent activity |
+| File                              | Description                                                                         |
+| --------------------------------- | ----------------------------------------------------------------------------------- |
+| `dashboards/pipeline-merged.json` | Approval queue, pipeline operations, QA observability, content quality (merged set) |
 
 ### Premium (Seed Package — $29)
 
