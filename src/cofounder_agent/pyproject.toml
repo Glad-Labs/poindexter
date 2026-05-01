@@ -186,6 +186,7 @@ analyze_topic_gaps = "cofounder_agent.services.jobs.analyze_topic_gaps:AnalyzeTo
 sync_newsletter_subscribers = "cofounder_agent.services.jobs.sync_newsletter_subscribers:SyncNewsletterSubscribersJob"
 backfill_videos = "cofounder_agent.services.jobs.backfill_videos:BackfillVideosJob"
 backfill_podcasts = "cofounder_agent.services.jobs.backfill_podcasts:BackfillPodcastsJob"
+run_niche_topic_sweep = "cofounder_agent.services.jobs.run_niche_topic_sweep:RunNicheTopicSweepJob"
 detect_anomalies = "cofounder_agent.services.jobs.detect_anomalies:DetectAnomaliesJob"
 check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
 regenerate_stock_images = "cofounder_agent.services.jobs.regenerate_stock_images:RegenerateStockImagesJob"

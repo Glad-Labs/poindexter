@@ -263,6 +263,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.reload_site_config", "ReloadSiteConfigJob"),
         ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
         ("jobs", "services.jobs.sync_newsletter_subscribers", "SyncNewsletterSubscribersJob"),
+        # Niche topic-discovery sweep — calls TopicBatchService.run_sweep
+        # per active niche on a 30-min cadence. Per-niche cadence floor
+        # (niches.discovery_cadence_minute_floor) gates the actual work.
+        # Layer 1 of the topic-UX rollout (niche pivot).
+        ("jobs", "services.jobs.run_niche_topic_sweep", "RunNicheTopicSweepJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
