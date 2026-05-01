@@ -36,8 +36,24 @@ git checkout -b "$TEMP_BRANCH" 2>/dev/null
 # === Premium product surfaces and private branding ===
 git rm -r --cached --quiet web/public-site/ 2>/dev/null || true              # branded Next.js site
 git rm -r --cached --quiet web/storefront/ 2>/dev/null || true               # gladlabs.ai storefront (Lemon Squeezy checkout + copy)
-git rm -r --cached --quiet docs/ 2>/dev/null || true                         # internal docs
 git rm -r --cached --quiet marketing/ 2>/dev/null || true                    # marketing materials
+
+# === Internal-only docs (the rest of docs/ ships to public for Mintlify) ===
+# Strip individual subpaths instead of the whole tree — most of docs/ is
+# operator-facing and gets hosted on Mintlify (see docs.json at repo root).
+# These specific files are internal: incident audits, planning docs,
+# session summaries, brand assets, launch drafts, brainstorming specs.
+git rm -r --cached --quiet docs/brand/ 2>/dev/null || true                              # brand asset PNGs (logos, screenshots)
+git rm -r --cached --quiet docs/experiments/ 2>/dev/null || true                        # launch drafts + tuning notes
+git rm -r --cached --quiet docs/superpowers/ 2>/dev/null || true                        # internal brainstorming/specs/plans workflow
+git rm --cached --quiet docs/operations/documentation-audit-2026-04-29.md 2>/dev/null || true
+git rm --cached --quiet docs/operations/migrations-audit-2026-04-27.md 2>/dev/null || true
+git rm --cached --quiet docs/operations/overnight-2026-04-27-summary.md 2>/dev/null || true
+git rm --cached --quiet docs/operations/public-site-audit-2026-04-27.md 2>/dev/null || true
+git rm --cached --quiet docs/operations/silent-failures-audit-2026-04-27.md 2>/dev/null || true
+git rm --cached --quiet docs/operations/test-coverage-2026-04-27.md 2>/dev/null || true
+git rm --cached --quiet docs/architecture/database-and-embeddings-plan-2026-04-24.md 2>/dev/null || true
+git rm --cached --quiet docs/architecture/gh-107-secret-keys-audit-2026-04-24.md 2>/dev/null || true
 git rm -r --cached --quiet src/cofounder_agent/writing_samples/ 2>/dev/null || true  # private writing style training data
 git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # private operator MCP server
 

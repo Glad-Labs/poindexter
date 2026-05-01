@@ -1,0 +1,120 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Poindexter",
+  "description": "Open-source AI content pipeline. Self-host, full local-LLM control, multi-niche.",
+  "colors": {
+    "primary": "#00b3cc",
+    "light": "#00e5ff",
+    "dark": "#00e5ff"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "docs/README",
+              "docs/operations/local-development-setup",
+              "docs/operations/cli-reference",
+              "docs/operations/environment-variables"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "docs/ARCHITECTURE",
+              "docs/architecture/content-pipeline",
+              "docs/architecture/multi-agent-pipeline",
+              "docs/architecture/anti-hallucination",
+              "docs/architecture/database-schema",
+              "docs/architecture/plugin-architecture",
+              "docs/architecture/declarative-data-plane-rfc-2026-04-24",
+              "docs/architecture/niches-and-rag-modes"
+            ]
+          },
+          {
+            "group": "Service reference",
+            "pages": [
+              "docs/architecture/services/content_router_service",
+              "docs/architecture/services/content_validator",
+              "docs/architecture/services/cost_guard",
+              "docs/architecture/services/internal_link_coherence",
+              "docs/architecture/services/model_router",
+              "docs/architecture/services/multi_model_qa",
+              "docs/architecture/services/newsletter_service",
+              "docs/architecture/services/publish_service",
+              "docs/architecture/services/qa_gates_db",
+              "docs/architecture/services/quality_service",
+              "docs/architecture/services/research-and-web-research",
+              "docs/architecture/services/settings_service",
+              "docs/architecture/services/site_config",
+              "docs/architecture/services/social_poster",
+              "docs/architecture/services/topic_batch_service",
+              "docs/architecture/services/workflow_executor"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "docs/operations/troubleshooting",
+              "docs/operations/disaster-recovery",
+              "docs/operations/incident-response",
+              "docs/operations/secret-rotation",
+              "docs/operations/commit-signing",
+              "docs/operations/ci-deploy-chain",
+              "docs/operations/extending-poindexter",
+              "docs/operations/niche-topic-discovery-operator-guide"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "docs/integrations/README",
+              "docs/integrations/outbound_discord_post",
+              "docs/integrations/outbound_telegram_post",
+              "docs/integrations/outbound_vercel_isr",
+              "docs/integrations/tap_builtin_topic_source",
+              "docs/integrations/tap_external_metrics_writer",
+              "docs/integrations/tap_singer_subprocess",
+              "docs/integrations/retention_downsample",
+              "docs/integrations/retention_ttl_prune",
+              "docs/integrations/setup-gsc-and-ga4"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "docs/reference/app-settings",
+              "docs/reference/services",
+              "docs/api/README"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/Glad-Labs/poindexter",
+          "icon": "github"
+        },
+        {
+          "anchor": "Glad Labs Pro",
+          "href": "https://gladlabs.io/product",
+          "icon": "star"
+        }
+      ]
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Glad-Labs/poindexter",
+      "website": "https://www.gladlabs.io"
+    }
+  }
+}
