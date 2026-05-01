@@ -23,12 +23,19 @@ POLL_INTERVAL = 5  # seconds
 class WebhookDeliveryService:
     def __init__(self, pool):
         self.pool = pool
+        # webhook_url is plaintext, captured at init is fine.
         self.webhook_url = site_config.get("openclaw_webhook_url", "")
-        self.webhook_token = site_config.get("openclaw_webhook_token", "")
+        # webhook_token is is_secret=true (#325 bug class) — capturing the
+        # sync .get() value at __init__ would store the ciphertext. Read
+        # via the async get_secret accessor at delivery time instead.
         self._running = False
         self._client = None
         # Strong ref to the delivery loop task so asyncio doesn't GC it.
         self._delivery_task: asyncio.Task | None = None
+
+    async def _get_webhook_token(self) -> str:
+        """Read the bearer token at call time (is_secret=true row)."""
+        return await site_config.get_secret("openclaw_webhook_token", "")
 
     async def start(self):
         """Start the delivery loop."""
@@ -94,9 +101,10 @@ class WebhookDeliveryService:
         message = self._format_message(event_type, payload)
 
         try:
+            webhook_token = await self._get_webhook_token()
             headers = {}
-            if self.webhook_token:
-                headers["Authorization"] = f"Bearer {self.webhook_token}"
+            if webhook_token:
+                headers["Authorization"] = f"Bearer {webhook_token}"
 
             response = await self._client.post(
                 f"{self.webhook_url}/hooks/agent",

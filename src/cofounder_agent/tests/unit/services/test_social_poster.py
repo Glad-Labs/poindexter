@@ -321,9 +321,18 @@ class TestNotify:
 
     @pytest.mark.asyncio
     @patch("services.social_poster._get_discord_ops_channel", return_value="test-discord-channel-id")
+    @patch("services.social_poster.get_telegram_chat_id", return_value="test-chat-id")
+    @patch("services.social_poster.get_telegram_bot_token", new_callable=AsyncMock)
+    @patch("services.social_poster._openclaw_token", new_callable=AsyncMock)
     @patch("services.social_poster.httpx.AsyncClient")
-    async def test_sends_telegram_and_discord(self, mock_client_cls, mock_channel):
+    async def test_sends_telegram_and_discord(
+        self, mock_client_cls, mock_openclaw_token, mock_tg_token, mock_chat, mock_channel
+    ):
         from services.social_poster import _notify
+
+        # Token + openclaw secret are async (is_secret=true rows after #325 sweep)
+        mock_tg_token.return_value = "test-bot-token"
+        mock_openclaw_token.return_value = "test-openclaw-token"
 
         mock_client = AsyncMock()
         mock_client.post.return_value = MagicMock(status_code=200)
@@ -336,10 +345,13 @@ class TestNotify:
         # First call: Telegram
         telegram_call = mock_client.post.call_args_list[0]
         assert "api.telegram.org" in telegram_call.args[0]
+        assert "test-bot-token" in telegram_call.args[0]
         assert telegram_call.kwargs["json"]["text"] == "Test notification message"
+        assert telegram_call.kwargs["json"]["chat_id"] == "test-chat-id"
         # Second call: Discord via OpenClaw
         discord_call = mock_client.post.call_args_list[1]
         assert "/hooks/agent" in discord_call.args[0]
+        assert discord_call.kwargs["headers"]["Authorization"] == "Bearer test-openclaw-token"
 
     @pytest.mark.asyncio
     @patch("services.social_poster.httpx.AsyncClient")

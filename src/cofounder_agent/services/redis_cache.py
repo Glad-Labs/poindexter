@@ -134,8 +134,15 @@ class RedisCache:
             logger.warning("Redis not available - caching disabled")
             return cls(redis_instance=None, enabled=False)
 
-        # Get configuration from site_config (falls back to env vars)
-        redis_url = site_config.get("redis_url", "redis://localhost:6379/0")
+        # `redis_url` is is_secret=true (the URL embeds the auth password,
+        # encrypted with the enc:v1: prefix). Sync .get() returns the
+        # ciphertext for is_secret rows — aioredis would then fail to parse
+        # it as a URL and Redis would silently fall through to disabled mode.
+        # Same #325 bug class as the auth/webhook/newsletter fixes. Use the
+        # async get_secret accessor to read the decrypted plaintext.
+        redis_url = await site_config.get_secret(
+            "redis_url", "redis://localhost:6379/0"
+        )
         redis_enabled = site_config.get("redis_enabled", "true").lower() in ("true", "1", "yes")
 
         if not redis_enabled:

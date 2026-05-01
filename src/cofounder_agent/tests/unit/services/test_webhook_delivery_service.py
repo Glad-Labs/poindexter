@@ -103,19 +103,27 @@ class TestServiceLifecycle:
         with patch.dict("os.environ", {}, clear=True):
             svc = WebhookDeliveryService(pool)
         assert svc.webhook_url == ""
-        assert svc.webhook_token == ""
+        # `webhook_token` is no longer an attribute — it's read at delivery
+        # time via `_get_webhook_token()` so the encrypted is_secret value
+        # stays decrypted-on-demand (#325 bug class).
+        assert not hasattr(svc, "webhook_token")
         assert svc._running is False
 
-    def test_reads_url_and_token_from_env(self):
+    @pytest.mark.asyncio
+    async def test_reads_url_from_env_and_token_via_get_secret(self):
         pool, _ = _make_pool()
-        env = {
-            "OPENCLAW_WEBHOOK_URL": "https://openclaw.example.com",
-            "OPENCLAW_WEBHOOK_TOKEN": "secret123",
-        }
+        env = {"OPENCLAW_WEBHOOK_URL": "https://openclaw.example.com"}
         with patch.dict("os.environ", env, clear=True):
             svc = WebhookDeliveryService(pool)
         assert svc.webhook_url == "https://openclaw.example.com"
-        assert svc.webhook_token == "secret123"
+        # Token is fetched async via get_secret (which decrypts is_secret rows).
+        # Mock site_config.get_secret to return our test value.
+        with patch(
+            "services.webhook_delivery_service.site_config.get_secret",
+            new_callable=AsyncMock,
+            return_value="secret123",
+        ):
+            assert await svc._get_webhook_token() == "secret123"
 
     @pytest.mark.asyncio
     async def test_start_without_url_does_nothing(self):
@@ -307,7 +315,14 @@ class TestDeliverEvent:
         self.svc._client.post = AsyncMock(return_value=response)
 
         row = _make_row(event_id=42)
-        await self.svc._deliver_event(row)
+        # Token is now read at delivery time via get_secret (#325 sweep);
+        # mock the call so the headers test still asserts the bearer.
+        with patch(
+            "services.webhook_delivery_service.site_config.get_secret",
+            new_callable=AsyncMock,
+            return_value="tok_secret",
+        ):
+            await self.svc._deliver_event(row)
 
         # Verify the HTTP call
         self.svc._client.post.assert_awaited_once()

@@ -58,7 +58,10 @@ async def _notify_openclaw(message: str, critical: bool = False) -> None:
             from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
             from services.site_config import site_config
             openclaw_url = site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
-            openclaw_token = site_config.get("openclaw_webhook_token", "hooks-gladlabs")
+            # is_secret=true row — sync .get() returns ciphertext (#325 bug class)
+            openclaw_token = await site_config.get_secret(
+                "openclaw_webhook_token", "hooks-gladlabs"
+            )
             async with _httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(
                     f"{openclaw_url}/api/hooks/pipeline",

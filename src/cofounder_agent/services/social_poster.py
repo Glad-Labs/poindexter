@@ -28,8 +28,7 @@ import httpx
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.logger_config import get_logger
 from services.site_config import site_config as _sc
-from services.telegram_config import TELEGRAM_BOT_TOKEN as _TELEGRAM_BOT_TOKEN
-from services.telegram_config import TELEGRAM_CHAT_ID as _TELEGRAM_CHAT_ID
+from services.telegram_config import get_telegram_bot_token, get_telegram_chat_id
 
 from .ollama_client import OllamaClient
 
@@ -59,9 +58,13 @@ def _openclaw_url() -> str:
     return _sc.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
 
 
-def _openclaw_token() -> str:
+async def _openclaw_token() -> str:
     # Same key as task_executor._notify_openclaw uses; unifying here.
-    return _sc.get("openclaw_webhook_token", "hooks-gladlabs")
+    # is_secret=true row — must use async get_secret to read plaintext.
+    # Sync .get() would return enc:v1:<ciphertext> for is_secret rows
+    # (#325 bug class), and the bearer-token comparison upstream would
+    # silently 401 every webhook fire.
+    return await _sc.get_secret("openclaw_webhook_token", "hooks-gladlabs")
 
 
 def _get_discord_ops_channel() -> str:
@@ -206,16 +209,24 @@ async def _notify(message: str) -> None:
             timeout=httpx.Timeout(10.0, connect=3.0)
         ) as client:
             logger.info("[social_poster] Notifying: %s", message[:80])
-            # Telegram — direct bot API
-            await client.post(
-                f"https://api.telegram.org/bot{_TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": _TELEGRAM_CHAT_ID, "text": message},
-                timeout=10,
-            )
+            # Telegram — direct bot API. Token is is_secret=true; must be
+            # fetched via get_telegram_bot_token() (async, decrypted).
+            _tg_token = await get_telegram_bot_token()
+            _tg_chat = get_telegram_chat_id()
+            if _tg_token and _tg_chat:
+                await client.post(
+                    f"https://api.telegram.org/bot{_tg_token}/sendMessage",
+                    json={"chat_id": _tg_chat, "text": message},
+                    timeout=10,
+                )
+            else:
+                logger.warning(
+                    "[social_poster] Telegram token or chat_id not set — skipping notification"
+                )
             # Discord — via OpenClaw hooks
             await client.post(
                 f"{_openclaw_url()}/hooks/agent",
-                headers={"Authorization": f"Bearer {_openclaw_token()}"},
+                headers={"Authorization": f"Bearer {await _openclaw_token()}"},
                 json={
                     "message": f"Post this to the #ops channel in Discord: {message}",
                     "channel": "discord",
