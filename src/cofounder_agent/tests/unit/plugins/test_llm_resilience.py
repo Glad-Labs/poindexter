@@ -811,36 +811,11 @@ class TestGeminiClassifier:
         assert gemini_classifier(ServerError("oops")).retry is True
 
 
-class TestOpenAICompatClassifier:
-    def test_rate_limit_with_retry_after_header(self):
-        from services.llm_providers.openai_compat import openai_compat_classifier
-
-        class _Resp:
-            headers = {"retry-after": "3"}
-
-        class RateLimitError(Exception):
-            response = _Resp()
-
-        d = openai_compat_classifier(RateLimitError("slow down"))
-        assert d.retry is True
-        assert d.wait_seconds == 3.0
-        assert d.reason == "rate_limit"
-
-    def test_503_retryable(self):
-        from services.llm_providers.openai_compat import openai_compat_classifier
-
-        resp = httpx.Response(status_code=503)
-        exc = httpx.HTTPStatusError("svc", request=None, response=resp)
-        d = openai_compat_classifier(exc)
-        assert d.retry is True
-        assert d.reason == "http_503"
-
-    def test_400_not_retryable(self):
-        from services.llm_providers.openai_compat import openai_compat_classifier
-
-        resp = httpx.Response(status_code=400)
-        exc = httpx.HTTPStatusError("bad", request=None, response=resp)
-        assert openai_compat_classifier(exc).retry is False
+# TestOpenAICompatClassifier removed 2026-05-01: tested a standalone
+# `openai_compat_classifier` function in services/llm_providers/openai_compat.py
+# that was inlined into the OpenAICompatProvider's resilience setup
+# during a prior refactor. The retry/backoff behavior is now exercised
+# end-to-end via the ResilienceRegistry tests below.
 
 
 # ---------------------------------------------------------------------------

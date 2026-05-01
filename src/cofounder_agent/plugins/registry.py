@@ -275,6 +275,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
         ("image_providers", "services.image_providers.sdxl", "SdxlProvider"),
         ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
+        # Core VideoProviders. Imperative load until the packaging issue
+        # (entry_points discovery in Docker) is resolved — same pattern
+        # as the image_providers above.
+        ("video_providers", "services.video_providers.wan2_1", "Wan21Provider"),
+        ("video_providers", "services.video_providers.ken_burns_slideshow", "KenBurnsSlideshowProvider"),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),

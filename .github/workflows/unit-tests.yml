@@ -54,15 +54,9 @@ jobs:
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/routes/ -q --tb=short -p no:cacheprovider
 
-      # 2 ignored files have pre-existing test rot tracked in
-      # Glad-Labs/poindexter#332. Remove the ignores once that closes.
       - name: Unit tests — plugins
         working-directory: src/cofounder_agent
-        run: |
-          python -m pytest tests/unit/plugins/ -q --tb=short \
-            --ignore=tests/unit/plugins/test_llm_resilience.py \
-            --ignore=tests/unit/plugins/test_video_provider.py \
-            -p no:cacheprovider
+        run: python -m pytest tests/unit/plugins/ -q --tb=short -p no:cacheprovider
 
       # `--forked` isolates ServiceContainer / site_config singletons that
       # leak across tests in the services directory. Three test files are
@@ -80,9 +74,6 @@ jobs:
             --ignore=tests/unit/services/test_memory_system.py \
             --ignore=tests/unit/services/test_web_research.py \
             --ignore=tests/unit/services/test_pipeline_flow.py \
-            --ignore=tests/unit/services/test_task_executor_legacy_bridge.py \
-            --ignore=tests/unit/services/test_audio_gen_integration.py \
-            --ignore=tests/unit/services/test_gpu_scheduler_unload.py \
             --ignore=tests/unit/services/stages/ \
             --ignore=tests/unit/services/test_audio_gen_providers_stable_audio_open.py \
             --ignore=tests/unit/services/test_audio_gen_service.py \
