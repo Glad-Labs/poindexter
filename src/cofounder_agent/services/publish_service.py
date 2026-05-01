@@ -669,14 +669,16 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 10. ISR revalidation
     # ---------------------------------------------------------------
+    # Glad-Labs/poindexter#327: routed through trigger_isr_revalidate
+    # so every publish path (canonical, /go-live, scheduled_publisher)
+    # uses the same code that knows the canonical paths/tags +
+    # async get_secret() flow.
     revalidation_success = False
     if trigger_revalidation:
         try:
-            from services.revalidation_service import trigger_nextjs_revalidation
+            from services.revalidation_service import trigger_isr_revalidate
 
-            reval_paths = ["/", "/archive", "/posts", f"/posts/{slug}"]
-            reval_tags = ["posts", "post-index", f"post:{slug}"]
-            revalidation_success = await trigger_nextjs_revalidation(reval_paths, reval_tags)
+            revalidation_success = await trigger_isr_revalidate(slug)
             if not revalidation_success:
                 logger.warning("[publish_service] ISR revalidation returned failure for %s", slug)
         except Exception as reval_err:

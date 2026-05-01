@@ -169,13 +169,21 @@ def _make_mock_httpx_client(status_code: int = 200, text: str = "ok"):
     return mock_client
 
 
-def _mock_site_config():
-    """Return a mock site_config that provides a revalidate_secret."""
+def _mock_site_config(secret: str = "test-secret"):
+    """Return a mock site_config that provides a revalidate_secret.
+
+    Glad-Labs/poindexter#327: ``revalidate_secret`` is now read via
+    the async ``get_secret`` method (not the sync ``get``). The
+    legacy plaintext fallback (``cfg.get('revalidate_secret', '')``)
+    is also exercised by some callers, so we still wire it up — but
+    real production reads always go through ``get_secret``.
+    """
     cfg = MagicMock()
     cfg.get = lambda key, default=None: {
-        "revalidate_secret": "test-secret",
+        "revalidate_secret": secret,
         "public_site_url": "http://localhost:3000",
     }.get(key, default)
+    cfg.get_secret = AsyncMock(return_value=secret)
     return cfg
 
 
@@ -255,6 +263,7 @@ class TestTriggerNextjsRevalidation:
             "revalidate_secret": "test-secret",
             "public_site_url": "http://my-site.example.com",
         }.get(key, default)
+        mock_cfg.get_secret = AsyncMock(return_value="test-secret")
         with patch("services.site_config.site_config", mock_cfg), \
              patch("services.revalidation_service.site_config", mock_cfg), \
              patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):

@@ -668,25 +668,20 @@ async def go_live(
     )
 
     # Trigger ISR revalidation on the public site so Vercel busts its cache.
-    # Includes both routes (revalidatePath) and tags (revalidateTag).
-    # The tags are critical — revalidatePath alone does NOT invalidate the
-    # data cache keyed by fetch URL, so null responses from before publish
-    # stick around for the 5-minute TTL.
+    # Glad-Labs/poindexter#327: routed through the shared helper in
+    # services.revalidation_service so this admin path picks up the
+    # same canonical paths/tags + async get_secret() resolution as
+    # publish_service.publish_post_from_task. Previously this endpoint
+    # bypassed publish_service entirely (direct UPDATE posts SET
+    # status='published') and silently relied on its own copy-paste
+    # revalidation block — when the resolution chain drifted, posts
+    # went live in the DB but stuck on the 5-minute ISR window.
     try:
-        from routes.revalidate_routes import trigger_nextjs_revalidation
-        reval_ok = await trigger_nextjs_revalidation(
-            paths=[
-                f"/posts/{row['slug']}",
-                "/",
-                "/archive",
-                "/archive/1",
-                "/posts",
-            ],
-            tags=[
-                "posts",
-                "post-index",
-                f"post:{row['slug']}",
-            ],
+        from services.revalidation_service import trigger_isr_revalidate
+        reval_ok = await trigger_isr_revalidate(
+            row["slug"],
+            paths=["/archive/1"],  # legacy paginated index, not in canonical set
+            site_config=site_config_dep,
         )
         if reval_ok:
             logger.info("[GO-LIVE] ISR revalidation triggered for %s", row["slug"])

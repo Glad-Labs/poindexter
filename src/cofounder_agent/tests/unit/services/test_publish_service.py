@@ -136,9 +136,16 @@ def _stub_lazy_imports():
     devto_mod = MagicMock()
     devto_mod.DevToCrossPostService = MagicMock(return_value=devto_svc_instance)
 
-    # routes.revalidate_routes
+    # services.revalidation_service — Glad-Labs/poindexter#327: publish_service
+    # now imports trigger_isr_revalidate (the slug-aware wrapper) from
+    # services.revalidation_service, not trigger_nextjs_revalidation from
+    # routes.revalidate_routes. Keep the legacy stub too for tests that
+    # still reach for the old import path.
     reval_mod = MagicMock()
     reval_mod.trigger_nextjs_revalidation = AsyncMock(return_value=True)
+    reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
+    legacy_reval_routes = MagicMock()
+    legacy_reval_routes.trigger_nextjs_revalidation = AsyncMock(return_value=True)
 
     # services.task_executor
     task_executor_mod = MagicMock()
@@ -155,7 +162,8 @@ def _stub_lazy_imports():
         "services.webhook_delivery_service": webhook_mod,
         "services.social_poster": social_mod,
         "services.devto_service": devto_mod,
-        "routes.revalidate_routes": reval_mod,
+        "services.revalidation_service": reval_mod,
+        "routes.revalidate_routes": legacy_reval_routes,
         "services.task_executor": task_executor_mod,
         "services.podcast_service": podcast_mod,
     }
@@ -726,8 +734,13 @@ class TestRevalidation:
         db = _make_db()
         task = _make_task()
 
+        # #327: publish_service now imports trigger_isr_revalidate from
+        # services.revalidation_service (not the legacy
+        # trigger_nextjs_revalidation). Stub both so this test stays
+        # valid regardless of which symbol is referenced inside.
         reval_mod = MagicMock()
         reval_mod.trigger_nextjs_revalidation = AsyncMock(return_value=True)
+        reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
 
         with _LazyImportContext(overrides={"services.revalidation_service": reval_mod}):
             result = await publish_post_from_task(

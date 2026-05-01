@@ -3,6 +3,14 @@ Scheduled Post Publisher
 
 Background coroutine that publishes posts whose scheduled publication
 time has arrived. Runs every 60 seconds.
+
+Glad-Labs/poindexter#327: every promotion to ``status='published''``
+now triggers ISR revalidation via the shared
+``services.revalidation_service.trigger_isr_revalidate`` helper.
+Previously this loop only flipped the row in postgres and relied on
+the next ISR window (5 min) to surface the post on Vercel — which
+left a window where new posts existed in the cloud DB but did not
+appear on www.gladlabs.io.
 """
 
 import asyncio
@@ -41,11 +49,15 @@ async def run_scheduled_publisher(get_pool):
                 continue
 
             async with pool.acquire() as conn:
+                # #327: pull the slug back too so we can revalidate the
+                # post-specific path. Previously only id/title were
+                # returned and the loop never triggered ISR busting,
+                # so promoted posts sat invisible for ≤5 min.
                 rows = await conn.fetch("""
                     UPDATE posts
                     SET status = 'published', updated_at = NOW()
                     WHERE status = 'scheduled' AND published_at <= NOW()
-                    RETURNING id, title
+                    RETURNING id, title, slug
                     """)
                 if rows:
                     for row in rows:
@@ -54,8 +66,56 @@ async def run_scheduled_publisher(get_pool):
                             row["title"],
                             row["id"],
                         )
+                        # Glad-Labs/poindexter#327: every promotion must
+                        # bust the Vercel ISR cache, otherwise the post
+                        # won't appear on www.gladlabs.io until the next
+                        # 5-minute window.
+                        await _revalidate_for_row(row)
         except asyncio.CancelledError:
             logger.info("[scheduled_publisher] Shutting down")
             break
         except Exception as e:
             logger.error("[scheduled_publisher] Error: %s", e, exc_info=True)
+
+
+async def _revalidate_for_row(row) -> None:
+    """Trigger ISR revalidation for a freshly-promoted scheduled post.
+
+    Pulled out as a helper so the main loop body stays readable and
+    tests can patch a single symbol.
+
+    Never raises — revalidation failure must not poison the loop or
+    block subsequent rows in the same batch.
+    """
+    try:
+        slug = row["slug"]
+    except (KeyError, TypeError):
+        slug = None
+    if not slug:
+        try:
+            row_id = row["id"]
+        except (KeyError, TypeError):
+            row_id = "?"
+        logger.warning(
+            "[scheduled_publisher] Skipping revalidation — no slug on row %s",
+            row_id,
+        )
+        return
+    try:
+        from services.revalidation_service import trigger_isr_revalidate
+        ok = await trigger_isr_revalidate(slug)
+        if ok:
+            logger.info(
+                "[scheduled_publisher] ISR revalidation triggered for %s",
+                slug,
+            )
+        else:
+            logger.warning(
+                "[scheduled_publisher] ISR revalidation returned failure for %s",
+                slug,
+            )
+    except Exception as reval_err:
+        logger.warning(
+            "[scheduled_publisher] Revalidation raised for %s (non-fatal): %s",
+            slug, reval_err,
+        )
