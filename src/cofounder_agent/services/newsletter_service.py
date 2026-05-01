@@ -47,7 +47,7 @@ async def _cfg() -> dict:
         "provider": site_config.get("newsletter_provider", "resend"),
         "from_email": site_config.get("newsletter_from_email", ""),
         "from_name": site_config.get("newsletter_from_name", ""),
-        "resend_api_key": site_config.get("resend_api_key", ""),
+        "resend_api_key": await site_config.get_secret("resend_api_key", ""),
         "smtp_host": site_config.get("smtp_host", ""),
         "smtp_port": site_config.get_int("smtp_port", 587),
         "smtp_user": site_config.get("smtp_user", ""),

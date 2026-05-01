@@ -100,12 +100,12 @@ class TestSendNewsletterDisabled:
                 "newsletter_provider": "resend",
                 "newsletter_from_email": "x@y.com",
                 "newsletter_from_name": "Test",
-                "resend_api_key": "",
                 "smtp_host": "",
                 "smtp_user": "",
             }.get(k, d)
             mock_cfg.get_int.return_value = 50
-            # smtp_password is now a secret — fetched via the async path.
+            # resend_api_key is is_secret=true — fetched via get_secret. This
+            # test exercises the missing-key branch so return "" for both.
             mock_cfg.get_secret = AsyncMock(return_value="")
             result = await send_post_newsletter(pool, "T", "E", "s")
         assert result["skipped_reason"] == "no_api_key"
@@ -144,8 +144,15 @@ class TestSendNewsletterSuccess:
                 "newsletter_batch_size": 50,
                 "newsletter_batch_delay_seconds": 0,
             }.get(k, d)
-            # smtp_password is now a secret — fetched via the async path.
-            mock_cfg.get_secret = AsyncMock(return_value="")
+            # smtp_password and resend_api_key are both is_secret=true rows
+            # — fetched via the async get_secret path. Mock as a side-effect
+            # function so resend_api_key still returns a usable value.
+            async def _get_secret(k, d=""):
+                return {
+                    "smtp_password": "",
+                    "resend_api_key": "re_test_key",
+                }.get(k, d)
+            mock_cfg.get_secret = AsyncMock(side_effect=_get_secret)
 
             with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
                 mock_send.return_value = True
@@ -175,13 +182,14 @@ class TestSendNewsletterSuccess:
                 "newsletter_provider": "resend",
                 "newsletter_from_email": "x@y.com",
                 "newsletter_from_name": "Test",
-                "resend_api_key": "re_test_key",
             }.get(k, d)
             mock_cfg.get_int.side_effect = lambda k, d=0: {
                 "newsletter_batch_size": 50,
                 "newsletter_batch_delay_seconds": 0,
             }.get(k, d)
-            mock_cfg.get_secret = AsyncMock(return_value="")
+            async def _get_secret(k, d=""):
+                return {"smtp_password": "", "resend_api_key": "re_test_key"}.get(k, d)
+            mock_cfg.get_secret = AsyncMock(side_effect=_get_secret)
 
             send_results = [True, False, True]
             with patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_send:
