@@ -7,15 +7,22 @@ import httpx
 import pytest
 
 from services.social_poster import (
-    LINKEDIN_CHAR_LIMIT,
-    TWITTER_CHAR_LIMIT,
     SocialPost,
     _build_linkedin_prompt,
     _build_twitter_prompt,
     _generate_social_text,
+    _linkedin_char_limit,
+    _twitter_char_limit,
     generate_and_distribute_social_posts,
     generate_social_posts,
 )
+
+# Module-level constants were removed 2026-05-01 — they captured at import
+# time and bypassed app_settings hot-reload. Tests now call the helper
+# functions which read at call time. These local aliases keep the rest of
+# the test suite tidy without regressing the runtime fix.
+TWITTER_CHAR_LIMIT = _twitter_char_limit()
+LINKEDIN_CHAR_LIMIT = _linkedin_char_limit()
 
 # ---------------------------------------------------------------------------
 # Helpers

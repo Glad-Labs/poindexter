@@ -36,33 +36,58 @@ from .ollama_client import OllamaClient
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants
+# Runtime config accessors
 # ---------------------------------------------------------------------------
+#
+# These were module-level constants until 2026-05-01 (Glad-Labs/poindexter#185
+# docs review flagged it). The site_config singleton is reloaded every minute
+# by the `reload_site_config` plugin job, but module-level captures bypass
+# that — operators who tuned `social_twitter_char_limit` etc. wouldn't see
+# the change until the worker process restarted. Per the "DB-first runtime-
+# tunable" principle in CLAUDE.md, every consumer reads at call time.
+#
+# Pattern: thin helper functions per setting, read on every invocation.
+# Cost is one in-memory dict lookup per call — negligible vs the LLM call
+# the value gets passed into.
 
-SITE_BASE_URL = _sc.get("site_url", "https://localhost:3000")
 
-_OPENCLAW_URL = _sc.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
-# Same key as task_executor._notify_openclaw uses; unifying here.
-_OPENCLAW_TOKEN = _sc.get("openclaw_webhook_token", "hooks-gladlabs")
+def _site_base_url() -> str:
+    return _sc.get("site_url", "https://localhost:3000")
+
+
+def _openclaw_url() -> str:
+    return _sc.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
+
+
+def _openclaw_token() -> str:
+    # Same key as task_executor._notify_openclaw uses; unifying here.
+    return _sc.get("openclaw_webhook_token", "hooks-gladlabs")
 
 
 def _get_discord_ops_channel() -> str:
-    """Lazy-load the discord channel ID at first call (not at import time).
+    """Read the discord channel ID at call time, not module import time.
 
-    The require() call needs site_config to be loaded, which doesn't happen
-    until the worker boots and connects to the DB. Calling it at module
-    import time breaks pytest collection in any environment without a DB.
+    require() needs site_config to be loaded, which doesn't happen until the
+    worker boots and connects to the DB. Calling it at import time breaks
+    pytest collection in any environment without a DB.
     """
     return _sc.require("discord_ops_channel_id")
 
-# LLM defaults — social copy is a simple task, use the fast 8B model
-_SOCIAL_MODEL = _sc.get("social_poster_model", "ollama/llama3:latest")
 
-# Platform character limits (with safety margin). Defaults match current
-# public limits; tune via app_settings keys social_twitter_char_limit,
-# social_linkedin_char_limit when platforms change. (#198)
-TWITTER_CHAR_LIMIT = _sc.get_int("social_twitter_char_limit", 280)
-LINKEDIN_CHAR_LIMIT = _sc.get_int("social_linkedin_char_limit", 700)
+def _social_model() -> str:
+    # Default is a fast small model — social copy is a simple task.
+    return _sc.get("social_poster_model", "ollama/llama3:latest")
+
+
+def _twitter_char_limit() -> int:
+    # Defaults match current public platform limits; tune via app_settings
+    # social_twitter_char_limit / social_linkedin_char_limit when platforms
+    # change. (#198)
+    return _sc.get_int("social_twitter_char_limit", 280)
+
+
+def _linkedin_char_limit() -> int:
+    return _sc.get_int("social_linkedin_char_limit", 700)
 
 
 # ---------------------------------------------------------------------------
@@ -87,13 +112,13 @@ class SocialPost:
 
 
 def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: list[str]) -> str:
-    post_url = f"{SITE_BASE_URL}/posts/{slug}"
+    post_url = f"{_site_base_url()}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
         f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
         "Write a single tweet to promote the following blog post.\n\n"
         "Rules:\n"
-        f"- The tweet MUST be under {TWITTER_CHAR_LIMIT} characters including the URL and hashtags.\n"
+        f"- The tweet MUST be under {_twitter_char_limit()} characters including the URL and hashtags.\n"
         "- Include the exact URL below — do not shorten or modify it.\n"
         "- Include 2-3 relevant hashtags from the keywords provided.\n"
         "- Be punchy and engaging. No generic filler.\n"
@@ -106,13 +131,13 @@ def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: list[st
 
 
 def _build_linkedin_prompt(title: str, slug: str, excerpt: str, keywords: list[str]) -> str:
-    post_url = f"{SITE_BASE_URL}/posts/{slug}"
+    post_url = f"{_site_base_url()}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
         f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
         "Write a LinkedIn post to promote the following blog article.\n\n"
         "Rules:\n"
-        f"- The post MUST be under {LINKEDIN_CHAR_LIMIT} characters including the URL and hashtags.\n"
+        f"- The post MUST be under {_linkedin_char_limit()} characters including the URL and hashtags.\n"
         "- Use a professional but approachable tone.\n"
         "- Include the exact URL below — do not shorten or modify it.\n"
         "- Include 2-3 relevant hashtags from the keywords provided.\n"
@@ -136,7 +161,7 @@ async def _generate_social_text(
     # so we don't shut down a pool the caller is still using.
     owns_client = ollama is None
     client = ollama or OllamaClient()
-    model = _SOCIAL_MODEL.removeprefix("ollama/")  # OllamaClient expects bare model name
+    model = _social_model().removeprefix("ollama/")  # OllamaClient expects bare model name
 
     try:
         result = await client.generate(
@@ -189,8 +214,8 @@ async def _notify(message: str) -> None:
             )
             # Discord — via OpenClaw hooks
             await client.post(
-                f"{_OPENCLAW_URL}/hooks/agent",
-                headers={"Authorization": f"Bearer {_OPENCLAW_TOKEN}"},
+                f"{_openclaw_url()}/hooks/agent",
+                headers={"Authorization": f"Bearer {_openclaw_token()}"},
                 json={
                     "message": f"Post this to the #ops channel in Discord: {message}",
                     "channel": "discord",
@@ -228,13 +253,13 @@ async def generate_social_posts(
         List of SocialPost objects (one per platform)
     """
     keywords = keywords or []
-    post_url = f"{SITE_BASE_URL}/posts/{slug}"
+    post_url = f"{_site_base_url()}/posts/{slug}"
     posts: list[SocialPost] = []
 
     # --- Twitter ---
     twitter_prompt = _build_twitter_prompt(title, slug, excerpt, keywords)
     twitter_text = await _generate_social_text(
-        twitter_prompt, TWITTER_CHAR_LIMIT, "twitter", ollama
+        twitter_prompt, _twitter_char_limit(), "twitter", ollama
     )
     if twitter_text:
         posts.append(SocialPost(platform="twitter", text=twitter_text, post_url=post_url))
@@ -245,7 +270,7 @@ async def generate_social_posts(
     # --- LinkedIn ---
     linkedin_prompt = _build_linkedin_prompt(title, slug, excerpt, keywords)
     linkedin_text = await _generate_social_text(
-        linkedin_prompt, LINKEDIN_CHAR_LIMIT, "linkedin", ollama
+        linkedin_prompt, _linkedin_char_limit(), "linkedin", ollama
     )
     if linkedin_text:
         posts.append(SocialPost(platform="linkedin", text=linkedin_text, post_url=post_url))
