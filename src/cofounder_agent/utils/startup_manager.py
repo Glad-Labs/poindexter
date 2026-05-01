@@ -327,41 +327,21 @@ class StartupManager:
         )
 
     async def _initialize_task_executor(self) -> None:
-        """Initialize background task executor (WITHOUT starting it yet)
+        """Initialize background task executor (WITHOUT starting it yet).
 
-        IMPORTANT: We create the TaskExecutor but do NOT call .start() here.
-        The executor will be started from main.py AFTER UnifiedOrchestrator is initialized.
-        This prevents the executor from processing tasks with legacy systems.
+        We create the TaskExecutor but do NOT call .start() here. main.py's
+        lifespan handler starts it once the rest of the app state is wired.
         """
         logger.info("  ⏳ Initializing background task executor (start deferred)...")
         try:
             from services.task_executor import TaskExecutor
 
-            logger.debug(f"  [DEBUG] TaskExecutor init: database_service={self.database_service}")
-            logger.debug(
-                f"  [DEBUG] TaskExecutor init: database_service.tasks={self.database_service.tasks}"
-            )
-            logger.debug(f"  [DEBUG] TaskExecutor init: orchestrator={self.orchestrator}")
-
-            logger.debug("  [DEBUG] Creating TaskExecutor instance...")
-            # Pass None for orchestrator - it will be injected from main.py lifespan
             self.task_executor = TaskExecutor(
                 database_service=self.database_service,
-                orchestrator=None,  # Will be injected in main.py AFTER UnifiedOrchestrator is created
-                poll_interval=5,  # Poll every 5 seconds
+                orchestrator=None,  # See follow-up: orchestrator plumbing is dead, slated for removal
+                poll_interval=5,
             )
-            logger.debug(f"  [DEBUG] TaskExecutor created: {self.task_executor}")
-            logger.debug(
-                f"  [DEBUG] TaskExecutor.database_service: {self.task_executor.database_service}"
-            )
-            logger.debug(
-                "  [DEBUG] TaskExecutor.orchestrator (initial): None (will be injected later)"
-            )
-
             logger.info("   Background task executor initialized (not started yet)")
-            logger.info(
-                "     ⏸️  Will be fully configured and started after UnifiedOrchestrator is injected in main.py"
-            )
         except Exception as e:
             error_msg = f"Task executor initialization failed: {e!s}"
             logger.error(f"   {error_msg}", exc_info=True)

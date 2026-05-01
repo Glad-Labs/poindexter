@@ -85,8 +85,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] Injecting services into app.state. ..")
         app.state.database = services["database"]
         app.state.redis_cache = services["redis_cache"]
-        # app.state.orchestrator will be set to UnifiedOrchestrator below
-        # (removed legacy Orchestrator)
         app.state.task_executor = services["task_executor"]
         app.state.custom_workflows_service = services.get("custom_workflows_service")
         app.state.legacy_data_service = services.get("legacy_data_service")

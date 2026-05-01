@@ -85,7 +85,7 @@ content with human oversight**, not "AI content factory" and not
 │         POINDEXTER WORKER (Central Brain)                        │
 │                     FastAPI + Python                             │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │  UnifiedOrchestrator  →  ContentRouterService              │ │
+│  │  TaskExecutor  →  ContentRouterService                     │ │
 │  │     → StageRunner (12 sequential Stage plugins)            │ │
 │  │  Provider Protocol (Ollama primary, cloud providers        │ │
 │  │     pluggable for fallback — GH-104)                       │ │
@@ -111,8 +111,8 @@ execution and multi-agent orchestration.
 **Request Flow:**
 1. **POST `/api/tasks`**: User creates a task (e.g., `task_type="blog_post"`).
 2. **PostgreSQL**: Task is stored as `pending`.
-3. **TaskExecutor**: Background polling picks up the task and calls `UnifiedOrchestrator`.
-4. **UnifiedOrchestrator**: Routes by `task_type` to the right pipeline (e.g. `ContentRouterService` → `StageRunner` for blog posts).
+3. **TaskExecutor**: Background polling picks up the task and dispatches by `task_type`.
+4. **ContentRouterService**: For blog posts, runs the 12-stage `StageRunner` chain. Other task types route to their own service.
 
 ### Data Architecture
 
@@ -135,7 +135,7 @@ execution and multi-agent orchestration.
    ↓
 3. TaskExecutor polling loop claims the row (SELECT ... FOR UPDATE SKIP LOCKED)
    ↓
-4. UnifiedOrchestrator routes by task_type → ContentRouterService
+4. TaskExecutor dispatches by task_type → ContentRouterService
    ↓
 5. StageRunner runs the 12-stage pipeline (generate → self-review → QA → ...)
    ↓
@@ -377,13 +377,6 @@ As of the Phase F+G refactor, the pipeline runs through `StageRunner` and 12 seq
 - Electricity cost tracking (per-call, based on GPU wattage × inference time × `electricity_rate_kwh`)
 - Token counting per task type (`model_token_limits_by_task` JSON in app_settings)
 - Future refactor: extracts into `LLMProvider` plugin family (GitHub [#64 Phase J](https://github.com/Glad-Labs/poindexter/issues/64))
-
-#### Unified Orchestrator (`services/unified_orchestrator.py`)
-
-- Routes `POST /api/tasks` by `task_type` to the correct pipeline (blog / image / etc.)
-- Calls `ContentRouterService` for blog posts, which runs the 12-stage `StageRunner` chain
-- Returns a task record that the `TaskExecutor` polling loop will pick up asynchronously
-- Error recovery is per-stage — a failing stage can halt the pipeline or mark the task rejected
 
 #### Stage Plugin System (`plugins/stage.py` + `services/stages/*`)
 
