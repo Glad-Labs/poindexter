@@ -633,7 +633,12 @@ services:
     # Optional DB GUI — start with: docker compose --profile operator up -d pgadmin
     profiles: ["operator"]
     ports:
-      - "5480:80"
+      # 5480 → 18443 (2026-05-01): Windows wslrelay rejecting connections to
+      # 5480/5481 with stuck SYN_RECEIVED even after a full Docker Desktop +
+      # `wsl --shutdown` cycle. Other forwards (worker 8002, grafana 3000)
+      # still work, so it's port-specific. Moving way out of the typical
+      # range as a workaround. See #222 for the underlying Docker Desktop bug.
+      - "18443:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@gladlabs.io}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?Run 'poindexter setup' — PGADMIN_PASSWORD is generated in bootstrap.toml}

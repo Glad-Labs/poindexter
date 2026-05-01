@@ -171,3 +171,69 @@ async def test_start_and_shutdown_clean(
     await asyncio.sleep(0.05)
 
     await scheduler.shutdown(wait=False)
+
+
+async def test_record_last_run_writes_telemetry(
+    migrations_applied, clean_test_tables: asyncpg.Pool
+) -> None:
+    """``_record_last_run`` UPSERTs the two app_settings telemetry rows.
+
+    Dashboards (System Health → "Hours since last run" panels) read these
+    keys instead of the legacy ``idle_last_run_*`` rows that only the
+    retired ``services/idle_worker.py`` wrote.
+    """
+    import time
+    scheduler = PluginScheduler(clean_test_tables)
+
+    before = int(time.time())
+    await scheduler._record_last_run("demo_job", ok=True)
+    after = int(time.time())
+
+    async with clean_test_tables.acquire() as conn:
+        run_row = await conn.fetchrow(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "plugin_job_last_run_demo_job",
+        )
+        status_row = await conn.fetchrow(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "plugin_job_last_status_demo_job",
+        )
+
+    assert run_row is not None, "plugin_job_last_run_demo_job not written"
+    assert before <= int(run_row["value"]) <= after
+    assert status_row is not None
+    assert status_row["value"] == "ok"
+
+    # Re-running flips status and bumps the epoch — UPSERT, not duplicate insert.
+    await asyncio.sleep(1.1)  # ensure epoch tick is observable
+    await scheduler._record_last_run("demo_job", ok=False)
+
+    async with clean_test_tables.acquire() as conn:
+        rerun = await conn.fetchrow(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "plugin_job_last_run_demo_job",
+        )
+        restatus = await conn.fetchrow(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "plugin_job_last_status_demo_job",
+        )
+
+    assert int(rerun["value"]) > int(run_row["value"])
+    assert restatus["value"] == "err"
+
+
+async def test_record_last_run_swallows_db_errors(
+    migrations_applied, clean_test_tables: asyncpg.Pool
+) -> None:
+    """A DB write failure inside telemetry must not propagate.
+
+    If the pool is broken when a job fires, we still want the scheduler
+    loop to keep going — observability is not a hard dependency.
+    """
+    class _BrokenPool:
+        def acquire(self):
+            raise RuntimeError("pool is dead")
+
+    scheduler = PluginScheduler(_BrokenPool())
+    # Should NOT raise.
+    await scheduler._record_last_run("demo_job", ok=True)

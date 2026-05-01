@@ -921,7 +921,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key = 'idle_last_run_podcast_backfill';",
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key = 'plugin_job_last_run_backfill_podcasts';",
           "refId": "A"
         }
       ],
@@ -987,7 +987,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key = 'idle_last_run_video_backfill';",
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key = 'plugin_job_last_run_backfill_videos';",
           "refId": "A"
         }
       ],
@@ -1571,7 +1571,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT key AS \"Job\", value::float8 AS \"Last-run (unix ts)\", to_timestamp(value::float8)::timestamptz AS \"Last-run\", ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(value::float8))) / 3600, 1) AS \"Hours ago\" FROM app_settings WHERE key LIKE 'idle_last_run_%' ORDER BY value::float8 ASC;",
+          "rawSql": "SELECT replace(r.key, 'plugin_job_last_run_', '') AS \"Job\", to_timestamp(r.value::float8)::timestamptz AS \"Last-run\", ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(r.value::float8))) / 3600, 1) AS \"Hours ago\", COALESCE(s.value, '?') AS \"Status\" FROM app_settings r LEFT JOIN app_settings s ON s.key = replace(r.key, 'plugin_job_last_run_', 'plugin_job_last_status_') WHERE r.key LIKE 'plugin_job_last_run_%' ORDER BY r.value::float8 ASC;",
           "refId": "A"
         }
       ],
@@ -5105,7 +5105,7 @@
   "timezone": "browser",
   "title": "System Health",
   "uid": "system-health-merged",
-  "version": 1,
+  "version": 2,
   "weekStart": "",
   "description": "Merged system-health + infrastructure-data. Top section gives core service status + pipeline-level signals; bottom section is the full infrastructure detail (DB tables, hardware metrics, audit log, raw data explorer, system settings)."
 }

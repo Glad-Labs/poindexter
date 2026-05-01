@@ -115,8 +115,10 @@ class PluginScheduler:
                     "scheduler: job %r ran ok=%s detail=%r changes=%d",
                     job.name, result.ok, result.detail, result.changes_made,
                 )
+                await self._record_last_run(job.name, ok=bool(result.ok))
             except Exception as e:
                 logger.exception("scheduler: job %r raised: %s", job.name, e)
+                await self._record_last_run(job.name, ok=False)
 
         self._scheduler.add_job(
             _runner,
@@ -151,3 +153,43 @@ class PluginScheduler:
     def jobs(self) -> list[str]:
         """Return registered Job names."""
         return list(self._registered)
+
+    async def _record_last_run(self, name: str, ok: bool) -> None:
+        """Stamp ``app_settings`` with this job's last-run epoch + status.
+
+        Two keys per job, written every fire:
+
+        - ``plugin_job_last_run_<name>`` — Unix epoch seconds (string).
+        - ``plugin_job_last_status_<name>`` — ``"ok"`` or ``"err"``.
+
+        Dashboards that surface "minutes since last run" should read these
+        instead of the legacy ``idle_last_run_*`` keys (which only the
+        retired ``services/idle_worker.py`` wrote and were stuck once that
+        loop was decomposed into plugin Jobs).
+
+        Failure here is swallowed: telemetry must not crash the scheduler.
+        """
+        import time
+        epoch = str(int(time.time()))
+        status = "ok" if ok else "err"
+        sql = (
+            "INSERT INTO app_settings (key, value, category, description, updated_at) "
+            "VALUES ($1, $2, 'plugin_telemetry', $3, NOW()) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
+        )
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    sql,
+                    f"plugin_job_last_run_{name}",
+                    epoch,
+                    f"Unix epoch of last fire for plugin job {name!r} (auto-written by PluginScheduler)",
+                )
+                await conn.execute(
+                    sql,
+                    f"plugin_job_last_status_{name}",
+                    status,
+                    f"Outcome of last fire for plugin job {name!r}: 'ok' or 'err'",
+                )
+        except Exception as e:
+            logger.warning("scheduler: last-run telemetry write failed for %r: %s", name, e)
