@@ -96,7 +96,7 @@ async def _fetch_published_posts(pool, include_content: bool = False) -> list[di
               AND (p.published_at IS NULL OR p.published_at <= NOW())
             GROUP BY p.id
             ORDER BY p.published_at DESC NULLS LAST
-        """)
+        """)  # nosec B608  # content_col is one of two hardcoded literals (", p.content" or "")
     return [dict(r) for r in rows]
 
 

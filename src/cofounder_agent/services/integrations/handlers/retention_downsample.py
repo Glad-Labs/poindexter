@@ -125,7 +125,7 @@ async def downsample(
     async with pool.acquire() as conn:
         # (1) How many raw rows would we affect?
         count_sql = (
-            f"SELECT COUNT(*)::bigint FROM {table_name} "
+            f"SELECT COUNT(*)::bigint FROM {table_name} "  # nosec B608  # table_name validated by _validate_identifier (regex whitelist)
             f"WHERE {age_column} < now() - make_interval(days => $1)"
         )
         raw_count = int(await conn.fetchval(count_sql, keep_raw_days) or 0)
@@ -165,7 +165,7 @@ async def downsample(
              WHERE {age_column} < now() - make_interval(days => $1)
              GROUP BY 1
              ON CONFLICT (bucket_start) DO NOTHING
-        """
+        """  # nosec B608  # rollup_table/age_column/table_name validated by _validate_identifier; aggregations built by _build_aggregations against _ALLOWED_FNS whitelist
         # NOTE: the replace() above is a hack to render the aggregate
         # column list twice (once in the INSERT cols, once in the SELECT
         # list). It works because aggregations strings like
@@ -181,7 +181,7 @@ async def downsample(
 
         # (3) Delete the raw rows we just aggregated.
         delete_sql = (
-            f"DELETE FROM {table_name} "
+            f"DELETE FROM {table_name} "  # nosec B608  # table_name validated by _validate_identifier (regex whitelist)
             f"WHERE {age_column} < now() - make_interval(days => $1)"
         )
         del_result = await conn.execute(delete_sql, keep_raw_days)

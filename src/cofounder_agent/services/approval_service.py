@@ -621,7 +621,7 @@ async def list_pending(
           {where}
          ORDER BY gate_paused_at ASC NULLS LAST
          LIMIT {limit_param}
-    """
+    """  # nosec B608  # where is built from local literals; limit_param is "${N}" placeholder; values use $N params
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *args)

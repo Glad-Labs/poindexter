@@ -149,7 +149,7 @@ async def get_past_decisions(
             WHERE {where}
             ORDER BY created_at DESC
             LIMIT ${idx}
-        """, *params)
+        """, *params)  # nosec B608  # where is built from local literals; values use $N params
 
         return [dict(r) for r in rows]
     except Exception as e:

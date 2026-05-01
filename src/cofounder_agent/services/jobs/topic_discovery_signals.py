@@ -192,7 +192,7 @@ async def _evaluate_signals(
         )
         recent = await pool.fetch(
             "SELECT status FROM content_tasks "
-            f"WHERE updated_at > NOW() - INTERVAL '{streak_h} hours' "
+            f"WHERE updated_at > NOW() - INTERVAL '{streak_h} hours' "  # nosec B608  # streak_h is int from app_settings via get_int
             "ORDER BY updated_at DESC LIMIT $1",
             streak_threshold,
         )

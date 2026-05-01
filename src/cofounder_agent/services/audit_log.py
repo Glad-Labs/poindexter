@@ -179,7 +179,7 @@ class AuditLogger:
             idx += 1
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-        sql = f"SELECT * FROM audit_log{where} ORDER BY timestamp DESC LIMIT ${idx}"
+        sql = f"SELECT * FROM audit_log{where} ORDER BY timestamp DESC LIMIT ${idx}"  # nosec B608  # conditions built from local literals; values use $N params
         params.append(limit)
 
         rows = await self.pool.fetch(sql, *params)

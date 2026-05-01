@@ -58,7 +58,7 @@ async def run_migration(conn) -> None:
             logger.info(f"users.{col} does not exist — skipping")
             continue
 
-        await conn.execute(f"UPDATE users SET {col} = {backfill} WHERE {col} IS NULL")
+        await conn.execute(f"UPDATE users SET {col} = {backfill} WHERE {col} IS NULL")  # nosec B608  # col + backfill come from _COLUMNS module-level constant
         await conn.execute(f"ALTER TABLE users ALTER COLUMN {col} SET NOT NULL")
         await conn.execute(f"ALTER TABLE users ALTER COLUMN {col} SET DEFAULT {default}")
         logger.info(f"Set NOT NULL + DEFAULT {default} on users.{col}")

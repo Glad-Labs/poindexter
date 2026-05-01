@@ -777,18 +777,11 @@ class TasksDatabase(DatabaseServiceMixin):
                         )
                         return None
                     params: list[Any] = [str(task_id), new_status, list(allowed_from), *extra_vals]
-                    updated = await conn.fetchval(
-                        """
-                        UPDATE pipeline_tasks
-                           SET status = $2,
-                               updated_at = NOW()
-                               """ + extra_clause + """
-                         WHERE task_id = $1
-                           AND status = ANY($3::text[])
-                     RETURNING task_id
-                        """,
-                        *params,
+                    # nosec B608 line below — extra_clause built from local literals (column-name fragments); values use $N params
+                    _sql = (
+                        """\nUPDATE pipeline_tasks\n   SET status = $2,\n       updated_at = NOW()\n""" + extra_clause + """\n WHERE task_id = $1\n   AND status = ANY($3::text[])\n RETURNING task_id\n"""  # nosec B608
                     )
+                    updated = await conn.fetchval(_sql, *params)
                     if updated is None:
                         return None
                     return prev
@@ -867,7 +860,7 @@ class TasksDatabase(DatabaseServiceMixin):
             {where_sql}
             ORDER BY created_at DESC
             LIMIT ${limit_param} OFFSET ${offset_param}
-        """
+        """  # nosec B608  # where_sql built from local literals; limit/offset rendered as "${N}" placeholders; values use $N params
 
         try:
             async with self.pool.acquire() as conn:
@@ -1081,7 +1074,7 @@ class TasksDatabase(DatabaseServiceMixin):
             {date_filter}
             GROUP BY status, model_used, task_type, day
             ORDER BY day ASC
-        """
+        """  # nosec B608  # date_filter is one of two hardcoded literals ("AND created_at >= $2" or ""); values use $N params
 
         try:
             async with self.pool.acquire() as conn:
@@ -1522,7 +1515,7 @@ class TasksDatabase(DatabaseServiceMixin):
                         FOR UPDATE SKIP LOCKED
                     )
                     RETURNING *
-                    """,
+                    """,  # nosec B608  # category_filter built from generated "${N}" placeholders only; task_categories values use $N params
                     *params,
                 )
 

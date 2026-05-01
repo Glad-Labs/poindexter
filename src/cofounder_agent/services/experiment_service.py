@@ -262,7 +262,8 @@ class ExperimentService:
                      started_at)
                 VALUES ($1, $2, $3, $4::jsonb, $5, {started_at_sql})
                 RETURNING id::text AS id
-                """,
+                """,  # nosec B608  # started_at_sql is one of two hardcoded literals ("NOW()" or "NULL"); other values use $N params
+
                 key,
                 description,
                 status,

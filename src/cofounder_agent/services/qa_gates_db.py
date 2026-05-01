@@ -109,7 +109,7 @@ async def load_qa_gate_chain(
                   FROM qa_gates
                  WHERE {where_sql}
               ORDER BY execution_order ASC, name ASC
-                """,
+                """,  # nosec B608  # where_sql built from local literals ("stage_name = $1", "enabled = TRUE"); values use $N params
                 *args,
             )
     except Exception as exc:  # noqa: BLE001

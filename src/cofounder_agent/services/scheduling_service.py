@@ -563,7 +563,7 @@ async def assign_batch(
             "AND published_at IS NULL"
         )
     sql = (
-        f"SELECT id, slug, title, status, published_at, created_at "
+        f"SELECT id, slug, title, status, published_at, created_at "  # nosec B608  # all interpolations are hardcoded/safelisted (see below)
         f"  FROM posts WHERE {where} "
         f"ORDER BY {order_col} ASC LIMIT $1"
     )

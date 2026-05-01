@@ -34,14 +34,24 @@ logger = logging.getLogger(__name__)
 
 
 def _metric_queries(current_h: int, baseline_d: int) -> list[tuple[str, str, str]]:
-    """Build the (name, recent_sql, historical_sql) tuples for each metric."""
+    """Build the (name, recent_sql, historical_sql) tuples for each metric.
+
+    SQL strings interpolate ``current_h`` and ``baseline_d`` (both ints,
+    sourced from app_settings via ``site_config.get_int`` and re-cast to
+    int by the caller). All ``# nosec B608`` suppressions below cover
+    the same false positive: integer-only interpolation, no user input.
+    """
+    # Defensive int cast — already int by typing, but belt-and-suspenders
+    # for the SQL interpolation below.
+    current_h = int(current_h)
+    baseline_d = int(baseline_d)
     return [
         (
             "task_failure_rate",
             f"""SELECT CASE WHEN COUNT(*) = 0 THEN 0
                 ELSE SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::float / COUNT(*)
                 END as val
-                FROM content_tasks WHERE created_at > NOW() - INTERVAL '{current_h} hours'""",
+                FROM content_tasks WHERE created_at > NOW() - INTERVAL '{current_h} hours'""",  # nosec B608  # current_h is int
             f"""SELECT AVG(daily_rate) as mean, STDDEV(daily_rate) as stddev FROM (
                 SELECT date_trunc('day', created_at) as day,
                     CASE WHEN COUNT(*) = 0 THEN 0
@@ -50,41 +60,41 @@ def _metric_queries(current_h: int, baseline_d: int) -> list[tuple[str, str, str
                 FROM content_tasks
                 WHERE created_at > NOW() - INTERVAL '{baseline_d} days'
                 GROUP BY day
-            ) t""",
+            ) t""",  # nosec B608  # baseline_d is int
         ),
         (
             "avg_quality_score",
             f"""SELECT AVG(quality_score) as val FROM content_tasks
                 WHERE created_at > NOW() - INTERVAL '{current_h} hours'
-                AND quality_score IS NOT NULL""",
+                AND quality_score IS NOT NULL""",  # nosec B608  # current_h is int
             f"""SELECT AVG(daily_avg) as mean, STDDEV(daily_avg) as stddev FROM (
                 SELECT date_trunc('day', created_at) as day, AVG(quality_score) as daily_avg
                 FROM content_tasks
                 WHERE created_at > NOW() - INTERVAL '{baseline_d} days' AND quality_score IS NOT NULL
                 GROUP BY day
-            ) t""",
+            ) t""",  # nosec B608  # baseline_d is int
         ),
         (
             "cost_per_day",
             f"""SELECT COALESCE(SUM(cost_usd), 0) as val FROM cost_logs
-                WHERE created_at > NOW() - INTERVAL '{current_h} hours'""",
+                WHERE created_at > NOW() - INTERVAL '{current_h} hours'""",  # nosec B608  # current_h is int
             f"""SELECT AVG(daily_cost) as mean, STDDEV(daily_cost) as stddev FROM (
                 SELECT date_trunc('day', created_at) as day, COALESCE(SUM(cost_usd), 0) as daily_cost
                 FROM cost_logs
                 WHERE created_at > NOW() - INTERVAL '{baseline_d} days'
                 GROUP BY day
-            ) t""",
+            ) t""",  # nosec B608  # baseline_d is int
         ),
         (
             "error_log_rate",
             f"""SELECT COUNT(*) as val FROM audit_log
-                WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '{current_h} hours'""",
+                WHERE severity = 'error' AND timestamp > NOW() - INTERVAL '{current_h} hours'""",  # nosec B608  # current_h is int
             f"""SELECT AVG(daily_errors) as mean, STDDEV(daily_errors) as stddev FROM (
                 SELECT date_trunc('day', timestamp) as day, COUNT(*) as daily_errors
                 FROM audit_log WHERE severity = 'error'
                 AND timestamp > NOW() - INTERVAL '{baseline_d} days'
                 GROUP BY day
-            ) t""",
+            ) t""",  # nosec B608  # baseline_d is int
         ),
     ]
 

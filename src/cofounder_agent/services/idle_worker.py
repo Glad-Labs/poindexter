@@ -347,7 +347,7 @@ class IdleWorker:
             _streak_h = site_config.get_int("topic_discovery_streak_window_hours", 6)
             recent = await self.pool.fetch(
                 "SELECT status FROM content_tasks "
-                f"WHERE updated_at > NOW() - INTERVAL '{_streak_h} hours' "
+                f"WHERE updated_at > NOW() - INTERVAL '{_streak_h} hours' "  # nosec B608  # _streak_h is int from app_settings
                 "ORDER BY updated_at DESC LIMIT $1",
                 streak_threshold,
             )

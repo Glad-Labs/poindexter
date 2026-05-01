@@ -230,7 +230,7 @@ class CostGuard:
                 FROM cost_logs
                 WHERE created_at >= {window_sql}
                   AND provider NOT IN ('electricity', 'ollama', 'ollama_native')
-                """,
+                """,  # nosec B608  # window_sql is hardcoded literal from get_daily_spend/get_monthly_spend ("date_trunc('day'/'month', NOW())")
             )
             return float(row["total"]) if row else 0.0
         except Exception as e:

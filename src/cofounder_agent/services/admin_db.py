@@ -225,7 +225,7 @@ class AdminDatabase(DatabaseServiceMixin):
         if post_published is not None:
             params.append(post_published)
             sets.append(f"post_published = ${len(params)}")
-        sql = f"UPDATE model_performance SET {', '.join(sets)} WHERE task_id = $1"
+        sql = f"UPDATE model_performance SET {', '.join(sets)} WHERE task_id = $1"  # nosec B608  # interpolation builds SET clause from local literals (human_approved/post_published); values use $N params
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(sql, *params)
@@ -405,7 +405,7 @@ class AdminDatabase(DatabaseServiceMixin):
             return cached["value"]
 
         where = "key = $1" if include_inactive else "key = $1 AND is_active = true"
-        sql = f"SELECT {self._APP_SETTINGS_COLUMNS} FROM app_settings WHERE {where}"
+        sql = f"SELECT {self._APP_SETTINGS_COLUMNS} FROM app_settings WHERE {where}"  # nosec B608  # _APP_SETTINGS_COLUMNS is a class constant; where is a literal; key value uses $1
 
         try:
             async with self.pool.acquire() as conn:
@@ -445,7 +445,7 @@ class AdminDatabase(DatabaseServiceMixin):
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         sql = (
-            f"SELECT {self._APP_SETTINGS_COLUMNS} FROM app_settings "
+            f"SELECT {self._APP_SETTINGS_COLUMNS} FROM app_settings "  # nosec B608  # _APP_SETTINGS_COLUMNS is a class constant
             f"{where_sql} ORDER BY key"
         )
 
@@ -677,7 +677,7 @@ class AdminDatabase(DatabaseServiceMixin):
             idx += 1
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        sql = f"SELECT * FROM logs {where_clause} ORDER BY created_at DESC LIMIT ${idx}"
+        sql = f"SELECT * FROM logs {where_clause} ORDER BY created_at DESC LIMIT ${idx}"  # nosec B608  # conditions built from local literals; agent_name/level/limit values use $N params
         params.append(limit)
 
         try:

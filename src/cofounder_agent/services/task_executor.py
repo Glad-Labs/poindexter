@@ -1225,7 +1225,7 @@ class TaskExecutor:
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
                 AND COALESCE((task_metadata::jsonb->>'allow_revisions')::text, 'true') != 'false'
                 LIMIT 3
-            """, max_retries)
+            """, max_retries)  # nosec B608  # retry_window_h is int from app_settings (cast above); max_retries uses $1
 
             for row in rows:
                 task_id = row["task_id"]

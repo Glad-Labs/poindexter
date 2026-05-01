@@ -90,7 +90,7 @@ async def _prune_one(pool: Any, table: str, ts_col: str, days: int) -> int:
         logger.debug("[retention_janitor] %s: retention=0 — skip", table)
         return 0
     sql = (
-        f"DELETE FROM {table} "  # noqa: S608 — table is a whitelisted constant
+        f"DELETE FROM {table} "  # noqa: S608  # nosec B608  # table is a whitelisted constant from _JANITOR_TARGETS
         f"WHERE {ts_col} < (NOW() - INTERVAL '{int(days)} days')"
     )
     async with pool.acquire() as conn:

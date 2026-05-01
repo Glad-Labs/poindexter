@@ -535,7 +535,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 try:
                     from services.site_config import site_config as _sc
                     _cost_days = _sc.get_int("cost_summary_window_days", 30)
-                    cost_query = f"SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '{_cost_days} days'"
+                    cost_query = f"SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '{_cost_days} days'"  # nosec B608  # _cost_days is int from app_settings
                     cost_result = await conn.fetchrow(cost_query)
                     if cost_result and cost_result["total"]:
                         total_cost = round(float(cost_result["total"]), 2)

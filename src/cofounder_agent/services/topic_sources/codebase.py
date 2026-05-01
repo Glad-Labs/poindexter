@@ -197,10 +197,10 @@ class CodebaseSource:
                            1 - (embedding <=> $1::vector) as similarity
                     FROM embeddings
                     WHERE source_table != 'posts_authored'
-                      AND created_at > NOW() - INTERVAL '{lookback_days} days'
+                      AND created_at > NOW() - INTERVAL '{int(lookback_days)} days'
                     ORDER BY embedding <=> $1::vector
                     LIMIT $2
-                    """,
+                    """,  # nosec B608  # lookback_days int-cast inline; values use $N params
                     vec_str, per_query_limit,
                 )
 

@@ -97,7 +97,7 @@ async def up(pool) -> None:
                     SET {column} = NULL
                     WHERE {column} IS NOT NULL
                       AND {column} NOT IN {allowed}
-                    """
+                    """  # nosec B608  # column + allowed come from _CONTENT_TASKS_CONSTRAINTS module-level constant
                 )
 
                 await conn.execute(
@@ -105,7 +105,7 @@ async def up(pool) -> None:
                     ALTER TABLE content_tasks
                         ADD CONSTRAINT {constraint_name}
                         CHECK ({column} IN {allowed})
-                    """
+                    """  # nosec B608  # constraint_name + column + allowed come from _CONTENT_TASKS_CONSTRAINTS module-level constant
                 )
                 logger.info(f"Added constraint {constraint_name} to content_tasks")
 
@@ -124,7 +124,7 @@ async def up(pool) -> None:
                     SET {column} = NULL
                     WHERE {column} IS NOT NULL
                       AND {column} NOT IN {allowed}
-                    """
+                    """  # nosec B608  # column + allowed come from _STATUS_HISTORY_CONSTRAINTS module-level constant
                 )
 
                 await conn.execute(
@@ -132,7 +132,7 @@ async def up(pool) -> None:
                     ALTER TABLE task_status_history
                         ADD CONSTRAINT {constraint_name}
                         CHECK ({column} IN {allowed})
-                    """
+                    """  # nosec B608  # constraint_name + column + allowed come from _STATUS_HISTORY_CONSTRAINTS module-level constant
                 )
                 logger.info(f"Added constraint {constraint_name} to task_status_history")
 

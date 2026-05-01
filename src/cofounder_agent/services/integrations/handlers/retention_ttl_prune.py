@@ -86,7 +86,7 @@ async def ttl_prune(
 
     async with pool.acquire() as conn:
         if dry_run:
-            count_sql = f"SELECT COUNT(*)::bigint FROM {table_name} WHERE {where_clause}"
+            count_sql = f"SELECT COUNT(*)::bigint FROM {table_name} WHERE {where_clause}"  # nosec B608  # table_name+age_column validated by _validate_identifier; filter_sql is operator-controlled migration seed (see module docstring)
             would_delete = await conn.fetchval(count_sql, ttl_days)
             logger.info(
                 "[retention.ttl_prune] %s: DRY RUN — would delete %s rows older than %s days",
@@ -110,7 +110,7 @@ async def ttl_prune(
                       WHERE {where_clause}
                       LIMIT $2
                  )
-            """
+            """  # nosec B608  # table_name+age_column validated by _validate_identifier; filter_sql is operator-controlled migration seed (see module docstring)
             result = await conn.execute(delete_sql, ttl_days, batch_size)
             # asyncpg returns "DELETE <count>"
             try:

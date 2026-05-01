@@ -63,7 +63,7 @@ async def up(pool) -> None:
                 "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename=$1", t,
             )
             if exists:
-                count = await conn.fetchval(f"SELECT COUNT(*) FROM {t}")  # noqa: S608
+                count = await conn.fetchval(f"SELECT COUNT(*) FROM {t}")  # noqa: S608  # nosec B608  # t comes from _DROP_TABLES module-level constant
                 before[t] = count or 0
             else:
                 before[t] = None

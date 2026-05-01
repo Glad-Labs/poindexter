@@ -627,8 +627,9 @@ class TopicBatchService:
                 raise ValueError(
                     f"no rank-1 candidate in batch {batch_id}; rank first",
                 )
+            assert tbl in ("topic_candidates", "internal_topic_candidates")  # nosec B101  # safelist guard for the f-string below
             await conn.execute(
-                f"UPDATE {tbl} "
+                f"UPDATE {tbl} "  # nosec B608  # tbl is safelisted via the assert above; values use $N params
                 "SET operator_edited_topic = $1, operator_edited_angle = $2 "
                 "WHERE id = $3",
                 topic, angle, rid,
