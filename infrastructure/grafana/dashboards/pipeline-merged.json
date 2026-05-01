@@ -2964,6 +2964,296 @@
           "mode": "single"
         }
       }
+    },
+    {
+      "type": "row",
+      "id": 43,
+      "title": "Topic Discovery \u2014 Niche Pivot",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 132
+      },
+      "panels": [],
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "id": 44,
+      "title": "Open batches awaiting decision",
+      "description": "Topic batches in `open` state. When >0 you have decisions to make.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 133
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Open batches\" FROM topic_batches WHERE status = 'open'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 6
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 45,
+      "title": "Hours since last batch",
+      "description": "Time since the discovery sweep last produced anything.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 133
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - MAX(created_at))) / 3600, 1) AS \"Hours\" FROM topic_batches",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 24
+              },
+              {
+                "color": "orange",
+                "value": 72
+              },
+              {
+                "color": "red",
+                "value": 168
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 46,
+      "title": "Candidates ranked (24h)",
+      "description": "Candidates the discovery sweep produced in last 24h (external + internal RAG).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 133
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (SELECT COUNT(*) FROM topic_candidates WHERE created_at > NOW() - INTERVAL '24 hours') + (SELECT COUNT(*) FROM internal_topic_candidates WHERE created_at > NOW() - INTERVAL '24 hours') AS \"Candidates\"",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 47,
+      "title": "Active niches",
+      "description": "Niches with active=true \u2014 each has its own discovery sweep.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 133
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Active niches\" FROM niches WHERE active = true",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "table",
+      "id": 48,
+      "title": "Open batches awaiting your decision",
+      "description": "Each row = one open topic batch with its top candidate. To resolve: poindexter topics resolve-batch <batch_id> (or MCP topics_show_batch from your phone).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 138
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT n.slug AS \"Niche\", tb.id::text AS \"Batch ID\", ROUND(EXTRACT(EPOCH FROM (NOW() - tb.created_at))/3600, 1) AS \"Hours open\", COALESCE(tc.title, '(no candidates yet)') AS \"Top candidate\", ROUND((tc.score * tc.decay_factor)::numeric, 3) AS \"Score\", (SELECT COUNT(*) FROM topic_candidates WHERE batch_id = tb.id) + (SELECT COUNT(*) FROM internal_topic_candidates WHERE batch_id = tb.id) AS \"Candidates\" FROM topic_batches tb JOIN niches n ON n.id = tb.niche_id LEFT JOIN LATERAL (  SELECT title, score, decay_factor FROM topic_candidates   WHERE batch_id = tb.id ORDER BY (score * decay_factor) DESC LIMIT 1) tc ON true WHERE tb.status = 'open' ORDER BY tb.created_at ASC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "type": "table",
+      "id": 49,
+      "title": "Recent batch decisions (7 days)",
+      "description": "Closed batches with the picked candidate \u2014 retroactive review of what got shipped to research/draft.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 146
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT n.slug AS \"Niche\", tb.status AS \"Status\", tb.resolved_at AT TIME ZONE 'UTC' AS \"Resolved\", tb.picked_candidate_kind AS \"Kind\", COALESCE(tc.title, ic.title, '(skipped)') AS \"Picked\" FROM topic_batches tb JOIN niches n ON n.id = tb.niche_id LEFT JOIN topic_candidates tc ON tc.id = tb.picked_candidate_id LEFT JOIN internal_topic_candidates ic ON ic.id = tb.picked_candidate_id WHERE tb.status != 'open' AND tb.resolved_at > NOW() - INTERVAL '7 days' ORDER BY tb.resolved_at DESC LIMIT 25",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
     }
   ],
   "refresh": "30s",
@@ -2980,7 +3270,7 @@
   "timezone": "browser",
   "title": "Pipeline",
   "uid": "pipeline-merged",
-  "version": 1,
+  "version": 2,
   "weekStart": "",
   "description": "Everything pipeline-shaped: approval queue, live operations, QA decisions, content quality. Replaces approval-queue / pipeline-operations / qa-observability / quality-content as separate dashboards."
 }
