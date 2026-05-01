@@ -47,6 +47,40 @@
 
 ---
 
+## [1.3.0](https://github.com/Glad-Labs/poindexter/compare/v1.2.0...v1.3.0) (2026-05-01)
+
+
+### Features
+
+* **brain:** compose-spec drift probe + optional auto-recreate (closes Glad-Labs/poindexter[#213](https://github.com/Glad-Labs/poindexter/issues/213)) ([#112](https://github.com/Glad-Labs/poindexter/issues/112)) ([f581bc9](https://github.com/Glad-Labs/poindexter/commit/f581bc929c0974a212da14e133a033cd68a710f2))
+* **brain:** migration-drift probe + auto-restart workflow (closes Glad-Labs/poindexter[#228](https://github.com/Glad-Labs/poindexter/issues/228)) ([#109](https://github.com/Glad-Labs/poindexter/issues/109)) ([7b92cac](https://github.com/Glad-Labs/poindexter/commit/7b92cacf97a0bbb921f3e770d9dcef8c5b09467b))
+* **brain:** poetry dep group instead of ad-hoc pip install (closes Glad-Labs/poindexter[#173](https://github.com/Glad-Labs/poindexter/issues/173)) ([#110](https://github.com/Glad-Labs/poindexter/issues/110)) ([b2d3647](https://github.com/Glad-Labs/poindexter/commit/b2d3647b218c42c953e048e6a1255b49f436010d))
+* **ci:** GitHub Actions workflow auto-syncs filtered subset to public poindexter ([c33f098](https://github.com/Glad-Labs/poindexter/commit/c33f098817dfa52dac2d269087ea14770272ad72))
+* **idle_worker:** kill-switch for legacy auto-topic-discovery ([#89](https://github.com/Glad-Labs/poindexter/issues/89)) ([48d7e3f](https://github.com/Glad-Labs/poindexter/commit/48d7e3f5123776c25361ff807a2509db26a50e70))
+* **observability:** poindexter_unapplied_migrations_count gauge + Grafana alert (closes Glad-Labs/poindexter[#227](https://github.com/Glad-Labs/poindexter/issues/227)) ([#101](https://github.com/Glad-Labs/poindexter/issues/101)) ([33477ef](https://github.com/Glad-Labs/poindexter/commit/33477efd60c1200221306cfbd4aedf8d3114ff8d))
+* **registry:** add 6 missing get_* functions for new plugin Protocol families ([45988e9](https://github.com/Glad-Labs/poindexter/commit/45988e9a1cf914124b4cb1247bdcaf3a62d0406f))
+* **sync:** one-command push to both remotes via 'git pushe' ([c3b3ed1](https://github.com/Glad-Labs/poindexter/commit/c3b3ed109fc9c4af0661d6ab63c1eb6a05d7d124))
+
+
+### Bug Fixes
+
+* **auth:** same get_secret fix for verify_api_token_optional ([#325](https://github.com/Glad-Labs/poindexter/issues/325) follow-on) ([06d191f](https://github.com/Glad-Labs/poindexter/commit/06d191fbea6f0bffee70749246f8be0659c67cc3))
+* **auth:** verify_api_token must use async get_secret() for is_secret rows (closes Glad-Labs/poindexter[#325](https://github.com/Glad-Labs/poindexter/issues/325)) ([#106](https://github.com/Glad-Labs/poindexter/issues/106)) ([c4f358b](https://github.com/Glad-Labs/poindexter/commit/c4f358b8da30675d7924c0975e91e369327bfd8f))
+* **ci:** migrations-smoke fires on every push/PR (branch protection requires it) ([a07ba7a](https://github.com/Glad-Labs/poindexter/commit/a07ba7a02e6be4b6c5145b8c04c9fdc343dbd5ef))
+* **cost_guard:** suppress Bandit B104 false positive on local-host hints ([#99](https://github.com/Glad-Labs/poindexter/issues/99)) ([f7c2314](https://github.com/Glad-Labs/poindexter/commit/f7c2314b4e378ec1a0ff685768f39dea8ef1b6d8))
+* **database_service:** fail loud + notify on missing DSN — closes Glad-Labs/poindexter[#169](https://github.com/Glad-Labs/poindexter/issues/169) ([#104](https://github.com/Glad-Labs/poindexter/issues/104)) ([68ae8f9](https://github.com/Glad-Labs/poindexter/commit/68ae8f9413bc1d2ff84bae8de4811d3d24860dcc))
+* **dependabot:** retarget main (dev branch retired with gitea decommission), use real GH username ([b95c001](https://github.com/Glad-Labs/poindexter/commit/b95c0019de396a9f1871eafa681ecf7682baa62a))
+* **deps:** bump datasets to 3.x for pyarrow 14+ compat (closes Glad-Labs/poindexter[#308](https://github.com/Glad-Labs/poindexter/issues/308)) ([#92](https://github.com/Glad-Labs/poindexter/issues/92)) ([b4f8726](https://github.com/Glad-Labs/poindexter/commit/b4f87261af61647933d16901b16dc412b45b89f5))
+* **experiment_service:** replace SHA1 with blake2b in _hash_subject (closes Glad-Labs/poindexter[#307](https://github.com/Glad-Labs/poindexter/issues/307)) ([#90](https://github.com/Glad-Labs/poindexter/issues/90)) ([99653a4](https://github.com/Glad-Labs/poindexter/commit/99653a432f0490180aa08fb972f9d96f57bcb9d8))
+* **gpu-exporter:** ThreadingHTTPServer + watchdog + healthcheck (closes Glad-Labs/poindexter[#319](https://github.com/Glad-Labs/poindexter/issues/319)) ([#91](https://github.com/Glad-Labs/poindexter/issues/91)) ([117bfb0](https://github.com/Glad-Labs/poindexter/commit/117bfb05844a9e32b677329c9e637653610a6fef))
+* **migrations:** 0114 handles content_tasks-as-VIEW shape (production schema) ([185c9a3](https://github.com/Glad-Labs/poindexter/commit/185c9a332c366bcd1b20d8d176bf0c08c2acd0bf))
+* **migrations:** repair 9 of 10 broken migrations on fresh-DB smoke ([#87](https://github.com/Glad-Labs/poindexter/issues/87)) ([5571242](https://github.com/Glad-Labs/poindexter/commit/557124218a7349ed9f3d9c4f5ac8c87ee9f7f2b3))
+* **migrations:** resolve 0093 number collision (renumber object_stores to 0117) ([#86](https://github.com/Glad-Labs/poindexter/issues/86)) ([cd5c401](https://github.com/Glad-Labs/poindexter/commit/cd5c4016d3628e2ba884a341771b06f0fd3eb189))
+* **prometheus:** scrape gpu-exporter via container DNS, not host.docker.internal ([8b5373f](https://github.com/Glad-Labs/poindexter/commit/8b5373f7c9a5af5ee09acaeea1cde64f99ca8403))
+* **secrets:** migrate smtp_password to encrypted is_secret + async get_secret (closes Glad-Labs/poindexter[#221](https://github.com/Glad-Labs/poindexter/issues/221)) ([#107](https://github.com/Glad-Labs/poindexter/issues/107)) ([5f27f26](https://github.com/Glad-Labs/poindexter/commit/5f27f261893bae59b94a9201d44adf83c9aa641a))
+* **security:** remove Uptime Kuma API key from prometheus.yml + seed app_settings ([#102](https://github.com/Glad-Labs/poindexter/issues/102)) ([5f69b26](https://github.com/Glad-Labs/poindexter/commit/5f69b26ffec2b40c4c6c26aab2ca3b9f713b7c26))
+* **tests:** plugins.registry tests no longer order-couple with services/ runs ([#105](https://github.com/Glad-Labs/poindexter/issues/105)) ([3cc04e7](https://github.com/Glad-Labs/poindexter/commit/3cc04e7ac53d9a22f8e5b528c8fc53640dc1085c))
+
 ## [1.2.0](https://github.com/Glad-Labs/poindexter/compare/v1.1.0...v1.2.0) (2026-04-30)
 
 
