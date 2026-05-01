@@ -59,6 +59,7 @@ import logging
 import math
 import random
 from collections.abc import Iterable, Sequence
+from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -223,7 +224,13 @@ def kmeans_cluster(
 # ---------------------------------------------------------------------------
 
 def build_summary_text(previews: Iterable[str], *, chars_per_member: int = 200) -> str:
-    """Join the first ``chars_per_member`` chars of each preview."""
+    """Join the first ``chars_per_member`` chars of each preview.
+
+    Used as the lossy-but-fast fallback when LLM summarization isn't
+    enabled or the LLM call fails. Preserves enough surface signal that
+    a vector query can still retrieve the cluster, but loses semantic
+    structure compared to a real summary.
+    """
     parts: list[str] = []
     for p in previews:
         if not p:
@@ -233,6 +240,96 @@ def build_summary_text(previews: Iterable[str], *, chars_per_member: int = 200) 
             snippet = snippet[:chars_per_member].rstrip() + "..."
         parts.append(snippet)
     return " | ".join(parts)
+
+
+# Default summarization prompt — kept tight to avoid burning tokens on
+# preamble. Per-source-table override available via app_settings key
+# ``embedding_collapse_summary_prompt_<source_table>``.
+_DEFAULT_SUMMARY_PROMPT = (
+    "You are compressing a cluster of older memories so the system "
+    "remembers the gist without storing every detail. Below are "
+    "{n} excerpts from the same source ({source_table}), each "
+    "separated by '---'.\n\n"
+    "Write a single paragraph (3-6 sentences) summarizing what these "
+    "excerpts collectively say. Preserve specific names, dates, "
+    "decisions, errors, and outcomes. Drop boilerplate, repetition, "
+    "and verbose phrasing. The summary will be embedded and used for "
+    "future semantic search, so dense factual content beats prose.\n\n"
+    "Excerpts:\n{joined}\n\n"
+    "Summary:"
+)
+
+
+async def build_summary_text_via_llm(
+    previews: Sequence[str],
+    *,
+    source_table: str,
+    model: str,
+    timeout_s: int,
+    prompt_template: str | None = None,
+) -> str | None:
+    """Summarize a cluster of memories with Ollama.
+
+    Returns ``None`` on any failure — callers should fall back to
+    :func:`build_summary_text`. Never raises so a single bad cluster
+    can't break the whole collapse job.
+
+    Per the GH-81 follow-up: replaces the joined-text-preview heuristic
+    with an LLM-generated summary. Defaults to the local Ollama writer
+    model so cost stays at zero (electricity only). Per-cluster cost is
+    one short generation call (~3-6 sentences).
+    """
+    if not previews:
+        return None
+
+    # Build the joined block — pad each excerpt with separator and a
+    # soft cap so the prompt doesn't blow past the model's context.
+    pieces: list[str] = []
+    for p in previews:
+        if not p:
+            continue
+        s = p.strip().replace("\r\n", "\n")
+        if len(s) > 800:
+            s = s[:800].rstrip() + "..."
+        pieces.append(s)
+
+    if not pieces:
+        return None
+
+    template = prompt_template or _DEFAULT_SUMMARY_PROMPT
+    prompt = template.format(
+        n=len(pieces),
+        source_table=source_table,
+        joined="\n---\n".join(pieces),
+    )
+
+    try:
+        from services.ollama_client import OllamaClient
+        client = OllamaClient(model=model)
+        try:
+            result = await client.generate(
+                prompt=prompt,
+                temperature=0.3,  # low — we want compression, not creativity
+                max_tokens=400,   # 3-6 sentences is plenty
+                timeout=timeout_s,
+            )
+            text = (result.get("text") or "").strip()
+            if not text:
+                return None
+            # Strip wrapping quotes if the model added them
+            if text.startswith('"') and text.endswith('"'):
+                text = text[1:-1].strip()
+            return text or None
+        finally:
+            with suppress(Exception):
+                await client.close()
+    except Exception as exc:  # noqa: BLE001 — never let a bad LLM call kill the job
+        logger.warning(
+            "[COLLAPSE] LLM summarization failed for source=%s (%d members): %s — "
+            "falling back to joined-preview",
+            source_table, len(pieces), exc,
+        )
+        return None
 
 
 def build_summary_metadata(
@@ -327,6 +424,24 @@ class CollapseOldEmbeddingsJob:
                 changes_made=0,
             )
 
+        # Summary provider — `joined_preview` is the original heuristic
+        # (lossy, fast, no external dependency); `ollama` calls the local
+        # LLM for a real summary. Default flipped to `ollama` 2026-05-01
+        # per the "system never forgets — sharp recent / vague past" goal.
+        # Anything other than these two strings falls back to joined_preview.
+        summary_provider = (await _get_setting(
+            pool, "embedding_collapse_summary_provider", "ollama",
+        )).strip().lower()
+        summary_model = (await _get_setting(
+            pool, "embedding_collapse_summary_model", "gemma3:27b-it-qat",
+        )).strip()
+        summary_timeout_s = _parse_int(
+            await _get_setting(
+                pool, "embedding_collapse_summary_timeout_seconds", "60",
+            ),
+            60,
+        )
+
         cutoff = datetime.now(timezone.utc) - timedelta(days=max(0, age_days))
 
         total_collapsed = 0
@@ -342,6 +457,9 @@ class CollapseOldEmbeddingsJob:
                     cutoff=cutoff,
                     cluster_size=cluster_size,
                     age_days=age_days,
+                    summary_provider=summary_provider,
+                    summary_model=summary_model,
+                    summary_timeout_s=summary_timeout_s,
                 )
             except Exception as exc:  # noqa: BLE001 — never crash whole job
                 logger.exception(
@@ -380,6 +498,9 @@ class CollapseOldEmbeddingsJob:
         cutoff: datetime,
         cluster_size: int,
         age_days: int,
+        summary_provider: str = "joined_preview",
+        summary_model: str = "gemma3:27b-it-qat",
+        summary_timeout_s: int = 60,
     ) -> dict[str, int]:
         result = {"candidates": 0, "collapsed": 0, "summaries": 0, "clusters": 0}
 
@@ -466,7 +587,24 @@ class CollapseOldEmbeddingsJob:
             member_ids = [m["source_id"] for m in members]
             row_ids = [m["id"] for m in members]
             summary_id = _summary_source_id(source_table, member_ids)
-            summary_text = build_summary_text(m["text_preview"] for m in members)
+
+            previews = [m["text_preview"] for m in members]
+            summary_text: str | None = None
+            summary_method = "joined_preview"
+            if summary_provider == "ollama":
+                summary_text = await build_summary_text_via_llm(
+                    previews,
+                    source_table=source_table,
+                    model=summary_model,
+                    timeout_s=summary_timeout_s,
+                )
+                if summary_text:
+                    summary_method = "ollama"
+            if not summary_text:
+                # Fallback path — either the operator picked joined_preview
+                # explicitly, or the LLM call returned empty/raised.
+                summary_text = build_summary_text(previews)
+
             metadata = build_summary_metadata(
                 source_table,
                 member_ids,

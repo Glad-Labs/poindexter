@@ -498,3 +498,101 @@ class TestJobRun:
         assert result["candidates"] == 0  # never even read the rows
         assert result["collapsed"] == 0
         assert pool.insert_attempts == 0
+
+
+# ---------------------------------------------------------------------------
+# LLM-summarization path (added 2026-05-01)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestLLMSummary:
+    """`build_summary_text_via_llm` + the provider switch in `run()`."""
+
+    async def test_llm_summary_returns_none_for_empty_previews(self):
+        from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
+        result = await build_summary_text_via_llm(
+            [], source_table="audit", model="x", timeout_s=5,
+        )
+        assert result is None
+
+    async def test_llm_summary_returns_none_when_all_previews_blank(self):
+        from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
+        result = await build_summary_text_via_llm(
+            ["", "   ", None],  # type: ignore[list-item]
+            source_table="audit", model="x", timeout_s=5,
+        )
+        assert result is None
+
+    async def test_llm_summary_calls_ollama_with_joined_excerpts(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
+
+        fake_client = AsyncMock()
+        fake_client.generate = AsyncMock(return_value={"text": "Summary line here."})
+        fake_client.close = AsyncMock()
+        fake_cls = MagicMock(return_value=fake_client)
+
+        with patch("services.ollama_client.OllamaClient", fake_cls):
+            result = await build_summary_text_via_llm(
+                ["first excerpt about X", "second excerpt about Y"],
+                source_table="claude_sessions",
+                model="glm-4.7-5090:latest",
+                timeout_s=30,
+            )
+
+        assert result == "Summary line here."
+        fake_cls.assert_called_once_with(model="glm-4.7-5090:latest")
+        # Verify the prompt actually contained both excerpts (rough check).
+        call_kwargs = fake_client.generate.call_args.kwargs
+        assert "first excerpt about X" in call_kwargs["prompt"]
+        assert "second excerpt about Y" in call_kwargs["prompt"]
+        assert "claude_sessions" in call_kwargs["prompt"]
+        assert call_kwargs["temperature"] == 0.3
+
+    async def test_llm_summary_returns_none_on_ollama_exception(self):
+        """LLM failure must not raise — caller falls back to joined-preview."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
+
+        fake_client = AsyncMock()
+        fake_client.generate = AsyncMock(side_effect=RuntimeError("ollama down"))
+        fake_client.close = AsyncMock()
+        fake_cls = MagicMock(return_value=fake_client)
+
+        with patch("services.ollama_client.OllamaClient", fake_cls):
+            result = await build_summary_text_via_llm(
+                ["x"], source_table="audit", model="x", timeout_s=5,
+            )
+        assert result is None
+
+    async def test_llm_summary_strips_wrapping_quotes(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
+
+        fake_client = AsyncMock()
+        fake_client.generate = AsyncMock(return_value={"text": '"Quoted summary."'})
+        fake_client.close = AsyncMock()
+        fake_cls = MagicMock(return_value=fake_client)
+
+        with patch("services.ollama_client.OllamaClient", fake_cls):
+            result = await build_summary_text_via_llm(
+                ["x"], source_table="audit", model="x", timeout_s=5,
+            )
+        assert result == "Quoted summary."
+
+    async def test_llm_summary_returns_none_when_ollama_returns_empty(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from services.jobs.collapse_old_embeddings import build_summary_text_via_llm
+
+        fake_client = AsyncMock()
+        fake_client.generate = AsyncMock(return_value={"text": ""})
+        fake_client.close = AsyncMock()
+        fake_cls = MagicMock(return_value=fake_client)
+
+        with patch("services.ollama_client.OllamaClient", fake_cls):
+            result = await build_summary_text_via_llm(
+                ["x"], source_table="audit", model="x", timeout_s=5,
+            )
+        assert result is None
