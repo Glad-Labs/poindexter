@@ -1,0 +1,41 @@
+# Mintlify ignore — defense in depth for the public docs site.
+# Mintlify reads docs.json's nav to render pages, but it also indexes
+# the broader repo for search. Anything matched here is excluded from
+# both — so even if a private file ever slips into the public mirror
+# via a sync regression, it won't surface on docs.gladlabs.io.
+
+# Personal Claude Code state (should never be in public, but belt + suspenders)
+CLAUDE.md
+.claude/
+.shared-context/
+
+# Operator scripts (sync filter strips these, but redundant guard)
+scripts/sync-to-github.sh
+scripts/push-everywhere.sh
+scripts/install-git-hooks.sh
+scripts/system-health-check.sh
+scripts/claude-sessions.ps1
+scripts/run-claude-session.cmd
+scripts/sync-premium-prompts.py
+
+# Legacy CI (gitea decommissioned 2026-04-30)
+.gitea/
+
+# GitHub Actions internals
+.github/workflows-disabled/
+.github/COMMIT_MESSAGE_*.txt
+.github/create-tech-debt-issues.sh
+.github/tech-debt-issues.json
+
+# Internal-only docs (anything not listed in docs.json's nav)
+docs/brand/
+docs/experiments/
+docs/superpowers/
+docs/operations/documentation-audit-*.md
+docs/operations/migrations-audit-*.md
+docs/operations/overnight-*-summary.md
+docs/operations/public-site-audit-*.md
+docs/operations/silent-failures-audit-*.md
+docs/operations/test-coverage-*.md
+docs/architecture/database-and-embeddings-plan-*.md
+docs/architecture/gh-*-secret-keys-audit-*.md

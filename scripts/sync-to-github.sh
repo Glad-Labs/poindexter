@@ -59,7 +59,19 @@ git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # p
 
 # === Private infrastructure (Matt's local setup, not useful publicly) ===
 git rm --cached --quiet .woodpecker.yml 2>/dev/null || true                  # legacy Gitea CI config (unused post-decommission)
+git rm -r --cached --quiet .gitea/ 2>/dev/null || true                       # gitea decommissioned; entire workflow folder is dead
 git rm --cached --quiet scripts/migrate-poindexter-rename.sh 2>/dev/null || true  # one-shot rebrand script, specific to Matt's install
+git rm --cached --quiet scripts/sync-to-github.sh 2>/dev/null || true        # the sync script itself — internal-only, exposes strip logic
+git rm --cached --quiet scripts/push-everywhere.sh 2>/dev/null || true       # local-dev-only, two-remote push helper
+git rm --cached --quiet scripts/install-git-hooks.sh 2>/dev/null || true     # local-dev-only, sets up the pushe alias
+git rm --cached --quiet scripts/system-health-check.sh 2>/dev/null || true   # operator-specific health probes (Matt's install)
+git rm --cached --quiet scripts/claude-sessions.ps1 2>/dev/null || true       # Windows scheduled-task setup for autonomous Claude sessions (Matt's install)
+git rm --cached --quiet scripts/run-claude-session.cmd 2>/dev/null || true    # cmd wrapper for above
+git rm --cached --quiet scripts/sync-premium-prompts.py 2>/dev/null || true   # syncs premium prompts from Glad Labs operator stash, no-op for public users
+
+# === Operator-specific taps (read from Matt's local Claude / OpenClaw state) ===
+git rm --cached --quiet src/cofounder_agent/services/taps/claude_code_sessions.py 2>/dev/null || true  # taps ~/.claude/projects/*.jsonl — Matt's actual conversations
+git rm --cached --quiet src/cofounder_agent/tests/unit/services/test_claude_code_sessions_tap.py 2>/dev/null || true
 
 # === Personal context (bank balance, memory paths, internal URLs) ===
 git rm --cached --quiet CLAUDE.md 2>/dev/null || true                        # Matt's personal Claude Code instructions
