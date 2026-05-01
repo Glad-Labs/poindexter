@@ -297,6 +297,20 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # on schedules declared by the Job class; PluginConfig in app_settings
         # overrides per install. Worker mode only — coordinator has no pool
         # it owns (reads cloud DB read-only).
+        # Register integration handlers (outbound dispatcher, retention,
+        # taps, inbound webhooks) — eager imports trigger the
+        # @register_handler decorators. Without this nothing in the
+        # ``services.integrations`` framework is callable at runtime.
+        try:
+            from services.integrations.handlers import load_all
+            load_all()
+            logger.info("[LIFESPAN] Integration handlers registered")
+        except Exception as e:
+            logger.warning(
+                "[LIFESPAN] Integration handler load failed (non-critical): %s", e,
+                exc_info=True,
+            )
+
         app.state.plugin_scheduler = None
         if _deployment_mode == "worker" and db_service and getattr(db_service, "pool", None):
             try:

@@ -28,6 +28,7 @@ framework and will migrate onto it in a follow-up.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -124,7 +125,22 @@ async def _load_row(db_service: Any, name: str) -> dict[str, Any] | None:
         """,
         name,
     )
-    return dict(row) if row else None
+    if row is None:
+        return None
+    out = dict(row)
+    # asyncpg returns JSONB columns as raw JSON strings unless a codec is
+    # registered on the pool. Handlers expect dicts (e.g. telegram_post
+    # reads `config["chat_id"]`), so parse here once for the whole framework.
+    for k in ("event_filter", "config", "metadata"):
+        v = out.get(k)
+        if isinstance(v, str) and v:
+            try:
+                out[k] = json.loads(v)
+            except json.JSONDecodeError:
+                # Leave as-is and let handlers raise with a clearer error
+                # than a silent type confusion.
+                pass
+    return out
 
 
 async def _record_success(db_service: Any, row_id: Any) -> None:
