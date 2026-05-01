@@ -1038,7 +1038,7 @@
           "language": "plaintext",
           "showLineNumbers": false
         },
-        "content": "| Dashboard | Description |\n|---|---|\n| [Approval Queue](http://100.81.93.12:3000/d/approval-queue) | Review and approve AI-generated content |\n| [Pipeline Operations](http://100.81.93.12:3000/d/pipeline-operations) | Task status, throughput, stuck task detection |\n| [Quality & Content](http://100.81.93.12:3000/d/quality-content) | Quality score trends, pass rates, topic quality |\n| [Cost & Analytics](http://100.81.93.12:3000/d/cost-analytics) | LLM spend, electricity costs, budget tracking |\n| [Infrastructure & Data](http://100.81.93.12:3000/d/infrastructure-data) | Hardware metrics, audit log, raw DB tables |",
+        "content": "| Dashboard | Description |\n|---|---|\n| [Mission Control](http://100.81.93.12:3000/d/mission-control) | Service status grid + ops drilldowns |\n| [Pipeline](http://100.81.93.12:3000/d/pipeline-merged) | Task status, throughput, stuck task detection, quality trends |\n| [System Health](http://100.81.93.12:3000/d/system-health-merged) | Core services up/down, hardware, validator + reject signals |\n| [Observability](http://100.81.93.12:3000/d/observability-merged) | Logs (Loki), traces (Tempo), profiles (Pyroscope), uptime |\n| [Cost Analytics](http://100.81.93.12:3000/d/cost-analytics) | LLM spend, electricity costs, budget tracking |",
         "mode": "markdown"
       },
       "type": "text",
@@ -1173,7 +1173,7 @@
   "timezone": "browser",
   "title": "Integrations & Admin",
   "uid": "integrations-admin",
-  "version": 1,
+  "version": 2,
   "weekStart": "",
   "description": "Webhook framework health + admin reference (link registry). Replaces integration-health / link-registry as separate dashboards."
 }
