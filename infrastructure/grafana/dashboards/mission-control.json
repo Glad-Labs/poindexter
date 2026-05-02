@@ -122,21 +122,9 @@
       "tags": [],
       "targetBlank": true,
       "title": "pgAdmin",
-      "tooltip": "Postgres admin UI (databases, queries, schema) (tailscale workstation IP, port 5480)",
+      "tooltip": "Postgres admin UI (databases, queries, schema) (tailscale workstation IP, port 18443)",
       "type": "link",
-      "url": "http://100.81.93.12:5480"
-    },
-    {
-      "asDropdown": false,
-      "icon": "external link",
-      "includeVars": false,
-      "keepTime": false,
-      "tags": [],
-      "targetBlank": true,
-      "title": "Gitea",
-      "tooltip": "Local git repo + CI dashboards (tailscale workstation IP, port 3001)",
-      "type": "link",
-      "url": "http://100.81.93.12:3001"
+      "url": "http://100.81.93.12:18443"
     },
     {
       "asDropdown": false,

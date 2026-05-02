@@ -83,15 +83,15 @@
           "color": {
             "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -103,9 +103,11 @@
       },
       "id": 2,
       "options": {
+        "displayLabels": ["percent", "name"],
         "legend": {
           "displayMode": "table",
           "placement": "right",
+          "showLegend": true,
           "values": [
             "value",
             "percent"
@@ -113,11 +115,16 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
         }
       },
+      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
@@ -125,7 +132,7 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT model, ROUND(SUM(cost_usd)::numeric, 4) as cost FROM cost_logs WHERE provider != 'electricity' AND $__timeFilter(created_at) GROUP BY model ORDER BY cost DESC",
+          "rawSql": "SELECT model AS metric, ROUND(SUM(cost_usd)::numeric, 4) AS value FROM cost_logs WHERE provider != 'electricity' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 2 DESC",
           "refId": "A"
         }
       ],
@@ -388,22 +395,23 @@
           "color": {
             "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
         },
         "overrides": []
       },
       "options": {
+        "displayLabels": ["percent", "name"],
         "legend": {
           "displayMode": "table",
           "placement": "right",
+          "showLegend": true,
           "values": [
             "value",
             "percent"
@@ -411,14 +419,16 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "single",
+          "sort": "none"
         }
       },
+      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
@@ -451,22 +461,23 @@
           "color": {
             "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
         },
         "overrides": []
       },
       "options": {
+        "displayLabels": ["percent", "name"],
         "legend": {
           "displayMode": "table",
           "placement": "right",
+          "showLegend": true,
           "values": [
             "value",
             "percent"
@@ -474,14 +485,16 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "single",
+          "sort": "none"
         }
       },
+      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
@@ -554,23 +567,24 @@
           "color": {
             "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
           },
+          "mappings": [],
           "unit": "currencyUSD"
         },
         "overrides": []
       },
       "options": {
+        "displayLabels": ["percent", "name"],
         "legend": {
           "displayMode": "table",
           "placement": "right",
+          "showLegend": true,
           "values": [
             "value",
             "percent"
@@ -578,14 +592,16 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "single",
+          "sort": "none"
         }
       },
+      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
@@ -618,23 +634,24 @@
           "color": {
             "mode": "palette-classic"
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
           },
+          "mappings": [],
           "unit": "currencyUSD"
         },
         "overrides": []
       },
       "options": {
+        "displayLabels": ["percent", "name"],
         "legend": {
           "displayMode": "table",
           "placement": "right",
+          "showLegend": true,
           "values": [
             "value",
             "percent"
@@ -642,14 +659,16 @@
         },
         "pieType": "donut",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "single",
+          "sort": "none"
         }
       },
+      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
