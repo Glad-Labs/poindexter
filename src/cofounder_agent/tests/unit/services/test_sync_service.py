@@ -144,10 +144,15 @@ class TestPushPost:
         svc._local_pool = local_pool
         svc._cloud_pool = cloud_pool
 
+        # NOTE GH#337: dropped stale ``tag_ids`` field. Column was removed
+        # in migration 0035_drop_posts_tag_ids_column.py and production
+        # ``sync_service._upsert_post`` never reads it. Keeping it
+        # documented-as-tested a column the schema no longer has — exactly
+        # the audit (#30) failure mode.
         post_data = {
             "id": "p1", "title": "Test", "slug": "test", "content": "body",
             "excerpt": None, "featured_image_url": None, "cover_image_url": None,
-            "author_id": None, "category_id": "cat1", "tag_ids": [],
+            "author_id": None, "category_id": "cat1",
             "status": "published", "seo_title": None, "seo_description": None,
             "seo_keywords": None, "created_by": None, "updated_by": None,
             "created_at": "2025-01-01", "updated_at": "2025-01-01",

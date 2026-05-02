@@ -36,14 +36,20 @@ from services.tasks_db import TasksDatabase, serialize_value_for_postgres
 
 
 def _make_row(**kwargs):
+    """Create a mock asyncpg Record-like row.
+
+    Strict ``__getitem__`` (KeyError on missing key) so production code
+    that reads a column the test didn't set fails loudly instead of
+    silently getting ``None`` and passing — see GH#337.
+    """
     row = MagicMock()
     _data = {**kwargs}
-    row.__getitem__ = lambda self, k: _data.get(k)
-    row.get = lambda k, default=None: _data.get(k, default)
+    row.__getitem__ = lambda self, k, _d=_data: _d[k]
+    row.get = lambda k, default=None, _d=_data: _d.get(k, default)
     row.__bool__ = lambda self: True
-    row.items = lambda: _data.items()
-    row.keys = lambda: _data.keys()
-    row.values = lambda: _data.values()
+    row.items = lambda _d=_data: _d.items()
+    row.keys = lambda _d=_data: _d.keys()
+    row.values = lambda _d=_data: _d.values()
     return row
 
 
@@ -357,8 +363,14 @@ class TestUpdateTask:
 
     @pytest.mark.asyncio
     async def test_task_name_mapped_to_title(self):
-        """task_name in updates should be remapped to title."""
-        row = _make_row(task_id="t-1", title="My Task")
+        """task_name in updates should be remapped to title.
+
+        The resolved-row SELECT at ``tasks_db.py:623`` reads ``status`` to
+        guard against overwriting cancelled/rejected tasks; the row mock
+        must therefore include ``status``. Strict ``__getitem__`` exposed
+        the missing column — see GH#337.
+        """
+        row = _make_row(task_id="t-1", title="My Task", status="pending")
         pool = _make_pool(fetchrow_result=row)
         db = _make_db(pool)
 
@@ -387,8 +399,12 @@ class TestUpdateTask:
 
     @pytest.mark.asyncio
     async def test_metadata_fields_extracted_to_columns(self):
-        """Fields in task_metadata should be extracted to dedicated columns."""
-        row = _make_row(task_id="t-1", content="extracted content")
+        """Fields in task_metadata should be extracted to dedicated columns.
+
+        ``status`` required by the resolved-row guard at
+        ``tasks_db.py:631`` — see GH#337.
+        """
+        row = _make_row(task_id="t-1", content="extracted content", status="pending")
         pool = _make_pool(fetchrow_result=row)
         db = _make_db(pool)
 

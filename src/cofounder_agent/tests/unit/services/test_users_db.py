@@ -29,10 +29,16 @@ from services.users_db import UsersDatabase
 
 
 def _make_row(**kwargs):
+    """Create a mock asyncpg Record-like row.
+
+    Strict ``__getitem__`` (KeyError on missing key) so production code
+    that reads a column the test didn't set fails loudly instead of
+    silently getting ``None`` and passing — see GH#337.
+    """
     row = MagicMock()
     _data = {**kwargs}
-    row.__getitem__ = lambda self, k: _data.get(k)
-    row.get = lambda k, default=None: _data.get(k, default)
+    row.__getitem__ = lambda self, k, _d=_data: _d[k]
+    row.get = lambda k, default=None, _d=_data: _d.get(k, default)
     row.__bool__ = lambda self: True
     return row
 
@@ -279,15 +285,23 @@ class TestGetOrCreateOAuthUser:
 
     @pytest.mark.asyncio
     async def test_path3_no_email_uses_fallback_username(self):
-        """If provider_data has no email, username fallback 'user' is used."""
+        """If provider_data has no email, username fallback 'user' is used.
+
+        With no email, production code skips the existing-user-by-email
+        lookup (``users_db.py:183``), so only THREE fetchrow calls happen:
+        oauth check → INSERT user RETURNING → winner-row recheck.
+        Previously this test seeded 4 rows with the wrong shapes and
+        silently passed on the concurrent-winner code path because the
+        non-strict ``__getitem__`` returned ``None`` instead of failing —
+        see GH#337.
+        """
         no_oauth = None
-        no_existing_user = None
         _fixed_uuid = "new-uuid"
         new_user_row = _make_row(id=_fixed_uuid)
-        # 4th fetchrow: winner re-fetch returns same user_id
+        # 3rd fetchrow: winner re-fetch returns same user_id (no race)
         winner_recheck = _make_row(user_id=_fixed_uuid)
         pool = _make_pool(
-            fetchrow_results=[no_oauth, no_existing_user, new_user_row, winner_recheck]
+            fetchrow_results=[no_oauth, new_user_row, winner_recheck]
         )
         db = _make_db(pool)
 

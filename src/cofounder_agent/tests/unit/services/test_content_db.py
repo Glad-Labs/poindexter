@@ -32,10 +32,16 @@ from services.error_handler import DatabaseError
 
 
 def _make_row(**kwargs):
-    """Build a mock asyncpg Record-like object."""
+    """Build a mock asyncpg Record-like object.
+
+    Strict ``__getitem__`` (KeyError on missing key) so production code
+    that reads a column the test didn't set fails loudly instead of
+    silently getting ``None`` and passing — see GH#337.
+    """
     row = MagicMock()
-    row.__getitem__ = lambda self, k: kwargs.get(k)
-    row.get = lambda k, default=None: kwargs.get(k, default)
+    _data = {**kwargs}
+    row.__getitem__ = lambda self, k, _d=_data: _d[k]
+    row.get = lambda k, default=None, _d=_data: _d.get(k, default)
     row.__bool__ = lambda self: True
     return row
 

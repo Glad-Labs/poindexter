@@ -32,15 +32,20 @@ from services.admin_db import AdminDatabase
 
 
 def _make_row(**kwargs):
-    """Create a mock asyncpg Record-like row."""
+    """Create a mock asyncpg Record-like row.
+
+    Strict ``__getitem__`` (KeyError on missing key) so production code
+    that reads a column the test didn't set fails loudly instead of
+    silently getting ``None`` and passing — see GH#337.
+    """
     row = MagicMock()
     _data = {**kwargs}
-    row.__getitem__ = lambda self, k: _data.get(k)
-    row.get = lambda k, default=None: _data.get(k, default)
+    row.__getitem__ = lambda self, k, _d=_data: _d[k]
+    row.get = lambda k, default=None, _d=_data: _d.get(k, default)
     row.__bool__ = lambda self: True
-    row.items = lambda: _data.items()
-    row.keys = lambda: _data.keys()
-    row.values = lambda: _data.values()
+    row.items = lambda _d=_data: _d.items()
+    row.keys = lambda _d=_data: _d.keys()
+    row.values = lambda _d=_data: _d.values()
     return row
 
 

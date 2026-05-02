@@ -38,6 +38,12 @@ _DEFAULT_PHASES = json.dumps(
 
 
 def _make_row(**kwargs):
+    """Build a mock asyncpg Record-like row.
+
+    Strict ``__getitem__`` (KeyError on missing key) so production code
+    that reads a column the test didn't set fails loudly instead of
+    silently getting ``None`` and passing — see GH#337.
+    """
     defaults = {
         "id": "wf-uuid-1",
         "name": "My Workflow",
@@ -51,8 +57,8 @@ def _make_row(**kwargs):
     }
     defaults.update(kwargs)
     row = MagicMock()
-    row.__getitem__ = lambda self, k: defaults.get(k)
-    row.get = lambda k, default=None: defaults.get(k, default)
+    row.__getitem__ = lambda self, k, _d=defaults: _d[k]
+    row.get = lambda k, default=None, _d=defaults: _d.get(k, default)
     row.__bool__ = lambda self: True
     return row
 
@@ -842,6 +848,10 @@ class TestPersistWorkflowExecution:
 
 
 def _make_execution_row(**kwargs):
+    """Build a mock asyncpg Record-like row for workflow_executions.
+
+    Strict ``__getitem__`` (KeyError on missing key) — see GH#337.
+    """
     defaults = {
         "id": "exec-1",
         "workflow_id": "wf-1",
@@ -863,8 +873,8 @@ def _make_execution_row(**kwargs):
     }
     defaults.update(kwargs)
     row = MagicMock()
-    row.__getitem__ = lambda self, k: defaults.get(k)
-    row.get = lambda k, default=None: defaults.get(k, default)
+    row.__getitem__ = lambda self, k, _d=defaults: _d[k]
+    row.get = lambda k, default=None, _d=defaults: _d.get(k, default)
     row.__bool__ = lambda self: True
     return row
 
