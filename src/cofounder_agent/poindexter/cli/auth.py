@@ -20,13 +20,55 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from typing import Any
 
 import click
 
 
+def _read_bootstrap_value(key: str) -> str:
+    """Inline ``~/.poindexter/bootstrap.toml`` reader.
+
+    Vendored locally so we don't depend on ``brain.bootstrap`` — the
+    poindexter CLI is installed via ``pip install poindexter-backend``
+    which only ships ``cofounder_agent``. ``brain`` lives at the repo
+    root and isn't on sys.path for installed CLI invocations, so
+    ``from brain.bootstrap import ...`` fails silently and we fall
+    through to the env-var path. That's exactly what burned the
+    ``poindexter auth migrate-cli`` invocation when an env var was
+    pointing at an unreachable cloud DSN (WinError 121 timeout).
+    """
+    try:
+        if sys.version_info >= (3, 11):
+            import tomllib as _tomllib
+        else:  # pragma: no cover — tomli only on 3.10
+            import tomli as _tomllib  # type: ignore[import-not-found]
+    except Exception:  # noqa: BLE001
+        return ""
+    path = os.path.expanduser("~/.poindexter/bootstrap.toml")
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "rb") as f:
+            data = _tomllib.load(f)
+    except Exception:  # noqa: BLE001
+        return ""
+    return str(data.get(key) or "").strip()
+
+
 def _dsn() -> str:
-    dsn = (
+    """Resolve the DB DSN.
+
+    Order matches the rest of the codebase (CLAUDE.md §Configuration):
+    ``~/.poindexter/bootstrap.toml::database_url`` →
+    POINDEXTER_MEMORY_DSN → LOCAL_DATABASE_URL → DATABASE_URL.
+
+    Previously this skipped bootstrap.toml entirely and read env vars
+    directly — fine on the worker host (which exports nothing), but
+    broke for Matt locally when an env var was left pointing at an
+    unreachable cloud DSN (asyncpg → WinError 121 semaphore timeout).
+    """
+    dsn = _read_bootstrap_value("database_url") or (
         os.getenv("POINDEXTER_MEMORY_DSN")
         or os.getenv("LOCAL_DATABASE_URL")
         or os.getenv("DATABASE_URL")
@@ -34,7 +76,9 @@ def _dsn() -> str:
     )
     if not dsn:
         raise RuntimeError(
-            "No DSN — set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, or DATABASE_URL.",
+            "No DSN — set ~/.poindexter/bootstrap.toml::database_url "
+            "(preferred) or DATABASE_URL / LOCAL_DATABASE_URL / "
+            "POINDEXTER_MEMORY_DSN env var.",
         )
     return dsn
 
@@ -53,16 +97,14 @@ async def _pool():
 def _bootstrap_path_for_secret_key() -> None:
     """Make sure ``POINDEXTER_SECRET_KEY`` is in env before we touch the
     issuer. Bootstrap normally exports it; CLI invocations skip the
-    worker startup path so we read from ``bootstrap.toml`` directly."""
+    worker startup path so we read from ``bootstrap.toml`` directly.
+
+    Uses the same vendored reader as ``_dsn`` — ``brain.bootstrap`` is
+    not on sys.path for installed CLI invocations (see
+    ``_read_bootstrap_value`` for the full why)."""
     if os.getenv("POINDEXTER_SECRET_KEY"):
         return
-    try:
-        # Local import — brain.bootstrap is heavy and only needed when
-        # the env var isn't already populated.
-        from brain.bootstrap import get_bootstrap_value  # type: ignore[import-not-found]
-        key = get_bootstrap_value("poindexter_secret_key", "")
-    except Exception:  # noqa: BLE001
-        key = ""
+    key = _read_bootstrap_value("poindexter_secret_key")
     if key:
         os.environ["POINDEXTER_SECRET_KEY"] = key
 
