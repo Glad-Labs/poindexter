@@ -13,8 +13,15 @@ jobs:
     release-please:
         runs-on: ubuntu-latest
 
-        # Skip version bump commits from the old auto-bump system
-        if: "!contains(github.event.head_commit.message, '[skip ci]')"
+        # Only run on the public Glad-Labs/poindexter repo. The private
+        # glad-labs-stack mirrors this workflow file (sync filter doesn't
+        # strip workflows by default), but we don't want versioning on the
+        # private operator repo — there's nothing to release there, just a
+        # main branch that deploys on every push. The conditional below is
+        # the single source of "release-please runs only on public".
+        if: |
+          github.repository == 'Glad-Labs/poindexter' &&
+          !contains(github.event.head_commit.message, '[skip ci]')
 
         steps:
             - name: "\U0001F4E6 Run Release Please"
@@ -27,5 +34,20 @@ jobs:
                   config-file: release-please-config.json
                   manifest-file: .release-please-manifest.json
 
-            # Version bumps are handled by extra-files in release-please-config.json
-            # GitHub Release + tag is created on main by deploy-production-with-environments.yml
+            # Auto-merge the release PR if branch protection's required
+            # checks all pass. Combined with required test-backend +
+            # migrations-smoke + Mintlify checks, this means: every commit
+            # with a feat:/fix: that lands on public main triggers a
+            # release-please PR within minutes, runs through CI, and
+            # auto-merges → tag + GitHub Release. Zero manual touch.
+            - name: "\U0001F501 Enable auto-merge on the release PR"
+              if: ${{ steps.release.outputs.pr }}
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  pr_number=$(echo '${{ steps.release.outputs.pr }}' | jq -r .number)
+                  echo "Enabling auto-merge on release PR #${pr_number}"
+                  gh pr merge "${pr_number}" --squash --auto --repo "${{ github.repository }}"
+
+            # GitHub Release + tag is created automatically by release-please
+            # itself once the release PR merges.
