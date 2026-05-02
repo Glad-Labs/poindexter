@@ -1,5 +1,27 @@
 /** @type {import('next').NextConfig} */
-import { withSentryConfig } from '@sentry/nextjs';
+// Lazy-import Sentry so the build still works when its module resolution
+// breaks. Background: @sentry/nextjs gets hoisted to root node_modules by
+// npm workspaces, but `next` stays nested in web/public-site/node_modules
+// (because web/storefront also depends on `next`, npm keeps per-workspace
+// copies). When Sentry's `isBuild.js` does `require('next/constants')`,
+// Node's module resolution walks up from the hoisted location and can't
+// find Next — `Cannot find module 'next/constants'`. This crashed every
+// Vercel build between PR #97 (Apr 30) and PR #148 (May 1) — gladlabs.io
+// was stuck on a 3-day-old deploy.
+//
+// Until the hoisting is properly fixed (separate follow-up: bump Sentry
+// to v11+ which supports Next 16, OR add `next` to root devDependencies
+// to force hoist parity), gracefully skip Sentry when it can't load.
+let withSentryConfig = null;
+try {
+  ({ withSentryConfig } = await import('@sentry/nextjs'));
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[next.config] @sentry/nextjs failed to load — building without Sentry wrapping.',
+    err?.message || err,
+  );
+}
 
 // ── Build-time environment validation ──────────────────────────────────────
 // Runs when Next.js boots (`next build` and `next dev`).
@@ -376,7 +398,7 @@ const hasSentryDsn =
   Boolean(process.env.SENTRY_DSN) ||
   Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN);
 
-export default hasSentryDsn
+export default (hasSentryDsn && withSentryConfig)
   ? withSentryConfig(nextConfig, {
       // Suppress Sentry CLI output during builds
       silent: true,
