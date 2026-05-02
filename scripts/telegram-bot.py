@@ -26,6 +26,9 @@ import httpx
 
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
+# `services.*` lives under src/cofounder_agent/ — add that to sys.path
+# so we can import the integrations package without restructuring.
+sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 
 
 def _load_config() -> dict:
@@ -73,6 +76,116 @@ async def send_message(text: str, chat_id: str = ""):
         })
 
 
+# ---------------------------------------------------------------------------
+# /cli passthrough bridge
+# ---------------------------------------------------------------------------
+#
+# The passthrough module (services/integrations/telegram_cli_passthrough.py)
+# expects a SiteConfig-like object with a sync `.get(key, default)`
+# method. The bot already loaded the four /cli telegram_cli_* keys plus
+# telegram_chat_id from app_settings at startup; wrap that dict as a
+# SiteConfig stand-in so we don't have to drag in the full FastAPI DI.
+
+class _BotSiteConfig:
+    """Read-through view over the dict loaded from app_settings.
+
+    Falls back to live DB reads on cache miss so app_settings updates
+    made elsewhere (Grafana, MCP `set_setting`, etc.) take effect on
+    the bot's next /cli call without a restart.
+    """
+
+    def __init__(self, initial: dict[str, str]):
+        self._cache = dict(initial)
+
+    def get(self, key: str, default: str = "") -> str:
+        if key in self._cache:
+            return self._cache.get(key) or default
+        # Lazy DB lookup for keys not in initial seed — best-effort.
+        try:
+            import asyncpg  # noqa: F401  # imported here so a missing dep
+                                          # doesn't break the simple paths
+            from brain.bootstrap import resolve_database_url
+            dsn = os.getenv("DATABASE_URL") or resolve_database_url()
+            if dsn:
+                async def _fetch_one():
+                    conn = await asyncpg.connect(dsn)
+                    try:
+                        return await conn.fetchval(
+                            "SELECT value FROM app_settings WHERE key = $1",
+                            key,
+                        )
+                    finally:
+                        await conn.close()
+
+                value = asyncio.get_event_loop().run_until_complete(_fetch_one())
+                if value is not None:
+                    self._cache[key] = value
+                    return value
+        except Exception:
+            pass
+        return default
+
+
+_PASSTHROUGH_KEYS = (
+    "telegram_chat_id",
+    "telegram_cli_enabled",
+    "telegram_cli_safe_commands",
+    "telegram_cli_max_output_chars",
+    "telegram_cli_timeout_seconds",
+    "telegram_cli_audit_logged",
+)
+
+
+def _load_passthrough_config(initial: dict[str, str]) -> dict[str, str]:
+    """Pull the /cli keys at startup so the first invocation isn't slow."""
+    extra: dict[str, str] = {}
+    try:
+        import asyncpg
+        from brain.bootstrap import resolve_database_url
+        dsn = os.getenv("DATABASE_URL") or resolve_database_url()
+        if not dsn:
+            return extra
+
+        async def _fetch():
+            conn = await asyncpg.connect(dsn)
+            try:
+                rows = await conn.fetch(
+                    "SELECT key, value FROM app_settings WHERE key = ANY($1::text[])",
+                    list(_PASSTHROUGH_KEYS),
+                )
+                return {r["key"]: r["value"] for r in rows}
+            finally:
+                await conn.close()
+
+        extra = asyncio.run(_fetch())
+    except Exception as e:
+        print(f"[CLI] Could not preload passthrough settings: {e}")
+    return extra
+
+
+_passthrough_extra = _load_passthrough_config(_cfg)
+_BOT_SITE_CONFIG = _BotSiteConfig({**_cfg, **_passthrough_extra})
+
+
+async def _maybe_handle_cli(text: str, chat_id: str) -> str | None:
+    """Route /cli messages to the passthrough; return reply text or None."""
+    try:
+        from services.integrations.telegram_cli_passthrough import handle_cli_message
+    except Exception as e:
+        print(f"[CLI] Passthrough import failed: {e}")
+        return None
+
+    reply = await handle_cli_message(
+        text,
+        chat_id,
+        site_config=_BOT_SITE_CONFIG,
+        # No audit_logger from this standalone script; the worker can
+        # wire one in if it ever embeds the passthrough directly.
+        audit_logger=None,
+    )
+    return reply.text if reply is not None else None
+
+
 async def api_call(method: str, path: str, json_data: dict | None = None) -> dict:
     """Make an authenticated API call to the Poindexter worker."""
     async with httpx.AsyncClient(timeout=30) as client:
@@ -89,6 +202,16 @@ async def api_call(method: str, path: str, json_data: dict | None = None) -> dic
 
 async def handle_command(text: str, chat_id: str):
     """Process a command and send the response."""
+    # /cli <args> passthrough — runs the full poindexter CLI surface.
+    # Routed BEFORE the legacy slash-command dispatch so a future
+    # `/cli` overlap with a one-off command can't be accidentally
+    # shadowed. The passthrough returns None for non-/cli messages so
+    # this is a safe early-exit.
+    cli_reply = await _maybe_handle_cli(text, chat_id)
+    if cli_reply is not None:
+        await send_message(cli_reply, chat_id)
+        return
+
     parts = text.strip().split()
     cmd = parts[0].lower().replace("@", "").split("@")[0]
     args = parts[1:]
@@ -166,7 +289,8 @@ async def handle_command(text: str, chat_id: str):
             "/approve ID — publish a post\n"
             "/reject ID reason — reject a post\n"
             "/stats — pipeline stats (24h)\n"
-            "/publish topic — queue a new topic\n",
+            "/publish topic — queue a new topic\n"
+            "/cli <args> — run any poindexter CLI command (allowlisted)\n",
             chat_id,
         )
 
