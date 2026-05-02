@@ -714,6 +714,189 @@ def migrate_openclaw(name: str, scopes: str) -> None:
     _run(_impl())
 
 
+@auth_group.command("mint-grafana-token")
+@click.option(
+    "--ttl",
+    "ttl_str",
+    default="90d",
+    show_default=True,
+    help=(
+        "Token lifetime — accepts <int>{s|m|h|d}. The MCP/CLI tokens use "
+        "the 60-min default; Grafana's contact-point UI is operator-pasted "
+        "and the rotation cadence is human-scale, so 90 days is a sensible "
+        "default. Cap at 365d to keep blast-radius bounded."
+    ),
+)
+@click.option(
+    "--scopes",
+    default="api:read api:write",
+    show_default=True,
+    help=(
+        "Space-delimited subset of {api:read, api:write, mcp:read, mcp:write}. "
+        "Default covers the alertmanager webhook (which writes to "
+        "alert_events + dispatches to operator notify); narrow to "
+        "'api:read' if you wire Grafana up to a read-only endpoint."
+    ),
+)
+@click.option(
+    "--name",
+    default="grafana-alerts",
+    show_default=True,
+    help="Client display name (shown in `poindexter auth list-clients`).",
+)
+def mint_grafana_token(ttl_str: str, scopes: str, name: str) -> None:
+    """Mint a long-TTL JWT for Grafana contact-point webhooks (#247).
+
+    Pre-issued long-TTL JWT (option B from the #247 issue) — Grafana's
+    own OAuth contact-point flow is fragile across versions, and the
+    operator pastes the token into the contact-point UI exactly once
+    per rotation. See ``docs/operations/oauth-grafana.md`` for the full
+    paste-into-Grafana walkthrough.
+
+    Idempotent in the sense that re-running mints a *new* JWT bound to
+    the same ``grafana-alerts`` client. The previous JWT keeps verifying
+    until its own ``exp`` elapses (or you ``revoke-client`` the underlying
+    OAuth client to invalidate everything bound to it on the next mint
+    cycle — outstanding JWTs continue verifying until they expire,
+    which is exactly the trade-off documented for #241).
+
+    First call provisions the OAuth client + persists encrypted creds to
+    ``app_settings.grafana_oauth_client_id`` / ``_client_secret``. Subsequent
+    calls reuse those creds.
+    """
+    _bootstrap_path_for_secret_key()
+
+    ttl_seconds = _parse_ttl(ttl_str)
+    if ttl_seconds < 60:
+        raise click.UsageError(
+            "--ttl must be at least 60 seconds (a token shorter than the "
+            "default 60s skew on consumers would mint expired tokens)"
+        )
+    if ttl_seconds > 365 * 24 * 3600:
+        raise click.UsageError(
+            "--ttl capped at 365d. If you need a longer-lived credential, "
+            "rotate at this cadence — anything longer is a code smell."
+        )
+
+    scope_list = [s.strip() for s in scopes.split() if s.strip()]
+    if not scope_list:
+        raise click.UsageError("--scopes must list at least one scope")
+
+    GRAFANA_CLIENT_ID_KEY = "grafana_oauth_client_id"
+    GRAFANA_CLIENT_SECRET_KEY = "grafana_oauth_client_secret"
+
+    async def _impl():
+        from plugins.secrets import get_secret
+        from services.auth.oauth_issuer import (
+            InvalidScope,
+            issue_token,
+        )
+
+        pool = await _pool()
+        try:
+            async with pool.acquire() as conn:
+                client_id = await get_secret(conn, GRAFANA_CLIENT_ID_KEY)
+
+            if not client_id:
+                # First mint — provision the client.
+                client_id, _client_secret = await _provision_consumer_client(
+                    name=name,
+                    scopes=scope_list,
+                    client_id_setting_key=GRAFANA_CLIENT_ID_KEY,
+                    client_secret_setting_key=GRAFANA_CLIENT_SECRET_KEY,
+                )
+                provisioned_now = True
+            else:
+                provisioned_now = False
+
+            # Mint the JWT. Note: we issue directly (skipping the HTTP
+            # /token round trip) because the CLI already has DB access
+            # and the issuer is synchronous. Same shape as ``mint-token``.
+            try:
+                token, claims = issue_token(
+                    client_id, scope_list, ttl_seconds=ttl_seconds,
+                )
+            except InvalidScope as e:
+                raise click.ClickException(str(e)) from e
+        finally:
+            await pool.close()
+
+        click.echo("")
+        if provisioned_now:
+            click.echo(click.style(
+                "Grafana OAuth client provisioned + token minted.",
+                fg="green", bold=True,
+            ))
+        else:
+            click.echo(click.style(
+                "Token minted for existing Grafana OAuth client.",
+                fg="green", bold=True,
+            ))
+        click.echo(f"  client_id:   {client_id}")
+        click.echo(f"  scopes:      {' '.join(sorted(claims.scopes))}")
+        click.echo(f"  ttl:         {ttl_str} ({ttl_seconds}s)")
+        click.echo(
+            f"  expires_at:  {claims.expires_at} "
+            f"(epoch — {_format_epoch(claims.expires_at)})"
+        )
+        click.echo(f"  jti:         {claims.jti}")
+        click.echo("")
+        click.echo("Token (paste into Grafana contact-point Authorization Header):")
+        click.echo("")
+        click.echo(token)
+        click.echo("")
+        click.echo(click.style(
+            "  Capture the token NOW — it is not recoverable from the DB.",
+            fg="yellow",
+        ))
+        click.echo("")
+        click.echo(
+            "Walkthrough: see docs/operations/oauth-grafana.md for where to "
+            "paste in Grafana's contact-point UI."
+        )
+
+    _run(_impl())
+
+
+def _parse_ttl(s: str) -> int:
+    """Parse a TTL string like '90d', '60m', '3600' into seconds.
+
+    Bare integers count as seconds (matches the ``--ttl 3600`` legacy
+    pattern). Suffixes ``s|m|h|d`` are case-insensitive.
+    """
+    s = s.strip().lower()
+    if not s:
+        raise click.UsageError("--ttl is required")
+    multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    if s[-1] in multipliers:
+        try:
+            n = int(s[:-1])
+        except ValueError as e:
+            raise click.UsageError(
+                f"--ttl: cannot parse '{s}' as <int>{{s|m|h|d}}"
+            ) from e
+        return n * multipliers[s[-1]]
+    try:
+        return int(s)
+    except ValueError as e:
+        raise click.UsageError(
+            f"--ttl: cannot parse '{s}' as integer-of-seconds or "
+            "<int>{s|m|h|d}"
+        ) from e
+
+
+def _format_epoch(epoch_seconds: int) -> str:
+    """Format a unix epoch as ``YYYY-MM-DD HH:MM UTC``. Best-effort —
+    if the value is wildly out of range we fall back to repr."""
+    import datetime as _dt
+    try:
+        return _dt.datetime.fromtimestamp(
+            epoch_seconds, tz=_dt.timezone.utc,
+        ).strftime("%Y-%m-%d %H:%M UTC")
+    except (OverflowError, OSError, ValueError):
+        return repr(epoch_seconds)
+
+
 @auth_group.command("migrate-brain")
 @click.option(
     "--name",

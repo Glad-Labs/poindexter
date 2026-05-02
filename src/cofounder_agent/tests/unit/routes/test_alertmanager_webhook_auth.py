@@ -12,6 +12,10 @@ Covers:
 - Empty token in app_settings → 503 (fail-closed, misconfigured install)
 - Uses ``hmac.compare_digest`` — timing-safe comparison (sanity check
   that we imported hmac, not just ==)
+- OAuth JWT (Glad-Labs/poindexter#247) — verified via
+  ``services.auth.oauth_issuer`` when token shape matches; rejected
+  401 when JWT is bad; falls through to static-Bearer when token
+  doesn't look like a JWT.
 """
 
 from __future__ import annotations
@@ -138,3 +142,103 @@ class TestImplementationDetails:
         from routes import alertmanager_webhook_routes as mod
         source = __import__("inspect").getsource(mod.verify_alertmanager_token)
         assert "compare_digest" in source
+
+
+class TestOAuthJWT:
+    """Glad-Labs/poindexter#247 — OAuth JWT path on the alertmanager webhook.
+
+    Three branches:
+
+    - JWT-shaped + verifies → 200 (no static-Bearer round trip).
+    - JWT-shaped + verify raises ``InvalidToken`` → 401, no fall-through
+      (a malformed JWT is a real auth failure, not "give them another
+      chance with the static path").
+    - Not-JWT-shaped → fall through to static-Bearer. Already covered by
+      ``TestBearerTokenAuth`` against pre-existing behaviour, but
+      regress-tested here against the new dispatch order.
+    """
+
+    def test_valid_jwt_passes_without_touching_static_token(self):
+        """A valid JWT short-circuits before ``get_secret`` is called —
+        we patch ``get_secret`` to raise so a successful 200 means the
+        JWT path returned without falling through."""
+        client = _build_app()
+
+        async def _boom(*_args, **_kwargs):
+            raise AssertionError(
+                "get_secret should not be called when JWT verifies"
+            )
+
+        # JWT shape is "header.payload.signature" — three non-empty
+        # base64url segments. Real verification is mocked.
+        jwt_token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.fake-sig"
+
+        with patch(
+            "plugins.secrets.get_secret",
+            new=AsyncMock(side_effect=_boom),
+        ), patch(
+            "services.auth.oauth_issuer.verify_token",
+            return_value=AsyncMock(),
+        ), patch(
+            "routes.alertmanager_webhook_routes._ensure_table",
+            new=AsyncMock(return_value=None),
+        ):
+            resp = client.post(
+                "/api/webhooks/alertmanager",
+                json={"alerts": []},
+                headers={"Authorization": f"Bearer {jwt_token}"},
+            )
+        assert resp.status_code == 200, resp.text
+
+    def test_invalid_jwt_returns_401_without_static_fallthrough(self):
+        """A JWT-shaped token that fails verification must NOT fall
+        through to the static-Bearer path. That would let an attacker
+        try a malformed JWT, get rejected, and immediately retry the
+        static credentials in the same request — which is silly, but
+        also semantically wrong: a JWT-shaped payload is an OAuth
+        client claim and a failed verify is a real auth failure."""
+        from services.auth.oauth_issuer import InvalidToken
+
+        client = _build_app()
+
+        async def _boom(*_args, **_kwargs):
+            raise AssertionError(
+                "static-Bearer path must not run after a JWT verify failure"
+            )
+
+        jwt_token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.fake"
+
+        with patch(
+            "plugins.secrets.get_secret",
+            new=AsyncMock(side_effect=_boom),
+        ), patch(
+            "services.auth.oauth_issuer.verify_token",
+            side_effect=InvalidToken("bad signature"),
+        ):
+            resp = client.post(
+                "/api/webhooks/alertmanager",
+                json={"alerts": []},
+                headers={"Authorization": f"Bearer {jwt_token}"},
+            )
+        assert resp.status_code == 401
+        # WWW-Authenticate hint per RFC 6750 §3.
+        assert "Bearer" in resp.headers.get("WWW-Authenticate", "")
+
+    def test_non_jwt_token_falls_through_to_static_path(self):
+        """A 32-char static-Bearer token doesn't look like a JWT
+        (no dots) and must take the legacy ``app_settings`` path."""
+        client = _build_app()
+
+        with patch(
+            "plugins.secrets.get_secret",
+            new=AsyncMock(return_value="legacy-static-token-abc123"),
+        ), patch(
+            "routes.alertmanager_webhook_routes._ensure_table",
+            new=AsyncMock(return_value=None),
+        ):
+            resp = client.post(
+                "/api/webhooks/alertmanager",
+                json={"alerts": []},
+                headers={"Authorization": "Bearer legacy-static-token-abc123"},
+            )
+        assert resp.status_code == 200, resp.text

@@ -21,14 +21,26 @@ can read ``alert_events`` directly via DB since it shares the pool.
 
 ## Authentication
 
-Bearer token via ``Authorization: Bearer <token>`` header. The token
-is stored in ``app_settings.alertmanager_webhook_token`` (is_secret=true,
-encrypted at rest). Alertmanager injects it via ``http_config.bearer_token``
-in its routing config.
+Bearer token via ``Authorization: Bearer <token>`` header. Two token
+shapes are accepted (Glad-Labs/poindexter#247):
 
-If the token row is empty OR missing, the endpoint rejects every
-request with 503 — fail-closed, so a misconfigured install can't
-silently accept unsigned webhooks. Tests override the dependency.
+1. **OAuth JWT** issued by ``services.auth.oauth_issuer`` — typically a
+   long-TTL token (e.g. 90 days) minted via
+   ``poindexter auth mint-grafana-token``. Verified by signature +
+   expiry + issuer. Pasted into the Grafana contact-point UI by the
+   operator (Grafana's contact-point OAuth flow is fragile, so a
+   pre-issued long-TTL JWT — option B in #247 — is the ergonomic
+   choice).
+2. **Static Bearer** — the legacy ``app_settings.alertmanager_webhook_token``.
+   Kept for the Phase 2 migration window so existing Alertmanager
+   configs keep working until Phase 3 (#249) retires it.
+
+Dispatch order: tokens with three dot-separated segments go through
+JWT verify first; everything else falls through to the static path.
+If neither path is configured AND the submitted token isn't a valid
+JWT, the endpoint rejects with 503 — fail-closed, so a misconfigured
+install can't silently accept unsigned webhooks. Tests override the
+dependency.
 """
 
 from __future__ import annotations
@@ -53,22 +65,37 @@ router = APIRouter(prefix="/api/webhooks", tags=["alertmanager"])
 # ---------------------------------------------------------------------------
 
 
+def _looks_like_jwt(token: str) -> bool:
+    """Cheap shape check — three non-empty base64url segments joined by '.'.
+
+    Lets us skip the JWT verify path for legacy 32-char static tokens
+    without paying for an inevitable failed signature check.
+    """
+    parts = token.split(".")
+    return len(parts) == 3 and all(parts)
+
+
 async def verify_alertmanager_token(
     authorization: str | None = Header(default=None),
     db: Any = Depends(get_database_dependency),
 ) -> None:
-    """Reject the webhook unless the Authorization header carries the
-    bearer token stored in ``app_settings.alertmanager_webhook_token``.
+    """Reject the webhook unless the Authorization header carries either
+    a valid OAuth JWT (Glad-Labs/poindexter#247) or the legacy bearer
+    token stored in ``app_settings.alertmanager_webhook_token``.
 
-    Fail-closed semantics:
-    - Missing header -> 401
-    - Malformed header (no ``Bearer `` prefix) -> 401
-    - Empty or unset token in app_settings -> 503 (server misconfigured)
-    - Token mismatch -> 401
+    Dispatch:
+    - Token shaped like a JWT (three dot segments) → verify via
+      ``services.auth.oauth_issuer.verify_token``. Pass = 200.
+    - Token doesn't look like a JWT, OR JWT verification raises
+      ``InvalidToken`` → fall through to the static-Bearer path.
+    - Neither path configured AND the JWT path didn't accept → 503
+      (fail-closed, server misconfigured).
+    - Static token mismatch → 401.
 
-    The token is stored ``is_secret=true`` so it's encrypted at rest;
-    ``plugins.secrets.get_secret`` transparently decrypts. ``hmac.compare_digest``
-    is used for the comparison to avoid timing side channels.
+    The static token is stored ``is_secret=true`` so it's encrypted at
+    rest; ``plugins.secrets.get_secret`` transparently decrypts.
+    ``hmac.compare_digest`` is used for the static comparison to avoid
+    timing side channels.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -76,6 +103,37 @@ async def verify_alertmanager_token(
             detail="alertmanager webhook requires Bearer token",
         )
     submitted = authorization[len("Bearer "):].strip()
+
+    # OAuth JWT path. Tokens minted via `poindexter auth mint-grafana-token`
+    # land here. We verify but don't enforce a particular client_id —
+    # any valid JWT issued by this Poindexter is accepted, since the
+    # operator is the one wiring it into Grafana's contact-point config.
+    # Scope enforcement could be added later if more clients start
+    # speaking to this endpoint.
+    if _looks_like_jwt(submitted):
+        try:
+            from services.auth.oauth_issuer import verify_token, InvalidToken
+            try:
+                verify_token(submitted)
+                return  # OAuth JWT accepted.
+            except InvalidToken as e:
+                logger.warning("alertmanager webhook: OAuth JWT rejected: %s", e)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"invalid_token: {e}",
+                    headers={
+                        "WWW-Authenticate": 'Bearer error="invalid_token"',
+                    },
+                ) from e
+        except HTTPException:
+            raise
+        except Exception:  # noqa: BLE001
+            # Issuer module unavailable (minimal-app test, etc.) — fall
+            # through to the static path.
+            logger.debug(
+                "alertmanager webhook: oauth_issuer unavailable; "
+                "falling back to static-Bearer comparison"
+            )
 
     from plugins.secrets import get_secret
     async with db.pool.acquire() as conn:
