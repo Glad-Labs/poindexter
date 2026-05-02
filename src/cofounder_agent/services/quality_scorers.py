@@ -159,21 +159,16 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
         score += 0.5
 
     # Voice violation: penalize first-person claims about building/creating things.
-    # Niche-level escape hatch (2026-05-02 voice-policy update): the
-    # ``dev_diary`` niche explicitly allows first-person — that's the
-    # whole point of build-in-public posts. The bypass list lives in
-    # ``app_settings.qa_allow_first_person_niches`` (CSV of niche slugs)
-    # so future niches can opt in without a code change.
-    _post_niche = (context.get("niche") or context.get("category") or "")
-    _post_niche = str(_post_niche).strip().lower()
-    _allow_first_person = False
-    if _post_niche:
-        _allowed_csv = _sc.get("qa_allow_first_person_niches", "")
-        if _allowed_csv:
-            _allowed = {s.strip().lower() for s in str(_allowed_csv).split(",") if s.strip()}
-            _allow_first_person = _post_niche in _allowed
+    # Niche scoping + per-rule disable now lives in the `content_validator_rules`
+    # table (migration 0135). The legacy CSV `qa_allow_first_person_niches` is
+    # still honored inside `is_validator_enabled` for backwards compatibility
+    # with PR #160.
+    from services.validator_config import is_validator_enabled
 
-    if not _allow_first_person:
+    _post_niche = (context.get("niche") or context.get("category") or "")
+    _post_niche = str(_post_niche).strip().lower() or None
+
+    if is_validator_enabled("first_person_claims", niche=_post_niche):
         first_person_claims = len(re.findall(
             r"\b(?:I|we)\s+(?:built|created|developed|designed|made|launched|shipped|released|wrote)\b",
             content, re.IGNORECASE,
@@ -184,18 +179,19 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
                 cfg["accuracy_first_person_max"],
             )
 
-    # Meta-commentary penalty
-    meta_commentary = len(re.findall(
-        r"\b(?:this\s+(?:post|article|blog|piece)\s+(?:explores?|examines?|discusses?|looks\s+at|covers?|delves?))"
-        r"|\b(?:in\s+this\s+(?:post|article|blog|piece))"
-        r"|\b(?:(?:we.ll|let.s|we\s+will)\s+(?:explore|discuss|examine|look\s+at|dive\s+into))",
-        content, re.IGNORECASE,
-    ))
-    if meta_commentary > 0:
-        score -= min(
-            meta_commentary * cfg["accuracy_meta_commentary_penalty"],
-            cfg["accuracy_meta_commentary_max"],
-        )
+    # Meta-commentary penalty — same DB-driven gate.
+    if is_validator_enabled("meta_commentary", niche=_post_niche):
+        meta_commentary = len(re.findall(
+            r"\b(?:this\s+(?:post|article|blog|piece)\s+(?:explores?|examines?|discusses?|looks\s+at|covers?|delves?))"
+            r"|\b(?:in\s+this\s+(?:post|article|blog|piece))"
+            r"|\b(?:(?:we.ll|let.s|we\s+will)\s+(?:explore|discuss|examine|look\s+at|dive\s+into))",
+            content, re.IGNORECASE,
+        ))
+        if meta_commentary > 0:
+            score -= min(
+                meta_commentary * cfg["accuracy_meta_commentary_penalty"],
+                cfg["accuracy_meta_commentary_max"],
+            )
 
     return min(max(score, 0.0), 10.0)
 

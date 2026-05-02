@@ -905,6 +905,7 @@ def validate_content(
     content: str,
     topic: str = "",
     tags: list[str] | None = None,
+    niche: str | None = None,
 ) -> ValidationResult:
     """
     Validate content against hard quality rules.
@@ -917,7 +918,21 @@ def validate_content(
     topic-mismatched library mentions (e.g. recommending CadQuery from
     an ai-ml post). Omitting tags keeps the rule working but with a
     weaker fallback based on the topic/title text.
+
+    niche (Validators CRUD V1, migration 0135): optional niche slug for
+    the post. When provided, fine-grained rules in
+    ``content_validator_rules`` whose ``applies_to_niches`` excludes
+    this niche are skipped. Backwards compatible -- omitting it falls
+    through to "no niche scoping" so all enabled rules still run.
     """
+    # Per-rule DB-driven enable/scope checks. Imported lazily so module
+    # load doesn't pull in asyncpg for callers (tests, scripts) that
+    # never reach validate_content().
+    from services.validator_config import is_validator_enabled
+
+    def _enabled(rule_name: str) -> bool:
+        return is_validator_enabled(rule_name, niche=niche)
+
     issues: list[ValidationIssue] = []
     title = title or ""
     content = content or ""
@@ -926,55 +941,62 @@ def validate_content(
     full_text = f"{title}\n{content}"
 
     # 1. Check for fabricated people
-    issues.extend(_check_patterns(
-        full_text, FAKE_NAME_PATTERNS, "critical", "fake_person",
-        "Fabricated person detected: '{matched}'"
-    ))
+    if _enabled("fake_person"):
+        issues.extend(_check_patterns(
+            full_text, FAKE_NAME_PATTERNS, "critical", "fake_person",
+            "Fabricated person detected: '{matched}'"
+        ))
 
     # 2. Check for fabricated statistics.
     # Matt 2026-04-11: "A fabrication is a fail, I can't be lying to the
     # audience. That kills brand credibility." Every fabrication
-    # category is CRITICAL now — any match blocks approval. There is no
+    # category is CRITICAL now -- any match blocks approval. There is no
     # "probably fake" middle ground when the consequence is publishing
     # a lie under your byline.
-    issues.extend(_check_patterns(
-        full_text, FAKE_STAT_PATTERNS, "critical", "fake_stat",
-        "Fabricated statistic: '{matched}'"
-    ))
+    if _enabled("fake_stat"):
+        issues.extend(_check_patterns(
+            full_text, FAKE_STAT_PATTERNS, "critical", "fake_stat",
+            "Fabricated statistic: '{matched}'"
+        ))
 
     # 3. Check for impossible company claims
-    issues.extend(_check_patterns(
-        full_text, GLAD_LABS_IMPOSSIBLE, "critical", "glad_labs_claim",
-        f"Impossible claim about {_COMPANY_NAME}: " + "'{matched}'"
-    ))
+    if _enabled("glad_labs_claim"):
+        issues.extend(_check_patterns(
+            full_text, GLAD_LABS_IMPOSSIBLE, "critical", "glad_labs_claim",
+            f"Impossible claim about {_COMPANY_NAME}: " + "'{matched}'"
+        ))
 
     # 4. Check for fabricated quotes
-    issues.extend(_check_patterns(
-        full_text, FAKE_QUOTE_PATTERNS, "critical", "fake_quote",
-        "Fabricated quote detected: '{matched}'"
-    ))
+    if _enabled("fake_quote"):
+        issues.extend(_check_patterns(
+            full_text, FAKE_QUOTE_PATTERNS, "critical", "fake_quote",
+            "Fabricated quote detected: '{matched}'"
+        ))
 
     # 4b. Check for fabricated personal experiences (AI pretending to be
-    # human). Promoted to critical — a fake anecdote is the same class
+    # human). Promoted to critical -- a fake anecdote is the same class
     # of lie as a fake stat.
-    issues.extend(_check_patterns(
-        full_text, FABRICATED_EXPERIENCE_PATTERNS, "critical", "fabricated_experience",
-        "Fabricated personal experience: '{matched}'"
-    ))
+    if _enabled("fabricated_experience"):
+        issues.extend(_check_patterns(
+            full_text, FABRICATED_EXPERIENCE_PATTERNS, "critical", "fabricated_experience",
+            "Fabricated personal experience: '{matched}'"
+        ))
 
-    # 5. Check for hallucinated internal links. Promoted to critical —
+    # 5. Check for hallucinated internal links. Promoted to critical --
     # a link that looks valid but leads nowhere is functionally a lie
     # to the reader.
-    issues.extend(_check_patterns(
-        full_text, HALLUCINATED_LINK_PATTERNS, "critical", "hallucinated_link",
-        "Hallucinated internal link: '{matched}'"
-    ))
+    if _enabled("hallucinated_link"):
+        issues.extend(_check_patterns(
+            full_text, HALLUCINATED_LINK_PATTERNS, "critical", "hallucinated_link",
+            "Hallucinated internal link: '{matched}'"
+        ))
 
     # 5b. Check for unlinked citations (hallucinated paper/study references)
-    issues.extend(_check_patterns(
-        full_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
-        "Unlinked citation — possible hallucinated reference: '{matched}'"
-    ))
+    if _enabled("unlinked_citation"):
+        issues.extend(_check_patterns(
+            full_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
+            "Unlinked citation -- possible hallucinated reference: '{matched}'"
+        ))
 
     # 5c. Hallucinated library/API reference detection (GH-83 part b).
     # Catches `schedule_callback(event)`-style fake asyncio functions and
@@ -982,183 +1004,196 @@ def validate_content(
     # Emitted as warnings; the per-rule threshold promotion below escalates
     # to critical if the same category fires > N times (same plumbing as
     # #91's unlinked_citation path).
-    issues.extend(_detect_hallucinated_references(title, content, topic, tags))
+    if _enabled("hallucinated_reference"):
+        issues.extend(_detect_hallucinated_references(title, content, topic, tags))
 
-    # 5d. Code-block density (GH-234). Soft signal — tech-tagged posts
+    # 5d. Code-block density (GH-234). Soft signal -- tech-tagged posts
     # with too little runnable code get a warning (never critical) so
     # the human approver in multi_model_qa can decide whether the post
     # legitimately doesn't need code (architecture overview, postmortem)
     # or whether the writer surface-summarized a topic that needed
     # demonstration. Tag list + thresholds are DB-tunable.
-    issues.extend(_check_code_block_density(content, topic, tags))
+    if _enabled("code_block_density"):
+        issues.extend(_check_code_block_density(content, topic, tags))
 
     # 6. Check for brand contradictions (promoting paid cloud APIs)
-    issues.extend(_check_patterns(
-        full_text, BRAND_CONTRADICTION_PATTERNS, "warning", "brand_contradiction",
-        "Brand contradiction — references paid cloud API: '{matched}'"
-    ))
+    if _enabled("brand_contradiction"):
+        issues.extend(_check_patterns(
+            full_text, BRAND_CONTRADICTION_PATTERNS, "warning", "brand_contradiction",
+            "Brand contradiction -- references paid cloud API: '{matched}'"
+        ))
 
     # 7. Check for leaked image generation prompts
-    issues.extend(_check_patterns(
-        full_text, LEAKED_IMAGE_PROMPT_PATTERNS, "warning", "leaked_image_prompt",
-        "Leaked image generation prompt in content: '{matched}'"
-    ))
+    if _enabled("leaked_image_prompt"):
+        issues.extend(_check_patterns(
+            full_text, LEAKED_IMAGE_PROMPT_PATTERNS, "warning", "leaked_image_prompt",
+            "Leaked image generation prompt in content: '{matched}'"
+        ))
 
     # 7b. Check for LLM image placeholder artifacts ([IMAGE-1: ...], [FIGURE: ...], etc.)
-    issues.extend(_check_patterns(
-        full_text, IMAGE_PLACEHOLDER_PATTERNS, "critical", "image_placeholder",
-        "LLM image placeholder left in content: '{matched}'"
-    ))
+    if _enabled("image_placeholder"):
+        issues.extend(_check_patterns(
+            full_text, IMAGE_PLACEHOLDER_PATTERNS, "critical", "image_placeholder",
+            "LLM image placeholder left in content: '{matched}'"
+        ))
 
-    # 7c. Known-wrong facts — loaded from DB (fact_overrides table).
+    # 7c. Known-wrong facts -- loaded from DB (fact_overrides table).
     # Each row has its own explanation so the rewrite prompt carries the
     # correction, not just "you lied". Manageable via pgAdmin, no redeploy.
-    _fact_overrides = _load_fact_overrides_sync()
-    clean_full = _strip_html(full_text)
-    for _hw_pat, _hw_reason, _hw_sev in _fact_overrides:
-        for _hw_line_idx, _hw_line in enumerate(clean_full.split("\n"), 1):
-            for _hw_match in re.finditer(_hw_pat, _hw_line, re.IGNORECASE):
-                issues.append(ValidationIssue(
-                    severity=_hw_sev,
-                    category="known_wrong_fact",
-                    description=f"{_hw_reason} Matched: '{_hw_match.group(0)[:80]}'",
-                    matched_text=_hw_match.group(0)[:100],
-                    line_number=_hw_line_idx,
-                ))
+    if _enabled("known_wrong_fact"):
+        _fact_overrides = _load_fact_overrides_sync()
+        clean_full = _strip_html(full_text)
+        for _hw_pat, _hw_reason, _hw_sev in _fact_overrides:
+            for _hw_line_idx, _hw_line in enumerate(clean_full.split("\n"), 1):
+                for _hw_match in re.finditer(_hw_pat, _hw_line, re.IGNORECASE):
+                    issues.append(ValidationIssue(
+                        severity=_hw_sev,
+                        category="known_wrong_fact",
+                        description=f"{_hw_reason} Matched: '{_hw_match.group(0)[:80]}'",
+                        matched_text=_hw_match.group(0)[:100],
+                        line_number=_hw_line_idx,
+                    ))
 
-    # 7c-bis. Removed 2026-05-01 — first-person title gate killed (see
+    # 7c-bis. Removed 2026-05-01 -- first-person title gate killed (see
     # FIRST_PERSON_TITLE_PATTERNS removal note at module top for context).
 
-    # 7d. Filler phrases — "many organizations have found...", "the journey
+    # 7d. Filler phrases -- "many organizations have found...", "the journey
     # is rewarding", etc. Warning level, score penalty only.
-    issues.extend(_check_patterns(
-        full_text, FILLER_PHRASE_PATTERNS, "warning", "filler_phrase",
-        "Filler phrase: '{matched}' — replace with a specific, concrete claim"
-    ))
+    if _enabled("filler_phrase"):
+        issues.extend(_check_patterns(
+            full_text, FILLER_PHRASE_PATTERNS, "warning", "filler_phrase",
+            "Filler phrase: '{matched}' -- replace with a specific, concrete claim"
+        ))
 
     # 8. Check title for impossible claims (numeric and written-out years)
-    WRITTEN_YEARS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
-    for word, num in WRITTEN_YEARS.items():
-        if re.search(rf"\b{word}\s+years?\b", title, re.IGNORECASE) and num > 1:
-            issues.append(ValidationIssue(
-                severity="critical", category="glad_labs_claim",
-                description=f"Title claims {word} years — {_COMPANY_NAME} is {GLAD_LABS_FACTS['age_months']} months old",
-                matched_text=title,
-            ))
-    if re.search(r"\d+\s*years?", title, re.IGNORECASE):
-        match = re.search(r"(\d+)\s*years?", title, re.IGNORECASE)
-        years = int(match.group(1)) if match else 0
-        if years > 1:
-            issues.append(ValidationIssue(
-                severity="critical",
-                category="glad_labs_claim",
-                description=f"Title claims {years} years — {_COMPANY_NAME} is {GLAD_LABS_FACTS['age_months']} months old",
-                matched_text=title,
-            ))
+    if _enabled("title_year_claim"):
+        WRITTEN_YEARS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+        for word, num in WRITTEN_YEARS.items():
+            if re.search(rf"\b{word}\s+years?\b", title, re.IGNORECASE) and num > 1:
+                issues.append(ValidationIssue(
+                    severity="critical", category="glad_labs_claim",
+                    description=f"Title claims {word} years -- {_COMPANY_NAME} is {GLAD_LABS_FACTS['age_months']} months old",
+                    matched_text=title,
+                ))
+        if re.search(r"\d+\s*years?", title, re.IGNORECASE):
+            match = re.search(r"(\d+)\s*years?", title, re.IGNORECASE)
+            years = int(match.group(1)) if match else 0
+            if years > 1:
+                issues.append(ValidationIssue(
+                    severity="critical",
+                    category="glad_labs_claim",
+                    description=f"Title claims {years} years -- {_COMPANY_NAME} is {GLAD_LABS_FACTS['age_months']} months old",
+                    matched_text=title,
+                ))
 
     # 8b. Structural banned headers — the prompts already tell the LLM not to
     # use generic section titles like "## Introduction" / "## Conclusion", but
     # some models ignore the rule. This is a warning (not critical): the post
     # is readable, but the score drops so the model learns the pattern over
     # time and we prefer regenerating when it happens.
-    BANNED_HEADER_WORDS = {
-        "introduction",
-        "conclusion",
-        "summary",
-        "background",
-        "overview",
-        "final thoughts",
-        "wrap-up",
-        "wrap up",
-        "the end",
-    }
-    for m in re.finditer(r"^#{2,3}\s+(.+?)\s*$", content, re.MULTILINE):
-        heading = m.group(1).strip().lower().rstrip(":")
-        if heading in BANNED_HEADER_WORDS:
-            issues.append(ValidationIssue(
-                severity="warning",
-                category="banned_header",
-                description=f"Generic section title: '{m.group(1).strip()}' — use a creative, benefit-focused heading instead",
-                matched_text=m.group(0)[:80],
-            ))
+    if _enabled("banned_header"):
+        BANNED_HEADER_WORDS = {
+            "introduction",
+            "conclusion",
+            "summary",
+            "background",
+            "overview",
+            "final thoughts",
+            "wrap-up",
+            "wrap up",
+            "the end",
+        }
+        for m in re.finditer(r"^#{2,3}\s+(.+?)\s*$", content, re.MULTILINE):
+            heading = m.group(1).strip().lower().rstrip(":")
+            if heading in BANNED_HEADER_WORDS:
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    category="banned_header",
+                    description=f"Generic section title: '{m.group(1).strip()}' — use a creative, benefit-focused heading instead",
+                    matched_text=m.group(0)[:80],
+                ))
 
     # 8c. "In this post/article/guide" intros — a common LLM crutch the
     # prompts already ban. Warning-level; penalizes the score without
     # killing the post outright.
-    first_500 = content[:500]
-    for pat in (
-        r"\bIn this (?:post|article|guide|blog post|tutorial)[,\s]",
-        r"\bIn today'?s (?:fast-paced|digital|modern|competitive)",
-    ):
-        m = re.search(pat, first_500, re.IGNORECASE)
-        if m:
-            issues.append(ValidationIssue(
-                severity="warning",
-                category="filler_intro",
-                description=f"Filler intro phrase: '{m.group(0).strip()}' — start with a concrete hook instead",
-                matched_text=m.group(0)[:80],
-            ))
-            break
+    if _enabled("filler_intro"):
+        first_500 = content[:500]
+        for pat in (
+            r"\bIn this (?:post|article|guide|blog post|tutorial)[,\s]",
+            r"\bIn today'?s (?:fast-paced|digital|modern|competitive)",
+        ):
+            m = re.search(pat, first_500, re.IGNORECASE)
+            if m:
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    category="filler_intro",
+                    description=f"Filler intro phrase: '{m.group(0).strip()}' — start with a concrete hook instead",
+                    matched_text=m.group(0)[:80],
+                ))
+                break
 
     # 9. Check for late acronym expansions — e.g. "CRM (Customer Relationship Management)"
     #    when the acronym was already used earlier without expansion
-    for m in re.finditer(r'\b([A-Z]{2,6})\s*\(([A-Z][a-z][\w\s]{5,50})\)', content):
-        acronym = m.group(1)
-        # Check if the acronym appears earlier in the content (before this match)
-        prior_text = content[:m.start()]
-        prior_uses = len(re.findall(rf'\b{re.escape(acronym)}\b', prior_text))
-        if prior_uses >= 2:
-            issues.append(ValidationIssue(
-                severity="warning", category="late_acronym_expansion",
-                description=f"Acronym '{acronym}' expanded after {prior_uses} prior uses — expand on first use or not at all",
-                matched_text=m.group(0)[:80],
-            ))
+    if _enabled("late_acronym_expansion"):
+        for m in re.finditer(r'\b([A-Z]{2,6})\s*\(([A-Z][a-z][\w\s]{5,50})\)', content):
+            acronym = m.group(1)
+            # Check if the acronym appears earlier in the content (before this match)
+            prior_text = content[:m.start()]
+            prior_uses = len(re.findall(rf'\b{re.escape(acronym)}\b', prior_text))
+            if prior_uses >= 2:
+                issues.append(ValidationIssue(
+                    severity="warning", category="late_acronym_expansion",
+                    description=f"Acronym '{acronym}' expanded after {prior_uses} prior uses — expand on first use or not at all",
+                    matched_text=m.group(0)[:80],
+                ))
 
     # 10. Truncation detection — content that ends mid-sentence indicates
     # the LLM hit its token limit. This is critical because it means the
     # reader gets an incomplete article.
-    stripped_content = content.rstrip()
-    if stripped_content and len(stripped_content) > 200:
-        # Check if content ends with a sentence-ending character
-        last_char = stripped_content[-1]
-        if last_char not in '.!?"\u201d)\u2019':
-            # Check it's not a code block or list that legitimately ends without punctuation
-            last_line = stripped_content.split('\n')[-1].strip()
-            _in_code = last_line.startswith('```') or last_line.startswith('    ')
-            _is_heading = last_line.startswith('#')
-            _is_list_item = re.match(r'^[-*\d]+[.)]\s', last_line) or re.match(r'^[-*]\s', last_line)
-            if not (_in_code or _is_heading or _is_list_item):
-                issues.append(ValidationIssue(
-                    severity="critical",
-                    category="truncated_content",
-                    description=(
-                        f"Content appears truncated — ends with '{last_line[-60:]}' "
-                        f"which is not a complete sentence. The LLM likely hit its token limit."
-                    ),
-                    matched_text=stripped_content[-100:],
-                ))
+    if _enabled("truncated_content"):
+        stripped_content = content.rstrip()
+        if stripped_content and len(stripped_content) > 200:
+            # Check if content ends with a sentence-ending character
+            last_char = stripped_content[-1]
+            if last_char not in '.!?"”)’':
+                # Check it's not a code block or list that legitimately ends without punctuation
+                last_line = stripped_content.split('\n')[-1].strip()
+                _in_code = last_line.startswith('```') or last_line.startswith('    ')
+                _is_heading = last_line.startswith('#')
+                _is_list_item = re.match(r'^[-*\d]+[.)]\s', last_line) or re.match(r'^[-*]\s', last_line)
+                if not (_in_code or _is_heading or _is_list_item):
+                    issues.append(ValidationIssue(
+                        severity="critical",
+                        category="truncated_content",
+                        description=(
+                            f"Content appears truncated — ends with '{last_line[-60:]}' "
+                            f"which is not a complete sentence. The LLM likely hit its token limit."
+                        ),
+                        matched_text=stripped_content[-100:],
+                    ))
 
     # 11. Title diversity — detect repetitive opener patterns
-    _BANNED_OPENERS = [
-        "beyond the", "beyond", "building", "unlocking", "the ultimate",
-        "the hidden", "the silent", "the invisible", "the secret",
-        "mastering", "revolutionizing", "the complete", "the definitive",
-        "how to build", "scale your", "why you need",
-    ]
-    if title:
-        title_lower = title.lower().strip()
-        for opener in _BANNED_OPENERS:
-            if title_lower.startswith(opener):
-                issues.append(ValidationIssue(
-                    severity="warning",
-                    category="title_diversity",
-                    description=(
-                        f"Title starts with overused opener '{opener}'. "
-                        "Rotate title structure for better variety."
-                    ),
-                    matched_text=title[:60],
-                ))
-                break
+    if _enabled("title_diversity"):
+        _BANNED_OPENERS = [
+            "beyond the", "beyond", "building", "unlocking", "the ultimate",
+            "the hidden", "the silent", "the invisible", "the secret",
+            "mastering", "revolutionizing", "the complete", "the definitive",
+            "how to build", "scale your", "why you need",
+        ]
+        if title:
+            title_lower = title.lower().strip()
+            for opener in _BANNED_OPENERS:
+                if title_lower.startswith(opener):
+                    issues.append(ValidationIssue(
+                        severity="warning",
+                        category="title_diversity",
+                        description=(
+                            f"Title starts with overused opener '{opener}'. "
+                            "Rotate title structure for better variety."
+                        ),
+                        matched_text=title[:60],
+                    ))
+                    break
 
     # ------------------------------------------------------------------
     # Severity promotion (GH-91)

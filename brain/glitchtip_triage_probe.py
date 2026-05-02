@@ -101,6 +101,13 @@ ALERT_THRESHOLD_DEFAULT = 100
 #                                       # on issues with count <= this.
 #                                       # Stops auto-resolving runaway
 #                                       # outages we should still notice.
+#     "min_age_days": <int> | null,     # optional age floor — only auto-act
+#                                       # on issues whose firstSeen is at
+#                                       # least this many days ago. Lets
+#                                       # operators write "GC anything older
+#                                       # than 7 days with <5 occurrences"
+#                                       # rules without auto-closing fresh
+#                                       # noise that might still be live.
 #     "level_in": [<level>, ...] | null # optional level filter
 #   }
 RULES_SETTING_KEY = "glitchtip_triage_auto_resolve_patterns"
@@ -240,6 +247,7 @@ async def _read_rules(pool) -> list[dict[str, Any]]:
             "action": action,
             "reason": entry.get("reason") or "",
             "max_count": entry.get("max_count"),
+            "min_age_days": entry.get("min_age_days"),
             "level_in": entry.get("level_in"),
         })
     return cleaned
@@ -374,7 +382,16 @@ def _match_rule(
     """Return the first rule that matches this issue, or None.
 
     Rules evaluated in declaration order — operator authors them most-
-    specific-first.
+    specific-first. Rules may carry these optional gates (any present
+    must be satisfied for the rule to match):
+
+    * ``max_count``    — issue.count must be <= this value.
+    * ``min_age_days`` — ``now - issue.firstSeen`` must be >= this
+                         many days. Lets operators write rules like
+                         "GC anything older than 7 days with <5
+                         occurrences" without auto-closing fresh
+                         noise that might still be flapping.
+    * ``level_in``     — issue.level must be in this list.
     """
     title = issue.get("title") or ""
     count = int(issue.get("count") or 0)
@@ -386,12 +403,58 @@ def _match_rule(
                     continue
             except (TypeError, ValueError):
                 pass
+        if rule.get("min_age_days") is not None and not _issue_meets_min_age(
+            issue, rule["min_age_days"],
+        ):
+            continue
         levels = rule.get("level_in")
         if levels and level not in levels:
             continue
         if rule["_compiled"].search(title):
             return rule
     return None
+
+
+def _issue_meets_min_age(issue: dict[str, Any], min_age_days: Any) -> bool:
+    """Return True iff issue.firstSeen is at least ``min_age_days`` days old.
+
+    Returns False (rule can't match) when:
+    * ``min_age_days`` doesn't parse as a positive number,
+    * the issue has no ``firstSeen`` field, or
+    * ``firstSeen`` doesn't parse as an ISO-8601 timestamp.
+
+    A failed parse is the safer default than silently ignoring the gate
+    — if the operator pinned an age floor and we can't measure age, we
+    decline to act on the issue. The cycle continues; no other rules
+    are short-circuited.
+    """
+    try:
+        floor = float(min_age_days)
+    except (TypeError, ValueError):
+        return False
+    if floor <= 0:
+        # Treat <=0 as "no gate" — act regardless. Matches operator
+        # intuition that 0 days = no waiting required.
+        return True
+
+    raw = issue.get("firstSeen")
+    if not raw:
+        return False
+    try:
+        from datetime import datetime, timezone
+        # GlitchTip / Sentry returns ISO 8601 with trailing 'Z'. Python's
+        # fromisoformat accepts the offset form natively in 3.11+; we
+        # normalise the Z just to keep it deterministic on older runtimes.
+        ts_str = str(raw).rstrip("Z") + "+00:00" if str(raw).endswith("Z") else str(raw)
+        first_seen = datetime.fromisoformat(ts_str)
+    except (TypeError, ValueError):
+        return False
+    if first_seen.tzinfo is None:
+        from datetime import timezone
+        first_seen = first_seen.replace(tzinfo=timezone.utc)
+    from datetime import datetime, timezone
+    age_days = (datetime.now(timezone.utc) - first_seen).total_seconds() / 86400.0
+    return age_days >= floor
 
 
 # ---------------------------------------------------------------------------

@@ -453,6 +453,167 @@ def test_match_rule_respects_level_in():
     assert gt._match_rule({"title": "xyz", "level": "error", "count": 1}, [rule]) is None
 
 
+# ---------------------------------------------------------------------------
+# min_age_days gate (Part 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_min_age_days_gate_blocks_fresh_issues():
+    """Rule with min_age_days=7 should NOT match an issue from yesterday."""
+    from datetime import datetime, timedelta, timezone
+    rule = {
+        "title_pattern": "GC me",
+        "_compiled": __import__("re").compile("GC me"),
+        "action": "resolve",
+        "reason": "weekly GC",
+        "max_count": 5,
+        "min_age_days": 7,
+        "level_in": None,
+    }
+    fresh_first_seen = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    issue = {
+        "title": "GC me please",
+        "count": 3,
+        "level": "error",
+        "firstSeen": fresh_first_seen,
+    }
+    assert gt._match_rule(issue, [rule]) is None
+
+
+@pytest.mark.unit
+def test_min_age_days_gate_allows_old_issues():
+    """Rule with min_age_days=7 SHOULD match an issue from 10 days ago."""
+    from datetime import datetime, timedelta, timezone
+    rule = {
+        "title_pattern": "GC me",
+        "_compiled": __import__("re").compile("GC me"),
+        "action": "resolve",
+        "reason": "weekly GC",
+        "max_count": 5,
+        "min_age_days": 7,
+        "level_in": None,
+    }
+    old_first_seen = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    issue = {
+        "title": "GC me please",
+        "count": 3,
+        "level": "error",
+        "firstSeen": old_first_seen,
+    }
+    assert gt._match_rule(issue, [rule]) is rule
+
+
+@pytest.mark.unit
+def test_min_age_days_combines_with_max_count():
+    """The classic 'GC > N days old AND <= K occurrences' combo."""
+    from datetime import datetime, timedelta, timezone
+    rule = {
+        "title_pattern": ".*",
+        "_compiled": __import__("re").compile(".*"),
+        "action": "resolve",
+        "reason": "GC stale low-count noise",
+        "max_count": 5,
+        "min_age_days": 7,
+        "level_in": None,
+    }
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+
+    # Old AND low count -> resolve.
+    matched = gt._match_rule(
+        {"title": "x", "count": 4, "level": "error", "firstSeen": old_ts},
+        [rule],
+    )
+    assert matched is rule
+
+    # Old but high count -> max_count blocks.
+    blocked_by_count = gt._match_rule(
+        {"title": "x", "count": 50, "level": "error", "firstSeen": old_ts},
+        [rule],
+    )
+    assert blocked_by_count is None
+
+    # Low count but fresh -> min_age_days blocks.
+    fresh_ts = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    blocked_by_age = gt._match_rule(
+        {"title": "x", "count": 4, "level": "error", "firstSeen": fresh_ts},
+        [rule],
+    )
+    assert blocked_by_age is None
+
+
+@pytest.mark.unit
+def test_min_age_days_handles_missing_first_seen():
+    """No ``firstSeen`` field -> rule cannot satisfy the age gate, so no match."""
+    rule = {
+        "title_pattern": ".*",
+        "_compiled": __import__("re").compile(".*"),
+        "action": "resolve",
+        "reason": "",
+        "max_count": None,
+        "min_age_days": 7,
+        "level_in": None,
+    }
+    issue = {"title": "x", "count": 1, "level": "error"}  # firstSeen missing
+    assert gt._match_rule(issue, [rule]) is None
+
+
+@pytest.mark.unit
+def test_min_age_days_handles_z_suffix_iso8601():
+    """GlitchTip API returns timestamps with trailing 'Z' -- must parse cleanly."""
+    from datetime import datetime, timedelta, timezone
+    rule = {
+        "title_pattern": ".*",
+        "_compiled": __import__("re").compile(".*"),
+        "action": "resolve",
+        "reason": "",
+        "max_count": None,
+        "min_age_days": 1,
+        "level_in": None,
+    }
+    old = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue = {"title": "x", "count": 1, "level": "error", "firstSeen": old}
+    assert gt._match_rule(issue, [rule]) is rule
+
+
+@pytest.mark.unit
+def test_min_age_days_zero_is_no_gate():
+    """min_age_days=0 should behave as 'no age gate' (act regardless)."""
+    rule = {
+        "title_pattern": ".*",
+        "_compiled": __import__("re").compile(".*"),
+        "action": "resolve",
+        "reason": "",
+        "max_count": None,
+        "min_age_days": 0,
+        "level_in": None,
+    }
+    # Even an issue with no firstSeen at all should match (gate is no-op).
+    issue = {"title": "x", "count": 1, "level": "error"}
+    assert gt._match_rule(issue, [rule]) is rule
+
+
+@pytest.mark.unit
+def test_read_rules_preserves_min_age_days():
+    """``_read_rules`` must surface min_age_days through the cleaned dict so
+    ``_match_rule`` can consult it. Smoke-tests the JSON schema additions."""
+    import asyncio
+    rules_json = json.dumps([
+        {
+            "title_pattern": ".*",
+            "action": "resolve",
+            "reason": "test",
+            "max_count": 5,
+            "min_age_days": 7,
+        },
+    ])
+    pool = _make_pool({"glitchtip_triage_auto_resolve_patterns": rules_json})
+    cleaned = asyncio.run(gt._read_rules(pool))
+    assert len(cleaned) == 1
+    assert cleaned[0]["min_age_days"] == 7
+    assert cleaned[0]["max_count"] == 5
+
+
 @pytest.mark.unit
 def test_parse_next_cursor_handles_terminal_page():
     link = (
