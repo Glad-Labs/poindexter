@@ -133,10 +133,16 @@ async def _upload_to_cloudinary(path: str, prompt: str) -> str:
 
     from services.site_config import site_config
 
+    # cloudinary_api_key + cloudinary_api_secret are is_secret=true in
+    # app_settings (encrypted with enc:v1: prefix). Sync .get() returns
+    # the ciphertext for is_secret rows — only get_secret() decrypts.
+    # Fixes Glad-Labs/poindexter#334.
+    api_key = await site_config.get_secret("cloudinary_api_key", "")
+    api_secret = await site_config.get_secret("cloudinary_api_secret", "")
     cloudinary.config(
         cloud_name=site_config.get("cloudinary_cloud_name"),
-        api_key=site_config.get("cloudinary_api_key"),
-        api_secret=site_config.get("cloudinary_api_secret"),
+        api_key=api_key,
+        api_secret=api_secret,
     )
 
     def _upload() -> dict:

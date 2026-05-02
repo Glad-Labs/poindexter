@@ -88,10 +88,18 @@ class RegenerateStockImagesJob:
 
             import cloudinary
             import cloudinary.uploader
+
+            # cloudinary_api_key + cloudinary_api_secret are is_secret=true
+            # rows — sync .get() returns ciphertext, only get_secret()
+            # decrypts. Fixes Glad-Labs/poindexter#334.
+            api_key = await site_config.get_secret("cloudinary_api_key", "")
+            api_secret = await site_config.get_secret(
+                "cloudinary_api_secret", "",
+            )
             cloudinary.config(
                 cloud_name=site_config.get("cloudinary_cloud_name"),
-                api_key=site_config.get("cloudinary_api_key"),
-                api_secret=site_config.get("cloudinary_api_secret"),
+                api_key=api_key,
+                api_secret=api_secret,
             )
 
             regenerated = 0

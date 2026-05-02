@@ -82,6 +82,10 @@ class TestRegenerateStockImagesJobRun:
             "services.site_config.site_config.get",
             side_effect=lambda k, d="": "postgres://cloud" if k == "database_url" else "",
         ), \
+             patch(
+                 "services.site_config.site_config.get_secret",
+                 new=AsyncMock(side_effect=lambda k, d="": "fake-key" if "api" in k else ""),
+             ), \
              patch.dict("sys.modules", {
                  "asyncpg": fake_asyncpg,
                  "cloudinary": fake_cloudinary,
