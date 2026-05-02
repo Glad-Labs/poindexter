@@ -99,7 +99,15 @@ prometheus-client = "^0.25.0"
 # — required for Matt's Windows host `poetry install --extras profiling`
 # to skip cleanly instead of falling through to a Rust source build.
 pyroscope-io = { version = "^0.8.5", optional = true, markers = "sys_platform != 'win32'" }
-langgraph = ">=0.2,<1.0"
+# Bumped past 1.0.10 to clear GHSA — checkpoint loading had unsafe
+# msgpack deserialization in <1.0.10. langgraph 1.x is API-compatible
+# with the StateGraph + END + MemorySaver surface used in
+# services/writer_rag_modes/two_pass.py.
+langgraph = ">=1.0.10,<2.0"
+# Explicit floor — langgraph 1.x's resolver allows <5.0.0 but Poetry
+# prefers the older 3.x without prodding. <4.0 has a BaseCache RCE
+# (Deserialization of Untrusted Data, GHSA-via-#17). Pin to 4.x+.
+langgraph-checkpoint = ">=4.0.0,<5.0"
 # datasets pinned to ^3.0 to override the legacy 1.1.1 transitive dep
 # pulled in by ragas — 1.1.1 calls `pyarrow.PyExtensionType` which was
 # removed in pyarrow 14, breaking topic_discovery_signals at runtime
