@@ -116,18 +116,14 @@ configure_sunshine_firewall() {
     # nothing leaks to the public internet even if the operator opens
     # those ports later for a different reason.
     local rule_prefix="Sunshine (Tailscale)"
+    # New-NetFirewallRule -LocalPort wants an int array, not a comma-
+    # joined string. Bare comma-separated literals work because
+    # PowerShell's comma operator builds an array from them.
     run_ps "
-        \$ports_tcp = '47984,47989,47990,48010'
-        \$ports_udp = '47998,47999,48000,48002'
         \$scope = '100.64.0.0/10'
-        Get-NetFirewallRule -DisplayName '${rule_prefix}*' -ErrorAction SilentlyContinue |
-            Remove-NetFirewallRule -ErrorAction SilentlyContinue
-        New-NetFirewallRule -DisplayName '${rule_prefix} TCP' \
-            -Direction Inbound -Action Allow -Protocol TCP \
-            -LocalPort \$ports_tcp -RemoteAddress \$scope | Out-Null
-        New-NetFirewallRule -DisplayName '${rule_prefix} UDP' \
-            -Direction Inbound -Action Allow -Protocol UDP \
-            -LocalPort \$ports_udp -RemoteAddress \$scope | Out-Null
+        Get-NetFirewallRule -DisplayName '${rule_prefix}*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+        New-NetFirewallRule -DisplayName '${rule_prefix} TCP' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 47984,47989,47990,48010 -RemoteAddress \$scope | Out-Null
+        New-NetFirewallRule -DisplayName '${rule_prefix} UDP' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 47998,47999,48000,48002 -RemoteAddress \$scope | Out-Null
     "
     ok "Firewall scoped to Tailscale CGNAT (100.64.0.0/10) only."
 }
@@ -202,16 +198,9 @@ configure_rustdesk_firewall() {
     local rule_prefix="RustDesk (Tailscale)"
     run_ps "
         \$scope = '100.64.0.0/10'
-        Get-NetFirewallRule -DisplayName '${rule_prefix}*' -ErrorAction SilentlyContinue |
-            Remove-NetFirewallRule -ErrorAction SilentlyContinue
-        New-NetFirewallRule -DisplayName '${rule_prefix} TCP' \
-            -Direction Inbound -Action Allow -Protocol TCP \
-            -LocalPort '21115,21116,21117,21118,21119' \
-            -RemoteAddress \$scope | Out-Null
-        New-NetFirewallRule -DisplayName '${rule_prefix} UDP' \
-            -Direction Inbound -Action Allow -Protocol UDP \
-            -LocalPort '21116' \
-            -RemoteAddress \$scope | Out-Null
+        Get-NetFirewallRule -DisplayName '${rule_prefix}*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+        New-NetFirewallRule -DisplayName '${rule_prefix} TCP' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 21115,21116,21117,21118,21119 -RemoteAddress \$scope | Out-Null
+        New-NetFirewallRule -DisplayName '${rule_prefix} UDP' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 21116 -RemoteAddress \$scope | Out-Null
     "
     ok "Firewall scoped to Tailscale CGNAT (100.64.0.0/10) only."
 }
