@@ -31,6 +31,17 @@ import httpx
 
 from mcp.server.fastmcp import FastMCP
 
+# OAuth helper — local mirror of services.auth.oauth_client. See
+# oauth_client.py docstring for why this is mirrored rather than
+# imported from the worker tree (Glad-Labs/poindexter#243).
+from oauth_client import (  # noqa: E402 — local module
+    MCP_CLIENT_ID_KEY,
+    MCP_CLIENT_SECRET_KEY,
+    MCP_DEFAULT_SCOPES,
+    McpOAuthClient,
+    oauth_client_from_pool,
+)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("poindexter-mcp")
 
@@ -120,13 +131,20 @@ def setup_runtime() -> None:
     ``mcp.streamable_http_app()`` (HTTP). Raises ``RuntimeError`` if a
     required value is missing; callers are expected to surface that
     cleanly (operator-notify + exit for stdio, return 500 for HTTP).
+
+    Auth note (#243): ``POINDEXTER_API_TOKEN`` is no longer strictly
+    required — once ``poindexter auth migrate-mcp`` has run, the MCP
+    tools mint OAuth JWTs from app_settings and the env token only
+    matters as a back-compat fallback. We log a warning when both
+    paths look unconfigured (the token is blank AND we can't see the
+    OAuth credentials), but don't fail at startup; the OAuth helper
+    raises loudly on first ``_api`` call with a pointer to the
+    migration command.
     """
     global LOCAL_DB_DSN
     missing = []
     if not API_URL:
         missing.append("POINDEXTER_API_URL")
-    if not API_TOKEN:
-        missing.append("POINDEXTER_API_TOKEN")
     if not OLLAMA_URL:
         missing.append("OLLAMA_URL")
     if missing:
@@ -136,6 +154,17 @@ def setup_runtime() -> None:
             "For local dev the Claude desktop config exports these; "
             "for the worker-mounted HTTP transport, main.py wires them "
             "from app_settings before mounting (see issue #237)."
+        )
+
+    if not API_TOKEN:
+        # Soft-warn rather than fail: the OAuth helper reads creds from
+        # app_settings on first ``_api`` call and the migration may
+        # already have happened. If it hasn't, the OAuth helper raises
+        # with a clear pointer to ``poindexter auth migrate-mcp``.
+        logger.warning(
+            "POINDEXTER_API_TOKEN not set — assuming OAuth migration "
+            "(`poindexter auth migrate-mcp`) has run. If it hasn't, "
+            "the first worker-API call will fail with a clear error.",
         )
 
     if LOCAL_DB_DSN is None:
@@ -152,9 +181,14 @@ def setup_runtime() -> None:
 
         LOCAL_DB_DSN = require_database_url(source="mcp_server")
 
-# Lazy-initialized connection pool and HTTP client
+# Lazy-initialized connection pool and HTTP clients
 _pool: asyncpg.Pool | None = None
 _http: httpx.AsyncClient | None = None
+# Worker-API OAuth client. Built lazily on first call to ``_get_oauth``
+# because we need the asyncpg pool already up to read credentials from
+# app_settings (and we want to defer that until someone actually calls
+# a tool that talks to the worker).
+_oauth: McpOAuthClient | None = None
 
 
 async def _get_pool() -> asyncpg.Pool:
@@ -166,11 +200,44 @@ async def _get_pool() -> asyncpg.Pool:
 
 
 async def _get_http() -> httpx.AsyncClient:
-    """Get or create the async HTTP client."""
+    """Get or create the async HTTP client (Ollama + ad-hoc probes)."""
     global _http
     if _http is None:
         _http = httpx.AsyncClient(timeout=30.0)
     return _http
+
+
+async def _get_oauth() -> McpOAuthClient:
+    """Get or build the worker-API OAuth client.
+
+    Resolution (Glad-Labs/poindexter#243):
+
+    1. ``app_settings.mcp_oauth_client_id`` + ``mcp_oauth_client_secret``
+       → mints + caches a JWT against ``POST /token``.
+    2. ``app_settings.api_token`` (legacy, encrypted) → static Bearer.
+    3. ``POINDEXTER_API_TOKEN`` env var (still set by ``http_server.py``
+       and Claude Desktop config) → static Bearer fallback.
+
+    Re-uses the same asyncpg pool the rest of this module uses, so the
+    credential read is one extra DB round-trip on first call.
+    """
+    global _oauth
+    if _oauth is None:
+        pool = await _get_pool()
+        _oauth = await oauth_client_from_pool(
+            pool,
+            base_url=API_URL or "",
+            client_id_key=MCP_CLIENT_ID_KEY,
+            client_secret_key=MCP_CLIENT_SECRET_KEY,
+            api_token_key="api_token",
+            static_bearer_fallback=API_TOKEN or "",
+            # Don't request a scope subset — let the client use its full
+            # grant. The migration helper provisions ``api:read api:write``
+            # by default; tighter scoping (e.g. mcp:read for a read-only
+            # operator MCP variant) belongs in a follow-up.
+            scopes=None,
+        )
+    return _oauth
 
 
 async def _embed_text(text: str) -> list[float]:
@@ -197,24 +264,41 @@ Search before asking the user — the answer may already be in memory.
 """)
 
 
-def _api(method: str, path: str, data: dict | None = None) -> dict:
-    """Call the Poindexter API."""
-    url = f"{API_URL}{path}"
-    headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
-    body = json.dumps(data).encode() if data else None
-    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+async def _api(method: str, path: str, data: dict | None = None) -> dict:
+    """Call the Poindexter worker API through the OAuth-aware client.
+
+    Uses ``McpOAuthClient`` (mint + cache + 401 retry, with legacy
+    static-Bearer fallback) so the MCP server gets the same auth surface
+    as the CLI and brain — see Glad-Labs/poindexter#243. The function
+    keeps its original error-flattening shape (``{"error": "..."}`` on
+    failure) so existing tool callers don't need updates.
+    """
     try:
-        resp = urllib.request.urlopen(req, timeout=15)
-        return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        # Capture the response body — it contains the actual error details
-        try:
-            error_body = json.loads(e.read())
-            return {"error": f"HTTP {e.code}", **error_body}
-        except Exception:
-            return {"error": f"HTTP {e.code}: {str(e)[:200]}"}
-    except Exception as e:
+        oauth = await _get_oauth()
+    except Exception as e:  # noqa: BLE001 — surfaced to caller as dict
+        return {"error": f"oauth init failed: {type(e).__name__}: {str(e)[:200]}"}
+
+    try:
+        kwargs: dict[str, Any] = {"timeout": 15.0}
+        if data is not None:
+            kwargs["json"] = data
+        resp = await oauth.request(method, path, **kwargs)
+    except Exception as e:  # noqa: BLE001
         return {"error": str(e)[:200]}
+
+    if resp.status_code // 100 != 2:
+        # Mirror the previous urllib.HTTPError handling — try to surface
+        # the structured error body, fall back to the status text.
+        try:
+            error_body = resp.json()
+        except ValueError:
+            return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+        return {"error": f"HTTP {resp.status_code}", **error_body}
+
+    try:
+        return resp.json()
+    except ValueError:
+        return {"error": f"non-JSON response: {resp.text[:200]}"}
 
 
 # ============================================================================
@@ -222,9 +306,9 @@ def _api(method: str, path: str, data: dict | None = None) -> dict:
 # ============================================================================
 
 @mcp.tool()
-def create_post(topic: str, category: str = "technology", target_audience: str = "developers and founders") -> str:
+async def create_post(topic: str, category: str = "technology", target_audience: str = "developers and founders") -> str:
     """Create a new blog post task in the content pipeline. The worker will generate it via AI."""
-    result = _api("POST", "/api/tasks", {
+    result = await _api("POST", "/api/tasks", {
         "task_name": f"Blog post: {topic}",
         "topic": topic,
         "category": category,
@@ -288,7 +372,7 @@ async def _resolve_task_id(task_id: str) -> str:
 async def approve_post(task_id: str) -> str:
     """Approve a content task for publishing."""
     full_id = await _resolve_task_id(task_id)
-    result = _api("POST", f"/api/tasks/{full_id}/approve")
+    result = await _api("POST", f"/api/tasks/{full_id}/approve")
     return f"Status: {result.get('status', result.get('error', '?'))}"
 
 
@@ -296,7 +380,7 @@ async def approve_post(task_id: str) -> str:
 async def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str:
     """Reject a content task. Provide a reason for feedback to the pipeline."""
     full_id = await _resolve_task_id(task_id)
-    result = _api("POST", f"/api/tasks/{full_id}/reject", data={
+    result = await _api("POST", f"/api/tasks/{full_id}/reject", data={
         "reason": reason,
         "feedback": reason,
         "allow_revisions": False,
@@ -309,7 +393,7 @@ async def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str
 async def publish_post(task_id: str) -> str:
     """Publish an approved content task to the configured site."""
     full_id = await _resolve_task_id(task_id)
-    result = _api("POST", f"/api/tasks/{full_id}/publish")
+    result = await _api("POST", f"/api/tasks/{full_id}/publish")
     return f"Status: {result.get('status', result.get('error', '?'))}"
 
 
@@ -329,7 +413,7 @@ async def get_post_count() -> str:
 # ============================================================================
 
 @mcp.tool()
-def check_health() -> str:
+async def check_health() -> str:
     """Check the health of all Poindexter systems (site, API, worker, OpenClaw)."""
     checks = []
 
@@ -343,21 +427,27 @@ def check_health() -> str:
         checks.append(f"Site: DOWN ({e})")
 
     # API
-    result = _api("GET", "/api/health")
+    result = await _api("GET", "/api/health")
     checks.append(f"API: {result.get('status', result.get('error', '?'))}")
 
     # Posts
-    result = _api("GET", "/api/posts?limit=1")
+    result = await _api("GET", "/api/posts?limit=1")
     checks.append(f"Posts: {result.get('total', '?')}")
 
-    # Worker
-    try:
-        resp = urllib.request.urlopen(f"{API_URL}/api/health", timeout=5)
-        data = json.loads(resp.read())
-        te = data.get("components", {}).get("task_executor", {})
-        checks.append(f"Worker: running={te.get('running')}, processed={te.get('total_processed')}")
-    except Exception:
+    # Worker — use the OAuth-aware client so the same auth semantics
+    # apply to the diagnostic probe as to real tool calls. The previous
+    # code hit /api/health without auth via urllib; the worker's
+    # /api/health does require a valid bearer (or, today, the legacy
+    # static one), so going through _api keeps that consistent.
+    worker_health = await _api("GET", "/api/health")
+    if "error" in worker_health:
         checks.append("Worker: offline")
+    else:
+        te = worker_health.get("components", {}).get("task_executor", {})
+        checks.append(
+            f"Worker: running={te.get('running')}, "
+            f"processed={te.get('total_processed')}"
+        )
 
     # OpenClaw
     try:
@@ -873,13 +963,13 @@ async def get_audit_summary(hours: int = 24) -> str:
 # ============================================================================
 
 @mcp.tool()
-def rebuild_static_export() -> str:
+async def rebuild_static_export() -> str:
     """Rebuild all static JSON files on CDN (posts, feed, sitemap, categories, authors).
 
     Triggers a full export of the headless CMS data to R2/S3 storage.
     Any frontend can consume these files without needing the API.
     """
-    result = _api("POST", "/api/export/rebuild")
+    result = await _api("POST", "/api/export/rebuild")
     if "error" in result:
         return f"Export failed: {result['error']}"
     posts = result.get("posts_exported", 0)

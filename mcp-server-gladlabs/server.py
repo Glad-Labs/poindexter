@@ -38,6 +38,16 @@ import httpx
 
 from mcp.server.fastmcp import FastMCP
 
+# OAuth helper — local mirror, see oauth_client.py for why
+# (Glad-Labs/poindexter#244, mirrors the pattern from #243).
+from oauth_client import (  # noqa: E402 — local module
+    MCP_GLADLABS_CLIENT_ID_KEY,
+    MCP_GLADLABS_CLIENT_SECRET_KEY,
+    MCP_GLADLABS_DEFAULT_SCOPES,
+    GladlabsMcpOAuthClient,
+    oauth_client_from_pool,
+)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gladlabs-mcp")
 
@@ -69,6 +79,12 @@ GLADLABS_DEFAULT_DISCORD_CHANNEL = os.getenv("GLADLABS_DEFAULT_DISCORD_CHANNEL",
 # Lazy-initialized shared resources
 _pool: asyncpg.Pool | None = None
 _http: httpx.AsyncClient | None = None
+# Worker-API OAuth client. Built lazily on first call to ``_get_oauth``;
+# the gladlabs MCP doesn't currently call the worker API directly (it
+# routes Discord through OpenClaw and uses local DB for everything
+# else), but the helper is wired now so future tools can call
+# ``await (await _get_oauth()).get(...)`` without re-doing the migration.
+_oauth: GladlabsMcpOAuthClient | None = None
 
 
 async def _get_pool() -> asyncpg.Pool:
@@ -83,6 +99,34 @@ async def _get_http() -> httpx.AsyncClient:
     if _http is None:
         _http = httpx.AsyncClient(timeout=30.0)
     return _http
+
+
+async def _get_oauth() -> GladlabsMcpOAuthClient:
+    """Get or build the worker-API OAuth client for operator tools.
+
+    Resolution (Glad-Labs/poindexter#244):
+
+    1. ``app_settings.mcp_gladlabs_oauth_client_id`` +
+       ``mcp_gladlabs_oauth_client_secret`` → mints + caches a JWT.
+    2. ``app_settings.api_token`` (legacy, encrypted) → static Bearer.
+    3. ``POINDEXTER_API_TOKEN`` env → static Bearer fallback.
+
+    The first call opens a credential read against the local pool.
+    Subsequent calls return the cached client.
+    """
+    global _oauth
+    if _oauth is None:
+        pool = await _get_pool()
+        _oauth = await oauth_client_from_pool(
+            pool,
+            base_url=POINDEXTER_API_URL,
+            client_id_key=MCP_GLADLABS_CLIENT_ID_KEY,
+            client_secret_key=MCP_GLADLABS_CLIENT_SECRET_KEY,
+            api_token_key="api_token",
+            static_bearer_fallback=POINDEXTER_API_TOKEN or "",
+            scopes=None,  # Use the client's full grant.
+        )
+    return _oauth
 
 
 async def _openclaw_invoke(tool: str, action: str, args: dict) -> dict:
@@ -245,6 +289,19 @@ async def operator_status() -> str:
     lines.append(f"  Local DB DSN:          {'set' if LOCAL_DB_DSN else 'unset'}")
     lines.append(f"  Poindexter API URL:    {POINDEXTER_API_URL}")
     lines.append(f"  Poindexter API token:  {'set' if POINDEXTER_API_TOKEN else 'unset'}")
+
+    # OAuth credential state (Glad-Labs/poindexter#244). We only check
+    # if the helper *would* use OAuth — we don't actually mint, since
+    # operator_status is a diagnostic and a 401 here would be
+    # misleading noise.
+    try:
+        oauth = await _get_oauth()
+        lines.append(
+            f"  OAuth (worker API):     {'OAuth' if oauth.using_oauth else 'legacy static Bearer'}"
+        )
+    except Exception as e:  # noqa: BLE001
+        lines.append(f"  OAuth (worker API):     init failed: {type(e).__name__}: {e}")
+
     lines.append(f"  OpenClaw gateway URL:  {OPENCLAW_GATEWAY_URL}")
     lines.append(
         f"  OpenClaw gateway token: {'set' if OPENCLAW_GATEWAY_TOKEN else 'NOT set'}"

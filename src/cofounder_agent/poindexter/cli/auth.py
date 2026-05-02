@@ -498,6 +498,138 @@ def migrate_cli(name: str, scopes: str) -> None:
     _run(_impl())
 
 
+@auth_group.command("migrate-mcp")
+@click.option(
+    "--name",
+    default="poindexter-mcp",
+    show_default=True,
+    help="Client display name (shown in `poindexter auth list-clients`).",
+)
+@click.option(
+    "--scopes",
+    default="api:read api:write",
+    show_default=True,
+    help="Space-delimited subset of {api:read, api:write, mcp:read, mcp:write}.",
+)
+def migrate_mcp(name: str, scopes: str) -> None:
+    """Register an OAuth client for the public MCP server and store creds.
+
+    One-shot Phase 2 migration helper (#243). After this runs:
+
+    * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
+    * ``app_settings.mcp_oauth_client_id`` + ``mcp_oauth_client_secret``
+      hold the new credentials (encrypted via plugins.secrets).
+    * The MCP server's ``_api()`` calls automatically prefer the new
+      OAuth path on the next process restart; the static-Bearer
+      fallback (``app_settings.api_token`` and ``POINDEXTER_API_TOKEN``
+      env) stays available until Phase 3 retires it.
+
+    Re-running creates a fresh client + secret pair; revoke the old one
+    with ``poindexter auth revoke-client --client-id ...``.
+
+    Restart the stdio MCP server (Claude Code / Claude Desktop reload)
+    after running this so the new creds get picked up.
+    """
+    _bootstrap_path_for_secret_key()
+    scope_list = [s.strip() for s in scopes.split() if s.strip()]
+    if not scope_list:
+        raise click.UsageError("--scopes must list at least one scope")
+
+    # Setting keys live in mcp-server/oauth_client.py — duplicated here
+    # so the CLI doesn't have to add mcp-server/ to its import path.
+    # Keep these in sync if either side ever changes.
+    MCP_CLIENT_ID_KEY = "mcp_oauth_client_id"
+    MCP_CLIENT_SECRET_KEY = "mcp_oauth_client_secret"
+
+    async def _impl():
+        client_id, client_secret = await _provision_consumer_client(
+            name=name,
+            scopes=scope_list,
+            client_id_setting_key=MCP_CLIENT_ID_KEY,
+            client_secret_setting_key=MCP_CLIENT_SECRET_KEY,
+        )
+        click.echo("")
+        click.echo(click.style(
+            "MCP server OAuth client provisioned.", fg="green", bold=True,
+        ))
+        click.echo(f"  name:           {name}")
+        click.echo(f"  scopes:         {' '.join(scope_list)}")
+        click.echo(f"  client_id:      {client_id}")
+        click.echo(f"  app_settings:   {MCP_CLIENT_ID_KEY} + {MCP_CLIENT_SECRET_KEY}")
+        click.echo("")
+        click.echo("Restart the stdio MCP server (reload Claude Code / Claude")
+        click.echo("Desktop) so the new credentials are picked up.")
+
+    _run(_impl())
+
+
+@auth_group.command("migrate-mcp-gladlabs")
+@click.option(
+    "--name",
+    default="gladlabs-mcp",
+    show_default=True,
+    help="Client display name (shown in `poindexter auth list-clients`).",
+)
+@click.option(
+    "--scopes",
+    default="mcp:read mcp:write api:read api:write",
+    show_default=True,
+    help=(
+        "Space-delimited subset of {api:read, api:write, mcp:read, mcp:write}. "
+        "The operator MCP defaults to the broader set because its tools tend "
+        "to write — Discord posts, customer lookups, subscriber management."
+    ),
+)
+def migrate_mcp_gladlabs(name: str, scopes: str) -> None:
+    """Register an OAuth client for the gladlabs operator MCP and store creds.
+
+    One-shot Phase 2 migration helper (#244). After this runs:
+
+    * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
+    * ``app_settings.mcp_gladlabs_oauth_client_id`` +
+      ``mcp_gladlabs_oauth_client_secret`` hold the new credentials
+      (encrypted via plugins.secrets).
+    * The gladlabs MCP server's worker-API calls (when added) will use
+      OAuth automatically; the static-Bearer fallback (api_token /
+      POINDEXTER_API_TOKEN) stays available until Phase 3.
+
+    Distinct from ``migrate-mcp`` because the operator MCP is a separate
+    consumer — different scopes, separate audit trail, independent
+    revoke. Both can be active simultaneously.
+    """
+    _bootstrap_path_for_secret_key()
+    scope_list = [s.strip() for s in scopes.split() if s.strip()]
+    if not scope_list:
+        raise click.UsageError("--scopes must list at least one scope")
+
+    MCP_GLADLABS_CLIENT_ID_KEY = "mcp_gladlabs_oauth_client_id"
+    MCP_GLADLABS_CLIENT_SECRET_KEY = "mcp_gladlabs_oauth_client_secret"
+
+    async def _impl():
+        client_id, client_secret = await _provision_consumer_client(
+            name=name,
+            scopes=scope_list,
+            client_id_setting_key=MCP_GLADLABS_CLIENT_ID_KEY,
+            client_secret_setting_key=MCP_GLADLABS_CLIENT_SECRET_KEY,
+        )
+        click.echo("")
+        click.echo(click.style(
+            "Gladlabs MCP OAuth client provisioned.", fg="green", bold=True,
+        ))
+        click.echo(f"  name:           {name}")
+        click.echo(f"  scopes:         {' '.join(scope_list)}")
+        click.echo(f"  client_id:      {client_id}")
+        click.echo(
+            f"  app_settings:   {MCP_GLADLABS_CLIENT_ID_KEY} + "
+            f"{MCP_GLADLABS_CLIENT_SECRET_KEY}"
+        )
+        click.echo("")
+        click.echo("Restart the stdio gladlabs MCP server so the new credentials")
+        click.echo("are picked up.")
+
+    _run(_impl())
+
+
 @auth_group.command("migrate-brain")
 @click.option(
     "--name",
