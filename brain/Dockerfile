@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
 
-COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py telemetry.py ./
+COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py telemetry.py ./
 COPY seed_app_settings.json /app/seed_app_settings.json
 
 # brain_daemon.py imports `from brain.bootstrap import ...` so the files

@@ -81,10 +81,11 @@ services:
       - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus-rules:/etc/prometheus/rules
       - prometheus-data:/prometheus
-      # Uptime Kuma metrics API key, sourced from ~/.poindexter/bootstrap.toml
-      # by scripts/start-stack.sh. Read by basic_auth.password_file in
-      # prometheus.yml. See poindexter#136.
-      - ${USERPROFILE:-.}/.poindexter/uptime-kuma-api-key:/etc/prometheus/secrets/uptime-kuma-api-key:ro
+      # Uptime Kuma metrics API key (and any future scrape secrets)
+      # written by brain/prometheus_secret_writer.py from app_settings.
+      # See brain-daemon's volumes block — same host dir, mounted rw
+      # there and ro here.
+      - ./infrastructure/prometheus/secrets:/etc/prometheus/secrets:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -208,6 +209,13 @@ services:
       # to compare against `docker inspect` for each service. Read-only —
       # the brain only inspects, it never edits the spec.
       - ./docker-compose.local.yml:/app/docker-compose.local.yml:ro
+      # Brain writes Prometheus scrape secrets here (uptime_kuma_api_key
+      # etc.) — see brain/prometheus_secret_writer.py. Same host dir is
+      # mounted into the prometheus container at /etc/prometheus/secrets/
+      # (ro), so prometheus.yml's password_file: directives resolve to
+      # whatever brain wrote on its last cycle. Rotating a secret is just
+      # `poindexter set <key> <new>`; brain syncs within 5 min.
+      - ./infrastructure/prometheus/secrets:/host-prometheus/secrets:rw
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

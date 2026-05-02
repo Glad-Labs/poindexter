@@ -91,6 +91,20 @@ except ImportError:  # pragma: no cover — package-qualified for tests
     except ImportError:
         _HAS_COMPOSE_DRIFT_PROBE = False
 
+try:
+    # Writes Prometheus scrape secrets (uptime_kuma_api_key, etc.) to
+    # the bind-mounted secrets dir so prometheus.yml's `password_file:`
+    # directives find a fresh value on every scrape. Replaces the old
+    # "literal placeholder + manual edit" workflow.
+    from prometheus_secret_writer import write_prometheus_secrets
+    _HAS_PROMETHEUS_SECRET_WRITER = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.prometheus_secret_writer import write_prometheus_secrets
+        _HAS_PROMETHEUS_SECRET_WRITER = True
+    except ImportError:
+        _HAS_PROMETHEUS_SECRET_WRITER = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1099,6 +1113,64 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] compose_drift probe failed: %s", e)
+
+    # Refresh Prometheus scrape secrets (uptime_kuma_api_key, etc.)
+    # from app_settings → bind-mounted password_file paths so the next
+    # prometheus scrape uses the current value. No-op when secrets are
+    # already up to date. See brain/prometheus_secret_writer.py.
+    if _HAS_PROMETHEUS_SECRET_WRITER:
+        try:
+            # Thin SiteConfig-shaped wrapper. Brain doesn't use the
+            # worker's full DI seam, but write_prometheus_secrets only
+            # needs `get_secret(key, default)`. Decryption mirrors
+            # services.plugins.secrets.get_secret: pgcrypto's
+            # pgp_sym_decrypt with POINDEXTER_SECRET_KEY (already set
+            # in the brain container's env per docker-compose).
+            class _BrainSecretReader:
+                def __init__(self, _pool):
+                    self._pool = _pool
+                async def get_secret(self, key, default=""):
+                    row = await self._pool.fetchrow(
+                        "SELECT value, is_secret FROM app_settings "
+                        "WHERE key = $1", key,
+                    )
+                    if not row:
+                        return default
+                    val = row["value"]
+                    if not val:
+                        return default
+                    # Plaintext rows (is_secret=false OR pre-migration
+                    # legacy is_secret=true without enc: prefix) come
+                    # back verbatim.
+                    if not row["is_secret"] or not val.startswith("enc:v1:"):
+                        return val
+                    pkey = os.getenv("POINDEXTER_SECRET_KEY")
+                    if not pkey:
+                        logger.warning(
+                            "[BRAIN] POINDEXTER_SECRET_KEY unset — can't "
+                            "decrypt %s", key,
+                        )
+                        return default
+                    try:
+                        return await self._pool.fetchval(
+                            "SELECT pgp_sym_decrypt(decode($1, 'base64'), $2)::text",
+                            val[len("enc:v1:"):],
+                            pkey,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "[BRAIN] decrypt %s failed: %s", key, exc,
+                        )
+                        return default
+
+            secret_reader = _BrainSecretReader(pool)
+            secret_results = await write_prometheus_secrets(secret_reader)
+            probe_results["prometheus_secrets"] = {
+                "ok": all(not v.startswith("error:") for v in secret_results.values()),
+                "detail": ", ".join(f"{k}={v}" for k, v in secret_results.items()),
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] prometheus_secret_writer failed: %s", e)
 
     all_issues = issues + ext_issues
 
