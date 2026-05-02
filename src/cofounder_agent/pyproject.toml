@@ -187,6 +187,7 @@ sync_newsletter_subscribers = "cofounder_agent.services.jobs.sync_newsletter_sub
 backfill_videos = "cofounder_agent.services.jobs.backfill_videos:BackfillVideosJob"
 backfill_podcasts = "cofounder_agent.services.jobs.backfill_podcasts:BackfillPodcastsJob"
 run_niche_topic_sweep = "cofounder_agent.services.jobs.run_niche_topic_sweep:RunNicheTopicSweepJob"
+run_dev_diary_post = "cofounder_agent.services.jobs.run_dev_diary_post:RunDevDiaryPostJob"
 detect_anomalies = "cofounder_agent.services.jobs.detect_anomalies:DetectAnomaliesJob"
 check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
 regenerate_stock_images = "cofounder_agent.services.jobs.regenerate_stock_images:RegenerateStockImagesJob"
@@ -198,6 +199,7 @@ devto = "cofounder_agent.services.topic_sources.devto:DevtoSource"
 web_search = "cofounder_agent.services.topic_sources.web_search:WebSearchSource"
 knowledge = "cofounder_agent.services.topic_sources.knowledge:KnowledgeSource"
 codebase = "cofounder_agent.services.topic_sources.codebase:CodebaseSource"
+dev_diary = "cofounder_agent.services.topic_sources.dev_diary_source:DevDiarySource"
 
 [tool.poetry.plugins."poindexter.image_providers"]
 pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"

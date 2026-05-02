@@ -158,16 +158,31 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
     if named_quote:
         score += 0.5
 
-    # Voice violation: penalize first-person claims about building/creating things
-    first_person_claims = len(re.findall(
-        r"\b(?:I|we)\s+(?:built|created|developed|designed|made|launched|shipped|released|wrote)\b",
-        content, re.IGNORECASE,
-    ))
-    if first_person_claims > 0:
-        score -= min(
-            first_person_claims * cfg["accuracy_first_person_penalty"],
-            cfg["accuracy_first_person_max"],
-        )
+    # Voice violation: penalize first-person claims about building/creating things.
+    # Niche-level escape hatch (2026-05-02 voice-policy update): the
+    # ``dev_diary`` niche explicitly allows first-person — that's the
+    # whole point of build-in-public posts. The bypass list lives in
+    # ``app_settings.qa_allow_first_person_niches`` (CSV of niche slugs)
+    # so future niches can opt in without a code change.
+    _post_niche = (context.get("niche") or context.get("category") or "")
+    _post_niche = str(_post_niche).strip().lower()
+    _allow_first_person = False
+    if _post_niche:
+        _allowed_csv = _sc.get("qa_allow_first_person_niches", "")
+        if _allowed_csv:
+            _allowed = {s.strip().lower() for s in str(_allowed_csv).split(",") if s.strip()}
+            _allow_first_person = _post_niche in _allowed
+
+    if not _allow_first_person:
+        first_person_claims = len(re.findall(
+            r"\b(?:I|we)\s+(?:built|created|developed|designed|made|launched|shipped|released|wrote)\b",
+            content, re.IGNORECASE,
+        ))
+        if first_person_claims > 0:
+            score -= min(
+                first_person_claims * cfg["accuracy_first_person_penalty"],
+                cfg["accuracy_first_person_max"],
+            )
 
     # Meta-commentary penalty
     meta_commentary = len(re.findall(
