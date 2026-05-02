@@ -112,6 +112,31 @@ async def process_content_generation_task(
     from services.image_style_rotation import ImageStyleTracker as _IST
     _style_tracker = _IST()
 
+    # Mutable copy — the experiment hook may set ``models_by_phase["writer"]``
+    # below if an A/B experiment is active. Always seed the dict before the
+    # hook runs so the merge is in-place + observable to downstream stages.
+    _models_by_phase: dict[str, str] = dict(models_by_phase or {})
+
+    # Glad-Labs/poindexter#27: assign this task to a variant of the active
+    # pipeline experiment (if any). Best-effort — failure returns no-op
+    # and the pipeline runs with default config. The assignment dict is
+    # threaded through so finalize can record_outcome on the same row.
+    try:
+        from services.pipeline_experiment_hook import assign_pipeline_variant
+        from services.site_config import site_config as _sc_for_experiment
+        _experiment_assignment = await assign_pipeline_variant(
+            task_id=task_id,
+            database_service=database_service,
+            site_config=_sc_for_experiment,
+            models_by_phase=_models_by_phase,
+        )
+    except Exception as _exc:
+        # Truly defensive — assign_pipeline_variant is itself wrapped in
+        # try/except, but if the import fails for some bizarre reason we
+        # still want the pipeline to run.
+        logger.debug("[BG-TASK] experiment hook unavailable: %s", _exc)
+        _experiment_assignment = {"experiment_key": None, "variant_key": None}
+
     result: dict[str, Any] = {
         "task_id": task_id,
         "topic": topic,
@@ -126,12 +151,15 @@ async def process_content_generation_task(
         "generate_featured_image": generate_featured_image,
         "database_service": database_service,
         "image_service": image_service,
-        "models_by_phase": models_by_phase or {},
+        "models_by_phase": _models_by_phase,
         "quality_preference": quality_preference,
         "target_audience": target_audience,
         # Shared services threaded via context (replaces singletons).
         "settings_service": _settings_service,
         "image_style_tracker": _style_tracker,
+        # Experiment context — present for the duration of the run so
+        # finalize can call record_outcome on the same assignment row.
+        "experiment_assignment": _experiment_assignment,
     }
 
     # Build the Stage runner. Stages are loaded imperatively via
@@ -276,6 +304,29 @@ async def process_content_generation_task(
             "early_eval_score": quality_result.overall_score,
             "status": result["status"],
         }, task_id=task_id)
+
+        # Glad-Labs/poindexter#27: attribute pipeline outcome to the
+        # experiment assignment row (no-op when no experiment active).
+        try:
+            from services.pipeline_experiment_hook import record_pipeline_outcome
+            from services.site_config import site_config as _sc_for_outcome
+            await record_pipeline_outcome(
+                assignment=result.get("experiment_assignment") or {},
+                task_id=task_id,
+                database_service=database_service,
+                site_config=_sc_for_outcome,
+                metrics={
+                    "quality_score": float(
+                        result.get("quality_score", quality_result.overall_score) or 0.0
+                    ),
+                    "qa_final_score": float(result.get("qa_final_score") or 0.0),
+                    "status": str(result["status"]),
+                    "model_used": str(result.get("model_used", "")),
+                    "outcome": "success",
+                },
+            )
+        except Exception as _exc:
+            logger.debug("[BG-TASK] experiment record_outcome failed: %s", _exc)
 
         logger.info("=" * 80)
         logger.info("COMPLETE CONTENT GENERATION PIPELINE FINISHED")

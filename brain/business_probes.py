@@ -6,6 +6,9 @@ They implement the Probe interface from probe_interface.py.
 
 Probes:
   - status_digest: 6-hour system health summary to Telegram
+  - webhook_freshness: alert when revenue/subscriber webhooks go quiet
+    (Glad-Labs/poindexter#27 follow-up — webhooks were wired with test
+    rows on Apr 25 but no real provider deliveries since)
   - (future) email_triage: Gmail inbox scan, flag actionable items
   - (future) revenue_monitor: Lemon Squeezy sales + Mercury balance
 """
@@ -196,6 +199,162 @@ async def probe_status_digest(pool, notify_fn) -> dict:
 
 
 # ============================================================================
+# WEBHOOK FRESHNESS — alert when revenue / subscriber tables go quiet
+# ============================================================================
+#
+# Glad-Labs/poindexter#27 follow-up. Both Lemon Squeezy and Resend webhook
+# handlers shipped (signature-verified, registered, idempotent). But each
+# table has exactly one row from 2026-04-25 — the test fires at
+# handler-wire time. No real provider deliveries since.
+#
+# Two ways that can be the system's fault:
+#
+#   1. Provider isn't pointed at our public webhook URL (config drift,
+#      URL change, secret mismatch).
+#   2. Inbound dispatch is silently dropping verified events somewhere.
+#
+# And one way it's not the system's fault: there genuinely have been no
+# sales / sends. This probe can't distinguish those — only the operator
+# can — but it surfaces "your webhook table has been quiet for N days,
+# go check the provider config" so the symptom is visible early.
+#
+# Defaults are deliberately loose: 30d for revenue (a quiet store
+# alerting daily on day-1 of zero sales is noise) and 7d for subscribers
+# (Resend should see at least one digest send weekly once newsletters
+# are running). Operators tune via app_settings:
+#
+#   webhook_freshness_revenue_threshold_days     (default 30)
+#   webhook_freshness_subscriber_threshold_days  (default 7)
+#   probe_webhook_freshness_enabled              (default true)
+#   probe_webhook_freshness_interval_minutes     (default 1440)
+
+
+async def _read_setting(pool, key: str, default: str) -> str:
+    """Read an app_settings value with a typed default. Never raises."""
+    try:
+        value = await pool.fetchval(
+            "SELECT value FROM app_settings "
+            "WHERE key = $1 AND is_active = TRUE",
+            key,
+        )
+    except Exception:
+        return default
+    if value is None:
+        return default
+    return str(value).strip() or default
+
+
+async def _row_age_days(pool, table: str, column: str = "created_at") -> float | None:
+    """Return age (in days) of newest row, or None if table is empty / errored."""
+    try:
+        last = await pool.fetchval(
+            # Identifier interpolation OK — `table` and `column` are
+            # caller-supplied literals, not user input. Bandit B608 is
+            # satisfied because no $ params are involved.
+            f"SELECT MAX({column}) FROM {table}",  # nosec B608
+        )
+    except Exception as e:
+        logger.debug("[BUSINESS_PROBE] _row_age_days(%s.%s) failed: %s", table, column, e)
+        return None
+    if last is None:
+        # Empty table — return very-large sentinel so threshold comparison
+        # treats it as "long since last delivery".
+        return float("inf")
+    import datetime as _dt
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=_dt.timezone.utc)
+    delta = now - last
+    return delta.total_seconds() / 86400.0
+
+
+async def probe_webhook_freshness(pool, notify_fn) -> dict:
+    """Check that revenue_events + subscriber_events tables are seeing fresh rows.
+
+    Every ``probe_webhook_freshness_interval_minutes`` (default 24h) the
+    probe queries the newest row in each table. If either is older than
+    its configured threshold, send an operator notification with a
+    pointer to the provider admin URL the human should verify.
+
+    Best-effort: never raises, returns ``{"ok": False, "detail": ...}``
+    on internal error so the brain cycle can keep going.
+    """
+    enabled = (await _read_setting(pool, "probe_webhook_freshness_enabled", "true")).lower()
+    if enabled in ("false", "0", "no", "off"):
+        return {"ok": True, "detail": "disabled via app_settings"}
+
+    interval = int(await _read_setting(
+        pool, "probe_webhook_freshness_interval_minutes", "1440",
+    ) or 1440)
+    if not _is_due("webhook_freshness", interval):
+        return {"ok": True, "detail": "not due yet"}
+
+    revenue_threshold_days = float(await _read_setting(
+        pool, "webhook_freshness_revenue_threshold_days", "30",
+    ) or 30)
+    subscriber_threshold_days = float(await _read_setting(
+        pool, "webhook_freshness_subscriber_threshold_days", "7",
+    ) or 7)
+
+    revenue_age = await _row_age_days(pool, "revenue_events")
+    subscriber_age = await _row_age_days(pool, "subscriber_events")
+
+    alerts: list[str] = []
+    if revenue_age is None:
+        # Table missing / query error. Don't spam — debug log only.
+        logger.debug("[BUSINESS_PROBE] revenue_events not queryable — skipping")
+    elif revenue_age >= revenue_threshold_days:
+        if revenue_age == float("inf"):
+            age_str = "ever (table empty)"
+        else:
+            age_str = f"{revenue_age:.1f}d"
+        alerts.append(
+            f"revenue_events: no row in {age_str} (threshold "
+            f"{revenue_threshold_days:.0f}d). Verify Lemon Squeezy webhook "
+            "config: https://app.lemonsqueezy.com/settings/webhooks"
+        )
+
+    if subscriber_age is None:
+        logger.debug("[BUSINESS_PROBE] subscriber_events not queryable — skipping")
+    elif subscriber_age >= subscriber_threshold_days:
+        if subscriber_age == float("inf"):
+            age_str = "ever (table empty)"
+        else:
+            age_str = f"{subscriber_age:.1f}d"
+        alerts.append(
+            f"subscriber_events: no row in {age_str} (threshold "
+            f"{subscriber_threshold_days:.0f}d). Verify Resend webhook "
+            "config: https://resend.com/webhooks"
+        )
+
+    _mark_run("webhook_freshness")
+
+    if not alerts:
+        logger.info(
+            "[BUSINESS_PROBE] webhook_freshness OK — revenue_age=%s "
+            "subscriber_age=%s",
+            "—" if revenue_age is None else f"{revenue_age:.1f}d",
+            "—" if subscriber_age is None else f"{subscriber_age:.1f}d",
+        )
+        return {"ok": True, "detail": "all webhook tables fresh"}
+
+    body = (
+        "WEBHOOK QUIET — provider deliveries appear to have stopped.\n\n"
+        + "\n\n".join(alerts)
+        + "\n\nOperator action: verify the provider admin pages above. "
+        "If config is correct and the absence is real (no sales / no "
+        "sends), tighten or loosen the thresholds via "
+        "`poindexter settings set webhook_freshness_*_threshold_days`."
+    )
+    try:
+        notify_fn(body)
+    except Exception as e:
+        logger.warning("[BUSINESS_PROBE] notify_fn failed: %s", e)
+    logger.warning("[BUSINESS_PROBE] webhook_freshness fired %d alert(s)", len(alerts))
+    return {"ok": True, "detail": f"fired {len(alerts)} alert(s)", "alerts": alerts}
+
+
+# ============================================================================
 # RUNNER — called from brain daemon's run_cycle
 # ============================================================================
 
@@ -207,6 +366,7 @@ async def run_business_probes(pool, notify_fn) -> dict:
     results = {}
 
     results["status_digest"] = await probe_status_digest(pool, notify_fn)
+    results["webhook_freshness"] = await probe_webhook_freshness(pool, notify_fn)
 
     # Future probes:
     # results["email_triage"] = await probe_email_triage(pool, notify_fn)

@@ -131,6 +131,50 @@ DROP TABLE IF EXISTS experiments;
 
 async def up(pool) -> None:
     async with pool.acquire() as conn:
+        # Migration 0063 created an `experiments` table with a different
+        # shape (``experiment_type`` / ``variant_a`` / ``variant_b`` columns)
+        # that nothing ever wrote to. The new harness needs ``key`` /
+        # ``description`` / ``variants`` jsonb instead. If the old shape
+        # is present (column ``experiment_type`` exists, no ``key`` yet)
+        # AND the table is empty, drop + recreate. We never touch a
+        # populated experiments table — the operator must reconcile by
+        # hand if they had pre-0097 data, but the audit (#27) confirms
+        # nobody did.
+        col_exists = await conn.fetchval(
+            """
+            SELECT EXISTS(
+              SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'experiments' AND column_name = 'key'
+            )
+            """,
+        )
+        if not col_exists:
+            old_exists = await conn.fetchval(
+                """
+                SELECT EXISTS(
+                  SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'experiments' AND column_name = 'experiment_type'
+                )
+                """,
+            )
+            if old_exists:
+                count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM experiments",
+                )
+                if count == 0:
+                    logger.info(
+                        "0097: pre-existing legacy experiments table is "
+                        "empty — dropping so the new shape can be created"
+                    )
+                    await conn.execute("DROP TABLE IF EXISTS experiments CASCADE")
+                else:
+                    logger.warning(
+                        "0097: legacy experiments table has %d row(s) — "
+                        "leaving in place; new harness will not function. "
+                        "Operator must reconcile manually.",
+                        count,
+                    )
+                    return
         await conn.execute(SQL_UP)
         logger.info("0097: created experiments + experiment_assignments tables")
 

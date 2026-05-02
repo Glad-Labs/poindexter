@@ -1,16 +1,20 @@
-"""RollupPostPerformanceJob — aggregate page_views into post_performance.
+"""RollupPostPerformanceJob — aggregate page_views + external_metrics into post_performance.
 
 Part of gitea#272 Phase 3 Wave B. The external-tap half (Google Search
-Console, GA4, Cloudflare Analytics) needs OAuth that isn't provisioned
-yet, but the LOCAL half — rolling up our own page_views table into
-post_performance — is pure SQL and ships now. Unblocks "views per post"
-panels in Grafana and starts building the historical dataset that the
-experiments agent (gitea#273) will consume.
+Console, GA4, Cloudflare Analytics) ships via the Singer-tap framework
+in #103; the LOCAL half — rolling up our own page_views table into
+post_performance — is pure SQL. As of Glad-Labs/poindexter#27 the job
+also LEFT JOINs external_metrics (filtered by source='google_search_console')
+to enrich each snapshot row with google_impressions / google_clicks /
+google_avg_position, fixing the audit gap where 322 post_performance
+rows had impressions=0 despite 2,322 GSC rows in external_metrics.
 
 ## What it does
 
 Once per cycle, for every published post:
   - Count page_views.slug matches over 1d / 7d / 30d / total windows.
+  - Aggregate GSC impressions/clicks (sum) and position (avg) over the
+    last 30 days from external_metrics.
   - Insert a new post_performance snapshot row with ``period='snapshot'``
     and ``measured_at=NOW()``.
 
@@ -25,6 +29,18 @@ Retention is bounded by the retention_janitor (defaults to 180d).
 - ``config.min_published_days_ago`` (default 0) — skip posts too new to
   have meaningful view counts yet (set to 1 if you only want "yesterday's
   views" patterns)
+- ``config.gsc_window_days`` (default 30) — how far back to aggregate
+  GSC impressions/clicks. 30d matches the post_performance.views_30d
+  column convention so the per-row "30 day window" is consistent.
+
+## GSC-join semantics
+
+We aggregate by ``slug`` rather than ``post_id`` because GSC data lands
+with ``post_id`` NULL for any URL the tap couldn't resolve at write time
+(the tap stores the path in the ``slug`` column either way). Joining on
+slug means we capture all the impressions for a post regardless of
+when the tap was wired up. ``COALESCE(SUM(...), 0)`` keeps the columns
+non-NULL for posts with no GSC traffic yet.
 
 ## Idempotency
 
@@ -53,6 +69,7 @@ class RollupPostPerformanceJob:
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         min_published_days_ago = int(config.get("min_published_days_ago", 0) or 0)
+        gsc_window_days = int(config.get("gsc_window_days", 30) or 30)
         try:
             async with pool.acquire() as conn:
                 # One SQL statement rolls up every published post.
@@ -60,6 +77,13 @@ class RollupPostPerformanceJob:
                 # rows for posts that still exist in the CMS (FK satisfied).
                 # slug match handles both "/posts/<slug>" path form and
                 # the raw slug form (some page_view writers use each).
+                #
+                # Glad-Labs/poindexter#27: also LEFT JOIN external_metrics
+                # for GSC enrichment. The CTE shape is per-(slug, metric_name)
+                # so we collapse with FILTER + SUM/AVG. Joining on slug
+                # (not post_id) captures GSC rows where the tap wrote
+                # ``post_id=NULL`` because the URL didn't resolve at write
+                # time — the slug column is always populated.
                 rows = await conn.fetch(
                     """
                     WITH windows AS (
@@ -84,20 +108,44 @@ class RollupPostPerformanceJob:
                       WHERE p.status = 'published'
                         AND p.published_at <= NOW() - ($1::int || ' days')::interval
                       GROUP BY p.id, p.slug
+                    ),
+                    gsc AS (
+                      SELECT
+                        em.slug,
+                        COALESCE(SUM(em.metric_value) FILTER (
+                          WHERE em.metric_name = 'impressions'
+                        ), 0)::int AS google_impressions,
+                        COALESCE(SUM(em.metric_value) FILTER (
+                          WHERE em.metric_name = 'clicks'
+                        ), 0)::int AS google_clicks,
+                        AVG(em.metric_value) FILTER (
+                          WHERE em.metric_name = 'position' AND em.metric_value > 0
+                        ) AS google_avg_position
+                      FROM external_metrics em
+                      WHERE em.source = 'google_search_console'
+                        AND em.date > (NOW() - ($2::int || ' days')::interval)::date
+                        AND em.slug IS NOT NULL
+                      GROUP BY em.slug
                     )
                     INSERT INTO post_performance (
                       post_id, slug,
                       views_1d, views_7d, views_30d, views_total,
+                      google_impressions, google_clicks, google_avg_position,
                       measured_at, period
                     )
                     SELECT
-                      post_id, slug,
-                      views_1d, views_7d, views_30d, views_total,
+                      w.post_id, w.slug,
+                      w.views_1d, w.views_7d, w.views_30d, w.views_total,
+                      COALESCE(g.google_impressions, 0),
+                      COALESCE(g.google_clicks, 0),
+                      g.google_avg_position,
                       NOW(), 'snapshot'
-                    FROM windows
+                    FROM windows w
+                    LEFT JOIN gsc g ON g.slug = w.slug
                     RETURNING id
                     """,
                     min_published_days_ago,
+                    gsc_window_days,
                 )
                 inserted = len(rows)
                 # Also log a summary for the daily top-5 — operators like

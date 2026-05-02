@@ -257,6 +257,15 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Re-enable when (and if) the script lands.
         ("jobs", "services.jobs.auto_embed_posts", "AutoEmbedPostsJob"),
         ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
+        # One-shot backfill — patches google_* columns on existing
+        # post_performance snapshots from external_metrics. Runs every
+        # 30d as a maintenance pass; the rollup job above keeps new
+        # rows accurate. Glad-Labs/poindexter#27.
+        (
+            "jobs",
+            "services.jobs.backfill_post_performance_gsc",
+            "BackfillPostPerformanceGscJob",
+        ),
         # ReloadSiteConfigJob — every-minute refresh of the in-memory
         # site_config cache so SQL/UI edits to app_settings take effect
         # without a container restart (gitea#280).

@@ -7,6 +7,7 @@ import logging
 import click
 
 from .costs import costs_group
+from .experiments import experiments_group
 from .memory import memory_group
 from .posts import posts_group
 from .premium import premium_group
@@ -49,6 +50,7 @@ main.add_command(sprint_group, name="sprint")
 main.add_command(vercel_group, name="vercel")
 main.add_command(premium_group, name="premium")
 main.add_command(topics_group, name="topics")
+main.add_command(experiments_group, name="experiments")
 
 
 if __name__ == "__main__":
