@@ -105,6 +105,20 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_PROMETHEUS_SECRET_WRITER = False
 
+try:
+    # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
+    # known noise, pages on novel high-count issues. Config is DB-driven
+    # via app_settings (seeded by migration 0133). No-ops without an API
+    # token configured.
+    from glitchtip_triage_probe import run_glitchtip_triage_probe
+    _HAS_GLITCHTIP_TRIAGE_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.glitchtip_triage_probe import run_glitchtip_triage_probe
+        _HAS_GLITCHTIP_TRIAGE_PROBE = True
+    except ImportError:
+        _HAS_GLITCHTIP_TRIAGE_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1113,6 +1127,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] compose_drift probe failed: %s", e)
+
+    # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
+    # known noise per glitchtip_triage_auto_resolve_patterns, and pages on
+    # novel high-count issues. No-ops if the API token isn't configured
+    # (status=unconfigured in the summary). See brain/glitchtip_triage_probe.py
+    # and migration 0133.
+    if _HAS_GLITCHTIP_TRIAGE_PROBE:
+        try:
+            gt_summary = await run_glitchtip_triage_probe(pool)
+            probe_results["glitchtip_triage"] = {
+                "ok": bool(gt_summary.get("ok", False)),
+                "detail": gt_summary.get("detail", ""),
+                "summary": gt_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] glitchtip_triage probe failed: %s", e)
 
     # Refresh Prometheus scrape secrets (uptime_kuma_api_key, etc.)
     # from app_settings → bind-mounted password_file paths so the next

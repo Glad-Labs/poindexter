@@ -89,6 +89,8 @@ mcp.json
 .mcp.json
 infrastructure/pgadmin/pgpass
 scripts/posts_audit.json
+scripts/glitchtip_audit_raw.json
+scripts/glitchtip_audit_report.md
 # Key material
 *.pem
 *.key
