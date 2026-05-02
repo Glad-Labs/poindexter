@@ -6,6 +6,7 @@ import logging
 
 import click
 
+from .auth import auth_group
 from .costs import costs_group
 from .experiments import experiments_group
 from .memory import memory_group
@@ -42,6 +43,7 @@ def main(ctx: click.Context, verbose: bool) -> None:
 
 
 main.add_command(setup_command, name="setup")
+main.add_command(auth_group, name="auth")
 main.add_command(memory_group, name="memory")
 main.add_command(tasks_group, name="tasks")
 main.add_command(posts_group, name="posts")

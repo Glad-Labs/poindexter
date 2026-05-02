@@ -377,6 +377,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
+    { name = "pyjwt" },
 ]
 
 [package.metadata]
@@ -385,6 +386,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.23.0" },
+    { name = "pyjwt", specifier = ">=2.12.0,<3.0.0" },
 ]
 
 [[package]]

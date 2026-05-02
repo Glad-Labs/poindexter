@@ -40,55 +40,31 @@ logger = logging.getLogger("poindexter-mcp")
 # the MCP server fails loud on startup if something required is missing.
 
 
-def _require_env(*names: str) -> str:
-    """Return the first set env var in order. Notify + exit if none are set."""
+def _first_env(*names: str) -> str | None:
+    """Return the first set env var in order, or None. Pure lookup — no exit.
+
+    Validation happens in :func:`setup_runtime`, called by the stdio entry
+    point AND by any other process that imports this module to mount the
+    HTTP transport. Keeping module import side-effect-free (no
+    ``sys.exit``) is what lets the worker (``cofounder_agent.main``)
+    import ``mcp`` and call ``mcp.streamable_http_app()`` to expose
+    these tools as a remote MCP server (Glad-Labs/poindexter#237).
+    """
     for n in names:
         v = os.getenv(n)
         if v:
             return v
-    import sys as _sys
-    from pathlib import Path as _Path
-
-    _repo_root = _Path(__file__).resolve().parents[1]
-    if str(_repo_root) not in _sys.path:
-        _sys.path.insert(0, str(_repo_root))
-    from brain.operator_notifier import notify_operator
-
-    joined = ", ".join(names)
-    notify_operator(
-        title="MCP server cannot start — missing required env var",
-        detail=(
-            f"Set one of these env vars before launching the MCP server: "
-            f"{joined}.\n\n"
-            "For local dev the Claude desktop config should export "
-            "POINDEXTER_API_URL, POINDEXTER_API_TOKEN, LOCAL_DATABASE_URL, "
-            "and OLLAMA_URL. No hardcoded defaults — see issue #198."
-        ),
-        source="mcp_server",
-        severity="critical",
-    )
-    _sys.exit(2)
+    return None
 
 
-API_URL = _require_env("POINDEXTER_API_URL", "GLADLABS_API_URL")
-API_TOKEN = _require_env("POINDEXTER_API_TOKEN", "GLADLABS_API_TOKEN")
+# Module globals — populated from env at import (lazy, no exit). Validated
+# in setup_runtime(); read at call time inside individual tool functions.
+API_URL: str | None = _first_env("POINDEXTER_API_URL", "GLADLABS_API_URL")
+API_TOKEN: str | None = _first_env("POINDEXTER_API_TOKEN", "GLADLABS_API_TOKEN")
+OLLAMA_URL: str | None = _first_env("OLLAMA_URL")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+LOCAL_DB_DSN: str | None = None  # Populated by setup_runtime()
 
-# Route the DB DSN through the bootstrap resolver so ~/.poindexter/bootstrap.toml
-# works for the MCP server just like it does for the brain daemon (#198).
-import sys as _sys_boot
-from pathlib import Path as _Path_boot
-
-_repo_root_boot = _Path_boot(__file__).resolve().parents[1]
-if str(_repo_root_boot) not in _sys_boot.path:
-    _sys_boot.path.insert(0, str(_repo_root_boot))
-# Also expose src/cofounder_agent so we can import services.logger_config
-# without altering the rest of the import shape (#259).
-_cofounder_root = _repo_root_boot / "src" / "cofounder_agent"
-if _cofounder_root.is_dir() and str(_cofounder_root) not in _sys_boot.path:
-    _sys_boot.path.insert(0, str(_cofounder_root))
-from brain.bootstrap import require_database_url
-
-LOCAL_DB_DSN = require_database_url(source="mcp_server")
 
 # --- Tool error formatting helper (#259) -----------------------------------
 # Anti-pattern being replaced: ``return f"X failed: {e}"`` swallowed the
@@ -97,8 +73,23 @@ LOCAL_DB_DSN = require_database_url(source="mcp_server")
 # errors). Every MCP tool now routes errors through ``_format_tool_error``
 # so callers see the exception class, a correlation id, and the server logs
 # carry the full traceback under that same id.
-import traceback  # noqa: E402, F401  (traceback is used by logger.exception)
+#
+# Import is kept at module scope (not in setup_runtime) because the
+# ``_format_tool_error`` symbol is referenced by tool functions defined
+# at module scope below, which evaluate type hints / decorators at import
+# time. The src/cofounder_agent path is injected here so the
+# services.logger_config import resolves; both injections are no-ops if
+# the directories don't exist (e.g. minimal CI shape).
+import sys as _sys_boot
 import uuid as _uuid  # noqa: E402
+from pathlib import Path as _Path_boot
+
+_repo_root_boot = _Path_boot(__file__).resolve().parents[1]
+if str(_repo_root_boot) not in _sys_boot.path:
+    _sys_boot.path.insert(0, str(_repo_root_boot))
+_cofounder_root = _repo_root_boot / "src" / "cofounder_agent"
+if _cofounder_root.is_dir() and str(_cofounder_root) not in _sys_boot.path:
+    _sys_boot.path.insert(0, str(_cofounder_root))
 
 try:  # pragma: no cover - import-shape only
     from services.logger_config import get_logger as _get_logger
@@ -120,8 +111,46 @@ def _format_tool_error(tool_name: str, e: Exception) -> str:
     _log.exception("[mcp-tool] %s failed [rid=%s]", tool_name, rid)
     return f"{tool_name} failed (rid={rid}): {type(e).__name__}: {e}"
 
-OLLAMA_URL = _require_env("OLLAMA_URL")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+
+def setup_runtime() -> None:
+    """Validate required env + resolve DB DSN. Idempotent.
+
+    Must be called before :data:`mcp` actually serves requests — i.e.
+    before ``mcp.run()`` (stdio) or before mounting
+    ``mcp.streamable_http_app()`` (HTTP). Raises ``RuntimeError`` if a
+    required value is missing; callers are expected to surface that
+    cleanly (operator-notify + exit for stdio, return 500 for HTTP).
+    """
+    global LOCAL_DB_DSN
+    missing = []
+    if not API_URL:
+        missing.append("POINDEXTER_API_URL")
+    if not API_TOKEN:
+        missing.append("POINDEXTER_API_TOKEN")
+    if not OLLAMA_URL:
+        missing.append("OLLAMA_URL")
+    if missing:
+        joined = ", ".join(missing)
+        raise RuntimeError(
+            f"MCP server missing required env vars: {joined}. "
+            "For local dev the Claude desktop config exports these; "
+            "for the worker-mounted HTTP transport, main.py wires them "
+            "from app_settings before mounting (see issue #237)."
+        )
+
+    if LOCAL_DB_DSN is None:
+        # Route through the bootstrap resolver so
+        # ~/.poindexter/bootstrap.toml works for the MCP server just like
+        # it does for the brain daemon (#198).
+        import sys as _sys_boot
+        from pathlib import Path as _Path_boot
+
+        _repo_root_boot = _Path_boot(__file__).resolve().parents[1]
+        if str(_repo_root_boot) not in _sys_boot.path:
+            _sys_boot.path.insert(0, str(_repo_root_boot))
+        from brain.bootstrap import require_database_url
+
+        LOCAL_DB_DSN = require_database_url(source="mcp_server")
 
 # Lazy-initialized connection pool and HTTP client
 _pool: asyncpg.Pool | None = None
@@ -1018,5 +1047,38 @@ async def topics_reject_batch(batch_id: str, reason: str = "") -> str:
         return _format_tool_error("topics_reject_batch", e)
 
 
-if __name__ == "__main__":
+def _stdio_main() -> None:
+    """Entry point for the stdio transport (existing local clients).
+
+    Validates env / DB DSN via setup_runtime; if anything's missing,
+    surfaces it through the operator-notifier path that the original
+    ``_require_env`` used to fire (Telegram → Discord → alerts.log)
+    before exiting with a clear status.
+    """
+    try:
+        setup_runtime()
+    except RuntimeError as exc:
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        _repo_root = _Path(__file__).resolve().parents[1]
+        if str(_repo_root) not in _sys.path:
+            _sys.path.insert(0, str(_repo_root))
+        try:
+            from brain.operator_notifier import notify_operator
+            notify_operator(
+                title="MCP server cannot start — missing required env var",
+                detail=str(exc),
+                source="mcp_server",
+                severity="critical",
+            )
+        except Exception:  # noqa: BLE001 — notifier is best-effort
+            pass
+        print(f"FATAL: {exc}", file=_sys.stderr)
+        _sys.exit(2)
+
     mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    _stdio_main()

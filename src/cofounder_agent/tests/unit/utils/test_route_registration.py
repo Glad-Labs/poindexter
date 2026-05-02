@@ -90,12 +90,16 @@ class TestRouteManifestStructure:
         for the Prometheus/Alertmanager consumer.
         Updated 2026-04-21 (gitea#271 Phase 3.B): added external_webhooks_router
         for Lemon Squeezy + Resend webhook sinks.
+        Updated 2026-05-02 (PR #166 OAuth recovery): added oauth_metadata_router
+        + oauth_token_router (RFC 8414 + RFC 6749 §4.4).
         """
-        assert len(_WORKER_ROUTES) == 14
+        assert len(_WORKER_ROUTES) == 16
 
     def test_worker_approval_router_is_first(self):
-        """Approval router should be first in the worker manifest."""
-        assert _WORKER_ROUTES[0][2] == "approval_router"
+        """OAuth metadata router is first now (PR #166); approval was first
+        until OAuth recovery added the well-known endpoints at the top of the
+        manifest."""
+        assert _WORKER_ROUTES[0][2] == "oauth_metadata_router"
 
     def test_worker_manifest_structure_valid(self):
         """All worker manifest entries should be valid 4-tuples."""

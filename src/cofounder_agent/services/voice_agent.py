@@ -1,4 +1,4 @@
-"""voice_agent.py — Local real-time voice agent for Poindexter.
+"""voice_agent.py — Real-time voice agent for Poindexter.
 
 Real-time voice conversation loop running ENTIRELY on your machine
 (Ollama-first, no paid APIs):
@@ -9,20 +9,19 @@ Single process. No cloud, no API keys. Built on Pipecat (Apache-2.0).
 All configuration lives in ``app_settings`` (DB-first config plane —
 zero env-var dependency per the project's standard pattern).
 
-## Roadmap
+## Surfaces
 
-This file is the engine. Surfaces are added on top:
+- **Local mic loop** (``run_local()``, ``python -m services.voice_agent``)
+- **WebRTC over Tailscale** (``services.voice_agent_webrtc``) — phone /
+  laptop access from anywhere on the tailnet, same pipeline.
+- Future: Discord voice bot adapter, multi-agent voice rooms.
 
-- Local mic loop (this entry point — ``run_local()``)
-- Poindexter MCP tools wired into the LLM step (so "what's in my approval
-  queue" calls the existing mcp-server/server.py tools)
-- WebRTC transport for phone/laptop access over Tailscale
-- Discord voice bot adapter
-- Multi-agent voice rooms (foundation for the tactical-sim product)
+The pipeline-builder (``build_voice_pipeline_task``) is the shared
+engine — both surfaces call it with their own transport.
 
 ## Install
 
-System dep (portaudio for mic+speaker access):
+System dep (portaudio for the local-mic surface only):
 
     sudo apt-get install -y portaudio19-dev   # Linux
     # macOS:  brew install portaudio
@@ -30,8 +29,9 @@ System dep (portaudio for mic+speaker access):
 
 Python deps (Apache-2.0 / MIT all the way down):
 
-    pip install \
-        "pipecat-ai[silero,whisper,ollama,kokoro,local]" \
+    pip install \\
+        "pipecat-ai[silero,whisper,ollama,kokoro,local,webrtc]" \\
+        pipecat-ai-small-webrtc-prebuilt \\
         sounddevice numpy
 
 First run downloads model weights:
@@ -45,31 +45,28 @@ Subsequent runs are warm (everything cached under ``~/.cache/``).
 
     python -m services.voice_agent
 
-Talk into your default mic. The agent transcribes when you stop speaking,
-sends to Ollama, speaks the response in the bf_emma British-female voice.
-Ctrl+C to exit.
+Talk into your default mic. Ctrl+C to exit.
 
 ## Configuration (DB-driven via app_settings)
 
 All knobs are app_settings rows — change at runtime, no restart needed.
-Defaults are seeded by migration ``0104_seed_voice_agent_defaults.py``.
+Defaults are seeded by migrations 0104 + 0107 + 0108.
 
 | Key                              | Default                              | Purpose                              |
 | -------------------------------- | ------------------------------------ | ------------------------------------ |
 | voice_agent_llm_model            | glm-4.7-5090:latest                  | Ollama model tag                     |
-| voice_agent_ollama_url           | http://host.docker.internal:11434    | Ollama base URL                      |
+| voice_agent_ollama_url           | http://localhost:11434/v1            | Ollama OpenAI-compat base URL        |
 | voice_agent_tts_voice            | bf_emma                              | Kokoro voice id (top-graded UK fem)  |
 | voice_agent_tts_speed            | 1.0                                  | Kokoro playback speed                |
-| voice_agent_whisper_model        | base.en                              | faster-whisper model size            |
+| voice_agent_whisper_model        | base                                 | faster-whisper model size            |
+| voice_agent_vad_stop_secs        | 0.2                                  | End-of-speech silence window         |
 | voice_agent_system_prompt        | (Emma, terse Glad Labs assistant)    | Agent personality                    |
+| voice_agent_webrtc_host          | 0.0.0.0                              | WebRTC bind host                     |
+| voice_agent_webrtc_port          | 8003                                 | WebRTC bind port                     |
 
 Edit any setting via the CLI:
 
     poindexter settings set voice_agent_tts_voice bf_isabella
-
-If latency hurts:
-- Drop ``voice_agent_whisper_model`` to ``tiny.en`` (~40 MB, ~2-3× faster)
-- Confirm the 5090 isn't busy with SDXL (kill the worker container if needed)
 """
 
 from __future__ import annotations
@@ -80,6 +77,7 @@ import sys
 from typing import Any
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -94,6 +92,7 @@ from pipecat.services.whisper.stt import (
     Model as WhisperModel,
     WhisperSTTService,
 )
+from pipecat.transports.base_transport import BaseTransport
 from pipecat.transports.local.audio import (
     LocalAudioTransport,
     LocalAudioTransportParams,
@@ -112,71 +111,106 @@ _DEFAULT_SYSTEM_PROMPT = (
 
 
 # ---------------------------------------------------------------------------
-# Pipeline
+# Shared pipeline builder
 # ---------------------------------------------------------------------------
 
 
-async def run_local(site_config: Any) -> None:
-    """Run the voice agent on local mic + speakers.
-
-    Reads every knob from ``app_settings`` via ``site_config``. Blocking
-    until Ctrl+C.
+def _resolve_whisper_model(name: str) -> WhisperModel:
+    """Pipecat's Whisper ``Model`` is an enum keyed on ``value`` (e.g. 'base',
+    'small'). Accept either the enum value ('base') or name ('BASE') so
+    operators don't have to memorize which case the lookup wants.
     """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    log = logging.getLogger("voice_agent")
+    try:
+        return WhisperModel(name)
+    except ValueError:
+        try:
+            return WhisperModel[name.upper()]
+        except KeyError as exc:
+            valid = ", ".join(m.value for m in WhisperModel)
+            raise ValueError(
+                f"voice_agent_whisper_model={name!r} is not a valid "
+                f"Pipecat Whisper model. Valid values: {valid}",
+            ) from exc
+
+
+def build_voice_pipeline_task(
+    transport: BaseTransport,
+    site_config: Any,
+    *,
+    log: logging.Logger | None = None,
+    tools: list[Any] | None = None,
+    llm: Any | None = None,
+    system_prompt_override: str | None = None,
+) -> PipelineTask:
+    """Build a configured :class:`PipelineTask` for the given transport.
+
+    Reads every knob from ``app_settings`` via ``site_config``. Used by
+    every voice surface (local mic, SmallWebRTC, LiveKit) so the
+    pipeline shape stays in one place.
+
+    Args:
+        transport: The Pipecat transport that owns mic/speaker IO.
+        site_config: SiteConfig instance for DB-backed settings.
+        log: Optional logger (defaults to module logger).
+        tools: Optional list of Python coroutine functions to expose as
+            LLM tool calls. Each callable is registered via
+            ``llm.register_direct_function`` — Pipecat introspects
+            the signature + docstring to build the OpenAI tool schema.
+            Ignored when ``llm`` is supplied (the caller owns wiring).
+        llm: Optional pre-built Pipecat LLM service. When supplied,
+            replaces the default Ollama-backed stage. Used by
+            ``voice_agent_livekit --brain claude-code`` to swap in
+            the Claude Code subprocess bridge.
+        system_prompt_override: If set, used in place of the
+            ``voice_agent_system_prompt`` setting. Useful for the
+            Claude bridge, which already has its own system prompt
+            via the project's CLAUDE.md and shouldn't get the
+            "you are Emma" preamble.
+    """
+    log = log or logging.getLogger("voice_agent")
 
     llm_model = site_config.get(
         "voice_agent_llm_model", "glm-4.7-5090:latest",
     )
     ollama_url = site_config.get(
-        "voice_agent_ollama_url", "http://host.docker.internal:11434",
+        "voice_agent_ollama_url", "http://localhost:11434/v1",
     )
     tts_voice = site_config.get("voice_agent_tts_voice", "bf_emma")
     tts_speed = float(site_config.get("voice_agent_tts_speed", 1.0))
     whisper_model_name = site_config.get(
-        "voice_agent_whisper_model", "base.en",
+        "voice_agent_whisper_model", "base",
     )
-    system_prompt = (
+    vad_stop_secs = float(site_config.get("voice_agent_vad_stop_secs", 0.2))
+    system_prompt = system_prompt_override or (
         site_config.get("voice_agent_system_prompt", "")
         or _DEFAULT_SYSTEM_PROMPT
     )
 
     log.info(
-        "Starting voice agent (local mic) — llm=%s voice=%s whisper=%s",
-        llm_model, tts_voice, whisper_model_name,
+        "Voice pipeline — llm=%s voice=%s whisper=%s vad_stop=%.2fs",
+        llm_model, tts_voice, whisper_model_name, vad_stop_secs,
     )
 
-    # Pipecat 1.1 moved vad_analyzer OFF the transport params and onto
-    # the user-aggregator params (see LLMContextAggregatorPair below).
-    # Passing vad_analyzer to LocalAudioTransportParams is silently
-    # dropped by pydantic v2 — speech-start/stop events never fire and
-    # STT never runs. Spent way too long diagnosing this.
-    transport = LocalAudioTransport(
-        LocalAudioTransportParams(
-            audio_in_enabled=True,
-            audio_out_enabled=True,
-        ),
-    )
+    stt = WhisperSTTService(model=_resolve_whisper_model(whisper_model_name))
 
-    # Pipecat's Whisper Model is an enum keyed on `value` (e.g. 'base',
-    # 'small'). Accept either the enum value ('base') or name ('BASE')
-    # so operators don't have to memorize which case the lookup wants.
-    try:
-        whisper_model_enum = WhisperModel(whisper_model_name)
-    except ValueError:
-        try:
-            whisper_model_enum = WhisperModel[whisper_model_name.upper()]
-        except KeyError as exc:
-            valid = ", ".join(m.value for m in WhisperModel)
-            raise ValueError(
-                f"voice_agent_whisper_model={whisper_model_name!r} is not a "
-                f"valid Pipecat Whisper model. Valid values: {valid}",
-            ) from exc
-    stt = WhisperSTTService(model=whisper_model_enum)
-    llm = OLLamaLLMService(model=llm_model, base_url=ollama_url)
+    # Build (or reuse) the LLM stage. Default is the local Ollama path;
+    # callers can inject any Pipecat LLM service to swap brains — the
+    # Claude Code subprocess bridge is the marquee alternative.
+    if llm is None:
+        llm = OLLamaLLMService(model=llm_model, base_url=ollama_url)
+    assert llm is not None  # narrow for the type checker
+
+    # Tool wiring for the Ollama brain. Skipped when the caller provided
+    # a custom llm — those services manage their own tool surface (the
+    # Claude bridge inherits its tools from the operator's MCP servers,
+    # not from a Pipecat-side schema).
+    tool_schema = None
+    if tools and not system_prompt_override:
+        from pipecat.adapters.schemas.tools_schema import ToolsSchema
+        for fn in tools:
+            llm.register_direct_function(fn)
+        tool_schema = ToolsSchema(standard_tools=list(tools))
+        log.info("Registered %d tool(s) on the LLM stage", len(tools))
     # Pipecat 1.1 deprecated KokoroTTSService(voice_id=...) in favor of
     # settings=Settings(voice=...). Passing voice= as a kwarg gets eaten
     # by **kwargs and the underlying kokoro_onnx ends up with voice=None
@@ -190,14 +224,22 @@ async def run_local(site_config: Any) -> None:
     # Pipecat 1.1 API: LLMContext (universal, not OpenAI-specific) + a
     # standalone LLMContextAggregatorPair (replaces the old
     # llm.create_context_aggregator helper).
-    context = LLMContext(
-        messages=[{"role": "system", "content": system_prompt}],
-    )
-    # VAD lives here in Pipecat 1.1 (see transport block above).
+    context_kwargs: dict[str, Any] = {
+        "messages": [{"role": "system", "content": system_prompt}],
+    }
+    if tool_schema is not None:
+        context_kwargs["tools"] = tool_schema
+    context = LLMContext(**context_kwargs)
+    # Pipecat 1.1 wires VAD on the user-aggregator params, NOT on the
+    # transport params. Passing vad_analyzer to a transport's params is
+    # silently dropped by pydantic v2 — speech-start/stop events never
+    # fire and STT never runs.
     context_aggregator = LLMContextAggregatorPair(
         context=context,
         user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(),
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(stop_secs=vad_stop_secs),
+            ),
         ),
     )
 
@@ -213,7 +255,7 @@ async def run_local(site_config: Any) -> None:
         ],
     )
 
-    task = PipelineTask(
+    return PipelineTask(
         pipeline,
         params=PipelineParams(
             allow_interruptions=True,
@@ -222,14 +264,40 @@ async def run_local(site_config: Any) -> None:
         ),
     )
 
+
+# ---------------------------------------------------------------------------
+# Local-mic surface (entry point)
+# ---------------------------------------------------------------------------
+
+
+async def run_local(site_config: Any) -> None:
+    """Run the voice agent on local mic + speakers.
+
+    Reads every knob from ``app_settings`` via ``site_config``. Blocking
+    until Ctrl+C.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    log = logging.getLogger("voice_agent")
+
+    transport = LocalAudioTransport(
+        LocalAudioTransportParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+        ),
+    )
+
+    task = build_voice_pipeline_task(transport, site_config, log=log)
+
     log.info(
         "Audio transport ready. Start talking when the model downloads "
         "finish (first run only). Ctrl+C to exit.",
     )
     # No on_client_connected event for LocalAudioTransport (that's a
     # WebRTC concept). Skip the greet — operator sees the log line above
-    # and can speak first. We can revisit a "type a message to start"
-    # path later if the silent-start UX is bad.
+    # and can speak first.
 
     runner = PipelineRunner()
     try:

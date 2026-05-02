@@ -50,6 +50,13 @@ _COORDINATOR_ROUTES = [
 # Routes for worker mode (local PC — full power, all operations)
 # Workers run content generation, task management, and serve preview.
 _WORKER_ROUTES = [
+    # OAuth issuer (#241 Phase 1) — must register before any auth-protected
+    # route so the discovery + grant endpoints are reachable without a
+    # Bearer token. Worker only; the coordinator stays read-only.
+    # Two routers: metadata (well-known) + authorization endpoints
+    # (/authorize, /token, /register, /revoke).
+    ("routes.oauth_routes", "metadata_router", "oauth_metadata_router", "OAuth 2.1 + RFC 8414 + RFC 9728 + OIDC discovery metadata"),
+    ("routes.oauth_routes", "authorization_router", "oauth_auth_router", "OAuth 2.1 authorization, token, register, revoke endpoints"),
     ("routes.approval_routes", "router", "approval_router", "task approval workflow"),
     ("routes.task_routes", "router", "task_router", "task management"),
     ("routes.topics_routes", "router", "topics_router", "URL-based topic seeding (#230)"),

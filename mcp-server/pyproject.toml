@@ -14,6 +14,10 @@ dependencies = [
     # src/cofounder_agent/pyproject.toml ("^3.11.2"). See
     # Glad-Labs/poindexter#258.
     "apscheduler>=3.11.2,<4",
+    # OAuth JWT verification for the HTTP transport (#241 Phase 1).
+    # Kept on the same major as the cofounder_agent pin to avoid
+    # signature-format drift between issuer and verifier.
+    "pyjwt>=2.12.0,<3.0.0",
 ]
 
 [build-system]

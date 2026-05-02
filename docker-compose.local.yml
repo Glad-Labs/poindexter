@@ -1009,6 +1009,35 @@ services:
       postgres-local:
         condition: service_healthy
 
+  # ===========================================
+  # LiveKit Server — multi-party WebRTC for the conference-call voice agent.
+  # MIT-licensed. One container hosts every voice room.
+  # ``--dev`` mode: in-memory room store, no TLS (Tailscale Funnel terminates
+  # TLS upstream), trivially-recoverable on restart since rooms are ephemeral.
+  # API key/secret default to dev values; operators override via env or
+  # bootstrap.toml before exposing the port outside the tailnet.
+  # ===========================================
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: poindexter-livekit
+    restart: unless-stopped
+    command: ["--dev", "--bind", "0.0.0.0"]
+    ports:
+      - "7880:7880"        # HTTP/WebSocket signalling
+      - "7881:7881"        # TCP RTC fallback
+      - "7882:7882/udp"    # UDP RTC primary (single port — sufficient for
+                           # solo-operator small rooms; expand to a 50000-60000
+                           # range later if we run >5 simultaneous peers)
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecret_change_me_change_me_change_me}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:7880/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 # Volumes deliberately keep the gladlabs-* prefix from the pre-rebrand era.
 # Renaming a docker volume in compose creates a fresh empty volume and
 # orphans the old one — that means data loss for any existing instance.
