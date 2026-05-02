@@ -277,6 +277,10 @@ def get_core_samples() -> dict[str, list[Any]]:
         # (niches.discovery_cadence_minute_floor) gates the actual work.
         # Layer 1 of the topic-UX rollout (niche pivot).
         ("jobs", "services.jobs.run_niche_topic_sweep", "RunNicheTopicSweepJob"),
+        # Daily dev_diary auto-post (PR #160). Cron 0 13 * * * UTC = 9am EDT.
+        # The pyproject.toml entry-point is also registered but isn't read
+        # at runtime per the imperative-load pattern this list enforces.
+        ("jobs", "services.jobs.run_dev_diary_post", "RunDevDiaryPostJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
@@ -284,6 +288,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("topic_sources", "services.topic_sources.web_search", "WebSearchSource"),
         ("topic_sources", "services.topic_sources.knowledge", "KnowledgeSource"),
         ("topic_sources", "services.topic_sources.codebase", "CodebaseSource"),
+        # Dev_diary topic source — pulls 24h of PRs/commits/decisions for
+        # the daily build-in-public post (PR #160).
+        ("topic_sources", "services.topic_sources.dev_diary_source", "DevDiarySource"),
         # Core ImageProviders — Phase G migration. Pexels first (search);
         # SDXL generation provider lands in a follow-up slice.
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
