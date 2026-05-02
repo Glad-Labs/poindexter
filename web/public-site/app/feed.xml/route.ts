@@ -34,9 +34,16 @@ const FEED_CUTOFF = '2026-04-12T00:00:00Z';
 
 export async function GET() {
   try {
-    // Fetch published posts from static JSON on R2
+    // Fetch published posts from static JSON on R2.
+    // `cache: 'no-store'` so every ISR regen pulls fresh data —
+    // previously `next: { revalidate: 300 }` cached the R2 response in
+    // Next.js's data cache for 5 min, which couldn't be busted from a
+    // backend-side `revalidatePath('/feed.xml')` call. Result: feed
+    // could lag the publish path by up to 5 min even after explicit
+    // revalidation. The OUTER ISR layer (Cache-Control max-age=3600
+    // below) still protects R2 from per-request hammering.
     const response = await fetch(`${STATIC_URL}/posts/index.json`, {
-      next: { revalidate: 300 }, // Revalidate every 5 min
+      cache: 'no-store',
     });
 
     let posts: Post[] = [];
