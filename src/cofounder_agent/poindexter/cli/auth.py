@@ -685,3 +685,153 @@ def migrate_brain(name: str, scopes: str) -> None:
         click.echo("from a probe to use them inline).")
 
     _run(_impl())
+
+
+# ---------------------------------------------------------------------------
+# migrate-scripts — one-shot scripts/ provisioning (Round 2B / #248)
+# ---------------------------------------------------------------------------
+
+
+def _write_bootstrap_oauth_creds(client_id: str, client_secret: str) -> bool:
+    """Append/update OAuth scripts creds in ``~/.poindexter/bootstrap.toml``.
+
+    The brain daemon's bootstrap helper owns full TOML serialisation,
+    but we only need to set/update two keys, so we do a minimal
+    in-place edit that preserves the rest of the file. Returns True
+    when the write succeeded.
+
+    Why bootstrap.toml in addition to app_settings: some scripts under
+    ``scripts/`` run on the operator's host without DB access (e.g.
+    ``scripts/daemon.py`` reading from ``~/.poindexter`` before any
+    pool is opened). Storing the creds in both places lets those
+    scripts use OAuth without an extra DB roundtrip. The values are
+    plaintext on disk in bootstrap.toml — same risk profile as the
+    legacy ``api_token`` line that already lives there.
+    """
+    import re
+    from pathlib import Path
+
+    path = Path.home() / ".poindexter" / "bootstrap.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.is_file():
+        text = path.read_text(encoding="utf-8")
+    else:
+        text = ""
+
+    def _upsert(text: str, key: str, value: str) -> str:
+        line = f'{key} = "{value}"'
+        pattern = re.compile(rf'^{re.escape(key)}\s*=\s*".*?"$', re.MULTILINE)
+        if pattern.search(text):
+            return pattern.sub(line, text, count=1)
+        # Append — keep a trailing newline for clean concatenation.
+        sep = "" if text.endswith("\n") or text == "" else "\n"
+        return f"{text}{sep}{line}\n"
+
+    text = _upsert(text, "scripts_oauth_client_id", client_id)
+    text = _upsert(text, "scripts_oauth_client_secret", client_secret)
+
+    try:
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:  # noqa: BLE001
+        click.echo(click.style(
+            f"  WARN: could not write {path}: {exc}", fg="yellow",
+        ))
+        return False
+
+    # Restrict permissions where the platform supports it (no-op on Windows).
+    try:
+        import stat
+        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
+@auth_group.command("migrate-scripts")
+@click.option(
+    "--name",
+    default="scripts-shared",
+    show_default=True,
+    help="Client display name (shown in `poindexter auth list-clients`).",
+)
+@click.option(
+    "--scopes",
+    default="api:read api:write",
+    show_default=True,
+    help="Space-delimited subset of {api:read, api:write, mcp:read, mcp:write}.",
+)
+@click.option(
+    "--no-bootstrap",
+    is_flag=True,
+    default=False,
+    help=(
+        "Skip writing the credentials into ~/.poindexter/bootstrap.toml. "
+        "Useful when the scripts run only inside containers that read from "
+        "app_settings via asyncpg."
+    ),
+)
+def migrate_scripts(name: str, scopes: str, no_bootstrap: bool) -> None:
+    """Register a shared OAuth client for ``scripts/`` and store creds.
+
+    One-shot Phase 2 Round 2B migration helper (#248). After this runs:
+
+    * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
+    * ``app_settings.scripts_oauth_client_id`` +
+      ``scripts_oauth_client_secret`` hold the new credentials
+      (encrypted via plugins.secrets).
+    * Unless ``--no-bootstrap`` is passed, ``~/.poindexter/bootstrap.toml``
+      gets the same two keys in plaintext so host-side scripts that
+      don't open a DB pool can still mint JWTs (matches the existing
+      ``api_token`` plaintext line already in bootstrap.toml).
+    * Every script in ``scripts/`` that has been migrated to
+      ``ScriptsOAuthClient`` will pick up OAuth on its next start;
+      legacy static-Bearer fallback stays active until Phase 3 (#249).
+
+    A single shared client per operator covers all migrated scripts —
+    per-script clients would be overkill at our scale and create
+    rotation churn.
+
+    Re-running creates a fresh client + secret pair; revoke the old one
+    afterwards with ``poindexter auth revoke-client --client-id ...``.
+    """
+    _bootstrap_path_for_secret_key()
+    scope_list = [s.strip() for s in scopes.split() if s.strip()]
+    if not scope_list:
+        raise click.UsageError("--scopes must list at least one scope")
+
+    SCRIPTS_CLIENT_ID_KEY = "scripts_oauth_client_id"
+    SCRIPTS_CLIENT_SECRET_KEY = "scripts_oauth_client_secret"
+
+    async def _impl():
+        client_id, client_secret = await _provision_consumer_client(
+            name=name,
+            scopes=scope_list,
+            client_id_setting_key=SCRIPTS_CLIENT_ID_KEY,
+            client_secret_setting_key=SCRIPTS_CLIENT_SECRET_KEY,
+        )
+
+        bootstrap_written = False
+        if not no_bootstrap:
+            bootstrap_written = _write_bootstrap_oauth_creds(
+                client_id, client_secret,
+            )
+
+        click.echo("")
+        click.echo(click.style("Scripts OAuth client provisioned.", fg="green", bold=True))
+        click.echo(f"  name:           {name}")
+        click.echo(f"  scopes:         {' '.join(scope_list)}")
+        click.echo(f"  client_id:      {client_id}")
+        click.echo(f"  app_settings:   {SCRIPTS_CLIENT_ID_KEY} + {SCRIPTS_CLIENT_SECRET_KEY}")
+        if no_bootstrap:
+            click.echo("  bootstrap.toml: skipped (--no-bootstrap)")
+        elif bootstrap_written:
+            click.echo("  bootstrap.toml: scripts_oauth_client_id + scripts_oauth_client_secret")
+        else:
+            click.echo("  bootstrap.toml: write FAILED — see warning above")
+        click.echo("")
+        click.echo("Migrated scripts (telegram-bot.py, discord-voice-bot.py,")
+        click.echo("daemon.py, ...) will use OAuth on next start. The legacy")
+        click.echo("static-Bearer fallback stays active until Phase 3 (#249).")
+
+    _run(_impl())

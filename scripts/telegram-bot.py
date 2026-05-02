@@ -9,8 +9,16 @@ Commands:
   /stats      — pipeline stats (24h)
   /publish    — queue a new topic
 
-Reads config from app_settings DB (telegram_bot_token, api_token).
-No .env or environment variables needed.
+Reads config from app_settings DB (telegram_bot_token, OAuth client
+credentials, or legacy api_token). No .env or environment variables
+needed.
+
+Authentication (Glad-Labs/poindexter#248):
+  Prefers OAuth 2.1 client credentials when ``scripts_oauth_client_id``
+  + ``scripts_oauth_client_secret`` are present in app_settings or
+  bootstrap.toml. Falls back to the legacy static Bearer
+  (``api_token``) when OAuth isn't configured. Run
+  ``poindexter auth migrate-scripts`` to provision the OAuth path.
 
 Usage:
     python scripts/telegram-bot.py
@@ -20,47 +28,61 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from urllib.parse import quote
 
+import asyncpg
 import httpx
 
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
+sys.path.insert(0, str(_project_root / "scripts"))
 # `services.*` lives under src/cofounder_agent/ — add that to sys.path
 # so we can import the integrations package without restructuring.
 sys.path.insert(0, str(_project_root / "src" / "cofounder_agent"))
 
+# OAuth helper lives next to this script — see scripts/_oauth_helper.py
+# for the module-level docstring on resolution order. We hold a single
+# pool + client at module scope so every command shares the cached JWT
+# instead of minting per request.
+from _oauth_helper import oauth_client_from_pool  # noqa: E402
 
-def _load_config() -> dict:
-    import asyncpg
+
+API_URL = os.getenv("POINDEXTER_API_URL", "http://localhost:8002")
+
+
+def _resolve_db_url() -> str:
     from brain.bootstrap import resolve_database_url
 
     db_url = os.getenv("DATABASE_URL") or resolve_database_url()
     if not db_url:
         print("ERROR: No database URL. Run `poindexter setup` first.")
         sys.exit(1)
-
-    async def _fetch():
-        conn = await asyncpg.connect(db_url)
-        try:
-            rows = await conn.fetch(
-                "SELECT key, value FROM app_settings WHERE key IN "
-                "('telegram_bot_token', 'telegram_chat_id', 'api_token')"
-            )
-            return {r["key"]: r["value"] for r in rows}
-        finally:
-            await conn.close()
-
-    return asyncio.run(_fetch())
+    return db_url
 
 
-print("[INIT] Loading config from app_settings...")
-_cfg = _load_config()
+async def _load_telegram_config(pool) -> dict:
+    """Pull Telegram-specific config from app_settings.
 
-BOT_TOKEN = _cfg.get("telegram_bot_token", "")
-CHAT_ID = _cfg.get("telegram_chat_id", "")
-API_TOKEN = _cfg.get("api_token", "")
-API_URL = "http://localhost:8002"
+    OAuth creds are NOT fetched here — the OAuth helper handles its own
+    resolution (bootstrap.toml + app_settings + decryption).
+    """
+    rows = await pool.fetch(
+        "SELECT key, value FROM app_settings WHERE key IN "
+        "('telegram_bot_token', 'telegram_chat_id')"
+    )
+    return {r["key"]: r["value"] for r in rows}
+
+
+print("[INIT] Loading config + OAuth client...")
+
+_DB_URL = _resolve_db_url()
+_pool: asyncpg.Pool = asyncio.run(asyncpg.create_pool(_DB_URL, min_size=1, max_size=2))
+_tg_cfg = asyncio.run(_load_telegram_config(_pool))
+_oauth_client = asyncio.run(
+    oauth_client_from_pool(_pool, base_url=API_URL),
+)
+
+BOT_TOKEN = _tg_cfg.get("telegram_bot_token", "")
+CHAT_ID = _tg_cfg.get("telegram_chat_id", "")
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 _last_update_id = 0
@@ -163,8 +185,8 @@ def _load_passthrough_config(initial: dict[str, str]) -> dict[str, str]:
     return extra
 
 
-_passthrough_extra = _load_passthrough_config(_cfg)
-_BOT_SITE_CONFIG = _BotSiteConfig({**_cfg, **_passthrough_extra})
+_passthrough_extra = _load_passthrough_config(_tg_cfg)
+_BOT_SITE_CONFIG = _BotSiteConfig({**_tg_cfg, **_passthrough_extra})
 
 
 async def _maybe_handle_cli(text: str, chat_id: str) -> str | None:
@@ -187,17 +209,20 @@ async def _maybe_handle_cli(text: str, chat_id: str) -> str | None:
 
 
 async def api_call(method: str, path: str, json_data: dict | None = None) -> dict:
-    """Make an authenticated API call to the Poindexter worker."""
-    async with httpx.AsyncClient(timeout=30) as client:
-        headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
-        if method == "GET":
-            resp = await client.get(f"{API_URL}{path}", headers=headers)
-        else:
-            resp = await client.post(f"{API_URL}{path}", headers=headers, json=json_data or {})
-        try:
-            return resp.json()
-        except Exception:
-            return {"error": resp.text[:200]}
+    """Make an authenticated API call to the Poindexter worker.
+
+    Auth is handled by the shared ScriptsOAuthClient (OAuth JWT when
+    configured, legacy static Bearer otherwise). The 401-retry dance
+    happens transparently inside the helper.
+    """
+    if method == "GET":
+        resp = await _oauth_client.get(path)
+    else:
+        resp = await _oauth_client.post(path, json=json_data or {})
+    try:
+        return resp.json()
+    except Exception:
+        return {"error": resp.text[:200]}
 
 
 async def handle_command(text: str, chat_id: str):

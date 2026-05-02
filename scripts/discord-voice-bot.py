@@ -24,6 +24,12 @@ Configuration (all from app_settings DB, no env vars):
     discord_voice_channel_id   — auto-join channel (optional)
     whisper_model              — faster-whisper model (default: base.en)
     tts_voice                  — Edge TTS voice (default: en-US-GuyNeural)
+
+Worker-API authentication (Glad-Labs/poindexter#248):
+    Prefers OAuth 2.1 client credentials when ``scripts_oauth_client_id``
+    + ``scripts_oauth_client_secret`` are present in app_settings or
+    bootstrap.toml. Falls back to legacy static Bearer (``api_token``)
+    otherwise. Run ``poindexter auth migrate-scripts`` to provision.
 """
 
 import asyncio
@@ -39,10 +45,16 @@ from pathlib import Path
 
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
+sys.path.insert(0, str(_project_root / "scripts"))
 
+import asyncpg
 import discord
 import edge_tts
 from faster_whisper import WhisperModel
+
+# OAuth helper for the Poindexter worker API (Glad-Labs/poindexter#248).
+# Picks OAuth client_credentials when configured, else legacy Bearer.
+from _oauth_helper import oauth_client_from_pool  # noqa: E402
 
 try:
     import webrtcvad
@@ -52,40 +64,51 @@ except ImportError:
     print("[WARN] webrtcvad not installed — falling back to /listen + /stop mode")
 
 
-def _load_config_from_db() -> dict:
-    import asyncpg
-    from brain.bootstrap import resolve_database_url
+def _load_config_from_db(pool) -> dict:
+    """Pull Discord/voice/Ollama config from app_settings.
 
-    db_url = os.getenv("DATABASE_URL") or resolve_database_url()
-    if not db_url:
-        print("ERROR: No database URL found. Run `poindexter setup` first.")
-        sys.exit(1)
+    OAuth creds are intentionally NOT in this list — the OAuth helper
+    handles its own resolution chain (bootstrap.toml + app_settings).
+    """
 
     async def _fetch():
-        conn = await asyncpg.connect(db_url)
-        try:
-            rows = await conn.fetch(
-                "SELECT key, value FROM app_settings WHERE key IN "
-                "('discord_bot_token', 'discord_voice_bot_token', "
-                "'discord_voice_channel_id', 'discord_guild_id', "
-                "'whisper_model', 'tts_voice', 'api_token', 'ollama_base_url')"
-            )
-            return {r["key"]: r["value"] for r in rows}
-        finally:
-            await conn.close()
+        rows = await pool.fetch(
+            "SELECT key, value FROM app_settings WHERE key IN "
+            "('discord_bot_token', 'discord_voice_bot_token', "
+            "'discord_voice_channel_id', 'discord_guild_id', "
+            "'whisper_model', 'tts_voice', 'ollama_base_url')"
+        )
+        return {r["key"]: r["value"] for r in rows}
 
     return asyncio.run(_fetch())
 
 
-print("[INIT] Loading config from app_settings...")
-_cfg = _load_config_from_db()
+def _resolve_db_url() -> str:
+    from brain.bootstrap import resolve_database_url
+    db_url = os.getenv("DATABASE_URL") or resolve_database_url()
+    if not db_url:
+        print("ERROR: No database URL found. Run `poindexter setup` first.")
+        sys.exit(1)
+    return db_url
+
+
+print("[INIT] Loading config + OAuth client...")
+_DB_URL = _resolve_db_url()
+_pool: asyncpg.Pool = asyncio.run(asyncpg.create_pool(_DB_URL, min_size=1, max_size=2))
+_cfg = _load_config_from_db(_pool)
+
+API_URL = os.getenv("POINDEXTER_API_URL", "http://localhost:8002")
+
+# Single shared OAuth client for the bot's lifetime — the cached JWT is
+# reused across slash-command invocations + LLM-driven action handlers.
+_oauth_client = asyncio.run(
+    oauth_client_from_pool(_pool, base_url=API_URL),
+)
 
 DISCORD_TOKEN = _cfg.get("discord_voice_bot_token", "") or _cfg.get("discord_bot_token", "")
 VOICE_CHANNEL_ID = int(_cfg.get("discord_voice_channel_id", "0"))
 WHISPER_MODEL = _cfg.get("whisper_model", "base.en")
 TTS_VOICE = _cfg.get("tts_voice", "en-US-GuyNeural")
-API_URL = os.getenv("POINDEXTER_API_URL", "http://localhost:8002")
-API_TOKEN = _cfg.get("api_token", "")
 
 SILENCE_THRESHOLD_S = 1.5
 MIN_SPEECH_S = 0.5
@@ -284,65 +307,64 @@ Include action JSON when the user wants something done. Otherwise just chat natu
 
 
 async def _execute_action(action: dict) -> str:
-    """Execute a pipeline action and return result as spoken text."""
-    import httpx
+    """Execute a pipeline action and return result as spoken text.
+
+    All worker-API calls go through the shared OAuth client so the
+    cached JWT is reused across actions. The DB stats path uses the
+    shared asyncpg pool directly because that's a non-API query.
+    """
     act = action.get("action", "")
-    headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        if act == "health":
-            resp = await client.get(f"{API_URL}/api/health", headers=headers)
-            d = resp.json()
-            te = d.get("components", {}).get("task_executor", {})
-            return f"System is {d.get('status', '?')}. {te.get('pending_task_count', 0)} pending, {te.get('in_progress_count', 0)} in progress."
+    if act == "health":
+        resp = await _oauth_client.get("/api/health")
+        d = resp.json()
+        te = d.get("components", {}).get("task_executor", {})
+        return f"System is {d.get('status', '?')}. {te.get('pending_task_count', 0)} pending, {te.get('in_progress_count', 0)} in progress."
 
-        elif act == "tasks":
-            resp = await client.get(f"{API_URL}/api/tasks?status=awaiting_approval", headers=headers)
-            tasks = resp.json() if isinstance(resp.json(), list) else resp.json().get("tasks", [])
-            if not tasks:
-                return "No posts awaiting approval."
-            lines = [f"{str(t.get('id','?'))[:6]}: {t.get('title', t.get('topic','?'))[:40]}, score {t.get('quality_score','?')}" for t in tasks[:5]]
-            return f"{len(tasks)} posts waiting. " + ". ".join(lines)
+    elif act == "tasks":
+        resp = await _oauth_client.get("/api/tasks?status=awaiting_approval")
+        body = resp.json()
+        tasks = body if isinstance(body, list) else body.get("tasks", [])
+        if not tasks:
+            return "No posts awaiting approval."
+        lines = [f"{str(t.get('id','?'))[:6]}: {t.get('title', t.get('topic','?'))[:40]}, score {t.get('quality_score','?')}" for t in tasks[:5]]
+        return f"{len(tasks)} posts waiting. " + ". ".join(lines)
 
-        elif act == "approve":
-            tid = action.get("task_id", "")
-            resp = await client.post(f"{API_URL}/api/tasks/{tid}/approve", headers=headers,
-                                     json={"approved": True, "auto_publish": True})
-            return f"Task {tid} {resp.json().get('status', 'done')}."
+    elif act == "approve":
+        tid = action.get("task_id", "")
+        resp = await _oauth_client.post(
+            f"/api/tasks/{tid}/approve",
+            json={"approved": True, "auto_publish": True},
+        )
+        return f"Task {tid} {resp.json().get('status', 'done')}."
 
-        elif act == "reject":
-            tid = action.get("task_id", "")
-            reason = action.get("reason", "Rejected via voice")
-            resp = await client.post(f"{API_URL}/api/tasks/{tid}/reject", headers=headers,
-                                     json={"feedback": reason, "reason": "operator"})
-            return f"Task {tid} rejected. {reason}."
+    elif act == "reject":
+        tid = action.get("task_id", "")
+        reason = action.get("reason", "Rejected via voice")
+        resp = await _oauth_client.post(
+            f"/api/tasks/{tid}/reject",
+            json={"feedback": reason, "reason": "operator"},
+        )
+        return f"Task {tid} rejected. {reason}."
 
-        elif act == "stats":
-            import asyncpg
-            dsn = os.getenv("DATABASE_URL") or ""
-            if not dsn:
-                try:
-                    from brain.bootstrap import resolve_database_url
-                    dsn = resolve_database_url() or ""
-                except Exception:
-                    pass
-            if dsn:
-                conn = await asyncpg.connect(dsn)
-                rows = await conn.fetch(
-                    "SELECT status, COUNT(*) as c FROM pipeline_tasks_view "
-                    "WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY status ORDER BY c DESC"
-                )
-                total = await conn.fetchval("SELECT COUNT(*) FROM posts WHERE status = 'published'")
-                await conn.close()
-                parts = [f"{r['c']} {r['status']}" for r in rows]
-                return f"Last 24 hours: {', '.join(parts)}. Total published: {total}."
-            return "Couldn't connect to database for stats."
+    elif act == "stats":
+        # Direct DB read — not a worker API call, no auth needed.
+        async with _pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT status, COUNT(*) as c FROM pipeline_tasks_view "
+                "WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY status ORDER BY c DESC"
+            )
+            total = await conn.fetchval("SELECT COUNT(*) FROM posts WHERE status = 'published'")
+        parts = [f"{r['c']} {r['status']}" for r in rows]
+        return f"Last 24 hours: {', '.join(parts)}. Total published: {total}."
 
-        elif act == "publish":
-            topic = action.get("topic", "")
-            resp = await client.post(f"{API_URL}/api/tasks", headers=headers,
-                                     json={"topic": topic, "category": "technology"})
-            return f"Queued new topic: {topic}."
+    elif act == "publish":
+        topic = action.get("topic", "")
+        resp = await _oauth_client.post(
+            "/api/tasks",
+            json={"topic": topic, "category": "technology"},
+        )
+        return f"Queued new topic: {topic}."
 
     return "I didn't understand that action."
 
@@ -491,23 +513,24 @@ async def clear(ctx):
 # =========================================================================
 
 async def _api_call(method: str, path: str, json_data: dict | None = None) -> dict:
-    """Make an authenticated API call to the Poindexter worker."""
-    import httpx
-    async with httpx.AsyncClient(timeout=30) as client:
-        url = f"{API_URL}{path}"
-        headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
-        if method == "GET":
-            resp = await client.get(url, headers=headers)
-        elif method == "POST":
-            resp = await client.post(url, headers=headers, json=json_data or {})
-        elif method == "PUT":
-            resp = await client.put(url, headers=headers, json=json_data or {})
-        else:
-            return {"error": f"Unknown method: {method}"}
-        try:
-            return resp.json()
-        except Exception:
-            return {"status_code": resp.status_code, "text": resp.text[:200]}
+    """Make an authenticated API call to the Poindexter worker.
+
+    Routes through the shared OAuth client so the cached JWT is reused
+    across slash commands. The 401-retry dance is handled inside the
+    helper.
+    """
+    if method == "GET":
+        resp = await _oauth_client.get(path)
+    elif method == "POST":
+        resp = await _oauth_client.post(path, json=json_data or {})
+    elif method == "PUT":
+        resp = await _oauth_client.put(path, json=json_data or {})
+    else:
+        return {"error": f"Unknown method: {method}"}
+    try:
+        return resp.json()
+    except Exception:
+        return {"status_code": resp.status_code, "text": resp.text[:200]}
 
 
 @bot.slash_command(name="health", description="Check system health")
@@ -560,16 +583,10 @@ async def reject(ctx, task_id: str, reason: str = "Rejected via Discord"):
 
 @bot.slash_command(name="stats", description="Pipeline stats for the last 24h")
 async def stats(ctx):
-    import httpx
-    async with httpx.AsyncClient(timeout=15) as client:
-        # Query DB directly for stats
-        try:
-            import asyncpg
-            dsn = os.getenv("DATABASE_URL") or ""
-            if not dsn:
-                from brain.bootstrap import resolve_database_url
-                dsn = resolve_database_url() or ""
-            conn = await asyncpg.connect(dsn)
+    """Stats are read directly from the shared asyncpg pool — these are
+    DB queries, not worker-API calls, so no auth needed."""
+    try:
+        async with _pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT status, COUNT(*) as c FROM pipeline_tasks_view "
                 "WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY status ORDER BY c DESC"
@@ -577,14 +594,13 @@ async def stats(ctx):
             total_published = await conn.fetchval(
                 "SELECT COUNT(*) FROM posts WHERE status = 'published'"
             )
-            await conn.close()
-            lines = [f"**{r['status']}:** {r['c']}" for r in rows]
-            await ctx.respond(
-                f"**Pipeline (24h):**\n" + "\n".join(lines) +
-                f"\n\n**Total published:** {total_published}"
-            )
-        except Exception as e:
-            await ctx.respond(f"Stats error: {e}")
+        lines = [f"**{r['status']}:** {r['c']}" for r in rows]
+        await ctx.respond(
+            f"**Pipeline (24h):**\n" + "\n".join(lines) +
+            f"\n\n**Total published:** {total_published}"
+        )
+    except Exception as e:
+        await ctx.respond(f"Stats error: {e}")
 
 
 @bot.slash_command(name="publish_now", description="Create and auto-queue a post on a topic")
@@ -599,10 +615,10 @@ async def publish_now(ctx, topic: str, category: str = "technology"):
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
         print("ERROR: discord_bot_token not found in app_settings.")
-        print("  Set it via the API:")
-        print("  curl -X PUT localhost:8002/api/settings/discord_bot_token \\")
-        print('    -H "Authorization: Bearer $TOKEN" \\')
-        print("    -d '{\"value\": \"your-bot-token\"}'")
+        print("  Set it via the CLI:")
+        print("    poindexter settings set discord_bot_token <token>")
+        print("  Or via the API (after `poindexter auth migrate-scripts`):")
+        print("    poindexter settings set discord_bot_token <token>")
         raise SystemExit(1)
 
     print("[BOT] Starting Discord Voice Bot (VAD enabled)" if HAS_VAD else "[BOT] Starting (no VAD)")

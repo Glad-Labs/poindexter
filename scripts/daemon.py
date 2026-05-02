@@ -12,21 +12,23 @@ Usage:
     pythonw scripts/daemon.py          # Run windowless (background)
     python scripts/daemon.py           # Run with console output
     python scripts/daemon.py --once    # Run once and exit (for testing)
+
+Worker-API authentication (Glad-Labs/poindexter#248):
+    Uses ``ScriptsOAuthClient`` from ``_oauth_helper`` — picks OAuth
+    client credentials when configured, falls back to the legacy static
+    Bearer (``api_token``). Run ``poindexter auth migrate-scripts`` to
+    provision the OAuth path.
 """
 
-import json
+import asyncio
 import logging
 import os
 import subprocess
 import sys
 import time
-import urllib.request
-from datetime import datetime
 
-# Ensure scripts/ is on sys.path so `from lib.…` works
+# Ensure scripts/ is on sys.path so `from _oauth_helper import …` works
 sys.path.insert(0, os.path.dirname(__file__))
-from lib.config import load_api_token  # noqa: E402
-from lib.topic_dedup import fetch_existing_topics, is_too_similar, is_topic_duplicate_semantic  # noqa: E402
 
 # pythonw.exe sets stdout/stderr to None — redirect to devnull before any imports
 # that might trigger warnings (e.g., pydantic) writing to stderr
@@ -41,6 +43,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "cofound
 # Import content_validator early — its import chain triggers configure_standard_logging()
 # which reconfigures the root logger. We must let that run BEFORE setting up our own handler.
 from services.content_validator import validate_content  # noqa: E402
+from _oauth_helper import oauth_client_from_bootstrap_only  # noqa: E402
 
 LOG_FILE = os.path.join(os.path.expanduser("~"), ".poindexter", "daemon.log")
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -55,9 +58,51 @@ logger.addHandler(_file_handler)
 if sys.stdout is not None and not sys.stdout.name == os.devnull:
     logger.addHandler(logging.StreamHandler(sys.stdout))
 
-API_URL = "http://localhost:8002"
-API_TOKEN = load_api_token()
-AUTH = f"Bearer {API_TOKEN}"
+API_URL = os.getenv("POINDEXTER_API_URL", "http://localhost:8002")
+
+# OAuth client + event loop — the daemon runs sync logic on a single
+# global asyncio loop so the cached JWT survives across cycles. Each
+# cycle's API calls are issued on this loop via run_until_complete.
+_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(_loop)
+_oauth_client = _loop.run_until_complete(
+    oauth_client_from_bootstrap_only(base_url=API_URL),
+)
+
+
+def _api_get(path: str, timeout: float = 30) -> dict:
+    """Sync wrapper around the OAuth client's GET — used by the daemon's
+    sync control loop. Returns parsed JSON; raises on HTTP errors."""
+    async def _impl():
+        resp = await _oauth_client.get(path, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    return _loop.run_until_complete(_impl())
+
+
+def _api_post(path: str, json_data: dict | None = None, timeout: float = 30) -> dict:
+    async def _impl():
+        kwargs = {"timeout": timeout}
+        if json_data is not None:
+            kwargs["json"] = json_data
+        resp = await _oauth_client.post(path, **kwargs)
+        resp.raise_for_status()
+        try:
+            return resp.json()
+        except ValueError:
+            return {}
+    return _loop.run_until_complete(_impl())
+
+
+def _api_patch(path: str, json_data: dict, timeout: float = 30) -> dict:
+    async def _impl():
+        resp = await _oauth_client.patch(path, json=json_data, timeout=timeout)
+        resp.raise_for_status()
+        try:
+            return resp.json()
+        except ValueError:
+            return {}
+    return _loop.run_until_complete(_impl())
 
 # ---------------------------------------------------------------------------
 # Dynamic settings — loaded from API, refreshed periodically
@@ -79,7 +124,7 @@ def _load_settings():
     """Fetch settings from the API and cache them.  Falls back to defaults."""
     global _cached_settings, _settings_fetched_at
     try:
-        resp = _api_request(f"{API_URL}/api/settings", timeout=10, retries=1)
+        resp = _api_get("/api/settings", timeout=10)
         # API may return a dict or a list of {key, value} rows
         if isinstance(resp, list):
             _cached_settings = {item["key"]: item["value"] for item in resp}
@@ -111,23 +156,6 @@ def _setting(key: str):
     return raw
 
 
-def _api_request(url, method="GET", data=None, timeout=30, retries=2):
-    """Make an API request with simple retry logic."""
-    headers = {"Authorization": AUTH}
-    if data is not None:
-        headers["Content-Type"] = "application/json"
-    last_err: Exception = RuntimeError("no attempts made")
-    for attempt in range(retries + 1):
-        try:
-            req = urllib.request.Request(url, data=data, headers=headers, method=method)
-            return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
-        except Exception as e:
-            last_err = e
-            if attempt < retries:
-                time.sleep(2 ** attempt)  # 1s, 2s backoff
-    raise last_err
-
-
 OPPORTUNISTIC_INTERVAL = 120  # 2 minutes — check for idle GPU work (not worth making configurable)
 
 
@@ -152,10 +180,10 @@ def auto_publish():
 
     for status in ["awaiting_approval", "approved"]:
         try:
-            data = _api_request(f"{API_URL}/api/tasks?status={status}&limit=30", timeout=10)
+            data = _api_get(f"/api/tasks?status={status}&limit=30", timeout=10)
             tasks = data.get("tasks", [])
         except Exception as _e:
-            logger.warning("API request failed (after retries): %s", _e)
+            logger.warning("API request failed: %s", _e)
             continue
 
         for t in tasks:
@@ -165,10 +193,7 @@ def auto_publish():
 
             # Fetch full task for content and QA score
             try:
-                full = json.loads(urllib.request.urlopen(
-                    urllib.request.Request(f"{API_URL}/api/tasks/{tid}", headers={"Authorization": AUTH}),
-                    timeout=10,
-                ).read())
+                full = _api_get(f"/api/tasks/{tid}", timeout=10)
                 content = ""
                 result = full.get("result")
                 if isinstance(result, dict):
@@ -207,12 +232,12 @@ def auto_publish():
             # Both gates passed — approve + publish
             try:
                 if status == "awaiting_approval":
-                    _api_request(f"{API_URL}/api/tasks/{tid}/approve", method="POST", timeout=30)
-                _api_request(f"{API_URL}/api/tasks/{tid}/publish", method="POST", timeout=30)
+                    _api_post(f"/api/tasks/{tid}/approve", timeout=30)
+                _api_post(f"/api/tasks/{tid}/publish", timeout=30)
                 published += 1
                 logger.info("PUBLISHED: %s (QA: %.0f)", topic[:50], qa_score)
             except Exception as _e:
-                logger.warning("Approve/publish failed (after retries): %s", _e)
+                logger.warning("Approve/publish failed: %s", _e)
             time.sleep(0.3)
 
     if published or rejected or held:
@@ -221,82 +246,27 @@ def auto_publish():
 
 
 def generate_content(count=3):
-    """Generate content tasks from topic templates."""
-    import random
+    """Request ``count`` new content tasks via the worker's auto-topic feature.
 
-    # NOTE: Every template must be answerable in THIRD PERSON. First-person
-    # templates ("Why I switched...", "Lessons from running X in production")
-    # push the LLM into fabricating personal experience, which the POV guard
-    # in the prompts and the validator then reject. Keep all formulations as
-    # third-person educational angles.
-    TEMPLATES = [
-        # Question-driven (curiosity)
-        "Why {tech} Is the Secret Weapon for {domain}",
-        "What Happens When You Run {tech} on Your Own Hardware",
-        "Is {tech} Worth It for Solo Developers in 2026",
-        "{tech} vs {alt}: The Real Trade-offs Nobody Mentions",
-        # How-to / practical
-        "How to Set Up {tech} for {domain} in Under an Hour",
-        "The {domain} Guide to {tech}: What Actually Works",
-        "The {num} {tech} Mistakes That Waste the Most Time",
-        "From Zero to {tech}: A Weekend Project Blueprint",
-        # Opinion / insight (third-person framings)
-        "Why Teams Are Moving From {alt} to {tech}",
-        "The Hidden Cost of NOT Using {tech} in a {domain} Stack",
-        "Stop Overthinking {tech} — Here's What Matters",
-        "What {domain} Gets Wrong About {tech}",
-        # Comparison / decision
-        "When {tech} Beats {alt} (And When It Doesn't)",
-        "{tech} for {domain}: Overkill or Exactly Right?",
-    ]
-    TECHS = [
-        # AI/ML (core)
-        "Local LLMs", "AI Agents", "RAG Pipelines", "Prompt Engineering",
-        "Ollama", "Fine-Tuning", "Vector Databases", "AI Content Pipelines",
-        # Dev tools
-        "FastAPI", "PostgreSQL", "Next.js", "Docker", "Grafana",
-        "Cloudflare Workers", "Redis", "CI/CD",
-        # Hardware
-        "RTX 5090", "Local GPU Inference", "Self-Hosted AI",
-        # Gaming adjacent
-        "Game Servers", "Unreal Engine", "Godot",
-    ]
-    ALTS = ["Cloud APIs", "OpenAI API", "Managed Services", "SaaS Platforms",
-            "Manual Workflows", "Traditional CMS", "WordPress"]
-    DOMAINS = [
-        "Solo Founders", "Content Creators", "Indie Hackers",
-        "Small Studios", "Side Projects", "AI Startups",
-        "PC Builders", "Self-Hosters", "Open Source Projects",
-    ]
-    NUMS = ["3", "5", "7"]
-
-    # Get recent topics AND published post titles to avoid duplicates
-    existing = fetch_existing_topics(API_URL, AUTH)
-
+    The legacy hardcoded-template path that used to live here pulled in
+    a ``lib.topic_dedup`` module that no longer exists; the worker's
+    own TopicDiscovery (HN / Dev.to / DuckDuckGo + semantic dedup) is a
+    superset of what this script used to do, so we just request N
+    auto-topic tasks and let the worker handle dedup + selection.
+    """
     created = 0
-    for _ in range(count * 3):
-        if created >= count:
-            break
-        topic = random.choice(TEMPLATES).format(
-            tech=random.choice(TECHS), alt=random.choice(ALTS),
-            domain=random.choice(DOMAINS), num=random.choice(NUMS),
-        )
-        if is_too_similar(topic, existing):
-            continue
-        # Semantic check against published post embeddings in pgvector
-        if is_topic_duplicate_semantic(topic):
-            logger.info("Skipped (semantic duplicate): %s", topic[:60])
-            continue
+    for _ in range(count):
         try:
-            payload = json.dumps({"task_name": f"Blog post: {topic}", "topic": topic,
-                                  "category": "technology", "target_audience": "developers and founders"}).encode()
-            _api_request(f"{API_URL}/api/tasks", method="POST", data=payload, timeout=30)
+            _api_post(
+                "/api/tasks",
+                json_data={"topic": "auto", "task_type": "blog_post"},
+                timeout=30,
+            )
             created += 1
-            existing.add(topic)
-            logger.info("Created task: %s", topic[:60])
         except Exception as _e:
-            logger.warning("Task creation failed (after retries): %s", _e)
-
+            logger.warning("Task creation failed: %s", _e)
+    if created:
+        logger.info("Requested %d auto-topic tasks", created)
     return created
 
 
@@ -321,11 +291,7 @@ def get_gpu_utilization():
 def get_pending_task_count():
     """Check how many tasks are waiting in the queue."""
     try:
-        req = urllib.request.Request(
-            f"{API_URL}/api/tasks?status=pending&limit=1",
-            headers={"Authorization": AUTH},
-        )
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        data = _api_get("/api/tasks?status=pending&limit=1", timeout=10)
         return len(data.get("tasks", []))
     except Exception:
         return -1
@@ -353,33 +319,28 @@ def run_opportunistic_task():
         return  # Worker has tasks to process, don't create more load
 
     # GPU is idle and no tasks pending — find productive work
-    logger.info("🔋 GPU idle (%d%%), looking for opportunistic work...", gpu_util)
+    logger.info("GPU idle (%d%%), looking for opportunistic work...", gpu_util)
 
     # Priority 1: Re-score held posts that have old quality scores
     # These were scored before calibration and might now pass the threshold
     try:
-        req = urllib.request.Request(
-            f"{API_URL}/api/tasks?status=awaiting_approval&limit=50",
-            headers={"Authorization": AUTH},
-        )
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        data = _api_get("/api/tasks?status=awaiting_approval&limit=50", timeout=10)
         held_tasks = data.get("tasks", [])
         low_scored = [t for t in held_tasks if (t.get("quality_score") or 0) < 75]
 
         if low_scored:
             # Pick one to re-evaluate — create a lightweight re-score task
             task = low_scored[0]
-            logger.info("🔄 [OPPORTUNISTIC] Re-scoring held post: %s (current: %s)",
+            logger.info("[OPPORTUNISTIC] Re-scoring held post: %s (current: %s)",
                         task.get("topic", "?")[:40], task.get("quality_score"))
             # Reset to pending so the worker re-processes with updated scoring
             try:
-                urllib.request.urlopen(urllib.request.Request(
-                    f"{API_URL}/api/tasks/{task['task_id']}",
-                    data=json.dumps({"status": "pending"}).encode(),
-                    headers={"Authorization": AUTH, "Content-Type": "application/json"},
-                    method="PATCH",
-                ), timeout=10)
-                logger.info("🔄 [OPPORTUNISTIC] Task reset to pending for re-scoring")
+                _api_patch(
+                    f"/api/tasks/{task['task_id']}",
+                    json_data={"status": "pending"},
+                    timeout=10,
+                )
+                logger.info("[OPPORTUNISTIC] Task reset to pending for re-scoring")
                 return
             except Exception as e:
                 logger.debug("Re-score reset failed: %s", e)
@@ -388,11 +349,7 @@ def run_opportunistic_task():
 
     # Priority 2: Pre-generate content if we're running low
     try:
-        req = urllib.request.Request(
-            f"{API_URL}/api/tasks?status=awaiting_approval&limit=1",
-            headers={"Authorization": AUTH},
-        )
-        data = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        data = _api_get("/api/tasks?status=awaiting_approval&limit=1", timeout=10)
         ready_count = len(data.get("tasks", []))
 
         if ready_count < 3:
@@ -400,10 +357,9 @@ def run_opportunistic_task():
             # Use the API's auto-topic feature instead of hardcoded templates.
             # This triggers TopicDiscovery which pulls from HN/Dev.to/DuckDuckGo.
             try:
-                _api_request(
-                    f"{API_URL}/api/tasks",
-                    method="POST",
-                    data={"topic": "auto", "task_type": "blog_post"},
+                _api_post(
+                    "/api/tasks",
+                    json_data={"topic": "auto", "task_type": "blog_post"},
                     timeout=30,
                 )
             except Exception as e:
@@ -457,11 +413,7 @@ def main():
             # Check daily cost before creating more tasks
             # Each task can cost $0.50-5.00 if it hits cloud models
             try:
-                cost_check = json.loads(urllib.request.urlopen(
-                    urllib.request.Request(f"{API_URL}/api/metrics/costs/today",
-                                          headers={"Authorization": AUTH}),
-                    timeout=10,
-                ).read())
+                cost_check = _api_get("/api/metrics/costs/today", timeout=10)
                 daily_spend = cost_check.get("total_cost", 0) or 0
                 spend_limit = _setting("daily_spend_limit")
                 if daily_spend >= spend_limit:
@@ -469,7 +421,7 @@ def main():
                     last_generate = now
                     continue
             except Exception as _e:
-                logger.warning("Operation failed: %s", _e)  # If cost API unavailable, proceed with generation (Ollama is free)
+                logger.warning("Cost check failed: %s", _e)  # If cost API unavailable, proceed with generation (Ollama is free)
 
             try:
                 generate_content(int(_setting("content_gen_count")))
