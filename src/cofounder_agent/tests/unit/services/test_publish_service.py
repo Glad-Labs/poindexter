@@ -773,3 +773,559 @@ class TestRevalidation:
 
         assert result.success is True
         assert result.revalidation_success is False
+
+
+# ===========================================================================
+# Coverage fills for previously-untested helpers + fire_post_distribution_hooks
+# ===========================================================================
+#
+# Targets the 277 uncovered lines reported by:
+#   pytest --cov=services.publish_service ... → 48% baseline
+# Specifically:
+#   - 132-137: _post_has_pending_gates DB-error fallback
+#   - 142-154: _sync_published_post local-only / failure handling
+#   - 203-224: _embed_published_post happy path + provider-missing skip
+#   - 1066-1236: fire_post_distribution_hooks (entire function)
+#   - Gate-deferral branch in publish_post_from_task (line 685+)
+
+
+# ---------------------------------------------------------------------------
+# _post_has_pending_gates
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPostHasPendingGates:
+    """The probe used by both publish + fire_post_distribution_hooks to
+    decide whether to defer distribution."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_pending_row_exists(self):
+        from services.publish_service import _post_has_pending_gates
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value={"?column?": 1})
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        assert await _post_has_pending_gates(pool, "post-1") is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_pending_rows(self):
+        from services.publish_service import _post_has_pending_gates
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value=None)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        assert await _post_has_pending_gates(pool, "post-1") is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_db_error(self):
+        """DB error → False (publish-friendly default; better to ship than block)."""
+        from services.publish_service import _post_has_pending_gates
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(side_effect=RuntimeError("DB blip"))
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        assert await _post_has_pending_gates(pool, "post-1") is False
+
+
+# ---------------------------------------------------------------------------
+# _sync_published_post
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSyncPublishedPost:
+    """Cloud-DB sync after a publish — only fires on the local worker.
+
+    Coverage target: lines 142-154 of services/publish_service.py.
+    """
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    async def test_skips_when_not_running_local(self, _hooks):
+        from services.publish_service import _sync_published_post
+        # Should silently no-op — no exception, no work
+        await _sync_published_post("post-1")
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    async def test_pushes_to_cloud_when_local(self, _hooks):
+        from services.publish_service import _sync_published_post
+        sync_instance = AsyncMock()
+        sync_instance.push_post = AsyncMock(return_value=True)
+        sync_instance.__aenter__ = AsyncMock(return_value=sync_instance)
+        sync_instance.__aexit__ = AsyncMock(return_value=False)
+
+        sync_mod = MagicMock()
+        sync_mod.SyncService = MagicMock(return_value=sync_instance)
+
+        with patch.dict(sys.modules, {"services.sync_service": sync_mod}):
+            await _sync_published_post("post-xyz")
+
+        sync_instance.push_post.assert_awaited_once_with("post-xyz")
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    async def test_swallows_sync_exception(self, _hooks):
+        """Sync failure must NOT propagate — the post is already published locally."""
+        from services.publish_service import _sync_published_post
+
+        sync_mod = MagicMock()
+        sync_mod.SyncService = MagicMock(side_effect=RuntimeError("cloud unreachable"))
+
+        with patch.dict(sys.modules, {"services.sync_service": sync_mod}):
+            # Must not raise
+            await _sync_published_post("post-fail")
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    async def test_logs_warning_on_push_returns_false(self, _hooks):
+        """push_post returning False is logged but doesn't raise."""
+        from services.publish_service import _sync_published_post
+        sync_instance = AsyncMock()
+        sync_instance.push_post = AsyncMock(return_value=False)
+        sync_instance.__aenter__ = AsyncMock(return_value=sync_instance)
+        sync_instance.__aexit__ = AsyncMock(return_value=False)
+
+        sync_mod = MagicMock()
+        sync_mod.SyncService = MagicMock(return_value=sync_instance)
+
+        with patch.dict(sys.modules, {"services.sync_service": sync_mod}):
+            await _sync_published_post("post-fail")  # no raise
+
+
+# ---------------------------------------------------------------------------
+# _embed_published_post
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestEmbedPublishedPost:
+    """pgvector embedding of a freshly-published post (RAG fodder).
+
+    Coverage target: lines 203-224 of services/publish_service.py.
+    """
+
+    @pytest.mark.asyncio
+    async def test_skips_when_embeddings_db_unavailable(self):
+        from services.publish_service import _embed_published_post
+        db = MagicMock()
+        db.embeddings = None
+        # Should no-op silently
+        await _embed_published_post(db, {"id": "p", "title": "t", "content": "c"})
+
+    @pytest.mark.asyncio
+    async def test_skips_when_ollama_provider_not_registered(self):
+        from services.publish_service import _embed_published_post
+        db = MagicMock()
+        db.embeddings = MagicMock()
+
+        registry_mod = MagicMock()
+        registry_mod.get_llm_providers = MagicMock(return_value=[])  # no ollama
+        embed_svc_mod = MagicMock()
+
+        with patch.dict(sys.modules, {
+            "plugins.registry": registry_mod,
+            "services.embedding_service": embed_svc_mod,
+        }):
+            await _embed_published_post(db, {"id": "p", "title": "t", "content": "c"})
+
+    @pytest.mark.asyncio
+    async def test_happy_path_embeds_post(self):
+        from services.publish_service import _embed_published_post
+        db = MagicMock()
+        db.embeddings = MagicMock()
+
+        ollama_provider = MagicMock()
+        ollama_provider.name = "ollama_native"
+        registry_mod = MagicMock()
+        registry_mod.get_llm_providers = MagicMock(return_value=[ollama_provider])
+
+        embed_instance = MagicMock()
+        embed_instance.embed_post = AsyncMock()
+        embed_svc_mod = MagicMock()
+        embed_svc_mod.EmbeddingService = MagicMock(return_value=embed_instance)
+
+        post = {"id": "p1", "title": "Title", "content": "body"}
+        with patch.dict(sys.modules, {
+            "plugins.registry": registry_mod,
+            "services.embedding_service": embed_svc_mod,
+        }):
+            await _embed_published_post(db, post)
+
+        embed_instance.embed_post.assert_awaited_once_with(post)
+
+    @pytest.mark.asyncio
+    async def test_swallows_embedding_exception(self):
+        """Embedding failure is non-fatal — the published post is already live."""
+        from services.publish_service import _embed_published_post
+        db = MagicMock()
+        db.embeddings = MagicMock()
+
+        registry_mod = MagicMock()
+        registry_mod.get_llm_providers = MagicMock(side_effect=RuntimeError("registry boom"))
+        embed_svc_mod = MagicMock()
+
+        with patch.dict(sys.modules, {
+            "plugins.registry": registry_mod,
+            "services.embedding_service": embed_svc_mod,
+        }):
+            # Must not raise
+            await _embed_published_post(db, {"id": "p", "title": "t", "content": "c"})
+
+
+# ---------------------------------------------------------------------------
+# Gate-deferral branch in publish_post_from_task (#24)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPublishGateDeferral:
+    """When the post has pending approval gates, distribution hooks
+    (social/devto/podcast/video/short/RSS/ISR/static-export) are skipped.
+
+    Coverage target: branches around line 685+ in publish_post_from_task.
+    """
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._post_has_pending_gates", new_callable=AsyncMock, return_value=True)
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    async def test_pending_gates_skips_devto_social_isr(
+        self, _sched, _ping, _hooks, mock_gates,
+    ):
+        """When gates are pending, social + devto + ISR + static-export are NOT fired."""
+        db = _make_db()
+        task = _make_task()
+
+        # Devto module — track whether the service was instantiated
+        devto_instance = AsyncMock()
+        devto_instance.cross_post_by_post_id = AsyncMock()
+        devto_mod = MagicMock()
+        devto_mod.DevToCrossPostService = MagicMock(return_value=devto_instance)
+
+        # Social module — track the call
+        social_mod = MagicMock()
+        social_mod.generate_and_distribute_social_posts = AsyncMock()
+
+        # Reval module
+        reval_mod = MagicMock()
+        reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
+
+        with _LazyImportContext(overrides={
+            "services.devto_service": devto_mod,
+            "services.social_poster": social_mod,
+            "services.revalidation_service": reval_mod,
+        }):
+            result = await publish_post_from_task(
+                db_service=db, task=task, task_id="tid-gated",
+                queue_social=True, trigger_revalidation=True,
+            )
+
+        assert result.success is True
+        # NEITHER distribution path should have been triggered
+        social_mod.generate_and_distribute_social_posts.assert_not_called()
+        devto_mod.DevToCrossPostService.assert_not_called()
+        reval_mod.trigger_isr_revalidate.assert_not_called()
+        # ISR result reflects the deferral
+        assert result.revalidation_success is False
+
+
+# ---------------------------------------------------------------------------
+# fire_post_distribution_hooks — gate-engine re-trigger
+# ---------------------------------------------------------------------------
+
+
+def _make_post_row(
+    *, post_id="post-1", title="My Title", slug="my-title",
+    content="body", excerpt="excerpt", keywords="ai,ml",
+    media: list[str] | None = None,
+):
+    return {
+        "id": post_id,
+        "title": title,
+        "slug": slug,
+        "content": content,
+        "excerpt": excerpt,
+        "seo_keywords": keywords,
+        "media_to_generate": media or [],
+    }
+
+
+def _make_pool_for_fire(post_row, pending_gates: bool = False, status_flip: bool = True):
+    """Build a pool that:
+    - First acquire(): _post_has_pending_gates query → returns 1 row if pending_gates else None
+    - Second acquire(): SELECT post by id → returns post_row
+    - Third acquire(): UPDATE posts SET status='published' → returns 'UPDATE 1' or 'UPDATE 0'
+    """
+    # Connections for each acquire() — same conn instance, but separate
+    # fetchrow / execute return values per call.
+    conn = AsyncMock()
+    pending_value = {"?column?": 1} if pending_gates else None
+    conn.fetchrow = AsyncMock(side_effect=[pending_value, post_row])
+    conn.execute = AsyncMock(return_value="UPDATE 1" if status_flip else "UPDATE 0")
+
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=conn)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    pool = MagicMock()
+    pool.acquire = MagicMock(return_value=ctx)
+    return pool, conn
+
+
+@pytest.mark.unit
+class TestFirePostDistributionHooks:
+    """fire_post_distribution_hooks re-fires distribution when approval gates clear.
+
+    Coverage target: lines 1051-1236 (the entire function).
+    """
+
+    @pytest.mark.asyncio
+    async def test_refuses_when_gates_still_pending(self):
+        from services.publish_service import fire_post_distribution_hooks
+        # Pool returns a pending row → refusal
+        post_row = _make_post_row()
+        pool, _conn = _make_pool_for_fire(post_row, pending_gates=True)
+        db = MagicMock()
+        db.pool = pool
+        db.cloud_pool = None
+
+        result = await fire_post_distribution_hooks(db, "post-1")
+        assert result == {"fired": False, "reason": "pending_gates"}
+
+    @pytest.mark.asyncio
+    async def test_returns_post_not_found_when_select_returns_none(self):
+        from services.publish_service import fire_post_distribution_hooks
+        # First fetchrow (pending) → None, second (post lookup) → None
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(side_effect=[None, None])
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        db = MagicMock()
+        db.pool = pool
+        db.cloud_pool = None
+
+        result = await fire_post_distribution_hooks(db, "ghost-post")
+        assert result == {"fired": False, "reason": "post_not_found"}
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    async def test_happy_path_flips_status_and_fires_social_devto(self, _hooks):
+        from services.publish_service import fire_post_distribution_hooks
+        post_row = _make_post_row()
+        pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=True)
+        db = MagicMock()
+        db.pool = pool
+        db.cloud_pool = None
+
+        # All the lazy imports
+        social_mod = MagicMock()
+        social_mod.generate_and_distribute_social_posts = AsyncMock()
+        devto_instance = AsyncMock()
+        devto_instance.cross_post_by_post_id = AsyncMock()
+        devto_mod = MagicMock()
+        devto_mod.DevToCrossPostService = MagicMock(return_value=devto_instance)
+        export_mod = MagicMock()
+        export_mod.export_post = AsyncMock()
+        reval_mod = MagicMock()
+        reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
+
+        with patch.dict(sys.modules, {
+            "services.social_poster": social_mod,
+            "services.devto_service": devto_mod,
+            "services.static_export_service": export_mod,
+            "services.revalidation_service": reval_mod,
+        }):
+            result = await fire_post_distribution_hooks(db, "post-1")
+
+        assert result["fired"] is True
+        assert result["status_flipped"] is True
+        assert "social" in result["hooks"]
+        assert "devto" in result["hooks"]
+        assert "static_export" in result["hooks"]
+        assert "isr_revalidate" in result["hooks"]
+        # search_engines hook also fires (uses site_config.require)
+        assert "search_engines" in result["hooks"]
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    async def test_no_status_flip_when_post_already_published(self, _hooks):
+        """If the UPDATE returns 'UPDATE 0' (post not in awaiting_gates),
+        status_flipped is NOT in the response and static_export/ISR don't fire
+        (since they're inside the UPDATE-1 branch)."""
+        from services.publish_service import fire_post_distribution_hooks
+        post_row = _make_post_row()
+        pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
+        db = MagicMock()
+        db.pool = pool
+        db.cloud_pool = None
+
+        social_mod = MagicMock()
+        social_mod.generate_and_distribute_social_posts = AsyncMock()
+        devto_mod = MagicMock()
+        devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
+            cross_post_by_post_id=AsyncMock(),
+        ))
+
+        with patch.dict(sys.modules, {
+            "services.social_poster": social_mod,
+            "services.devto_service": devto_mod,
+        }):
+            result = await fire_post_distribution_hooks(db, "post-1")
+
+        assert result["fired"] is True
+        assert "status_flipped" not in result
+        assert "static_export" not in result["hooks"]
+        assert "isr_revalidate" not in result["hooks"]
+        # social + devto still fire — they're outside the UPDATE-1 branch
+        assert "social" in result["hooks"]
+        assert "devto" in result["hooks"]
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    async def test_fires_podcast_video_short_only_when_in_media_list(self, _hooks):
+        """Per-medium hooks only fire for media that is in media_to_generate."""
+        from services.publish_service import fire_post_distribution_hooks
+
+        # Only podcast + short — NOT video
+        post_row = _make_post_row(media=["podcast", "short"])
+        pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
+        db = MagicMock()
+        db.pool = pool
+        db.cloud_pool = None
+
+        social_mod = MagicMock()
+        social_mod.generate_and_distribute_social_posts = AsyncMock()
+        devto_mod = MagicMock()
+        devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
+            cross_post_by_post_id=AsyncMock(),
+        ))
+        podcast_mod = MagicMock()
+        podcast_mod.generate_podcast_episode = AsyncMock()
+        video_mod = MagicMock()
+        video_mod.generate_video_episode = AsyncMock()
+        video_mod.generate_short_video_for_post = AsyncMock()
+
+        with patch.dict(sys.modules, {
+            "services.social_poster": social_mod,
+            "services.devto_service": devto_mod,
+            "services.podcast_service": podcast_mod,
+            "services.video_service": video_mod,
+        }):
+            result = await fire_post_distribution_hooks(db, "post-1")
+
+        assert "podcast" in result["hooks"]
+        assert "short" in result["hooks"]
+        assert "video" not in result["hooks"]
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    async def test_swallows_individual_hook_failures(self, _hooks):
+        """Each hook is wrapped in try/except — one failure doesn't kill the rest."""
+        from services.publish_service import fire_post_distribution_hooks
+        post_row = _make_post_row()
+        pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
+        db = MagicMock()
+        db.pool = pool
+        db.cloud_pool = None
+
+        # Social raises, devto succeeds — overall result still fired=True,
+        # devto still in hooks, social NOT in hooks.
+        social_mod = MagicMock()
+        social_mod.generate_and_distribute_social_posts = MagicMock(
+            side_effect=RuntimeError("social import busted"),
+        )
+        devto_mod = MagicMock()
+        devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
+            cross_post_by_post_id=AsyncMock(),
+        ))
+
+        with patch.dict(sys.modules, {
+            "services.social_poster": social_mod,
+            "services.devto_service": devto_mod,
+        }):
+            result = await fire_post_distribution_hooks(db, "post-1")
+
+        assert result["fired"] is True
+        assert "social" not in result["hooks"]
+        assert "devto" in result["hooks"]
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    async def test_uses_cloud_pool_when_present(self, _hooks):
+        """If db_service has a cloud_pool, that's the pool used (not db.pool)."""
+        from services.publish_service import fire_post_distribution_hooks
+        post_row = _make_post_row()
+        cloud_pool, _conn = _make_pool_for_fire(post_row, pending_gates=False)
+
+        # local pool — should NEVER be acquired
+        local_pool = MagicMock()
+        local_pool.acquire = MagicMock(side_effect=AssertionError("should use cloud_pool"))
+
+        db = MagicMock()
+        db.pool = local_pool
+        db.cloud_pool = cloud_pool
+
+        social_mod = MagicMock()
+        social_mod.generate_and_distribute_social_posts = AsyncMock()
+        devto_mod = MagicMock()
+        devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
+            cross_post_by_post_id=AsyncMock(),
+        ))
+
+        with patch.dict(sys.modules, {
+            "services.social_poster": social_mod,
+            "services.devto_service": devto_mod,
+        }):
+            result = await fire_post_distribution_hooks(db, "post-1")
+
+        assert result["fired"] is True
+
+
+# ---------------------------------------------------------------------------
+# _ping_search_engines — empty-key/empty-url skip branches (#198)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPingSearchEnginesEmptyConfig:
+    """Lines 169-198: when site_config returns '' for the ping URLs the
+    function skips that ping entirely."""
+
+    @pytest.mark.asyncio
+    async def test_empty_indexnow_url_skips_indexnow(self):
+        """indexnow_ping_url='' → IndexNow ping is skipped."""
+        from services.publish_service import _ping_search_engines
+
+        sc = MagicMock()
+        # IndexNow disabled, sitemap ping disabled too
+        sc.get = MagicMock(side_effect=lambda k, default="": "" if "indexnow" in k or "sitemap" in k else default)
+
+        with patch("services.publish_service.site_config", sc):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock()
+            with patch("httpx.AsyncClient") as mock_cls:
+                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+                await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test")
+
+        # Both pings were skipped → no GET calls
+        mock_client.get.assert_not_called()
