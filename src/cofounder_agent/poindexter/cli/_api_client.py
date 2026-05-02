@@ -119,24 +119,18 @@ async def _resolve_credentials(
 def _dsn_or_none() -> str:
     """Best-effort DSN resolution. Returns "" if nothing is configured.
 
-    Matches the resolution order ``cli/auth.py`` uses — bootstrap.toml
-    via ``brain.bootstrap`` if available, then the env-var triplet.
+    Same resolution order as ``cli/auth.py`` — uses the shared
+    ``poindexter.cli._bootstrap.resolve_dsn`` helper which prefers
+    bootstrap.toml over env vars (the resolver previously imported
+    ``brain.bootstrap`` which isn't on sys.path for installed CLI
+    invocations, silently failing and reverting to env-var-only).
+
     Doesn't raise; the caller is expected to be tolerant of missing
     DSN (env-var-only setups still work).
     """
-    dsn = (
-        os.getenv("POINDEXTER_MEMORY_DSN")
-        or os.getenv("LOCAL_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    )
-    if dsn:
-        return dsn
-    # Fall back to bootstrap.toml — same trick auth.py uses.
     try:
-        from brain.bootstrap import get_bootstrap_value  # type: ignore[import-not-found]
-
-        return get_bootstrap_value("database_url", "") or ""
+        from poindexter.cli._bootstrap import resolve_dsn
+        return resolve_dsn()
     except Exception:  # noqa: BLE001
         return ""
 

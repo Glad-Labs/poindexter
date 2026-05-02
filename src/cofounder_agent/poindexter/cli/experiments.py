@@ -24,18 +24,7 @@ from typing import Any
 import click
 
 
-def _dsn() -> str:
-    dsn = (
-        os.getenv("POINDEXTER_MEMORY_DSN")
-        or os.getenv("LOCAL_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    )
-    if not dsn:
-        raise RuntimeError(
-            "No DSN — set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, or DATABASE_URL."
-        )
-    return dsn
+from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 
 
 def _run(coro):

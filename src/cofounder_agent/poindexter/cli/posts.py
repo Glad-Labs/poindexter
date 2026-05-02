@@ -28,25 +28,7 @@ def _run(coro):
 # ---------------------------------------------------------------------------
 
 
-def _gate_dsn() -> str:
-    """Resolve the PostgreSQL DSN for the gate-engine commands.
-
-    Same env-var ladder ``poindexter approval`` uses. The CLI runs
-    outside the worker process, so it can't read app.state.site_config
-    — env vars are the standard escape hatch.
-    """
-    dsn = (
-        os.getenv("POINDEXTER_MEMORY_DSN")
-        or os.getenv("LOCAL_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    )
-    if not dsn:
-        raise RuntimeError(
-            "No DSN — set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, "
-            "or DATABASE_URL."
-        )
-    return dsn
+from poindexter.cli._bootstrap import resolve_dsn as _gate_dsn  # noqa: E402
 
 
 async def _make_gate_pool():

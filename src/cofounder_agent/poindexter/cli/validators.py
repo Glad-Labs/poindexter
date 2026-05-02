@@ -36,25 +36,7 @@ import click
 _VALID_SEVERITIES = ("info", "warning", "error")
 
 
-def _dsn() -> str:
-    """Resolve a PostgreSQL DSN from the same env-var ladder the rest of
-    the CLI uses (mirrors ``poindexter qa-gates`` and ``poindexter taps``).
-
-    No bootstrap.toml lookup here -- CLI commands run outside the worker
-    process so they can't share its loaded site_config. The env vars
-    are the standard escape hatch.
-    """
-    dsn = (
-        os.getenv("POINDEXTER_MEMORY_DSN")
-        or os.getenv("LOCAL_DATABASE_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    )
-    if not dsn:
-        raise RuntimeError(
-            "No DSN -- set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, or DATABASE_URL."
-        )
-    return dsn
+from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 
 
 def _run(coro):

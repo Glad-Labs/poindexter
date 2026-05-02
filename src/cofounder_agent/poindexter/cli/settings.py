@@ -49,19 +49,12 @@ def settings_list(
     # we fall back to direct DB for that case. Active-only can still go
     # through the cached HTTP path.
     if include_inactive:
-        import os
-
         import asyncpg
 
+        from poindexter.cli._bootstrap import resolve_dsn
+
         async def _list_db() -> list[dict[str, Any]]:
-            dsn = (
-                os.getenv("POINDEXTER_MEMORY_DSN")
-                or os.getenv("LOCAL_DATABASE_URL")
-                or os.getenv("DATABASE_URL")
-                or ""
-            )
-            if not dsn:
-                raise RuntimeError("No DSN — set POINDEXTER_MEMORY_DSN / LOCAL_DATABASE_URL / DATABASE_URL.")
+            dsn = resolve_dsn()
             conn = await asyncpg.connect(dsn)
             try:
                 where = ["1=1"]
@@ -197,20 +190,11 @@ def settings_set(key: str, value: str, category: str, description: str) -> None:
     """
 
     async def _upsert() -> bool:
-        import os
-
         import asyncpg
 
-        dsn = (
-            os.getenv("POINDEXTER_MEMORY_DSN")
-            or os.getenv("LOCAL_DATABASE_URL")
-            or os.getenv("DATABASE_URL")
-            or ""
-        )
-        if not dsn:
-            raise RuntimeError(
-                "No DSN found — set POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, or DATABASE_URL."
-            )
+        from poindexter.cli._bootstrap import resolve_dsn
+
+        dsn = resolve_dsn()
         conn = await asyncpg.connect(dsn)
         try:
             await conn.execute(

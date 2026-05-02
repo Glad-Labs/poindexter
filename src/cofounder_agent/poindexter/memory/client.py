@@ -105,18 +105,29 @@ class MemoryClient:
         pool_min_size: int = 1,
         pool_max_size: int = 5,
     ) -> None:
+        # Resolution order: explicit `dsn=` arg → env vars (legacy) →
+        # ``~/.poindexter/bootstrap.toml::database_url`` (last-ditch
+        # fallback so a fresh install works without operator-managed env
+        # vars). Explicit + env var stay first for backward compat with
+        # callers that already have those wired.
+        try:
+            from poindexter.cli._bootstrap import read_bootstrap_value
+            _toml_dsn = read_bootstrap_value("database_url")
+        except Exception:  # noqa: BLE001
+            _toml_dsn = ""
         self.dsn = (
             dsn
             or os.getenv("POINDEXTER_MEMORY_DSN")
             or os.getenv("LOCAL_DATABASE_URL")
             or os.getenv("DATABASE_URL")
+            or _toml_dsn
             or ""
         )
         if not self.dsn:
             raise RuntimeError(
-                "MemoryClient requires a DSN. Pass dsn= or set any of: "
-                "POINDEXTER_MEMORY_DSN, LOCAL_DATABASE_URL, DATABASE_URL "
-                "in the environment."
+                "MemoryClient requires a DSN. Pass dsn=, set any of "
+                "POINDEXTER_MEMORY_DSN / LOCAL_DATABASE_URL / DATABASE_URL "
+                "in env, OR populate ~/.poindexter/bootstrap.toml::database_url."
             )
         # OLLAMA_URL kept for the standalone CLI path; OLLAMA_BASE_URL is
         # the name the worker container + compose stack uses, so accept
