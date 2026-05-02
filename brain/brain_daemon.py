@@ -845,7 +845,8 @@ async def generate_daily_digest(pool):
                 (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'pending') as pending,
                 (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status = 'failed'
                     AND updated_at > NOW() - INTERVAL '{_digest_h} hours') as failed_24h,
-                (SELECT COUNT(*) FROM posts WHERE published_at > NOW() - INTERVAL '{_digest_h} hours') as published_24h,
+                (SELECT COUNT(*) FROM posts WHERE status = 'published'
+                    AND published_at > NOW() - INTERVAL '{_digest_h} hours') as published_24h,
                 (SELECT COUNT(*) FROM page_views WHERE created_at >= date_trunc('day', NOW())) as views_today,
                 (SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs
                     WHERE created_at >= date_trunc('month', NOW())) as month_spend
