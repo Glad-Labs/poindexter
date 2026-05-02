@@ -100,6 +100,43 @@ def _should_run_post_publish_hooks() -> bool:
     return bool(os.getenv("LOCAL_DATABASE_URL"))
 
 
+async def _post_has_pending_gates(pool, post_id: str) -> bool:
+    """Return True iff the post has any unresolved gate row.
+
+    Used by the publish path to decide whether to fire the
+    distribution + media-generation hooks immediately or defer them
+    until the operator clears the gates (Glad-Labs/poindexter#24).
+
+    Back-compat: posts that pre-date the gate engine (no rows in
+    ``post_approval_gates``) have zero pending gates and so the
+    distribution hooks fire as before.
+
+    Defensive: any DB error returns False so we err on the side of
+    publishing — the alternative (silently swallowing distribution
+    for every post on a transient DB blip) is worse.
+    """
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT 1
+                  FROM post_approval_gates
+                 WHERE post_id::text = $1
+                   AND state = 'pending'
+                 LIMIT 1
+                """,
+                str(post_id),
+            )
+        return row is not None
+    except Exception as exc:
+        logger.debug(
+            "[publish_service] _post_has_pending_gates probe failed "
+            "for %s (treating as no gates): %s",
+            post_id, exc,
+        )
+        return False
+
+
 async def _sync_published_post(post_id: str) -> None:
     """Push a newly published post to the cloud DB (non-blocking)."""
     if not _should_run_post_publish_hooks():
@@ -522,6 +559,21 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 5. Insert into posts table
     # ---------------------------------------------------------------
+    # Strict-mode gate enforcement (#24): if this post will have
+    # approval gates, it must NOT land at status='published' on initial
+    # insert — that would make the URL live + index it on the static
+    # export before the operator approves. Instead we land at
+    # 'awaiting_gates'. fire_post_distribution_hooks (called after the
+    # last gate clears) flips it to 'published'.
+    #
+    # The gate ROWS may not exist yet at this exact moment (some flows
+    # create them just after the post insert), so we use the planned
+    # gate list passed in via task['gates'] OR check existing rows. If
+    # neither is present, we treat it as a no-gate autonomous publish.
+    _planned_gates = task.get("gates") or []
+    _strict_mode_status = (
+        "awaiting_gates" if (_planned_gates and not draft_mode) else "published"
+    )
     post_data: dict[str, Any] = {
         "title": post_title,
         "slug": slug,
@@ -531,7 +583,7 @@ async def publish_post_from_task(
         "cover_image_url": featured_image_url,
         "author_id": author_id,
         "category_id": category_id,
-        "status": "draft" if draft_mode else "published",
+        "status": "draft" if draft_mode else _strict_mode_status,
         "seo_title": post_title,
         "seo_description": seo_description,
         "seo_keywords": ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or ""),
@@ -617,9 +669,31 @@ async def publish_post_from_task(
         logger.info("[publish_service] Queued sync + embed for post %s", post_id)
 
     # ---------------------------------------------------------------
+    # 8b. Gate engine — defer distribution if any approval gate is pending
+    # ---------------------------------------------------------------
+    # Glad-Labs/poindexter#24: the per-medium gate machinery can pause
+    # the workflow at a `final` (or earlier) checkpoint between content
+    # creation and distribution. When any gate row for this post is
+    # still ``pending``, skip the social/devto/podcast/video/short/RSS
+    # hooks and let ``fire_post_distribution_hooks`` re-run them once
+    # the gate is approved.
+    #
+    # Posts that pre-date the gate engine (or were created without any
+    # ``--gates``) have zero pending rows, so this is a no-op for the
+    # autonomous path (back-compat preserved).
+    _gate_pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+    _gates_block_distribution = await _post_has_pending_gates(_gate_pool, post_id)
+    if _gates_block_distribution:
+        logger.info(
+            "[publish_service] Post %s has pending approval gates — "
+            "deferring distribution hooks until gates clear (#24)",
+            post_id,
+        )
+
+    # ---------------------------------------------------------------
     # 9. Queue social media post generation
     # ---------------------------------------------------------------
-    if queue_social:
+    if queue_social and not _gates_block_distribution:
         try:
             from services.social_poster import generate_and_distribute_social_posts
 
@@ -649,22 +723,23 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 9b. Queue Dev.to cross-posting (fire-and-forget)
     # ---------------------------------------------------------------
-    try:
-        from services.devto_service import DevToCrossPostService
+    if not _gates_block_distribution:
+        try:
+            from services.devto_service import DevToCrossPostService
 
-        devto_svc = DevToCrossPostService(getattr(db_service, "cloud_pool", None) or db_service.pool)
-        if background_tasks:
-            background_tasks.add_task(
-                devto_svc.cross_post_by_post_id, post_id
-            )
-        else:
-            _spawn_background(
-                devto_svc.cross_post_by_post_id(post_id),
-                name=f"devto_crosspost({post_id})",
-            )
-        logger.info("[DEVTO] Queued cross-post for post %s", post_id)
-    except Exception as e:
-        logger.debug("[DEVTO] Cross-posting setup failed (non-fatal): %s", e)
+            devto_svc = DevToCrossPostService(getattr(db_service, "cloud_pool", None) or db_service.pool)
+            if background_tasks:
+                background_tasks.add_task(
+                    devto_svc.cross_post_by_post_id, post_id
+                )
+            else:
+                _spawn_background(
+                    devto_svc.cross_post_by_post_id(post_id),
+                    name=f"devto_crosspost({post_id})",
+                )
+            logger.info("[DEVTO] Queued cross-post for post %s", post_id)
+        except Exception as e:
+            logger.debug("[DEVTO] Cross-posting setup failed (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 10. ISR revalidation
@@ -673,8 +748,13 @@ async def publish_post_from_task(
     # so every publish path (canonical, /go-live, scheduled_publisher)
     # uses the same code that knows the canonical paths/tags +
     # async get_secret() flow.
+    #
+    # Strict-mode gate (#24): if the post has pending gates, do NOT
+    # revalidate — the post status is 'awaiting_gates', so revalidation
+    # would just expose a 404 to anyone who clicks. fire_post_distribution_hooks
+    # fires ISR revalidate after gates clear.
     revalidation_success = False
-    if trigger_revalidation:
+    if trigger_revalidation and not _gates_block_distribution:
         try:
             from services.revalidation_service import trigger_isr_revalidate
 
@@ -687,29 +767,35 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 10b. Static JSON export to CDN (fire-and-forget)
     # ---------------------------------------------------------------
-    try:
-        from services.static_export_service import export_post
+    # Strict-mode gate (#24): same reason as ISR — static export filters
+    # on status='published', so 'awaiting_gates' posts are excluded
+    # automatically. But we ALSO skip the export call entirely as a
+    # belt-and-suspenders against future filter changes.
+    if not _gates_block_distribution:
+        try:
+            from services.static_export_service import export_post
 
-        _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-        if background_tasks:
-            background_tasks.add_task(export_post, _pool, slug)
-        else:
-            _spawn_background(
-                export_post(_pool, slug), name=f"static_export({slug})"
-            )
-        logger.info("[STATIC_EXPORT] Queued export for %s", slug)
-    except Exception as e:
-        logger.debug("[STATIC_EXPORT] Failed to queue export (non-fatal): %s", e)
+            _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+            if background_tasks:
+                background_tasks.add_task(export_post, _pool, slug)
+            else:
+                _spawn_background(
+                    export_post(_pool, slug), name=f"static_export({slug})"
+                )
+            logger.info("[STATIC_EXPORT] Queued export for %s", slug)
+        except Exception as e:
+            logger.debug("[STATIC_EXPORT] Failed to queue export (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 11. Ping search engines (fire-and-forget)
     # ---------------------------------------------------------------
     site_url = site_config.require("site_url")
     published_url_full = f"{site_url}/posts/{slug}"
-    _spawn_background(
-        _ping_search_engines(site_url, published_url_full),
-        name=f"ping_search_engines({slug})",
-    )
+    if not _gates_block_distribution:
+        _spawn_background(
+            _ping_search_engines(site_url, published_url_full),
+            name=f"ping_search_engines({slug})",
+        )
 
     # ---------------------------------------------------------------
     # 11b. Generate podcast episode (fire-and-forget, local worker only)
@@ -717,7 +803,7 @@ async def publish_post_from_task(
     _pre_script = merged.get("podcast_script") or ""
     _video_scenes = merged.get("video_scenes") or []
     _short_summary = merged.get("short_summary_script") or ""
-    if _should_run_post_publish_hooks():
+    if _should_run_post_publish_hooks() and not _gates_block_distribution:
         try:
             from services.podcast_service import generate_podcast_episode
 
@@ -739,7 +825,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11c. Generate video episode (fire-and-forget, local worker only)
     # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks():
+    if _should_run_post_publish_hooks() and not _gates_block_distribution:
         try:
             from services.video_service import generate_video_episode
 
@@ -761,7 +847,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11d. Generate short-form video (fire-and-forget, local worker only)
     # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks():
+    if _should_run_post_publish_hooks() and not _gates_block_distribution:
         try:
             from services.video_service import generate_short_video_for_post
 
@@ -794,7 +880,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11e. Upload media to R2 CDN (fire-and-forget, after generation)
     # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks():
+    if _should_run_post_publish_hooks() and not _gates_block_distribution:
         async def _upload_media_to_r2(pid: str) -> None:
             """Wait for media files to appear, then upload to R2."""
             import asyncio as _aio
@@ -918,7 +1004,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 11f. Newsletter to subscribers (fire-and-forget)
     # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks():
+    if _should_run_post_publish_hooks() and not _gates_block_distribution:
         async def _send_newsletter(_pid: str, ptitle: str, pexcerpt: str, pslug: str) -> None:
             try:
                 from services.newsletter_service import send_post_newsletter
@@ -955,3 +1041,196 @@ async def publish_post_from_task(
         post_title=post_title,
         revalidation_success=revalidation_success,
     )
+
+
+# ---------------------------------------------------------------------------
+# Gate-engine re-trigger (Glad-Labs/poindexter#24)
+# ---------------------------------------------------------------------------
+
+
+async def fire_post_distribution_hooks(
+    db_service,
+    post_id: str,
+) -> dict[str, Any]:
+    """Re-fire the distribution hooks (social/devto/podcast/video/short/RSS)
+    for a post whose approval gates have just cleared.
+
+    Reads the post + the writer task it came from, then fans out the
+    same hooks ``publish_post_from_task`` would have fired immediately
+    for an autonomous post.
+
+    Returns a small descriptor of what was triggered. All errors are
+    swallowed and logged — distribution hooks are best-effort by
+    design (the post is already on the public site at this point).
+    """
+    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+
+    # Defensive: don't fire if there are still pending gates. Concurrent
+    # operators or callers re-triggering speculatively shouldn't be
+    # able to bypass a subsequent ``revise``.
+    if await _post_has_pending_gates(pool, post_id):
+        logger.info(
+            "[publish_service] fire_post_distribution_hooks: post %s "
+            "still has pending gates — refusing to fire distribution",
+            post_id,
+        )
+        return {"fired": False, "reason": "pending_gates"}
+
+    async with pool.acquire() as conn:
+        post_row = await conn.fetchrow(
+            """
+            SELECT id::text AS id, title, slug, content, excerpt,
+                   seo_keywords, media_to_generate
+              FROM posts
+             WHERE id::text = $1
+            """,
+            str(post_id),
+        )
+    if post_row is None:
+        logger.warning(
+            "[publish_service] fire_post_distribution_hooks: post %s "
+            "not found",
+            post_id,
+        )
+        return {"fired": False, "reason": "post_not_found"}
+
+    post_title = post_row["title"]
+    slug = post_row["slug"]
+    post_content = post_row["content"] or ""
+    seo_description = post_row["excerpt"] or ""
+    seo_keywords_str = post_row["seo_keywords"] or ""
+    seo_keywords = [k.strip() for k in seo_keywords_str.split(",") if k.strip()]
+    media = list(post_row["media_to_generate"] or [])
+
+    fired: dict[str, Any] = {"fired": True, "post_id": post_id, "hooks": []}
+
+    # ---------------------------------------------------------------
+    # Strict-mode gate enforcement (#24): the post was inserted at
+    # status='awaiting_gates' to keep it off the public site while
+    # gates were pending. Now that all gates have cleared, flip it to
+    # 'published' so the static export query (status='published')
+    # picks it up + the page route resolves. Then fire ISR revalidate
+    # + static export so the public surfaces refresh immediately.
+    # ---------------------------------------------------------------
+    async with pool.acquire() as conn:
+        update_result = await conn.execute(
+            """
+            UPDATE posts
+               SET status = 'published',
+                   published_at = COALESCE(published_at, NOW()),
+                   updated_at = NOW()
+             WHERE id::text = $1 AND status = 'awaiting_gates'
+            """,
+            str(post_id),
+        )
+    if update_result.startswith("UPDATE 1"):
+        logger.info(
+            "[publish_service] fire_post_distribution_hooks: flipped post %s "
+            "from awaiting_gates → published",
+            post_id,
+        )
+        fired["status_flipped"] = True
+
+        # Static export (R2) so the post becomes fetchable by the
+        # public-site getPostBySlug call.
+        try:
+            from services.static_export_service import export_post
+            _spawn_background(
+                export_post(pool, slug),
+                name=f"static_export({slug})",
+            )
+            fired["hooks"].append("static_export")
+        except Exception as e:
+            logger.warning(
+                "[publish_service] static_export on gate-clear failed "
+                "(non-fatal): %s", e,
+            )
+
+        # ISR revalidate so Vercel rebuilds the slug page immediately
+        # rather than waiting for natural ISR expiry.
+        try:
+            from services.revalidation_service import trigger_isr_revalidate
+            ok = await trigger_isr_revalidate(slug)
+            if ok:
+                fired["hooks"].append("isr_revalidate")
+        except Exception as e:
+            logger.warning(
+                "[publish_service] ISR revalidate on gate-clear failed "
+                "(non-fatal): %s", e,
+            )
+
+    # 1. Social media
+    try:
+        from services.social_poster import generate_and_distribute_social_posts
+        _spawn_background(
+            generate_and_distribute_social_posts(
+                title=post_title, slug=slug,
+                excerpt=seo_description, keywords=seo_keywords,
+            ),
+            name=f"social_posts({slug})",
+        )
+        fired["hooks"].append("social")
+    except Exception as e:
+        logger.debug("[SOCIAL] Failed in re-trigger (non-fatal): %s", e)
+
+    # 2. Dev.to
+    try:
+        from services.devto_service import DevToCrossPostService
+        devto_svc = DevToCrossPostService(pool)
+        _spawn_background(
+            devto_svc.cross_post_by_post_id(post_id),
+            name=f"devto_crosspost({post_id})",
+        )
+        fired["hooks"].append("devto")
+    except Exception as e:
+        logger.debug("[DEVTO] Failed in re-trigger (non-fatal): %s", e)
+
+    # 3. Search engine pings
+    try:
+        site_url = site_config.require("site_url")
+        _spawn_background(
+            _ping_search_engines(site_url, f"{site_url}/posts/{slug}"),
+            name=f"ping_search_engines({slug})",
+        )
+        fired["hooks"].append("search_engines")
+    except Exception as e:
+        logger.debug("[SEO] Failed in re-trigger (non-fatal): %s", e)
+
+    # 4. Per-medium generation — only fire for media in media_to_generate.
+    if _should_run_post_publish_hooks():
+        if "podcast" in media:
+            try:
+                from services.podcast_service import generate_podcast_episode
+                _spawn_background(
+                    generate_podcast_episode(post_id, post_title, post_content),
+                    name=f"podcast_episode({post_id})",
+                )
+                fired["hooks"].append("podcast")
+            except Exception as e:
+                logger.debug("[PODCAST] Failed in re-trigger (non-fatal): %s", e)
+        if "video" in media:
+            try:
+                from services.video_service import generate_video_episode
+                _spawn_background(
+                    generate_video_episode(post_id, post_title, post_content),
+                    name=f"video_episode({post_id})",
+                )
+                fired["hooks"].append("video")
+            except Exception as e:
+                logger.debug("[VIDEO] Failed in re-trigger (non-fatal): %s", e)
+        if "short" in media:
+            try:
+                from services.video_service import generate_short_video_for_post
+                _spawn_background(
+                    generate_short_video_for_post(post_id, post_title, post_content),
+                    name=f"short_video({post_id})",
+                )
+                fired["hooks"].append("short")
+            except Exception as e:
+                logger.debug("[SHORT] Failed in re-trigger (non-fatal): %s", e)
+
+    logger.info(
+        "[publish_service] Re-fired %d distribution hook(s) for post %s: %s",
+        len(fired["hooks"]), post_id, fired["hooks"],
+    )
+    return fired

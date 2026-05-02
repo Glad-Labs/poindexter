@@ -95,6 +95,13 @@ class IdleWorker:
         # Event-driven (publish_at is a per-task timestamp), no Job counterpart.
         results["scheduled_publishes"] = await self._publish_scheduled_posts()
 
+        # Auto-advance the per-medium gate engine (Glad-Labs/poindexter#24).
+        # For every post with all gates decided + no pending rows, re-fire
+        # the deferred social/devto/podcast/video/short/RSS hooks.
+        # Idempotent — uses an app_settings marker per post to avoid
+        # double-firing on subsequent ticks.
+        results["gate_advances"] = await self._advance_post_gates()
+
         # Topic discovery — event-driven (issue #229). Fires on signals
         # (queue_low, stale_content, rejection_streak, manual). 24h safety-net
         # kept as fallback so the system never stalls completely if signal
@@ -147,6 +154,90 @@ class IdleWorker:
                         len(results), ", ".join(results.keys()))
 
         return results
+
+    async def _advance_post_gates(self) -> dict:
+        """Auto-advance the per-medium gate engine (#24).
+
+        For every post with at least one decided gate AND no pending
+        gates, fire ``fire_post_distribution_hooks`` so the deferred
+        social/devto/podcast/video/short/RSS hooks run.
+
+        Idempotency is provided via an app_settings marker per post
+        (gate_distribution_fired_<post_id>) so repeated ticks won't
+        double-publish. Operators can delete the marker to force a
+        re-fire.
+
+        Posts that have NEVER had a gate row are out of scope (they
+        publish via the autonomous path immediately and never need
+        re-trigger). Posts whose status='rejected' or 'archived' are
+        also skipped.
+        """
+        if not self.pool:
+            return {"advanced": 0}
+        try:
+            # Pull every post that:
+            #   - has at least one approved gate row
+            #   - has zero pending or revising gate rows
+            #   - is in a non-terminal status
+            rows = await self.pool.fetch(
+                """
+                SELECT p.id::text AS post_id
+                  FROM posts p
+                  JOIN post_approval_gates g ON g.post_id = p.id
+                 WHERE p.status NOT IN ('rejected', 'archived')
+                 GROUP BY p.id
+                HAVING COUNT(*) FILTER (
+                    WHERE g.state IN ('pending', 'revising')
+                ) = 0
+                   AND COUNT(*) FILTER (
+                    WHERE g.state = 'approved'
+                ) > 0
+                 LIMIT 50
+                """,
+            )
+            if not rows:
+                return {"advanced": 0}
+
+            from services.database_service import DatabaseService
+            from services.publish_service import fire_post_distribution_hooks
+
+            advanced = 0
+            for row in rows:
+                pid = row["post_id"]
+                marker_key = f"gate_distribution_fired_{pid}"
+                already = await self.pool.fetchval(
+                    "SELECT 1 FROM app_settings WHERE key = $1", marker_key,
+                )
+                if already:
+                    continue
+                try:
+                    db = DatabaseService()
+                    db._pool = self.pool
+                    result = await fire_post_distribution_hooks(db, pid)
+                    if result.get("fired"):
+                        advanced += 1
+                        await self.pool.execute(
+                            "INSERT INTO app_settings (key, value, description, is_active) "
+                            "VALUES ($1, $2, $3, TRUE) ON CONFLICT (key) DO UPDATE "
+                            "SET value = EXCLUDED.value, updated_at = NOW()",
+                            marker_key, "true",
+                            "Idle-worker gate-engine marker (one per "
+                            "post; presence means distribution hooks "
+                            "have already fired for this post). Safe "
+                            "to delete to force a re-fire.",
+                        )
+                        logger.info(
+                            "[GATES] Fired deferred distribution hooks for post %s "
+                            "(hooks=%s)", pid, result.get("hooks"),
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "[GATES] Failed to advance post %s: %s", pid, exc,
+                    )
+            return {"advanced": advanced, "checked": len(rows)}
+        except Exception as e:
+            logger.exception("[GATES] Auto-advance loop failed: %s", e)
+            return {"advanced": 0, "error": str(e)}
 
     async def _publish_scheduled_posts(self) -> dict:
         """Publish approved tasks whose scheduled_at has arrived."""

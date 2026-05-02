@@ -9,7 +9,7 @@ import click
 from .costs import costs_group
 from .experiments import experiments_group
 from .memory import memory_group
-from .posts import posts_group
+from .posts import post_group, posts_group
 from .premium import premium_group
 from .settings import settings_group
 from .setup import setup_command
@@ -44,6 +44,7 @@ main.add_command(setup_command, name="setup")
 main.add_command(memory_group, name="memory")
 main.add_command(tasks_group, name="tasks")
 main.add_command(posts_group, name="posts")
+main.add_command(post_group, name="post")
 main.add_command(settings_group, name="settings")
 main.add_command(costs_group, name="costs")
 main.add_command(sprint_group, name="sprint")

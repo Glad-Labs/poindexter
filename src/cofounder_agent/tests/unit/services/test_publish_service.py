@@ -729,10 +729,11 @@ class TestRevalidation:
     """ISR revalidation behavior."""
 
     @pytest.mark.asyncio
+    @patch("services.publish_service._post_has_pending_gates", new_callable=AsyncMock, return_value=False)
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
-    async def test_revalidation_success_reflected_in_result(self, mock_sched, mock_ping, mock_hooks):
+    async def test_revalidation_success_reflected_in_result(self, mock_sched, mock_ping, mock_hooks, mock_gates):
         db = _make_db()
         task = _make_task()
 
@@ -740,6 +741,9 @@ class TestRevalidation:
         # services.revalidation_service (not the legacy
         # trigger_nextjs_revalidation). Stub both so this test stays
         # valid regardless of which symbol is referenced inside.
+        # #24 strict-mode: also stub _post_has_pending_gates → False so
+        # the test asserts the no-gate path (revalidation fires). The
+        # gate-defer path is tested separately in TestGateDeferral.
         reval_mod = MagicMock()
         reval_mod.trigger_nextjs_revalidation = AsyncMock(return_value=True)
         reval_mod.trigger_isr_revalidate = AsyncMock(return_value=True)
