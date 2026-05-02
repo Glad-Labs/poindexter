@@ -956,7 +956,7 @@ class ImageService:
             )
 
             # Run generation in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None,
                 self._generate_image_sync,

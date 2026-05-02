@@ -113,7 +113,7 @@ async def _send_via_resend(cfg: dict, to_email: str, subject: str, html: str) ->
 
         resend.api_key = cfg["resend_api_key"]
         # Run in executor since resend SDK is sync
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             lambda: resend.Emails.send({

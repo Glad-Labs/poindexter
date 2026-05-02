@@ -148,7 +148,7 @@ async def _upload_to_cloudinary(path: str, prompt: str) -> str:
             context={"alt": prompt[:200]},
         )
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, _upload)
     url = result.get("secure_url", "")
     if not url:

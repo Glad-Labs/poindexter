@@ -108,7 +108,7 @@ class RegenerateStockImagesJob:
                     )
                     if success and os.path.exists(output_path):
                         import asyncio
-                        result = await asyncio.get_event_loop().run_in_executor(
+                        result = await asyncio.get_running_loop().run_in_executor(
                             None,
                             lambda p=output_path, c=cat: cloudinary.uploader.upload(
                                 p, folder="generated/",

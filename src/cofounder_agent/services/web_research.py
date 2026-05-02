@@ -99,7 +99,7 @@ class WebResearcher:
                     results = list(ddgs.text(query, max_results=num_results))
                 return results
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             # Hard cap: DDG sometimes hangs or rate-limits silently.
             # asyncio.wait_for guarantees the pipeline won't stall on search.
             _search_timeout = _web_research_int("search_timeout_seconds", 20)
