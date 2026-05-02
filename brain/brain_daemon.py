@@ -50,6 +50,20 @@ try:
 except ImportError:
     _HAS_BUSINESS_PROBES = False
 
+# OAuth client for authenticated worker-API calls (#245). Pulled in
+# lazily inside main() so the import is independent of the probe
+# imports above (and the brain still boots if httpx is somehow
+# unavailable — every other call path here uses urllib).
+try:
+    from oauth_client import oauth_client_from_pool, BRAIN_DEFAULT_SCOPES
+    _HAS_OAUTH_CLIENT = True
+except ImportError:  # pragma: no cover — package-qualified path for tests
+    try:
+        from brain.oauth_client import oauth_client_from_pool, BRAIN_DEFAULT_SCOPES
+        _HAS_OAUTH_CLIENT = True
+    except ImportError:
+        _HAS_OAUTH_CLIENT = False
+
 try:
     # GH#214 — operator-facing URL/IP drift probe. Runs on its own 15-min
     # cadence, gated inside maybe_run_operator_url_probe so we don't need
@@ -236,6 +250,23 @@ CYCLE_SECONDS = 300  # 5 minutes between full cycles
 # sync_alert_rules fires when the counter hits grafana_alert_sync_interval_cycles
 # (default 3 = every 15 min). Reset to 0 after each sync.
 _alert_sync_cycle_counter = 0
+
+# OAuth client used for any authenticated worker-API call brain probes
+# need to make. Initialised once in main() after the DB pool is ready.
+# When OAuth credentials aren't configured (pre-#245 migration) the
+# helper falls back to app_settings.api_token automatically.
+_OAUTH_CLIENT = None
+
+
+def get_oauth_client():
+    """Return the brain's shared OAuth client, or ``None`` before init.
+
+    Exposed so probes can opt into authenticated calls without needing
+    to thread the pool through their signatures. Probes that don't
+    need authentication (most of them — they hit /api/health which is
+    open) keep using ``urllib`` directly.
+    """
+    return _OAUTH_CLIENT
 
 
 def check_http(url: str, timeout: int = 10) -> tuple:
@@ -1250,6 +1281,31 @@ async def main():
     # Load config from DB (site URLs, Telegram tokens, etc.)
     await _load_config_from_db(pool)
 
+    # Build the shared OAuth client so probes can hit authenticated
+    # worker endpoints with cached JWTs (#245). Falls back to the
+    # legacy static Bearer if app_settings.brain_oauth_client_id /
+    # _secret aren't set yet — exactly the dual-auth bridge the
+    # middleware was built for.
+    global _OAUTH_CLIENT
+    if _HAS_OAUTH_CLIENT and _API_BASE_URL:
+        try:
+            _OAUTH_CLIENT = await oauth_client_from_pool(
+                pool,
+                base_url=_API_BASE_URL,
+                scopes=BRAIN_DEFAULT_SCOPES,
+            )
+            mode = "oauth" if _OAUTH_CLIENT.using_oauth else "static-bearer (legacy)"
+            logger.info("[BRAIN] OAuth client ready (mode=%s, base=%s)", mode, _API_BASE_URL)
+        except Exception as e:
+            logger.warning("[BRAIN] OAuth client init failed: %s — probes that need auth will skip", e, exc_info=True)
+            _OAUTH_CLIENT = None
+    else:
+        logger.info(
+            "[BRAIN] OAuth client unavailable (has_oauth=%s, api_base=%r) — "
+            "authenticated probes disabled",
+            _HAS_OAUTH_CLIENT, _API_BASE_URL,
+        )
+
     # Fallback: load Telegram token from OpenClaw .env if not in DB
     global TELEGRAM_BOT_TOKEN
     env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
@@ -1321,6 +1377,11 @@ async def main():
             pass  # Normal — timeout means no shutdown signal, continue loop
 
     logger.info("[BRAIN] Shutting down gracefully")
+    if _OAUTH_CLIENT is not None:
+        try:
+            await _OAUTH_CLIENT.aclose()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[BRAIN] OAuth client close failed: %s", e)
     await pool.close()
     logger.info("[BRAIN] Pool closed, exiting")
 

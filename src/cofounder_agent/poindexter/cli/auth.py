@@ -373,3 +373,183 @@ def mint_token(client_id: str, client_secret: str, scopes: str) -> None:
         )
 
     _run(_impl())
+
+
+# ---------------------------------------------------------------------------
+# migrate-cli / migrate-brain — one-shot Phase 2 client provisioning
+# ---------------------------------------------------------------------------
+
+
+async def _provision_consumer_client(
+    name: str,
+    scopes: list[str],
+    client_id_setting_key: str,
+    client_secret_setting_key: str,
+) -> tuple[str, str]:
+    """Register a new OAuth client and persist creds to app_settings.
+
+    Returns (client_id, client_secret). Used by ``migrate-cli`` and
+    ``migrate-brain`` so the helper has identical semantics in both
+    spots — only the name + setting keys differ.
+
+    The client is registered with ``client_credentials`` grant only (no
+    browser callback), since both CLI and brain run headless. The
+    secret is stored encrypted via ``plugins.secrets.set_secret`` with
+    ``is_secret=true``.
+    """
+    from mcp.shared.auth import OAuthClientInformationFull
+    from pydantic import AnyUrl
+    from services.auth.oauth_issuer import generate_client_id, generate_client_secret
+    from services.auth.oauth_provider import PoindexterOAuthProvider
+    from plugins.secrets import set_secret
+
+    client_id = generate_client_id()
+    client_secret = generate_client_secret()
+
+    client_info = OAuthClientInformationFull(
+        client_id=client_id,
+        client_secret=client_secret,
+        # The SDK requires at least one redirect_uri even for headless
+        # clients; localhost placeholder is harmless because the
+        # client_credentials path doesn't hit /authorize.
+        redirect_uris=[AnyUrl("http://localhost/")],
+        token_endpoint_auth_method="client_secret_post",
+        grant_types=["client_credentials"],
+        response_types=["code"],
+        scope=" ".join(scopes),
+        client_name=name,
+    )
+
+    pool = await _pool()
+    try:
+        provider = PoindexterOAuthProvider(pool)
+        await provider.register_client(client_info)
+        async with pool.acquire() as conn:
+            await set_secret(
+                conn, client_id_setting_key, client_id,
+                description=f"OAuth client_id for {name} (Phase 2 #241)",
+            )
+            await set_secret(
+                conn, client_secret_setting_key, client_secret,
+                description=f"OAuth client_secret for {name} (Phase 2 #241)",
+            )
+    finally:
+        await pool.close()
+
+    return client_id, client_secret
+
+
+@auth_group.command("migrate-cli")
+@click.option(
+    "--name",
+    default="poindexter-cli",
+    show_default=True,
+    help="Client display name (shown in `poindexter auth list-clients`).",
+)
+@click.option(
+    "--scopes",
+    default="api:read api:write",
+    show_default=True,
+    help="Space-delimited subset of {api:read, api:write, mcp:read, mcp:write}.",
+)
+def migrate_cli(name: str, scopes: str) -> None:
+    """Register an OAuth client for the Poindexter CLI and store creds.
+
+    One-shot Phase 2 migration helper (#242). After this runs:
+
+    * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
+    * ``app_settings.cli_oauth_client_id`` + ``cli_oauth_client_secret``
+      hold the new credentials (encrypted via plugins.secrets).
+    * The CLI's ``WorkerClient`` automatically prefers the new OAuth
+      path; the static-Bearer fallback stays available until Phase 3
+      (#249) removes it.
+
+    Idempotent in the sense that re-running creates a *new* client +
+    secret pair (the previous client stays registered until you
+    ``revoke-client`` it). Run once per environment.
+    """
+    _bootstrap_path_for_secret_key()
+    scope_list = [s.strip() for s in scopes.split() if s.strip()]
+    if not scope_list:
+        raise click.UsageError("--scopes must list at least one scope")
+
+    from poindexter.cli._api_client import (
+        CLI_CLIENT_ID_KEY,
+        CLI_CLIENT_SECRET_KEY,
+    )
+
+    async def _impl():
+        client_id, client_secret = await _provision_consumer_client(
+            name=name,
+            scopes=scope_list,
+            client_id_setting_key=CLI_CLIENT_ID_KEY,
+            client_secret_setting_key=CLI_CLIENT_SECRET_KEY,
+        )
+        click.echo("")
+        click.echo(click.style("CLI OAuth client provisioned.", fg="green", bold=True))
+        click.echo(f"  name:           {name}")
+        click.echo(f"  scopes:         {' '.join(scope_list)}")
+        click.echo(f"  client_id:      {client_id}")
+        click.echo(f"  app_settings:   {CLI_CLIENT_ID_KEY} + {CLI_CLIENT_SECRET_KEY}")
+        click.echo("")
+        click.echo("The CLI will use OAuth on the next invocation. The legacy")
+        click.echo("static-Bearer fallback stays active until Phase 3 (#249).")
+
+    _run(_impl())
+
+
+@auth_group.command("migrate-brain")
+@click.option(
+    "--name",
+    default="brain-daemon",
+    show_default=True,
+    help="Client display name (shown in `poindexter auth list-clients`).",
+)
+@click.option(
+    "--scopes",
+    default="api:read api:write",
+    show_default=True,
+    help="Space-delimited subset of {api:read, api:write, mcp:read, mcp:write}.",
+)
+def migrate_brain(name: str, scopes: str) -> None:
+    """Register an OAuth client for the brain daemon and store creds.
+
+    One-shot Phase 2 migration helper (#245). After this runs:
+
+    * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
+    * ``app_settings.brain_oauth_client_id`` + ``brain_oauth_client_secret``
+      hold the new credentials (encrypted via plugins.secrets).
+    * The brain daemon's HTTP probes will use OAuth on the next cycle;
+      the static-Bearer fallback stays available until Phase 3.
+
+    Re-running creates a fresh client + secret pair; revoke the old one
+    afterwards with ``poindexter auth revoke-client --client-id ...``.
+    """
+    _bootstrap_path_for_secret_key()
+    scope_list = [s.strip() for s in scopes.split() if s.strip()]
+    if not scope_list:
+        raise click.UsageError("--scopes must list at least one scope")
+
+    # Brain helper module owns the canonical setting keys.
+    BRAIN_CLIENT_ID_KEY = "brain_oauth_client_id"
+    BRAIN_CLIENT_SECRET_KEY = "brain_oauth_client_secret"
+
+    async def _impl():
+        client_id, client_secret = await _provision_consumer_client(
+            name=name,
+            scopes=scope_list,
+            client_id_setting_key=BRAIN_CLIENT_ID_KEY,
+            client_secret_setting_key=BRAIN_CLIENT_SECRET_KEY,
+        )
+        click.echo("")
+        click.echo(click.style("Brain OAuth client provisioned.", fg="green", bold=True))
+        click.echo(f"  name:           {name}")
+        click.echo(f"  scopes:         {' '.join(scope_list)}")
+        click.echo(f"  client_id:      {client_id}")
+        click.echo(f"  app_settings:   {BRAIN_CLIENT_ID_KEY} + {BRAIN_CLIENT_SECRET_KEY}")
+        click.echo("")
+        click.echo("The brain will pick up the new credentials on its next")
+        click.echo("daemon restart (or call brain.oauth_client.oauth_client_from_pool")
+        click.echo("from a probe to use them inline).")
+
+    _run(_impl())
