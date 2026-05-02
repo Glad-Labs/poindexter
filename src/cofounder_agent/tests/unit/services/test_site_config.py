@@ -6,7 +6,7 @@ All database calls are mocked — no real asyncpg pool required.
 """
 
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -190,3 +190,169 @@ class TestInitialConfig:
         assert cfg._pool is pool
         # But _config stays empty — load() hasn't run.
         assert cfg._config == {}
+
+
+# ---------------------------------------------------------------------------
+# Round-2 fills: previously-uncovered branches (lines 107-122 reload,
+# 136-153 get_secret, 161-167 require, 202-203 get_float exception).
+# ---------------------------------------------------------------------------
+
+
+class TestReload:
+    """``SiteConfig.reload`` re-reads from the DB atomically (~lines 102-122)."""
+
+    async def test_reload_replaces_existing_config(self, config):
+        # Seed with one value
+        pool1 = AsyncMock()
+        pool1.fetch = AsyncMock(return_value=[
+            {"key": "site_name", "value": "Old"},
+            {"key": "old_only", "value": "stale"},
+        ])
+        await config.load(pool1)
+        assert config.get("old_only") == "stale"
+
+        # Reload with a different snapshot — old key disappears
+        pool2 = AsyncMock()
+        pool2.fetch = AsyncMock(return_value=[
+            {"key": "site_name", "value": "New"},
+            {"key": "new_only", "value": "fresh"},
+        ])
+        loaded = await config.reload(pool2)
+        assert loaded == 2
+        assert config.get("site_name") == "New"
+        assert config.get("new_only") == "fresh"
+        # The old-only key should be gone from the new snapshot
+        assert config.get("old_only", "MISSING") == "MISSING"
+
+    async def test_reload_skips_empty_values(self, config):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"key": "filled", "value": "yes"},
+            {"key": "empty", "value": ""},
+        ])
+        loaded = await config.reload(pool)
+        assert loaded == 1
+        assert config.get("filled") == "yes"
+
+    async def test_reload_with_none_pool_returns_zero(self, config):
+        loaded = await config.reload(None)
+        assert loaded == 0
+
+    async def test_reload_handles_db_error(self, config):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("connection lost"))
+        loaded = await config.reload(pool)
+        assert loaded == 0
+
+
+class TestGetSecret:
+    """Async secret-fetch path — secrets bypass the in-memory cache."""
+
+    async def test_get_secret_returns_value_from_pool(self, config):
+        """Happy path: the underlying plugins.secrets.get_secret returns a value."""
+        pool = AsyncMock()
+        # Async context manager on pool.acquire()
+        conn = AsyncMock()
+        acquire_ctx = AsyncMock()
+        acquire_ctx.__aenter__ = AsyncMock(return_value=conn)
+        acquire_ctx.__aexit__ = AsyncMock(return_value=None)
+        pool.acquire = lambda: acquire_ctx
+
+        cfg = SiteConfig(pool=pool)
+        with patch("plugins.secrets.get_secret",
+                   new=AsyncMock(return_value="s3cret-value")):
+            val = await cfg.get_secret("api_key")
+        assert val == "s3cret-value"
+
+    async def test_get_secret_falls_back_to_env_when_db_returns_none(self, config):
+        pool = AsyncMock()
+        conn = AsyncMock()
+        acquire_ctx = AsyncMock()
+        acquire_ctx.__aenter__ = AsyncMock(return_value=conn)
+        acquire_ctx.__aexit__ = AsyncMock(return_value=None)
+        pool.acquire = lambda: acquire_ctx
+        cfg = SiteConfig(pool=pool)
+
+        with patch("plugins.secrets.get_secret",
+                   new=AsyncMock(return_value=None)):
+            with patch.dict(os.environ, {"MY_SECRET_KEY": "from-env"}):
+                val = await cfg.get_secret("my_secret_key")
+        assert val == "from-env"
+
+    async def test_get_secret_falls_back_to_default_on_db_error(self, config):
+        """A DB exception must not crash callers — log + fall through to env/default."""
+        pool = AsyncMock()
+        # acquire() returns a context that raises on enter -> exception path
+        acquire_ctx = AsyncMock()
+        acquire_ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("pool exhausted"))
+        acquire_ctx.__aexit__ = AsyncMock(return_value=None)
+        pool.acquire = lambda: acquire_ctx
+        cfg = SiteConfig(pool=pool)
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MISSING_SECRET", None)
+            val = await cfg.get_secret("missing_secret", default="fallback-val")
+        assert val == "fallback-val"
+
+    async def test_get_secret_returns_default_when_no_pool_no_env(self, config):
+        cfg = SiteConfig()  # no pool
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NEVER_SET_KEY", None)
+            val = await cfg.get_secret("never_set_key", default="default-x")
+        assert val == "default-x"
+
+    async def test_get_secret_empty_string_treated_as_missing(self, config):
+        """Empty value from DB is not a real value — fall through to env."""
+        pool = AsyncMock()
+        conn = AsyncMock()
+        acquire_ctx = AsyncMock()
+        acquire_ctx.__aenter__ = AsyncMock(return_value=conn)
+        acquire_ctx.__aexit__ = AsyncMock(return_value=None)
+        pool.acquire = lambda: acquire_ctx
+        cfg = SiteConfig(pool=pool)
+
+        with patch("plugins.secrets.get_secret",
+                   new=AsyncMock(return_value="")):
+            with patch.dict(os.environ, {"EMPTY_KEY": "from-env"}):
+                val = await cfg.get_secret("empty_key", default="default-x")
+        assert val == "from-env"
+
+
+class TestRequire:
+    """Required-setting accessor — raises if not configured."""
+
+    def test_require_returns_db_value(self):
+        cfg = SiteConfig(initial_config={"site_url": "https://x"})
+        assert cfg.require("site_url") == "https://x"
+
+    def test_require_falls_back_to_env_var(self):
+        cfg = SiteConfig()
+        with patch.dict(os.environ, {"REQUIRED_FROM_ENV": "env-val"}):
+            assert cfg.require("required_from_env") == "env-val"
+
+    def test_require_raises_when_unset_anywhere(self):
+        cfg = SiteConfig()
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("DEFINITELY_NOT_SET_XYZ", None)
+            with pytest.raises(RuntimeError, match="not configured"):
+                cfg.require("definitely_not_set_xyz")
+
+    def test_require_error_includes_env_key_name(self):
+        cfg = SiteConfig()
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MY_REQUIRED_SETTING", None)
+            with pytest.raises(RuntimeError) as exc:
+                cfg.require("my_required_setting")
+        assert "MY_REQUIRED_SETTING" in str(exc.value)
+
+
+class TestGetFloatException:
+    async def test_get_float_invalid_returns_default(self, config):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[{"key": "rate", "value": "not-a-float"}])
+        await config.load(pool)
+        assert config.get_float("rate", 0.5) == 0.5
+
+    def test_get_float_missing_returns_default(self):
+        cfg = SiteConfig()
+        assert cfg.get_float("missing_key", 1.5) == 1.5
