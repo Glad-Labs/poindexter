@@ -630,6 +630,90 @@ def migrate_mcp_gladlabs(name: str, scopes: str) -> None:
     _run(_impl())
 
 
+@auth_group.command("migrate-openclaw")
+@click.option(
+    "--name",
+    default="openclaw-skills",
+    show_default=True,
+    help="Client display name (shown in `poindexter auth list-clients`).",
+)
+@click.option(
+    "--scopes",
+    default="api:read api:write",
+    show_default=True,
+    help=(
+        "Space-delimited subset of {api:read, api:write, mcp:read, mcp:write}. "
+        "Default covers the existing skill surface (list/get reads + "
+        "approve/publish/reject/create writes)."
+    ),
+)
+def migrate_openclaw(name: str, scopes: str) -> None:
+    """Register an OAuth client for the OpenClaw skill bash scripts.
+
+    One-shot Phase 2 migration helper (#246). After this runs:
+
+    * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
+    * ``app_settings.openclaw_oauth_client_id`` +
+      ``openclaw_oauth_client_secret`` hold the new credentials
+      (encrypted via plugins.secrets).
+    * The CLI prints an env block — paste it into ``~/.openclaw/openclaw.json``
+      under ``processes.<entry>.env`` so every skill subprocess inherits
+      ``POINDEXTER_OAUTH_CLIENT_ID`` + ``POINDEXTER_OAUTH_CLIENT_SECRET``.
+      The shared ``skills/openclaw/_lib/get_token.sh`` helper picks them
+      up automatically and mints a fresh JWT per skill invocation
+      (cached at ``~/.openclaw/.token-cache-<client_id>`` until 30s
+      before exp).
+
+    The legacy ``POINDEXTER_KEY`` static-Bearer fallback stays available
+    until Phase 3 (#249) — the helper prefers OAuth when both are set.
+    """
+    _bootstrap_path_for_secret_key()
+    scope_list = [s.strip() for s in scopes.split() if s.strip()]
+    if not scope_list:
+        raise click.UsageError("--scopes must list at least one scope")
+
+    OPENCLAW_CLIENT_ID_KEY = "openclaw_oauth_client_id"
+    OPENCLAW_CLIENT_SECRET_KEY = "openclaw_oauth_client_secret"
+
+    async def _impl():
+        client_id, client_secret = await _provision_consumer_client(
+            name=name,
+            scopes=scope_list,
+            client_id_setting_key=OPENCLAW_CLIENT_ID_KEY,
+            client_secret_setting_key=OPENCLAW_CLIENT_SECRET_KEY,
+        )
+        click.echo("")
+        click.echo(click.style(
+            "OpenClaw OAuth client provisioned.", fg="green", bold=True,
+        ))
+        click.echo(f"  name:           {name}")
+        click.echo(f"  scopes:         {' '.join(scope_list)}")
+        click.echo(f"  client_id:      {client_id}")
+        click.echo(
+            f"  app_settings:   {OPENCLAW_CLIENT_ID_KEY} + "
+            f"{OPENCLAW_CLIENT_SECRET_KEY}"
+        )
+        click.echo("")
+        click.echo("Paste this env block into ~/.openclaw/openclaw.json under")
+        click.echo("each skill process's `env` map (or set globally so every")
+        click.echo("subprocess inherits both vars):")
+        click.echo("")
+        click.echo("  POINDEXTER_OAUTH_CLIENT_ID=" + client_id)
+        click.echo("  POINDEXTER_OAUTH_CLIENT_SECRET=" + client_secret)
+        click.echo("  FASTAPI_URL=http://localhost:8002   # if not already set")
+        click.echo("")
+        click.echo(click.style(
+            "  Capture the client_secret NOW — it is not recoverable.",
+            fg="yellow",
+        ))
+        click.echo("")
+        click.echo("Skill scripts source skills/openclaw/_lib/get_token.sh,")
+        click.echo("which mints + caches a JWT per OAuth client. The legacy")
+        click.echo("POINDEXTER_KEY fallback stays active until Phase 3 (#249).")
+
+    _run(_impl())
+
+
 @auth_group.command("migrate-brain")
 @click.option(
     "--name",

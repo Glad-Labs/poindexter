@@ -10,15 +10,14 @@
 # (programmatic_validator, ollama_critic, topic_delivery, internal_consistency,
 # image_relevance, rendered_preview) finish.
 
-set -euo pipefail
+set -o pipefail
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY:-}}"
 
-if [ -z "$POINDEXTER_KEY" ]; then
-  echo "Error: POINDEXTER_KEY not configured (set POINDEXTER_KEY or GLADLABS_KEY in your env)" >&2
-  exit 1
-fi
+# OAuth helper (Glad-Labs/poindexter#246).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/../../_lib/get_token.sh"
+POINDEXTER_TOKEN="$(get_poindexter_token)" || exit 1
 
 MODE="${1:-all}"
 LIMIT="${2:-10}"
@@ -27,7 +26,7 @@ fetch_tasks() {
   local status="$1"
   local limit="$2"
   curl -s -w "\n%{http_code}" -X GET "${FASTAPI_URL}/api/tasks?status=${status}&limit=${limit}" \
-    -H "Authorization: Bearer ${POINDEXTER_KEY}" \
+    -H "Authorization: Bearer ${POINDEXTER_TOKEN}" \
     -H "Content-Type: application/json"
 }
 

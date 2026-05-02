@@ -2,12 +2,14 @@
 # scripts/run.sh — List content tasks with optional status filter
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
 
-if [ -z "$POINDEXTER_KEY" ]; then
-  echo "Error: POINDEXTER_KEY not configured (set POINDEXTER_KEY in your env)"
-  exit 1
-fi
+# OAuth helper (Glad-Labs/poindexter#246). Mints a JWT when
+# POINDEXTER_OAUTH_CLIENT_ID/SECRET are set; falls back to legacy
+# POINDEXTER_KEY static-Bearer otherwise.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/../../_lib/get_token.sh"
+
+POINDEXTER_TOKEN="$(get_poindexter_token)" || exit 1
 
 STATUS="$1"
 LIMIT="${2:-20}"
@@ -20,7 +22,7 @@ fi
 echo "Fetching tasks (status=${STATUS:-all}, limit=${LIMIT})..."
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${FASTAPI_URL}/api/tasks?${QUERY}" \
-  -H "Authorization: Bearer ${POINDEXTER_KEY}" \
+  -H "Authorization: Bearer ${POINDEXTER_TOKEN}" \
   -H "Content-Type: application/json")
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)

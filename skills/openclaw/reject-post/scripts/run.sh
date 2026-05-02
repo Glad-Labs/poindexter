@@ -2,12 +2,11 @@
 # scripts/run.sh — Reject a content task
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
 
-if [ -z "$POINDEXTER_KEY" ]; then
-  echo "Error: POINDEXTER_KEY not configured (set POINDEXTER_KEY in your env)"
-  exit 1
-fi
+# OAuth helper (Glad-Labs/poindexter#246).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/../../_lib/get_token.sh"
+POINDEXTER_TOKEN="$(get_poindexter_token)" || exit 1
 
 TASK_ID="$1"
 REASON="${2:-}"
@@ -27,7 +26,7 @@ else
 fi
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${FASTAPI_URL}/api/tasks/${TASK_ID}/reject" \
-  -H "Authorization: Bearer ${POINDEXTER_KEY}" \
+  -H "Authorization: Bearer ${POINDEXTER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD")
 

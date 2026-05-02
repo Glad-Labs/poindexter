@@ -2,7 +2,11 @@
 # scripts/run.sh — View or update app_settings in the database
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
+
+# OAuth helper (Glad-Labs/poindexter#246).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/../../_lib/get_token.sh"
+POINDEXTER_TOKEN="$(get_poindexter_token)" || exit 1
 
 ACTION="$1"
 ARG1="$2"
@@ -14,11 +18,11 @@ case "$ACTION" in
     if [ -n "$CATEGORY" ]; then
       echo "Settings for category: $CATEGORY"
       RESPONSE=$(curl -s "${FASTAPI_URL}/api/settings?category=${CATEGORY}" \
-        -H "Authorization: Bearer ${POINDEXTER_KEY}")
+        -H "Authorization: Bearer ${POINDEXTER_TOKEN}")
     else
       echo "All settings:"
       RESPONSE=$(curl -s "${FASTAPI_URL}/api/settings" \
-        -H "Authorization: Bearer ${POINDEXTER_KEY}")
+        -H "Authorization: Bearer ${POINDEXTER_TOKEN}")
     fi
     echo "$RESPONSE" | python -c "
 import sys,json
@@ -36,7 +40,7 @@ for s in d.get('settings',[]):
       exit 1
     fi
     RESPONSE=$(curl -s "${FASTAPI_URL}/api/settings/${KEY}" \
-      -H "Authorization: Bearer ${POINDEXTER_KEY}")
+      -H "Authorization: Bearer ${POINDEXTER_TOKEN}")
     echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"
     ;;
 
@@ -50,7 +54,7 @@ for s in d.get('settings',[]):
     fi
     PAYLOAD=$(python -c "import json,sys; print(json.dumps({'key': sys.argv[1], 'value': sys.argv[2]}))" "$KEY" "$VALUE")
     RESPONSE=$(curl -s -X PUT "${FASTAPI_URL}/api/settings/${KEY}" \
-      -H "Authorization: Bearer ${POINDEXTER_KEY}" \
+      -H "Authorization: Bearer ${POINDEXTER_TOKEN}" \
       -H "Content-Type: application/json" \
       -d "$PAYLOAD")
     echo "$RESPONSE" | python -m json.tool 2>/dev/null || echo "$RESPONSE"

@@ -2,12 +2,11 @@
 # scripts/run.sh — Create a new blog post task
 
 FASTAPI_URL="${FASTAPI_URL:-http://localhost:8002}"
-POINDEXTER_KEY="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
 
-if [ -z "$POINDEXTER_KEY" ]; then
-  echo "Error: POINDEXTER_KEY not configured (set POINDEXTER_KEY in your env)"
-  exit 1
-fi
+# OAuth helper (Glad-Labs/poindexter#246).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "${SCRIPT_DIR}/../../_lib/get_token.sh"
+POINDEXTER_TOKEN="$(get_poindexter_token)" || exit 1
 
 TOPIC="$1"
 CATEGORY="${2:-general}"
@@ -23,7 +22,7 @@ fi
 echo "Creating task for topic: $TOPIC"
 
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${FASTAPI_URL}/api/tasks" \
-  -H "Authorization: Bearer ${POINDEXTER_KEY}" \
+  -H "Authorization: Bearer ${POINDEXTER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d "{\"task_name\":\"Blog post: ${TOPIC}\",\"topic\":\"${TOPIC}\",\"category\":\"${CATEGORY}\",\"target_audience\":\"${TARGET_AUDIENCE}\",\"primary_keyword\":\"${PRIMARY_KEYWORD}\"}")
 
