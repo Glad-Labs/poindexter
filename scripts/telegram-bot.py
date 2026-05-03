@@ -75,7 +75,16 @@ async def _load_telegram_config(pool) -> dict:
 print("[INIT] Loading config + OAuth client...")
 
 _DB_URL = _resolve_db_url()
-_pool: asyncpg.Pool = asyncio.run(asyncpg.create_pool(_DB_URL, min_size=1, max_size=2))
+
+
+# asyncpg.create_pool() returns a Pool wrapped in __await__ magic, not a
+# coroutine — asyncio.run() rejects it as "a coroutine was expected".
+# Wrap in a coro so asyncio.run accepts it. Same fix in discord-voice-bot.py.
+async def _make_pool() -> asyncpg.Pool:
+    return await asyncpg.create_pool(_DB_URL, min_size=1, max_size=2)
+
+
+_pool: asyncpg.Pool = asyncio.run(_make_pool())
 _tg_cfg = asyncio.run(_load_telegram_config(_pool))
 _oauth_client = asyncio.run(
     oauth_client_from_pool(_pool, base_url=API_URL),

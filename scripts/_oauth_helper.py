@@ -143,7 +143,7 @@ def _read_bootstrap_value(key: str) -> str:
         return ""
 
 
-async def _read_app_setting(pool, key: str, default: str = "") -> str:
+async def read_app_setting(pool, key: str, default: str = "") -> str:
     """Fetch one app_settings value, decrypting if it's marked secret.
 
     Mirrors ``brain.oauth_client.read_app_setting`` so the two helpers
@@ -412,11 +412,11 @@ async def resolve_credentials(
     # Layer 3 — app_settings (decrypted)
     if pool is not None:
         if not client_id:
-            client_id = await _read_app_setting(pool, client_id_key, "")
+            client_id = await read_app_setting(pool, client_id_key, "")
         if not client_secret:
-            client_secret = await _read_app_setting(pool, client_secret_key, "")
+            client_secret = await read_app_setting(pool, client_secret_key, "")
         if not static_token:
-            static_token = await _read_app_setting(pool, api_token_key, "")
+            static_token = await read_app_setting(pool, api_token_key, "")
 
     return client_id, client_secret, static_token
 
@@ -498,5 +498,5 @@ __all__ = [
     "oauth_client_from_bootstrap_only",
     "_decode_jwt_exp",
     "_read_bootstrap_value",
-    "_read_app_setting",
+    "read_app_setting",
 ]

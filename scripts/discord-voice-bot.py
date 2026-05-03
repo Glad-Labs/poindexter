@@ -54,7 +54,10 @@ from faster_whisper import WhisperModel
 
 # OAuth helper for the Poindexter worker API (Glad-Labs/poindexter#248).
 # Picks OAuth client_credentials when configured, else legacy Bearer.
-from _oauth_helper import oauth_client_from_pool  # noqa: E402
+from _oauth_helper import (  # noqa: E402
+    oauth_client_from_pool,
+    read_app_setting,
+)
 
 try:
     import webrtcvad
@@ -64,23 +67,36 @@ except ImportError:
     print("[WARN] webrtcvad not installed — falling back to /listen + /stop mode")
 
 
-def _load_config_from_db(pool) -> dict:
+async def _load_config_from_db(pool) -> dict:
     """Pull Discord/voice/Ollama config from app_settings.
+
+    discord_bot_token + discord_voice_bot_token are is_secret=true rows
+    (encrypted at rest with `enc:v1:` prefix). A naive SELECT returns
+    the ciphertext, which discord.py then rejects with the cryptic
+    "Newline, carriage return, or null byte detected in headers" error.
+    Route those keys through the helper that does pgcrypto decryption.
 
     OAuth creds are intentionally NOT in this list — the OAuth helper
     handles its own resolution chain (bootstrap.toml + app_settings).
     """
-
-    async def _fetch():
-        rows = await pool.fetch(
-            "SELECT key, value FROM app_settings WHERE key IN "
-            "('discord_bot_token', 'discord_voice_bot_token', "
-            "'discord_voice_channel_id', 'discord_guild_id', "
-            "'whisper_model', 'tts_voice', 'ollama_base_url')"
-        )
-        return {r["key"]: r["value"] for r in rows}
-
-    return asyncio.run(_fetch())
+    secret_keys = ("discord_bot_token", "discord_voice_bot_token")
+    plain_keys = (
+        "discord_voice_channel_id",
+        "discord_guild_id",
+        "whisper_model",
+        "tts_voice",
+        "ollama_base_url",
+    )
+    cfg: dict = {}
+    for k in secret_keys:
+        cfg[k] = await read_app_setting(pool, k, "")
+    rows = await pool.fetch(
+        "SELECT key, value FROM app_settings WHERE key = ANY($1::text[])",
+        list(plain_keys),
+    )
+    for r in rows:
+        cfg[r["key"]] = r["value"]
+    return cfg
 
 
 def _resolve_db_url() -> str:
@@ -94,16 +110,22 @@ def _resolve_db_url() -> str:
 
 print("[INIT] Loading config + OAuth client...")
 _DB_URL = _resolve_db_url()
-_pool: asyncpg.Pool = asyncio.run(asyncpg.create_pool(_DB_URL, min_size=1, max_size=2))
-_cfg = _load_config_from_db(_pool)
-
 API_URL = os.getenv("POINDEXTER_API_URL", "http://localhost:8002")
 
-# Single shared OAuth client for the bot's lifetime — the cached JWT is
-# reused across slash-command invocations + LLM-driven action handlers.
-_oauth_client = asyncio.run(
-    oauth_client_from_pool(_pool, base_url=API_URL),
-)
+
+# Single asyncio.run() for ALL initialization — pool, config read, and
+# OAuth client mint must all happen in the SAME event loop. asyncpg
+# pools are bound to the loop they were created on; reusing a pool
+# across multiple asyncio.run() calls (each spinning up a fresh loop)
+# triggers `another operation is in progress` on the second call.
+async def _bootstrap_init():
+    pool = await asyncpg.create_pool(_DB_URL, min_size=1, max_size=2)
+    cfg = await _load_config_from_db(pool)
+    oauth = await oauth_client_from_pool(pool, base_url=API_URL)
+    return pool, cfg, oauth
+
+
+_pool, _cfg, _oauth_client = asyncio.run(_bootstrap_init())
 
 DISCORD_TOKEN = _cfg.get("discord_voice_bot_token", "") or _cfg.get("discord_bot_token", "")
 VOICE_CHANNEL_ID = int(_cfg.get("discord_voice_channel_id", "0"))

@@ -700,6 +700,12 @@ services:
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
       - ./scripts/discord-voice-bot.py:/app/discord-voice-bot.py:ro
+      # _oauth_helper.py is the operator-side OAuth client mirror that
+      # discord-voice-bot.py imports as a sibling module (PR #170 OAuth
+      # migration). Mount it alongside the bot script — without this,
+      # the bot crash-loops with `ModuleNotFoundError: No module named
+      # '_oauth_helper'`.
+      - ./scripts/_oauth_helper.py:/app/_oauth_helper.py:ro
       - ./brain:/brain:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
