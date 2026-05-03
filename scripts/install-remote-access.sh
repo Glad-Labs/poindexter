@@ -179,15 +179,72 @@ print_sunshine_pairing() {
 # ---------------------------------------------------------------------------
 
 install_rustdesk() {
-    log "Installing RustDesk via winget..."
-    if winget list --id RustDesk.RustDesk -e 2>/dev/null | grep -q RustDesk.RustDesk; then
+    log "Installing RustDesk..."
+    # Prefer winget when the package is available (cleanest update story),
+    # but RustDesk has been intermittently absent from winget's source
+    # (Matt's run 2026-05-02 saw "No package found matching RustDesk").
+    # Fall back to a direct .msi download from the official GitHub
+    # release so the script doesn't hard-fail on operators whose winget
+    # source hasn't synced the package.
+    local already_installed
+    already_installed=$(run_ps "
+        \$rd = Get-ItemProperty 'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*', 'HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*' -ErrorAction SilentlyContinue |
+            Where-Object { \$_.DisplayName -like 'RustDesk*' }
+        if (\$rd) { 'yes' } else { 'no' }
+    " 2>/dev/null | tr -d '[:space:]')
+
+    if [[ "${already_installed}" == "yes" ]]; then
         ok "RustDesk already installed."
-    else
+        return
+    fi
+
+    if winget search --source winget --exact --id RustDesk.RustDesk 2>/dev/null | grep -q RustDesk.RustDesk; then
+        log "  via winget..."
         winget install --exact --id RustDesk.RustDesk \
             --accept-source-agreements --accept-package-agreements \
             --silent
-        ok "RustDesk installed."
+        ok "RustDesk installed (winget)."
+        return
     fi
+
+    warn "RustDesk not in winget — falling back to GitHub release .msi."
+    # Fetch latest x64 .msi from the official RustDesk repo.
+    local tmp_msi="${TMPDIR:-/tmp}/rustdesk-latest.msi"
+    local download_url
+    download_url=$(curl -sSLf https://api.github.com/repos/rustdesk/rustdesk/releases/latest 2>/dev/null \
+        | grep -oE '"browser_download_url":\s*"[^"]+\.msi"' \
+        | grep -iE 'x86_64|x64|win64|windows' \
+        | head -1 \
+        | sed 's/.*"\(https[^"]*\)"$/\1/')
+
+    if [[ -z "${download_url}" ]]; then
+        # Some releases name the asset like 'rustdesk-X.Y.Z.msi' without
+        # the arch tag. Take the first .msi as a final fallback.
+        download_url=$(curl -sSLf https://api.github.com/repos/rustdesk/rustdesk/releases/latest 2>/dev/null \
+            | grep -oE '"browser_download_url":\s*"[^"]+\.msi"' \
+            | head -1 \
+            | sed 's/.*"\(https[^"]*\)"$/\1/')
+    fi
+
+    if [[ -z "${download_url}" ]]; then
+        err "Couldn't find a .msi asset on RustDesk's latest release."
+        err "Manual install: https://github.com/rustdesk/rustdesk/releases/latest"
+        exit 1
+    fi
+
+    log "  downloading $(basename "${download_url}")..."
+    curl -sSLf -o "${tmp_msi}" "${download_url}" || {
+        err "Download failed: ${download_url}"
+        exit 1
+    }
+
+    log "  running msiexec /quiet..."
+    # /qn  = no UI, /norestart = don't reboot the PC behind your back
+    local windows_msi
+    windows_msi=$(cygpath -w "${tmp_msi}" 2>/dev/null || echo "${tmp_msi}")
+    run_ps "Start-Process msiexec -ArgumentList '/i', \"${windows_msi}\", '/qn', '/norestart' -Wait -NoNewWindow"
+    rm -f "${tmp_msi}"
+    ok "RustDesk installed (GitHub release .msi)."
 }
 
 configure_rustdesk_firewall() {
