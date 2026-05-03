@@ -6,7 +6,7 @@
 This is the end-to-end walkthrough for getting Poindexter running on
 your own machine. If you only want "one command to a working
 pipeline," run `poindexter setup --auto` — read
-[Quick Start in the README](../../README.md#quick-start) first.
+[Quick Start in the README](../../README#quick-start) first.
 
 This document covers the longer form: what the setup wizard does
 under the hood, how to verify each layer, and how to troubleshoot
@@ -153,7 +153,7 @@ module or `sentry-sdk` are skipped when running inside Docker
 
 ## 8. What to do when something breaks
 
-See [troubleshooting.md](troubleshooting.md).
+See [troubleshooting.md](troubleshooting).
 
 ## Configuration
 
@@ -172,7 +172,7 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
   -d '{"value": "80"}'
 ```
 
-See [environment-variables.md](environment-variables.md) for the
+See [environment-variables.md](environment-variables) for the
 bootstrap-layer reference (the few env vars Docker still needs), and
-[reference/app-settings.md](../reference/app-settings.md) for the
+[reference/app-settings.md](../reference/app-settings) for the
 full DB-layer settings catalog.

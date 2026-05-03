@@ -23,7 +23,7 @@ The system uses a modular database architecture with 6 specialized database modu
 5. **WritingStyleDatabase** - Writing samples for RAG-based style matching
 6. **EmbeddingsDatabase** - pgvector storage and cosine-similarity search (writer-segregated across `brain`, `audit`, `posts`, `memory`, `claude_sessions`, `issues`, `samples`)
 
-All six are reached through `services/database_service.py::DatabaseService` — callers don't import them directly. See [`../reference/services.md`](../reference/services.md) for service-level details and [GH-106](https://github.com/Glad-Labs/poindexter/issues/106) for the stale-embedding retention policy.
+All six are reached through `services/database_service.py::DatabaseService` — callers don't import them directly. See [`../reference/services.md`](../reference/services) for service-level details and [GH-106](https://github.com/Glad-Labs/poindexter/issues/106) for the stale-embedding retention policy.
 
 ---
 

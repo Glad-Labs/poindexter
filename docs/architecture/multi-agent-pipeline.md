@@ -13,18 +13,18 @@ The Phase E refactor replaced the agent-centric model with a 12-stage
 `LLMProvider` family that pluralizes inference backends. All current
 and future pipeline work is documented in:
 
-- **[Content pipeline — Stage architecture](./content-pipeline.md)** —
+- **[Content pipeline — Stage architecture](./content-pipeline)** —
   the authoritative description of the 12-stage pipeline that runs
   every content task today. Includes stage-by-stage behavior,
   halt semantics, and the rewrite loop.
-- **[Plugin architecture](./plugin-architecture.md)** — the evolution
+- **[Plugin architecture](./plugin-architecture)** — the evolution
   plan from god-files to plugin Protocols (Tap, Probe, Job, Stage,
   Pack, LLMProvider). Umbrella issue [GH-64](https://github.com/Glad-Labs/poindexter/issues/64).
-- **[Services reference](../reference/services.md)** — catalog of
+- **[Services reference](../reference/services)** — catalog of
   every service in `src/cofounder_agent/services/` with the four
   blog-focused agents (content generator, image, publisher, quality)
   called out under Core and Pipeline orchestration.
-- **[Database schema](./database-schema.md)** — every table + migration.
+- **[Database schema](./database-schema)** — every table + migration.
 
 ## Why this file still exists
 

@@ -9,7 +9,7 @@ umbrella ([GH-64](https://github.com/Glad-Labs/poindexter/issues/64))
 covers the long-range roadmap.
 
 This guide is prescriptive. If you want design rationale, read
-[`architecture/plugin-architecture.md`](../architecture/plugin-architecture.md).
+[`architecture/plugin-architecture.md`](../architecture/plugin-architecture).
 
 ---
 
@@ -530,13 +530,13 @@ gate-disabled passthrough, skip_if_setting passthrough, enabled-halt
 
 ## See also
 
-- [Plugin architecture](../architecture/plugin-architecture.md) —
+- [Plugin architecture](../architecture/plugin-architecture) —
   full roadmap + rationale
-- [Services reference](../reference/services.md) — catalog of every
+- [Services reference](../reference/services) — catalog of every
   service in the worker
-- [Content pipeline](../architecture/content-pipeline.md) — how the
+- [Content pipeline](../architecture/content-pipeline) — how the
   Stage chain fits together
-- [App settings reference](../reference/app-settings.md) — every
+- [App settings reference](../reference/app-settings) — every
   DB-backed config key
 
 <!-- DOC-SYNC 2026-04-25: stale references — brain/probe_registry.py (use brain/probe_interface.py), services/social_publisher.py, and threads.py adapter no longer exist. Extension-point docs may be out of date. -->

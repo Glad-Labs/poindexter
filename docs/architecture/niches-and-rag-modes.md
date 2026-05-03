@@ -10,7 +10,7 @@ instead of summarizing external feeds.
 This doc is for operators who want to understand what the new flow does,
 when each writer mode is the right pick, and how to drive it from the
 CLI or MCP. The full design rationale lives in
-[`docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md`](../superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md);
+[`docs/superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design.md`](../superpowers/specs/2026-04-30-rag-pivot-niche-discovery-design);
 this page is the operator surface only.
 
 ## Why this exists
@@ -49,15 +49,15 @@ A weighted entry in `niche_goals`. Each goal pulls from a fixed
 vocabulary so the ranker can score candidates consistently across
 niches:
 
-| Goal type     | What it scores for                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| `TRAFFIC`     | Organic search potential — trending keyword, broad appeal, evergreen demand.                |
-| `EDUCATION`   | Teaches the reader something concrete and useful they didn't know.                          |
-| `BRAND`       | Reinforces the operator's positioning and unique perspective.                               |
-| `AUTHORITY`   | Demonstrates depth and expertise on something specific.                                     |
-| `REVENUE`     | Drives a commercial outcome: signups, sales, conversions, paid feature awareness.           |
-| `COMMUNITY`   | Resonates with the existing audience; sparks discussion, shares, replies.                   |
-| `NICHE_DEPTH` | Goes deep on the niche specialty rather than broad-audience content.                        |
+| Goal type     | What it scores for                                                                |
+| ------------- | --------------------------------------------------------------------------------- |
+| `TRAFFIC`     | Organic search potential — trending keyword, broad appeal, evergreen demand.      |
+| `EDUCATION`   | Teaches the reader something concrete and useful they didn't know.                |
+| `BRAND`       | Reinforces the operator's positioning and unique perspective.                     |
+| `AUTHORITY`   | Demonstrates depth and expertise on something specific.                           |
+| `REVENUE`     | Drives a commercial outcome: signups, sales, conversions, paid feature awareness. |
+| `COMMUNITY`   | Resonates with the existing audience; sparks discussion, shares, replies.         |
+| `NICHE_DEPTH` | Goes deep on the niche specialty rather than broad-audience content.              |
 
 Weights are integer percentages and must sum to ~100 per niche.
 
@@ -101,7 +101,7 @@ The sweep:
    "goal vector" per goal type, weighted-summed across the niche's
    goals × the candidate's `decay_factor`. Top 10 advance.
 5. **LLM final scoring.** One call returns a JSON `{candidate_id:
-   {score, score_breakdown}}` against the niche's weighted goals.
+{score, score_breakdown}}` against the niche's weighted goals.
 6. Top `batch_size` candidates land in `topic_candidates` /
    `internal_topic_candidates`, a new `topic_batches` row opens, and
    the existing `topic_decision` gate flags "operator action needed."

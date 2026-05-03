@@ -5,7 +5,7 @@ writer modes shipped on 2026-04-30 (Glad-Labs/poindexter#278).
 
 For the architecture rationale (why this exists, table layout, decay math,
 provenance trail) see
-[`docs/architecture/niches-and-rag-modes.md`](../architecture/niches-and-rag-modes.md).
+[`docs/architecture/niches-and-rag-modes.md`](../architecture/niches-and-rag-modes).
 This page is the action surface — what to type, when to type it.
 
 ## What this is, in 3 sentences

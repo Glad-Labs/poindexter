@@ -8,7 +8,7 @@
 > built. It is intentionally long. For a guided setup in 30 minutes,
 > see [Poindexter Pro](https://www.gladlabs.ai/guide) which includes
 > the full setup book. For running the stack locally right now, see
-> [operations/local-development-setup.md](operations/local-development-setup.md).
+> [operations/local-development-setup.md](operations/local-development-setup).
 
 ---
 
@@ -209,7 +209,7 @@ execution and multi-agent orchestration.
 
 **Current chain:** Ollama primary → `pipeline_fallback_model` (also Ollama, default gemma3:27b) → HuggingFace transformers (emergency, CPU).
 
-Cloud LLM providers were removed from the pipeline in session 55 to honor the "no paid APIs" rule. Customers forking the repo can re-enable them via community plugins (future Phase J of the [plugin architecture refactor](architecture/plugin-architecture.md)).
+Cloud LLM providers were removed from the pipeline in session 55 to honor the "no paid APIs" rule. Customers forking the repo can re-enable them via community plugins (future Phase J of the [plugin architecture refactor](architecture/plugin-architecture)).
 
 Use cost tiers (`free`/`budget`/`standard`/`premium`) for model selection — never hardcode model names. Cost tiers live in `app_settings` and map to Ollama models at runtime.
 
@@ -347,7 +347,7 @@ A lightweight `registry.py` wires agent instances into the pipeline. No `BaseAge
 
 **Stage-driven pipeline (not agent-driven):**
 
-As of the Phase F+G refactor, the pipeline runs through `StageRunner` and 12 sequential stages (see `services/stages/`, catalogued in [`reference/services.md`](../reference/services.md)). Agents are called _by stages_ when an LLM invocation is needed — they don't orchestrate each other. The self-critiquing loop happens inside `services/stages/cross_model_qa.py`, not via agent-to-agent messaging.
+As of the Phase F+G refactor, the pipeline runs through `StageRunner` and 12 sequential stages (see `services/stages/`, catalogued in [`reference/services.md`](../reference/services)). Agents are called _by stages_ when an LLM invocation is needed — they don't orchestrate each other. The self-critiquing loop happens inside `services/stages/cross_model_qa.py`, not via agent-to-agent messaging.
 
 **Usage patterns:**
 
@@ -365,7 +365,7 @@ As of the Phase F+G refactor, the pipeline runs through `StageRunner` and 12 seq
 #### Main API (`main.py`)
 
 - FastAPI application
-- ~70 REST endpoints (see [API reference](../api/README.md) for the inventory)
+- ~70 REST endpoints (see [API reference](../api/README) for the inventory)
 - Error handling and logging
 - CORS middleware
 - Request/response validation via Pydantic models
@@ -520,13 +520,13 @@ The roadmap is tracked via GitHub milestones at
 - **Dev-token bypass** blocked in production (`DEVELOPMENT_MODE` check)
 - **Secrets in DB** (`is_secret=true` keys fetched via `site_config.get_secret()`, filtered from in-memory cache)
 - **No cloud keys in env** — LLM API keys set via settings API, not env vars
-- See [SECURITY.md](../SECURITY.md) for the full model.
+- See [SECURITY.md](../SECURITY) for the full model.
 
 ---
 
 ## Related Documentation
 
-- **[Content Pipeline](architecture/content-pipeline.md)** — the 12-stage Stage plugin chain + cross-model QA
-- **[Database Schema](architecture/database-schema.md)** — every table + migration system
-- **[API Reference](api/README.md)** — REST endpoints
-- **[Local Development](operations/local-development-setup.md)** — setup walkthrough
+- **[Content Pipeline](architecture/content-pipeline)** — the 12-stage Stage plugin chain + cross-model QA
+- **[Database Schema](architecture/database-schema)** — every table + migration system
+- **[API Reference](api/README)** — REST endpoints
+- **[Local Development](operations/local-development-setup)** — setup walkthrough

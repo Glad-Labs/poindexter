@@ -260,5 +260,5 @@ Common status codes: `400` validation, `401` missing/bad token,
 
 ## Related Documentation
 
-- **[Local Development Setup](../operations/local-development-setup.md)** — full setup walkthrough
-- **[Troubleshooting](../operations/troubleshooting.md)** — production issues and fixes
+- **[Local Development Setup](../operations/local-development-setup)** — full setup walkthrough
+- **[Troubleshooting](../operations/troubleshooting)** — production issues and fixes

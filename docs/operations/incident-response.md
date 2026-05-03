@@ -15,7 +15,7 @@ When an alert fires (Telegram or Discord), this is the playbook. Find the alert 
 - A symptom is happening but no alert fired (Grafana / brain daemon may be down)
 - You need to escalate / mute an alert during planned maintenance
 
-For catastrophic-loss scenarios (lost DB volume, lost secret key), see [`disaster-recovery.md`](./disaster-recovery.md). For known-pattern symptoms, see [`troubleshooting.md`](./troubleshooting.md). For routine secret rotation, see [`secret-rotation.md`](./secret-rotation.md).
+For catastrophic-loss scenarios (lost DB volume, lost secret key), see [`disaster-recovery.md`](./disaster-recovery). For known-pattern symptoms, see [`troubleshooting.md`](./troubleshooting). For routine secret rotation, see [`secret-rotation.md`](./secret-rotation).
 
 ---
 
@@ -98,7 +98,7 @@ docker logs -f poindexter-worker 2>&1 | head -40
 curl -s http://localhost:8002/api/health | python -m json.tool
 ```
 
-If the container won't start (crashloop), see [`troubleshooting.md`](./troubleshooting.md) "Test suite fails in the worker container" or check the logs for a Python traceback. Most common: a recent migration added a column that the deployed code doesn't expect — roll the migration back or pull/rebuild.
+If the container won't start (crashloop), see [`troubleshooting.md`](./troubleshooting) "Test suite fails in the worker container" or check the logs for a Python traceback. Most common: a recent migration added a column that the deployed code doesn't expect — roll the migration back or pull/rebuild.
 
 **Escalation.** If the container is healthy but tasks still aren't processing, jump to **Stale Tasks** below.
 
@@ -133,7 +133,7 @@ schtasks /Query /TN "Poindexter Brain Watchdog" /V /FO LIST
 crontab -l | grep brain-watchdog
 ```
 
-**Escalation.** If brain restarts but immediately exits, look at the logs for a DB connection error — likely a `DATABASE_URL` problem. See [`disaster-recovery.md`](./disaster-recovery.md) CONFIG-1.
+**Escalation.** If brain restarts but immediately exits, look at the logs for a DB connection error — likely a `DATABASE_URL` problem. See [`disaster-recovery.md`](./disaster-recovery) CONFIG-1.
 
 ---
 
@@ -230,7 +230,7 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c 
    WHERE status='in_progress' AND updated_at < NOW() - INTERVAL '2 hours';"
 ```
 
-Then check what hung — see [`troubleshooting.md`](./troubleshooting.md) "Pipeline task stuck in_progress for more than 10 minutes."
+Then check what hung — see [`troubleshooting.md`](./troubleshooting) "Pipeline task stuck in_progress for more than 10 minutes."
 
 ---
 
@@ -323,7 +323,7 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c 
    GROUP BY d ORDER BY d DESC;"
 ```
 
-**Fix.** Most common cause — `pipeline_writer_model` was flipped off the intended model. See [`troubleshooting.md`](./troubleshooting.md) "Approval rate drops to ~0%" entry.
+**Fix.** Most common cause — `pipeline_writer_model` was flipped off the intended model. See [`troubleshooting.md`](./troubleshooting) "Approval rate drops to ~0%" entry.
 
 ```sql
 -- Restore intended writer
@@ -515,7 +515,7 @@ gh run rerun <latest_run_id> --repo Glad-Labs/glad-labs-stack
 
 **Means.** `curl http://localhost:9840/health` returned `degraded:true`. Video generation will silently fall back to SDXL/Pexels stills.
 
-**Fix.** See [`troubleshooting.md`](./troubleshooting.md) entries:
+**Fix.** See [`troubleshooting.md`](./troubleshooting) entries:
 
 - "Wan-server enters DEGRADED state — `/generate` returns 503 forever"
 - "`poindexter-wan-server` container restart-loops every ~30 seconds"
@@ -601,8 +601,8 @@ This is a single-operator system. There is no on-call rotation.
 
 ## See also
 
-- [`troubleshooting.md`](./troubleshooting.md) — symptom-driven debugging
-- [`disaster-recovery.md`](./disaster-recovery.md) — catastrophic-loss playbooks
-- [`secret-rotation.md`](./secret-rotation.md) — secret rotation procedures
+- [`troubleshooting.md`](./troubleshooting) — symptom-driven debugging
+- [`disaster-recovery.md`](./disaster-recovery) — catastrophic-loss playbooks
+- [`secret-rotation.md`](./secret-rotation) — secret rotation procedures
 - `infrastructure/grafana/provisioning/alerting/alert-rules.yml` — the alert rule source of truth
 - `brain/` — brain daemon source (synthetic alerts fired directly from here)

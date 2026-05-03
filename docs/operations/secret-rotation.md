@@ -14,10 +14,10 @@ This runbook lists every known secret, where to obtain a fresh value, how to set
 
 - Routine 90-day rotation of API keys
 - Emergency rotation after suspected compromise
-- Re-seeding after the encryption key was lost (see [`disaster-recovery.md`](./disaster-recovery.md) CONFIG-2)
+- Re-seeding after the encryption key was lost (see [`disaster-recovery.md`](./disaster-recovery) CONFIG-2)
 - Updating a third-party token that the provider expired / regenerated
 
-For initial provisioning, see [`local-development-setup.md`](./local-development-setup.md). For incident triage, see [`incident-response.md`](./incident-response.md).
+For initial provisioning, see [`local-development-setup.md`](./local-development-setup). For incident triage, see [`incident-response.md`](./incident-response).
 
 ---
 
@@ -181,7 +181,7 @@ curl -s http://localhost:8002/api/health | python -m json.tool
 
 **Lives in.** `~/.poindexter/bootstrap.toml` (env var name `POINDEXTER_SECRET_KEY`).
 
-**When to rotate.** Annually, or after a suspected compromise. **THIS IS THE DOOMSDAY KEY.** Losing it without rotating means every encrypted `app_settings` row becomes garbage forever (see [`disaster-recovery.md`](./disaster-recovery.md) CONFIG-2).
+**When to rotate.** Annually, or after a suspected compromise. **THIS IS THE DOOMSDAY KEY.** Losing it without rotating means every encrypted `app_settings` row becomes garbage forever (see [`disaster-recovery.md`](./disaster-recovery) CONFIG-2).
 
 **Procedure.** Use the `rotate_key` helper from `plugins.secrets` — it decrypts every secret with the OLD key and re-encrypts with the NEW one in a single transaction.
 
@@ -822,8 +822,8 @@ A scheduled agent should be set up to remind on this cadence (see `/schedule` sk
 
 ## See also
 
-- [`disaster-recovery.md`](./disaster-recovery.md) — recovery from lost key (CONFIG-2)
-- [`incident-response.md`](./incident-response.md) — alert routing
+- [`disaster-recovery.md`](./disaster-recovery) — recovery from lost key (CONFIG-2)
+- [`incident-response.md`](./incident-response) — alert routing
 - `src/cofounder_agent/plugins/secrets.py` — encryption module reference
 - `scripts/_rotate_api_token.py` — `api_token` rotation helper
 - `scripts/_rotate_consumer_configs.py` — pushes new `api_token` to consumer JSONs

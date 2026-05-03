@@ -14,7 +14,7 @@
 > (database URL + 4 generated passwords). Then `bash scripts/start-stack.sh`
 > reads bootstrap.toml and exports them for Docker. No `.env` file needed.
 >
-> See [reference/app-settings.md](../reference/app-settings.md) for
+> See [reference/app-settings.md](../reference/app-settings) for
 > the full list of DB-backed settings.
 
 This document enumerates the environment variables consumed by the
@@ -122,6 +122,6 @@ rebuild. Use the settings API or SQL against `app_settings` instead.
 
 ## Where to go next
 
-- **Full settings catalog:** [reference/app-settings.md](../reference/app-settings.md)
-- **Local dev setup:** [local-development-setup.md](local-development-setup.md)
-- **Troubleshooting:** [troubleshooting.md](troubleshooting.md)
+- **Full settings catalog:** [reference/app-settings.md](../reference/app-settings)
+- **Local dev setup:** [local-development-setup.md](local-development-setup)
+- **Troubleshooting:** [troubleshooting.md](troubleshooting)

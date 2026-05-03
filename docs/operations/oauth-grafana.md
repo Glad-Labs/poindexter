@@ -148,7 +148,7 @@ operator pastes the new one in — same procedure as a normal rotation.
 
 ## See also
 
-- [`docs/operations/secret-rotation.md`](secret-rotation.md) — full
+- [`docs/operations/secret-rotation.md`](secret-rotation) — full
   secret-rotation runbook (the Grafana JWT row is one of many).
 - [Glad-Labs/poindexter#241](https://github.com/Glad-Labs/poindexter/issues/241) —
   OAuth 2.1 migration umbrella, full design rationale.

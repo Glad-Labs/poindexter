@@ -115,7 +115,7 @@ Poindexter is in **alpha**. Honestly:
 - Native Windows cmd / PowerShell is not supported. Use Git Bash or WSL.
 - Database schema is not yet considered stable across releases. Read the CHANGELOG before upgrading.
 
-If any of those would block your use case, that's worth knowing before you start. If you want to fix one of them, [PRs welcome](CONTRIBUTING.md).
+If any of those would block your use case, that's worth knowing before you start. If you want to fix one of them, [PRs welcome](CONTRIBUTING).
 
 ## Screenshots
 
@@ -238,20 +238,20 @@ See `src/cofounder_agent/plugins/samples/` for the three shipping samples (`Hell
 
 ## Documentation
 
-Full technical documentation lives under [`docs/`](docs/welcome.md).
-Start with the [architecture overview](docs/ARCHITECTURE.md), then
+Full technical documentation lives under [`docs/`](docs/welcome).
+Start with the [architecture overview](docs/ARCHITECTURE), then
 dive into specific areas:
 
-- **[Architecture overview](docs/ARCHITECTURE.md)** — how the whole system fits together
-- **[Multi-agent pipeline](docs/architecture/multi-agent-pipeline.md)** — the content pipeline + cross-model QA
-- **[Database schema](docs/architecture/database-schema.md)** — every table + migration system
-- **[API reference](docs/api/README.md)** — REST endpoints exposed by the worker
-- **[CLI reference](docs/operations/cli-reference.md)** — every `poindexter` subcommand with flags + examples
-- **[Services reference](docs/reference/services.md)** — catalog of every service in the worker
-- **[Extending Poindexter](docs/operations/extending-poindexter.md)** — how to add stages, reviewers, adapters, taps, jobs, and probes
-- **[Local development setup](docs/operations/local-development-setup.md)** — end-to-end setup walkthrough
-- **[Environment variables](docs/operations/environment-variables.md)** — bootstrap-layer config
-- **[Troubleshooting](docs/operations/troubleshooting.md)** — production issues we've hit
+- **[Architecture overview](docs/ARCHITECTURE)** — how the whole system fits together
+- **[Multi-agent pipeline](docs/architecture/multi-agent-pipeline)** — the content pipeline + cross-model QA
+- **[Database schema](docs/architecture/database-schema)** — every table + migration system
+- **[API reference](docs/api/README)** — REST endpoints exposed by the worker
+- **[CLI reference](docs/operations/cli-reference)** — every `poindexter` subcommand with flags + examples
+- **[Services reference](docs/reference/services)** — catalog of every service in the worker
+- **[Extending Poindexter](docs/operations/extending-poindexter)** — how to add stages, reviewers, adapters, taps, jobs, and probes
+- **[Local development setup](docs/operations/local-development-setup)** — end-to-end setup walkthrough
+- **[Environment variables](docs/operations/environment-variables)** — bootstrap-layer config
+- **[Troubleshooting](docs/operations/troubleshooting)** — production issues we've hit
 
 The docs are written for operators and contributors who want to
 master the system. They take hours to read end-to-end. If you want
@@ -275,11 +275,11 @@ The free tier runs the pipeline end-to-end. Pro gives you months of tuning in a 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING) for guidelines.
 
 ## Security & SBOM
 
-- Report vulnerabilities to **security@gladlabs.io** (see [SECURITY.md](SECURITY.md))
+- Report vulnerabilities to **security@gladlabs.io** (see [SECURITY.md](SECURITY))
 - Every push to `main` runs gitleaks (secret scan), Trivy (CVE scan), and syft+grype (SBOM + CVE scan against the SBOM) — see [`.github/workflows/security.yml`](.github/workflows/security.yml)
 - A CycloneDX-JSON **SBOM is published as a workflow artifact** on every release; enterprise buyers can also request one directly at the contact address above
 

@@ -4,7 +4,7 @@
 **Audience:** solo operator (Matt) at 2am during an incident
 **Prereqs:** Local PC online, Docker running, gh CLI authed, poindexter CLI installed, `~/.poindexter/bootstrap.toml` accessible (or you have the `database_url` + `POINDEXTER_SECRET_KEY` somewhere safe)
 
-This runbook covers catastrophic-loss scenarios — the kind where "just restart the container" is not enough. For per-alert triage and routing, see [`incident-response.md`](./incident-response.md). For known-pattern symptom debugging, see [`troubleshooting.md`](./troubleshooting.md).
+This runbook covers catastrophic-loss scenarios — the kind where "just restart the container" is not enough. For per-alert triage and routing, see [`incident-response.md`](./incident-response). For known-pattern symptom debugging, see [`troubleshooting.md`](./troubleshooting).
 
 ---
 
@@ -174,7 +174,7 @@ poindexter migrate up
 
 This is the painful part. Encrypted secrets are gone forever. You need to:
 
-1. Go to [`secret-rotation.md`](./secret-rotation.md) and rotate **every** API key listed in the inventory (Telegram, Discord, OpenAI, Anthropic, Lemon Squeezy, Resend, Cloudinary, Pexels, etc.) — treat all of them as compromised because the encrypted blobs may have leaked with the volume backup.
+1. Go to [`secret-rotation.md`](./secret-rotation) and rotate **every** API key listed in the inventory (Telegram, Discord, OpenAI, Anthropic, Lemon Squeezy, Resend, Cloudinary, Pexels, etc.) — treat all of them as compromised because the encrypted blobs may have leaked with the volume backup.
 2. Re-seed each one with `poindexter set` (see secret-rotation.md "Re-seeding from scratch").
 
 ### Step 6 — Re-import published posts from R2
@@ -483,7 +483,7 @@ docker restart poindexter-worker
 
 ### Step 5 — Re-seed every secret
 
-Follow [`secret-rotation.md`](./secret-rotation.md) — go through the inventory and rotate / re-add each one.
+Follow [`secret-rotation.md`](./secret-rotation) — go through the inventory and rotate / re-add each one.
 
 ### Verification
 
@@ -591,11 +591,11 @@ pythonw scripts/nvidia-smi-exporter.py
 
 ## See also
 
-- [`incident-response.md`](./incident-response.md) — alert routing and triage
-- [`secret-rotation.md`](./secret-rotation.md) — rotating individual secrets
-- [`troubleshooting.md`](./troubleshooting.md) — known-symptom debugging entries
-- [`local-development-setup.md`](./local-development-setup.md) — fresh setup walkthrough
-- [`ci-deploy-chain.md`](./ci-deploy-chain.md) — how Vercel deploys are wired
+- [`incident-response.md`](./incident-response) — alert routing and triage
+- [`secret-rotation.md`](./secret-rotation) — rotating individual secrets
+- [`troubleshooting.md`](./troubleshooting) — known-symptom debugging entries
+- [`local-development-setup.md`](./local-development-setup) — fresh setup walkthrough
+- [`ci-deploy-chain.md`](./ci-deploy-chain) — how Vercel deploys are wired
 - `scripts/db-backup-local.sh` — backup script (cron / scheduled task)
 - `src/cofounder_agent/plugins/secrets.py` — encryption module reference
 

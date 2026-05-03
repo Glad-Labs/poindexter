@@ -15,7 +15,7 @@ pre-Phase-E refactor).
 > a Protocol. This document describes the current shape of the
 > pipeline — not the historical 6-agent model nor the future
 > plugin-marketplace vision. For the long-range plugin roadmap see
-> [`plugin-architecture.md`](./plugin-architecture.md).
+> [`plugin-architecture.md`](./plugin-architecture).
 
 ---
 
@@ -327,7 +327,7 @@ timeout comes from (in order of precedence):
 When a stage times out, the runner logs it, records the failure in
 the summary, and either halts or continues based on the stage's
 `halts_on_failure` setting. This is why the
-[troubleshooting doc](../operations/troubleshooting.md)'s
+[troubleshooting doc](../operations/troubleshooting)'s
 "Pipeline task stuck in_progress" entry mostly no longer reproduces
 — every external call now sits inside a stage with a finite
 deadline.
@@ -353,7 +353,7 @@ Each stage run surfaces on three channels:
 
 There are no OpenTelemetry traces yet — that's deferred to Phase I
 (see the "Deferred to Phase I" section of
-[`plugin-architecture.md`](./plugin-architecture.md)).
+[`plugin-architecture.md`](./plugin-architecture)).
 
 ---
 
@@ -410,23 +410,23 @@ this becomes a `pip install` of a separate package plus an entry
 under `[project.entry-points."poindexter.stages"]` in its
 `pyproject.toml` — no edits to core required. See the worked
 example at the bottom of
-[`plugin-architecture.md`](./plugin-architecture.md#plugin-discovery-setuptools-entry_points).
+[`plugin-architecture.md`](./plugin-architecture#plugin-discovery-setuptools-entry_points).
 
 ---
 
 ## Related documentation
 
-- [ARCHITECTURE.md](../ARCHITECTURE.md) — system overview, the 7
+- [ARCHITECTURE.md](../ARCHITECTURE) — system overview, the 7
   principles, tech stack.
-- [plugin-architecture.md](./plugin-architecture.md) — long-range
+- [plugin-architecture.md](./plugin-architecture) — long-range
   plugin design; Stage / Reviewer / Adapter / Provider split;
   Phase E / F / G / J roadmap.
-- [database-schema.md](./database-schema.md) — the `content_tasks`
+- [database-schema.md](./database-schema) — the `content_tasks`
   table and its surrounding schema.
-- [../operations/local-development-setup.md](../operations/local-development-setup.md)
+- [../operations/local-development-setup.md](../operations/local-development-setup)
   — setup walkthrough, includes a "submit a task end-to-end" curl.
-- [../operations/troubleshooting.md](../operations/troubleshooting.md)
+- [../operations/troubleshooting.md](../operations/troubleshooting)
   — pipeline symptoms and fixes for issues that have hit
   production.
-- [../api/README.md](../api/README.md) — REST surface,
+- [../api/README.md](../api/README) — REST surface,
   `/api/tasks` creation, approval, and rejection endpoints.
