@@ -183,19 +183,26 @@ from brain.bootstrap import require_database_url
 
 LOCAL_BRAIN_DB = require_database_url(source="brain_daemon")
 
-# Telegram for alerts (direct bot API, no OpenClaw dependency).
-# Canonical store is app_settings — env vars are bootstrap-only fallbacks
-# kept so the daemon can boot before the DB is reachable. _load_config_from_db
-# overwrites these from app_settings on every startup, decrypting the
-# is_secret=true rows via brain.secret_reader.read_app_setting (#342).
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-# Canonical env var; fallback matches services/telegram_config.py
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-# Discord ops webhook — operator-facing channel for cycle summaries +
-# alert dispatch. Loaded from app_settings.discord_ops_webhook_url at
-# startup; env var is a bootstrap fallback only.
-DISCORD_OPS_WEBHOOK_URL = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
-
+# Telegram + Discord notification config — NOT cached at module level.
+#
+# Glad-Labs/poindexter#344: the brain image's Dockerfile mirrors files
+# into both ``/app`` (flat layout) and ``/app/brain/`` (package layout)
+# so ``from brain.X import Y`` and ``from X import Y`` both resolve.
+# That import duality is fine for stateless helpers, but module-level
+# globals (``TELEGRAM_BOT_TOKEN = ""``) created TWO independent copies
+# of the secret cache — one per module instance — and ``_load_config_from_db``
+# only updated the instance it was called from. Whichever path the
+# alert_dispatcher used to reach ``send_telegram`` read the empty copy
+# and silently dropped every page.
+#
+# Fix: ``send_telegram``/``send_discord`` re-fetch their secrets from
+# app_settings on every call via ``read_app_setting`` (which decrypts
+# the pgcrypto envelope, see #342). One DB roundtrip per alert is
+# negligible — the dispatcher polls every 30s and notify is rare.
+# The bootstrap-via-env path still works because ``read_app_setting``
+# returns the supplied default when the row is missing, and we pass
+# the env var as the default below.
+#
 # Detect Docker (set in docker-compose.local.yml)
 IS_DOCKER = bool(os.getenv("IN_DOCKER"))
 
@@ -212,24 +219,23 @@ SERVICES = {
 
 
 async def _load_config_from_db(pool):
-    """Load identity + notification config from app_settings.
+    """Load non-secret identity config from app_settings.
 
-    Replaces env vars with the canonical DB values. Secret rows
-    (``telegram_bot_token``) are read through ``read_app_setting`` so
-    pgcrypto-encrypted ``enc:v1:<base64>`` envelopes get decrypted with
-    POINDEXTER_SECRET_KEY before they reach ``send_telegram``. Without
-    this decrypt step the brain shoves the ciphertext into the URL and
-    Python's http.client rejects it as "URL can't contain control
-    characters" — the exact failure mode that Glad-Labs/poindexter#342
-    diagnosed as the alert-dispatch black hole.
+    Pulls the operator-facing service URLs (``site_url``, ``api_base_url``)
+    so the monitor cycle can probe the right hosts. The Telegram/Discord
+    notification secrets used to be cached here too, but
+    Glad-Labs/poindexter#344 traced an alert-dispatch outage to the
+    module-instance landmine (two copies of ``TELEGRAM_BOT_TOKEN``, only
+    one populated by this function). Those secrets are now lazy-fetched
+    inline by ``send_telegram`` / ``send_discord`` via
+    ``read_app_setting`` so there's nothing to cache and nothing to drift.
     """
     global _SITE_URL, _API_BASE_URL
-    global TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, DISCORD_OPS_WEBHOOK_URL
     try:
         # Plaintext keys — one round-trip via the cheap SELECT.
         rows = await pool.fetch(
             "SELECT key, value FROM app_settings WHERE key IN "
-            "('site_url', 'api_base_url', 'telegram_chat_id', 'discord_ops_webhook_url')"
+            "('site_url', 'api_base_url')"
         )
         config = {r["key"]: r["value"] for r in rows}
         if config.get("site_url"):
@@ -238,22 +244,8 @@ async def _load_config_from_db(pool):
         if config.get("api_base_url"):
             _API_BASE_URL = config["api_base_url"]
             SERVICES["api"]["url"] = _API_BASE_URL + "/api/health"
-        if config.get("telegram_chat_id"):
-            TELEGRAM_CHAT_ID = config["telegram_chat_id"]
-        if config.get("discord_ops_webhook_url"):
-            DISCORD_OPS_WEBHOOK_URL = config["discord_ops_webhook_url"]
 
-        # Secret keys — go through the decrypt path. Pass the existing
-        # env-var value as the default so a row that's missing from the
-        # DB doesn't blank out a working bootstrap-via-env config.
-        token = await _read_app_setting(
-            pool, "telegram_bot_token", default=TELEGRAM_BOT_TOKEN
-        )
-        if token:
-            TELEGRAM_BOT_TOKEN = token
-
-        loaded = len(config) + (1 if token else 0)
-        logger.info("[BRAIN] Loaded %d config values from DB", loaded)
+        logger.info("[BRAIN] Loaded %d config values from DB", len(config))
     except Exception as e:
         logger.warning("[BRAIN] Could not load config from DB: %s (using defaults)", e, exc_info=True)
 
@@ -383,7 +375,53 @@ def check_json_status(url: str, timeout: int = 10) -> tuple:
         return False, 0, str(e)[:100]
 
 
-def send_telegram(message: str) -> bool:
+# Cross-module-instance pool registry.
+#
+# The brain Docker image mirrors source files into both ``/app`` (flat)
+# and ``/app/brain/`` (package) so two import paths resolve. Module-level
+# variables on this file therefore live in TWO namespaces — see the
+# Glad-Labs/poindexter#344 fix for the gory details. ``sys.modules`` is
+# the only namespace guaranteed to be shared, so we stash the daemon's
+# pool on a sentinel ``ModuleType`` keyed there. Both module instances
+# look up the same key and read back the same pool, even when ``main()``
+# only ran on one of them.
+_POOL_REGISTRY_KEY = "_brain_daemon_pool_registry"
+
+
+def _set_brain_pool(pool) -> None:
+    """Register the brain's main asyncpg pool for cross-instance reads.
+
+    Called from ``main()`` once the pool is alive. ``send_telegram`` /
+    ``send_discord`` / ``notify`` look this up when no explicit ``pool=``
+    arg is supplied, so callers in restart_service-style sync paths
+    (which can't easily thread a pool through) still get a real pool to
+    decrypt secrets with.
+    """
+    import types
+    holder = sys.modules.get(_POOL_REGISTRY_KEY)
+    if holder is None:
+        holder = types.ModuleType(_POOL_REGISTRY_KEY)
+        sys.modules[_POOL_REGISTRY_KEY] = holder
+    holder.pool = pool
+
+
+async def _resolve_pool(pool):
+    """Return ``pool`` if provided, else the registered brain pool, else None.
+
+    No-op when called with an explicit pool. The registry lookup tolerates
+    a missing holder (e.g. when ``send_telegram`` is invoked from a unit
+    test that never called ``_set_brain_pool``) and returns ``None`` so
+    the caller can fall through to its "no pool" branch.
+    """
+    if pool is not None:
+        return pool
+    holder = sys.modules.get(_POOL_REGISTRY_KEY)
+    if holder is None:
+        return None
+    return getattr(holder, "pool", None)
+
+
+async def send_telegram(message: str, *, pool=None) -> bool:
     """Send alert to Telegram — direct bot API, no dependencies.
 
     Returns ``True`` if the API accepted the request (HTTP 2xx),
@@ -391,56 +429,106 @@ def send_telegram(message: str) -> bool:
     error, non-2xx response). Callers like ``alert_dispatcher`` rely
     on this signal to set ``alert_events.dispatch_result`` honestly
     instead of recording every cycle as ``'sent'`` (#342).
+
+    Glad-Labs/poindexter#344: this function previously read a
+    module-level ``TELEGRAM_BOT_TOKEN`` global. The brain Docker image
+    mirrors files into both ``/app`` and ``/app/brain/`` so a process
+    that imports ``brain.brain_daemon`` AND has ``brain_daemon`` in
+    ``sys.modules`` (e.g. ``__main__`` aliased + a sibling import)
+    sees TWO module instances each with their own copy of the global.
+    ``_load_config_from_db`` populated one; the alert dispatcher
+    happened to read the other and silently dropped every page.
+
+    The fix is to re-read the secret from app_settings on every call
+    via ``read_app_setting`` (which decrypts the pgcrypto envelope per
+    #342). One DB roundtrip per alert is negligible — the dispatcher
+    polls every 30s and notify is rare. Callers that already have a
+    pool should pass it as ``pool=`` to skip the lazy-pool path.
     """
-    if not TELEGRAM_BOT_TOKEN:
+    pool = await _resolve_pool(pool)
+    if pool is None:
+        logger.warning(
+            "[BRAIN] No DB pool available — can't fetch telegram_bot_token"
+        )
+        return False
+
+    token = await _read_app_setting(
+        pool, "telegram_bot_token", default=os.getenv("TELEGRAM_BOT_TOKEN", "")
+    )
+    chat_id = await _read_app_setting(
+        pool, "telegram_chat_id", default=os.getenv("TELEGRAM_CHAT_ID", "")
+    )
+    if not token:
         logger.warning("[BRAIN] No Telegram bot token — can't send alert")
         return False
-    if not TELEGRAM_CHAT_ID:
+    if not chat_id:
         logger.warning("[BRAIN] No Telegram chat ID — can't send alert")
         return False
     try:
-        payload = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": f"🧠 Brain: {message}"}).encode()
+        payload = json.dumps({"chat_id": chat_id, "text": f"🧠 Brain: {message}"}).encode()
         req = urllib.request.Request(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            f"https://api.telegram.org/bot{token}/sendMessage",
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        resp = urllib.request.urlopen(req, timeout=10)
+        # urllib is sync — run in a thread so we don't block the event loop.
+        def _do_post():
+            return urllib.request.urlopen(req, timeout=10)
+        resp = await asyncio.to_thread(_do_post)
         return 200 <= resp.status < 300
     except Exception as e:
         logger.error("[BRAIN] Telegram send failed: %s", e, exc_info=True)
         return False
 
 
-def send_discord(message: str, webhook_url: str | None = None) -> bool:
+async def send_discord(message: str, webhook_url: str | None = None, *, pool=None) -> bool:
     """Send message to Discord via webhook — no dependencies.
 
     Returns ``True`` for an HTTP 2xx response (Discord webhooks return
     204 No Content on success), ``False`` for any failure. See
-    ``send_telegram`` for the rationale on the bool return.
+    ``send_telegram`` for the rationale on the bool return AND the
+    rationale for lazy-fetching the webhook URL on every call (#344).
+
+    Resolution order for the webhook URL:
+        1. Explicit ``webhook_url=`` arg (used by ``notify`` for the
+           ops-channel route).
+        2. ``app_settings.discord_lab_logs_webhook_url`` (the public
+           lab-logs channel — daily digest fallback).
+        3. ``DISCORD_LAB_LOGS_WEBHOOK_URL`` env var (legacy bootstrap).
     """
-    url = webhook_url or os.getenv("DISCORD_LAB_LOGS_WEBHOOK_URL", "")
-    if not url:
+    if not webhook_url:
+        pool = await _resolve_pool(pool)
+        if pool is not None:
+            webhook_url = await _read_app_setting(
+                pool,
+                "discord_lab_logs_webhook_url",
+                default=os.getenv("DISCORD_LAB_LOGS_WEBHOOK_URL", ""),
+            )
+        else:
+            webhook_url = os.getenv("DISCORD_LAB_LOGS_WEBHOOK_URL", "")
+    if not webhook_url:
         logger.debug("[BRAIN] No Discord webhook URL — skipping")
         return False
     try:
         payload = json.dumps({"content": message}).encode()
         req = urllib.request.Request(
-            url,
+            webhook_url,
             data=payload,
             headers={
                 "Content-Type": "application/json",
                 "User-Agent": "PoinDexterBrain/1.0",
             },
         )
-        resp = urllib.request.urlopen(req, timeout=10)
+        def _do_post():
+            return urllib.request.urlopen(req, timeout=10)
+        resp = await asyncio.to_thread(_do_post)
         return 200 <= resp.status < 300
     except Exception as e:
         logger.error("[BRAIN] Discord send failed: %s", e)
         return False
 
 
-def notify(message: str) -> bool:
+async def notify(message: str, *, pool=None) -> bool:
     """Send to both Telegram (urgent) and Discord #ops (ops log).
 
     Telegram = alarm bell (phone push notification).
@@ -452,20 +540,33 @@ def notify(message: str) -> bool:
     the brain ``alert_dispatcher`` raises on this so the
     ``alert_events`` row gets ``dispatch_result = 'error: ...'``
     instead of a phantom ``'sent'`` (#342).
+
+    Lazy-fetches ``discord_ops_webhook_url`` from app_settings each
+    call (#344). Callers that already hold a pool should pass it as
+    ``pool=`` to share the connection across the two sends.
     """
-    tg_ok = send_telegram(message)
+    pool = await _resolve_pool(pool)
+    tg_ok = await send_telegram(message, pool=pool)
     # Operational messages go to #ops; fall back to lab-logs only if
-    # ops isn't configured. DISCORD_OPS_WEBHOOK_URL is loaded from
-    # app_settings.discord_ops_webhook_url at startup (with the env
-    # var as a bootstrap fallback).
-    if DISCORD_OPS_WEBHOOK_URL:
-        dc_ok = send_discord(message, webhook_url=DISCORD_OPS_WEBHOOK_URL)
+    # ops isn't configured. The ops webhook is read from app_settings
+    # on every call (no cached global — see #344 docstring above).
+    ops_url = ""
+    if pool is not None:
+        ops_url = await _read_app_setting(
+            pool,
+            "discord_ops_webhook_url",
+            default=os.getenv("DISCORD_OPS_WEBHOOK_URL", ""),
+        )
     else:
-        dc_ok = send_discord(message)  # fallback to lab-logs if ops not configured
+        ops_url = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
+    if ops_url:
+        dc_ok = await send_discord(message, webhook_url=ops_url, pool=pool)
+    else:
+        dc_ok = await send_discord(message, pool=pool)  # fallback to lab-logs
     return tg_ok or dc_ok
 
 
-def restart_service(name: str):
+async def restart_service(name: str, *, pool=None):
     """Attempt to restart a local service on the operator's PC."""
     if IS_DOCKER:
         # Docker socket is mounted — restart sibling containers directly.
@@ -485,18 +586,18 @@ def restart_service(name: str):
                 )
                 if result.returncode == 0:
                     logger.info("[BRAIN] Docker-restarted container %s", container)
-                    notify(f"Auto-restarted {container}")
+                    await notify(f"Auto-restarted {container}", pool=pool)
                 else:
                     logger.warning("[BRAIN] Docker restart failed for %s: %s", container, result.stderr[:100])
-                    notify(f"Failed to restart {container}: {result.stderr[:100]}")
+                    await notify(f"Failed to restart {container}: {result.stderr[:100]}", pool=pool)
             except FileNotFoundError:
                 logger.warning("[BRAIN] Docker CLI not available in container — install docker-cli or mount the binary")
-                notify(f"Service {name} is down. Docker CLI not found in brain container.")
+                await notify(f"Service {name} is down. Docker CLI not found in brain container.", pool=pool)
             except Exception as e:
                 logger.warning("[BRAIN] Docker restart error for %s: %s", name, e)
-                notify(f"Service {name} is down. Restart failed: {e}")
+                await notify(f"Service {name} is down. Restart failed: {e}", pool=pool)
         else:
-            notify(f"Service {name} is down — no container mapping for auto-restart.")
+            await notify(f"Service {name} is down — no container mapping for auto-restart.", pool=pool)
         return
     try:
         kwargs = {}
@@ -577,7 +678,7 @@ async def monitor_services(pool) -> list:
 
             # Auto-restart local services
             if name in ("worker", "openclaw"):
-                restart_service(name)
+                await restart_service(name, pool=pool)
                 logger.info("[BRAIN] Auto-restarted %s", name)
 
             # Auto-triage: check alert_actions table before escalating
@@ -607,17 +708,17 @@ async def monitor_services(pool) -> list:
                             )
                             failures = (action["consecutive_failures"] or 0) + 1
                             if failures >= action["escalate_after_failures"] and action["escalate_after_failures"] > 0:
-                                notify(f"🚨 {name} DOWN ({failures}x): {detail}")
+                                await notify(f"🚨 {name} DOWN ({failures}x): {detail}", pool=pool)
                             else:
                                 logger.info("[BRAIN] Alert '%s' logged (failure %d/%d before escalation)",
                                             pattern, failures, action["escalate_after_failures"])
                         else:
                             logger.debug("[BRAIN] Alert '%s' in cooldown", pattern)
                     else:
-                        notify(f"ALERT: {name} is DOWN — {detail}")
+                        await notify(f"ALERT: {name} is DOWN — {detail}", pool=pool)
                 except Exception as alert_err:
                     logger.warning("[BRAIN] Alert triage failed: %s — falling back to Telegram", alert_err, exc_info=True)
-                    notify(f"ALERT: {name} is DOWN — {detail}")
+                    await notify(f"ALERT: {name} is DOWN — {detail}", pool=pool)
         else:
             logger.debug("[BRAIN] Service %s: OK", name)
 
@@ -661,12 +762,12 @@ async def monitor_external_services(pool) -> list:
             if prev != indicator:
                 logger.warning("[BRAIN] External %s: %s — %s", name, indicator, description)
                 if is_major:
-                    notify(f"🚨 {name.upper()} MAJOR OUTAGE: {description}")
+                    await notify(f"🚨 {name.upper()} MAJOR OUTAGE: {description}", pool=pool)
         else:
             # Alert on recovery from major outage only
             if prev and prev in ("major", "critical", "major_outage") and prev != indicator:
                 logger.info("[BRAIN] External %s recovered: %s", name, description)
-                notify(f"✅ {name.upper()} recovered: {description}")
+                await notify(f"✅ {name.upper()} recovered: {description}", pool=pool)
             logger.debug("[BRAIN] External %s: OK", name)
 
     return issues
@@ -726,7 +827,7 @@ async def _handle_alert(pool, item):
     ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
     severity = ctx.get("severity", "info")
     source = ctx.get("source", "unknown")
-    notify(f"[{severity.upper()}] {source}: {item['content']}")
+    await notify(f"[{severity.upper()}] {source}: {item['content']}", pool=pool)
     return {"action": "forwarded_to_telegram", "severity": severity}
 
 
@@ -928,7 +1029,7 @@ async def auto_remediate(pool):
             # Alert on significant actions
             for action in actions_taken:
                 if "cancelled" in action or "high failure" in action or "idle" in action:
-                    notify(f"🔧 Auto-remediation: {action}")
+                    await notify(f"🔧 Auto-remediation: {action}", pool=pool)
 
     except Exception as e:
         logger.debug("[BRAIN] Auto-remediation failed: %s", e)
@@ -985,8 +1086,8 @@ async def generate_daily_digest(pool):
             f"Traffic: {stats['views_today']} views today\n"
             f"Spend: ${float(stats['month_spend']):.2f} MTD"
         )
-        send_telegram(msg)
-        send_discord(msg)  # #lab-logs channel
+        await send_telegram(msg, pool=pool)
+        await send_discord(msg, pool=pool)  # #lab-logs channel
 
         # Mark sent
         await pool.execute("""
@@ -1133,12 +1234,12 @@ async def log_electricity_cost(pool):
 
             if power_source == "hx1500i" and prev_source != "hx1500i":
                 # PSU sensors recovered
-                notify("PSU sensors recovered — using real HX1500i wall power data")
-                send_discord("✅ PSU sensors recovered — using real HX1500i wall power data")
+                await notify("PSU sensors recovered — using real HX1500i wall power data", pool=pool)
+                await send_discord("✅ PSU sensors recovered — using real HX1500i wall power data", pool=pool)
             elif power_source != "hx1500i" and prev_source == "hx1500i":
                 # PSU sensors dropped
-                notify(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.")
-                send_discord(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.")
+                await notify(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.", pool=pool)
+                await send_discord(f"⚠️ PSU sensors dropped — falling back to {power_source} ({watts:.0f}W). iCUE may have lost the HX1500i connection.", pool=pool)
 
             await pool.execute("""
                 INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
@@ -1367,6 +1468,14 @@ async def main():
     pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3)
     logger.info("[BRAIN] Connected. Starting brain daemon (once=%s)", one_shot)
 
+    # Register the pool in the cross-instance registry so send_telegram /
+    # send_discord / notify can lazy-fetch their secrets even when called
+    # from sibling code paths that hold a different module instance of
+    # brain_daemon (see Glad-Labs/poindexter#344). Callers that already
+    # hold a pool should still pass it explicitly via ``pool=`` to skip
+    # the registry indirection.
+    _set_brain_pool(pool)
+
     # Boot-controller phase 1: seed app_settings from the embedded core seed
     # if the table is empty or missing required keys. Idempotent — safe to
     # call every boot. See GitHub #63 (brain-as-boot-controller) and
@@ -1411,14 +1520,12 @@ async def main():
             _HAS_OAUTH_CLIENT, _API_BASE_URL,
         )
 
-    # Fallback: load Telegram token from OpenClaw .env if not in DB
-    global TELEGRAM_BOT_TOKEN
-    env_path = os.path.join(os.path.expanduser("~"), ".openclaw", "workspace", ".env")
-    if os.path.exists(env_path) and not TELEGRAM_BOT_TOKEN:
-        with open(env_path) as f:
-            for line in f:
-                if line.startswith("TELEGRAM_BOT_TOKEN="):
-                    TELEGRAM_BOT_TOKEN = line.split("=", 1)[1].strip()
+    # Legacy: the brain used to hot-patch ``TELEGRAM_BOT_TOKEN`` from the
+    # OpenClaw workspace .env if app_settings was empty. That fallback is
+    # gone — the canonical path is ``app_settings.telegram_bot_token``
+    # (with ``read_app_setting`` decrypting on the fly per #342). Operators
+    # who haven't migrated their token to app_settings should run
+    # ``poindexter setup`` or ``poindexter settings set telegram_bot_token <value>``.
 
     shutdown = asyncio.Event()
 

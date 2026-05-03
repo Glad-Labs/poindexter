@@ -189,7 +189,7 @@ def _row_to_alert_dict(row: dict[str, Any]) -> dict[str, Any]:
 NotifyFn = Callable[..., Awaitable[None]]
 
 
-async def _resolve_notify_fn() -> Optional[NotifyFn]:
+async def _resolve_notify_fn(pool: Any = None) -> Optional[NotifyFn]:
     """Return a coroutine notify function, or None if nothing is reachable.
 
     Order:
@@ -204,6 +204,11 @@ async def _resolve_notify_fn() -> Optional[NotifyFn]:
     3. None — neither path is reachable. Caller logs and marks the
        row with the resolution failure so the operator sees it in
        ``alert_events.dispatch_result``.
+
+    ``pool`` is forwarded to the brain.notify branch so the secrets it
+    lazily fetches (per Glad-Labs/poindexter#344) hit the same DB the
+    dispatcher polled. Tests can pass ``None`` and the adapter falls
+    back to the cross-instance pool registry inside ``brain.notify``.
     """
     try:
         from services.integrations.operator_notify import notify_operator  # type: ignore
@@ -229,21 +234,26 @@ async def _resolve_notify_fn() -> Optional[NotifyFn]:
                 brain_daemon_mod = None
 
     if brain_daemon_mod is not None and hasattr(brain_daemon_mod, "notify"):
-        sync_notify = brain_daemon_mod.notify
+        notify_callable = brain_daemon_mod.notify
 
         async def _adapter(message: str, *, critical: bool = False) -> None:
-            # Brain's notify is sync (uses urllib). Run it inline — the
-            # urllib calls are short (10s timeout) and we're already
-            # off the main brain cycle on a 30s loop, so a blocking
-            # send is fine. If we ever move to long-poll telegram or
-            # something fancier, swap to asyncio.to_thread here.
-            #
             # critical is a no-op for the brain helper — it always sends
             # to both Telegram and Discord ops. Severity is encoded in
             # the message header itself, which is enough for Matt to
             # triage on his phone.
             del critical
-            ok = sync_notify(message)
+            # Glad-Labs/poindexter#344: brain.notify is now async and
+            # accepts ``pool=`` so it can lazy-fetch the Telegram +
+            # Discord secrets via ``read_app_setting``. We thread the
+            # dispatcher's pool in so the secret read hits the right DB
+            # and dodges the module-instance landmine the old global
+            # cache fell into. Some tests still stub notify as a sync
+            # ``MagicMock`` returning True/False — handle both paths.
+            result = notify_callable(message, pool=pool) if pool is not None else notify_callable(message)
+            if hasattr(result, "__await__"):
+                ok = await result
+            else:
+                ok = result
             # The brain notify returns True iff at least one channel
             # accepted the message. False = operator did NOT receive
             # the alert (no token, malformed URL, all transports down).
@@ -342,7 +352,7 @@ async def poll_and_dispatch(
     summary["polled"] = len(rows)
 
     if notify_fn is None:
-        notify_fn = await _resolve_notify_fn()
+        notify_fn = await _resolve_notify_fn(pool=pool)
 
     if notify_fn is None:
         # Mark every polled row with a clear error so operators see it

@@ -183,10 +183,11 @@ class TestReadAppSetting:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestEndToEndAlertDispatch:
-    """End-to-end coverage of the #342 fix: an alert_events row is
-    polled, the brain notify path reads the encrypted telegram_bot_token,
-    decrypts it, and POSTs to the real Telegram URL — not the
-    ``enc:v1:<base64>`` ciphertext.
+    """End-to-end coverage of the #342 + #344 fixes: an alert_events row
+    is polled, the brain notify path reads the encrypted
+    telegram_bot_token from app_settings on every call (#344, no module
+    globals), decrypts it (#342), and POSTs to the real Telegram URL —
+    not the ``enc:v1:<base64>`` ciphertext.
 
     Mocks the HTTP layer (``urllib.request.urlopen``) and the DB
     (``asyncpg`` pool) but exercises the real ``brain_daemon.notify``
@@ -201,26 +202,26 @@ class TestEndToEndAlertDispatch:
         # Master key for pgcrypto round-trip — the brain container env.
         monkeypatch.setenv("POINDEXTER_SECRET_KEY", "test-master-key")
 
-        # Simulate the DB: telegram_bot_token row is encrypted, the
-        # decrypt fetchval returns the plaintext.
-        pool = MagicMock()
-        # _load_config_from_db calls pool.fetch for the plaintext keys
-        # and pool.fetchrow + pool.fetchval (via read_app_setting) for
-        # the secret token.
-        pool.fetch = AsyncMock(return_value=[
-            {"key": "telegram_chat_id", "value": "123456789"},
-            {"key": "discord_ops_webhook_url", "value": ""},
-        ])
-        pool.fetchrow = AsyncMock(return_value={
-            "value": "enc:v1:dGVzdC1ibG9i",  # base64('test-blob')
-            "is_secret": True,
-        })
-        pool.fetchval = AsyncMock(return_value="DECRYPTED_BOT_TOKEN_42")
+        # Simulate the DB: send_telegram + send_discord each call
+        # read_app_setting → fetchrow + fetchval. The encrypted-token
+        # branch fires for telegram_bot_token; chat_id + webhook URLs
+        # are plaintext.
+        encrypted_row = {"value": "enc:v1:dGVzdC1ibG9i", "is_secret": True}
+        chat_id_row = {"value": "123456789", "is_secret": False}
+        empty_row = {"value": "", "is_secret": False}
 
-        # Run _load_config_from_db — populates module globals.
-        await bd._load_config_from_db(pool)
-        assert bd.TELEGRAM_BOT_TOKEN == "DECRYPTED_BOT_TOKEN_42"
-        assert bd.TELEGRAM_CHAT_ID == "123456789"
+        pool = MagicMock()
+        # Lookup order inside notify():
+        #   send_telegram → telegram_bot_token (enc), telegram_chat_id (plain)
+        #   discord_ops_webhook_url (plain, empty here so we fall to lab-logs)
+        #   send_discord → discord_lab_logs_webhook_url (plain, empty)
+        pool.fetchrow = AsyncMock(side_effect=[
+            encrypted_row,   # telegram_bot_token
+            chat_id_row,     # telegram_chat_id
+            empty_row,       # discord_ops_webhook_url
+            empty_row,       # discord_lab_logs_webhook_url
+        ])
+        pool.fetchval = AsyncMock(return_value="DECRYPTED_BOT_TOKEN_42")
 
         # Capture the URL the brain actually hits.
         captured_requests = []
@@ -232,12 +233,13 @@ class TestEndToEndAlertDispatch:
             captured_requests.append(req)
             return _FakeResp()
 
-        monkeypatch.setattr(
-            "urllib.request.urlopen", _fake_urlopen,
-        )
+        monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
 
         # Send an alert through the same code path the dispatcher uses.
-        result = bd.notify("PoindexterPostgresDown — pg unreachable")
+        # #344: notify is async and accepts pool=.
+        result = await bd.notify(
+            "PoindexterPostgresDown — pg unreachable", pool=pool,
+        )
 
         assert result is True, "notify should return True when telegram POST succeeded"
         # At least one POST went out; the first one is to Telegram.
@@ -261,27 +263,34 @@ class TestEndToEndAlertDispatch:
         the bool return propagates through the alert_dispatcher
         adapter into a NotifyFailed exception, which the dispatcher
         catches and records as ``'error: ...'``.
+
+        #344: The brain no longer caches the token at module level —
+        secrets are lazy-fetched on every call. So this test feeds the
+        DB an encrypted row + an empty key env and confirms the lazy
+        path returns False and skips the network.
         """
         from brain import brain_daemon as bd
 
         monkeypatch.delenv("POINDEXTER_SECRET_KEY", raising=False)
+        # Make sure the env-var bootstrap fallbacks don't bleed in.
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.delenv("DISCORD_OPS_WEBHOOK_URL", raising=False)
+        monkeypatch.delenv("DISCORD_LAB_LOGS_WEBHOOK_URL", raising=False)
 
-        # Reset the module token globals so a previous test doesn't bleed in.
-        bd.TELEGRAM_BOT_TOKEN = ""
-        bd.TELEGRAM_CHAT_ID = ""
-        bd.DISCORD_OPS_WEBHOOK_URL = ""
+        # Token row is encrypted but key env is unset → read_app_setting
+        # logs a warning and returns the empty default. chat_id +
+        # webhooks return empty too so neither send path can fire.
+        encrypted_row = {"value": "enc:v1:abc", "is_secret": True}
+        empty_row = {"value": "", "is_secret": False}
 
         pool = MagicMock()
-        pool.fetch = AsyncMock(return_value=[])
-        pool.fetchrow = AsyncMock(return_value={
-            "value": "enc:v1:abc",
-            "is_secret": True,
-        })
+        pool.fetchrow = AsyncMock(side_effect=[
+            encrypted_row,   # telegram_bot_token (decrypt skipped → "")
+            empty_row,       # telegram_chat_id
+            empty_row,       # discord_ops_webhook_url
+            empty_row,       # discord_lab_logs_webhook_url
+        ])
         pool.fetchval = AsyncMock(return_value=None)
-
-        await bd._load_config_from_db(pool)
-        # Token stayed empty — no POINDEXTER_SECRET_KEY to decrypt with.
-        assert bd.TELEGRAM_BOT_TOKEN == ""
 
         captured = []
 
@@ -296,7 +305,7 @@ class TestEndToEndAlertDispatch:
         monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
 
         # No discord either — both channels should fail.
-        result = bd.notify("test alert")
+        result = await bd.notify("test alert", pool=pool)
         assert result is False, "notify must return False when no channel reached the operator"
         # And nothing should have been POSTed.
         assert captured == []

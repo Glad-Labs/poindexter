@@ -227,7 +227,8 @@ class TestPollAndDispatch:
 
         # Pass notify_fn=None AND patch the resolver to return None so
         # the "no channel reachable" branch fires deterministically.
-        async def _no_channel():
+        # #344: _resolve_notify_fn now accepts an optional pool kwarg.
+        async def _no_channel(pool=None):
             return None
 
         result = await ad.poll_and_dispatch(
@@ -355,6 +356,46 @@ class TestBrainNotifyAdapter:
         # Should not raise.
         await adapter("test message", critical=False)
         fake_module.notify.assert_called_once()
+
+    async def test_adapter_threads_pool_through_to_notify(self, monkeypatch):
+        """#344: when poll_and_dispatch resolves with a pool, the adapter
+        must thread it into the brain.notify call so secrets are
+        lazy-fetched against the right DB instead of falling through to
+        the cross-instance registry (which may be unset under pytest).
+        """
+        from unittest.mock import AsyncMock as _AsyncMock
+
+        fake_module = MagicMock()
+        # Simulate the new async notify(message, *, pool=None).
+        fake_module.notify = _AsyncMock(return_value=True)
+        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
+
+        sentinel_pool = MagicMock(name="sentinel_pool")
+        adapter = await ad._resolve_notify_fn(pool=sentinel_pool)
+        assert adapter is not None
+
+        await adapter("test message", critical=False)
+        # The pool must have landed in the notify kwargs so the brain
+        # daemon's lazy secret-fetch hits the right database.
+        fake_module.notify.assert_awaited_once_with("test message", pool=sentinel_pool)
+
+    async def test_adapter_handles_async_notify_returning_false(self, monkeypatch):
+        """#344: brain.notify is now an async function returning bool.
+        Adapter must await it and still raise NotifyFailed on False.
+        """
+        from unittest.mock import AsyncMock as _AsyncMock
+
+        fake_module = MagicMock()
+        fake_module.notify = _AsyncMock(return_value=False)
+        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
+
+        adapter = await ad._resolve_notify_fn()
+        assert adapter is not None
+
+        with pytest.raises(ad.NotifyFailed):
+            await adapter("test message", critical=True)
 
     async def test_adapter_treats_none_return_as_success(self, monkeypatch):
         """Legacy notify() that returns None (pre-#342) keeps working.
