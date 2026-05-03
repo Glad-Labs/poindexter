@@ -365,17 +365,19 @@ async def preview_post_html(preview_token: str):
         import json as _json
         post = _json.loads(post.body)
 
-    title = post.get("title", "Untitled")
-    content = post.get("content", "")
-    status = post.get("status", "unknown")
-    quality = post.get("quality_score", "?")
-    excerpt = post.get("excerpt", "")
+    # dict.get(key, default) returns None when the key exists with a None value,
+    # so coerce to fallback strings explicitly with `or` before any string ops.
+    title = post.get("title") or "Untitled"
+    content = post.get("content") or ""
+    status = post.get("status") or "unknown"
+    quality = post.get("quality_score") if post.get("quality_score") is not None else "?"
+    excerpt = post.get("excerpt") or ""
     from html import escape as _esc
-    featured_img = _esc(post.get("featured_image_url", ""))
+    featured_img = _esc(post.get("featured_image_url") or "")
     has_podcast = post.get("has_podcast", False)
     has_video = post.get("has_video", False)
-    podcast_url = _esc(post.get("podcast_url", ""))
-    video_url = _esc(post.get("video_url", ""))
+    podcast_url = _esc(post.get("podcast_url") or "")
+    video_url = _esc(post.get("video_url") or "")
     safe_title = _esc(title)
 
     # Build podcast/video players
