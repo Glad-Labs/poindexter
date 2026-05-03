@@ -95,28 +95,46 @@ def _site_config(values: dict | None = None) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
+def _patch_site_config(monkeypatch, values: dict | None = None):
+    """Replace the site_config singleton with a mock that returns *values*.
+
+    `_build_user_agent` and `_scrape_arxiv` import the singleton at call
+    time via `from services.site_config import site_config as _sc`, so
+    patching the module-level binding is enough — no need to thread
+    site_config through as a function argument anymore.
+    """
+    monkeypatch.setattr(
+        "services.site_config.site_config",
+        _site_config(values),
+    )
+
+
 @pytest.mark.unit
 class TestBuildUserAgent:
-    def test_returns_fallback_when_site_config_is_none(self):
-        ua = _build_user_agent(None)
+    def test_returns_fallback_when_no_contact_configured(self, monkeypatch):
+        _patch_site_config(monkeypatch, {})
+        ua = _build_user_agent()
         assert "PoindexterBot" in ua
         assert "no-contact-configured" in ua
 
-    def test_uses_contact_url_when_set(self):
-        sc = _site_config({"site_contact_url": "https://example.com/contact"})
-        ua = _build_user_agent(sc)
+    def test_uses_contact_url_when_set(self, monkeypatch):
+        _patch_site_config(
+            monkeypatch, {"site_contact_url": "https://example.com/contact"},
+        )
+        ua = _build_user_agent()
         assert "+https://example.com/contact" in ua
 
-    def test_uses_default_bot_name_when_unset(self):
-        sc = _site_config({})
-        ua = _build_user_agent(sc)
+    def test_uses_default_bot_name_when_unset(self, monkeypatch):
+        _patch_site_config(monkeypatch, {})
+        ua = _build_user_agent()
         assert "PoindexterBot/1.0" in ua
 
-    def test_uses_custom_bot_name_when_set(self):
-        sc = _site_config(
+    def test_uses_custom_bot_name_when_set(self, monkeypatch):
+        _patch_site_config(
+            monkeypatch,
             {"scraper_bot_name": "AcmeBot/2.5", "site_contact_url": ""},
         )
-        ua = _build_user_agent(sc)
+        ua = _build_user_agent()
         assert "AcmeBot/2.5" in ua
         assert "no-contact-configured" in ua
 
@@ -244,7 +262,11 @@ class TestScrapeGeneric:
             with pytest.raises(URLScrapeError, match="Fetch failed"):
                 await scrape_url("https://example.com/dead")
 
-    async def test_passes_user_agent_from_site_config(self):
+    async def test_passes_user_agent_from_site_config(self, monkeypatch):
+        # USER_AGENT is frozen at module import from the site_config
+        # singleton. To test that the value flows through into the HTTP
+        # headers we patch it directly — simpler than reloading the
+        # module to re-run `_build_user_agent`.
         captured: dict = {}
 
         class _Recorder:
@@ -260,9 +282,12 @@ class TestScrapeGeneric:
             async def get(self, url, **kwargs):
                 return _FakeResponse(text=_HTML_FULL)
 
-        sc = _site_config({"site_contact_url": "https://acme.test/c"})
+        monkeypatch.setattr(
+            url_scraper, "USER_AGENT",
+            "Mozilla/5.0 (compatible; PoindexterBot/1.0; +https://acme.test/c) AI content pipeline topic scraper",
+        )
         with patch.object(url_scraper.httpx, "AsyncClient", _Recorder):
-            await scrape_url("https://example.com/x", site_config=sc)
+            await scrape_url("https://example.com/x")
         assert "+https://acme.test/c" in captured["headers"]["User-Agent"]
 
 
@@ -361,13 +386,16 @@ class TestScrapeArxiv:
         # Result url should now point at /abs/.
         assert "/abs/1234.5678" in result["url"]
 
-    async def test_uses_arxiv_base_url_from_site_config(self):
-        sc = _site_config({"arxiv_base_url": "https://mirror.example/"})
+    async def test_uses_arxiv_base_url_from_site_config(self, monkeypatch):
+        # _scrape_arxiv reads `arxiv_base_url` from the site_config
+        # singleton at call time (not from a kwarg). Patch the singleton
+        # so the test is isolated from real DB state.
+        _patch_site_config(
+            monkeypatch, {"arxiv_base_url": "https://mirror.example/"},
+        )
         responses = [_FakeResponse(text=_ARXIV_HTML)]
         with _patch_async_client(responses):
-            result = await scrape_url(
-                "https://arxiv.org/abs/1234.5678", site_config=sc,
-            )
+            result = await scrape_url("https://arxiv.org/abs/1234.5678")
         assert "mirror.example" in result["url"]
 
     async def test_unrecognized_arxiv_url_uses_input_url(self):
