@@ -1123,10 +1123,9 @@ async def self_maintain(pool):
         )
         expired = int(result.split()[-1]) if result else 0
 
-        # Clean old processed queue items
-        await pool.execute(
-            "DELETE FROM brain_queue WHERE status != 'pending' AND created_at < NOW() - INTERVAL '7 days'"
-        )
+        # brain_queue table was dropped in migration 0080 (2026-04-21).
+        # Removed the DELETE that referenced it — was raising UndefinedTable
+        # every cycle and getting logged as "[BRAIN] Maintenance failed".
 
         if expired:
             logger.info("[BRAIN] Maintenance: expired %d facts", expired)
@@ -1337,7 +1336,10 @@ async def run_cycle(pool):
 
     issues = await monitor_services(pool)
     ext_issues = await monitor_external_services(pool)
-    await process_queue(pool)
+    # process_queue is dead since migration 0080 dropped brain_queue
+    # (2026-04-21). Nothing enqueues to it anymore. The handler
+    # functions (enqueue_brain_item, accept_topic, etc.) are kept in
+    # this module pending a fuller cleanup pass — see follow-up issue.
     await auto_remediate(pool)
     await self_maintain(pool)
     await update_system_metrics(pool)
