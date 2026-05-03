@@ -323,6 +323,58 @@ services:
       retries: 3
 
   # ===========================================
+  # Poindexter pipeline Telegram bot — operator chat surface
+  # ===========================================
+  # Long-polls @poindexterai_bot, routes /health, /tasks, /approve,
+  # /reject, /stats, /publish, /cli, /help to the worker via
+  # ``http://worker:8002``. Standalone redundancy path so phone-side
+  # control of the pipeline doesn't depend on OpenClaw being alive
+  # (OpenClaw lives on its own bot, @OpenClawGladbot, since 2026-05-03).
+  #
+  # Reuses the worker image (same dep set + scripts mount) — no
+  # separate Dockerfile or pip install needed. Auth credentials
+  # (OAuth client_id/secret) come from app_settings via plugins.secrets
+  # at startup; secret_key for decryption is plumbed in through env.
+  pipeline-bot:
+    build:
+      context: ./src/cofounder_agent
+      dockerfile: Dockerfile.worker
+    container_name: poindexter-pipeline-bot
+    restart: unless-stopped
+    command: ["python", "-u", "/opt/scripts/telegram-bot.py"]
+    environment:
+      # Worker URL inside the docker network (NOT localhost — the bot
+      # runs in its own container, "localhost" would point at itself).
+      POINDEXTER_API_URL: "http://worker:8002"
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
+      LOG_TO_FILE: "false"
+      PYTHONDONTWRITEBYTECODE: "1"
+      # /app for ``services.*`` imports (plugins.secrets, etc.); /opt/poindexter
+      # for ``brain.bootstrap`` (resolve_database_url fallback).
+      PYTHONPATH: "/app:/opt/poindexter"
+    volumes:
+      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
+      - ./src/cofounder_agent:/app:ro
+      - ./brain:/opt/poindexter/brain:ro
+      - ./scripts:/opt/scripts:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    healthcheck:
+      # The bot is alive if the python process is alive — there's no
+      # HTTP server to probe. Use pgrep on the bot script. Returns 0
+      # when at least one matching process exists.
+      test: ["CMD", "pgrep", "-f", "telegram-bot.py"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  # ===========================================
   # Prefect 3 — content pipeline orchestration (#206)
   # ===========================================
   # Three services per the canonical 3-latest self-host pattern:

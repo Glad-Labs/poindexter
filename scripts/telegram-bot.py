@@ -62,14 +62,24 @@ def _resolve_db_url() -> str:
 async def _load_telegram_config(pool) -> dict:
     """Pull Telegram-specific config from app_settings.
 
+    Goes through ``plugins.secrets.get_secret`` so encrypted rows
+    (``is_secret=true`` / ``enc:v1:<base64>`` envelope) get decrypted
+    properly. Reading raw ``SELECT value`` would hand the bot the
+    ciphertext as if it were the token — same shape as the
+    poindexter#185 voice-bot bug + Glad-Labs/poindexter#342 brain bug.
+
     OAuth creds are NOT fetched here — the OAuth helper handles its own
     resolution (bootstrap.toml + app_settings + decryption).
     """
-    rows = await pool.fetch(
-        "SELECT key, value FROM app_settings WHERE key IN "
-        "('telegram_bot_token', 'telegram_chat_id')"
-    )
-    return {r["key"]: r["value"] for r in rows}
+    from plugins.secrets import get_secret
+
+    async with pool.acquire() as conn:
+        token = await get_secret(conn, "telegram_bot_token")
+        chat_id = await get_secret(conn, "telegram_chat_id")
+    return {
+        "telegram_bot_token": token or "",
+        "telegram_chat_id": chat_id or "",
+    }
 
 
 print("[INIT] Loading config + OAuth client...")
@@ -84,17 +94,37 @@ async def _make_pool() -> asyncpg.Pool:
     return await asyncpg.create_pool(_DB_URL, min_size=1, max_size=2)
 
 
-_pool: asyncpg.Pool = asyncio.run(_make_pool())
-_tg_cfg = asyncio.run(_load_telegram_config(_pool))
-_oauth_client = asyncio.run(
-    oauth_client_from_pool(_pool, base_url=API_URL),
-)
+# Module-level placeholders — populated in main() under a SINGLE event loop
+# so asyncpg's connection pool stays attached to the same loop poll_updates()
+# runs in. Earlier this file called asyncio.run() three times during module
+# import, which created a fresh loop per call and left _pool attached to a
+# dead loop the moment poll_updates() opened the actual run loop. Same
+# multi-event-loop landmine as scripts/discord-voice-bot.py + brain_daemon
+# (Glad-Labs/poindexter#185 + #344). Setup happens in main() now.
+_pool: asyncpg.Pool | None = None
+_tg_cfg: dict = {}
+_oauth_client = None
 
-BOT_TOKEN = _tg_cfg.get("telegram_bot_token", "")
-CHAT_ID = _tg_cfg.get("telegram_chat_id", "")
-TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+BOT_TOKEN = ""
+CHAT_ID = ""
+TG_API = ""
 
 _last_update_id = 0
+
+
+async def _setup() -> None:
+    """Initialise pool + config + OAuth client under the run loop."""
+    global _pool, _tg_cfg, _oauth_client, BOT_TOKEN, CHAT_ID, TG_API
+    _pool = await _make_pool()
+    _tg_cfg = await _load_telegram_config(_pool)
+    _oauth_client = await oauth_client_from_pool(_pool, base_url=API_URL)
+    # .strip() guards against trailing whitespace / newlines that crept
+    # in during SQL inserts of the secret. urllib rejects URLs with raw
+    # \n characters, which would otherwise make every getUpdates call
+    # raise "Invalid non-printable ASCII character in URL" forever.
+    BOT_TOKEN = _tg_cfg.get("telegram_bot_token", "").strip()
+    CHAT_ID = _tg_cfg.get("telegram_chat_id", "").strip()
+    TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
 async def send_message(text: str, chat_id: str = ""):
@@ -217,21 +247,49 @@ async def _maybe_handle_cli(text: str, chat_id: str) -> str | None:
     return reply.text if reply is not None else None
 
 
+class APIError(RuntimeError):
+    """Raised when the Poindexter worker returns a non-2xx response.
+
+    Bubbles up through ``handle_command`` to the top-level catch in
+    ``poll_updates`` so the operator sees the real error in Telegram
+    instead of a misleading "No posts awaiting approval" / "Task: ?"
+    that earlier silently masked 401s. (Fixed after the
+    ``scripts_oauth_client_id`` provisioning bug surfaced exactly that
+    failure mode.)
+    """
+
+
 async def api_call(method: str, path: str, json_data: dict | None = None) -> dict:
     """Make an authenticated API call to the Poindexter worker.
 
     Auth is handled by the shared ScriptsOAuthClient (OAuth JWT when
     configured, legacy static Bearer otherwise). The 401-retry dance
     happens transparently inside the helper.
+
+    Raises ``APIError`` on any non-2xx so callers don't have to
+    error-check every ``data.get()`` themselves.
     """
+    assert _oauth_client is not None, "OAuth client not initialised — _setup() must run before api_call"
     if method == "GET":
         resp = await _oauth_client.get(path)
     else:
         resp = await _oauth_client.post(path, json=json_data or {})
+    if resp.status_code >= 400:
+        # Surface the error verbatim — handlers used to swallow this
+        # into a benign default and the operator never saw the real
+        # cause. e.g. 401 → bot replied "Task: ?" with no hint that
+        # auth was the actual problem.
+        raise APIError(
+            f"{method} {path} → HTTP {resp.status_code}: {resp.text[:300]}"
+        )
     try:
         return resp.json()
     except Exception:
-        return {"error": resp.text[:200]}
+        # 2xx with non-JSON body — also unusual, surface it.
+        raise APIError(
+            f"{method} {path} → HTTP {resp.status_code} non-JSON response: "
+            f"{resp.text[:300]}"
+        ) from None
 
 
 async def handle_command(text: str, chat_id: str):
@@ -350,11 +408,18 @@ async def poll_updates():
                     text = msg.get("text", "")
                     chat_id = str(msg.get("chat", {}).get("id", ""))
 
+                    print(f"[POLL] update={update['update_id']} chat={chat_id} text={text[:60]!r}", flush=True)
+
                     if text.startswith("/") and chat_id == CHAT_ID:
+                        print(f"[CMD] dispatching {text[:30]!r}", flush=True)
                         try:
                             await handle_command(text, chat_id)
+                            print(f"[CMD] dispatched ok", flush=True)
                         except Exception as e:
+                            print(f"[CMD] ERROR: {type(e).__name__}: {e}", flush=True)
                             await send_message(f"Error: {e}", chat_id)
+                    elif text.startswith("/"):
+                        print(f"[POLL] skipped — chat_id mismatch (got {chat_id!r}, want {CHAT_ID!r})", flush=True)
 
             except httpx.TimeoutException:
                 continue
@@ -363,14 +428,18 @@ async def poll_updates():
                 await asyncio.sleep(5)
 
 
-if __name__ == "__main__":
+async def _main() -> None:
+    await _setup()
     if not BOT_TOKEN:
         print("ERROR: telegram_bot_token not in app_settings.")
         sys.exit(1)
     if not CHAT_ID:
         print("ERROR: telegram_chat_id not in app_settings.")
         sys.exit(1)
-
-    print(f"[BOT] Telegram Pipeline Bot starting...")
+    print("[BOT] Telegram Pipeline Bot starting...")
     print(f"[BOT] Listening for commands from chat {CHAT_ID}")
-    asyncio.run(poll_updates())
+    await poll_updates()
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())
