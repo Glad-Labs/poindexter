@@ -205,12 +205,21 @@ async def _set_last_run_date(pool: Any, date_str: str) -> None:
 
 
 async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
-    """Insert a content_tasks row tagged for the dev_diary niche.
+    """Insert a pipeline task tagged for the dev_diary niche.
 
     Uses raw SQL rather than the ContentTaskStore wrapper because the
     job runs in the bare ``pool`` context (no DatabaseService instance).
     The pipeline picks up rows by status='pending'; the niche tag
-    routes the row through the dev_diary writer-prompt override.
+    (carried via the ``category`` column == "dev_diary") routes the
+    row through the dev_diary writer-prompt override.
+
+    #188: ``content_tasks`` is a view — INSERT into the underlying
+    ``pipeline_tasks`` + ``pipeline_versions`` tables directly. The
+    ``task_metadata`` JSON blob lands inside ``pipeline_versions.stage_data``
+    under the ``task_metadata`` key so the view's
+    ``stage_data -> 'task_metadata'`` projection still surfaces it
+    unchanged for downstream readers (writer dispatcher reads
+    ``task["task_metadata"]["context_bundle"]``).
     """
     import json
     from uuid import uuid4
@@ -225,28 +234,42 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
         "generate_featured_image": True,
         "source": "scheduled_dev_diary_job",
     }
+    stage_data = {"task_metadata": task_metadata}
 
-    await pool.execute(
-        """
-        INSERT INTO content_tasks (
-            task_id, content_type, task_type, status, topic,
-            title, style, tone, target_length,
-            target_audience, category, approval_status, task_metadata,
-            created_at, updated_at
-        ) VALUES (
-            $1, 'blog_post', 'blog_post', 'pending', $2,
-            $3, 'first_person', 'candid', 600,
-            $4, $5, 'pending', $6,
-            NOW(), NOW()
-        )
-        """,
-        task_id,
-        topic,
-        topic[:140],
-        "indie-devs, ai-curious, build-in-public",
-        _NICHE_SLUG,
-        json.dumps(task_metadata),
-    )
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO pipeline_tasks (
+                    task_id, task_type, status, topic, stage,
+                    style, tone, target_length,
+                    target_audience, category,
+                    created_at, updated_at
+                ) VALUES (
+                    $1, 'blog_post', 'pending', $2, 'pending',
+                    'first_person', 'candid', 600,
+                    $3, $4,
+                    NOW(), NOW()
+                )
+                """,
+                task_id,
+                topic,
+                "indie-devs, ai-curious, build-in-public",
+                _NICHE_SLUG,
+            )
+            await conn.execute(
+                """
+                INSERT INTO pipeline_versions (
+                    task_id, version, title, stage_data, created_at
+                ) VALUES (
+                    $1, 1, $2, $3::jsonb, NOW()
+                )
+                ON CONFLICT (task_id, version) DO NOTHING
+                """,
+                task_id,
+                topic[:140],
+                json.dumps(stage_data, default=str),
+            )
     return task_id
 
 

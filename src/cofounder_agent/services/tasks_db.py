@@ -67,10 +67,13 @@ class TasksDatabase(DatabaseServiceMixin):
             pool: asyncpg connection pool
         """
         self.pool = pool
-        # Pipeline tables are now the primary store (#211 Phase 4).
-        # content_tasks is a VIEW with INSTEAD OF triggers that route
-        # all writes to pipeline_tasks + pipeline_versions automatically.
-        # No dual-write needed — the DB handles it.
+        # Pipeline tables are the primary store (#211 Phase 4).
+        # content_tasks is a VIEW over pipeline_tasks + pipeline_versions.
+        # Reads go through the view (so consumers see one flat row
+        # shape); writes go DIRECTLY to the underlying base tables —
+        # the INSTEAD OF triggers that previously redirected view-INSERTs
+        # are not reliably present in production (#188), so app-side
+        # routing is the source of truth. See add_task() for details.
 
     @log_query_performance(operation="get_pending_tasks", category="task_retrieval")
     async def get_pending_tasks(self, limit: int = 10) -> list[dict]:
@@ -149,9 +152,30 @@ class TasksDatabase(DatabaseServiceMixin):
     @log_query_performance(operation="add_task", category="task_write")
     async def add_task(self, task_data: dict[str, Any]) -> str:
         """
-        Add a new task to the database using content_tasks table.
+        Add a new task to the database via direct INSERT into the
+        underlying ``pipeline_tasks`` + ``pipeline_versions`` tables.
 
         Consolidates both manual and automated task creation pipelines.
+
+        Background — #188
+        -----------------
+        ``content_tasks`` is a VIEW (since migration 0125) and the
+        INSTEAD OF INSERT trigger that previously redirected writes to
+        the base tables is not reliably present in production, so any
+        INSERT into the view raises ``ObjectNotInPrerequisiteStateError:
+        cannot insert into view "content_tasks"``. We now mirror what
+        the trigger *would* have done, in application code:
+
+        - Core scalar columns go straight into ``pipeline_tasks``.
+        - ``title`` + content/SEO + ``stage_data`` JSONB (which carries
+          ``metadata`` / ``result`` / ``task_metadata``) go into
+          ``pipeline_versions`` at version=1.
+        - View-only computed columns (``content_type``, ``approval_status``,
+          ``post_id`` …) are simply dropped — they are projected from
+          other tables on read and have no underlying storage here.
+
+        Reads of ``content_tasks`` (the view) continue to return these
+        fields as before.
 
         Args:
             task_data: Task data dict with task_name, topic, task_type, status, agent_id, etc.
@@ -166,100 +190,149 @@ class TasksDatabase(DatabaseServiceMixin):
         # Extract metadata for normalization
         metadata = task_data.get("task_metadata") or task_data.get("metadata", {})
         metadata = safe_json_load(metadata, fallback={})
+        if not isinstance(metadata, dict):
+            metadata = {}
 
         # Ensure task_name is preserved in metadata since there is no column for it
         if "task_name" in task_data and "task_name" not in metadata:
             metadata["task_name"] = task_data["task_name"]
 
         try:
-            # Use naive UTC datetime for PostgreSQL 'timestamp without time zone' columns
+            # Use timezone-aware UTC datetime — pipeline_tasks columns are
+            # ``timestamptz`` so asyncpg accepts the aware value directly.
             now = datetime.now(timezone.utc)
 
-            # #231: The content_tasks view does NOT expose these columns,
-            # so previously-hardcoded INSERTs of request_type / agent_id /
-            # writing_style_id / featured_image_data / featured_image_prompt
-            # / tags / model_selection_log / publish_mode / model_selections
-            # / quality_preference / estimated_cost / cost_breakdown would
-            # raise or silently drop the whole row.
-            #
-            # Audit (2026-04-16) showed: 9 of those columns have ZERO readers
-            # anywhere in the codebase, so they're dropped. The remaining 3
-            # (tags, model_selections, quality_preference) are stashed in
-            # task_metadata JSONB where callers can still recover them, and
-            # task_executor.py's existing `task.get("tags", [])` pattern
-            # naturally returns [] when the column doesn't exist.
+            # #231: callers historically passed columns the view never
+            # exposed (request_type, agent_id, writing_style_id, …). Most
+            # are dead — drop them. The few with live readers are
+            # preserved by stashing them inside the task_metadata JSONB
+            # blob (which lives in pipeline_versions.stage_data and is
+            # projected back out by the view).
             meta_extras: dict[str, Any] = dict(metadata or {})
-            if task_data.get("tags"):
-                meta_extras["tags"] = task_data.get("tags")
-            if task_data.get("model_selections"):
-                meta_extras["model_selections"] = task_data.get("model_selections")
-            if task_data.get("quality_preference"):
-                meta_extras["quality_preference"] = task_data.get("quality_preference")
-            if task_data.get("featured_image_data"):
-                meta_extras["featured_image_data"] = task_data.get("featured_image_data")
-            if task_data.get("featured_image_prompt"):
-                meta_extras["featured_image_prompt"] = task_data.get("featured_image_prompt")
-            if task_data.get("cost_breakdown"):
-                meta_extras["cost_breakdown"] = task_data.get("cost_breakdown")
-            if task_data.get("estimated_cost"):
+            for k in (
+                "tags", "model_selections", "quality_preference",
+                "featured_image_data", "featured_image_prompt",
+                "cost_breakdown", "model_selection_log",
+            ):
+                if task_data.get(k) is not None and k not in meta_extras:
+                    meta_extras[k] = task_data.get(k)
+            if task_data.get("estimated_cost") is not None:
                 meta_extras["estimated_cost"] = float(task_data.get("estimated_cost", 0.0))
-            if task_data.get("model_selection_log"):
-                meta_extras["model_selection_log"] = task_data.get("model_selection_log")
 
-            # Build insert columns dict — ONLY fields that actually exist
-            # in the content_tasks view. Extras go into task_metadata.
-            insert_data = {
-                "task_id": task_id,
-                "content_type": task_data.get("content_type")
-                or task_data.get("task_type", "blog_post"),
-                "task_type": task_data.get("task_type", "blog_post"),
-                "status": task_data.get("status", "pending"),
-                "topic": task_data.get("topic", ""),
-                "title": task_data.get("title")
-                or task_data.get("task_name"),  # Support both title and task_name
-                "style": task_data.get("style", "technical"),
-                "tone": task_data.get("tone", "professional"),
-                "target_length": task_data.get("target_length", 1500),
-                "primary_keyword": task_data.get("primary_keyword"),
-                "target_audience": task_data.get("target_audience"),
-                "category": task_data.get("category"),
-                "content": metadata.get("content") or task_data.get("content"),
-                "excerpt": metadata.get("excerpt") or task_data.get("excerpt"),
-                "featured_image_url": metadata.get("featured_image_url")
-                or task_data.get("featured_image_url"),
-                "qa_feedback": metadata.get("qa_feedback"),
-                "quality_score": metadata.get("quality_score") or task_data.get("quality_score"),
-                "seo_title": metadata.get("seo_title"),
-                "seo_description": metadata.get("seo_description"),
-                "seo_keywords": metadata.get("seo_keywords"),
-                "stage": metadata.get("stage", "pending"),
-                "percentage": metadata.get("percentage", 0),
-                "message": metadata.get("message"),
-                "task_metadata": json.dumps(meta_extras),
-                "metadata": json.dumps(task_data.get("metadata") or {}),
-                "model_used": task_data.get("model_used"),
-                "models_used_by_phase": json.dumps(task_data.get("models_used_by_phase", {})),
-                "error_message": task_data.get("error_message"),
-                "approval_status": task_data.get("approval_status", "pending"),
-                "site_id": task_data.get("site_id"),
-                "created_at": now,
-                "updated_at": now,
-            }
+            # Build the stage_data JSONB blob. The view (see migration
+            # 0125 _CONTENT_TASKS_VIEW_DDL) projects:
+            #   metadata      = stage_data -> 'metadata'
+            #   result        = stage_data -> 'result'
+            #   task_metadata = stage_data -> 'task_metadata'
+            # Mirror that exact shape so callers can still read these
+            # columns back through content_tasks.
+            stage_data: dict[str, Any] = {}
+            if meta_extras:
+                stage_data["task_metadata"] = meta_extras
+            raw_metadata = task_data.get("metadata")
+            if raw_metadata is not None:
+                _md = safe_json_load(raw_metadata, fallback={}) or {}
+                if _md:
+                    stage_data["metadata"] = _md
+            elif metadata:
+                # If the caller passed `task_metadata` only (no separate
+                # `metadata`), still expose it under `metadata` so older
+                # readers that look at row["metadata"] keep working.
+                stage_data.setdefault("metadata", metadata)
 
-            builder = ParameterizedQueryBuilder()
-            sql, params = builder.insert(
-                table="content_tasks", columns=insert_data, return_columns=["task_id"]
+            # Title / content / SEO live on pipeline_versions.
+            title = task_data.get("title") or task_data.get("task_name")
+            content = metadata.get("content") or task_data.get("content")
+            excerpt = metadata.get("excerpt") or task_data.get("excerpt")
+            featured_image_url = (
+                metadata.get("featured_image_url") or task_data.get("featured_image_url")
             )
+            qa_feedback = metadata.get("qa_feedback")
+            if isinstance(qa_feedback, list):
+                qa_feedback = json.dumps(qa_feedback) if qa_feedback else None
+            quality_score = metadata.get("quality_score") or task_data.get("quality_score")
+            seo_title = metadata.get("seo_title")
+            seo_description = metadata.get("seo_description")
+            seo_keywords = metadata.get("seo_keywords")
+            models_used_by_phase = task_data.get("models_used_by_phase") or {}
+
+            task_type = task_data.get("task_type", "blog_post")
 
             async with self.pool.acquire() as conn:
-                result = await conn.fetchval(sql, *params)
-                logger.info(
-                    "Task added: %s | user_id=%s | task_type=%s",
-                    task_id,
-                    task_data.get("user_id", "unknown"),
-                    task_data.get("task_type", "unknown"),
-                )
-                return str(result)
+                async with conn.transaction():
+                    await conn.execute(
+                        """
+                        INSERT INTO pipeline_tasks (
+                            task_id, task_type, topic, status, stage,
+                            site_id, style, tone, target_length,
+                            category, primary_keyword, target_audience,
+                            percentage, message, model_used,
+                            error_message, created_at, updated_at
+                        ) VALUES (
+                            $1, $2, $3, $4, $5,
+                            $6, $7, $8, $9,
+                            $10, $11, $12,
+                            $13, $14, $15,
+                            $16, $17, $17
+                        )
+                        """,
+                        task_id,
+                        task_type,
+                        task_data.get("topic", ""),
+                        task_data.get("status", "pending"),
+                        metadata.get("stage", "pending"),
+                        task_data.get("site_id"),
+                        task_data.get("style", "technical"),
+                        task_data.get("tone", "professional"),
+                        task_data.get("target_length", 1500),
+                        task_data.get("category"),
+                        task_data.get("primary_keyword"),
+                        task_data.get("target_audience"),
+                        metadata.get("percentage", 0),
+                        metadata.get("message"),
+                        task_data.get("model_used"),
+                        task_data.get("error_message"),
+                        now,
+                    )
+                    await conn.execute(
+                        """
+                        INSERT INTO pipeline_versions (
+                            task_id, version, title, content, excerpt,
+                            featured_image_url, seo_title, seo_description,
+                            seo_keywords, quality_score, qa_feedback,
+                            models_used_by_phase, stage_data, created_at
+                        ) VALUES (
+                            $1, 1, $2, $3, $4,
+                            $5, $6, $7,
+                            $8, $9, $10,
+                            $11::jsonb, $12::jsonb, $13
+                        )
+                        ON CONFLICT (task_id, version) DO UPDATE
+                           SET title = COALESCE(EXCLUDED.title, pipeline_versions.title),
+                               content = COALESCE(EXCLUDED.content, pipeline_versions.content),
+                               stage_data = pipeline_versions.stage_data || EXCLUDED.stage_data
+                        """,
+                        task_id,
+                        title,
+                        content,
+                        excerpt,
+                        featured_image_url,
+                        seo_title,
+                        seo_description,
+                        seo_keywords,
+                        quality_score,
+                        json.dumps(qa_feedback) if isinstance(qa_feedback, (dict, list)) else qa_feedback,
+                        json.dumps(models_used_by_phase),
+                        json.dumps(stage_data, default=str),
+                        now,
+                    )
+            logger.info(
+                "Task added: %s | user_id=%s | task_type=%s",
+                task_id,
+                task_data.get("user_id", "unknown"),
+                task_type,
+            )
+            return str(task_id)
         except Exception as e:
             logger.error("Failed to add task: %s", e, exc_info=True)
             raise
@@ -272,6 +345,10 @@ class TasksDatabase(DatabaseServiceMixin):
         Inserts core task columns only (not content/SEO/image fields).
         For tasks that need all columns, use add_task() individually.
 
+        Per #188: writes go directly to pipeline_tasks + pipeline_versions
+        (the underlying tables) — content_tasks is a view and INSERTs into
+        it raise ``ObjectNotInPrerequisiteStateError`` in production.
+
         Args:
             tasks: List of task data dicts with keys like task_name, topic, status, etc.
 
@@ -282,8 +359,9 @@ class TasksDatabase(DatabaseServiceMixin):
             return []
 
         now = datetime.now(timezone.utc)
-        rows = []
-        task_ids = []
+        pipeline_rows: list[tuple] = []
+        version_rows: list[tuple] = []
+        task_ids: list[str] = []
 
         for task_data in tasks:
             task_id = task_data.get("id", task_data.get("task_id", str(uuid4())))
@@ -293,6 +371,8 @@ class TasksDatabase(DatabaseServiceMixin):
 
             metadata = task_data.get("task_metadata") or task_data.get("metadata", {})
             metadata = safe_json_load(metadata, fallback={})
+            if not isinstance(metadata, dict):
+                metadata = {}
             if "task_name" in task_data and "task_name" not in metadata:
                 metadata["task_name"] = task_data["task_name"]
             # #231: fields that don't exist as columns get stashed in
@@ -305,44 +385,69 @@ class TasksDatabase(DatabaseServiceMixin):
                 if task_data.get(k) and k not in metadata:
                     metadata[k] = task_data.get(k)
 
-            rows.append(
+            # Mirror the view's projection of task_metadata + metadata
+            # via stage_data. See add_task() for the full rationale.
+            stage_data: dict[str, Any] = {"task_metadata": metadata}
+            raw_metadata = task_data.get("metadata")
+            if raw_metadata is not None:
+                _md = safe_json_load(raw_metadata, fallback={}) or {}
+                if _md:
+                    stage_data["metadata"] = _md
+
+            pipeline_rows.append(
                 (
                     task_id,
-                    task_data.get("content_type") or task_data.get("task_type", "blog_post"),
                     task_data.get("task_type", "blog_post"),
-                    task_data.get("status", "pending"),
                     task_data.get("topic", ""),
-                    task_data.get("title") or task_data.get("task_name"),
+                    task_data.get("status", "pending"),
+                    "pending",  # stage
+                    task_data.get("site_id"),
                     task_data.get("style", "technical"),
                     task_data.get("tone", "professional"),
                     task_data.get("target_length", 1500),
+                    task_data.get("category"),
                     task_data.get("primary_keyword"),
                     task_data.get("target_audience"),
-                    task_data.get("category"),
-                    task_data.get("approval_status", "pending"),
-                    json.dumps(metadata or {}),
-                    task_data.get("site_id"),
                     now,
+                )
+            )
+            version_rows.append(
+                (
+                    task_id,
+                    task_data.get("title") or task_data.get("task_name"),
+                    json.dumps(stage_data, default=str),
                     now,
                 )
             )
 
-        sql = """
-            INSERT INTO content_tasks (
-                task_id, content_type, task_type, status, topic,
-                title, style, tone, target_length, primary_keyword,
-                target_audience, category, approval_status, task_metadata,
-                site_id, created_at, updated_at
+        pipeline_sql = """
+            INSERT INTO pipeline_tasks (
+                task_id, task_type, topic, status, stage,
+                site_id, style, tone, target_length,
+                category, primary_keyword, target_audience,
+                created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                $12, $13, $14, $15, $16, $17
+                $1, $2, $3, $4, $5,
+                $6, $7, $8, $9,
+                $10, $11, $12,
+                $13, $13
             )
+        """
+
+        version_sql = """
+            INSERT INTO pipeline_versions (
+                task_id, version, title, stage_data, created_at
+            ) VALUES (
+                $1, 1, $2, $3::jsonb, $4
+            )
+            ON CONFLICT (task_id, version) DO NOTHING
         """
 
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
-                    await conn.executemany(sql, rows)
+                    await conn.executemany(pipeline_sql, pipeline_rows)
+                    await conn.executemany(version_sql, version_rows)
             logger.info("Bulk created %d tasks", len(task_ids))
             return task_ids
         except Exception as e:

@@ -60,6 +60,7 @@ def _make_pool(
     execute_result=None,
     fetchrow_side_effect=None,
     fetch_side_effect=None,
+    execute_side_effect=None,
 ):
     conn = MagicMock()
     if fetchrow_side_effect:
@@ -71,7 +72,23 @@ def _make_pool(
     else:
         conn.fetch = AsyncMock(return_value=fetch_result or [])
     conn.fetchval = AsyncMock(return_value=fetchval_result)
-    conn.execute = AsyncMock(return_value=execute_result or "DELETE 1")
+    if execute_side_effect:
+        conn.execute = AsyncMock(side_effect=execute_side_effect)
+    else:
+        conn.execute = AsyncMock(return_value=execute_result or "DELETE 1")
+    conn.executemany = AsyncMock()
+
+    # Add async context manager for conn.transaction() so callers that
+    # wrap their writes in `async with conn.transaction(): …` (notably
+    # add_task / bulk_add_tasks after the #188 view-INSERT fix) work
+    # against this lightweight mock. Each call returns a *fresh* CM so
+    # tests that create multiple tasks against the same pool work.
+    @asynccontextmanager
+    async def _tx_inner():
+        yield
+
+    conn.transaction = MagicMock(side_effect=lambda *a, **kw: _tx_inner())
+
     pool = MagicMock()
 
     @asynccontextmanager
@@ -214,22 +231,31 @@ class TestGetAllTasks:
 class TestAddTask:
     @pytest.mark.asyncio
     async def test_returns_task_id_string(self):
-        pool = _make_pool(fetchval_result="task-uuid-returned")
+        # #188: add_task now writes to pipeline_tasks + pipeline_versions
+        # via conn.execute (not fetchval). The returned task_id is the
+        # one we generated locally, not anything the DB hands back.
+        pool = _make_pool()
         db = _make_db(pool)
 
         result = await db.add_task({"task_name": "Blog post about AI", "topic": "AI"})
         assert isinstance(result, str)
+        assert len(result) > 0
 
     @pytest.mark.asyncio
-    async def test_task_name_stored_in_metadata(self):
-        pool = _make_pool(fetchval_result="t-1")
+    async def test_task_name_returned_as_uuid(self):
+        # Without an explicit id/task_id, add_task generates a UUID
+        # locally and returns it. The fetchval_result mock from the
+        # pre-#188 era is no longer wired through anything.
+        pool = _make_pool()
         db = _make_db(pool)
         result = await db.add_task({"task_name": "My Task", "topic": "Tech"})
-        assert result == "t-1"
+        assert isinstance(result, str)
+        # Generated UUIDs follow the standard hyphenated format
+        assert result.count("-") == 4
 
     @pytest.mark.asyncio
     async def test_custom_task_id_used(self):
-        pool = _make_pool(fetchval_result="custom-id-123")
+        pool = _make_pool()
         db = _make_db(pool)
 
         result = await db.add_task({"id": "custom-id-123", "topic": "AI"})
@@ -237,13 +263,74 @@ class TestAddTask:
 
     @pytest.mark.asyncio
     async def test_db_error_raises(self):
-        pool = _make_pool(fetchval_result=None)
-        async with pool.acquire() as conn:
-            conn.fetchval = AsyncMock(side_effect=RuntimeError("DB down"))
-
+        # The pipeline_tasks INSERT runs via conn.execute now (#188);
+        # any DB-side failure must bubble up, not get swallowed.
+        pool = _make_pool(execute_side_effect=RuntimeError("DB down"))
         db = _make_db(pool)
         with pytest.raises(RuntimeError):
             await db.add_task({"topic": "AI"})
+
+    @pytest.mark.asyncio
+    async def test_writes_to_pipeline_tasks_not_view(self):
+        """#188 regression guard — INSERTs must target pipeline_tasks
+        (the underlying table), never content_tasks (the view).
+        """
+        captured: list[str] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append(sql)
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.add_task({"id": "t-1", "topic": "AI"})
+
+        joined = "\n".join(captured)
+        assert "pipeline_tasks" in joined
+        assert "pipeline_versions" in joined
+        assert "INSERT INTO content_tasks" not in joined
+
+    @pytest.mark.asyncio
+    async def test_metadata_routed_into_stage_data(self):
+        """task_metadata + metadata payloads must land inside
+        pipeline_versions.stage_data (which the view re-projects).
+        """
+        captured_args: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured_args.append((sql, args))
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.add_task({
+            "id": "t-1",
+            "topic": "AI",
+            "task_metadata": {"k": "v"},
+            "metadata": {"discovered_by": "test"},
+        })
+
+        # The pipeline_versions INSERT is the second call; its stage_data
+        # arg (positional 12 in our INSERT signature → args index 11
+        # since first arg is task_id).
+        versions_call = next(
+            (sql, args) for sql, args in captured_args
+            if "pipeline_versions" in sql
+        )
+        sql, args = versions_call
+        # stage_data is the second-to-last arg (last is created_at).
+        stage_data_json = args[11]
+        stage_data = json.loads(stage_data_json)
+        assert "task_metadata" in stage_data
+        assert stage_data["task_metadata"]["k"] == "v"
+        assert "metadata" in stage_data
+        assert stage_data["metadata"]["discovered_by"] == "test"
 
 
 # ---------------------------------------------------------------------------
@@ -917,15 +1004,20 @@ class TestReleaseTask:
 
 
 def _make_bulk_pool():
-    """Pool that supports both conn.executemany and a transaction context manager."""
+    """Pool that supports executemany + transaction context manager.
+
+    Captures all executemany calls in ``conn.executemany.call_args_list``
+    so tests can assert against both the pipeline_tasks INSERT and the
+    pipeline_versions INSERT (post-#188).
+    """
     conn = MagicMock()
     conn.executemany = AsyncMock()
 
     @asynccontextmanager
-    async def _tx():
+    async def _tx_inner():
         yield
 
-    conn.transaction = MagicMock(return_value=_tx())
+    conn.transaction = MagicMock(side_effect=lambda *a, **kw: _tx_inner())
     pool = MagicMock()
 
     @asynccontextmanager
@@ -959,7 +1051,9 @@ class TestBulkAddTasks:
 
         assert len(result) == 3
         assert all(isinstance(tid, str) for tid in result)
-        conn.executemany.assert_awaited_once()
+        # #188: now two executemany calls — pipeline_tasks +
+        # pipeline_versions — instead of a single content_tasks insert.
+        assert conn.executemany.await_count == 2
 
     @pytest.mark.asyncio
     async def test_uses_provided_task_id_when_present(self):
@@ -992,10 +1086,10 @@ class TestBulkAddTasks:
         pool, conn = _make_bulk_pool()
         db = _make_db(pool)
 
-        captured = {}
+        captured: list[tuple] = []
 
         async def _capture_executemany(sql, rows):
-            captured["rows"] = rows
+            captured.append((sql, rows))
 
         conn.executemany = AsyncMock(side_effect=_capture_executemany)
 
@@ -1005,38 +1099,68 @@ class TestBulkAddTasks:
             "task_metadata": {},
         }])
 
-        # #231: after dropping dead columns, task_metadata moved from
-        # $20 to $14 (positional index 13).
-        row = captured["rows"][0]
-        metadata_json = row[13]
-        metadata = json.loads(metadata_json)
-        assert metadata.get("task_name") == "My Post"
+        # #188: task_metadata now lives inside the pipeline_versions
+        # stage_data JSONB blob (positional arg 2 in the version row:
+        # task_id, title, stage_data_json, created_at).
+        version_call = next(
+            (sql, rows) for sql, rows in captured if "pipeline_versions" in sql
+        )
+        _, rows = version_call
+        stage_data_json = rows[0][2]
+        stage_data = json.loads(stage_data_json)
+        assert stage_data.get("task_metadata", {}).get("task_name") == "My Post"
 
     @pytest.mark.asyncio
     async def test_default_fields_when_unspecified(self):
         pool, conn = _make_bulk_pool()
         db = _make_db(pool)
 
-        captured = {}
+        captured: list[tuple] = []
 
         async def _capture(sql, rows):
-            captured["rows"] = rows
+            captured.append((sql, rows))
 
         conn.executemany = AsyncMock(side_effect=_capture)
 
         await db.bulk_add_tasks([{"topic": "AI"}])
 
-        row = captured["rows"][0]
-        # #231: column positions shifted after dropping dead columns.
-        # New order: task_id, content_type, task_type, status, topic,
-        #            title, style, tone, target_length, primary_keyword,
-        #            target_audience, category, approval_status,
-        #            task_metadata, site_id, created_at, updated_at.
-        assert row[2] == "blog_post"   # task_type
-        assert row[3] == "pending"     # status
-        assert row[6] == "technical"   # style
+        # #188: pipeline_tasks INSERT positional row layout:
+        #   $1 task_id, $2 task_type, $3 topic, $4 status, $5 stage,
+        #   $6 site_id, $7 style, $8 tone, $9 target_length,
+        #   $10 category, $11 primary_keyword, $12 target_audience,
+        #   $13 created_at (used twice for created_at + updated_at)
+        pt_call = next(
+            (sql, rows) for sql, rows in captured if "pipeline_tasks" in sql
+        )
+        _, rows = pt_call
+        row = rows[0]
+        assert row[1] == "blog_post"     # task_type
+        assert row[3] == "pending"       # status
+        assert row[4] == "pending"       # stage
+        assert row[6] == "technical"     # style
         assert row[7] == "professional"  # tone
-        assert row[8] == 1500          # target_length
+        assert row[8] == 1500            # target_length
+
+    @pytest.mark.asyncio
+    async def test_writes_to_pipeline_tables_not_view(self):
+        """#188 regression guard — bulk_add_tasks must INSERT into
+        pipeline_tasks + pipeline_versions, never content_tasks (view).
+        """
+        pool, conn = _make_bulk_pool()
+        db = _make_db(pool)
+
+        seen_sql: list[str] = []
+
+        async def _capture(sql, rows):
+            seen_sql.append(sql)
+
+        conn.executemany = AsyncMock(side_effect=_capture)
+        await db.bulk_add_tasks([{"topic": "AI"}])
+
+        joined = "\n".join(seen_sql)
+        assert "pipeline_tasks" in joined
+        assert "pipeline_versions" in joined
+        assert "INSERT INTO content_tasks" not in joined
 
     @pytest.mark.asyncio
     async def test_db_exception_raised(self):
@@ -1046,6 +1170,120 @@ class TestBulkAddTasks:
 
         with pytest.raises(RuntimeError, match="unique violation"):
             await db.bulk_add_tasks([{"topic": "x"}])
+
+
+# ---------------------------------------------------------------------------
+# #188 regression — add_task / bulk_add_tasks against a real Postgres DB
+# ---------------------------------------------------------------------------
+#
+# These tests run against the per-session ``db_pool`` fixture (a real
+# Postgres instance with all migrations applied) and exist solely to
+# catch the kind of view-vs-table drift that took down the pipeline for
+# 2 days in #188.
+#
+# If the DB driver swings INSERTs back at the content_tasks view, asyncpg
+# will raise ``ObjectNotInPrerequisiteStateError: cannot insert into view``
+# and these tests will fail loud at CI time rather than at runtime. They
+# skip gracefully when no live Postgres is reachable.
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio(loop_scope="session")
+class TestAddTaskAgainstRealDb:
+    """#188: regression guard — add_task() must succeed against a real
+    Postgres regardless of whether the content_tasks view's INSTEAD OF
+    triggers are present. We INSERT into pipeline_tasks + pipeline_versions
+    directly, so the trigger state is irrelevant.
+    """
+
+    async def test_add_task_writes_row_visible_via_view(self, db_pool):
+        from services.tasks_db import TasksDatabase
+
+        db = TasksDatabase(pool=db_pool)
+        task_id = await db.add_task({
+            "topic": "issue-188 regression",
+            "task_type": "blog_post",
+            "category": "test_188",
+            "task_metadata": {"source": "test_188", "discovered_by": "regression"},
+        })
+        assert task_id
+
+        # Read back through the view — the projected columns must match.
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT topic, task_type, content_type, status, "
+                "category, task_metadata, metadata "
+                "FROM content_tasks WHERE task_id = $1",
+                task_id,
+            )
+
+        assert row is not None, "row must round-trip via the view"
+        assert row["topic"] == "issue-188 regression"
+        assert row["task_type"] == "blog_post"
+        assert row["content_type"] == "blog_post"  # view-derived from task_type
+        assert row["status"] == "pending"
+        assert row["category"] == "test_188"
+
+        meta = row["task_metadata"]
+        if isinstance(meta, str):
+            meta = json.loads(meta)
+        assert meta.get("source") == "test_188"
+        assert meta.get("discovered_by") == "regression"
+
+        # Cleanup
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM pipeline_tasks WHERE task_id = $1", task_id)
+
+    async def test_bulk_add_tasks_writes_rows_visible_via_view(self, db_pool):
+        from services.tasks_db import TasksDatabase
+
+        db = TasksDatabase(pool=db_pool)
+        ids = await db.bulk_add_tasks([
+            {"topic": "188-bulk-A", "category": "test_188_bulk", "task_name": "Bulk A"},
+            {"topic": "188-bulk-B", "category": "test_188_bulk", "task_name": "Bulk B"},
+        ])
+        assert len(ids) == 2
+
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT topic, title, status FROM content_tasks "
+                "WHERE category = $1 ORDER BY topic ASC",
+                "test_188_bulk",
+            )
+
+        assert [r["topic"] for r in rows] == ["188-bulk-A", "188-bulk-B"]
+        assert [r["title"] for r in rows] == ["Bulk A", "Bulk B"]
+        assert all(r["status"] == "pending" for r in rows)
+
+        # Cleanup
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM pipeline_tasks WHERE task_id = ANY($1::text[])",
+                ids,
+            )
+
+    async def test_add_task_does_not_raise_view_insert_error(self, db_pool):
+        """Direct guard against the original #188 symptom:
+        ``asyncpg.exceptions.ObjectNotInPrerequisiteStateError:
+        cannot insert into view "content_tasks"``.
+        """
+        import asyncpg
+        from services.tasks_db import TasksDatabase
+
+        db = TasksDatabase(pool=db_pool)
+        try:
+            task_id = await db.add_task({
+                "topic": "188-no-view-error",
+                "category": "test_188_view_guard",
+            })
+        except asyncpg.exceptions.ObjectNotInPrerequisiteStateError as e:
+            pytest.fail(
+                f"add_task() raised the #188 view-INSERT error: {e}. "
+                "Writes must target pipeline_tasks, not content_tasks."
+            )
+
+        async with db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM pipeline_tasks WHERE task_id = $1", task_id)
 
 
 # ---------------------------------------------------------------------------

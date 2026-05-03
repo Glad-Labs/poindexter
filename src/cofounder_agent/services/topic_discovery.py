@@ -327,11 +327,12 @@ class TopicDiscovery:
             return 1200  # fallback
 
         queued = 0
+        from uuid import uuid4
         for topic in topics:
             try:
                 target_length = _pick_length()
                 style, tone = random.choice(_STYLES)
-                metadata = json.dumps({
+                metadata_payload = {
                     "category": str(topic.category or "technology"),
                     "source": str(topic.source or "unknown"),
                     "source_url": str(topic.source_url or ""),
@@ -339,11 +340,35 @@ class TopicDiscovery:
                     "target_length": target_length,
                     "style": style,
                     "tone": tone,
-                })
-                await self.pool.execute("""
-                    INSERT INTO content_tasks (task_id, task_type, content_type, topic, status, metadata)
-                    VALUES (gen_random_uuid()::text, 'blog_post', 'blog_post', $1::text, 'pending', $2::jsonb)
-                """, str(topic.title), metadata)
+                }
+                # #188: content_tasks is a view; INSERT directly into the
+                # underlying pipeline_tasks + pipeline_versions tables.
+                # The view re-projects stage_data->metadata back as the
+                # `metadata` column for downstream readers.
+                stage_data = json.dumps({"metadata": metadata_payload})
+                task_id = str(uuid4())
+                async with self.pool.acquire() as conn:
+                    async with conn.transaction():
+                        await conn.execute(
+                            """
+                            INSERT INTO pipeline_tasks
+                              (task_id, task_type, topic, status, stage,
+                               style, tone, target_length, category)
+                            VALUES ($1, 'blog_post', $2::text, 'pending', 'pending',
+                                    $3, $4, $5, $6)
+                            """,
+                            task_id, str(topic.title), style, tone,
+                            target_length, str(topic.category or "technology"),
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO pipeline_versions
+                              (task_id, version, title, stage_data, created_at)
+                            VALUES ($1, 1, $2, $3::jsonb, NOW())
+                            ON CONFLICT (task_id, version) DO NOTHING
+                            """,
+                            task_id, str(topic.title), stage_data,
+                        )
                 queued += 1
                 logger.info("[TOPIC_DISCOVERY] Queued: %s [%s]", topic.title[:50], topic.category)
             except Exception as e:

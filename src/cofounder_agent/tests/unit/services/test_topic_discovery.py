@@ -207,11 +207,39 @@ class TestDeduplicate:
 # ===========================================================================
 
 
+def _make_qt_pool(execute_side_effect=None):
+    """Build a pool whose acquire() yields a conn with execute +
+    transaction support. #188 — queue_topics now writes to
+    pipeline_tasks + pipeline_versions inside a transaction.
+    """
+    from contextlib import asynccontextmanager
+
+    conn = MagicMock()
+    if execute_side_effect:
+        conn.execute = AsyncMock(side_effect=execute_side_effect)
+    else:
+        conn.execute = AsyncMock()
+
+    @asynccontextmanager
+    async def _tx_inner():
+        yield
+
+    conn.transaction = MagicMock(side_effect=lambda *a, **kw: _tx_inner())
+
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield conn
+
+    pool.acquire = _acquire
+    return pool, conn
+
+
 class TestQueueTopics:
     @pytest.mark.asyncio
     async def test_queues_to_database(self):
-        pool = AsyncMock()
-        pool.execute = AsyncMock()
+        pool, conn = _make_qt_pool()
         d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title="New Topic", category="technology",
@@ -219,12 +247,13 @@ class TestQueueTopics:
         ]
         queued = await d.queue_topics(topics)
         assert queued == 1
-        pool.execute.assert_awaited_once()
+        # #188: each topic now triggers TWO INSERTs (pipeline_tasks +
+        # pipeline_versions) inside a single transaction.
+        assert conn.execute.await_count == 2
 
     @pytest.mark.asyncio
     async def test_handles_db_error(self):
-        pool = AsyncMock()
-        pool.execute = AsyncMock(side_effect=Exception("unique violation"))
+        pool, conn = _make_qt_pool(execute_side_effect=Exception("unique violation"))
         d = TopicDiscovery(pool)
         topics = [DiscoveredTopic(title="Dup", category="tech", source="hn", source_url="")]
         queued = await d.queue_topics(topics)
@@ -232,8 +261,7 @@ class TestQueueTopics:
 
     @pytest.mark.asyncio
     async def test_queues_multiple_topics(self):
-        pool = AsyncMock()
-        pool.execute = AsyncMock()
+        pool, conn = _make_qt_pool()
         d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title=f"Topic {i}", category="technology",
@@ -242,18 +270,26 @@ class TestQueueTopics:
         ]
         queued = await d.queue_topics(topics)
         assert queued == 5
-        assert pool.execute.await_count == 5
+        # 5 topics * 2 INSERTs each = 10 execute calls
+        assert conn.execute.await_count == 10
 
     @pytest.mark.asyncio
     async def test_partial_failure_counts_successes(self):
-        pool = AsyncMock()
+        # First topic: 2 successful executes.
+        # Second topic: first execute (pipeline_tasks) fails -> raise.
+        # Third topic: 2 successful executes.
+        # Total expected execute calls: 2 + 1 (failing) + 2 = 5,
+        # successful queued count = 2.
         call_count = 0
+
         async def _side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            if call_count == 2:
+            # Topic 2 fails on its first execute (call #3 overall)
+            if call_count == 3:
                 raise Exception("DB error on second topic")
-        pool.execute = AsyncMock(side_effect=_side_effect)
+
+        pool, conn = _make_qt_pool(execute_side_effect=_side_effect)
         d = TopicDiscovery(pool)
         topics = [
             DiscoveredTopic(title=f"Topic {i}", category="tech", source="hn", source_url="")
@@ -261,6 +297,26 @@ class TestQueueTopics:
         ]
         queued = await d.queue_topics(topics)
         assert queued == 2  # 1st and 3rd succeed
+
+    @pytest.mark.asyncio
+    async def test_writes_to_pipeline_tables_not_view(self):
+        """#188 regression guard — queue_topics must INSERT into
+        pipeline_tasks + pipeline_versions, never content_tasks.
+        """
+        seen: list[str] = []
+
+        async def _capture(sql, *args, **kwargs):
+            seen.append(sql)
+
+        pool, conn = _make_qt_pool(execute_side_effect=_capture)
+        d = TopicDiscovery(pool)
+        topics = [DiscoveredTopic(title="X", category="tech", source="hn", source_url="")]
+        await d.queue_topics(topics)
+
+        joined = "\n".join(seen)
+        assert "pipeline_tasks" in joined
+        assert "pipeline_versions" in joined
+        assert "INSERT INTO content_tasks" not in joined
 
 
 # ===========================================================================

@@ -691,7 +691,8 @@ class TopicBatchService:
         batch_id: UUID,
     ) -> None:
         """Advance the winning candidate into the existing content
-        pipeline by inserting a ``content_tasks`` row.
+        pipeline by inserting directly into ``pipeline_tasks`` (the
+        underlying table — see #188).
 
         Uses the operator-edited topic/angle when present, otherwise
         falls back to the candidate's title/summary.
@@ -701,26 +702,51 @@ class TopicBatchService:
         plan body originally threaded ``winner.id`` here, which would
         have made provenance point at the candidate row that owns the
         topic and broken the FK to ``topic_batches``.
+
+        The angle/summary lives in ``pipeline_versions.stage_data``
+        under ``metadata.angle`` so the writer dispatcher can read it
+        back via the ``content_tasks`` view's ``metadata`` projection.
         """
+        from uuid import uuid4
+
         topic = winner.operator_edited_topic or winner.title
         angle = winner.operator_edited_angle or winner.summary or ""
-        # task_id, task_type, and content_type are NOT NULL on
-        # content_tasks; the legacy code path (topic_discovery.py:344)
-        # supplies task_id via gen_random_uuid()::text and sets both
-        # task_type and content_type to 'blog_post'. Mirror that here so
-        # the INSERT doesn't trip NotNullViolationError at runtime.
+        task_id = str(uuid4())
+
+        # task_id and task_type are NOT NULL on pipeline_tasks. The
+        # legacy code path supplied task_type='blog_post'; preserve that.
+        # `content_type` is a view-only computed column (= task_type),
+        # so we don't write it directly — readers get it back via the
+        # content_tasks view.
+        stage_data = {
+            "metadata": {
+                "angle": angle,
+                "summary": winner.summary,
+                "source": "topic_batch",
+                "niche_slug": niche.slug,
+            }
+        }
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO content_tasks
-                  (task_id, task_type, content_type,
-                   topic, description, status, stage,
-                   niche_slug, writer_rag_mode, topic_batch_id)
-                VALUES (gen_random_uuid()::text, 'blog_post', 'blog_post',
-                        $1, $2, 'pending', 'pending', $3, $4, $5)
-                """,
-                topic, angle, niche.slug, niche.writer_rag_mode, batch_id,
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO pipeline_tasks
+                      (task_id, task_type, topic, status, stage,
+                       niche_slug, writer_rag_mode, topic_batch_id)
+                    VALUES ($1, 'blog_post', $2, 'pending', 'pending',
+                            $3, $4, $5)
+                    """,
+                    task_id, topic, niche.slug, niche.writer_rag_mode, batch_id,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO pipeline_versions
+                      (task_id, version, title, stage_data, created_at)
+                    VALUES ($1, 1, $2, $3::jsonb, NOW())
+                    ON CONFLICT (task_id, version) DO NOTHING
+                    """,
+                    task_id, topic, json.dumps(stage_data, default=str),
+                )
 
 
 def _json(obj: Any) -> str:
