@@ -30,15 +30,15 @@ def _make_pool():
 
 @pytest.fixture(autouse=True)
 def _reset_module_state():
+    # _created_issues was removed when the Gitea-issue auto-create helper
+    # was deleted (Gitea decommissioned 2026-04-30).
     hp._last_run.clear()
     hp._failure_counts.clear()
-    hp._created_issues.clear()
     hp._last_remediation.clear()
     hp._config_synced = False
     yield
     hp._last_run.clear()
     hp._failure_counts.clear()
-    hp._created_issues.clear()
     hp._last_remediation.clear()
     hp._config_synced = False
 
@@ -171,20 +171,11 @@ class TestRestartContainer:
         assert "error" in msg
 
 
-@pytest.mark.unit
-class TestCreateGiteaIssue:
-    def test_skips_duplicate(self):
-        hp._created_issues.add("already_made")
-        with patch("urllib" + ".request.urlopen") as mock_open:
-            hp._create_gitea_issue("already_made", "some detail")
-        mock_open.assert_not_called()
-
-    def test_creates_when_new(self):
-        fake_resp = MagicMock()
-        fake_resp.status = 201
-        with patch("urllib" + ".request.urlopen", return_value=fake_resp):
-            hp._create_gitea_issue("fresh_probe", "went boom")
-        assert "fresh_probe" in hp._created_issues
+# TestCreateGiteaIssue removed 2026-05-03 alongside the underlying
+# `_create_gitea_issue` helper and `_created_issues` dedupe set —
+# Gitea was decommissioned 2026-04-30, the auto-create paper trail
+# went with it. Probe-failure escalation now goes only through
+# `notify_operator` (Telegram + Discord) + `alert_events`.
 
 
 @pytest.mark.unit
@@ -266,8 +257,7 @@ class TestPerProbeSpans:
             {"fake_ok": ok_probe, "fake_fail": fail_probe},
             clear=True,
         ), \
-            patch.object(hp, "_is_due", return_value=True), \
-            patch.object(hp, "_create_gitea_issue"):
+            patch.object(hp, "_is_due", return_value=True):
             hp._config_synced = True
             p = _make_pool()
             await hp.run_health_probes(p, notify_fn=None)
@@ -299,8 +289,7 @@ class TestPerProbeSpans:
         with patch.dict(
             hp.PROBES, {"crashy": crashy_probe}, clear=True,
         ), \
-            patch.object(hp, "_is_due", return_value=True), \
-            patch.object(hp, "_create_gitea_issue"):
+            patch.object(hp, "_is_due", return_value=True):
             hp._config_synced = True
             p = _make_pool()
             await hp.run_health_probes(p, notify_fn=None)

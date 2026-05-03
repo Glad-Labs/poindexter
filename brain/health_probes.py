@@ -8,6 +8,7 @@ Results are stored in brain_knowledge for trend analysis.
 Standalone: only depends on asyncpg + urllib (no FastAPI imports).
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -117,44 +118,14 @@ async def _sync_config_from_db(pool):
     except Exception as e:
         logger.warning("[PROBES] Failed to sync config from DB, using env defaults: %s", e)
 
-# Track which probe issues we've already created (avoid duplicates)
-_created_issues: set = set()
-
-
-def _create_gitea_issue(probe_name: str, detail: str):
-    """Auto-create a Gitea issue when a probe fails 3x consecutively."""
-    if probe_name in _created_issues:
-        return  # Already created this session
-    try:
-        import base64
-        auth = base64.b64encode(f"{GITEA_USER}:{GITEA_PASS}".encode()).decode()
-        data = json.dumps({
-            "title": f"ops: Probe '{probe_name}' failing — {detail[:60]}",
-            "body": (
-                f"## Health Probe Failure\n\n"
-                f"**Probe:** `{probe_name}`\n"
-                f"**Error:** {detail}\n"
-                f"**Consecutive failures:** 3+\n"
-                f"**Auto-created by:** brain_daemon health probes\n\n"
-                f"This issue was automatically created when the probe failed 3 consecutive times."
-            ),
-            "labels": [],
-        }).encode()
-        req = urllib.request.Request(
-            f"{GITEA_URL}/api/v1/repos/{GITEA_REPO}/issues",
-            data=data,
-            headers={
-                "Authorization": f"Basic {auth}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        resp = urllib.request.urlopen(req, timeout=5)
-        if resp.status < 300:
-            _created_issues.add(probe_name)
-            logger.info("[PROBES] Created Gitea issue for probe '%s'", probe_name)
-    except Exception as e:
-        logger.debug("[PROBES] Could not create Gitea issue: %s", e)
+# Note: a previous version of this file had a `_create_gitea_issue` helper
+# that auto-filed Gitea tickets on 3-consecutive probe failures. Gitea was
+# decommissioned 2026-04-30 (see CLAUDE.md "Deployment" section); the
+# helper was removed in the same PR that wrapped these probes for async-
+# correctness. The `_created_issues` dedupe set used to live here too —
+# see `_failure_counts` below for the still-live consecutive-failure
+# tracking that drives notification escalation, which goes through the
+# brain's `notify_operator` (Telegram + Discord) instead now.
 
 # Probe schedules (seconds between runs)
 PROBE_SCHEDULES = {
@@ -242,7 +213,7 @@ async def probe_db_ping(pool) -> dict:
 
 async def probe_ollama_models(_pool) -> dict:
     """Probe: List Ollama models — verify expected models are loaded."""
-    ok, result = _http_json(f"{LOCAL_OLLAMA}/api/tags", timeout=5)
+    ok, result = await asyncio.to_thread(_http_json, f"{LOCAL_OLLAMA}/api/tags", timeout=5)
     if not ok:
         return {"ok": False, "detail": f"Ollama unreachable: {result.get('error', 'unknown')}", "models": []}
 
@@ -284,7 +255,8 @@ async def probe_quality_score(pool) -> dict:
 
 async def probe_content_gen(_pool) -> dict:
     """Probe: Check Ollama can generate text — 1-sentence test."""
-    ok, result = _http_json(
+    ok, result = await asyncio.to_thread(
+        _http_json,
         f"{LOCAL_OLLAMA}/api/generate",
         method="POST",
         data={
@@ -297,7 +269,8 @@ async def probe_content_gen(_pool) -> dict:
     )
     if not ok:
         # Try fallback model
-        ok, result = _http_json(
+        ok, result = await asyncio.to_thread(
+            _http_json,
             f"{LOCAL_OLLAMA}/api/generate",
             method="POST",
             data={
@@ -340,7 +313,7 @@ async def probe_affiliate_linker(pool) -> dict:
 async def probe_research_service(pool) -> dict:
     """Probe: Verify research service endpoint responds."""
     api_reachable = True
-    ok, result = _http_json(f"{API_URL}/api/health", timeout=5)
+    ok, result = await asyncio.to_thread(_http_json, f"{API_URL}/api/health", timeout=5)
     if not ok:
         # API unreachable is degraded, not a hard failure — the DB check still matters
         api_reachable = False
@@ -374,25 +347,24 @@ async def probe_image_search(_pool) -> dict:
     if pexels_key:
         return {"ok": True, "detail": "Pexels API key configured (env)"}
     # No env var — check if API endpoint works with a test query
-    ok, result = _http_json(f"{API_URL}/api/health", timeout=5)
+    ok, result = await asyncio.to_thread(_http_json, f"{API_URL}/api/health", timeout=5)
     if not ok:
         return {"ok": True, "detail": "Pexels key not set but not critical — using fallback images"}
     return {"ok": True, "detail": "Pexels key not set — image search will use fallback"}
 
 
-async def probe_grafana_datasources(_pool) -> dict:
-    """Probe: Check all Grafana datasources can connect."""
-    grafana_url = os.getenv("GRAFANA_URL", "http://localhost:3000")
-    grafana_user = os.getenv("GRAFANA_USER", "admin")
-    grafana_pass = os.getenv("GRAFANA_PASSWORD", "admin")
-
+def _check_grafana_datasources_sync(grafana_url: str, grafana_user: str, grafana_pass: str) -> dict:
+    """Sync helper: list Grafana datasources + health-check each. Called via
+    asyncio.to_thread from the async probe so the loop doesn't block on
+    several urllib.urlopen calls in series.
+    """
     try:
         import base64
         auth = base64.b64encode(f"{grafana_user}:{grafana_pass}".encode()).decode()
         # List datasources
         req = urllib.request.Request(
             f"{grafana_url}/api/datasources",
-            headers={"Authorization": f"Basic {auth}"},
+            headers={"Authorization": f"Basic {auth}", "User-Agent": "brain-probe"},
         )
         resp = urllib.request.urlopen(req, timeout=10)
         datasources = json.loads(resp.read())
@@ -405,7 +377,7 @@ async def probe_grafana_datasources(_pool) -> dict:
             try:
                 hc_req = urllib.request.Request(
                     f"{grafana_url}/api/datasources/uid/{uid}/health",
-                    headers={"Authorization": f"Basic {auth}"},
+                    headers={"Authorization": f"Basic {auth}", "User-Agent": "brain-probe"},
                 )
                 hc_resp = urllib.request.urlopen(hc_req, timeout=10)
                 hc_data = json.loads(hc_resp.read())
@@ -421,11 +393,21 @@ async def probe_grafana_datasources(_pool) -> dict:
         return {"ok": False, "detail": f"Grafana unreachable: {str(e)[:100]}"}
 
 
+async def probe_grafana_datasources(_pool) -> dict:
+    """Probe: Check all Grafana datasources can connect."""
+    return await asyncio.to_thread(
+        _check_grafana_datasources_sync,
+        os.getenv("GRAFANA_URL", "http://localhost:3000"),
+        os.getenv("GRAFANA_USER", "admin"),
+        os.getenv("GRAFANA_PASSWORD", "admin"),
+    )
+
+
 async def probe_public_site(_pool) -> dict:
     """Probe: Check the public site returns content (not just 200)."""
     try:
         site_url = os.getenv("SITE_URL", "http://localhost:3000")
-        ok, data = _http_json(f"{site_url}/api/posts?limit=1", timeout=10)
+        ok, data = await asyncio.to_thread(_http_json, f"{site_url}/api/posts?limit=1", timeout=10)
         if not ok:
             return {"ok": False, "detail": f"API unreachable: {data.get('error', 'unknown')}"}
         # Check that posts are actually returned
@@ -605,7 +587,7 @@ async def probe_worker_error_rate(pool) -> dict:
     (3 consecutive failures → Telegram alert).
     """
     try:
-        ok, data = _http_json(f"{API_URL}/api/health")
+        ok, data = await asyncio.to_thread(_http_json, f"{API_URL}/api/health")
         if not ok:
             return {"ok": False, "detail": f"Worker API unreachable: {data.get('error', 'unknown')}"}
 
@@ -839,12 +821,16 @@ async def probe_embeddings_freshness(pool) -> dict:
         return {"ok": False, "detail": str(e)[:200]}
 
 
-async def probe_r2_connectivity(_pool) -> dict:
-    """Probe: Verify R2 CDN is reachable by fetching the podcast feed."""
-    r2_url = os.getenv("R2_PUBLIC_URL", "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev")
+def _check_r2_sync(r2_url: str) -> dict:
+    """Sync helper: GET-with-Range to verify R2 CDN reachability. Called via
+    asyncio.to_thread from the async probe so the urllib call doesn't
+    block the event loop."""
     try:
         # Use GET with Range header to minimize data transfer (R2 blocks HEAD)
-        req = urllib.request.Request(f"{r2_url}/podcast/feed.xml")
+        req = urllib.request.Request(
+            f"{r2_url}/podcast/feed.xml",
+            headers={"User-Agent": "brain-probe"},
+        )
         req.add_header("Range", "bytes=0-64")
         resp = urllib.request.urlopen(req, timeout=10)
         ok = resp.status in (200, 206)
@@ -861,6 +847,14 @@ async def probe_r2_connectivity(_pool) -> dict:
         return {"ok": False, "status_code": e.code, "detail": f"R2 CDN error: HTTP {e.code}"}
     except Exception as e:
         return {"ok": False, "detail": f"R2 CDN unreachable: {str(e)[:100]}"}
+
+
+async def probe_r2_connectivity(_pool) -> dict:
+    """Probe: Verify R2 CDN is reachable by fetching the podcast feed."""
+    return await asyncio.to_thread(
+        _check_r2_sync,
+        os.getenv("R2_PUBLIC_URL", "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"),
+    )
 
 
 async def probe_traffic_anomaly(pool) -> dict:
@@ -1167,9 +1161,11 @@ async def run_health_probes(pool, notify_fn=None):
                     notify_fn(
                         f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
                     )
-                # Auto-create Gitea issue for tracking (always, even for
-                # Prometheus-covered probes — the issue is a paper trail, not a page).
-                _create_gitea_issue(name, detail)
+                # The Gitea-issue auto-create paper trail was removed when
+                # Gitea was decommissioned (2026-04-30). The notify_operator
+                # call above is now the only escalation; the brain's
+                # alert_dispatcher writes a row into alert_events for the
+                # broader monitoring view.
 
     # --- Self-healing: execute remediation actions for persistent failures ---
     for name, count in _failure_counts.items():
