@@ -17,7 +17,7 @@
           {
             "group": "Get Started",
             "pages": [
-              "docs/README",
+              "docs/welcome",
               "docs/operations/local-development-setup",
               "docs/operations/cli-reference",
               "docs/operations/environment-variables"

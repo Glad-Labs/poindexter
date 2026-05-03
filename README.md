@@ -238,7 +238,7 @@ See `src/cofounder_agent/plugins/samples/` for the three shipping samples (`Hell
 
 ## Documentation
 
-Full technical documentation lives under [`docs/`](docs/README.md).
+Full technical documentation lives under [`docs/`](docs/welcome.md).
 Start with the [architecture overview](docs/ARCHITECTURE.md), then
 dive into specific areas:
 
