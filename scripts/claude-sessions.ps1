@@ -1,8 +1,8 @@
-<#
+﻿<#
 .SYNOPSIS
     Scheduled autonomous Claude Code sessions for continuous improvement.
     Each session gets a focused prompt, works in the repo, and exits.
-    All changes go to branches — never commits directly to main.
+    All changes go to branches - never commits directly to main.
 
 .PARAMETER Session
     Which session to run: test-health, test-expansion, issue-resolver,
@@ -16,6 +16,14 @@
 
 .PARAMETER List
     Show all registered Claude session tasks.
+
+.NOTES
+    File MUST be saved as UTF-8 with BOM. Without the BOM, PowerShell 5.1
+    (powershell.exe) parses non-ASCII chars as ANSI/Windows-1252 garbage,
+    breaks string termination, and the whole script fails to run silently
+    (Task Scheduler logs exit code 0x1, no log files appear). The current
+    `param()` block + the prompts below are intentionally ASCII-only so a
+    re-save without BOM still works, but keep BOM as defense in depth.
 
 .EXAMPLE
     .\claude-sessions.ps1 -Session test-health
@@ -37,12 +45,12 @@ $WorkDir  = "C:\Users\mattm\glad-labs-website"
 $LogDir   = "$env:USERPROFILE\.poindexter\logs\claude-sessions"
 $Claude   = "$env:USERPROFILE\.local\bin\claude.exe"
 $TaskPrefix = "Claude Session"
-$RepoPreamble = "Your working directory on launch is C:\Users\mattm. Before running ANY shell commands, cd into C:\Users\mattm\glad-labs-website — that is where the repo lives. All relative paths below are relative to the repo root. "
+$RepoPreamble = "Your working directory on launch is C:\Users\mattm. Before running ANY shell commands, cd into C:\Users\mattm\glad-labs-website - that is where the repo lives. All relative paths below are relative to the repo root. Two GitHub repos: Glad-Labs/glad-labs-stack (private, full tree, push here for daily work) and Glad-Labs/poindexter (public mirror, auto-synced via GitHub Action). Issue routing: public product bugs/features -> Glad-Labs/poindexter; operator/business/Glad-Labs-only -> Glad-Labs/glad-labs-stack. Use the gh CLI for all GitHub operations (gh pr create, gh issue list, etc.). Gitea was decommissioned 2026-04-30 - do NOT use forgejo MCP tools or any localhost:3001 URLs. "
 
 # Session definitions: name, prompt, schedule, max duration
 $Sessions = @{
     "test-health" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Run the full Python test suite: cd src/cofounder_agent && python -m pytest tests/unit/ -q --tb=short -p no:cacheprovider. If tests pass, exit with no changes. If tests fail, analyze whether they are simple bugs (wrong mocks, stale assertions, missing imports). Fix the simple ones only. For complex failures, add a # FIXME comment. Use the forgejo MCP tools for Gitea. Create branch auto/test-fixes-{date}, commit, push via git, and create a Gitea PR against main. Do NOT modify production code (only files in tests/). Do NOT push to main directly. Do NOT merge the PR yourself — Matt reviews. Keep output minimal."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Run the full Python test suite: cd src/cofounder_agent ; poetry run pytest tests/unit/ -q --tb=short -p no:cacheprovider. (PowerShell 5.1 does not support && - use ; or run as a single bash -c pipeline). If tests pass, exit with no changes. If tests fail, analyze whether they are simple bugs (wrong mocks, stale assertions, missing imports). Fix the simple ones only. For complex failures, add a # FIXME comment. Create branch auto/test-fixes-{date}, commit, git push -u origin, then gh pr create --repo Glad-Labs/glad-labs-stack --base main with a clear title. Do NOT modify production code (only files in tests/). Do NOT push to main directly. Do NOT merge the PR yourself - Matt reviews. Keep output minimal."
         Cron = "0 3 * * *"
         TimeHH = "03"
         TimeMM = "00"
@@ -50,7 +58,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "test-expansion" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Pick ONE existing service test file with low test count (grep 'def test_' tests/unit/services/*.py | cut -d: -f1 | sort | uniq -c | sort -n | head -5). Read that service's source and the existing tests. Add 5-10 NEW test cases covering edge cases and error paths that aren't already covered. Do NOT duplicate existing tests. Run the new tests to verify they pass. Commit to branch auto/test-expand-{date}, push, create a Gitea PR. Do NOT push to main. Keep output minimal."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Pick ONE existing service test file with low test count: ls src/cofounder_agent/tests/unit/services/test_*.py | ForEach-Object { [PSCustomObject]@{ File = `$_.Name; Count = (Select-String -Path `$_ -Pattern '^\s*def test_').Count } } | Sort-Object Count | Select-Object -First 5. Read that service's source and the existing tests. Add 5-10 NEW test cases covering edge cases and error paths that are not already covered. Do NOT duplicate existing tests. Run the new tests to verify they pass. Commit to branch auto/test-expand-{date}, push via git push -u origin, create a GitHub PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
         Cron = "0 4 * * *"
         TimeHH = "04"
         TimeMM = "00"
@@ -58,7 +66,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "issue-resolver" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Use the forgejo MCP tools to list open issues (owner=gladlabs, repo=glad-labs-codebase, state=open, sort=oldest). Pick ONE issue that is clearly scoped, not marked Backlog, and fixable without architectural decisions. Skip anything involving Lemon Squeezy, DNS, secret rotation, or 'Matt decides' clauses. Read the code, understand the bug, make a targeted fix. Commit to branch auto/fix-issue-{number}, push via git, create a Gitea PR referencing the issue. Do NOT close the issue — let Matt merge the PR. Do NOT push to main. If no suitable issue exists, add an analysis comment to ONE issue explaining what you found. Keep output minimal."
+        Prompt = "You are in the glad-labs-website repo running autonomously. List open issues in the public product repo: gh issue list --repo Glad-Labs/poindexter --state open --limit 20 --json number,title,labels. Pick ONE issue that is clearly scoped, not labeled 'feature' or 'epic', and fixable without architectural decisions. Skip anything involving Lemon Squeezy, DNS, secret rotation, or 'Matt decides' clauses. Read the code, understand the bug, make a targeted fix. Commit to branch auto/fix-poindexter-{number}, push via git push -u origin, create a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main referencing the issue (title format: 'fix: <description> (closes Glad-Labs/poindexter#NNN)'). Do NOT close the issue - let Matt merge the PR. Do NOT push to main. If no suitable issue exists, add an analysis comment to ONE issue via gh issue comment explaining what you found. Keep output minimal."
         Cron = "0 5 * * *"
         TimeHH = "05"
         TimeMM = "00"
@@ -66,7 +74,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "codebase-audit" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Run a code quality audit: 1) Unused imports: cd src/cofounder_agent && python -m ruff check --select F401 services/ routes/. 2) Security: python -m bandit -r services/ routes/ -q -ll. 3) Fix only the unused-import issues (safe mechanical fix). For security findings with severity MEDIUM or HIGH, create Gitea issues describing the finding. Commit unused-import fixes to branch auto/audit-{date}, push, create a Gitea PR. Do NOT push to main. Keep output minimal."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Run a code quality audit: 1) Unused imports: cd src/cofounder_agent ; poetry run ruff check --select F401 services/ routes/. 2) Security: poetry run bandit -r services/ routes/ -q -ll. 3) Fix only the unused-import issues (safe mechanical fix). For security findings with severity MEDIUM or HIGH, file GitHub issues via gh issue create --repo Glad-Labs/poindexter --label security describing the finding. Commit unused-import fixes to branch auto/audit-{date}, push via git push -u origin, create a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
         Cron = "0 2 * * 3"
         TimeHH = "02"
         TimeMM = "00"
@@ -74,7 +82,7 @@ $Sessions = @{
         MaxMinutes = 30
     }
     "doc-sync" = @{
-        Prompt = "You are in the glad-labs-website repo running autonomously. Check CLAUDE.md for stale numbers: count tests (python -m pytest tests/unit/ --co -q 2>&1 | tail -1), count services (ls src/cofounder_agent/services/*.py | wc -l), count Grafana dashboards (ls infrastructure/grafana/dashboards/*.json | wc -l). If any CLAUDE.md number is off by >10%, update it. Also verify any referenced file paths in CLAUDE.md still exist. Commit fixes to auto/doc-sync-{date}, push, create a Gitea PR. Do NOT push to main. Keep output minimal."
+        Prompt = "You are in the glad-labs-website repo running autonomously. Check CLAUDE.md for stale numbers: count tests (cd src/cofounder_agent ; poetry run pytest tests/unit/ --co -q 2>&1 | Select-Object -Last 1), count services (Get-ChildItem src/cofounder_agent/services/*.py | Measure-Object | Select Count), count Grafana dashboards (Get-ChildItem infrastructure/grafana/dashboards/*.json | Measure-Object | Select Count). If any CLAUDE.md number is off by more than 10 percent, update it. Also verify any referenced file paths in CLAUDE.md still exist. Commit fixes to auto/doc-sync-{date}, push via git push -u origin, create a PR via gh pr create --repo Glad-Labs/glad-labs-stack --base main. Do NOT push to main. Keep output minimal."
         Cron = "0 5 * * 5"
         TimeHH = "05"
         TimeMM = "00"
