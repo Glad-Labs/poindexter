@@ -12,8 +12,9 @@ MagicMocks for DB behavior.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -21,6 +22,7 @@ from services.jobs.run_dev_diary_post import (
     RunDevDiaryPostJob,
     _LAST_RUN_KEY,
     _NICHE_SLUG,
+    _create_dev_diary_task,
     _format_draft_landed_message,
     _get_last_run_date,
     _set_last_run_date,
@@ -317,3 +319,92 @@ class TestRun:
 
         assert result.ok is False
         assert "gather_context failed" in result.detail
+
+
+# ---------------------------------------------------------------------------
+# _create_dev_diary_task — #341 regression guard (mock pool, no live DB)
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_pool(execute_side_effect=None):
+    """Lightweight pool — ``async with pool.acquire()`` →
+    ``async with conn.transaction()`` → ``await conn.execute(...)``.
+    Mirrors the helpers in test_tasks_db / test_topic_discovery /
+    test_topic_batch_service so all #188/#341 INSERT-target guard tests
+    share a uniform shape.
+    """
+    conn = MagicMock()
+    if execute_side_effect:
+        conn.execute = AsyncMock(side_effect=execute_side_effect)
+    else:
+        conn.execute = AsyncMock()
+
+    @asynccontextmanager
+    async def _tx_inner():
+        yield
+
+    conn.transaction = MagicMock(side_effect=lambda *a, **kw: _tx_inner())
+
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield conn
+
+    pool.acquire = _acquire
+    return pool, conn
+
+
+def _stub_ctx() -> DevDiaryContext:
+    """Minimal DevDiaryContext for the SQL-shape assertions — content
+    of the bundle doesn't matter, only that headline() + to_dict() work.
+    """
+    return DevDiaryContext(
+        date="2026-05-02",
+        merged_prs=[],
+        notable_commits=[],
+        brain_decisions=[],
+        audit_resolved=[],
+        recent_posts=[],
+        cost_summary={"total_usd": 0.0, "total_inferences": 0, "by_model": []},
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio(loop_scope="session")
+class TestCreateDevDiaryTaskSQL:
+    """#341 regression guard — ``_create_dev_diary_task`` must INSERT
+    into ``pipeline_tasks`` + ``pipeline_versions`` (the underlying
+    tables), never into the ``content_tasks`` view (which raises
+    ``ObjectNotInPrerequisiteStateError`` in production).
+    """
+
+    async def test_writes_to_pipeline_tables_not_view(self):
+        seen: list[str] = []
+
+        async def _capture(sql, *args, **kwargs):
+            seen.append(sql)
+            return "INSERT 0 1"
+
+        pool, _conn = _make_mock_pool(execute_side_effect=_capture)
+        await _create_dev_diary_task(pool, _stub_ctx(), gates="draft,final")
+
+        joined = "\n".join(seen)
+        assert "pipeline_tasks" in joined
+        assert "pipeline_versions" in joined
+        assert "INSERT INTO content_tasks" not in joined
+
+    async def test_emits_two_inserts(self):
+        pool, conn = _make_mock_pool()
+        await _create_dev_diary_task(pool, _stub_ctx(), gates="draft,final")
+        # One INSERT into pipeline_tasks, one into pipeline_versions.
+        assert conn.execute.await_count == 2
+
+    async def test_returns_task_id(self):
+        pool, _conn = _make_mock_pool()
+        task_id = await _create_dev_diary_task(
+            pool, _stub_ctx(), gates="draft,final",
+        )
+        assert isinstance(task_id, str)
+        # Generated UUIDs follow the standard hyphenated 8-4-4-4-12 form
+        assert task_id.count("-") == 4

@@ -8,13 +8,16 @@ defined in ``tests/unit/conftest.py``. Skipped automatically when no live
 Postgres DSN is reachable.
 """
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 
-from services.niche_service import NicheService, NicheGoal, NicheSource
+from services.niche_service import Niche, NicheService, NicheGoal, NicheSource
 from services.internal_rag_source import InternalCandidate
-from services.topic_batch_service import TopicBatchService
+from services.topic_batch_service import CandidateView, TopicBatchService
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -403,3 +406,150 @@ async def test_reject_batch_marks_expired_and_can_re_discover(db_pool):
             niche.id,
         )
     assert new_batch_row is not None
+
+
+# ===========================================================================
+# _handoff_to_pipeline — #188/#341 regression guard
+# ===========================================================================
+
+
+def _make_mock_pool(execute_side_effect=None):
+    """Lightweight pool that supports ``async with pool.acquire()`` +
+    ``async with conn.transaction()`` + ``await conn.execute(...)``.
+
+    Mirrors the helpers in ``test_tasks_db.py`` and
+    ``test_topic_discovery.py`` so all #188 INSERT-target guard tests
+    share a uniform shape.
+    """
+    conn = MagicMock()
+    if execute_side_effect:
+        conn.execute = AsyncMock(side_effect=execute_side_effect)
+    else:
+        conn.execute = AsyncMock()
+
+    @asynccontextmanager
+    async def _tx_inner():
+        yield
+
+    conn.transaction = MagicMock(side_effect=lambda *a, **kw: _tx_inner())
+
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield conn
+
+    pool.acquire = _acquire
+    return pool, conn
+
+
+def _make_niche(slug: str = "test-niche") -> Niche:
+    return Niche(
+        id=uuid4(),
+        slug=slug,
+        name="Test",
+        active=True,
+        target_audience_tags=[],
+        writer_prompt_override=None,
+        writer_rag_mode="TOPIC_ONLY",
+        batch_size=5,
+        discovery_cadence_minute_floor=60,
+    )
+
+
+def _make_candidate(title: str = "Why X beats Y") -> CandidateView:
+    return CandidateView(
+        id="cand-1",
+        kind="external",
+        title=title,
+        summary="Short summary",
+        score=0.8,
+        decay_factor=1.0,
+        effective_score=0.8,
+        rank_in_batch=1,
+        operator_rank=1,
+        operator_edited_topic=None,
+        operator_edited_angle=None,
+        score_breakdown={},
+    )
+
+
+@pytest.mark.unit
+class TestHandoffToPipelineSQL:
+    """#341 regression guard — ``_handoff_to_pipeline`` must INSERT into
+    ``pipeline_tasks`` + ``pipeline_versions`` (the underlying tables),
+    never into the ``content_tasks`` view (which raises
+    ``ObjectNotInPrerequisiteStateError`` in production).
+    """
+
+    async def test_writes_to_pipeline_tables_not_view(self):
+        seen: list[str] = []
+
+        async def _capture(sql, *args, **kwargs):
+            seen.append(sql)
+            return "INSERT 0 1"
+
+        pool, _conn = _make_mock_pool(execute_side_effect=_capture)
+        svc = TopicBatchService(pool)
+
+        await svc._handoff_to_pipeline(
+            winner=_make_candidate(),
+            niche=_make_niche(),
+            batch_id=uuid4(),
+        )
+
+        joined = "\n".join(seen)
+        assert "pipeline_tasks" in joined
+        assert "pipeline_versions" in joined
+        assert "INSERT INTO content_tasks" not in joined
+
+    async def test_emits_two_inserts_per_handoff(self):
+        # One INSERT into pipeline_tasks + one into pipeline_versions.
+        pool, conn = _make_mock_pool()
+        svc = TopicBatchService(pool)
+
+        await svc._handoff_to_pipeline(
+            winner=_make_candidate(),
+            niche=_make_niche(),
+            batch_id=uuid4(),
+        )
+
+        assert conn.execute.await_count == 2
+
+    async def test_uses_operator_edits_when_present(self):
+        captured_args: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured_args.append((sql, args))
+            return "INSERT 0 1"
+
+        pool, _conn = _make_mock_pool(execute_side_effect=_capture)
+        svc = TopicBatchService(pool)
+
+        winner = CandidateView(
+            id="cand-1",
+            kind="external",
+            title="Original Title",
+            summary="Original summary",
+            score=0.8,
+            decay_factor=1.0,
+            effective_score=0.8,
+            rank_in_batch=1,
+            operator_rank=1,
+            operator_edited_topic="Operator-Edited Topic",
+            operator_edited_angle="Operator angle",
+            score_breakdown={},
+        )
+
+        await svc._handoff_to_pipeline(
+            winner=winner, niche=_make_niche(), batch_id=uuid4(),
+        )
+
+        # Topic on pipeline_tasks insert must be the operator edit, not
+        # the original candidate title.
+        pipeline_call = next(
+            (sql, args) for sql, args in captured_args
+            if "pipeline_tasks" in sql
+        )
+        _, args = pipeline_call
+        assert "Operator-Edited Topic" in args
