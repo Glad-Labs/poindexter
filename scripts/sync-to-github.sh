@@ -37,6 +37,7 @@ git checkout -b "$TEMP_BRANCH" 2>/dev/null
 git rm -r --cached --quiet web/public-site/ 2>/dev/null || true              # branded Next.js site
 git rm -r --cached --quiet web/storefront/ 2>/dev/null || true               # gladlabs.ai storefront (Lemon Squeezy checkout + copy)
 git rm -r --cached --quiet marketing/ 2>/dev/null || true                    # marketing materials
+git rm -r --cached --quiet packages/ 2>/dev/null || true                     # @glad-labs/brand design tokens (consumed only by stripped surfaces)
 
 # === Internal-only docs (the rest of docs/ ships to public for Mintlify) ===
 # Strip individual subpaths instead of the whole tree — most of docs/ is
@@ -86,6 +87,7 @@ git rm --cached --quiet .github/create-tech-debt-issues.sh 2>/dev/null || true
 git rm --cached --quiet .github/tech-debt-issues.json 2>/dev/null || true
 git rm -r --cached --quiet .github/workflows-disabled/ 2>/dev/null || true
 git rm --cached --quiet .github/workflows/ci.yml 2>/dev/null || true          # Deploy runs from glad-labs-stack, not poindexter
+git rm --cached --quiet .github/workflows/sync-to-public-poindexter.yml 2>/dev/null || true  # The mirror sync ITSELF lives only on glad-labs-stack — shipping it to the public mirror caused recursive runs that fail every time (no POINDEXTER_DEPLOY_KEY secret on the public side) and burn CI minutes
 
 # === Operator-specific files (Glad Labs internal, not customer-facing) ===
 git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full local stack with pgAdmin, SDXL, etc.
