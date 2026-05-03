@@ -49,6 +49,14 @@ try:  # Flat import when brain/ is on sys.path (container runtime).
 except ImportError:  # pragma: no cover — package-qualified path
     from brain.operator_notifier import notify_operator
 
+# Shared brain secret reader — single source of truth for app_settings
+# decryption. Replaces the duplicated _read_secret implementation that
+# used to live below; closes Glad-Labs/poindexter#342.
+try:
+    from secret_reader import read_app_setting as _shared_read_app_setting
+except ImportError:  # pragma: no cover — package-qualified path
+    from brain.secret_reader import read_app_setting as _shared_read_app_setting
+
 try:
     from docker_utils import localize_url
 except ImportError:  # pragma: no cover — package-qualified path
@@ -159,46 +167,11 @@ async def _read_setting(pool, key: str, default: str = "") -> str:
 async def _read_secret(pool, key: str) -> str:
     """Read a (possibly encrypted) secret from app_settings.
 
-    Mirrors the pattern in brain_daemon._BrainSecretReader: plaintext rows
-    come back verbatim; ``enc:v1:`` rows get pgp_sym_decrypt'd with
-    POINDEXTER_SECRET_KEY. The probe degrades to "" on any failure
-    (decryption error, missing key) and the caller treats "" as "not
-    configured yet, skip cycle".
+    Thin wrapper around ``brain.secret_reader.read_app_setting`` so this
+    module's call sites stay readable. Returns ``""`` on any failure;
+    callers treat ``""`` as "not configured yet, skip cycle".
     """
-    import os
-    try:
-        row = await pool.fetchrow(
-            "SELECT value, is_secret FROM app_settings WHERE key = $1",
-            key,
-        )
-    except Exception as exc:
-        logger.warning(
-            "[GLITCHTIP_TRIAGE] Could not read secret %s: %s", key, exc
-        )
-        return ""
-    if not row or not row["value"]:
-        return ""
-    val = row["value"]
-    if not row["is_secret"] or not val.startswith("enc:v1:"):
-        return val
-    pkey = os.getenv("POINDEXTER_SECRET_KEY")
-    if not pkey:
-        logger.warning(
-            "[GLITCHTIP_TRIAGE] POINDEXTER_SECRET_KEY unset — can't decrypt %s",
-            key,
-        )
-        return ""
-    try:
-        return await pool.fetchval(
-            "SELECT pgp_sym_decrypt(decode($1, 'base64'), $2)::text",
-            val[len("enc:v1:"):],
-            pkey,
-        ) or ""
-    except Exception as exc:
-        logger.warning(
-            "[GLITCHTIP_TRIAGE] decrypt %s failed: %s", key, exc
-        )
-        return ""
+    return await _shared_read_app_setting(pool, key, default="")
 
 
 async def _read_rules(pool) -> list[dict[str, Any]]:

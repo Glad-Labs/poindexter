@@ -32,12 +32,21 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+# Shared brain secret reader — re-exported as ``read_app_setting`` for
+# backwards compatibility with anything that imports it from here. The
+# actual decrypt logic lives in ``brain.secret_reader`` so the brain
+# notify path, glitchtip probe, and oauth helper all share one
+# implementation (closes Glad-Labs/poindexter#342).
+try:  # Flat import when brain/ is on sys.path (container runtime).
+    from secret_reader import read_app_setting
+except ImportError:  # pragma: no cover — package-qualified path
+    from brain.secret_reader import read_app_setting
 
 logger = logging.getLogger("brain.oauth_client")
 
@@ -88,53 +97,13 @@ class _CachedToken:
 
 
 # ---------------------------------------------------------------------------
-# Secret loading from app_settings — pgcrypto-aware
-# ---------------------------------------------------------------------------
-
-
-async def read_app_setting(pool, key: str, default: str = "") -> str:
-    """Fetch one app_settings value, decrypting if it's marked secret.
-
-    The brain daemon already does similar inline decryption in
-    ``brain_daemon._BrainSecretReader``; this is the same pattern,
-    extracted so the OAuth helper can live alongside the rest of brain
-    without dragging in the secret reader's prometheus-specific
-    callsite. Decryption mirrors ``services.plugins.secrets.get_secret``:
-    pgcrypto's ``pgp_sym_decrypt`` against ``POINDEXTER_SECRET_KEY``.
-
-    Returns ``default`` when the row is missing, the value is empty,
-    or decryption fails.
-    """
-    row = await pool.fetchrow(
-        "SELECT value, is_secret FROM app_settings WHERE key = $1", key,
-    )
-    if not row:
-        return default
-    val = row["value"]
-    if not val:
-        return default
-    if not row["is_secret"] or not val.startswith("enc:v1:"):
-        return val
-    pkey = os.getenv("POINDEXTER_SECRET_KEY")
-    if not pkey:
-        logger.warning(
-            "[BRAIN.OAUTH] POINDEXTER_SECRET_KEY unset — cannot decrypt %s", key,
-        )
-        return default
-    try:
-        return await pool.fetchval(
-            "SELECT pgp_sym_decrypt(decode($1, 'base64'), $2)::text",
-            val[len("enc:v1:"):],
-            pkey,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[BRAIN.OAUTH] decrypt %s failed: %s", key, exc)
-        return default
-
-
-# ---------------------------------------------------------------------------
 # BrainOAuthClient — the public surface
 # ---------------------------------------------------------------------------
+
+# ``read_app_setting`` is re-exported from ``brain.secret_reader`` at
+# the top of this module for backwards compatibility — keep it here so
+# ``from brain.oauth_client import read_app_setting`` still works for
+# any existing call sites (CLI helpers, tests).
 
 
 class BrainOAuthClient:

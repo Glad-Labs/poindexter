@@ -299,6 +299,115 @@ class TestFormatAlertMessage:
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
+class TestBrainNotifyAdapter:
+    """The brain.notify adapter wraps a sync function that returns
+    True/False — Glad-Labs/poindexter#342 added the bool contract so
+    the dispatcher could record honest dispatch_result values instead
+    of phantom 'sent' rows when the operator's pager was actually
+    silent.
+
+    These tests construct the adapter directly via _resolve_notify_fn
+    and exercise the False/True branches.
+    """
+
+    async def test_adapter_raises_notify_failed_when_underlying_returns_false(
+        self, monkeypatch,
+    ):
+        """notify() returning False → adapter raises NotifyFailed.
+
+        Why an exception instead of bool propagation: poll_and_dispatch
+        already has a try/except that marks the row with
+        ``dispatch_result = 'error: <exc>'``. Raising plugs into that
+        path with zero new code; returning False would have required
+        a second branch that mirrors the same UPDATE.
+        """
+        # Stub a brain_daemon-shaped module with notify -> False.
+        fake_module = MagicMock()
+        fake_module.notify = MagicMock(return_value=False)
+        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        # Force the worker-side notify_operator import to fail so the
+        # resolver falls through to the brain.notify branch.
+        monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
+
+        adapter = await ad._resolve_notify_fn()
+        assert adapter is not None
+
+        with pytest.raises(ad.NotifyFailed):
+            await adapter("test message", critical=True)
+
+        fake_module.notify.assert_called_once_with("test message")
+
+    async def test_adapter_returns_normally_when_underlying_returns_true(
+        self, monkeypatch,
+    ):
+        """notify() returning True → adapter returns (no exception).
+
+        poll_and_dispatch then marks the row dispatch_result='sent'.
+        """
+        fake_module = MagicMock()
+        fake_module.notify = MagicMock(return_value=True)
+        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
+
+        adapter = await ad._resolve_notify_fn()
+        assert adapter is not None
+        # Should not raise.
+        await adapter("test message", critical=False)
+        fake_module.notify.assert_called_once()
+
+    async def test_adapter_treats_none_return_as_success(self, monkeypatch):
+        """Legacy notify() that returns None (pre-#342) keeps working.
+
+        We only treat ``False`` (explicit identity) as failure so
+        callers that haven't been updated yet — or test stubs that
+        don't bother returning a value — don't suddenly start
+        flagging every row as errored.
+        """
+        fake_module = MagicMock()
+        fake_module.notify = MagicMock(return_value=None)
+        monkeypatch.setitem(sys.modules, "brain_daemon", fake_module)
+        monkeypatch.setitem(sys.modules, "services.integrations.operator_notify", None)
+
+        adapter = await ad._resolve_notify_fn()
+        assert adapter is not None
+        # Should not raise.
+        await adapter("test message")
+
+    async def test_dispatcher_marks_error_when_notify_returns_false(
+        self,
+    ):
+        """End-to-end: notify returning False → row gets error mark.
+
+        The integration the operator cares about: an alert lands in
+        ``alert_events``, the dispatcher polls it, the brain notify
+        path returns False (no token, malformed URL, etc.), and the
+        row's ``dispatch_result`` honestly reflects that the page
+        didn't go out instead of recording a fake 'sent'.
+        """
+        rows = [_make_row(row_id=42, severity="critical")]
+        pool = _make_pool(rows)
+
+        # Inject a notify_fn that mimics the adapter's "raise on False"
+        # contract directly, bypassing the resolver chain.
+        async def _fail_notify(message: str, *, critical: bool = False) -> None:
+            raise ad.NotifyFailed("brain.notify reported no channel")
+
+        result = await ad.poll_and_dispatch(pool, notify_fn=_fail_notify)
+
+        # Row was marked errored, NOT sent.
+        assert result == {"polled": 1, "sent": 0, "errors": 1}
+        assert pool.execute.await_count == 1
+        sql, *args = pool.execute.await_args_list[0].args
+        assert "UPDATE alert_events" in sql
+        # Uses the parameterized error path, not the literal 'sent' UPDATE.
+        assert "dispatch_result = $2" in sql
+        assert args[0] == 42
+        assert args[1].startswith("error:")
+        assert "no channel" in args[1]
+
+
+@pytest.mark.unit
 class TestRowToAlertDict:
     """Reshape from asyncpg row dict back into the Alertmanager-style
     payload the formatter expects."""

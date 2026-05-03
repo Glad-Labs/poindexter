@@ -38,6 +38,19 @@ import asyncpg
 from health_probes import run_health_probes
 from seed_loader import seed_app_settings
 
+# Brain-local secret reader — single source of truth for app_settings
+# decryption (closes Glad-Labs/poindexter#342). Both flat and
+# package-qualified imports are tried so this module works both in the
+# Docker container (brain/ on PYTHONPATH) and in the test harness
+# (where `from brain import ...` is the canonical path).
+#
+# The module is named secret_reader (not secrets) to avoid shadowing
+# Python's stdlib ``secrets`` module on the brain's PYTHONPATH.
+try:
+    from secret_reader import read_app_setting as _read_app_setting
+except ImportError:  # pragma: no cover — package-qualified path for tests
+    from brain.secret_reader import read_app_setting as _read_app_setting
+
 try:
     # Flat import when brain/ is on sys.path (container runtime).
     from alert_sync import sync_alert_rules
@@ -170,10 +183,18 @@ from brain.bootstrap import require_database_url
 
 LOCAL_BRAIN_DB = require_database_url(source="brain_daemon")
 
-# Telegram for alerts (direct bot API, no OpenClaw dependency)
+# Telegram for alerts (direct bot API, no OpenClaw dependency).
+# Canonical store is app_settings — env vars are bootstrap-only fallbacks
+# kept so the daemon can boot before the DB is reachable. _load_config_from_db
+# overwrites these from app_settings on every startup, decrypting the
+# is_secret=true rows via brain.secret_reader.read_app_setting (#342).
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 # Canonical env var; fallback matches services/telegram_config.py
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# Discord ops webhook — operator-facing channel for cycle summaries +
+# alert dispatch. Loaded from app_settings.discord_ops_webhook_url at
+# startup; env var is a bootstrap fallback only.
+DISCORD_OPS_WEBHOOK_URL = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
 
 # Detect Docker (set in docker-compose.local.yml)
 IS_DOCKER = bool(os.getenv("IN_DOCKER"))
@@ -191,12 +212,24 @@ SERVICES = {
 
 
 async def _load_config_from_db(pool):
-    """Load identity config from app_settings (replaces env vars)."""
-    global _SITE_URL, _API_BASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+    """Load identity + notification config from app_settings.
+
+    Replaces env vars with the canonical DB values. Secret rows
+    (``telegram_bot_token``) are read through ``read_app_setting`` so
+    pgcrypto-encrypted ``enc:v1:<base64>`` envelopes get decrypted with
+    POINDEXTER_SECRET_KEY before they reach ``send_telegram``. Without
+    this decrypt step the brain shoves the ciphertext into the URL and
+    Python's http.client rejects it as "URL can't contain control
+    characters" — the exact failure mode that Glad-Labs/poindexter#342
+    diagnosed as the alert-dispatch black hole.
+    """
+    global _SITE_URL, _API_BASE_URL
+    global TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, DISCORD_OPS_WEBHOOK_URL
     try:
+        # Plaintext keys — one round-trip via the cheap SELECT.
         rows = await pool.fetch(
             "SELECT key, value FROM app_settings WHERE key IN "
-            "('site_url', 'api_base_url', 'telegram_bot_token', 'telegram_chat_id')"
+            "('site_url', 'api_base_url', 'telegram_chat_id', 'discord_ops_webhook_url')"
         )
         config = {r["key"]: r["value"] for r in rows}
         if config.get("site_url"):
@@ -205,11 +238,22 @@ async def _load_config_from_db(pool):
         if config.get("api_base_url"):
             _API_BASE_URL = config["api_base_url"]
             SERVICES["api"]["url"] = _API_BASE_URL + "/api/health"
-        if config.get("telegram_bot_token"):
-            TELEGRAM_BOT_TOKEN = config["telegram_bot_token"]
         if config.get("telegram_chat_id"):
             TELEGRAM_CHAT_ID = config["telegram_chat_id"]
-        logger.info("[BRAIN] Loaded %d config values from DB", len(config))
+        if config.get("discord_ops_webhook_url"):
+            DISCORD_OPS_WEBHOOK_URL = config["discord_ops_webhook_url"]
+
+        # Secret keys — go through the decrypt path. Pass the existing
+        # env-var value as the default so a row that's missing from the
+        # DB doesn't blank out a working bootstrap-via-env config.
+        token = await _read_app_setting(
+            pool, "telegram_bot_token", default=TELEGRAM_BOT_TOKEN
+        )
+        if token:
+            TELEGRAM_BOT_TOKEN = token
+
+        loaded = len(config) + (1 if token else 0)
+        logger.info("[BRAIN] Loaded %d config values from DB", loaded)
     except Exception as e:
         logger.warning("[BRAIN] Could not load config from DB: %s (using defaults)", e, exc_info=True)
 
@@ -339,11 +383,21 @@ def check_json_status(url: str, timeout: int = 10) -> tuple:
         return False, 0, str(e)[:100]
 
 
-def send_telegram(message: str):
-    """Send alert to Telegram — direct bot API, no dependencies."""
+def send_telegram(message: str) -> bool:
+    """Send alert to Telegram — direct bot API, no dependencies.
+
+    Returns ``True`` if the API accepted the request (HTTP 2xx),
+    ``False`` for any failure (no token, malformed URL, transport
+    error, non-2xx response). Callers like ``alert_dispatcher`` rely
+    on this signal to set ``alert_events.dispatch_result`` honestly
+    instead of recording every cycle as ``'sent'`` (#342).
+    """
     if not TELEGRAM_BOT_TOKEN:
         logger.warning("[BRAIN] No Telegram bot token — can't send alert")
-        return
+        return False
+    if not TELEGRAM_CHAT_ID:
+        logger.warning("[BRAIN] No Telegram chat ID — can't send alert")
+        return False
     try:
         payload = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": f"🧠 Brain: {message}"}).encode()
         req = urllib.request.Request(
@@ -351,17 +405,24 @@ def send_telegram(message: str):
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=10)
+        resp = urllib.request.urlopen(req, timeout=10)
+        return 200 <= resp.status < 300
     except Exception as e:
         logger.error("[BRAIN] Telegram send failed: %s", e, exc_info=True)
+        return False
 
 
-def send_discord(message: str, webhook_url: str | None = None):
-    """Send message to Discord via webhook — no dependencies."""
+def send_discord(message: str, webhook_url: str | None = None) -> bool:
+    """Send message to Discord via webhook — no dependencies.
+
+    Returns ``True`` for an HTTP 2xx response (Discord webhooks return
+    204 No Content on success), ``False`` for any failure. See
+    ``send_telegram`` for the rationale on the bool return.
+    """
     url = webhook_url or os.getenv("DISCORD_LAB_LOGS_WEBHOOK_URL", "")
     if not url:
         logger.debug("[BRAIN] No Discord webhook URL — skipping")
-        return
+        return False
     try:
         payload = json.dumps({"content": message}).encode()
         req = urllib.request.Request(
@@ -372,25 +433,36 @@ def send_discord(message: str, webhook_url: str | None = None):
                 "User-Agent": "PoinDexterBrain/1.0",
             },
         )
-        urllib.request.urlopen(req, timeout=10)
+        resp = urllib.request.urlopen(req, timeout=10)
+        return 200 <= resp.status < 300
     except Exception as e:
         logger.error("[BRAIN] Discord send failed: %s", e)
+        return False
 
 
-def notify(message: str):
+def notify(message: str) -> bool:
     """Send to both Telegram (urgent) and Discord #ops (ops log).
 
     Telegram = alarm bell (phone push notification).
     Discord #ops = system's voice (scrollable ops history).
     Discord #lab-logs = public-facing (daily digest only).
+
+    Returns ``True`` if AT LEAST ONE channel actually accepted the
+    message. ``False`` means the operator did not receive the alert —
+    the brain ``alert_dispatcher`` raises on this so the
+    ``alert_events`` row gets ``dispatch_result = 'error: ...'``
+    instead of a phantom ``'sent'`` (#342).
     """
-    send_telegram(message)
-    # Operational messages go to #ops, not #lab-logs
-    ops_webhook = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
-    if ops_webhook:
-        send_discord(message, webhook_url=ops_webhook)
+    tg_ok = send_telegram(message)
+    # Operational messages go to #ops; fall back to lab-logs only if
+    # ops isn't configured. DISCORD_OPS_WEBHOOK_URL is loaded from
+    # app_settings.discord_ops_webhook_url at startup (with the env
+    # var as a bootstrap fallback).
+    if DISCORD_OPS_WEBHOOK_URL:
+        dc_ok = send_discord(message, webhook_url=DISCORD_OPS_WEBHOOK_URL)
     else:
-        send_discord(message)  # fallback to lab-logs if ops not configured
+        dc_ok = send_discord(message)  # fallback to lab-logs if ops not configured
+    return tg_ok or dc_ok
 
 
 def restart_service(name: str):
@@ -1247,46 +1319,16 @@ async def run_cycle(pool):
         try:
             # Thin SiteConfig-shaped wrapper. Brain doesn't use the
             # worker's full DI seam, but write_prometheus_secrets only
-            # needs `get_secret(key, default)`. Decryption mirrors
-            # services.plugins.secrets.get_secret: pgcrypto's
-            # pgp_sym_decrypt with POINDEXTER_SECRET_KEY (already set
-            # in the brain container's env per docker-compose).
+            # needs ``get_secret(key, default)``. Delegates the actual
+            # read+decrypt to ``brain.secret_reader`` so this module
+            # doesn't carry yet another copy of the pgcrypto envelope
+            # logic (consolidated in #342).
             class _BrainSecretReader:
                 def __init__(self, _pool):
                     self._pool = _pool
+
                 async def get_secret(self, key, default=""):
-                    row = await self._pool.fetchrow(
-                        "SELECT value, is_secret FROM app_settings "
-                        "WHERE key = $1", key,
-                    )
-                    if not row:
-                        return default
-                    val = row["value"]
-                    if not val:
-                        return default
-                    # Plaintext rows (is_secret=false OR pre-migration
-                    # legacy is_secret=true without enc: prefix) come
-                    # back verbatim.
-                    if not row["is_secret"] or not val.startswith("enc:v1:"):
-                        return val
-                    pkey = os.getenv("POINDEXTER_SECRET_KEY")
-                    if not pkey:
-                        logger.warning(
-                            "[BRAIN] POINDEXTER_SECRET_KEY unset — can't "
-                            "decrypt %s", key,
-                        )
-                        return default
-                    try:
-                        return await self._pool.fetchval(
-                            "SELECT pgp_sym_decrypt(decode($1, 'base64'), $2)::text",
-                            val[len("enc:v1:"):],
-                            pkey,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "[BRAIN] decrypt %s failed: %s", key, exc,
-                        )
-                        return default
+                    return await _read_app_setting(self._pool, key, default)
 
             secret_reader = _BrainSecretReader(pool)
             secret_results = await write_prometheus_secrets(secret_reader)

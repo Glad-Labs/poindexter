@@ -52,11 +52,18 @@ Failure posture:
 - DB error during the poll → logged + swallowed; the loop continues.
   The brain's existing watchdog will detect a stuck cycle if poll
   errors persist.
-- ``notify_operator`` itself swallows network errors internally
-  (best-effort dispatcher), so a Telegram outage shows up here as
-  ``dispatch_result = 'sent'`` (the call succeeded, just nothing
-  reached Telegram). The dispatcher framework records the
-  per-channel outcome separately.
+- The brain-side ``notify()`` returns ``True`` only when at least
+  one channel (Telegram or Discord) actually accepted the message.
+  This module's ``_adapter`` wraps that bool into a ``NotifyFailed``
+  exception so a downed Telegram + missing Discord webhook surfaces
+  as ``dispatch_result = 'error: notify returned False'`` rather
+  than a phantom ``'sent'`` (the bug Glad-Labs/poindexter#342
+  diagnosed: dispatcher claimed sent=N, operator got nothing).
+- The worker-side ``notify_operator`` (when reachable) is best-effort
+  and swallows transport errors internally — its success/failure
+  contract isn't a bool. Per-channel failures from that path show up
+  in the worker's own logs; the dispatcher records ``'sent'`` because
+  the call returned without raising.
 
 Imports kept cheap on purpose:
 
@@ -78,6 +85,16 @@ import sys
 from typing import Any, Awaitable, Callable, Optional
 
 logger = logging.getLogger("brain.alert_dispatcher")
+
+
+class NotifyFailed(RuntimeError):
+    """Raised when ``notify`` reported zero channels accepted the message.
+
+    Caught by ``poll_and_dispatch`` — the row gets marked
+    ``dispatch_result = 'error: <reason>'`` and the cycle continues.
+    Surfaced as its own type so tests can assert on it without
+    string-matching exception messages.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +243,21 @@ async def _resolve_notify_fn() -> Optional[NotifyFn]:
             # the message header itself, which is enough for Matt to
             # triage on his phone.
             del critical
-            sync_notify(message)
+            ok = sync_notify(message)
+            # The brain notify returns True iff at least one channel
+            # accepted the message. False = operator did NOT receive
+            # the alert (no token, malformed URL, all transports down).
+            # Raise so poll_and_dispatch's try/except marks the row
+            # with an honest ``dispatch_result = 'error: ...'`` instead
+            # of silently recording ``'sent'`` while the page vanished
+            # into a black hole — the exact failure
+            # Glad-Labs/poindexter#342 traced.
+            if ok is False:  # explicit identity — None from legacy stubs is treated as success
+                raise NotifyFailed(
+                    "brain.notify reported no channel accepted the message "
+                    "(check telegram_bot_token, telegram_chat_id, "
+                    "discord_ops_webhook_url in app_settings)"
+                )
 
         return _adapter
 
