@@ -993,7 +993,7 @@ services:
     # Healthcheck (issue #319): catches the silent-hang failure mode where the
     # HTTP socket stays LISTENING but stops accepting connections. python:3.12-slim
     # has no wget/curl, so we use the bundled Python urllib (3s timeout matches
-    # the alloy scrape budget). When this fails 3× docker restarts the container.
+    # the prometheus scrape budget). When this fails 3× docker restarts the container.
     healthcheck:
       test:
         - "CMD"

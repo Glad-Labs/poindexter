@@ -95,7 +95,7 @@ Pulled `2026-04-30` from `app_settings WHERE is_secret = TRUE`, plus the two boo
 | `devto_api_key`                                | `app_settings` (encrypted)                          | Dev.to cross-post                     | [§ devto_api_key](#devto_api_key)                               |
 | `notion_api_key`                               | `app_settings` (encrypted)                          | Notion integration                    | [§ notion_api_key](#notion_api_key)                             |
 | `mercury_api_token`                            | `app_settings` (encrypted)                          | Mercury banking                       | [§ mercury_api_token](#mercury_api_token)                       |
-| `grafana_api_key` + `grafana_api_token`        | `app_settings` (encrypted)                          | Grafana Cloud API                     | [§ grafana keys](#grafana-keys)                                 |
+| `grafana_api_key` + `grafana_api_token`        | `app_settings` (encrypted)                          | Self-hosted Grafana HTTP API          | [§ grafana keys](#grafana-keys)                                 |
 | `google_api_key`                               | `app_settings` (encrypted)                          | Google APIs                           | [§ google_api_key](#google_api_key)                             |
 | `elevenlabs_api_key`                           | `app_settings` (encrypted)                          | TTS provider                          | [§ elevenlabs_api_key](#elevenlabs_api_key)                     |
 
@@ -739,7 +739,9 @@ Keys: `grafana_api_key` + `grafana_api_token` (both encrypted; some duplication 
 **Procedure.**
 
 ```bash
-# 1. https://gladlabs.grafana.net -> Configuration -> API keys -> Add new
+# 1. http://localhost:3000 (or http://100.81.93.12:3000 via tailnet) ->
+#    Administration -> Service accounts -> Add service account ->
+#    "alert-sync" with Editor role -> Add token
 # 2. poindexter set grafana_api_key "<new-key>"
 #    poindexter set grafana_api_token "<new-token>"   # if both rows exist
 # 3. docker restart poindexter-worker

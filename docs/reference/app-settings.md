@@ -298,24 +298,23 @@ The worker re-reads on every poll; no restart needed.
 
 ## integration
 
-| Key                       | Default                                    | Classification | Description                                             |
-| ------------------------- | ------------------------------------------ | -------------- | ------------------------------------------------------- |
-| `cloudinary_api_key`      | `*(encrypted)*`                            | encrypted      | Cloudinary API key for SDXL image hosting               |
-| `cloudinary_api_secret`   | `*(encrypted)*`                            | encrypted      | Cloudinary API secret for SDXL image hosting            |
-| `cloudinary_cloud_name`   | `dujk7kdhd`                                |                | Cloudinary cloud name                                   |
-| `discord_bot_token`       | `*(encrypted)*`                            | encrypted      | Discord bot token (OpenClaw)                            |
-| `discord_voice_bot_token` | `*(encrypted)*`                            | encrypted      | Discord voice bot token (Poindexter Voice)              |
-| `elevenlabs_api_key`      | `*(encrypted)*`                            | encrypted      | ElevenLabs TTS API key (legacy)                         |
-| `gitea_password`          | `*(encrypted)*`                            | encrypted      | Gitea admin password                                    |
-| `gitea_repo`              | `gladlabs/glad-labs-codebase`              |                | Gitea repository (owner/name)                           |
-| `gitea_url`               | `http://localhost:3001`                    |                | Gitea server URL                                        |
-| `gitea_user`              | `gladlabs`                                 |                | Gitea username                                          |
-| `grafana_api_key`         | `*(encrypted)*`                            | encrypted      | Grafana Cloud service account token (sa-1-claude-api)   |
-| `grafana_referral_url`    | `https://grafana.com/auth/sign-up?refC...` |                | Grafana referral link (real, verified by Matt)          |
-| `grafana_url`             | `http://localhost:3000`                    |                | Grafana Cloud instance URL                              |
-| `notion_api_key`          | `*(encrypted)*`                            | encrypted      | Notion API integration key                              |
-| `patreon_account`         | `active`                                   |                | Patreon account active — free podcast hosting available |
-| `telegram_bot_token`      | `*(encrypted)*`                            | encrypted      | Telegram bot token (brain notifications)                |
+| Key                       | Default                       | Classification | Description                                                    |
+| ------------------------- | ----------------------------- | -------------- | -------------------------------------------------------------- |
+| `cloudinary_api_key`      | `*(encrypted)*`               | encrypted      | Cloudinary API key for SDXL image hosting                      |
+| `cloudinary_api_secret`   | `*(encrypted)*`               | encrypted      | Cloudinary API secret for SDXL image hosting                   |
+| `cloudinary_cloud_name`   | `dujk7kdhd`                   |                | Cloudinary cloud name                                          |
+| `discord_bot_token`       | `*(encrypted)*`               | encrypted      | Discord bot token (OpenClaw)                                   |
+| `discord_voice_bot_token` | `*(encrypted)*`               | encrypted      | Discord voice bot token (Poindexter Voice)                     |
+| `elevenlabs_api_key`      | `*(encrypted)*`               | encrypted      | ElevenLabs TTS API key (legacy)                                |
+| `gitea_password`          | `*(encrypted)*`               | encrypted      | Gitea admin password                                           |
+| `gitea_repo`              | `gladlabs/glad-labs-codebase` |                | Gitea repository (owner/name)                                  |
+| `gitea_url`               | `http://localhost:3001`       |                | Gitea server URL                                               |
+| `gitea_user`              | `gladlabs`                    |                | Gitea username                                                 |
+| `grafana_api_key`         | `*(encrypted)*`               | encrypted      | Self-hosted Grafana service account token (used by alert_sync) |
+| `grafana_url`             | `http://localhost:3000`       |                | Self-hosted Grafana URL (Cloud retired 2026-05-03)             |
+| `notion_api_key`          | `*(encrypted)*`               | encrypted      | Notion API integration key                                     |
+| `patreon_account`         | `active`                      |                | Patreon account active — free podcast hosting available        |
+| `telegram_bot_token`      | `*(encrypted)*`               | encrypted      | Telegram bot token (brain notifications)                       |
 
 ## integrations
 

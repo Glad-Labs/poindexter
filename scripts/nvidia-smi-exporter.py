@@ -1,5 +1,7 @@
 """Prometheus exporter for NVIDIA GPU + system power + AIDA64 + liquidctl metrics.
-Serves on port 9835. Scraped by Grafana Alloy every 15s.
+Serves on port 9835. Scraped by the local Prometheus container every 15s.
+(Was scraped by Grafana Alloy until 2026-05-03 when Cloud was retired and
+Alloy with it; Prometheus took over the direct scrape.)
 
 Cross-platform: works on Windows (AIDA64 + Energy Meter) and Linux (lm-sensors + liquidctl).
 

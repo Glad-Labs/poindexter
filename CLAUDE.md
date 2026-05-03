@@ -26,16 +26,16 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 ### Production URLs
 
-| Service       | URL                                                   |
-| ------------- | ----------------------------------------------------- |
-| Public site   | https://gladlabs.io (→ www.gladlabs.io)               |
-| Backend API   | http://localhost:8002                                 |
-| Brain daemon  | Local process (brain/)                                |
-| Grafana       | https://gladlabs.grafana.net                          |
-| Public docs   | https://gladlabs.mintlify.app                         |
-| Private repo  | https://github.com/Glad-Labs/glad-labs-stack          |
-| Public repo   | https://github.com/Glad-Labs/poindexter (auto-mirror) |
-| Project board | https://github.com/orgs/Glad-Labs/projects/2          |
+| Service       | URL                                                               |
+| ------------- | ----------------------------------------------------------------- |
+| Public site   | https://gladlabs.io (→ www.gladlabs.io)                           |
+| Backend API   | http://localhost:8002                                             |
+| Brain daemon  | Local process (brain/)                                            |
+| Grafana       | http://localhost:3000 (or http://100.81.93.12:3000 via Tailscale) |
+| Public docs   | https://gladlabs.mintlify.app                                     |
+| Private repo  | https://github.com/Glad-Labs/glad-labs-stack                      |
+| Public repo   | https://github.com/Glad-Labs/poindexter (auto-mirror)             |
+| Project board | https://github.com/orgs/Glad-Labs/projects/2                      |
 
 ### Key Numbers (as of May 3, 2026)
 
@@ -244,7 +244,7 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 
 ## Monitoring
 
-- **Grafana Cloud:** gladlabs.grafana.net — 6 dashboards (merged set)
+- **Grafana (self-hosted):** http://localhost:3000 (or http://100.81.93.12:3000 from the tailnet) — 6 dashboards (merged set). Grafana Cloud was retired 2026-05-03; the local Docker container (poindexter-grafana) is the only Grafana now. Local Prometheus scrapes windows_exporter + nvidia-smi-exporter directly; Alloy was the Cloud shipper and is no longer used.
 - **Dashboards:** Ops (home), Performance, Hardware, Pipeline, Cost, Quality, plus built-in
 - **Alerts → Telegram + Discord:** stuck tasks, failure rate, worker offline, GPU temp, VRAM usage
 - **Playlist:** "Glad Labs Command Center" cycles all dashboards every 30s

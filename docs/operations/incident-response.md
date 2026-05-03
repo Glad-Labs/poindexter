@@ -539,10 +539,11 @@ If an alert fired with a name that's not in the index above:
 ### Step 1 — Find it in Grafana
 
 ```bash
-# Open the alert rules dashboard
-xdg-open https://gladlabs.grafana.net/alerting/list
+# Open the alert rules dashboard (self-hosted Grafana)
+xdg-open http://localhost:3000/alerting/list
 # Or on Windows
-start https://gladlabs.grafana.net/alerting/list
+start http://localhost:3000/alerting/list
+# From phone via tailnet: http://100.81.93.12:3000/alerting/list
 ```
 
 Find the firing rule. Read its `summary` and `description` annotations.
@@ -576,7 +577,7 @@ If you're doing intentional work that will fire alerts (e.g., bringing the worke
 poindexter settings set pipeline_paused true
 
 # Mute Grafana alerts via the contact-point silence
-# Open https://gladlabs.grafana.net/alerting/silences/new
+# Open http://localhost:3000/alerting/silences/new (or via tailnet)
 # Select all matchers (label=team / value=glad-labs), set duration, save.
 ```
 
