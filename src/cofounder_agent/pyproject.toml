@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "poindexter-backend"
-version = "0.2.0"
+version = "1.3.0"
 description = "Poindexter backend — FastAPI + specialized AI agents. Built by Glad Labs LLC."
 authors = ["Matthew M. Gladding <hello@gladlabs.io>"]
 readme = "README.md"

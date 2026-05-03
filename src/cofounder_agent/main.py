@@ -641,7 +641,7 @@ async def api_health():
         # Build comprehensive health response
         health_data = {
             "status": "healthy",
-            "service": "cofounder-agent",
+            "service": "poindexter",
             "version": config.app_version,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {},
@@ -826,7 +826,7 @@ async def api_health():
         return health_data
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Health check failed: %s", str(e), exc_info=True)
-        return {"status": "unhealthy", "service": "cofounder-agent", "error": "health_check_failed"}
+        return {"status": "unhealthy", "service": "poindexter", "error": "health_check_failed"}
 
 
 @app.get("/health")
@@ -838,7 +838,7 @@ async def health():
     Usage: External load balancers, uptime monitors, basic connectivity checks
     Performance: Instant response (doesn't check database)
     """
-    return {"status": "ok", "service": "cofounder-agent"}
+    return {"status": "ok", "service": "poindexter"}
 
 
 # ===== PROMETHEUS METRICS ENDPOINT =====
@@ -1032,7 +1032,8 @@ async def root():
     Root endpoint to confirm the server is running.
     """
     return {
-        "message": f"{_site_cfg.get('site_name', 'App')} AI Co-Founder is running",
+        "message": "Poindexter is running",
+        "service": "poindexter",
         "version": config.app_version,
         "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
     }

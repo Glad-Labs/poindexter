@@ -26,23 +26,25 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 ### Production URLs
 
-| Service       | URL                                             |
-| ------------- | ----------------------------------------------- |
-| Public site   | https://gladlabs.io (→ www.gladlabs.io)         |
-| Backend API   | http://localhost:8002                           |
-| Brain daemon  | Local process (brain/)                          |
-| Grafana       | https://gladlabs.grafana.net                    |
-| GitHub        | https://github.com/Glad-Labs/glad-labs-codebase |
-| Project board | https://github.com/orgs/Glad-Labs/projects/2    |
+| Service       | URL                                                   |
+| ------------- | ----------------------------------------------------- |
+| Public site   | https://gladlabs.io (→ www.gladlabs.io)               |
+| Backend API   | http://localhost:8002                                 |
+| Brain daemon  | Local process (brain/)                                |
+| Grafana       | https://gladlabs.grafana.net                          |
+| Public docs   | https://gladlabs.mintlify.app                         |
+| Private repo  | https://github.com/Glad-Labs/glad-labs-stack          |
+| Public repo   | https://github.com/Glad-Labs/poindexter (auto-mirror) |
+| Project board | https://github.com/orgs/Glad-Labs/projects/2          |
 
-### Key Numbers (as of April 27, 2026)
+### Key Numbers (as of May 3, 2026)
 
-- 46 live posts on gladlabs.io (212 posts total: 143 drafts, 23 archived; 1,072 pipeline_tasks across all generation runs)
-- 313 Python files under `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
+- 51 live posts on gladlabs.io (217 posts total: 143 drafts, 23 archived; 1,467 pipeline_tasks across all generation runs)
+- 400 Python files under `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
 - 6 Grafana dashboards (post-merge consolidation), 4 alert rules
-- 6,800+ Python unit tests passing
-- 310 app_settings keys (roughly 60 added in the #198 hardening sweep, plus ongoing per-feature additions)
-- 15,300+ embeddings across posts / issues / audit / memory / brain (8× growth since the prior count was logged)
+- 7,900+ Python unit tests passing (329 test files)
+- 453 app_settings keys (the in-code DI layer accepts hundreds more — see PR sweeps #198 + #221)
+- 25,000 embeddings across posts / issues / audit / memory / brain / claude_sessions (≈25× growth since logging started)
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
@@ -107,7 +109,7 @@ npm run type:check            # Python mypy
 | `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                |
 | `workflow_executor.py`                    | Step-based workflow orchestration                          |
 | `unified_orchestrator.py`                 | Cross-pipeline coordinator                                 |
-| `settings_service.py`                     | DB-backed config (app_settings, 310 active keys)           |
+| `settings_service.py`                     | DB-backed config (app_settings, 453 active keys)           |
 | `site_config.py`                          | DI seam over settings (Phase H singleton replacement)      |
 | `cost_guard.py`                           | Daily/monthly spend limits                                 |
 | `model_router.py`                         | Cost-tiered model selection (free/budget/standard/premium) |
@@ -149,7 +151,9 @@ Next.js 15 app router. ISR with 5-minute revalidation. Features:
 
 ### MCP Server (`mcp-server/`)
 
-Custom MCP server for Claude desktop app. 12 tools: create_post, approve, publish, check_health, get_budget, compose_plan, compose_execute, get/set/list_settings, get_post_count.
+Custom MCP server for Claude desktop app. 25 tools across content / approval / settings / memory / observability surfaces. The sibling `mcp-server-gladlabs/` adds 3 operator-only tools layered on top (private to the Glad Labs operator overlay; not in the public mirror).
+
+**Authentication:** OAuth 2.1 Client Credentials Grant (Phase 2 shipped 2026-05-02). Static Bearer tokens still accepted as a dual-auth fallback during the soak window — Phase 3 (#249) removes them once every consumer is verified on OAuth.
 
 ### Configuration (#198 — no hardcoded values in code)
 
@@ -172,7 +176,7 @@ explicit CLI arg → bootstrap.toml → DATABASE_URL → LOCAL_DATABASE_URL
 fires `notify_operator()` (Telegram → Discord → alerts.log → stderr)
 then `sys.exit(2)`.
 
-**Everything else lives in `app_settings` (200+ keys).** Code accesses
+**Everything else lives in `app_settings` (450+ active keys).** Code accesses
 settings through a `SiteConfig` instance that is dependency-injected
 (Phase H, GH#95). `main.py` constructs the canonical instance, loads it
 from the DB at startup, and attaches it to `app.state.site_config`.
@@ -217,6 +221,8 @@ Source of truth: `docs/operations/ci-deploy-chain.md`. Two-remote model (post-20
 - **`github` = `Glad-Labs/poindexter`** (public GitHub) — open-source product subset. Refreshed from origin via `scripts/sync-to-github.sh`, which strips private files (web/public-site, web/storefront, mcp-server-gladlabs, marketing, premium dashboards, writing_samples, gladlabs-config, .shared-context, CLAUDE.md, etc.).
 
 **Cross-repo sync is automatic.** GitHub Actions workflow `.github/workflows/sync-to-public-poindexter.yml` runs on every push to `origin/main` and mirrors the filtered subset to Glad-Labs/poindexter in ~30s, using a write-enabled deploy key (private key stored as `POINDEXTER_DEPLOY_KEY` secret on glad-labs-stack). Just `git push origin main` and the public mirror updates itself.
+
+**Mirror force-push posture (intentional):** Glad-Labs/poindexter has `allow_force_pushes: true` in its classic branch protection AND no `non_fast_forward` rule in its ruleset. The mirror is rebuilt from scratch on every sync (filter → force-push), so force-push protection on a derived branch would just keep the mirror permanently stale. The classic protection still requires the public-side CI checks (test-backend, migrations-smoke, Mintlify Deployment, link-rot) to pass on the resulting commit. **Do not re-enable force-push protection on the public mirror — it will silently break the sync workflow.**
 
 **Bypass mechanism:** include `[skip-public-sync]` in the commit message to keep a particular commit private (in-progress branches, sensitive WIP).
 
