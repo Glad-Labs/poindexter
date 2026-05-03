@@ -681,27 +681,45 @@ class TestWarningThresholdPromotion:
 
 class TestNamedSourceNoUrlPromotion:
     """Unlinked citations that name a source type (Medium / article /
-    blog post / documentation / paper / study) without a URL should be
-    promoted to critical individually — this is the hallucinated
-    attribution pattern from issue #91's log example."""
+    blog post / documentation / paper / study) without a URL.
 
-    def test_medium_article_without_url_is_critical(self):
-        # Exact log example from GH-91: unsourced "Medium article" citation
+    The per-instance promotion path was gated off in 2026-05-03 (default
+    ``content_validator_named_source_promote_enabled = false``) after
+    task 1738's dev_diary post tripped it 7+ times on legitimate
+    citations the writer hadn't yet wrapped in Markdown links and the
+    veto killed the post. The (a) per-category threshold path still
+    catches genuine spam — that's enough signal without a single
+    instance being a hard veto.
+
+    These tests assert the new default-off behavior. To re-enable the
+    aggressive per-instance promotion (e.g. if a future writer
+    regression starts emitting fabricated attributions and the
+    threshold path doesn't catch them), set
+    ``content_validator_named_source_promote_enabled=true`` in
+    app_settings; the legacy behavior is preserved behind the flag."""
+
+    def test_medium_article_without_url_stays_warning_by_default(self):
+        # Exact log example from GH-91 — "Medium article" with no URL.
+        # Pre-2026-05-03 this promoted to critical; after the gate-off
+        # default it stays at warning. A single warning is not enough to
+        # veto the post.
         content = (
             "This technique works well in practice, as highlighted in this Medium article."
         )
         result = validate_content("Title", content, "topic")
         unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
         assert unlinked, "expected an unlinked_citation match"
-        assert all(i.severity == "critical" for i in unlinked)
-        assert result.passed is False
+        assert all(i.severity == "warning" for i in unlinked), \
+            "named-source-without-URL promotion is gated off by default; should stay warning"
+        # One warning is not a hard veto — passed should be True.
+        assert result.passed is True
 
-    def test_article_on_redis_memory_usage_without_url_is_critical(self):
+    def test_article_on_redis_memory_usage_without_url_stays_warning_by_default(self):
         content = "As noted in this article on Redis memory usage, caching matters."
         result = validate_content("Title", content, "topic")
         unlinked = [i for i in result.issues if i.category == "unlinked_citation"]
         assert unlinked
-        assert all(i.severity == "critical" for i in unlinked)
+        assert all(i.severity == "warning" for i in unlinked)
 
     def test_medium_article_with_url_stays_warning(self):
         # The detector still flags the prose, but because a URL sits within

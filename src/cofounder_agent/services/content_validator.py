@@ -1240,30 +1240,44 @@ def validate_content(
     # look at each match in isolation; a post with one fabricated
     # "as noted in this Medium article" should reject even if the
     # category count is only 1.
-    _clean_full_text = _strip_html(full_text)
-    for _i in issues:
-        if _i.severity != "warning" or _i.category != "unlinked_citation":
-            continue
-        _match_lower = _i.matched_text.lower()
-        if not any(kw in _match_lower for kw in _NAMED_SOURCE_KEYWORDS):
-            continue
-        # Look for a URL within ~100 chars after the match; if missing,
-        # treat as a hallucinated attribution and promote to critical.
-        _idx = _clean_full_text.find(_i.matched_text)
-        _context_window = ""
-        if _idx != -1:
-            _context_window = _clean_full_text[
-                max(0, _idx - 20): _idx + len(_i.matched_text) + 100
-            ]
-        else:
-            _context_window = _i.matched_text
-        _has_url = bool(re.search(r"https?://\S+", _context_window))
-        if not _has_url:
-            _i.severity = "critical"
-            _i.description = (
-                "Named source without accompanying URL (hallucinated attribution): "
-                f"{_i.matched_text!r}"
-            )
+    #
+    # Tunable via ``content_validator_named_source_promote_enabled``
+    # (default ``false`` — gated off after task 1738's dev_diary post
+    # tripped the rule 7+ times on its own work-in-progress citations,
+    # and the per-instance promotion vetoed the whole post). The (a)
+    # per-category threshold below still catches genuine
+    # hallucination spam — that's enough signal without a single
+    # instance being a hard veto. Flip the setting back to ``true``
+    # if a future writer regression starts emitting fabricated
+    # attributions and the threshold path doesn't catch it.
+    _named_source_promote_enabled = _sc.get_bool(
+        "content_validator_named_source_promote_enabled", False,
+    )
+    if _named_source_promote_enabled:
+        _clean_full_text = _strip_html(full_text)
+        for _i in issues:
+            if _i.severity != "warning" or _i.category != "unlinked_citation":
+                continue
+            _match_lower = _i.matched_text.lower()
+            if not any(kw in _match_lower for kw in _NAMED_SOURCE_KEYWORDS):
+                continue
+            # Look for a URL within ~100 chars after the match; if missing,
+            # treat as a hallucinated attribution and promote to critical.
+            _idx = _clean_full_text.find(_i.matched_text)
+            _context_window = ""
+            if _idx != -1:
+                _context_window = _clean_full_text[
+                    max(0, _idx - 20): _idx + len(_i.matched_text) + 100
+                ]
+            else:
+                _context_window = _i.matched_text
+            _has_url = bool(re.search(r"https?://\S+", _context_window))
+            if not _has_url:
+                _i.severity = "critical"
+                _i.description = (
+                    "Named source without accompanying URL (hallucinated attribution): "
+                    f"{_i.matched_text!r}"
+                )
 
     # (a) Per-rule threshold promotion. Read the threshold from
     # site_config (DB-first) with a hardcoded floor of 3 so the guard
@@ -1271,18 +1285,35 @@ def validate_content(
     _warning_threshold = _sc.get_int(
         "content_validator_warning_reject_threshold", 3,
     )
+    # Per-category override: ``unlinked_citation`` is more tolerant than the
+    # global default because dev_diary + URL-seeded posts naturally cite
+    # several sources per piece. The default of 3 was triggering on
+    # legitimate posts that just had four "PR #N" references. Override
+    # value (default 6) raises the bar specifically for this category;
+    # other categories still use the global threshold. Tunable via
+    # ``content_validator_unlinked_citation_warning_threshold``.
+    _per_category_overrides = {
+        "unlinked_citation": _sc.get_int(
+            "content_validator_unlinked_citation_warning_threshold", 6,
+        ),
+    }
     if _warning_threshold > 0:
         for _i in issues:
+            _effective_threshold = _per_category_overrides.get(
+                _i.category, _warning_threshold,
+            )
+            if _effective_threshold <= 0:
+                continue
             if (
                 _i.severity == "warning"
-                and warning_counts_by_category.get(_i.category, 0) > _warning_threshold
+                and warning_counts_by_category.get(_i.category, 0) > _effective_threshold
             ):
                 _i.severity = "critical"
                 _i.description = (
                     f"{_i.description} "
                     f"(promoted: {warning_counts_by_category[_i.category]} "
                     f"{_i.category} warnings exceeds reject threshold of "
-                    f"{_warning_threshold})"
+                    f"{_effective_threshold})"
                 )
 
     # Calculate score penalty
