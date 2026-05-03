@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from typing import Any
 
@@ -270,11 +271,27 @@ def build_voice_pipeline_task(
 # ---------------------------------------------------------------------------
 
 
-async def run_local(site_config: Any) -> None:
+async def run_local(
+    site_config: Any,
+    brain: str = "ollama",
+    project_dir: str | None = None,
+) -> None:
     """Run the voice agent on local mic + speakers.
 
     Reads every knob from ``app_settings`` via ``site_config``. Blocking
     until Ctrl+C.
+
+    Args:
+        site_config: live SiteConfig instance.
+        brain: which LLM stage to wire in. ``"ollama"`` (default) uses
+            the local glm-4.7-5090 with 3 read-only Poindexter tools.
+            ``"claude-code"`` swaps in the ClaudeCodeBridge — every
+            voice turn shells out to ``claude -p`` under the operator's
+            Max OAuth sub. Same flag and same shape as
+            ``services.voice_agent_livekit``.
+        project_dir: when ``brain == "claude-code"``, the directory
+            ``claude`` is spawned in (determines which CLAUDE.md loads).
+            Defaults to cwd.
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -289,7 +306,38 @@ async def run_local(site_config: Any) -> None:
         ),
     )
 
-    task = build_voice_pipeline_task(transport, site_config, log=log)
+    if brain == "claude-code":
+        from services.voice_agent_claude_code import ClaudeCodeBridgeLLMService
+
+        extra = os.environ.get("CLAUDE_BOT_EXTRA_ARGS", "").split()
+        sess = os.environ.get("CLAUDE_BOT_SESSION_ID", "").strip() or None
+        llm_service = ClaudeCodeBridgeLLMService(
+            cwd=project_dir or os.getcwd(),
+            extra_args=extra or None,
+            session_id=sess,
+        )
+        if sess:
+            log.info(
+                "Resuming Claude session_id=%s (preserves prior turns)", sess,
+            )
+        # Claude bridge ignores Pipecat-side tools (it has its own MCP
+        # harness) and gets a TTS-friendly system prompt override so we
+        # don't double-prompt with Emma's local-LLM persona.
+        task = build_voice_pipeline_task(
+            transport, site_config, log=log,
+            llm=llm_service,
+            system_prompt_override=(
+                "You are speaking out loud to Matt over a local mic. "
+                "Keep replies short and natural — under 20 seconds of "
+                "speech unless he asks for more. No markdown, no bullet "
+                "lists, no code blocks; this goes through TTS. When you "
+                "take an action (edit a file, run a command, push a "
+                "PR), summarise the outcome in one sentence rather than "
+                "narrating the steps."
+            ),
+        )
+    else:
+        task = build_voice_pipeline_task(transport, site_config, log=log)
 
     log.info(
         "Audio transport ready. Start talking when the model downloads "
@@ -323,7 +371,7 @@ def _ensure_brain_on_path() -> None:
             return
 
 
-async def _bootstrap_and_run() -> None:
+async def _bootstrap_and_run(brain: str, project_dir: str | None) -> None:
     """Build a SiteConfig from the live DB and start the local mic loop."""
     import asyncpg
 
@@ -336,13 +384,43 @@ async def _bootstrap_and_run() -> None:
     try:
         site_config = SiteConfig()
         await site_config.load(pool)
-        await run_local(site_config)
+        await run_local(site_config, brain=brain, project_dir=project_dir)
     finally:
         await pool.close()
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Poindexter voice agent — local mic surface. Pipecat pipeline: "
+            "Whisper → LLM → Kokoro. Pick the LLM with --brain."
+        ),
+    )
+    parser.add_argument(
+        "--brain",
+        choices=["ollama", "claude-code"],
+        default="ollama",
+        help=(
+            "LLM stage to wire in. 'ollama' (default) is the snappy "
+            "local glm-4.7-5090 with three read-only Poindexter tools. "
+            "'claude-code' shells out to `claude -p` under the operator's "
+            "Max OAuth sub — slower but full repo / MCP / edit access."
+        ),
+    )
+    parser.add_argument(
+        "--project-dir",
+        default=None,
+        help=(
+            "Used with --brain=claude-code. The directory `claude` is "
+            "spawned in (determines which CLAUDE.md loads). Defaults to "
+            "the current working directory."
+        ),
+    )
+    args = parser.parse_args()
+
     try:
-        asyncio.run(_bootstrap_and_run())
+        asyncio.run(_bootstrap_and_run(args.brain, args.project_dir))
     except KeyboardInterrupt:
         sys.exit(0)
