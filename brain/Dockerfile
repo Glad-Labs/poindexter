@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
 
-COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py telemetry.py ./
+COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py alert_dispatcher.py telemetry.py ./
 COPY seed_app_settings.json /app/seed_app_settings.json
 
 # brain_daemon.py imports `from brain.bootstrap import ...` so the files
@@ -39,6 +39,7 @@ RUN mkdir -p /app/brain && \
     cp /app/seed_loader.py /app/brain/seed_loader.py && \
     cp /app/docker_utils.py /app/brain/docker_utils.py && \
     cp /app/alert_sync.py /app/brain/alert_sync.py && \
+    cp /app/alert_dispatcher.py /app/brain/alert_dispatcher.py && \
     cp /app/telemetry.py /app/brain/telemetry.py && \
     touch /app/brain/__init__.py
 

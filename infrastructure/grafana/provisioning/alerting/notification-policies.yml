@@ -1,19 +1,57 @@
-# Grafana Notification Policies — primary: Telegram, fallback: Discord #ops
+# Grafana Notification Policies — Poindexter Webhook is the only receiver.
+#
+# Why a single receiver instead of fanning out to Telegram + Discord here?
+#
+# Pre-2026-05 the default route fired Telegram (primary) plus a sub-route
+# with continue:true to Discord (redundancy). That fanned dispatch across
+# two paths: the worker's /api/webhooks/alertmanager handler ALSO called
+# notify_operator inline, so every critical alert hit Telegram/Discord
+# from BOTH the worker and Grafana. This led to:
+#
+#   - duplicate pages (every critical alert twice on Matt's phone),
+#   - inconsistent message formatting (Grafana templates vs the worker's
+#     compact ``[FIRING · severity] alertname — summary`` shape),
+#   - and silent loss when the worker was down (Grafana → Telegram still
+#     fired but the audit trail in alert_events never wrote — operators
+#     had no DB record of what was paged).
+#
+# The unified flow (Glad-Labs/poindexter#340 prep):
+#
+#   Grafana ─► Poindexter Webhook ─► alert_events (persist, dispatched_at IS NULL)
+#                                     │
+#                                     ▼
+#                              brain/alert_dispatcher.py (30s poll)
+#                                     │
+#                              ┌──────┴──────┐
+#                              ▼             ▼
+#                         Telegram        Discord
+#                         (critical)      (warning/info)
+#
+# Grafana now sends to ONE endpoint. The brain daemon owns all
+# Telegram/Discord fan-out via services.integrations.operator_notify
+# (worker-side) or brain.notify (brain-side fallback). One source of
+# truth, one formatter, one durable queue.
+#
+# To activate this yaml after editing:
+#   docker compose -f docker-compose.local.yml restart grafana
+# OR (zero-downtime, requires admin auth):
+#   curl -X POST http://localhost:3000/api/admin/provisioning/alerting/reload \
+#        -u admin:$GRAFANA_PASSWORD
+#
+# The "Glad Labs Telegram" and "Glad Labs Discord" contact points still
+# exist in Grafana — they're now unused by the default policy but kept
+# as available receivers for ad-hoc routing experiments. Removing them
+# entirely is a separate cleanup PR.
 apiVersion: 1
 
 policies:
   - orgId: 1
-    receiver: Glad Labs Telegram
+    receiver: Poindexter Webhook
     group_by:
       - grafana_folder
       - alertname
     group_wait: 30s
     group_interval: 5m
     repeat_interval: 1h
-    routes:
-      # Send all alerts to Discord as well (redundancy)
-      - receiver: Glad Labs Discord
-        continue: true
-        group_wait: 30s
-        group_interval: 5m
-        repeat_interval: 1h
+    # No sub-routes. All fan-out happens downstream in the brain
+    # daemon's alert_dispatcher loop.

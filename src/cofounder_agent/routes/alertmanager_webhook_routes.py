@@ -1,23 +1,38 @@
-"""Alertmanager webhook consumer.
+"""Alertmanager webhook consumer — persistence-only sink.
 
-Single endpoint — ``POST /api/webhooks/alertmanager`` — that consumes the
-payload Alertmanager sends to its webhook receivers. Three responsibilities,
-in order:
+Single endpoint — ``POST /api/webhooks/alertmanager`` — that consumes
+the payload Alertmanager / Grafana sends to its webhook receivers.
+Two responsibilities, in order:
 
-1. **Persist** every inbound alert to ``alert_events`` so the brain + operator
-   UI + future audit queries have a historical record.
-2. **Dispatch to the operator** (outbound dispatcher → Telegram for
-   critical / Discord otherwise) for anything ``severity=critical`` or
-   ``category=infrastructure``.
-3. **Remediation scaffold** — look up ``plugin.remediation.<alertname>``
+1. **Persist** every inbound alert to ``alert_events`` so the brain
+   daemon (the dispatcher), operator UI, and future audit queries have
+   a historical record. Rows land with ``dispatched_at IS NULL`` and
+   the brain's ``alert_dispatcher`` poll picks them up on its 30s
+   cadence (see ``brain/alert_dispatcher.py``).
+2. **Remediation scaffold** — look up ``plugin.remediation.<alertname>``
    in ``app_settings``. If present + enabled, hand off to a registry
    dispatcher. Phase D4 ships the hook; concrete remediation handlers
    arrive incrementally in follow-up commits.
 
+The webhook used to ALSO fan out to Telegram/Discord inline via
+``services.integrations.operator_notify.notify_operator``. That coupled
+the operator's pager to the worker's uptime — when the worker crashed
+mid-alert the page silently disappeared. Dispatch was moved into the
+brain daemon (Glad-Labs/poindexter#340 prep) so:
+
+- Source-of-truth row exists before any dispatch is attempted.
+- Brain re-attempts on restart by polling ``WHERE dispatched_at IS NULL``.
+- Future LLM-triage step (Phase A in #340) drops in by replacing the
+  dispatcher's "always page" body — the poll/mark plumbing stays.
+
+So this endpoint is now: *receive → persist → optionally remediate*.
+All operator-facing dispatch (Telegram + Discord) happens in the
+brain daemon.
+
 Collapsing all three alertmanager routes (urgent / digest / brain) into
 one endpoint — Phase-D ships sooner, and the dispatch logic is simpler
 to reason about in code than spread across YAML routing trees. Brain
-can read ``alert_events`` directly via DB since it shares the pool.
+reads ``alert_events`` directly via DB since it shares the pool.
 
 ## Authentication
 
@@ -174,7 +189,13 @@ CREATE TABLE IF NOT EXISTS alert_events (
     starts_at TIMESTAMPTZ,
     ends_at TIMESTAMPTZ,
     fingerprint TEXT,
-    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Dispatch tracking (migration 0137). Set by brain/alert_dispatcher.py
+    -- after it polls + sends the row. NULL means "still queued for the
+    -- brain to pick up". dispatch_result is 'sent' on success or
+    -- 'error: <message>' on failure.
+    dispatched_at TIMESTAMPTZ,
+    dispatch_result TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_alert_events_received_at
@@ -182,6 +203,13 @@ CREATE INDEX IF NOT EXISTS idx_alert_events_received_at
 
 CREATE INDEX IF NOT EXISTS idx_alert_events_alertname
   ON alert_events (alertname, received_at DESC);
+
+-- Partial index — only undispatched rows live in the index, so the
+-- brain's `WHERE dispatched_at IS NULL` poll stays cheap regardless
+-- of total table size.
+CREATE INDEX IF NOT EXISTS idx_alert_events_undispatched
+  ON alert_events (id)
+  WHERE dispatched_at IS NULL;
 """
 
 
@@ -217,12 +245,19 @@ async def _insert_alert(pool: Any, alert: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Dispatch
+# Pageability + formatting helpers (used by the route AND the brain
+# dispatcher; kept here so the worker-side operator UI can re-use the
+# same shaping when displaying historical alert_events rows).
 # ---------------------------------------------------------------------------
 
 
 def _should_page_operator(alert: dict[str, Any]) -> bool:
-    """True when a human should see this in Telegram/Discord immediately."""
+    """True when a human should see this in Telegram/Discord immediately.
+
+    Used by the webhook to count + report ``pageable`` alerts. The
+    brain's dispatcher does its own severity check inside
+    ``poll_and_dispatch`` and routes via ``critical=`` on notify_operator.
+    """
     if alert.get("status") == "resolved":
         return False
     labels = alert.get("labels") or {}
@@ -253,27 +288,12 @@ def _format_alert_message(alert: dict[str, Any]) -> str:
     return header
 
 
-async def _dispatch_to_operator(alert: dict[str, Any]) -> None:
-    """Send the alert to the operator via the outbound dispatcher.
-
-    Routes through ``services.integrations.operator_notify.notify_operator``
-    which selects the ``telegram_ops`` row for critical severity and
-    ``discord_ops`` otherwise. ``notify_operator`` is best-effort and
-    never raises, so this wrapper just exists to hold the legacy log
-    line shape used by the surrounding ingest path.
-    """
-    try:
-        from services.integrations.operator_notify import notify_operator
-    except Exception as e:
-        logger.warning("alertmanager webhook: notify_operator unavailable: %s", e)
-        return
-
-    severity = (alert.get("labels") or {}).get("severity", "info").lower()
-    message = _format_alert_message(alert)
-    try:
-        await notify_operator(message, critical=severity == "critical")
-    except Exception as e:
-        logger.warning("alertmanager webhook: operator dispatch failed: %s", e)
+# NOTE: ``_dispatch_to_operator`` was deleted when dispatch responsibility
+# moved to the brain daemon (see module docstring). The
+# ``_format_alert_message`` and ``_should_page_operator`` helpers above
+# are retained for the operator UI + tests; the brain daemon ships its
+# own copy of ``_format_alert_message`` (see ``brain/alert_dispatcher.py``)
+# so the brain image stays decoupled from the worker's source tree.
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +367,7 @@ async def alertmanager_webhook(
         logger.exception("alertmanager webhook: ensure_table failed: %s", e)
 
     persisted = 0
-    paged = 0
+    pageable = 0
     remediated = 0
     for alert in alerts:
         if not isinstance(alert, dict):
@@ -359,9 +379,13 @@ async def alertmanager_webhook(
         except Exception as e:
             logger.warning("alertmanager webhook: insert failed: %s", e)
 
+        # Dispatch is owned by the brain daemon (brain/alert_dispatcher.py)
+        # which polls undispatched alert_events rows on a 30s cadence.
+        # We still count "would-page" alerts so the response carries an
+        # observable signal for callers that want to verify routing —
+        # but no outbound notification happens here.
         if _should_page_operator(alert):
-            await _dispatch_to_operator(alert)
-            paged += 1
+            pageable += 1
 
         try:
             rem = await _maybe_remediate(pool, alert)
@@ -371,13 +395,17 @@ async def alertmanager_webhook(
             logger.warning("alertmanager webhook: remediation lookup failed: %s", e)
 
     logger.info(
-        "alertmanager webhook: received=%d persisted=%d paged=%d remediated=%d",
-        len(alerts), persisted, paged, remediated,
+        "alertmanager webhook: received=%d persisted=%d pageable=%d remediated=%d",
+        len(alerts), persisted, pageable, remediated,
     )
     return {
         "ok": True,
         "count": len(alerts),
         "persisted": persisted,
-        "paged": paged,
+        # Backward-compatible field name; semantics changed from
+        # "actually paged" to "would have been paged" since the brain
+        # owns dispatch now. ``pageable`` is the new, accurate name.
+        "paged": pageable,
+        "pageable": pageable,
         "remediated": remediated,
     }

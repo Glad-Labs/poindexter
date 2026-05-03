@@ -133,6 +133,20 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_GLITCHTIP_TRIAGE_PROBE = False
 
+try:
+    # Alert dispatcher — polls alert_events for undispatched rows and
+    # routes them to Telegram/Discord. Replaces the worker-side inline
+    # dispatch path; the webhook handler now persists only.
+    # See brain/alert_dispatcher.py + Glad-Labs/poindexter#340.
+    from alert_dispatcher import poll_and_dispatch as _poll_alert_events
+    _HAS_ALERT_DISPATCHER = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.alert_dispatcher import poll_and_dispatch as _poll_alert_events
+        _HAS_ALERT_DISPATCHER = True
+    except ImportError:
+        _HAS_ALERT_DISPATCHER = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -245,6 +259,13 @@ EXTERNAL_SERVICES = {
 _prev_external_status = {}
 
 CYCLE_SECONDS = 300  # 5 minutes between full cycles
+
+# Alert dispatch poll cadence — Grafana → webhook → alert_events rows are
+# time-sensitive (operator-facing pages), so we poll faster than the main
+# 5-min cycle. 30s gives near-real-time delivery without hammering the DB
+# while idle. The loop runs as its own asyncio task so a slow dispatch
+# never stalls the main cycle.
+ALERT_DISPATCH_INTERVAL_SECONDS = 30
 
 # GH-28: Grafana alert sync cadence counter. Incremented each run_cycle;
 # sync_alert_rules fires when the counter hits grafana_alert_sync_interval_cycles
@@ -1083,6 +1104,48 @@ async def _maybe_sync_grafana_alerts(pool) -> None:
         logger.warning("[BRAIN] Grafana alert sync failed: %s", e, exc_info=True)
 
 
+async def alert_dispatch_loop(pool, shutdown_event):
+    """Background task: poll alert_events for undispatched rows.
+
+    Runs independently of the 5-min ``run_cycle`` so a slow Telegram
+    or Discord round-trip never delays the main monitoring loop.
+    Cadence is ``ALERT_DISPATCH_INTERVAL_SECONDS`` (30s by default).
+
+    Best-effort: any exception in a single poll is logged and the loop
+    continues. ``poll_and_dispatch`` already swallows per-row errors and
+    marks the rows with their dispatch_result; this wrapper only has
+    to handle wholesale failures (DB pool death, etc.).
+    """
+    if not _HAS_ALERT_DISPATCHER:
+        logger.info(
+            "[BRAIN] Alert dispatcher unavailable — alert_events rows "
+            "will accumulate undispatched. Check brain image build."
+        )
+        return
+
+    logger.info(
+        "[BRAIN] Alert dispatcher loop started (interval=%ds)",
+        ALERT_DISPATCH_INTERVAL_SECONDS,
+    )
+    while not shutdown_event.is_set():
+        try:
+            await _poll_alert_events(pool)
+        except Exception as e:
+            logger.warning(
+                "[BRAIN] alert_dispatcher poll failed: %s", e, exc_info=True,
+            )
+
+        try:
+            await asyncio.wait_for(
+                shutdown_event.wait(),
+                timeout=ALERT_DISPATCH_INTERVAL_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            pass  # Normal — interval elapsed, continue polling.
+
+    logger.info("[BRAIN] Alert dispatcher loop stopping")
+
+
 async def run_cycle(pool):
     """One full brain cycle: monitor → process → maintain → update."""
     logger.info("[BRAIN] === Cycle start ===")
@@ -1360,6 +1423,17 @@ async def main():
     # Touch heartbeat on startup so watchdog knows we're alive immediately
     _touch_heartbeat()
 
+    # Alert dispatcher loop — poll alert_events for undispatched rows on
+    # its own 30s cadence so operator-facing pages aren't gated on the
+    # 5-min monitoring cycle. Skipped in --once mode (one-shot is for
+    # debug/CI; the dispatch loop's value is its persistent cadence).
+    alert_dispatch_task = None
+    if not one_shot:
+        alert_dispatch_task = asyncio.create_task(
+            alert_dispatch_loop(pool, shutdown),
+            name="alert_dispatch_loop",
+        )
+
     while not shutdown.is_set():
         try:
             await run_cycle(pool)
@@ -1377,6 +1451,13 @@ async def main():
             pass  # Normal — timeout means no shutdown signal, continue loop
 
     logger.info("[BRAIN] Shutting down gracefully")
+    if alert_dispatch_task is not None:
+        try:
+            await asyncio.wait_for(alert_dispatch_task, timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            alert_dispatch_task.cancel()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[BRAIN] alert_dispatch_task close failed: %s", e)
     if _OAUTH_CLIENT is not None:
         try:
             await _OAUTH_CLIENT.aclose()

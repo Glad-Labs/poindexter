@@ -1,10 +1,15 @@
 """Unit tests for ``routes/alertmanager_webhook_routes.py``.
 
-We stub out the asyncpg pool + ``notify_operator`` so each test can
-assert on inserts, pages, and remediation lookups without spinning up
-Postgres or the outbound dispatcher. The handler's goal is to be
-robust: malformed alerts, missing labels, and failing sub-steps must
-never 5xx — the webhook is a hot path Alertmanager will retry.
+We stub out the asyncpg pool so each test can assert on inserts,
+pageable counts, and remediation lookups without spinning up
+Postgres. The handler's goal is to be robust: malformed alerts,
+missing labels, and failing sub-steps must never 5xx — the webhook
+is a hot path Alertmanager will retry.
+
+Post-unification (Glad-Labs/poindexter#340 prep): the webhook NO
+LONGER dispatches to Telegram/Discord. That responsibility moved to
+the brain daemon's alert_dispatcher loop. Tests below assert that
+``notify_operator`` is NOT called, which is the new contract.
 """
 
 from __future__ import annotations
@@ -172,7 +177,12 @@ class TestWebhookEndpoint:
         assert any("CREATE TABLE" in s for s in sql_fragments)
         assert any("INSERT INTO alert_events" in s for s in sql_fragments)
 
-    def test_pages_operator_on_critical(self):
+    def test_critical_marked_pageable_but_not_dispatched(self):
+        """Critical alerts increment ``pageable`` but DO NOT dispatch.
+
+        Dispatch is the brain daemon's job (brain/alert_dispatcher.py).
+        The webhook persists + counts; it must not call notify_operator.
+        """
         pool = _FakePool()
         mock_notify = AsyncMock(return_value=None)
         with patch(
@@ -194,12 +204,14 @@ class TestWebhookEndpoint:
                 ],
             })
         assert resp.status_code == 200
-        assert resp.json()["paged"] == 1
-        mock_notify.assert_awaited_once()
-        kwargs = mock_notify.call_args.kwargs
-        assert kwargs.get("critical") is True
+        body = resp.json()
+        # Pageable count surfaces routing intent without actually paging.
+        assert body["paged"] == 1  # backwards-compat alias
+        assert body["pageable"] == 1
+        # Webhook MUST NOT call notify_operator — that's the brain's job now.
+        mock_notify.assert_not_awaited()
 
-    def test_resolved_alert_does_not_page(self):
+    def test_resolved_alert_does_not_count_as_pageable(self):
         pool = _FakePool()
         mock_notify = AsyncMock(return_value=None)
         with patch(
@@ -218,8 +230,23 @@ class TestWebhookEndpoint:
                 ],
             })
         assert resp.status_code == 200
-        assert resp.json()["paged"] == 0
+        body = resp.json()
+        assert body["paged"] == 0
+        assert body["pageable"] == 0
         mock_notify.assert_not_awaited()
+
+    def test_dispatch_helper_was_removed(self):
+        """Ensure the legacy ``_dispatch_to_operator`` helper is gone.
+
+        Hard-fails if a future commit re-introduces inline dispatch in
+        the route — keeping this contract enforced via test rather than
+        comment-only.
+        """
+        from routes import alertmanager_webhook_routes as m
+        assert not hasattr(m, "_dispatch_to_operator"), (
+            "_dispatch_to_operator must stay deleted — dispatch is the "
+            "brain daemon's responsibility (brain/alert_dispatcher.py)."
+        )
 
     def test_remediation_scaffold_fires_when_configured(self):
         pool = _FakePool(settings={
