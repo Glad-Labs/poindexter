@@ -210,6 +210,10 @@ def _http_json(url: str, method: str = "GET", data: dict | None = None,
     try:
         body = json.dumps(data).encode() if data else None
         req = urllib.request.Request(url, data=body, method=method)
+        # Vercel's edge protection (BotID + bot-blocking ruleset) returns 403
+        # for the default Python-urllib UA. Identify as the brain probe so the
+        # public site treats us like any other infra check.
+        req.add_header("User-Agent", "brain-probe")
         if body:
             req.add_header("Content-Type", "application/json")
         resp = urllib.request.urlopen(req, timeout=timeout)
