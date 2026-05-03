@@ -40,7 +40,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 ### Key Numbers (as of May 3, 2026)
 
 - 51 live posts on gladlabs.io (217 posts total: 143 drafts, 23 archived; 1,467 pipeline_tasks across all generation runs)
-- 400 Python files under `src/cofounder_agent/services/` (16 highlighted in the table below are the load-bearing ones)
+- 400 Python files under `src/cofounder_agent/services/` (15 highlighted in the table below are the load-bearing ones)
 - 6 Grafana dashboards (post-merge consolidation), 4 alert rules
 - 7,900+ Python unit tests passing (329 test files)
 - 453 app_settings keys (the in-code DI layer accepts hundreds more — see PR sweeps #198 + #221)
@@ -99,7 +99,7 @@ npm run type:check            # Python mypy
 - `DEPLOYMENT_MODE=coordinator` — minimal read-only API (intended for future cloud host; currently unused)
 - `DEPLOYMENT_MODE=worker` (local PC) — claims tasks, runs content pipeline via Ollama
 
-**Key services (16 load-bearing):**
+**Key services (15 load-bearing):**
 
 | Service                                   | Purpose                                                    |
 | ----------------------------------------- | ---------------------------------------------------------- |
@@ -108,7 +108,6 @@ npm run type:check            # Python mypy
 | `multi_model_qa.py`                       | Adversarial review (different LLMs check each other)       |
 | `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                |
 | `workflow_executor.py`                    | Step-based workflow orchestration                          |
-| `unified_orchestrator.py`                 | Cross-pipeline coordinator                                 |
 | `settings_service.py`                     | DB-backed config (app_settings, 453 active keys)           |
 | `site_config.py`                          | DI seam over settings (Phase H singleton replacement)      |
 | `cost_guard.py`                           | Daily/monthly spend limits                                 |
