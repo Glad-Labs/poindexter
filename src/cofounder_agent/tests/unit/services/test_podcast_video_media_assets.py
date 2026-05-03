@@ -52,7 +52,10 @@ class TestPodcastServiceRecordsAsset:
     async def test_success_records_media_asset(self, tmp_path: Path):
         pool = MagicMock()
         sc = _fake_site_config(pool=pool)
-        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        # site_config kwarg removed — PodcastService reads it from the
+        # singleton import at call time. `sc` is still constructed because
+        # other parts of the test inject it into mocks downstream.
+        svc = PodcastService(output_dir=tmp_path)
 
         # Mock the TTS render — write the file inside the mock so the
         # "episode already exists" short-circuit doesn't fire.
@@ -91,7 +94,10 @@ class TestPodcastServiceRecordsAsset:
 
     async def test_failure_does_not_record(self, tmp_path: Path):
         sc = _fake_site_config(pool=MagicMock())
-        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        # site_config kwarg removed — PodcastService reads it from the
+        # singleton import at call time. `sc` is still constructed because
+        # other parts of the test inject it into mocks downstream.
+        svc = PodcastService(output_dir=tmp_path)
 
         async def _gen_with_voice(script: str, voice: str, output_path: Path):
             return EpisodeResult(success=False, error="all voices failed")
@@ -119,7 +125,10 @@ class TestPodcastServiceRecordsAsset:
         # does NOT need to land a row — backfill catches it. Verify
         # the recorder is not called on this short-circuit path.
         sc = _fake_site_config(pool=MagicMock())
-        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        # site_config kwarg removed — PodcastService reads it from the
+        # singleton import at call time. `sc` is still constructed because
+        # other parts of the test inject it into mocks downstream.
+        svc = PodcastService(output_dir=tmp_path)
 
         fake_mp3 = tmp_path / "post-1.mp3"
         fake_mp3.write_bytes(b"bytes" * 1000)
@@ -199,9 +208,9 @@ class TestVideoServiceRecordsAsset:
             "services.video_service._generate_images_from_scenes",
             AsyncMock(return_value=[]),
         ), patch(
-            "services.video_service._maybe_generate_ambient_bed",
-            AsyncMock(return_value=None),
-        ), patch(
+            # _maybe_generate_ambient_bed was removed from video_service —
+            # ambient bed generation moved to a separate service. Patch is
+            # no longer needed; the test's other mocks cover the asset path.
             "services.video_service._video_server_url",
             return_value="http://localhost:9837",
         ), patch(
@@ -214,7 +223,6 @@ class TestVideoServiceRecordsAsset:
                 title="Test Video",
                 content="Body content",
                 podcast_path=str(podcast_path),
-                site_config=sc,
             )
 
         assert result.success is True
