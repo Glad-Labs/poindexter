@@ -365,7 +365,24 @@ class TaskExecutor:
                 if isinstance(_inner, dict):
                     _task_meta = _inner
             _user_seeded = _task_meta.get("discovered_by") in ("url_seed", "url_list")
-            if topic and not _user_seeded and not TopicDiscovery._is_brand_relevant(topic):
+            # Dev diary tasks are operator-internal content ABOUT Matt's
+            # work — the topic title is generated from the work itself
+            # (e.g. "Daily dev diary — 2026-05-03") so it never matches
+            # AI/gaming/hardware brand keywords. Exempt them from the
+            # off-brand gate the same way URL-seeded tasks are exempted.
+            # The dev_diary writer prompt has its own brand-voice
+            # injection downstream, so the post still ends up on-voice
+            # without needing the keyword pre-filter.
+            _is_dev_diary = (
+                _task_meta.get("request_type") == "dev_diary"
+                or task.get("category") == "dev_diary"
+            )
+            if (
+                topic
+                and not _user_seeded
+                and not _is_dev_diary
+                and not TopicDiscovery._is_brand_relevant(topic)
+            ):
                 _reason = (
                     f"Off-brand: topic '{topic[:80]}' did not match any keyword in "
                     f"TopicDiscovery._BRAND_KEYWORDS. Add the relevant niche keyword "
