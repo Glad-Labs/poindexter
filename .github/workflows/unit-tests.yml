@@ -59,27 +59,26 @@ jobs:
         run: python -m pytest tests/unit/plugins/ -q --tb=short -p no:cacheprovider
 
       # `--forked` isolates ServiceContainer / site_config singletons that
-      # leak across tests in the services directory. Three test files are
-      # excluded because they hit external services not available on a
-      # vanilla CI runner (memory_client + memory_system want a running
-      # poindexter memory server, web_research hits live HTTP). Two more
-      # are temporarily excluded due to test rot tracked in
-      # Glad-Labs/poindexter#332 (test_pipeline_flow + test_task_executor_legacy_bridge
-      # import functions that were renamed/removed in earlier refactors).
+      # leak across tests in the services directory. Each --ignore below
+      # has a reason — keep this list audited.
+      #
+      # Re-enabled 2026-05-03: test_brain_daemon_digest, test_memory_client
+      # (13 skipped, no failures), test_memory_system,
+      # test_cost_aggregation_service. Tried but reverted same day after
+      # CI revealed --forked-only failures (provider plugins not installed
+      # in CI + a stale "output > input" assertion in test_cost_lookup):
+      # test_audio_gen_*, test_image_providers_flux_schnell,
+      # test_llm_providers_gemini, test_cost_lookup. See poindexter#345.
       - name: Unit tests — services (forked)
         working-directory: src/cofounder_agent
         run: |
           python -m pytest tests/unit/services/ -q --tb=short --forked \
-            --ignore=tests/unit/services/test_memory_client.py \
-            --ignore=tests/unit/services/test_memory_system.py \
             --ignore=tests/unit/services/test_web_research.py \
             --ignore=tests/unit/services/test_pipeline_flow.py \
             --ignore=tests/unit/services/stages/ \
             --ignore=tests/unit/services/test_audio_gen_providers_stable_audio_open.py \
             --ignore=tests/unit/services/test_audio_gen_service.py \
-            --ignore=tests/unit/services/test_brain_daemon_digest.py \
             --ignore=tests/unit/services/test_brain_health_probes.py \
-            --ignore=tests/unit/services/test_cost_aggregation_service.py \
             --ignore=tests/unit/services/test_cost_lookup.py \
             --ignore=tests/unit/services/test_deepeval_rails.py \
             --ignore=tests/unit/services/test_image_providers_flux_schnell.py \
