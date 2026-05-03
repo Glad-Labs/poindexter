@@ -326,10 +326,19 @@ def get_oauth_client():
     return _OAUTH_CLIENT
 
 
+# Vercel's edge protection (BotID + bot-blocking ruleset) returns 403
+# for the default Python-urllib UA, which made the brain repeatedly
+# alert "Service site is DOWN: Forbidden" against a perfectly healthy
+# www.gladlabs.io. Identify as the brain probe so the public site
+# treats us like any other infra check. Same fix as
+# health_probes._http_json — keeping the helpers consistent.
+_PROBE_UA = "brain-probe"
+
+
 def check_http(url: str, timeout: int = 10) -> tuple:
     """Check if an HTTP endpoint responds. Returns (ok, status_code, detail)."""
     try:
-        req = urllib.request.Request(url)
+        req = urllib.request.Request(url, headers={"User-Agent": _PROBE_UA})
         resp = urllib.request.urlopen(req, timeout=timeout)
         return True, resp.status, "ok"
     except urllib.error.HTTPError as e:
@@ -341,7 +350,8 @@ def check_http(url: str, timeout: int = 10) -> tuple:
 def check_statuspage(url: str, timeout: int = 10) -> tuple:
     """Check an Atlassian Statuspage API. Returns (ok, indicator, description)."""
     try:
-        resp = urllib.request.urlopen(url, timeout=timeout)
+        req = urllib.request.Request(url, headers={"User-Agent": _PROBE_UA})
+        resp = urllib.request.urlopen(req, timeout=timeout)
         data = json.loads(resp.read())
         indicator = data.get("status", {}).get("indicator", "unknown")
         description = data.get("status", {}).get("description", "unknown")
@@ -354,7 +364,8 @@ def check_statuspage(url: str, timeout: int = 10) -> tuple:
 def check_instatus(url: str, timeout: int = 10) -> tuple:
     """Check an Instatus summary endpoint. Returns (ok, status, description)."""
     try:
-        resp = urllib.request.urlopen(url, timeout=timeout)
+        req = urllib.request.Request(url, headers={"User-Agent": _PROBE_UA})
+        resp = urllib.request.urlopen(req, timeout=timeout)
         data = json.loads(resp.read())
         status = data.get("page", {}).get("status", "UNKNOWN")
         ok = status in ("UP", "HASISSUES")  # UP = good, HASISSUES = degraded but alive
@@ -366,7 +377,8 @@ def check_instatus(url: str, timeout: int = 10) -> tuple:
 def check_json_status(url: str, timeout: int = 10) -> tuple:
     """Check a JSON health endpoint. Returns (ok, status, detail)."""
     try:
-        resp = urllib.request.urlopen(url, timeout=timeout)
+        req = urllib.request.Request(url, headers={"User-Agent": _PROBE_UA})
+        resp = urllib.request.urlopen(req, timeout=timeout)
         data = json.loads(resp.read())
         status = data.get("status", "unknown")
         ok = status in ("healthy", "degraded", "ok")
