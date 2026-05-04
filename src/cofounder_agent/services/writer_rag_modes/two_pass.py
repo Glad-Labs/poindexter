@@ -196,12 +196,27 @@ def _format_bundle_for_prompt(bundle: dict[str, Any]) -> str:
             title = (p.get("title") or "")[:200]
             url = p.get("url") or ""
             author = p.get("author") or ""
+            body = (p.get("body") or "").strip()
             tag = f"PR #{num}" if num else "PR"
             lines.append(f"- [{tag}] {title}")
             if url:
                 lines.append(f"  {url}")
             if author:
                 lines.append(f"  author: {author}")
+            # PR body is the writer's primary grounding signal — without it
+            # the writer guesses meaning from the title alone (see #353
+            # follow-up). Cap to first 800 chars per PR to keep the prompt
+            # within budget on multi-day windows; with 8 PRs × 800 chars
+            # the bodies fit in ~6.5K chars total. Strip blank lines and
+            # indent so the structure stays scannable.
+            if body:
+                # Compact: collapse runs of blank lines + first 800 chars.
+                compact_body = "\n".join(
+                    ln for ln in body.splitlines() if ln.strip()
+                )[:800]
+                lines.append("  description:")
+                for body_line in compact_body.splitlines():
+                    lines.append(f"    {body_line}")
         lines.append("")
     commits = (bundle.get("notable_commits") or [])[:8]
     if commits:

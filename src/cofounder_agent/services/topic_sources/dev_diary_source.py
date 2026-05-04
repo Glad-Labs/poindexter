@@ -193,7 +193,16 @@ def _run_subprocess(cmd: list[str], cwd: str | None = None, timeout: int = 30) -
 def _collect_merged_prs(hours: int, repo_root: str | None) -> list[dict[str, Any]]:
     """Use ``gh pr list`` to collect PRs merged in the last ``hours``.
 
-    Returns a list of ``{number, title, url, merged_at, author}`` dicts.
+    Returns a list of ``{number, title, url, merged_at, author, body}``
+    dicts. The ``body`` field is critical for technical accuracy: with
+    title-only data the writer guesses meaning from keywords (a PR
+    titled ``fix(validator): kill IGNORECASE bypass`` was described as
+    *adding* IGNORECASE — the opposite direction). With the body the
+    writer has the actual change description to ground against.
+
+    Body is capped to ~2000 chars per PR upstream of the prompt
+    formatter, which applies its own cap; the gh fetch itself is
+    unbounded so we always have the full text available for fallback.
     """
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     # gh's --search supports "merged:>=YYYY-MM-DDTHH:MM:SSZ"
@@ -202,7 +211,7 @@ def _collect_merged_prs(hours: int, repo_root: str | None) -> list[dict[str, Any
         "--state", "merged",
         "--search", f"merged:>={since}",
         "--limit", "30",
-        "--json", "number,title,url,mergedAt,author",
+        "--json", "number,title,url,mergedAt,author,body",
     ]
     raw = _run_subprocess(cmd, cwd=repo_root, timeout=30)
     if not raw.strip():
@@ -224,6 +233,7 @@ def _collect_merged_prs(hours: int, repo_root: str | None) -> list[dict[str, Any
             "url": pr.get("url", ""),
             "merged_at": pr.get("mergedAt", ""),
             "author": author.get("login", "") if isinstance(author, dict) else "",
+            "body": (pr.get("body") or "")[:2000],
         })
     return out
 
