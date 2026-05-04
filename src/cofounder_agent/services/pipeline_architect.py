@@ -76,15 +76,17 @@ that follow tell you what to chain:
 
 HARD RULES:
 
-1. ONLY use atom names that appear in the ATOM CATALOG. Do not invent
-   atom names. Names are namespaced — atoms.* are native composable
-   atoms, stage.* are legacy stages surfaced as virtual atoms.
-2. The graph MUST be a DAG. No cycles.
-3. Every non-terminal node must have at least one outgoing edge.
+1. Use atom names exactly as they appear in the ATOM CATALOG. Names
+   are namespaced — atoms.* are native composable atoms, stage.* are
+   legacy stages surfaced as virtual atoms. If the closest name in
+   the catalog has a different prefix, use the catalog form.
+2. Build the graph as a DAG — every edge moves the pipeline forward
+   toward END.
+3. Every non-terminal node has at least one outgoing edge.
 4. Terminal edges use the literal string "END" as the 'to' value.
 5. The 'entry' field names the first node to run.
-6. Output ONLY valid JSON matching the schema. No prose, no markdown
-   fences, no commentary outside the JSON.
+6. Output one valid JSON object matching the schema. The first
+   character is `{` and the last character is `}`.
 
 JSON SCHEMA:
 
@@ -120,7 +122,8 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 
 If the spec validator returns errors on a previous attempt, every
 error message starts with "FIX:" followed by exactly what to change.
-Apply the fixes literally on retry — don't redesign from scratch.
+On retry, apply each FIX literally — keep the rest of the prior
+spec intact.
 """
 
 
@@ -208,7 +211,8 @@ async def compose(
             f"---\n\n"
             f"{base_user_prompt}{retry_block}\n\n"
             f"---\n\n"
-            f"Output ONLY the JSON object. No prose, no markdown fences."
+            f"Output one JSON object. The first character is `{{` and "
+            f"the last character is `}}`."
         )
 
         raw = await _ollama_chat_text(full_prompt, model=model)
