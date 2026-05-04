@@ -174,6 +174,39 @@ class StageRunner:
     def registered_names(self) -> list[str]:
         return sorted(self._by_name)
 
+    async def _mark_stage(self, context: dict[str, Any], stage_name: str) -> None:
+        """Stamp ``pipeline_tasks.stage`` with the current stage name.
+
+        Non-fatal: if the UPDATE fails (no pool, no task_id in context,
+        DB transient error) we log a debug message and let the actual
+        stage execution proceed. This is purely an observability write
+        — the pipeline correctness doesn't depend on it.
+
+        Filed as Glad-Labs/poindexter#350: the column was being set to
+        'pending' on INSERT and never moved, even while the worker
+        processed through generate_content / quality_evaluation / qa /
+        finalize. Operator UIs (Grafana, MCP list_tasks, the ops
+        Telegram bot) all read this field to show in-flight progress
+        and were silently misleading.
+        """
+        if self._pool is None:
+            return
+        task_id = context.get("task_id")
+        if not task_id:
+            return
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE pipeline_tasks SET stage = $1, updated_at = NOW() "
+                    "WHERE task_id::text = $2",
+                    stage_name, str(task_id),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "stage_runner: stage column UPDATE for task %s failed: %s",
+                task_id, exc,
+            )
+
     async def run_all(
         self,
         context: dict[str, Any],
@@ -219,6 +252,14 @@ class StageRunner:
         if not cfg.enabled:
             logger.info("stage_runner: %r disabled in app_settings; skipping", name)
             return StageRunRecord(name=name, ok=True, detail="disabled", skipped=True)
+
+        # Best-effort: stamp the current stage name onto pipeline_tasks.stage
+        # so operator surfaces (Grafana, Telegram status, MCP list_tasks,
+        # `poindexter tasks list`) reflect what's actually happening — not
+        # the post-INSERT default 'pending'. See Glad-Labs/poindexter#350.
+        # A failed UPDATE here is observability-only; we log + continue
+        # rather than fail the stage.
+        await self._mark_stage(context, name)
 
         timeout = int(
             cfg.get("timeout_seconds", getattr(stage, "timeout_seconds", 120))
