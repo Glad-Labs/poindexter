@@ -370,6 +370,27 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # service or cost_guard directly, both of which hit cost_logs
         # fresh on every call). Audit confirmed zero production readers.
 
+        # Atom registry — Phase 2 of dynamic-pipeline-composition.
+        # Walks ``services.atoms`` collecting ATOM_META declarations,
+        # then writes them through to ``pipeline_atoms`` so the
+        # architect-LLM (and operator dashboards) can query the live
+        # block inventory by SQL. Best-effort — DB sync is non-fatal
+        # because the in-process registry is the source of truth.
+        if _deployment_mode == "worker" and db_service and getattr(db_service, "pool", None):
+            try:
+                from services import atom_registry
+                atom_registry.discover()
+                synced = await atom_registry.sync_to_db(db_service.pool)
+                logger.info(
+                    "[LIFESPAN] atom_registry: %d atom(s) discovered, %d synced to DB",
+                    len(atom_registry.list_atoms()), synced,
+                )
+            except Exception as e:
+                logger.warning(
+                    "[LIFESPAN] atom_registry boot failed (non-critical): %s", e,
+                    exc_info=True,
+                )
+
         # Plugin scheduler — apscheduler + entry_point + core-sample Jobs.
         # Runs housekeeping (sync_page_views, db_backup, render_prometheus_rules, ...)
         # on schedules declared by the Job class; PluginConfig in app_settings

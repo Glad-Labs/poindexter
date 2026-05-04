@@ -169,6 +169,74 @@ async def process_content_generation_task(
     from plugins.stage_runner import StageRunner
     _runner = StageRunner(database_service.pool, get_core_samples().get("stages", []))
 
+    # ------------------------------------------------------------------
+    # Dynamic-pipeline-composition dispatch (v1 POC, Glad-Labs/poindexter#359).
+    # When the task carries ``template_slug``, route to the LangGraph-based
+    # TemplateRunner instead of the legacy StageRunner. Tasks without a
+    # template_slug continue through the canonical chunked flow below —
+    # no behaviour change for the existing default path.
+    # ------------------------------------------------------------------
+    _template_slug: str | None = None
+    try:
+        async with database_service.pool.acquire() as _conn:
+            _raw = await _conn.fetchval(
+                "SELECT template_slug FROM pipeline_tasks WHERE task_id = $1",
+                str(task_id),
+            )
+        # Tight isinstance check — test fixtures bind ``db.pool`` as a
+        # MagicMock that auto-generates AsyncMocks for attribute access,
+        # so ``fetchval`` returns a truthy AsyncMock object rather than
+        # a string. Without the isinstance gate, the legacy-StageRunner
+        # tests get routed into TemplateRunner.run with a non-string
+        # slug and KeyError out.
+        if isinstance(_raw, str) and _raw.strip():
+            _template_slug = _raw.strip()
+    except Exception as _exc:
+        logger.debug("[BG-TASK] template_slug lookup failed: %s", _exc)
+
+    if _template_slug:
+        logger.info(
+            "[BG-TASK] template_slug=%r — routing to TemplateRunner (LangGraph)",
+            _template_slug,
+        )
+        from services.template_runner import TemplateRunner
+        _tmpl_runner = TemplateRunner(database_service.pool)
+        try:
+            _tmpl_summary = await _tmpl_runner.run(
+                _template_slug, result, thread_id=str(task_id),
+            )
+            # Mirror the stage-summary shape expected by callers — task
+            # routes through finalize_task inside the template, which
+            # already updates the row to awaiting_approval.
+            result.update(_tmpl_summary.final_state)
+            audit_log_bg(
+                "template_completed", "content_router",
+                {
+                    "template": _template_slug,
+                    "ok": _tmpl_summary.ok,
+                    "halted_at": _tmpl_summary.halted_at,
+                    "records": [r.name for r in _tmpl_summary.records],
+                },
+                task_id=task_id,
+            )
+            return result
+        except Exception as _exc:
+            logger.exception(
+                "[BG-TASK] TemplateRunner raised for task %s template=%r: %s",
+                task_id, _template_slug, _exc,
+            )
+            await database_service.update_task(
+                task_id,
+                {
+                    "status": "failed",
+                    "error_message": (
+                        f"TemplateRunner failed for template={_template_slug}: {_exc}"
+                    )[:500],
+                },
+            )
+            result["status"] = "failed"
+            return result
+
     try:
         logger.info("[BG-TASK] Starting content generation for task %s...", task_id[:8])
         logger.debug("[BG-TASK] database_service = %s", database_service)

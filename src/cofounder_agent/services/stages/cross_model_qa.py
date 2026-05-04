@@ -188,6 +188,56 @@ class CrossModelQAStage:
             except Exception:
                 settings_service = None
 
+        # DETERMINISTIC_COMPOSITOR niches bypass cross-model QA entirely.
+        # The compositor renders the post deterministically from the
+        # context_bundle (PR title → H2, PR body verbatim → section text,
+        # commit list, fixed footer). There is nothing for QA to improve;
+        # any "fix" via the LLM rewrite path would replace verifiable
+        # source-of-truth output with hallucinated freestyle content.
+        # Pass straight through to the operator approval gate. Closes the
+        # 2026-05-04 dev_diary fabrication saga where every QA-rewrite
+        # turn produced "kbir-dev/daily-diary" / "Marek Rosa" tutorial
+        # text regardless of writer model.
+        try:
+            gen_metrics = (context.get("generate_metrics") or {})
+            wmode = str(gen_metrics.get("writer_rag_mode") or "").upper()
+            logger.info(
+                "[MULTI_QA] task %s context keys=%s generate_metrics keys=%s writer_rag_mode=%r",
+                task_id[:8],
+                sorted(list(context.keys()))[:20],
+                sorted(list(gen_metrics.keys())) if isinstance(gen_metrics, dict) else type(gen_metrics).__name__,
+                wmode,
+            )
+            if wmode == "DETERMINISTIC_COMPOSITOR":
+                logger.info(
+                    "[MULTI_QA] Skipping QA for DETERMINISTIC_COMPOSITOR task %s — "
+                    "deterministic output, no rewrite needed",
+                    task_id[:8],
+                )
+                return StageResult(
+                    ok=True,
+                    detail="skipped — DETERMINISTIC_COMPOSITOR (no rewrite, no veto)",
+                    context_updates={
+                        "qa_final_score": float(quality_result.overall_score),
+                        "quality_score": float(quality_result.overall_score),
+                        "qa_reviews": [{
+                            "reviewer": "compositor_skip",
+                            "score": float(quality_result.overall_score),
+                            "approved": True,
+                            "feedback": "deterministic compositor output — QA bypassed",
+                            "provider": "none",
+                        }],
+                        "qa_rewrite_attempts": 0,
+                        "content": content_text,
+                    },
+                    metrics={"final_score": float(quality_result.overall_score)},
+                )
+        except Exception as exc:
+            logger.warning(
+                "[MULTI_QA] DETERMINISTIC_COMPOSITOR check failed: %s — running QA normally",
+                exc,
+            )
+
         qa = MultiModelQA(pool=pool, settings_service=settings_service)
 
         max_rewrites = await _resolve_max_rewrites(settings_service, default=2)

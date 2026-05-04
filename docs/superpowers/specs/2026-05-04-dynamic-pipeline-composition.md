@@ -269,12 +269,12 @@ Acceptance: dev_diary task produces a 2-3 paragraph narrative post via the dev_d
 
 ### Phase 4 (architect LLM — 1-2 days)
 
-13. `services/pipeline_architect.py`. Reads request + atom catalog → returns LangGraph composition (Claude Sonnet via Vercel AI Gateway, behind cost_guard).
-14. Architect compositions cached as named templates after operator review.
+13. `services/pipeline_architect.py`. Reads request + atom catalog → returns LangGraph composition. **Local LLM only** (`pipeline_architect_model`, defaults to `glm-4.7-5090:latest`); cloud APIs are opt-in fallbacks behind `cost_guard` per `feedback_no_paid_apis`.
+14. Architect compositions cached as named templates in `pipeline_templates.graph_def` after operator review.
 
 ### Phase 5 (extension to ops — incremental)
 
-15. Add ops atoms: `query_stripe`, `send_invoice`, `post_to_discord`, `send_email_via_resend`, `query_sentry_issues`, etc.
+15. Add ops atoms: `query_lemon_squeezy`, `send_email_via_resend`, `post_to_discord`, `query_sentry_issues`, etc. (Lemon Squeezy is the active payment surface — Stripe is deferred until Glad Labs needs it.)
 16. Architect now composes pipelines beyond product creation.
 17. Permission/sandbox model for ops atoms (deferred from earlier phases).
 
@@ -299,7 +299,7 @@ Acceptance: dev_diary task produces a 2-3 paragraph narrative post via the dev_d
 
 2. **Conditional branches** — `add_conditional_edges` covers skip-or-execute. Do we need full if/else with diverging downstream paths? Initial answer: not yet — push back any case that needs it to v2 of the schema.
 
-3. **Architect-LLM cost containment** — at ~$0.005-0.02 per architect call (Sonnet, ~3K input + ~1K output), 50 novel-request calls/day = ~$0.50/day. Cap at `architect_max_calls_per_day` setting; block + notify operator when exceeded.
+3. **Architect-LLM cost containment** — local LLM is the default, so per-call cost is GPU compute only (no $/call). If a future operator opts into a cloud architect model, gate behind `architect_max_calls_per_day` + `cost_guard` so spend stays bounded; block + notify operator when exceeded.
 
 4. **Sub-template composition vs flat atom graphs** — when the architect composes, should it nest sub-templates or always flatten? Probably depends on cost: flattened graphs are easier to optimize/observe, nested are easier for the architect LLM to reason about. Decide after Phase 4 prototyping.
 
@@ -317,6 +317,6 @@ Acceptance: dev_diary task produces a 2-3 paragraph narrative post via the dev_d
   - Phase 3: Atom granularity refactor (cross_model_qa, generate_content, etc.)
   - Phase 3: Approval gates as LangGraph interrupts
   - Phase 4: pipeline_architect.py LLM composition service
-  - Phase 5: Ops atoms (Stripe, Resend, Discord, Sentry, etc.)
+  - Phase 5: Ops atoms (Lemon Squeezy, Resend, Discord, Sentry, etc.)
   - Phase 5: Permission/sandbox model for ops atoms
 - Estimated total: **Day 1 ships in ~1 day**. Phases 2-3 add ~10 days for content. Phase 4 (architect) adds ~2 days. Phase 5 (ops) is incremental.

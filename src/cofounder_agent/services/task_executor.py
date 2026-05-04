@@ -619,7 +619,29 @@ class TaskExecutor:
                 # before bothering the human with a review notification.
                 # Tunable via app_settings key: min_curation_score (default 70)
                 min_curation_score = float(await self._get_setting("min_curation_score", "70"))
-                if 0 < quality_score < min_curation_score:
+                # DETERMINISTIC_COMPOSITOR niches (dev_diary) bypass the
+                # auto-curator. The compositor produces a deterministic
+                # restatement of the context_bundle — no creative writing,
+                # no hooks, no CTAs — so the LLM-tuned quality scorer
+                # underrates it (e.g. flags the footer as "truncated
+                # content"). Operator review is the only gate.
+                bypass_curator = False
+                with suppress(Exception):
+                    pool = getattr(self.database_service, "pool", None)
+                    if pool is not None:
+                        async with pool.acquire() as _conn:
+                            wrm = await _conn.fetchval(
+                                "SELECT writer_rag_mode FROM pipeline_tasks WHERE task_id = $1",
+                                str(task_id),
+                            )
+                        if str(wrm or "").upper() == "DETERMINISTIC_COMPOSITOR":
+                            bypass_curator = True
+                            logger.info(
+                                "[CURATE] Bypassing auto-curator for DETERMINISTIC_COMPOSITOR task %s "
+                                "(score=%.1f) — deterministic output, operator review only",
+                                task_id, quality_score,
+                            )
+                if (not bypass_curator) and 0 < quality_score < min_curation_score:
                     logger.info(
                         "[CURATE] Auto-rejecting low-quality post: %s (score %.1f < %.1f)",
                         topic[:40], quality_score, min_curation_score,

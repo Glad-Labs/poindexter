@@ -338,6 +338,11 @@ def _make_mock_pool(execute_side_effect=None):
         conn.execute = AsyncMock(side_effect=execute_side_effect)
     else:
         conn.execute = AsyncMock()
+    # _create_dev_diary_task now reads niches.writer_rag_mode via fetchval
+    # before inserting, so the mock conn needs an awaitable for it.
+    # Returning None keeps writer_rag_mode NULL in the INSERT, which is
+    # the same behaviour the test originally exercised.
+    conn.fetchval = AsyncMock(return_value=None)
 
     @asynccontextmanager
     async def _tx_inner():

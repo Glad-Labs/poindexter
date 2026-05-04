@@ -226,15 +226,42 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
 
     task_id = str(uuid4())
     topic = ctx.headline()
+    bundle_dict = ctx.to_dict()
     task_metadata = {
         "niche": _NICHE_SLUG,
         "gates": gates,
         "request_type": "dev_diary",
-        "context_bundle": ctx.to_dict(),
+        # Kept here for backward compat with any reader that still
+        # expects task_metadata.context_bundle, but THIS COPY GETS
+        # WIPED by the content_tasks_update_redirect trigger on first
+        # writer update (the trigger does
+        # ``stage_data || {'task_metadata': NEW.task_metadata}`` which
+        # replaces the entire task_metadata sub-object). The
+        # authoritative copy lives at stage_data._dev_diary_bundle —
+        # see below.
+        "context_bundle": bundle_dict,
         "generate_featured_image": True,
         "source": "scheduled_dev_diary_job",
     }
-    stage_data = {"task_metadata": task_metadata}
+    # Place the bundle at a top-level stage_data key so the trigger's
+    # JSONB merge (which only touches 'metadata', 'result',
+    # 'task_metadata') leaves it untouched. _read_context_bundle reads
+    # from here. Underscore prefix signals "preserved by convention".
+    stage_data = {
+        "task_metadata": task_metadata,
+        "_dev_diary_bundle": bundle_dict,
+    }
+
+    # Pull writer_rag_mode from the niche row so the task routes
+    # through the writer_rag_modes dispatcher (TWO_PASS / DETERMINISTIC_
+    # COMPOSITOR / etc.) when the legacy generate_content stage runs
+    # inside the template. NULL is fine — generate_content falls back
+    # to its legacy path when unset.
+    async with pool.acquire() as _niche_conn:
+        niche_mode = await _niche_conn.fetchval(
+            "SELECT writer_rag_mode FROM niches WHERE slug = $1",
+            _NICHE_SLUG,
+        )
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -244,11 +271,13 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
                     task_id, task_type, status, topic, stage,
                     style, tone, target_length,
                     target_audience, category, niche_slug,
+                    writer_rag_mode, template_slug,
                     created_at, updated_at
                 ) VALUES (
                     $1, 'blog_post', 'pending', $2, 'pending',
                     'first_person', 'candid', 600,
                     $3, $4, $5,
+                    $6, $7,
                     NOW(), NOW()
                 )
                 """,
@@ -266,6 +295,14 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
                 # generic-default writer prompt instead of the
                 # dev-diary-specific one).
                 _NICHE_SLUG,
+                niche_mode,
+                # template_slug routes the task through the v1
+                # LangGraph TemplateRunner. The 'dev_diary' template
+                # skips QA, auto-curator, SEO, and media-script stages —
+                # none fit a status-report artifact. See
+                # docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md
+                # and Glad-Labs/poindexter#359.
+                "dev_diary",
             )
             await conn.execute(
                 """

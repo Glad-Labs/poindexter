@@ -417,12 +417,25 @@ class GenerateContentStage:
         Task 14: niches set this column when handing tasks off via
         TopicBatchService; legacy/manual tasks leave it NULL and stay on the
         legacy generator path.
+
+        Reads pipeline_tasks.writer_rag_mode directly rather than going
+        through ``database_service.get_task()`` — that helper passes rows
+        through ``ModelConverter.to_task_response()``, which is built
+        against the public TaskResponse schema and silently drops fields
+        not declared there. ``writer_rag_mode`` is one of the dropped
+        fields, so the helper-based read returned None for every dev_diary
+        task even when the column was set, sending the writer down the
+        legacy path. Direct SQL avoids that schema gate.
         """
         try:
-            task_row = await database_service.get_task(task_id)
-            if not task_row:
+            pool = getattr(database_service, "pool", None)
+            if pool is None:
                 return None
-            mode = task_row.get("writer_rag_mode")
+            async with pool.acquire() as conn:
+                mode = await conn.fetchval(
+                    "SELECT writer_rag_mode FROM pipeline_tasks WHERE task_id = $1",
+                    str(task_id),
+                )
             if not mode:
                 return None
             return str(mode).strip().upper() or None
@@ -457,12 +470,52 @@ class GenerateContentStage:
         gets the actual PR titles + URLs to ground claims against.
         """
         try:
-            task_row = await database_service.get_task(task_id)
-            if not task_row:
+            # Read directly from pipeline_versions.stage_data rather than
+            # going through database_service.get_task() — that helper passes
+            # rows through ModelConverter, which projects task_metadata
+            # against a UI-shaped schema and may surface a *different*
+            # task_metadata than the raw row (the task_metadata column is
+            # rebuilt from normalized columns for UI compatibility, which
+            # drops the context_bundle key downstream stages set during
+            # initial INSERT). The original bundle lives in stage_data
+            # under task_metadata.context_bundle in the version-1 row
+            # written by run_dev_diary_post.
+            pool = getattr(database_service, "pool", None)
+            if pool is None:
                 return None
-            tm = task_row.get("task_metadata") or {}
+            import json as _json
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT stage_data FROM pipeline_versions "
+                    "WHERE task_id = $1 ORDER BY version ASC LIMIT 1",
+                    str(task_id),
+                )
+            if not row:
+                return None
+            sd = row["stage_data"]
+            if isinstance(sd, str):
+                try:
+                    sd = _json.loads(sd)
+                except Exception:
+                    return None
+            if not isinstance(sd, dict):
+                return None
+            # Preferred read: the dev_diary job stashes the bundle at the
+            # top level under _dev_diary_bundle to dodge the
+            # content_tasks_update_redirect trigger, which JSONB-merges
+            # only (metadata, result, task_metadata) so a key outside
+            # those survives writer updates. Fall through to the legacy
+            # task_metadata.context_bundle read for older rows.
+            preserved = sd.get("_dev_diary_bundle")
+            if isinstance(preserved, dict) and preserved:
+                return preserved
+            if isinstance(preserved, str):
+                try:
+                    return _json.loads(preserved)
+                except Exception:
+                    pass
+            tm = sd.get("task_metadata") or {}
             if isinstance(tm, str):
-                import json as _json
                 try:
                     tm = _json.loads(tm)
                 except Exception:
@@ -470,11 +523,15 @@ class GenerateContentStage:
             if not isinstance(tm, dict):
                 return None
             cb = tm.get("context_bundle")
-            # Some legacy paths nested it under metadata. Support both shapes.
             if cb is None:
                 inner = tm.get("metadata")
                 if isinstance(inner, dict):
                     cb = inner.get("context_bundle")
+            if isinstance(cb, str):
+                try:
+                    cb = _json.loads(cb)
+                except Exception:
+                    return None
             return cb if isinstance(cb, dict) else None
         except Exception as e:
             logger.warning(

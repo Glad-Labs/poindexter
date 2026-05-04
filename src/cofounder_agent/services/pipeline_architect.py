@@ -1,0 +1,579 @@
+"""``pipeline_architect`` — local-LLM service that composes pipelines on demand.
+
+Phase 4 of the dynamic-pipeline-composition spec. Takes a high-level
+intent (free-text or structured) plus the live atom catalog, returns
+a LangGraph ``StateGraph`` factory that the TemplateRunner can execute.
+
+Constraints (per Matt 2026-05-04):
+
+- **Local LLM only by default.** Uses ``pipeline_writer_model`` from
+  app_settings (currently glm-4.7-5090 or qwen3:30b). Cloud APIs are
+  opt-in fallbacks ONLY when explicitly enabled in app_settings AND
+  gated by cost_guard. See ``feedback_no_paid_apis`` memory.
+- No drag/drop UI. The architect is the composition mechanism; Matt
+  approves results not configurations.
+- Architect output is always reviewed by the operator (Telegram
+  approve/reject) before being cached as a named template.
+
+Output contract:
+
+The architect returns a JSON object describing the graph (nodes,
+edges, entry, optional config per node). A separate compiler
+function (:func:`build_graph_from_json`) resolves atom names to
+callables and wires up the LangGraph. JSON is preferred over Python
+code generation because:
+
+1. Local LLMs follow JSON schemas more reliably than emit Python.
+2. JSON is trivial to validate (every node atom must exist in the
+   catalog, every edge must reference a declared node, the graph
+   must be a DAG).
+3. JSON serializes cleanly into ``pipeline_templates.graph_def`` for
+   caching.
+
+Spec: ``docs/superpowers/specs/2026-05-04-dynamic-pipeline-composition.md``
+Issue: Glad-Labs/poindexter#364.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from langgraph.graph import END, StateGraph
+
+from services.atom_registry import (
+    get_atom_callable,
+    get_atom_meta,
+    list_atoms,
+    to_catalog_text,
+)
+from services.template_runner import (
+    PipelineState,
+    make_stage_node,
+)
+
+logger = logging.getLogger(__name__)
+
+
+_ARCHITECT_SYSTEM_PROMPT = """\
+You are the Glad Labs pipeline architect. Given an INTENT (high-level
+request) and an ATOM CATALOG (the available building blocks), produce
+a JSON object describing a LangGraph pipeline that satisfies the
+intent.
+
+Hard rules:
+
+1. ONLY use atom names that appear in the ATOM CATALOG. Do not invent
+   atom names.
+2. The graph MUST be a DAG. No cycles.
+3. Every node must connect to at least one other node OR to END.
+4. The first node is the entry point.
+5. Output ONLY valid JSON matching the schema below — no prose, no
+   markdown fences, no explanation.
+
+JSON schema:
+
+{
+  "name": "<short_slug>",
+  "description": "<one-sentence purpose>",
+  "entry": "<node_id_of_entry>",
+  "nodes": [
+    {"id": "<node_id>", "atom": "<atom_name_from_catalog>",
+     "config": {<optional key/value config for the atom>}}
+  ],
+  "edges": [
+    {"from": "<node_id>", "to": "<node_id_or_END>"}
+  ]
+}
+
+Use END (literal string "END") as the destination for terminal edges.
+Each node id must be unique within the graph. Atom names must match
+the catalog exactly (e.g. ``atoms.narrate_bundle``).
+
+Prefer simple linear graphs unless the intent specifically asks for
+branching. Match existing template patterns when possible (look for
+the dev_diary pattern: verify_task → narrate_bundle → finalize_task).
+"""
+
+
+# ---------------------------------------------------------------------------
+# Result + error types
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ArchitectResult:
+    """What the architect returned. Either a valid graph spec or errors."""
+
+    ok: bool
+    spec: dict[str, Any] | None = None
+    raw_response: str = ""
+    errors: list[str] | None = None
+    model_used: str = ""
+
+    @property
+    def slug(self) -> str:
+        return (self.spec or {}).get("name") or ""
+
+
+# ---------------------------------------------------------------------------
+# Compose: intent → graph spec (LLM call + validation)
+# ---------------------------------------------------------------------------
+
+
+async def compose(intent: str, *, context: dict[str, Any] | None = None) -> ArchitectResult:
+    """Ask the local writer LLM to compose a graph for the given intent.
+
+    Returns :class:`ArchitectResult`. On invalid output (missing atoms,
+    malformed JSON, cycles) returns ``ok=False`` with errors listed —
+    caller decides whether to retry, surface to operator, or fall
+    back to a default template.
+    """
+    catalog_text = to_catalog_text()
+    if not catalog_text.strip():
+        return ArchitectResult(
+            ok=False,
+            errors=["atom catalog is empty — discovery must have failed"],
+        )
+
+    from services.site_config import site_config
+
+    model = (
+        site_config.get("pipeline_architect_model")
+        or site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        or "glm-4.7-5090:latest"
+    ).removeprefix("ollama/")
+
+    user_prompt = (
+        f"INTENT: {intent}\n\n"
+    )
+    if context:
+        user_prompt += f"CONTEXT: {json.dumps(context, default=str)[:2000]}\n\n"
+    user_prompt += "ATOM CATALOG:\n\n" + catalog_text
+
+    full_prompt = (
+        f"{_ARCHITECT_SYSTEM_PROMPT}\n\n"
+        f"---\n\n"
+        f"{user_prompt}\n\n"
+        f"---\n\n"
+        f"Now output ONLY the JSON object. No prose, no markdown fences."
+    )
+
+    raw = await _ollama_chat_text(full_prompt, model=model)
+    spec, parse_errors = _parse_json_spec(raw)
+    if parse_errors:
+        return ArchitectResult(
+            ok=False, raw_response=raw, errors=parse_errors, model_used=model,
+        )
+
+    valid, validation_errors = _validate_spec(spec)
+    if not valid:
+        return ArchitectResult(
+            ok=False, spec=spec, raw_response=raw,
+            errors=validation_errors, model_used=model,
+        )
+
+    return ArchitectResult(
+        ok=True, spec=spec, raw_response=raw, model_used=model,
+    )
+
+
+def _parse_json_spec(raw: str) -> tuple[dict[str, Any], list[str]]:
+    """Extract + parse the JSON spec from the model's response.
+
+    Tolerates models that wrap output in markdown fences or add prose
+    around the JSON object — finds the outermost balanced ``{...}``
+    and parses that. Returns (spec, errors).
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return {}, ["empty response from model"]
+
+    # Strip markdown fences if present.
+    if raw.startswith("```"):
+        # Strip ```json or ``` opening, plus closing ```
+        lines = raw.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+
+    # Find the outermost {...}.
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end <= start:
+        return {}, [f"no JSON object found in response (preview: {raw[:200]!r})"]
+    payload = raw[start : end + 1]
+
+    try:
+        spec = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return {}, [f"invalid JSON: {exc}"]
+
+    if not isinstance(spec, dict):
+        return {}, [f"top-level value is not an object (got {type(spec).__name__})"]
+    return spec, []
+
+
+def _validate_spec(spec: dict[str, Any]) -> tuple[bool, list[str]]:
+    """Verify the architect's spec is well-formed AND every atom exists.
+
+    Returns (ok, errors). Errors are the issues the architect-LLM
+    needs to fix on retry — surface them in the operator-review
+    Telegram message so corrections are visible.
+    """
+    errors: list[str] = []
+
+    if not isinstance(spec.get("name"), str) or not spec["name"].strip():
+        errors.append("missing or invalid 'name'")
+
+    nodes = spec.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        errors.append("missing or empty 'nodes' list")
+        return False, errors
+
+    seen_ids: set[str] = set()
+    for i, n in enumerate(nodes):
+        if not isinstance(n, dict):
+            errors.append(f"nodes[{i}] is not an object")
+            continue
+        nid = n.get("id")
+        atom = n.get("atom")
+        if not isinstance(nid, str) or not nid.strip():
+            errors.append(f"nodes[{i}] missing 'id'")
+            continue
+        if nid in seen_ids:
+            errors.append(f"duplicate node id {nid!r}")
+            continue
+        seen_ids.add(nid)
+        if not isinstance(atom, str) or not atom.strip():
+            errors.append(f"node {nid!r} missing 'atom' name")
+            continue
+        # Tolerant lookup: LLMs sometimes drop the namespace prefix.
+        # Resolve "narrate_bundle" → "atoms.narrate_bundle" if the
+        # bare name isn't registered but a single namespaced match is.
+        if get_atom_meta(atom) is None:
+            candidates = [
+                m.name for m in list_atoms()
+                if m.name == atom or m.name.endswith("." + atom)
+            ]
+            if len(candidates) == 1:
+                # Rewrite the spec in-place to the canonical name so
+                # later compilation finds the atom cleanly.
+                n["atom"] = candidates[0]
+            else:
+                errors.append(
+                    f"node {nid!r} references unknown atom {atom!r} — "
+                    f"available: {sorted(m.name for m in list_atoms())}"
+                )
+
+    edges = spec.get("edges") or []
+    if not isinstance(edges, list):
+        errors.append("'edges' must be a list")
+        return False, errors
+
+    for j, e in enumerate(edges):
+        if not isinstance(e, dict):
+            errors.append(f"edges[{j}] is not an object")
+            continue
+        src = e.get("from")
+        dst = e.get("to")
+        if src not in seen_ids:
+            errors.append(f"edges[{j}] 'from' node {src!r} not declared")
+        if dst != "END" and dst not in seen_ids:
+            errors.append(f"edges[{j}] 'to' node {dst!r} not declared")
+
+    entry = spec.get("entry")
+    if entry is not None and entry not in seen_ids:
+        errors.append(f"'entry' {entry!r} not in nodes")
+
+    # Cycle detection: trivial DFS on adjacency list.
+    if not errors:
+        adj: dict[str, list[str]] = {nid: [] for nid in seen_ids}
+        for e in edges:
+            src, dst = e["from"], e["to"]
+            if dst != "END":
+                adj.setdefault(src, []).append(dst)
+        if _has_cycle(adj):
+            errors.append("graph contains a cycle (must be a DAG)")
+
+    return (not errors), errors
+
+
+def _has_cycle(adj: dict[str, list[str]]) -> bool:
+    """Tarjan-ish DFS cycle detection. White/gray/black coloring."""
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {n: WHITE for n in adj}
+
+    def dfs(node: str) -> bool:
+        color[node] = GRAY
+        for nxt in adj.get(node, []):
+            c = color.get(nxt, WHITE)
+            if c == GRAY:
+                return True
+            if c == WHITE and dfs(nxt):
+                return True
+        color[node] = BLACK
+        return False
+
+    for start in adj:
+        if color[start] == WHITE and dfs(start):
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Compile: spec → LangGraph factory
+# ---------------------------------------------------------------------------
+
+
+def build_graph_from_spec(
+    spec: dict[str, Any],
+    *,
+    pool: Any,
+    record_sink: list | None = None,
+) -> StateGraph:
+    """Compile a validated spec into an executable LangGraph.
+
+    Caller MUST validate the spec first (via :func:`compose` or
+    :func:`_validate_spec` directly). This function trusts the spec
+    and will raise on missing atoms / unresolvable references.
+
+    Atoms are resolved through the registry. Stage-typed atoms (the
+    legacy 12 stages) are wrapped via ``make_stage_node``; pure atoms
+    are wrapped with a tiny adapter that records to ``record_sink``
+    on the same shape as stage nodes.
+    """
+    from plugins.registry import get_core_samples
+
+    g: StateGraph = StateGraph(PipelineState)
+    stages_by_name = {s.name: s for s in get_core_samples().get("stages", [])}
+
+    nodes = spec["nodes"]
+    edges = spec.get("edges") or []
+
+    # Build node map.
+    node_ids: list[str] = []
+    for n in nodes:
+        nid = n["id"]
+        atom_name = n["atom"]
+        meta = get_atom_meta(atom_name)
+        if meta is None and atom_name.startswith("stage."):
+            # Allow ``stage.foo`` shorthand to reference the legacy
+            # stage registry.
+            stage_short = atom_name.removeprefix("stage.")
+            stage = stages_by_name.get(stage_short)
+            if stage is None:
+                raise KeyError(
+                    f"node {nid!r} references stage {stage_short!r} "
+                    f"which is not registered"
+                )
+            g.add_node(nid, make_stage_node(stage, pool, record_sink=record_sink))
+        else:
+            if meta is None:
+                raise KeyError(f"unknown atom {atom_name!r} in node {nid!r}")
+            run_fn = get_atom_callable(atom_name)
+            if run_fn is None:
+                raise KeyError(f"atom {atom_name!r} has no callable")
+            g.add_node(nid, _wrap_atom(run_fn, atom_name, record_sink))
+        node_ids.append(nid)
+
+    # Wire entry + edges.
+    entry = spec.get("entry") or node_ids[0]
+    g.set_entry_point(entry)
+
+    # The architect spec uses the literal string "END" for terminal
+    # edges (more readable + JSON-safe than LangGraph's internal
+    # ``__end__`` sentinel). Resolve it to the real ``END`` constant
+    # at compile time so the runtime sees the right value.
+    def _resolve(dst: str) -> Any:
+        return END if dst == "END" else dst
+
+    # Group edges by source so we can attach conditional edges that
+    # also respect ``_halt`` short-circuit.
+    out_by_src: dict[str, list[str]] = {}
+    for e in edges:
+        out_by_src.setdefault(e["from"], []).append(e["to"])
+
+    def _halt_router_single(target: Any) -> Callable[[PipelineState], Any]:
+        """Halt-aware router for a single successor."""
+
+        def _route(state: PipelineState) -> Any:
+            if state.get("_halt"):
+                return END
+            return target
+
+        _route.__name__ = (
+            f"route_to_{'END' if target is END else target}_or_end"
+        )
+        return _route
+
+    def _halt_router_multi(targets: list[Any]) -> Callable[[PipelineState], Any]:
+        """Halt-aware router for multiple successors (parallel fan-out).
+        LangGraph runs every node returned in the list concurrently.
+        """
+
+        def _route(state: PipelineState) -> Any:
+            if state.get("_halt"):
+                return [END]
+            return list(targets)
+
+        _route.__name__ = (
+            "fan_out_to_" + "_".join(
+                "END" if t is END else str(t) for t in targets
+            )
+        )
+        return _route
+
+    for src, dsts in out_by_src.items():
+        resolved = [_resolve(d) for d in dsts]
+        # Single-target case: simple halt-aware edge.
+        if len(resolved) == 1:
+            target = resolved[0]
+            mapping = {target: target} if target is END else {target: target, END: END}
+            g.add_conditional_edges(src, _halt_router_single(target), mapping)
+            continue
+        # Multi-target case: parallel fan-out. Build a mapping that
+        # includes every target plus END for the halt path.
+        mapping = {t: t for t in resolved}
+        mapping[END] = END
+        g.add_conditional_edges(src, _halt_router_multi(resolved), mapping)
+
+    # Any node without an outgoing edge → END.
+    sources_with_edges = set(out_by_src.keys())
+    for nid in node_ids:
+        if nid not in sources_with_edges:
+            g.add_conditional_edges(nid, _halt_router_single(END), {END: END})
+
+    return g
+
+
+def _wrap_atom(
+    run_fn: Callable[..., Any],
+    atom_name: str,
+    record_sink: list | None,
+) -> Callable[..., Any]:
+    """Wrap a pure atom into the LangGraph node signature with
+    record_sink integration so observability matches stage nodes."""
+
+    from services.template_runner import TemplateRunRecord
+
+    async def node(state: PipelineState) -> dict[str, Any]:
+        import time as _time
+        t0 = _time.time()
+        try:
+            result = await run_fn(dict(state))
+            elapsed_ms = int((_time.time() - t0) * 1000)
+            if record_sink is not None:
+                record_sink.append(
+                    TemplateRunRecord(
+                        name=atom_name, ok=True,
+                        detail=f"{len(str(result.get('content','') or ''))} chars",
+                        elapsed_ms=elapsed_ms,
+                    )
+                )
+            return result if isinstance(result, dict) else {}
+        except Exception as exc:
+            elapsed_ms = int((_time.time() - t0) * 1000)
+            logger.exception("[architect] atom %s raised: %s", atom_name, exc)
+            if record_sink is not None:
+                record_sink.append(
+                    TemplateRunRecord(
+                        name=atom_name, ok=False,
+                        detail=f"raised {type(exc).__name__}: {exc}",
+                        halted=True, elapsed_ms=elapsed_ms,
+                    )
+                )
+            return {"_halt": True, "_halt_reason": f"{atom_name}: {exc}"}
+
+    node.__name__ = f"atom_node_{atom_name.replace('.', '_')}"
+    return node
+
+
+# ---------------------------------------------------------------------------
+# Local-LLM transport (mirrors atoms.narrate_bundle._ollama_chat_text)
+# ---------------------------------------------------------------------------
+
+
+async def _ollama_chat_text(prompt: str, model: str) -> str:
+    """Plain-text Ollama call. Matches the helper in
+    ``atoms.narrate_bundle`` — they should converge into a shared
+    ``capability_router`` resolver in Phase 2.
+    """
+    import httpx
+    from services.site_config import site_config
+
+    base_url = (
+        site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
+    )
+    timeout = site_config.get_float("pipeline_architect_timeout_seconds", 120.0)
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(f"{base_url}/api/chat", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+    return (data.get("message") or {}).get("content", "")
+
+
+# ---------------------------------------------------------------------------
+# Cache: persist successful compositions as named templates
+# ---------------------------------------------------------------------------
+
+
+async def cache_template(pool: Any, spec: dict[str, Any]) -> str:
+    """Persist a validated spec to ``pipeline_templates``.
+
+    Returns the slug under which it was registered. The slug is
+    derived from ``spec['name']`` with safe-char normalization.
+    Subsequent compose() calls with matching intents can short-circuit
+    by looking up an existing slug instead of calling the LLM.
+
+    Phase 4: this writes to a new ``pipeline_templates.graph_def``
+    JSONB column. The migration ships separately when this lands.
+    """
+    import re as _re
+
+    raw_name = (spec.get("name") or "").strip()
+    slug = _re.sub(r"[^a-z0-9_]+", "_", raw_name.lower()).strip("_") or "architect_composed"
+
+    description = (spec.get("description") or "").strip()
+    payload = json.dumps(spec, default=str)
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO pipeline_templates
+                  (slug, name, description, version, active, graph_def, created_by)
+                VALUES ($1, $2, $3, 1, true, $4::jsonb, 'architect_llm')
+                ON CONFLICT (slug) DO UPDATE
+                  SET graph_def   = EXCLUDED.graph_def,
+                      description = EXCLUDED.description,
+                      updated_at  = NOW()
+                """,
+                slug, raw_name or slug, description, payload,
+            )
+    except Exception as exc:
+        # The pipeline_templates table is created in a future migration;
+        # surface the failure but don't block the architect output —
+        # callers can still execute the spec via build_graph_from_spec.
+        logger.warning(
+            "[architect] failed to cache template %r: %s", slug, exc,
+        )
+
+    return slug
+
+
+__all__ = [
+    "ArchitectResult",
+    "build_graph_from_spec",
+    "cache_template",
+    "compose",
+]

@@ -44,5 +44,12 @@ async def dispatch_writer_mode(
     elif mode == "TWO_PASS":
         from services.writer_rag_modes import two_pass
         return await two_pass.run(topic=topic, angle=angle, niche_id=niche_id, pool=pool, **kwargs)
+    elif mode == "DETERMINISTIC_COMPOSITOR":
+        # Zero-LLM-call template render of the context_bundle. Used by
+        # niches whose source-of-truth is a structured bundle (dev_diary)
+        # and where any generative step risks hallucination. Bypasses
+        # the entire RAG/embedding/snippet machinery.
+        from services.writer_rag_modes import deterministic_compositor
+        return await deterministic_compositor.run(topic=topic, angle=angle, niche_id=niche_id, pool=pool, **kwargs)
     else:
         raise ValueError(f"unknown writer_rag_mode: {mode!r}")
