@@ -243,18 +243,28 @@ async def _create_dev_diary_task(pool: Any, ctx: Any, gates: str) -> str:
                 INSERT INTO pipeline_tasks (
                     task_id, task_type, status, topic, stage,
                     style, tone, target_length,
-                    target_audience, category,
+                    target_audience, category, niche_slug,
                     created_at, updated_at
                 ) VALUES (
                     $1, 'blog_post', 'pending', $2, 'pending',
                     'first_person', 'candid', 600,
-                    $3, $4,
+                    $3, $4, $5,
                     NOW(), NOW()
                 )
                 """,
                 task_id,
                 topic,
                 "indie-devs, ai-curious, build-in-public",
+                _NICHE_SLUG,
+                # Persist the niche slug into the dedicated column too.
+                # Was previously only set on `category` and on
+                # `task_metadata.niche` — the dedicated niche_slug
+                # column stayed NULL, which broke per-niche lookups
+                # like the `niches.writer_prompt_override` consumer
+                # added in PR #222 (lookup keys off niche_slug, not
+                # task_metadata, so dev_diary tasks silently used the
+                # generic-default writer prompt instead of the
+                # dev-diary-specific one).
                 _NICHE_SLUG,
             )
             await conn.execute(
