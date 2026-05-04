@@ -84,11 +84,19 @@ class DevDiaryContext:
         }
 
     def is_empty(self) -> bool:
-        """True when the day has no Glad Labs activity worth posting about."""
+        """True when the day has no Glad Labs activity worth posting about.
+
+        brain_decisions is INTENTIONALLY excluded — the brain emits a
+        high-confidence "Cycle complete" decision every 5 minutes as a
+        heartbeat, so its presence is not signal that real work happened.
+        Real signal comes from git activity (PRs, notable commits),
+        published posts, or audit events that actually got resolved.
+        """
         return (
             not self.merged_prs
             and not self.notable_commits
-            and not self.brain_decisions
+            and not self.recent_posts
+            and not self.audit_resolved
         )
 
     def headline(self) -> str:
@@ -239,12 +247,19 @@ async def _collect_brain_decisions(
     if pool is None:
         return []
     try:
+        # Filter out the brain's heartbeat decisions — every monitor
+        # cycle emits a high-confidence "Cycle complete: 0 issues..."
+        # row that's pure noise for the writer. Same for the cycle
+        # narratives that start with "Monitored N internal".
         rows = await pool.fetch(
             """
             SELECT id, decision, reasoning, confidence, created_at
             FROM brain_decisions
             WHERE created_at > NOW() - ($1::int || ' hours')::interval
               AND confidence >= $2
+              AND decision NOT LIKE 'Cycle complete:%%'
+              AND decision NOT LIKE 'Monitored %% internal%%'
+              AND COALESCE(reasoning, '') NOT LIKE 'Monitored %% internal%%'
             ORDER BY confidence DESC, created_at DESC
             LIMIT 20
             """,

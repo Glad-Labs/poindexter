@@ -89,17 +89,29 @@ class TestDevDiaryContext:
         ctx.notable_commits = [{"sha": "abc12345", "subject": "fix: bug"}]
         assert ctx.is_empty() is False
 
-    def test_is_empty_false_when_decision_present(self):
+    def test_is_empty_true_when_only_brain_decisions_present(self):
+        # Brain decisions are NOT signal on their own — the brain emits
+        # high-confidence "Cycle complete" heartbeats every 5 minutes,
+        # so their presence doesn't justify a post. Required real signal
+        # is git activity, audit events, or published posts.
         ctx = self._empty()
         ctx.brain_decisions = [{"id": 1, "decision": "swap models", "confidence": 0.9}]
+        assert ctx.is_empty() is True
+
+    def test_is_empty_false_when_audit_resolved_present(self):
+        ctx = self._empty()
+        ctx.audit_resolved = [{"id": 1, "event_type": "stuck_task_resolved"}]
         assert ctx.is_empty() is False
 
-    def test_is_empty_ignores_audit_and_posts_and_cost(self):
-        # Audit/posts/cost are flavor — they don't justify a post on
-        # their own. Quiet-day check looks at PRs/commits/decisions only.
+    def test_is_empty_false_when_recent_posts_present(self):
         ctx = self._empty()
-        ctx.audit_resolved = [{"id": 1, "event_type": "x_resolved"}]
-        ctx.recent_posts = [{"id": "p1", "title": "old post"}]
+        ctx.recent_posts = [{"id": "p1", "title": "Today's drop"}]
+        assert ctx.is_empty() is False
+
+    def test_is_empty_ignores_cost_summary(self):
+        # Cost is metadata — it tells the writer what the day cost,
+        # but doesn't justify a post on its own.
+        ctx = self._empty()
         ctx.cost_summary = {"total_usd": 5.0, "total_inferences": 1000, "by_model": []}
         assert ctx.is_empty() is True
 
