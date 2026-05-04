@@ -723,6 +723,14 @@ class TopicBatchService:
                 "angle": angle,
                 "summary": winner.summary,
                 "source": "topic_batch",
+                # discovered_by mirrors source — task_executor's off-brand
+                # gate exempts a tuple of discovered_by values (url_seed,
+                # url_list, operator_telegram, operator_cli, topic_batch).
+                # Without this field set, an operator-resolved batch would
+                # hit the keyword whitelist and get rejected even though
+                # the operator vetted the topic via rank-batch + resolve-
+                # batch. See Glad-Labs/poindexter#351.
+                "discovered_by": "topic_batch",
                 "niche_slug": niche.slug,
             }
         }

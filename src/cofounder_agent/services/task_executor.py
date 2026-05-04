@@ -369,6 +369,12 @@ class TaskExecutor:
                 "url_list",
                 "operator_telegram",
                 "operator_cli",
+                # The operator already vetted brand fit by ranking + resolving
+                # the batch via `poindexter topics rank-batch + resolve-batch`.
+                # Re-applying the keyword whitelist on top would reject
+                # legitimate operator-curated topics that don't happen to
+                # match any baked-in brand keyword. See Glad-Labs/poindexter#351.
+                "topic_batch",
             )
             # Dev diary tasks are operator-internal content ABOUT Matt's
             # work — the topic title is generated from the work itself
