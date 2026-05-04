@@ -242,30 +242,62 @@ def get_atom_callable(name: str) -> Callable[..., Any] | None:
 
 
 def to_catalog_text() -> str:
-    """Render the atom catalog as a compact text block for the
-    architect-LLM prompt. Each atom gets one block: name, description,
-    inputs, outputs, capability_tier, cost_class.
+    """Render the atom catalog as an LLM-optimized prompt fragment.
+
+    Per ``feedback_design_for_llm_consumers``: this is NOT human
+    documentation. It's a structured prompt fragment the architect-LLM
+    reads when composing pipelines. Format priorities (in order):
+
+    1. Token-efficient — bullet-shaped, no headings beyond the atom
+       name line, no marketing copy.
+    2. Contract-shaped — every atom has a single-line PURPOSE then
+       INPUTS / OUTPUTS / TIER blocks the LLM can ground on.
+    3. Composition-friendly — REQUIRES + PRODUCES surface as
+       compose-time hints so the architect can reason about which
+       atom to chain after which.
+    4. Stable — same atom always renders identically across runs so
+       the LLM can build template-matching intuition over time.
     """
     discover()
     lines: list[str] = []
     for meta in list_atoms():
-        lines.append(f"## {meta.name} (v{meta.version})")
-        lines.append(meta.description.strip())
-        if meta.inputs:
-            lines.append("Inputs:")
-            for f in meta.inputs:
-                req = "required" if f.required else "optional"
-                lines.append(f"  - {f.name}: {f.type} ({req})")
-        if meta.outputs:
-            lines.append("Outputs:")
-            for f in meta.outputs:
-                lines.append(f"  - {f.name}: {f.type}")
+        # Single-line atom header: name + version + type + tier + cost
+        header_bits = [f"{meta.name} v{meta.version}", meta.type]
         if meta.capability_tier:
-            lines.append(f"Capability tier: {meta.capability_tier}")
-        lines.append(f"Cost class: {meta.cost_class}")
+            header_bits.append(f"tier={meta.capability_tier}")
+        header_bits.append(f"cost={meta.cost_class}")
+        if meta.idempotent:
+            header_bits.append("idempotent")
+        if meta.parallelizable:
+            header_bits.append("parallelizable")
+        lines.append("- " + " | ".join(header_bits))
+        # PURPOSE: single line. Avoid prose paragraphs in catalog.
+        purpose = " ".join(meta.description.split())[:300]
+        lines.append(f"  PURPOSE: {purpose}")
+        # INPUTS: terse {name}:{type}({R|O}) so the architect can scan.
+        if meta.inputs:
+            sigs = ", ".join(
+                f"{f.name}:{f.type}({'R' if f.required else 'O'})"
+                for f in meta.inputs
+            )
+            lines.append(f"  INPUTS: {sigs}")
+        else:
+            lines.append("  INPUTS: (reads from shared LangGraph state)")
+        # OUTPUTS: same shape as inputs.
+        if meta.outputs:
+            sigs = ", ".join(f"{f.name}:{f.type}" for f in meta.outputs)
+            lines.append(f"  OUTPUTS: {sigs}")
+        else:
+            lines.append("  OUTPUTS: (writes to shared LangGraph state)")
+        # Composition hints — what this atom needs upstream + what it
+        # produces for downstream. The architect uses these to chain.
         if meta.requires:
-            lines.append(f"Requires preconditions: {', '.join(meta.requires)}")
-        lines.append("")
+            lines.append(f"  REQUIRES: {', '.join(meta.requires)}")
+        if meta.produces:
+            lines.append(f"  PRODUCES: {', '.join(meta.produces)}")
+        # FALLBACK chain (for tier-resolved atoms only).
+        if meta.fallback:
+            lines.append(f"  FALLBACK: {' -> '.join(meta.fallback)}")
     return "\n".join(lines)
 
 

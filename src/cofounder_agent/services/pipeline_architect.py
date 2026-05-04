@@ -59,42 +59,68 @@ logger = logging.getLogger(__name__)
 
 _ARCHITECT_SYSTEM_PROMPT = """\
 You are the Glad Labs pipeline architect. Given an INTENT (high-level
-request) and an ATOM CATALOG (the available building blocks), produce
-a JSON object describing a LangGraph pipeline that satisfies the
-intent.
+request) and an ATOM CATALOG (one bullet line per atom, with PURPOSE
+/ INPUTS / OUTPUTS / REQUIRES / PRODUCES blocks), produce a JSON
+object describing a LangGraph pipeline that satisfies the intent.
 
-Hard rules:
+CATALOG FORMAT:
+Each atom is a bullet line followed by indented blocks. The header
+line shape is: name vN | type | tier=X | cost=Y | flags. The blocks
+that follow tell you what to chain:
+  PURPOSE: one sentence explaining what the atom does.
+  INPUTS: name:type(R|O), comma-separated. R=required, O=optional.
+  OUTPUTS: name:type, comma-separated. These land in shared state.
+  REQUIRES: state keys this atom needs upstream — chain accordingly.
+  PRODUCES: state keys this atom adds — feeds downstream atoms.
+  FALLBACK: tier resolution chain (cheap_critic -> budget_critic -> ...).
+
+HARD RULES:
 
 1. ONLY use atom names that appear in the ATOM CATALOG. Do not invent
-   atom names.
+   atom names. Names are namespaced — atoms.* are native composable
+   atoms, stage.* are legacy stages surfaced as virtual atoms.
 2. The graph MUST be a DAG. No cycles.
-3. Every node must connect to at least one other node OR to END.
-4. The first node is the entry point.
-5. Output ONLY valid JSON matching the schema below — no prose, no
-   markdown fences, no explanation.
+3. Every non-terminal node must have at least one outgoing edge.
+4. Terminal edges use the literal string "END" as the 'to' value.
+5. The 'entry' field names the first node to run.
+6. Output ONLY valid JSON matching the schema. No prose, no markdown
+   fences, no commentary outside the JSON.
 
-JSON schema:
+JSON SCHEMA:
 
 {
-  "name": "<short_slug>",
+  "name": "<short_snake_slug>",
   "description": "<one-sentence purpose>",
   "entry": "<node_id_of_entry>",
   "nodes": [
-    {"id": "<node_id>", "atom": "<atom_name_from_catalog>",
-     "config": {<optional key/value config for the atom>}}
+    {"id": "<unique_node_id>", "atom": "<atom_name_from_catalog>",
+     "config": {<optional state seed values for this node>}}
   ],
   "edges": [
-    {"from": "<node_id>", "to": "<node_id_or_END>"}
+    {"from": "<node_id>", "to": "<node_id_or_'END'>"}
   ]
 }
 
-Use END (literal string "END") as the destination for terminal edges.
-Each node id must be unique within the graph. Atom names must match
-the catalog exactly (e.g. ``atoms.narrate_bundle``).
+COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 
-Prefer simple linear graphs unless the intent specifically asks for
-branching. Match existing template patterns when possible (look for
-the dev_diary pattern: verify_task → narrate_bundle → finalize_task).
+- An atom whose REQUIRES lists key K must be downstream of an atom
+  whose PRODUCES lists K (or of an upstream stage that seeds K).
+- Multiple edges from the same source create a parallel fan-out —
+  every successor runs concurrently. Use this for parallel critic
+  reviews or independent media generation.
+- An atom marked "parallelizable" is safe to run as a sibling fan-out.
+- Approval gates (atoms.approval_gate or stage.approval_gate) set
+  _halt=True and pause the pipeline; the operator approves to resume.
+  Place these AFTER the artifact you want reviewed has been produced.
+- aggregate_reviews must follow N review_with_critic atoms (it folds
+  state.qa_reviews into a single verdict).
+- Prefer linear graphs unless the intent calls for parallelism.
+- For dev_diary content: stage.verify_task -> atoms.narrate_bundle
+  -> stage.finalize_task is the canonical 3-step pattern.
+
+If the spec validator returns errors on a previous attempt, every
+error message starts with "FIX:" followed by exactly what to change.
+Apply the fixes literally on retry — don't redesign from scratch.
 """
 
 
@@ -123,19 +149,26 @@ class ArchitectResult:
 # ---------------------------------------------------------------------------
 
 
-async def compose(intent: str, *, context: dict[str, Any] | None = None) -> ArchitectResult:
+async def compose(
+    intent: str,
+    *,
+    context: dict[str, Any] | None = None,
+    max_attempts: int = 3,
+) -> ArchitectResult:
     """Ask the local writer LLM to compose a graph for the given intent.
 
-    Returns :class:`ArchitectResult`. On invalid output (missing atoms,
-    malformed JSON, cycles) returns ``ok=False`` with errors listed —
-    caller decides whether to retry, surface to operator, or fall
-    back to a default template.
+    Retries up to ``max_attempts`` times when validation fails, feeding
+    the structured "FIX:..." error messages back into the prompt so
+    the LLM can self-correct (per ``feedback_design_for_llm_consumers``
+    — error messages are the LLM's primary repair signal). Returns the
+    last :class:`ArchitectResult`; ok=True on success, ok=False with
+    accumulated errors on persistent failure.
     """
     catalog_text = to_catalog_text()
     if not catalog_text.strip():
         return ArchitectResult(
             ok=False,
-            errors=["atom catalog is empty — discovery must have failed"],
+            errors=["FIX: atom registry is empty — call atom_registry.discover() before compose()"],
         )
 
     from services.site_config import site_config
@@ -146,37 +179,69 @@ async def compose(intent: str, *, context: dict[str, Any] | None = None) -> Arch
         or "glm-4.7-5090:latest"
     ).removeprefix("ollama/")
 
-    user_prompt = (
-        f"INTENT: {intent}\n\n"
-    )
+    base_user_prompt = f"INTENT: {intent}\n\n"
     if context:
-        user_prompt += f"CONTEXT: {json.dumps(context, default=str)[:2000]}\n\n"
-    user_prompt += "ATOM CATALOG:\n\n" + catalog_text
+        base_user_prompt += f"CONTEXT: {json.dumps(context, default=str)[:2000]}\n\n"
+    base_user_prompt += "ATOM CATALOG:\n\n" + catalog_text
 
-    full_prompt = (
-        f"{_ARCHITECT_SYSTEM_PROMPT}\n\n"
-        f"---\n\n"
-        f"{user_prompt}\n\n"
-        f"---\n\n"
-        f"Now output ONLY the JSON object. No prose, no markdown fences."
-    )
+    last_raw = ""
+    last_spec: dict[str, Any] | None = None
+    last_errors: list[str] = []
+    prior_attempts: list[tuple[str, list[str]]] = []  # (raw_json, errors)
 
-    raw = await _ollama_chat_text(full_prompt, model=model)
-    spec, parse_errors = _parse_json_spec(raw)
-    if parse_errors:
-        return ArchitectResult(
-            ok=False, raw_response=raw, errors=parse_errors, model_used=model,
+    for attempt in range(1, max_attempts + 1):
+        retry_block = ""
+        if prior_attempts:
+            # Feed the LAST attempt's spec + errors back in; the FIX:
+            # prefixes tell the LLM what to change literally.
+            last_attempt_raw, last_attempt_errors = prior_attempts[-1]
+            retry_block = (
+                "\n\nPREVIOUS ATTEMPT (rejected by validator):\n"
+                f"{last_attempt_raw}\n\n"
+                "VALIDATOR ERRORS — apply each FIX literally:\n"
+                + "\n".join(f"- {e}" for e in last_attempt_errors)
+                + "\n\nNow emit a corrected JSON spec."
+            )
+
+        full_prompt = (
+            f"{_ARCHITECT_SYSTEM_PROMPT}\n\n"
+            f"---\n\n"
+            f"{base_user_prompt}{retry_block}\n\n"
+            f"---\n\n"
+            f"Output ONLY the JSON object. No prose, no markdown fences."
         )
 
-    valid, validation_errors = _validate_spec(spec)
-    if not valid:
-        return ArchitectResult(
-            ok=False, spec=spec, raw_response=raw,
-            errors=validation_errors, model_used=model,
+        raw = await _ollama_chat_text(full_prompt, model=model)
+        last_raw = raw
+        spec, parse_errors = _parse_json_spec(raw)
+        if parse_errors:
+            last_errors = parse_errors
+            prior_attempts.append((raw[:1500], parse_errors))
+            logger.info(
+                "[architect] attempt %d/%d: parse failed (%s)",
+                attempt, max_attempts, parse_errors[0][:120],
+            )
+            continue
+
+        valid, validation_errors = _validate_spec(spec)
+        if valid:
+            return ArchitectResult(
+                ok=True, spec=spec, raw_response=raw, model_used=model,
+            )
+
+        last_spec = spec
+        last_errors = validation_errors
+        prior_attempts.append(
+            (json.dumps(spec, default=str)[:1500], validation_errors)
+        )
+        logger.info(
+            "[architect] attempt %d/%d: %d validation error(s) — retrying",
+            attempt, max_attempts, len(validation_errors),
         )
 
     return ArchitectResult(
-        ok=True, spec=spec, raw_response=raw, model_used=model,
+        ok=False, spec=last_spec, raw_response=last_raw,
+        errors=last_errors, model_used=model,
     )
 
 
@@ -221,36 +286,54 @@ def _parse_json_spec(raw: str) -> tuple[dict[str, Any], list[str]]:
 def _validate_spec(spec: dict[str, Any]) -> tuple[bool, list[str]]:
     """Verify the architect's spec is well-formed AND every atom exists.
 
-    Returns (ok, errors). Errors are the issues the architect-LLM
-    needs to fix on retry — surface them in the operator-review
-    Telegram message so corrections are visible.
+    Returns (ok, errors). Per ``feedback_design_for_llm_consumers``:
+    every error message tells the LLM HOW TO FIX the issue, not just
+    what's wrong. The architect retries on failure with these errors
+    in its prompt context, so they are the primary repair signal.
     """
     errors: list[str] = []
 
     if not isinstance(spec.get("name"), str) or not spec["name"].strip():
-        errors.append("missing or invalid 'name'")
+        errors.append(
+            "FIX: add a 'name' field at the top of the spec — "
+            "non-empty string slug like 'daily_dev_diary'"
+        )
 
     nodes = spec.get("nodes")
     if not isinstance(nodes, list) or not nodes:
-        errors.append("missing or empty 'nodes' list")
+        errors.append(
+            "FIX: add a 'nodes' array with at least one entry. Each "
+            "node must be {\"id\": str, \"atom\": str, \"config\": {}}"
+        )
         return False, errors
 
     seen_ids: set[str] = set()
     for i, n in enumerate(nodes):
         if not isinstance(n, dict):
-            errors.append(f"nodes[{i}] is not an object")
+            errors.append(
+                f"FIX nodes[{i}]: replace with an object "
+                "{\"id\": str, \"atom\": str}"
+            )
             continue
         nid = n.get("id")
         atom = n.get("atom")
         if not isinstance(nid, str) or not nid.strip():
-            errors.append(f"nodes[{i}] missing 'id'")
+            errors.append(
+                f"FIX nodes[{i}]: add 'id' field with a unique string slug"
+            )
             continue
         if nid in seen_ids:
-            errors.append(f"duplicate node id {nid!r}")
+            errors.append(
+                f"FIX: rename duplicate node id {nid!r} — every node id "
+                "must be unique within the graph"
+            )
             continue
         seen_ids.add(nid)
         if not isinstance(atom, str) or not atom.strip():
-            errors.append(f"node {nid!r} missing 'atom' name")
+            errors.append(
+                f"FIX node {nid!r}: add 'atom' field naming an atom "
+                "from the catalog (e.g. 'atoms.narrate_bundle')"
+            )
             continue
         # Tolerant lookup: LLMs sometimes drop the namespace prefix.
         # Resolve "narrate_bundle" → "atoms.narrate_bundle" if the
@@ -264,31 +347,59 @@ def _validate_spec(spec: dict[str, Any]) -> tuple[bool, list[str]]:
                 # Rewrite the spec in-place to the canonical name so
                 # later compilation finds the atom cleanly.
                 n["atom"] = candidates[0]
-            else:
+            elif len(candidates) > 1:
                 errors.append(
-                    f"node {nid!r} references unknown atom {atom!r} — "
-                    f"available: {sorted(m.name for m in list_atoms())}"
+                    f"FIX node {nid!r}: atom {atom!r} is ambiguous — "
+                    f"pick one of {candidates}"
+                )
+            else:
+                # Suggest 3 closest by simple substring; gives the LLM
+                # something to grab onto on retry.
+                all_names = sorted(m.name for m in list_atoms())
+                close = [n for n in all_names if atom.lower() in n.lower()][:3]
+                hint = (
+                    f"closest matches: {close}" if close
+                    else f"available: {all_names}"
+                )
+                errors.append(
+                    f"FIX node {nid!r}: atom {atom!r} not in catalog. {hint}"
                 )
 
     edges = spec.get("edges") or []
     if not isinstance(edges, list):
-        errors.append("'edges' must be a list")
+        errors.append(
+            "FIX: 'edges' must be an array of {\"from\": node_id, "
+            "\"to\": node_id_or_'END'}"
+        )
         return False, errors
 
     for j, e in enumerate(edges):
         if not isinstance(e, dict):
-            errors.append(f"edges[{j}] is not an object")
+            errors.append(
+                f"FIX edges[{j}]: replace with object "
+                "{\"from\": str, \"to\": str}"
+            )
             continue
         src = e.get("from")
         dst = e.get("to")
         if src not in seen_ids:
-            errors.append(f"edges[{j}] 'from' node {src!r} not declared")
+            errors.append(
+                f"FIX edges[{j}]: 'from' references {src!r} which is "
+                f"not a declared node id. Declared: {sorted(seen_ids)}"
+            )
         if dst != "END" and dst not in seen_ids:
-            errors.append(f"edges[{j}] 'to' node {dst!r} not declared")
+            errors.append(
+                f"FIX edges[{j}]: 'to' references {dst!r} which is "
+                f"not a declared node id and is not 'END'. "
+                f"Declared: {sorted(seen_ids)}"
+            )
 
     entry = spec.get("entry")
     if entry is not None and entry not in seen_ids:
-        errors.append(f"'entry' {entry!r} not in nodes")
+        errors.append(
+            f"FIX: 'entry' is {entry!r} but no node has that id. "
+            f"Set entry to one of {sorted(seen_ids)}"
+        )
 
     # Cycle detection: trivial DFS on adjacency list.
     if not errors:
@@ -298,7 +409,11 @@ def _validate_spec(spec: dict[str, Any]) -> tuple[bool, list[str]]:
             if dst != "END":
                 adj.setdefault(src, []).append(dst)
         if _has_cycle(adj):
-            errors.append("graph contains a cycle (must be a DAG)")
+            errors.append(
+                "FIX: the graph contains a cycle. Every edge must move "
+                "the pipeline forward; remove edges that loop back to "
+                "an earlier node. Pipelines must be DAGs."
+            )
 
     return (not errors), errors
 
