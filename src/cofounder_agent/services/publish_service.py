@@ -1033,6 +1033,40 @@ async def publish_post_from_task(
     except Exception:
         logger.debug("[publish_service] Notification failed (non-fatal)", exc_info=True)
 
+    # ---------------------------------------------------------------
+    # 13. Edit-distance metrics — auto_publish_gate training signal.
+    #     Pre-approve content is what finalize_task wrote into
+    #     task_metadata.content_text; post-approve is what actually
+    #     shipped. Diff is the operator's edit distance — the gate's
+    #     primary trust signal per
+    #     feedback_auto_publish_requires_edit_distance_track_record.
+    # ---------------------------------------------------------------
+    try:
+        from services.auto_publish_gate import record_post_approve_metrics
+        pre_approve = (
+            merged.get("content_text")
+            or task_metadata.get("content_text")
+            or ""
+        )
+        post_approve = draft_content or ""
+        pool = getattr(db_service, "pool", None)
+        await record_post_approve_metrics(
+            pool,
+            task_id=str(task_id),
+            pre_approve_content=pre_approve,
+            post_approve_content=post_approve,
+            niche_slug=task.get("niche_slug") or merged.get("niche_slug"),
+            category=task.get("category") or merged.get("category"),
+            approver=publisher,
+            approve_method="publish_post_from_task",
+            post_id=int(post_id) if str(post_id).isdigit() else None,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug(
+            "[publish_service] edit-distance metrics failed (non-fatal)",
+            exc_info=True,
+        )
+
     return PublishResult(
         success=True,
         post_id=post_id,

@@ -278,6 +278,51 @@ class FinalizeTaskStage:
         except Exception as rev_err:
             logger.debug("[content_revisions] final snapshot failed: %s", rev_err)
 
+        # Auto-publish gate evaluation — observe-only by default per
+        # feedback_auto_publish_requires_edit_distance_track_record. Logs
+        # "would have auto-published Y/N" via audit_log so the operator
+        # can see the gate's verdicts BEFORE flipping it live. Never
+        # actually approves while dry_run=true (default).
+        gate_decision = None
+        try:
+            from services.auto_publish_gate import evaluate as _gate_eval
+            from services.audit_log import audit_log_bg
+            db_pool = getattr(database_service, "pool", None)
+            gate_decision = await _gate_eval(
+                db_pool,
+                task_id=str(task_id),
+                niche_slug=context.get("niche_slug") or context.get("niche"),
+                category=category,
+                quality_score=float(final_quality_score or 0),
+            )
+            audit_log_bg(
+                "auto_publish_gate",
+                "finalize_task",
+                {
+                    "would_fire": gate_decision.would_fire,
+                    "dry_run": gate_decision.dry_run,
+                    "gate_state": gate_decision.gate_state,
+                    "reason": gate_decision.reason,
+                    "quality_score": gate_decision.quality_score,
+                    "threshold": gate_decision.threshold,
+                    "trailing_clean_runs": gate_decision.trailing_clean_runs,
+                    "required_clean_runs": gate_decision.required_clean_runs,
+                },
+                task_id=task_id,
+                severity="info",
+            )
+            logger.info(
+                "[finalize_task] auto-publish gate: state=%s would_fire=%s "
+                "dry_run=%s reason=%s",
+                gate_decision.gate_state, gate_decision.would_fire,
+                gate_decision.dry_run, gate_decision.reason,
+            )
+        except Exception as _gate_err:
+            logger.debug(
+                "[finalize_task] auto_publish_gate eval failed (non-fatal): %s",
+                _gate_err,
+            )
+
         return StageResult(
             ok=True,
             detail="task finalized → awaiting_approval",
@@ -287,9 +332,23 @@ class FinalizeTaskStage:
                 "post_id": None,
                 "post_slug": None,
                 "stages": stages,
+                # Surface the gate decision on context so downstream
+                # observability surfaces (Grafana, Discord) can render
+                # the would-have-fired signal.
+                "auto_publish_gate": (
+                    {
+                        "would_fire": gate_decision.would_fire,
+                        "dry_run": gate_decision.dry_run,
+                        "gate_state": gate_decision.gate_state,
+                        "reason": gate_decision.reason,
+                    } if gate_decision else None
+                ),
             },
             metrics={
                 "final_quality_score": final_quality_score,
                 "word_count": len(content_text.split()),
+                "auto_publish_gate_state": (
+                    gate_decision.gate_state if gate_decision else "unevaluated"
+                ),
             },
         )
