@@ -369,7 +369,17 @@ async def handle_command(text: str, chat_id: str):
 
     elif cmd == "/publish" and args:
         topic = " ".join(args)
-        data = await api_call("POST", "/api/tasks", {"topic": topic, "category": "technology"})
+        # Mark as operator-seeded so the off-brand gate (task_executor.py)
+        # exempts it — Matt typed it on Telegram, that's good enough.
+        data = await api_call(
+            "POST",
+            "/api/tasks",
+            {
+                "topic": topic,
+                "category": "technology",
+                "metadata": {"discovered_by": "operator_telegram"},
+            },
+        )
         tid = data.get("id", data.get("task_id", "?"))
         await send_message(f"Queued: *{topic}*\nTask: `{tid}`", chat_id)
 

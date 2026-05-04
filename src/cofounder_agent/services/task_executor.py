@@ -364,7 +364,12 @@ class TaskExecutor:
                         _inner = None
                 if isinstance(_inner, dict):
                     _task_meta = _inner
-            _user_seeded = _task_meta.get("discovered_by") in ("url_seed", "url_list")
+            _user_seeded = _task_meta.get("discovered_by") in (
+                "url_seed",
+                "url_list",
+                "operator_telegram",
+                "operator_cli",
+            )
             # Dev diary tasks are operator-internal content ABOUT Matt's
             # work — the topic title is generated from the work itself
             # (e.g. "Daily dev diary — 2026-05-03") so it never matches
