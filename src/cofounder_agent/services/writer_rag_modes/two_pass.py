@@ -96,6 +96,10 @@ class _State(TypedDict, total=False):
     external_lookups: list[dict[str, Any]]
     revision_loops: int
     loop_capped: bool
+    # niches.writer_prompt_override flowed down from generate_content.py;
+    # prepended to _draft_node's instruction. Empty string when no override
+    # is set (the historical generic-instruction-only behaviour).
+    writer_prompt_override: str
 
 
 # -- nodes --
@@ -134,6 +138,14 @@ async def _draft_node(state: _State) -> _State:
         "ground in a snippet. If you need an outside fact you don't have, mark it "
         "[EXTERNAL_NEEDED: <description>] in the draft so a follow-up pass can fill it in."
     )
+    # Prepend the niche-level writer prompt override (when present) so
+    # niche-specific anti-hallucination rules / brand voice / scope
+    # restrictions arrive before the mode-specific TWO_PASS instruction.
+    # Wired in by migration 0141 + this PR; empty string when the niche
+    # has no override set (preserves historical behaviour).
+    override = (state.get("writer_prompt_override") or "").strip()
+    if override:
+        instruction = f"{override}\n\n---\n\n{instruction}"
     draft = await generate_with_context(
         topic=state["topic"], angle=state["angle"],
         snippets=state["snippets"], extra_instructions=instruction,
@@ -239,7 +251,12 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
     thread_id = f"two_pass-{niche_id}-{topic[:32]}"
     _POOL_REGISTRY[thread_id] = pool
     try:
-        initial: _State = {"topic": topic, "angle": angle, "pool_thread": thread_id}
+        initial: _State = {
+            "topic": topic,
+            "angle": angle,
+            "pool_thread": thread_id,
+            "writer_prompt_override": str(kw.get("writer_prompt_override") or ""),
+        }
         config = {"configurable": {"thread_id": thread_id}}
         final = await _GRAPH.ainvoke(initial, config=config)
         return {

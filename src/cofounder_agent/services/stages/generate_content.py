@@ -433,6 +433,48 @@ class GenerateContentStage:
             )
             return None
 
+    async def _read_writer_prompt_override(
+        self, database_service: Any, task_id: str,
+    ) -> str | None:
+        """Return ``niches.writer_prompt_override`` for the task's niche.
+
+        Returns None when:
+         - the task has no ``niche_slug`` (legacy/manual tasks)
+         - the niche row doesn't exist
+         - the niche has ``writer_prompt_override = NULL``
+         - the lookup raises (logged as warning, falls back to no override)
+
+        The override flows down to the writer mode handler via
+        ``dispatch_writer_mode(writer_prompt_override=...)``. When a
+        niche has a non-null override, it's prepended to the
+        mode-specific instruction by the handler (currently TWO_PASS
+        only — see ``writer_rag_modes/two_pass.py::_draft_node``).
+
+        Wired by migration 0141 + companion changes; before that, the
+        column was written by migrations but never read.
+        """
+        try:
+            task_row = await database_service.get_task(task_id)
+            niche_slug = (task_row or {}).get("niche_slug")
+            if not niche_slug:
+                return None
+            pool = getattr(database_service, "pool", None)
+            if pool is None:
+                return None
+            async with pool.acquire() as conn:
+                value = await conn.fetchval(
+                    "SELECT writer_prompt_override FROM niches WHERE slug = $1",
+                    niche_slug,
+                )
+            return str(value) if value else None
+        except Exception as e:
+            logger.warning(
+                "Failed to read writer_prompt_override for task %s: %s — "
+                "falling back to no override",
+                task_id, e,
+            )
+            return None
+
     async def _generate_via_writer_mode(
         self,
         *,
@@ -472,6 +514,17 @@ class GenerateContentStage:
         # query the global embeddings table by topic+angle similarity. If a
         # downstream mode wants to scope to a niche it can look the niche_id
         # up via the task row's niche_slug.
+
+        # niches.writer_prompt_override — wired by migration 0141. None
+        # for legacy/manual tasks (no niche_slug) and for niches that
+        # haven't seeded an override; the handler prepends a non-empty
+        # override before the mode-specific instruction. Lookup is
+        # best-effort: a DB error here logs a warning and falls back to
+        # no override rather than failing the whole generation pass.
+        writer_prompt_override = await self._read_writer_prompt_override(
+            database_service, task_id,
+        )
+
         from services.gpu_scheduler import gpu
         async with gpu.lock(
             "ollama", model="glm-4.7-5090:latest",
@@ -483,6 +536,7 @@ class GenerateContentStage:
                 angle=angle,
                 niche_id=None,
                 pool=pool,
+                writer_prompt_override=writer_prompt_override,
             )
 
         draft = result.get("draft") or ""

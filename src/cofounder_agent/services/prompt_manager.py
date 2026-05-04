@@ -172,23 +172,52 @@ class UnifiedPromptManager:
         Call this once at app startup (after DB pool is ready).
         DB prompts take priority over YAML prompts — enabling runtime editing.
 
-        ``site_config`` is accepted for Phase H call-site compatibility
-        (GH#95) but isn't read by this method — the prompt_templates query
-        uses the pool directly. Stored on the instance for any future
-        site-aware filtering.
+        Premium gating (migration 0092 added the ``source`` column;
+        0141 wired the loader): when ``app_settings.premium_active`` is
+        truthy, rows with ``source='premium'`` AND ``source='default'``
+        load, with ``premium`` overriding ``default`` for matching keys
+        (``ORDER BY source`` puts ``default`` first, ``premium`` later;
+        last-write-wins on the dict so ``premium`` wins). When the flag
+        is absent or false (the OSS default), only ``'default'`` rows
+        load — premium prompts ship as a separate file drop and arrive
+        as DB rows that are inert until the operator flips
+        ``premium_active=true``.
+
+        ``site_config`` is read for the ``premium_active`` lookup. When
+        ``None`` (test paths, early bootstrap), the loader behaves as if
+        ``premium_active=false``.
 
         Returns number of prompts loaded from DB.
         """
         self._site_config = site_config
         if pool is None:
             return 0
+
+        premium_active = False
+        if site_config is not None:
+            try:
+                premium_active = bool(site_config.get_bool("premium_active", False))
+            except AttributeError:
+                premium_active = (
+                    str(site_config.get("premium_active", "false")).lower() == "true"
+                )
+
+        sources = ("default", "premium") if premium_active else ("default",)
         try:
             rows = await pool.fetch(
-                "SELECT key, template FROM prompt_templates WHERE is_active = true"
+                # ORDER BY source: 'default' < 'premium' alphabetically, so
+                # default rows assign first and premium rows overwrite.
+                "SELECT key, template, source FROM prompt_templates "
+                "WHERE is_active = true AND source = ANY($1::text[]) "
+                "ORDER BY source",
+                list(sources),
             )
             for row in rows:
                 self._db_overrides[row["key"]] = row["template"]
-            logger.info("Loaded %d prompt templates from database", len(rows))
+            logger.info(
+                "Loaded %d prompt templates from database (premium_active=%s, sources=%s)",
+                len(rows), premium_active, sources,
+            )
             return len(rows)
         except Exception as e:
             logger.warning("Could not load prompts from DB (using YAML fallback): %s", e)
