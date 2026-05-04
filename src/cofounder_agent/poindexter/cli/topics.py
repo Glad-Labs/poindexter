@@ -23,9 +23,43 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
+import re
+from uuid import UUID
 
 import click
+
+
+_MARKER_RE = re.compile(r"^(sys)?#(\d+)$")
+
+
+def _resolve_order_tokens(tokens, candidates):
+    """Translate a list of `--order` tokens into candidate UUIDs.
+
+    Each token is one of:
+      - ``sys#N``  → candidate with ``rank_in_batch == N``
+      - ``#N``     → candidate with ``operator_rank == N``
+      - anything else is assumed to already be a UUID and passed through
+
+    Raises ``click.ClickException`` if a marker doesn't resolve.
+    """
+    by_sys = {c.rank_in_batch: c.id for c in candidates}
+    by_op = {c.operator_rank: c.id for c in candidates if c.operator_rank}
+    resolved = []
+    for tok in tokens:
+        m = _MARKER_RE.match(tok)
+        if not m:
+            resolved.append(tok)
+            continue
+        kind, num = m.group(1), int(m.group(2))
+        lookup = by_sys if kind == "sys" else by_op
+        cid = lookup.get(num)
+        if cid is None:
+            label = f"sys#{num}" if kind == "sys" else f"#{num}"
+            raise click.ClickException(
+                f"no candidate matches {label} in this batch"
+            )
+        resolved.append(cid)
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +125,7 @@ def show_batch(niche: str) -> None:
                 )
                 click.echo(
                     f"  {marker:6s} [{c.kind:8s}] "
-                    f"eff={c.effective_score:5.1f} — {c.title}"
+                    f"eff={c.effective_score:5.1f}  {c.id}  — {c.title}"
                 )
         finally:
             await pool.close()
@@ -105,22 +139,29 @@ def show_batch(niche: str) -> None:
 
 
 @topics_group.command("rank-batch")
-@click.argument("batch_id")
+@click.argument("batch_id", type=click.UUID)
 @click.option(
     "--order",
     required=True,
-    help="Comma-separated candidate ids in your preferred order, best-first.",
+    help=(
+        "Comma-separated candidate identifiers in preferred order, best-first. "
+        "Accepts UUIDs, ``sys#N`` (rank_in_batch) or ``#N`` (operator_rank) "
+        "markers — same labels printed by ``topics show-batch``."
+    ),
 )
-def rank_batch(batch_id: str, order: str) -> None:
+def rank_batch(batch_id: UUID, order: str) -> None:
     """Set operator ranking for a batch's candidates."""
     async def _impl():
         import asyncpg
         from services.topic_batch_service import TopicBatchService
 
-        ids = [s.strip() for s in order.split(",") if s.strip()]
+        tokens = [s.strip() for s in order.split(",") if s.strip()]
         pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
         try:
-            await TopicBatchService(pool).rank_batch(
+            svc = TopicBatchService(pool)
+            view = await svc.show_batch(batch_id=batch_id)
+            ids = _resolve_order_tokens(tokens, view.candidates)
+            await svc.rank_batch(
                 batch_id=batch_id, ordered_candidate_ids=ids,
             )
             click.echo(f"Ranked {len(ids)} candidates in batch {batch_id}")
@@ -136,10 +177,10 @@ def rank_batch(batch_id: str, order: str) -> None:
 
 
 @topics_group.command("edit-winner")
-@click.argument("batch_id")
+@click.argument("batch_id", type=click.UUID)
 @click.option("--topic", help="Override the winner's title.")
 @click.option("--angle", help="Override the winner's angle/summary.")
-def edit_winner(batch_id: str, topic: str | None, angle: str | None) -> None:
+def edit_winner(batch_id: UUID, topic: str | None, angle: str | None) -> None:
     """Edit the title/angle of the rank-1 candidate before resolution."""
     if not topic and not angle:
         raise click.UsageError("Provide --topic and/or --angle.")
@@ -166,8 +207,8 @@ def edit_winner(batch_id: str, topic: str | None, angle: str | None) -> None:
 
 
 @topics_group.command("resolve-batch")
-@click.argument("batch_id")
-def resolve_batch(batch_id: str) -> None:
+@click.argument("batch_id", type=click.UUID)
+def resolve_batch(batch_id: UUID) -> None:
     """Resolve a batch — advance the rank-1 candidate to the pipeline."""
     async def _impl():
         import asyncpg
@@ -189,9 +230,9 @@ def resolve_batch(batch_id: str) -> None:
 
 
 @topics_group.command("reject-batch")
-@click.argument("batch_id")
+@click.argument("batch_id", type=click.UUID)
 @click.option("--reason", default="", help="Optional reason text.")
-def reject_batch(batch_id: str, reason: str) -> None:
+def reject_batch(batch_id: UUID, reason: str) -> None:
     """Reject a batch — discard candidates, allow a fresh sweep."""
     async def _impl():
         import asyncpg

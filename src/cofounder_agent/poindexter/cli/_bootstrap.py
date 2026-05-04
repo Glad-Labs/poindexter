@@ -49,6 +49,29 @@ def read_bootstrap_value(key: str) -> str:
     return str(data.get(key) or "").strip()
 
 
+def ensure_secret_key() -> bool:
+    """Make sure ``POINDEXTER_SECRET_KEY`` is in ``os.environ``.
+
+    ``plugins.secrets`` reads the encryption key from the env. The
+    bootstrap.toml stores it under ``poindexter_secret_key``, but only
+    the worker startup path reads it into the env automatically — bare
+    ``poindexter <cmd>`` invocations would silently fall through to
+    static-bearer auth (and a stale ``POINDEXTER_KEY`` env var) when
+    the OAuth secrets couldn't decrypt.
+
+    Returns True if the key is now present (already set or just loaded),
+    False if no source could supply it. Callers can keep going either
+    way — this is best-effort.
+    """
+    if os.getenv("POINDEXTER_SECRET_KEY"):
+        return True
+    key = read_bootstrap_value("poindexter_secret_key")
+    if key:
+        os.environ["POINDEXTER_SECRET_KEY"] = key
+        return True
+    return False
+
+
 def resolve_dsn() -> str:
     """Resolve the DB DSN, preferring bootstrap.toml over env vars.
 

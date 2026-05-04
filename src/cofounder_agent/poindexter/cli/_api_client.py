@@ -94,6 +94,14 @@ async def _resolve_credentials(
         # is usable.
         return "", "", env_static
 
+    # Make sure the secrets key is loaded from bootstrap.toml so the
+    # encrypted client_id/client_secret can decrypt — otherwise we'd
+    # silently fall through to static-bearer auth (and the inevitable
+    # stale POINDEXTER_KEY env var) for every operator who relies on
+    # bootstrap.toml for the secret key (i.e. every operator).
+    from poindexter.cli._bootstrap import ensure_secret_key
+    ensure_secret_key()
+
     import asyncpg
 
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
