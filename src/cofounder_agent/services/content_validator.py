@@ -145,9 +145,16 @@ UNLINKED_CITATION_PATTERNS = [
     r"(?:described|referenced|cited|mentioned)\s+in\s+['\"\u2018\u201c][A-Z][^'\"\u2019\u201d]{15,100}['\"\u2019\u201d]",
     # "according to Title Case Source" (not followed by a link)
     r"(?:according\s+to|as\s+(?:highlighted|noted|reported|described|shown)\s+(?:in|by))\s+(?!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Za-z]+){1,6})",
-    # Bare paper-style titles with colon: "Word Word: Subtitle With Title Case"
-    r"(?<!\[)(?:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Z][a-z]+){1,}:\s+[A-Z][a-z]+(?:\s+[A-Za-z]+){2,})(?!\])",
-    # "et al." references — almost certainly fabricated
+    # Bare paper-style titles with colon: "Word Word: Subtitle With Title Case".
+    # Case-sensitive — every Capital must actually be uppercase. Without
+    # ``(?-i:...)`` IGNORECASE makes ``[A-Z]`` match lowercase too, so this
+    # pattern fired on every "the core idea is simple:..." prose phrase
+    # AND every "[Beyond Autocomplete:...]" markdown link (the engine
+    # would start the match one char into "Beyond" to bypass ``(?<!\[)``).
+    # ``\b`` anchors the start to a word boundary; that, plus the case-
+    # sensitive capture, prevents IGNORECASE from defeating the lookbehind.
+    r"(?<!\[)\b(?-i:[A-Z][A-Za-z0-9\-]*(?:\s+[A-Z][a-z]+){1,}:\s+[A-Z][a-z]+(?:\s+[A-Za-z]+){2,})(?!\])",
+    # "et al." references — almost certainly fabricated.
     r"\b[A-Z][a-z]+\s+et\s+al\.?\s*(?:\(\d{4}\)|\[\d+\])?",
     # arXiv IDs without accompanying URL: "arXiv:2401.12345"
     r"\barXiv:\s*\d{4}\.\d{4,5}(?!\s*[\]\)])",
@@ -991,10 +998,17 @@ def validate_content(
             "Hallucinated internal link: '{matched}'"
         ))
 
-    # 5b. Check for unlinked citations (hallucinated paper/study references)
+    # 5b. Check for unlinked citations (hallucinated paper/study references).
+    # Strip Markdown header lines (``# Title``, ``## Section``) before scanning
+    # — H1/H2/H3 prose is title-case with colons by design ("The X: Y Z") and
+    # is NOT an unlinked citation. Without this strip the title-case-with-colon
+    # rule fires on every section heading, which (with the per-warning
+    # quality-score penalty from #91) tanks dev_diary posts that are otherwise
+    # well-grounded.
     if _enabled("unlinked_citation"):
+        _scan_text = re.sub(r"^\s*#{1,6}\s+.*$", "", full_text, flags=re.MULTILINE)
         issues.extend(_check_patterns(
-            full_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
+            _scan_text, UNLINKED_CITATION_PATTERNS, "warning", "unlinked_citation",
             "Unlinked citation -- possible hallucinated reference: '{matched}'"
         ))
 
