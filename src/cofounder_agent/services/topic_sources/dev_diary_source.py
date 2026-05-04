@@ -105,16 +105,57 @@ class DevDiaryContext:
         Used as the topic title when the structured bundle is handed to
         the writer. Falls back to a generic dated title if nothing
         notable is found.
+
+        Truncation is at WORD BOUNDARIES — a previous bug
+        (Glad-Labs/poindexter#352) sliced at character 60 mid-string,
+        which turned ``...auto-load POINDEXTER_SECRET_KEY`` into
+        ``...auto-load POINDEXTER_SE``. The writer then hallucinated an
+        explanation of ``POINDEXTER_SE`` as if it were a real env var.
+        ``textwrap.shorten`` breaks at whitespace and adds an ellipsis,
+        so the writer sees an obviously-truncated title and the
+        identifier never appears partial.
         """
         if self.merged_prs:
             top = self.merged_prs[0].get("title", "").strip()
             if top:
-                return f"Daily dev diary — {self.date}: {top[:60]}"
+                return f"Daily dev diary — {self.date}: {_short(top, 80)}"
         if self.notable_commits:
             top = self.notable_commits[0].get("subject", "").strip()
             if top:
-                return f"Daily dev diary — {self.date}: {top[:60]}"
+                return f"Daily dev diary — {self.date}: {_short(top, 80)}"
         return f"Daily dev diary — {self.date}"
+
+
+def _short(text: str, width: int) -> str:
+    """Word-boundary-aware truncation with ellipsis.
+
+    Wraps ``textwrap.shorten`` for the normal case (multi-word strings
+    that cleanly truncate at whitespace). Two edge cases need handling
+    because ``shorten``'s behaviour isn't ideal for our context:
+
+    - Single word longer than ``width`` → ``shorten`` returns the bare
+      placeholder. That would produce a title of just "…" which is
+      useless. We fall back to a hard-cut at ``width-1`` plus the
+      placeholder so the writer at least sees the start of the
+      identifier and an explicit truncation marker.
+    - Already-fits text → return as-is rather than running it through
+      ``shorten``'s whitespace-collapse pass.
+
+    The point isn't perfect cosmetics — it's preventing the
+    Glad-Labs/poindexter#352 failure mode where ``POINDEXTER_SECRET_KEY``
+    became ``POINDEXTER_SE`` and the writer hallucinated an explanation
+    of the truncated identifier.
+    """
+    import textwrap
+    text = " ".join(text.split())  # collapse internal whitespace
+    if len(text) <= width:
+        return text
+    short = textwrap.shorten(text, width=width, placeholder="…")
+    if short == "…":
+        # Single-word-longer-than-width pathological case — surface a
+        # prefix + the placeholder rather than just the placeholder.
+        return text[: max(width - 1, 1)] + "…"
+    return short
 
 
 # ---------------------------------------------------------------------------
