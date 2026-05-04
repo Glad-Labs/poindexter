@@ -87,7 +87,10 @@ def _walk_package(pkg_name: str) -> None:
 def discover() -> None:
     """Run discovery exactly once. Idempotent across multiple calls.
 
-    Currently walks ``services.atoms``. Future packages with atoms
+    Walks ``services.atoms`` for ATOM_META declarations, then
+    surfaces every registered Stage plugin as a virtual atom so the
+    architect-LLM sees the full composable surface (real atoms +
+    existing stages) in one catalog. Future packages with atoms
     (e.g. business-ops atoms in Phase 5) get added here as additional
     package paths.
     """
@@ -95,11 +98,129 @@ def discover() -> None:
     if _DISCOVERED:
         return
     _walk_package("services.atoms")
+    _surface_stages_as_atoms()
     _DISCOVERED = True
     logger.info(
         "[atom_registry] discovered %d atom(s): %s",
         len(_ATOMS), sorted(_ATOMS.keys()),
     )
+
+
+def _surface_stages_as_atoms() -> None:
+    """Lift each registered Stage plugin into the atom catalog as a
+    virtual atom prefixed ``stage.<name>``.
+
+    Virtual atoms have auto-derived metadata (name, description from
+    class docstring, halts_on_failure → cost_class hint) and a runner
+    that calls ``stage.execute(context, config)`` so the architect
+    can compose them just like real atoms. The make_stage_node path
+    in :mod:`services.template_runner` is the canonical executor —
+    we route through it so virtual atoms get the same plugin-config
+    + timeout treatment as native StageRunner runs.
+    """
+    try:
+        from plugins.registry import get_core_samples, get_stages
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[atom_registry] could not import plugins.registry: %s", exc)
+        return
+
+    stages_by_name: dict[str, Any] = {}
+    try:
+        for stage in get_stages():  # entry-point-discovered stages
+            name = getattr(stage, "name", None)
+            if name:
+                stages_by_name[name] = stage
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[atom_registry] get_stages() failed: %s", exc)
+
+    try:
+        for stage in get_core_samples().get("stages", []):
+            name = getattr(stage, "name", None)
+            if name and name not in stages_by_name:
+                stages_by_name[name] = stage
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[atom_registry] get_core_samples() stages failed: %s", exc)
+
+    surfaced = 0
+    for stage_name, stage in stages_by_name.items():
+        atom_slug = f"stage.{stage_name}"
+        if atom_slug in _ATOMS:
+            continue
+        meta = _stage_to_atom_meta(stage_name, stage)
+        if meta is None:
+            continue
+        _ATOMS[atom_slug] = meta
+        _RUNNERS[atom_slug] = _make_stage_runner(stage)
+        surfaced += 1
+    if surfaced:
+        logger.info(
+            "[atom_registry] surfaced %d Stage plugin(s) as virtual atoms",
+            surfaced,
+        )
+
+
+def _stage_to_atom_meta(stage_name: str, stage: Any) -> AtomMeta | None:
+    """Auto-derive AtomMeta for a Stage plugin.
+
+    Description prefers the class docstring's first paragraph; falls
+    back to the stage's ``description`` attribute, then to a generic
+    blurb. capability_tier defaults to None — stages don't declare
+    one because they reach into model_router themselves.
+    """
+    from plugins.atom import RetryPolicy
+
+    cls = type(stage)
+    doc = (cls.__doc__ or "").strip()
+    if doc:
+        # First paragraph as description.
+        description = doc.split("\n\n", 1)[0].replace("\n", " ").strip()
+    else:
+        description = getattr(stage, "description", "") or (
+            f"Legacy Stage plugin {stage_name!r} surfaced as a virtual atom."
+        )
+
+    halts = bool(getattr(stage, "halts_on_failure", True))
+    timeout_s = int(getattr(stage, "timeout_seconds", 120) or 120)
+
+    return AtomMeta(
+        name=f"stage.{stage_name}",
+        type="stage",
+        version=getattr(stage, "version", "1.0.0") or "1.0.0",
+        description=description[:500],  # keep prompt budget tight
+        inputs=(),         # stages share the LangGraph state dict
+        outputs=(),
+        requires=(),
+        produces=(),
+        capability_tier=None,
+        cost_class="compute",
+        idempotent=False,
+        side_effects=(f"stage timeout {timeout_s}s",),
+        retry=RetryPolicy(max_attempts=1),
+        fallback=(),
+        parallelizable=False,
+    ) if halts is not None else None  # always returns; halts kept for clarity
+
+
+def _make_stage_runner(stage: Any) -> Callable[..., Any]:
+    """Build the atom-runner shim for a virtual stage atom.
+
+    Calls ``services.template_runner.make_stage_node`` to get the
+    canonical LangGraph node wrapper, then unwraps it as a plain
+    awaitable that accepts the state dict — same contract real atoms
+    expose. We resolve pool from ``state['database_service']`` because
+    that's how stages already get their pool today.
+    """
+
+    async def runner(state: dict[str, Any]) -> dict[str, Any]:
+        from services.template_runner import make_stage_node
+
+        db = state.get("database_service")
+        pool = getattr(db, "pool", None) if db else None
+        node = make_stage_node(stage, pool, record_sink=None)
+        return await node(state)  # type: ignore[arg-type]
+
+    runner.__name__ = f"virtual_atom_runner_{getattr(stage, 'name', 'unknown')}"
+    return runner
 
 
 def list_atoms() -> list[AtomMeta]:
