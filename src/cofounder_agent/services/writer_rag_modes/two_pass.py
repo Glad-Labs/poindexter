@@ -100,6 +100,15 @@ class _State(TypedDict, total=False):
     # prepended to _draft_node's instruction. Empty string when no override
     # is set (the historical generic-instruction-only behaviour).
     writer_prompt_override: str
+    # task_metadata.context_bundle flowed down from generate_content.py
+    # (set by services/jobs/run_dev_diary_post.py for dev_diary tasks).
+    # When non-empty, _draft_node inserts a GROUND TRUTH section in the
+    # prompt with the actual PR titles + commits + decisions, so the
+    # writer stops riffing on the topic title alone. Closes #353. The
+    # dict shape matches DevDiaryContext.to_dict() — merged_prs,
+    # notable_commits, brain_decisions, audit_resolved, recent_posts,
+    # cost_summary, date.
+    context_bundle: dict[str, Any]
 
 
 # -- nodes --
@@ -146,11 +155,93 @@ async def _draft_node(state: _State) -> _State:
     override = (state.get("writer_prompt_override") or "").strip()
     if override:
         instruction = f"{override}\n\n---\n\n{instruction}"
+    # Inject the context_bundle (set by the dev_diary job for dev_diary
+    # tasks) as a GROUND TRUTH section. The writer must base claims on
+    # these entries; when present, this is the authoritative source —
+    # not the topic string, not the snippets. Closes #353. For niche-
+    # batch / ad-hoc tasks this is empty and the section is skipped.
+    bundle = state.get("context_bundle") or {}
+    if bundle:
+        ground_truth = _format_bundle_for_prompt(bundle)
+        if ground_truth:
+            instruction = (
+                f"{instruction}\n\n---\n\n"
+                f"GROUND TRUTH (today's actual activity — base every "
+                f"claim on these entries, do NOT infer or invent details "
+                f"the bundle doesn't contain. When you reference a PR or "
+                f"commit, use the exact title and link to the URL given):\n\n"
+                f"{ground_truth}"
+            )
     draft = await generate_with_context(
         topic=state["topic"], angle=state["angle"],
         snippets=state["snippets"], extra_instructions=instruction,
     )
     return {**state, "draft": draft}
+
+
+def _format_bundle_for_prompt(bundle: dict[str, Any]) -> str:
+    """Render the dev_diary context bundle as plain text for the writer.
+
+    Caps each section (top 8 PRs, top 8 commits, top 5 decisions, top 5
+    audit, top 5 posts) to keep the prompt within token budget on large
+    multi-day windows. Cost-summary is one line. Truncates individual
+    titles at 200 chars. Order matches DevDiaryContext.to_dict().
+    """
+    lines: list[str] = []
+    prs = (bundle.get("merged_prs") or [])[:8]
+    if prs:
+        lines.append("Merged PRs (use these — every PR claim must match a row here):")
+        for p in prs:
+            num = p.get("number")
+            title = (p.get("title") or "")[:200]
+            url = p.get("url") or ""
+            author = p.get("author") or ""
+            tag = f"PR #{num}" if num else "PR"
+            lines.append(f"- [{tag}] {title}")
+            if url:
+                lines.append(f"  {url}")
+            if author:
+                lines.append(f"  author: {author}")
+        lines.append("")
+    commits = (bundle.get("notable_commits") or [])[:8]
+    if commits:
+        lines.append("Notable commits:")
+        for c in commits:
+            sha = (c.get("sha") or "")[:7]
+            subject = (c.get("subject") or "")[:200]
+            lines.append(f"- [{sha}] {subject}" if sha else f"- {subject}")
+        lines.append("")
+    decisions = (bundle.get("brain_decisions") or [])[:5]
+    if decisions:
+        lines.append("Brain decisions (high-confidence calls):")
+        for d in decisions:
+            summary = (d.get("summary") or d.get("description") or "")[:200]
+            if summary:
+                lines.append(f"- {summary}")
+        lines.append("")
+    audit = (bundle.get("audit_resolved") or [])[:5]
+    if audit:
+        lines.append("Resolved audit events:")
+        for a in audit:
+            summary = (a.get("summary") or a.get("event") or "")[:200]
+            if summary:
+                lines.append(f"- {summary}")
+        lines.append("")
+    posts = (bundle.get("recent_posts") or [])[:5]
+    if posts:
+        lines.append("Recently published posts:")
+        for p in posts:
+            title = (p.get("title") or "")[:200]
+            url = p.get("url") or ""
+            lines.append(f"- {title}" + (f" — {url}" if url else ""))
+        lines.append("")
+    cost = bundle.get("cost_summary") or {}
+    if cost:
+        total = cost.get("total_usd")
+        if total is not None:
+            lines.append(f"Cost summary: ${total:.2f} across LLM calls today.")
+            lines.append("")
+    return "\n".join(lines).rstrip()
 
 
 def _detect_needs(state: _State) -> _State:
@@ -251,11 +342,13 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
     thread_id = f"two_pass-{niche_id}-{topic[:32]}"
     _POOL_REGISTRY[thread_id] = pool
     try:
+        cb_kw = kw.get("context_bundle") or {}
         initial: _State = {
             "topic": topic,
             "angle": angle,
             "pool_thread": thread_id,
             "writer_prompt_override": str(kw.get("writer_prompt_override") or ""),
+            "context_bundle": cb_kw if isinstance(cb_kw, dict) else {},
         }
         config = {"configurable": {"thread_id": thread_id}}
         final = await _GRAPH.ainvoke(initial, config=config)

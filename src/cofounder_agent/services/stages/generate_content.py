@@ -433,6 +433,57 @@ class GenerateContentStage:
             )
             return None
 
+    async def _read_context_bundle(
+        self, database_service: Any, task_id: str,
+    ) -> dict[str, Any] | None:
+        """Pull ``task_metadata.context_bundle`` from the live task row.
+
+        Set by ``services/jobs/run_dev_diary_post.py::_create_dev_diary_task``
+        on dev_diary tasks (PRs, notable commits, brain decisions, audit
+        events, recent posts, cost summary). Niche-batch and ad-hoc
+        tasks won't have this — returns None and the writer falls back
+        to similarity-retrieved snippets only.
+
+        Read order matters: must be called from a stage that runs
+        BEFORE the writer's pipeline_versions UPSERT replaces the
+        ``task_metadata`` key wholesale. ``generate_content`` is the
+        first stage that touches the writer, so reading here gives the
+        bundle a guaranteed clean view. After this stage runs the
+        bundle is overwritten in storage by the writer's output (tone,
+        style, content, etc.) — we capture once and pass through.
+
+        Closes Glad-Labs/poindexter#353. Before this fix the writer
+        only saw the topic title; with the bundle plumbed through it
+        gets the actual PR titles + URLs to ground claims against.
+        """
+        try:
+            task_row = await database_service.get_task(task_id)
+            if not task_row:
+                return None
+            tm = task_row.get("task_metadata") or {}
+            if isinstance(tm, str):
+                import json as _json
+                try:
+                    tm = _json.loads(tm)
+                except Exception:
+                    return None
+            if not isinstance(tm, dict):
+                return None
+            cb = tm.get("context_bundle")
+            # Some legacy paths nested it under metadata. Support both shapes.
+            if cb is None:
+                inner = tm.get("metadata")
+                if isinstance(inner, dict):
+                    cb = inner.get("context_bundle")
+            return cb if isinstance(cb, dict) else None
+        except Exception as e:
+            logger.warning(
+                "Failed to read context_bundle for task %s: %s — "
+                "falling back to no bundle",
+                task_id, e,
+            )
+            return None
+
     async def _read_writer_prompt_override(
         self, database_service: Any, task_id: str,
     ) -> str | None:
@@ -525,6 +576,18 @@ class GenerateContentStage:
             database_service, task_id,
         )
 
+        # task_metadata.context_bundle — set by the dev_diary job
+        # (PRs/commits/decisions/audit/recent posts/cost summary). We
+        # read it HERE (before any subsequent stage replaces
+        # task_metadata via the JSONB || merge) and plumb it through
+        # to the writer mode so _draft_node can include it as a
+        # GROUND TRUTH section in the prompt. Closes #353. None for
+        # niche-batch/manual tasks (writer falls back to similarity-
+        # retrieved snippets only).
+        context_bundle = await self._read_context_bundle(
+            database_service, task_id,
+        )
+
         from services.gpu_scheduler import gpu
         async with gpu.lock(
             "ollama", model="glm-4.7-5090:latest",
@@ -537,6 +600,7 @@ class GenerateContentStage:
                 niche_id=None,
                 pool=pool,
                 writer_prompt_override=writer_prompt_override,
+                context_bundle=context_bundle,
             )
 
         draft = result.get("draft") or ""
