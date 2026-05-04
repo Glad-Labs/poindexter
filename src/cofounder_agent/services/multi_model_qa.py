@@ -216,45 +216,52 @@ Evaluate:
 3. Are there any hallucinated people, statistics, or quotes?
 4. Would this be valuable to the target audience (developers and founders)?
 
-IMPORTANT — handling claims about products or events you do not recognize:
-Your training data has a cutoff. The article may discuss hardware, software,
-or events that were released or happened after your cutoff but before today's
-date above. If you encounter a specific product, version, framework, or event
-you do not recognize:
+HANDLING CLAIMS YOU DO NOT RECOGNIZE:
 
-  - Do NOT automatically reject it as fabricated just because you lack knowledge.
-    "I have not heard of this" is not the same as "this does not exist."
-  - Do NOT automatically accept it either. Unknown-to-you is not a free pass.
-  - Distinguish suspicious from merely unknown. Reject when claims are internally
-    contradictory, suspiciously specific (fake-looking statistics, invented quotes
-    attributed to real people, made-up studies with impossible citations),
-    or physically/logically impossible. Flag as "uncertain — cannot verify"
-    when the claim is plausible given the date but outside your knowledge,
-    and lower the score modestly for unverifiable specifics rather than rejecting.
-  - Always reject fabricated people, fake statistics, and invented quotes,
-    regardless of date.
+Your training data has a cutoff. The article may cover hardware,
+software, or events released after your cutoff but before today's
+date above. Apply this rubric to claims about products, versions,
+frameworks, or events you do not personally recognize:
 
-HOW TO USE THE SOURCES SECTION (if present above):
-The SOURCES block contains the research corpus the writer consulted while
-drafting this post — real links, pulled excerpts, and internal reference
-material. Treat it as the authoritative ground truth for this specific
-article. When you encounter a factual claim in the content:
+  - Treat "I have not heard of this" as "outside my knowledge",
+    distinct from "this is fabricated". A name being unfamiliar
+    is signal but not proof.
+  - Reject as fabricated when claims are internally contradictory,
+    suspiciously specific (fake-looking statistics, quotes attributed
+    to real people, made-up studies with impossible citations), or
+    physically/logically impossible.
+  - Mark as "uncertain — cannot verify" when the claim is plausible
+    for today's date but outside your knowledge, and lower the score
+    modestly for that unverifiable specificity.
+  - Reject outright the universal failure modes regardless of date:
+    fabricated people, fake statistics, invented quotes.
+  - Accept claims that fall outside your knowledge but match common
+    industry patterns (a startup with a real-looking product page, a
+    library with a plausible API, a metric within typical ranges).
 
-  - If the claim appears in or is supported by the SOURCES, it is grounded.
-    Accept it even if it falls outside your training knowledge.
-  - If the claim does NOT appear in the SOURCES and is also outside your
-    knowledge, flag it as "unverified — not backed by provided research"
-    and lower the score modestly. Do not reject outright unless the claim
-    is implausible.
-  - If the claim contradicts the SOURCES, that is a hard rejection.
-  - A claim that is well-established common knowledge (e.g., "HTTP uses
-    status codes", "Postgres supports JSONB") does not need to appear in
-    the SOURCES to be accepted.
+USING THE SOURCES SECTION (when present above):
 
-If the SOURCES block is absent, fall back to your training knowledge with
-the cutoff caveats above.
+The SOURCES block contains the research corpus the writer consulted
+while drafting this post — real links, pulled excerpts, internal
+reference material. Treat it as authoritative ground truth for this
+specific article. For each factual claim:
 
-Respond with ONLY valid JSON:
+  - When the claim appears in or is supported by the SOURCES, accept
+    it as grounded. This holds even when the claim falls outside
+    your training knowledge.
+  - When the claim is absent from SOURCES and outside your knowledge,
+    flag it as "unverified — not backed by provided research" and
+    lower the score modestly. Reject only when the claim is
+    additionally implausible.
+  - When the claim contradicts the SOURCES, reject it.
+  - Common knowledge ("HTTP uses status codes", "Postgres supports
+    JSONB") passes without needing a SOURCES entry.
+
+When the SOURCES block is absent, evaluate from your training
+knowledge using the cutoff rubric above.
+
+Output one JSON object. The first character is `{{` and the last
+character is `}}`:
 {{"approved": true/false, "quality_score": NUMBER 0-100, "feedback": "2-3 sentences"}}
 """
 
