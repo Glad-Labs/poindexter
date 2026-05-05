@@ -182,6 +182,67 @@ const log = (msg, cls='') => {{
 }};
 let room = null;
 let micPub = null;
+let audioEl = null;       // single managed audio element (re-bound on
+                          // each new track instead of multiplying DOM nodes)
+let statsTimer = null;    // periodic getStats() poller for live diagnostics
+let lastBytesReceived = 0;
+let silentTicks = 0;
+
+function showStartAudioButton(label) {{
+    if (document.getElementById('start-audio-btn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'start-audio-btn';
+    btn.textContent = label;
+    btn.style = 'margin-top:8px;background:#2a8c4a;width:100%';
+    btn.onclick = async () => {{
+        try {{
+            await room.startAudio();
+            if (audioEl) await audioEl.play();
+            log('Audio enabled (manual)', 'ok');
+            btn.remove();
+        }} catch (e) {{
+            log('Still blocked: ' + e.message, 'err');
+        }}
+    }};
+    document.body.appendChild(btn);
+}}
+
+// Periodic getStats() over the subscriber peer connection — surfaces
+// "audio bytes still flowing?" so a silent stretch is recognisable as
+// EITHER "bot isn't talking" OR "packets dropped to zero." Helps
+// disambiguate WiFi flakiness from idle.
+async function pollSubscriberStats() {{
+    if (!room || !room.engine || !room.engine.client || !room.engine.subscriber) return;
+    try {{
+        const pc = room.engine.subscriber.pc || room.engine.subscriber._pc;
+        if (!pc || !pc.getStats) return;
+        const stats = await pc.getStats();
+        let bytes = 0, packets = 0, lost = 0;
+        stats.forEach(r => {{
+            if (r.type === 'inbound-rtp' && r.kind === 'audio') {{
+                bytes = r.bytesReceived || 0;
+                packets = r.packetsReceived || 0;
+                lost = r.packetsLost || 0;
+            }}
+        }});
+        const delta = bytes - lastBytesReceived;
+        lastBytesReceived = bytes;
+        if (delta < 200) {{
+            silentTicks++;
+            if (silentTicks >= 3) {{
+                log('No audio bytes for 3 ticks (' + lost + ' lost so far) — track may be stalled', 'err');
+                if (audioEl && audioEl.paused) {{
+                    audioEl.play().then(() => log('Re-played audio after stall', 'ok')).catch(() => {{}});
+                }}
+                silentTicks = 0;
+            }}
+        }} else {{
+            silentTicks = 0;
+        }}
+    }} catch (e) {{
+        // Best-effort — different LiveKit versions expose pc differently.
+    }}
+}}
 
 document.getElementById('connect').addEventListener('click', async () => {{
     document.getElementById('connect').disabled = true;
@@ -193,52 +254,62 @@ document.getElementById('connect').addEventListener('click', async () => {{
             .on(LivekitClient.RoomEvent.TrackSubscribed, (track, _pub, p) => {{
                 log('Track from ' + p.identity + ': ' + track.kind, 'ok');
                 if (track.kind === 'audio') {{
-                    const audioEl = track.attach();
-                    audioEl.autoplay = true;
-                    audioEl.controls = true;
-                    audioEl.style = 'width:100%;margin-top:8px';
-                    document.body.appendChild(audioEl);
-                    // Mobile Chrome aggressively blocks autoplay even after
-                    // user interaction. Try play() and if it rejects, surface
-                    // a tap-to-enable button.
+                    // Reuse the same <audio> element across (re)subscriptions
+                    // instead of creating a new one each time. Each new element
+                    // would otherwise have to clear mobile-Chrome's autoplay
+                    // gate fresh, and the old elements would silently pile up
+                    // in the DOM holding stale tracks.
+                    if (!audioEl) {{
+                        audioEl = document.createElement('audio');
+                        audioEl.autoplay = true;
+                        audioEl.controls = true;
+                        audioEl.style = 'width:100%;margin-top:8px';
+                        document.body.appendChild(audioEl);
+                    }}
+                    track.attach(audioEl);
                     const playPromise = audioEl.play();
                     if (playPromise !== undefined) {{
                         playPromise
                             .then(() => log('Audio playback started', 'ok'))
                             .catch(err => {{
-                                log('Autoplay blocked: ' + err.name + '. Use the audio controls below.', 'err');
-                                const btn = document.createElement('button');
-                                btn.textContent = '▶ Tap to enable audio';
-                                btn.style = 'margin-top:8px;background:#2a8c4a';
-                                btn.onclick = () => audioEl.play().then(() => {{
-                                    log('Audio playback started (manual)', 'ok');
-                                    btn.remove();
-                                }}).catch(e => log('Still blocked: ' + e.message, 'err'));
-                                document.body.appendChild(btn);
+                                log('Autoplay blocked: ' + err.name, 'err');
+                                showStartAudioButton('▶ Tap to enable audio');
                             }});
                     }}
                 }}
             }})
-            .on(LivekitClient.RoomEvent.Disconnected, () => log('Disconnected', 'err'))
+            .on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, _pub, p) => {{
+                log('Track UNsubscribed from ' + p.identity + ': ' + track.kind, 'err');
+            }})
+            .on(LivekitClient.RoomEvent.ConnectionQualityChanged, (quality, p) => {{
+                log('Quality (' + p.identity + '): ' + quality);
+            }})
+            .on(LivekitClient.RoomEvent.Disconnected, reason => log('Disconnected: ' + reason, 'err'))
+            .on(LivekitClient.RoomEvent.Reconnecting, () => log('Reconnecting...', 'err'))
+            .on(LivekitClient.RoomEvent.Reconnected, () => log('Reconnected', 'ok'))
             .on(LivekitClient.RoomEvent.MediaDevicesError, e => log('Media error: ' + e.message, 'err'))
             .on(LivekitClient.RoomEvent.AudioPlaybackStatusChanged, () => {{
                 log('Audio playback status: ' + (room.canPlaybackAudio ? 'OK' : 'BLOCKED'),
                     room.canPlaybackAudio ? 'ok' : 'err');
-                if (!room.canPlaybackAudio) {{
-                    const btn = document.createElement('button');
-                    btn.textContent = '▶ Tap to start audio';
-                    btn.style = 'margin-top:8px;background:#2a8c4a';
-                    btn.onclick = () => room.startAudio().then(() => btn.remove());
-                    document.body.appendChild(btn);
-                }}
+                if (!room.canPlaybackAudio) showStartAudioButton('▶ Tap to start audio');
             }});
         await room.connect(WSS_URL, TOKEN);
         log('Connected to ' + room.name, 'ok');
         log('Participants: ' + (room.numParticipants || 1));
+        // Prime the audio context proactively (mobile-Chrome gesture
+        // requirement) so the first incoming track plays without
+        // needing a second tap. The Connect tap counts as the gesture.
+        try {{ await room.startAudio(); }} catch (e) {{
+            showStartAudioButton('▶ Tap to enable audio');
+        }}
         micPub = await room.localParticipant.setMicrophoneEnabled(true);
         log('Mic on. Talk freely.', 'ok');
         document.getElementById('mute').disabled = false;
         document.getElementById('leave').disabled = false;
+        // Start the watchdog poll. 3-second ticks = 9-second silent-stall
+        // detection threshold (matches the Pipecat output buffer + Kokoro
+        // generation worst case so we don't false-positive on a slow LLM).
+        statsTimer = setInterval(pollSubscriberStats, 3000);
     }} catch (e) {{
         log('Connect failed: ' + e.message, 'err');
         document.getElementById('connect').disabled = false;
@@ -254,7 +325,11 @@ document.getElementById('mute').addEventListener('click', async () => {{
 }});
 
 document.getElementById('leave').addEventListener('click', async () => {{
+    if (statsTimer) {{ clearInterval(statsTimer); statsTimer = null; }}
     if (room) {{ await room.disconnect(); room = null; }}
+    if (audioEl) {{ audioEl.remove(); audioEl = null; }}
+    lastBytesReceived = 0;
+    silentTicks = 0;
     document.getElementById('connect').disabled = false;
     document.getElementById('mute').disabled = true;
     document.getElementById('leave').disabled = true;
