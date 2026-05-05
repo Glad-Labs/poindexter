@@ -64,7 +64,7 @@ async def _embed_published_post(db_service: DatabaseService, post_dict: dict) ->
     and returns silently so the publish flow is never interrupted.
     """
     try:
-        from plugins.registry import get_llm_providers
+        from plugins.registry import get_all_llm_providers
         from services.embedding_service import EmbeddingService
 
         embeddings_db = getattr(db_service, "embeddings", None)
@@ -75,7 +75,7 @@ async def _embed_published_post(db_service: DatabaseService, post_dict: dict) ->
         # v2.2b: Provider Protocol instead of concrete OllamaClient.
         # ``plugin.llm_provider.primary.free`` in app_settings decides
         # which backend does the embedding without editing this code.
-        providers = {p.name: p for p in get_llm_providers()}
+        providers = {p.name: p for p in get_all_llm_providers()}
         provider = providers.get("ollama_native")
         if provider is None:
             logger.debug("[RAG] Skipping post embedding: ollama_native provider not registered")

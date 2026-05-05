@@ -52,7 +52,7 @@ import logging
 from typing import Any
 
 from plugins.config import PluginConfig
-from plugins.registry import get_llm_providers
+from plugins.registry import get_all_llm_providers
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ async def get_provider(pool: Any, tier: str = "standard") -> Any:
         span.set_attribute("llm.tier", tier)
         name = await get_provider_name(pool, tier)
         span.set_attribute("llm.provider.requested", name)
-        providers = {p.name: p for p in get_llm_providers()}
+        providers = {p.name: p for p in get_all_llm_providers()}
         if name not in providers:
             span.set_attribute("llm.provider.fallback", True)
             logger.warning(

@@ -103,12 +103,12 @@ async def generate_canonical_title(
 ) -> str | None:
     """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles."""
     try:
-        from plugins.registry import get_llm_providers
+        from plugins.registry import get_all_llm_providers
         from services.prompt_manager import get_prompt_manager
         from services.site_config import site_config
 
         pm = get_prompt_manager()
-        providers = {p.name: p for p in get_llm_providers()}
+        providers = {p.name: p for p in get_all_llm_providers()}
         provider = providers.get("ollama_native")
         if provider is None:
             logger.warning("[TITLE_GEN] ollama_native provider not registered; skipping")

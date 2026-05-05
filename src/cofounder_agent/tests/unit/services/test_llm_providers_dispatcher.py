@@ -124,28 +124,28 @@ class TestGetProvider:
     async def test_returns_named_provider_when_registered(self):
         pool = _FakePool(setting_value="openai_compat")
         provider = _FakeProvider(name="openai_compat")
-        with patch.object(dispatcher, "get_llm_providers", return_value=[provider]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             result = await dispatcher.get_provider(pool, tier="standard")
         assert result is provider
 
     async def test_falls_back_to_ollama_native_when_configured_missing(self):
         pool = _FakePool(setting_value="weird_provider_that_isnt_installed")
         ollama = _FakeProvider(name="ollama_native")
-        with patch.object(dispatcher, "get_llm_providers", return_value=[ollama]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[ollama]):
             result = await dispatcher.get_provider(pool, tier="standard")
         assert result is ollama
 
     async def test_raises_when_neither_configured_nor_fallback_registered(self):
         pool = _FakePool(setting_value="missing_one")
         # Registry has neither the configured name nor ollama_native.
-        with patch.object(dispatcher, "get_llm_providers", return_value=[]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[]):
             with pytest.raises(RuntimeError, match="No LLMProvider"):
                 await dispatcher.get_provider(pool, tier="standard")
 
     async def test_default_tier_is_standard(self):
         pool = _FakePool(setting_value="ollama_native")
         ollama = _FakeProvider(name="ollama_native")
-        with patch.object(dispatcher, "get_llm_providers", return_value=[ollama]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[ollama]):
             result = await dispatcher.get_provider(pool)  # no tier arg
         assert result.name == "ollama_native"
 
@@ -178,7 +178,7 @@ class TestDispatchComplete:
         provider.complete.return_value = _FakeCompletionResult(
             prompt_tokens=5, completion_tokens=7, finish_reason="stop",
         )
-        with patch.object(dispatcher, "get_llm_providers", return_value=[provider]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             result = await dispatcher.dispatch_complete(
                 pool,
                 messages=[{"role": "user", "content": "hi"}],
@@ -198,7 +198,7 @@ class TestDispatchComplete:
         provider = _FakeProvider(name="ollama_native")
         provider.complete.return_value = _FakeCompletionResult()
         custom_cfg = {"base_url": "http://my-vllm.local"}
-        with patch.object(dispatcher, "get_llm_providers", return_value=[provider]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             await dispatcher.dispatch_complete(
                 pool,
                 messages=[{"role": "user", "content": "hi"}],
@@ -213,7 +213,7 @@ class TestDispatchComplete:
         provider = _FakeProvider(name="ollama_native")
         # Plain object with no token attrs — getattr defaults kick in.
         provider.complete.return_value = object()
-        with patch.object(dispatcher, "get_llm_providers", return_value=[provider]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             result = await dispatcher.dispatch_complete(
                 pool,
                 messages=[{"role": "user", "content": "hi"}],
@@ -225,7 +225,7 @@ class TestDispatchComplete:
         pool = _FakePool(setting_value="ollama_native")
         provider = _FakeProvider(name="ollama_native")
         provider.complete.side_effect = RuntimeError("provider down")
-        with patch.object(dispatcher, "get_llm_providers", return_value=[provider]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             with pytest.raises(RuntimeError, match="provider down"):
                 await dispatcher.dispatch_complete(
                     pool,
@@ -245,7 +245,7 @@ class TestDispatchEmbed:
         pool = _FakePool(setting_value="ollama_native")
         provider = _FakeProvider(name="ollama_native")
         provider.embed.return_value = [0.4, 0.5, 0.6]
-        with patch.object(dispatcher, "get_llm_providers", return_value=[provider]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             vec = await dispatcher.dispatch_embed(
                 pool, text="hello", model="nomic-embed-text",
             )
@@ -277,7 +277,7 @@ class TestDispatchEmbed:
         pool.fetchval = AsyncMock(return_value=None)
 
         provider = _FakeProvider(name="ollama_native")
-        with patch.object(dispatcher, "get_llm_providers", return_value=[provider]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             await dispatcher.dispatch_embed(pool, text="hi", model="m")
         assert captured["key"] == "plugin.llm_provider.primary.free"
 
@@ -285,6 +285,6 @@ class TestDispatchEmbed:
         pool = _FakePool(setting_value="ollama_native")
         provider = _FakeProvider(name="ollama_native")
         provider.embed.side_effect = RuntimeError("embed down")
-        with patch.object(dispatcher, "get_llm_providers", return_value=[provider]):
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
             with pytest.raises(RuntimeError, match="embed down"):
                 await dispatcher.dispatch_embed(pool, text="hello", model="m")

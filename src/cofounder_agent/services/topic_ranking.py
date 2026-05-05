@@ -72,10 +72,10 @@ async def _embed_text_cached(text: str) -> list[float]:
     through the ``LLMProvider`` Protocol (matches the pattern in
     ``services.publish_service`` etc.).
     """
-    from plugins.registry import get_llm_providers
+    from plugins.registry import get_all_llm_providers
     from services.site_config import site_config
 
-    providers = {p.name: p for p in get_llm_providers()}
+    providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
     if provider is None:
         raise RuntimeError(

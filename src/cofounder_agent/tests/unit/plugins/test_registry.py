@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from plugins import Document, get_llm_providers, get_taps
+from plugins import Document, get_all_llm_providers, get_llm_providers, get_taps
 from plugins.registry import clear_registry_cache
 
 
@@ -202,3 +202,87 @@ def test_clear_cache_forces_rediscovery(monkeypatch):
     clear_registry_cache()
     get_taps()
     assert call_count == 2, "clear_registry_cache must invalidate the cache"
+
+
+# ---------------------------------------------------------------------------
+# get_all_llm_providers — Glad-Labs/poindexter#376 regression
+# ---------------------------------------------------------------------------
+
+
+class TestGetAllLlmProviders:
+    """``get_all_llm_providers`` must surface ``ollama_native`` even on a
+    fresh boot where the package isn't ``pip install``ed.
+
+    Glad-Labs/poindexter#376: dev_diary's TWO_PASS writer mode calls
+    ``services.topic_ranking.embed_text`` which looks up the
+    ``ollama_native`` provider by name. Before this fix that lookup went
+    through ``get_llm_providers()`` (entry_points-only), which returns
+    an empty list in every dev/test checkout because poetry-build of the
+    backend package is never run — leading to ``RuntimeError:
+    ollama_native provider not registered — cannot generate embeddings``
+    on every dev_diary run.
+    """
+
+    def test_returns_ollama_native_with_no_entry_points(self, monkeypatch):
+        """Bare boot — no entry_points present — must still expose
+        ``ollama_native`` via the imperatively-loaded core samples.
+        """
+        def fake_entry_points(group: str | None = None):
+            return []  # entry_points genuinely empty (the prod reality)
+
+        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        clear_registry_cache()
+
+        names = {p.name for p in get_all_llm_providers()}
+        assert "ollama_native" in names, (
+            "ollama_native must be discoverable on a bare checkout. "
+            f"Got: {sorted(names)}"
+        )
+        # The other in-tree providers should also be there.
+        assert "openai_compat" in names
+        assert "litellm" in names
+
+    def test_entry_point_plugin_overrides_core_sample(self, monkeypatch):
+        """When an entry_point and a core_sample share a name, the
+        installed plugin distribution wins. This lets operators ship a
+        replacement ``ollama_native`` via an installed package without
+        editing the core repo.
+        """
+        class _OverrideOllama:
+            name = "ollama_native"
+            supports_streaming = True
+            supports_embeddings = True
+            sentinel = "from-entry-point"
+
+        def fake_entry_points(group: str | None = None):
+            if group == "poindexter.llm_providers":
+                return [
+                    _make_entry_point(
+                        "ollama_native", "poindexter.llm_providers", _OverrideOllama,
+                    ),
+                ]
+            return []
+
+        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        clear_registry_cache()
+
+        by_name = {p.name: p for p in get_all_llm_providers()}
+        assert getattr(by_name["ollama_native"], "sentinel", None) == "from-entry-point"
+
+    def test_get_llm_providers_alone_is_empty_on_fresh_boot(self, monkeypatch):
+        """Documents the Glad-Labs/poindexter#376 trap: the
+        entry_points-only ``get_llm_providers`` returns nothing in a
+        dev checkout. Production code MUST use ``get_all_llm_providers``
+        instead.
+        """
+        def fake_entry_points(group: str | None = None):
+            return []
+
+        monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
+        clear_registry_cache()
+
+        assert get_llm_providers() == [], (
+            "get_llm_providers() (entry_points-only) is expected to be "
+            "empty on a fresh boot — that's exactly why callers should "
+            "use get_all_llm_providers() instead."
+        )

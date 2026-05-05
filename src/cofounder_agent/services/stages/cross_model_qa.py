@@ -538,7 +538,7 @@ async def _rewrite_draft(
     <think> tags), retry with ``qa_fallback_writer_model``. If the
     fallback is also too short, give up.
     """
-    from plugins.registry import get_llm_providers
+    from plugins.registry import get_all_llm_providers
     from services.audit_log import audit_log_bg
     from services.site_config import site_config
 
@@ -551,7 +551,7 @@ async def _rewrite_draft(
     timeout_s = site_config.get_int(
         "content_router_qa_rewrite_timeout_seconds", 240,
     )
-    providers = {p.name: p for p in get_llm_providers()}
+    providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
     if provider is None:
         logger.warning(

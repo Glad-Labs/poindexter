@@ -201,7 +201,7 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
 async def _embed_published_post(db_service, post_dict: dict) -> None:
     """Embed a newly published post into pgvector (non-blocking)."""
     try:
-        from plugins.registry import get_llm_providers
+        from plugins.registry import get_all_llm_providers
         from services.embedding_service import EmbeddingService
 
         embeddings_db = getattr(db_service, "embeddings", None)
@@ -211,7 +211,7 @@ async def _embed_published_post(db_service, post_dict: dict) -> None:
 
         # v2.2b: embed through the Provider Protocol — config-swappable
         # via plugin.llm_provider.primary.free in app_settings.
-        providers = {p.name: p for p in get_llm_providers()}
+        providers = {p.name: p for p in get_all_llm_providers()}
         provider = providers.get("ollama_native")
         if provider is None:
             logger.debug("[RAG] Skipping post embedding: ollama_native provider not registered")

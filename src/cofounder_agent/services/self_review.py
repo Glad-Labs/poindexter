@@ -31,7 +31,7 @@ async def self_review_and_revise(
     - ``contradictions_found`` (int) — count the detector returned.
     - ``revised`` (bool) — True only when we accepted the revision.
     """
-    from plugins.registry import get_llm_providers
+    from plugins.registry import get_all_llm_providers
     from services.site_config import site_config
 
     stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
@@ -70,7 +70,7 @@ async def self_review_and_revise(
     timeout_s = site_config.get_int(
         "content_router_contradiction_timeout_seconds", 120,
     )
-    providers = {p.name: p for p in get_llm_providers()}
+    providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
     if provider is None:
         logger.warning(

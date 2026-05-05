@@ -570,7 +570,7 @@ class ImageService:
         try:
             import asyncio
 
-            from plugins.registry import get_llm_providers
+            from plugins.registry import get_all_llm_providers
         except Exception:
             return None
 
@@ -582,7 +582,7 @@ class ImageService:
         _temp = _sc.get_float("image_search_query_temperature", 0.4)
         _generate_timeout = _sc.get_int("image_search_query_timeout_seconds", 20)
 
-        providers = {p.name: p for p in get_llm_providers()}
+        providers = {p.name: p for p in get_all_llm_providers()}
         provider = providers.get("ollama_native")
         if provider is None:
             logger.debug("LLM semantic query: ollama_native provider not registered")

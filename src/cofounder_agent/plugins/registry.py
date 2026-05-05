@@ -152,8 +152,56 @@ def get_packs() -> list[Any]:
 
 
 def get_llm_providers() -> list[Any]:
-    """Return all registered LLMProvider instances."""
+    """Return LLMProvider instances discovered via entry_points only.
+
+    NOTE: in development checkouts (``poetry install`` of poindexter is
+    rarely run), the entry_points group is empty — so this function
+    returns ``[]`` and callers looking up ``ollama_native`` get nothing.
+    Use :func:`get_all_llm_providers` instead — it merges entry_points
+    with the imperatively-loaded core samples (ollama_native,
+    openai_compat, litellm) and is what every production lookup site
+    should be hitting.
+
+    This entry_points-only variant is preserved so the registry tests
+    that monkeypatch ``importlib.metadata.entry_points`` keep working in
+    isolation; it has no other production callers and is being phased
+    out in favor of ``get_all_llm_providers``.
+    """
     return list(_cached(ENTRY_POINT_GROUPS["llm_providers"]))
+
+
+def get_all_llm_providers() -> list[Any]:
+    """Return every registered LLMProvider — entry_points AND core samples.
+
+    Merges :func:`get_llm_providers` (entry_points-only) with the
+    ``llm_providers`` slice of :func:`get_core_samples`. When a name
+    appears in both lists, the entry_points instance wins — production
+    deployments that ``pip install`` a real plugin distribution should
+    override the in-tree default of the same name.
+
+    This is the lookup-by-name surface every production call site
+    should use. Looking only at entry_points was the cause of poindexter#376
+    (``ollama_native provider not registered — cannot generate
+    embeddings`` blocked dev_diary every day) — entry_points is empty in
+    every development checkout because ``poetry install`` of the package
+    is never run. The core samples are the actual source of truth in
+    that environment, and the merged view is the only one that's
+    stable across both shapes.
+    """
+    by_name: dict[str, Any] = {}
+    # Start with core samples — they are the in-tree defaults that
+    # every checkout has access to.
+    for provider in get_core_samples().get("llm_providers", []):
+        name = getattr(provider, "name", None)
+        if name:
+            by_name[name] = provider
+    # Entry-points override on name conflict — installed plugin
+    # distributions intentionally beat the bundled default.
+    for provider in _cached(ENTRY_POINT_GROUPS["llm_providers"]):
+        name = getattr(provider, "name", None)
+        if name:
+            by_name[name] = provider
+    return list(by_name.values())
 
 
 def get_topic_sources() -> list[Any]:

@@ -933,7 +933,7 @@ class TestEmbedPublishedPost:
         db.embeddings = MagicMock()
 
         registry_mod = MagicMock()
-        registry_mod.get_llm_providers = MagicMock(return_value=[])  # no ollama
+        registry_mod.get_all_llm_providers = MagicMock(return_value=[])  # no ollama
         embed_svc_mod = MagicMock()
 
         with patch.dict(sys.modules, {
@@ -951,7 +951,7 @@ class TestEmbedPublishedPost:
         ollama_provider = MagicMock()
         ollama_provider.name = "ollama_native"
         registry_mod = MagicMock()
-        registry_mod.get_llm_providers = MagicMock(return_value=[ollama_provider])
+        registry_mod.get_all_llm_providers = MagicMock(return_value=[ollama_provider])
 
         embed_instance = MagicMock()
         embed_instance.embed_post = AsyncMock()
@@ -975,7 +975,7 @@ class TestEmbedPublishedPost:
         db.embeddings = MagicMock()
 
         registry_mod = MagicMock()
-        registry_mod.get_llm_providers = MagicMock(side_effect=RuntimeError("registry boom"))
+        registry_mod.get_all_llm_providers = MagicMock(side_effect=RuntimeError("registry boom"))
         embed_svc_mod = MagicMock()
 
         with patch.dict(sys.modules, {
