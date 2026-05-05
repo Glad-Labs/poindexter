@@ -507,11 +507,15 @@ services:
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: miniosecret
-    ports:
-      # MinIO console — browse buckets + verify uploads. Bind to localhost
-      # only; not exposed off-host. Worker + web reach it via the
-      # service-network name on port 9000.
-      - "127.0.0.1:9091:9001"
+    # No host port mapping — MinIO is internal-only. Worker + langfuse-web
+    # reach it via the compose network at langfuse-minio:9000 (S3 API) and
+    # langfuse-minio:9001 (console). Previously bound 127.0.0.1:9091→9001
+    # for browser access to the console, but that conflicted with the
+    # prometheus service (also 9091 on host), leaving MinIO with no Docker
+    # network attached on every fresh `docker compose up` (#377). To browse
+    # the MinIO console manually, either:
+    #   - `docker exec -it poindexter-langfuse-minio sh` and curl from inside, or
+    #   - re-add a host port mapping on a free port (e.g. 9095:9001) locally.
     volumes:
       - langfuse-minio-data:/data
     # `mc ready local` (the canonical Langfuse health pattern) needs
