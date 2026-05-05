@@ -99,6 +99,14 @@ class UnifiedPromptManager:
         self.prompts: dict[str, dict[str, Any]] = {}
         self.metadata: dict[str, PromptMetadata] = {}
         self._db_overrides: dict[str, str] = {}  # DB prompt overrides (loaded async)
+        # Langfuse client — lazy-initialized on first get_prompt call so
+        # apps that don't use Langfuse don't pay the connect cost. None
+        # when langfuse SDK isn't installed OR app_settings lacks the
+        # connection config OR the connection failed. Per
+        # feedback_prompts_must_be_db_configurable, Langfuse is the
+        # editing/observability surface above the DB+YAML stack.
+        self._langfuse_client: Any = None
+        self._langfuse_enabled: bool | None = None  # None = unevaluated
         self._initialize_prompts()
 
     def _initialize_prompts(self):
@@ -227,7 +235,18 @@ class UnifiedPromptManager:
         """
         Get a prompt by key and format with provided kwargs.
 
-        Priority: DB override > YAML file > KeyError
+        Priority: Langfuse production label > DB override > YAML file > KeyError.
+        Langfuse comes first because it's the operator's edit surface;
+        when an operator updates a prompt in the Langfuse UI it should
+        take effect on the next get_prompt call without a worker
+        restart. The Langfuse SDK caches in-process so the lookup is
+        cheap after the first call.
+
+        When Langfuse isn't configured (no host + key in app_settings)
+        or the lookup fails (network/auth/missing prompt), the call
+        falls through to the existing DB-override → YAML → KeyError
+        chain. This keeps the OSS distribution working without a
+        Langfuse account.
 
         Args:
             key: Prompt key (e.g., "blog_generation.initial_draft")
@@ -237,12 +256,20 @@ class UnifiedPromptManager:
             Formatted prompt ready for LLM
 
         Raises:
-            KeyError: If prompt key not found
+            KeyError: If prompt key not found in any source
         """
-        # DB overrides take priority (editable at runtime, no redeploy)
-        template = self._db_overrides.get(key)
+        # Langfuse first — operator's preferred edit surface. The SDK
+        # caches in-process; first call hits the API, subsequent calls
+        # for the same key return the cached version until the cache
+        # window expires (default 60s in langfuse SDK).
+        template = self._fetch_from_langfuse(key)
 
-        # Fall back to YAML-loaded prompts
+        # DB overrides take second priority (editable at runtime via
+        # SQL or the prompt_templates table).
+        if template is None:
+            template = self._db_overrides.get(key)
+
+        # Fall back to YAML-loaded prompts.
         if template is None:
             if key not in self.prompts:
                 available = ", ".join(self.prompts.keys())
@@ -257,6 +284,122 @@ class UnifiedPromptManager:
                 f"Prompt '{key}' missing required variable: {missing_var}. "
                 f"Please provide: {missing_var}=..."
             ) from e
+
+    def _fetch_from_langfuse(self, key: str) -> str | None:
+        """Look up the production prompt from Langfuse, or return None.
+
+        Lazy-initializes the Langfuse client on first call. Caches the
+        client + the per-prompt response (Langfuse SDK does its own
+        caching; we just don't fight it). All errors are swallowed —
+        the caller falls through to DB+YAML on any Langfuse failure.
+
+        Returns the prompt template string when Langfuse has a
+        ``production``-labeled version of the prompt; ``None`` otherwise.
+        """
+        # Has Langfuse been wired up at all?
+        if self._langfuse_enabled is False:
+            return None
+
+        client = self._init_langfuse_client()
+        if client is None:
+            self._langfuse_enabled = False
+            return None
+
+        try:
+            prompt = client.get_prompt(name=key, label="production")
+            # Langfuse Prompt objects expose .prompt for the template
+            # body. The SDK normalizes string + chat prompts; for our
+            # use we want the string form.
+            template = getattr(prompt, "prompt", None)
+            if isinstance(template, list):
+                # chat-prompt shape: render as a flattened single string
+                # for compatibility with the existing get_prompt API.
+                # Rare path; chat prompts are rare in our system.
+                template = "\n\n".join(
+                    f"{m.get('role', 'user')}: {m.get('content', '')}"
+                    for m in template
+                    if isinstance(m, dict)
+                )
+            if isinstance(template, str) and template.strip():
+                return template
+        except Exception as exc:  # noqa: BLE001
+            # Either the prompt doesn't exist in Langfuse yet (expected
+            # before the import script runs) or the API is unreachable.
+            # Demote to debug — this fires on every get_prompt call when
+            # Langfuse is configured but the specific prompt isn't yet
+            # synced. Caller falls through to DB+YAML.
+            logger.debug("[prompt_manager] Langfuse lookup for %r failed: %s", key, exc)
+        return None
+
+    def _init_langfuse_client(self):
+        """Build the Langfuse client lazily on first use.
+
+        Reads connection config from ``app_settings`` via the global
+        site_config (no env-var dependency per Matt's preference). When
+        any required setting is missing, returns None — the caller
+        gracefully falls through to the DB+YAML stack and Langfuse
+        becomes a no-op until the operator provisions credentials.
+        """
+        if self._langfuse_client is not None:
+            return self._langfuse_client
+        try:
+            from langfuse import Langfuse
+        except ImportError:
+            return None
+
+        try:
+            from services.site_config import site_config
+            host = site_config.get("langfuse_host", "")
+            public_key = site_config.get("langfuse_public_key", "")
+            # Secret key is a SECRET, so it routes through get_secret
+            # which hits the encrypted column synchronously via cache.
+            # Falls back to plain get when get_secret isn't available.
+            try:
+                # site_config.get_secret is async — use the sync
+                # accessor that reads from the secret cache.
+                secret_key = (
+                    getattr(site_config, "_secrets", {}).get("langfuse_secret_key")
+                    or site_config.get("langfuse_secret_key", "")
+                )
+            except Exception:
+                secret_key = ""
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[prompt_manager] site_config unavailable: %s", exc)
+            return None
+
+        host = (host or "").strip()
+        public_key = (public_key or "").strip()
+        secret_key = (secret_key or "").strip()
+        if not (host and public_key and secret_key):
+            logger.info(
+                "[prompt_manager] Langfuse not configured "
+                "(host=%s public_key=%s secret_key=%s) — using DB+YAML fallback. "
+                "Set langfuse_host / langfuse_public_key / langfuse_secret_key "
+                "in app_settings to enable.",
+                bool(host), bool(public_key), bool(secret_key),
+            )
+            return None
+
+        try:
+            self._langfuse_client = Langfuse(
+                host=host,
+                public_key=public_key,
+                secret_key=secret_key,
+            )
+            self._langfuse_enabled = True
+            logger.info(
+                "[prompt_manager] Langfuse prompt management active (host=%s)",
+                host,
+            )
+            return self._langfuse_client
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[prompt_manager] Langfuse client init failed: %s — "
+                "using DB+YAML fallback",
+                exc,
+            )
+            self._langfuse_enabled = False
+            return None
 
     def get_metadata(self, key: str) -> PromptMetadata:
         """Get metadata for a prompt"""
