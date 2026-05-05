@@ -137,6 +137,30 @@
       "tooltip": "FastAPI backend health + status endpoints (tailscale workstation IP, port 8002)",
       "type": "link",
       "url": "http://100.81.93.12:8002"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "✏ Talk to Poindexter (Pipecat)",
+      "tooltip": "Browser-direct WebRTC voice chat with the always-on bot. Whisper STT → Ollama → Kokoro TTS. Plain HTTP, tailnet-only — click Connect, allow mic.",
+      "type": "link",
+      "url": "http://100.81.93.12:8003/client/"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "✏ LiveKit room (multi-party) — setup pending",
+      "tooltip": "LiveKit SFU room ‘poindexter’ — multi-party voice. Phone-tap-join blocked by mixed-content (https client → ws:// signal). Tracked in poindexter#389.",
+      "type": "link",
+      "url": "https://github.com/Glad-Labs/poindexter/issues/389"
     }
   ],
   "panels": [
