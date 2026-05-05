@@ -7,6 +7,7 @@ import logging
 import click
 
 from .auth import auth_group
+from .auto_publish import auto_publish_group
 from .costs import costs_group
 from .experiments import experiments_group
 from .memory import memory_group
@@ -56,6 +57,7 @@ main.add_command(premium_group, name="premium")
 main.add_command(topics_group, name="topics")
 main.add_command(experiments_group, name="experiments")
 main.add_command(validators_group, name="validators")
+main.add_command(auto_publish_group, name="auto-publish")
 
 
 if __name__ == "__main__":
