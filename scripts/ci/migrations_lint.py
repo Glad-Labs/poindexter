@@ -62,7 +62,11 @@ MIGRATIONS_DIR = REPO_ROOT / "src" / "cofounder_agent" / "services" / "migration
 # format. Bump this whenever a legitimate legacy-numbered migration
 # lands; the lint will refuse anything ABOVE it that isn't a timestamp.
 # As of #378 the highest legacy prefix is 0159.
-LEGACY_PREFIX_CUTOFF_NUMBER = 159
+# Bumped to 160 to grandfather in `0160_litellm_cutover_default_providers.py`
+# (#250 / #372) which crossed the wire as the last legacy-named migration
+# before #378's timestamp convention took hold. No NEW 4-digit-prefix
+# migrations should land above this number.
+LEGACY_PREFIX_CUTOFF_NUMBER = 160
 
 _RE_LEGACY = re.compile(r"^(?P<prefix>\d{4})_(?P<slug>[a-z0-9_]+)\.py$")
 _RE_TIMESTAMP = re.compile(

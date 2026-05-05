@@ -13,7 +13,12 @@ zero env-var dependency per the project's standard pattern).
 
 - **Local mic loop** (``run_local()``, ``python -m services.voice_agent``)
 - **WebRTC over Tailscale** (``services.voice_agent_webrtc``) — phone /
-  laptop access from anywhere on the tailnet, same pipeline.
+  laptop access from anywhere on the tailnet, same pipeline. Runs as
+  the always-on ``voice-agent-webrtc`` Docker service (#383).
+- **LiveKit room participant** (``services.voice_agent_livekit``) —
+  multi-party voice room. Runs as the always-on
+  ``voice-agent-livekit`` Docker service (#383). See
+  ``docs/operations/voice-stt-tts.md``.
 - Future: Discord voice bot adapter, multi-agent voice rooms.
 
 The pipeline-builder (``build_voice_pipeline_task``) is the shared
@@ -94,10 +99,13 @@ from pipecat.services.whisper.stt import (
     WhisperSTTService,
 )
 from pipecat.transports.base_transport import BaseTransport
-from pipecat.transports.local.audio import (
-    LocalAudioTransport,
-    LocalAudioTransportParams,
-)
+
+# pipecat.transports.local.audio imports sounddevice / PortAudio at
+# module load. In a headless container (the always-on voice-agent-livekit
+# / voice-agent-webrtc surfaces, #383) there's no audio device and that
+# import raises ``OSError: PortAudio library not found`` even though the
+# LiveKit / WebRTC surfaces never touch a local mic. Defer the import to
+# ``run_local()`` so the headless surfaces import this module cleanly.
 
 
 _DEFAULT_SYSTEM_PROMPT = (
@@ -298,6 +306,14 @@ async def run_local(
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     log = logging.getLogger("voice_agent")
+
+    # Lazy import — see top-of-module note. Only the local-mic surface
+    # needs PortAudio; the LiveKit + WebRTC containerised surfaces never
+    # touch a local audio device.
+    from pipecat.transports.local.audio import (
+        LocalAudioTransport,
+        LocalAudioTransportParams,
+    )
 
     transport = LocalAudioTransport(
         LocalAudioTransportParams(

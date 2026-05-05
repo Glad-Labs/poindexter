@@ -263,13 +263,29 @@ def _mint_token(
     return token
 
 
-def _resolve_livekit_creds() -> tuple[str, str, str]:
-    """Pull URL + API key + secret from env (with sane dev fallbacks).
+def _resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, str]:
+    """Pull URL + API key + secret.
 
-    Eventually these move into bootstrap.toml so the operator doesn't
-    have to export anything to start a voice room.
+    Resolution order:
+      1. ``site_config.get('voice_agent_livekit_url')`` if a SiteConfig is
+         provided (DB-first per the project's standard).
+      2. ``LIVEKIT_URL`` env var (used by ``scripts/start-livekit-voice-bot.sh``
+         and any local manual invocation).
+      3. Hardcoded ``ws://localhost:7880`` dev fallback.
+
+    API key + secret stay in env vars for now — they're the same string
+    the LiveKit SFU container reads from compose, so a single place to
+    edit (compose env) keeps the two halves in lockstep. When the
+    LiveKit creds eventually move into bootstrap.toml or app_settings
+    (#383 follow-up), update both ends together.
     """
-    url = os.environ.get("LIVEKIT_URL", "ws://localhost:7880")
+    url = ""
+    if site_config is not None:
+        try:
+            url = str(site_config.get("voice_agent_livekit_url", "") or "").strip()
+        except Exception:  # noqa: BLE001 — site_config absence is OK; fall through
+            url = ""
+    url = url or os.environ.get("LIVEKIT_URL", "") or "ws://localhost:7880"
     key = os.environ.get("LIVEKIT_API_KEY", "devkey")
     secret = os.environ.get(
         "LIVEKIT_API_SECRET",
@@ -328,7 +344,20 @@ async def run_bot(
     from brain.bootstrap import require_database_url
     from services.site_config import SiteConfig
 
-    url, key, secret = _resolve_livekit_creds()
+    # Bootstrap a tiny pool just to read voice_agent_livekit_url before
+    # we mint the token. The "real" pool used by build_voice_pipeline_task
+    # is created below; keeping the cred lookup self-contained avoids
+    # ordering surprises when this is invoked from the always-on
+    # container vs. the ad-hoc script.
+    _bootstrap_dsn = require_database_url(source="voice_agent_livekit_creds")
+    _bootstrap_pool = await asyncpg.create_pool(_bootstrap_dsn, min_size=1, max_size=1)
+    try:
+        _bootstrap_cfg = SiteConfig()
+        await _bootstrap_cfg.load(_bootstrap_pool)
+        url, key, secret = _resolve_livekit_creds(_bootstrap_cfg)
+    finally:
+        await _bootstrap_pool.close()
+
     token = _mint_token(key, secret, identity=identity, room=room)
 
     log.info(
@@ -415,9 +444,88 @@ def _print_client_token(room: str, identity: str) -> None:
     print(tok)
 
 
+# ---------------------------------------------------------------------------
+# Always-on daemon entry point — reads everything from app_settings and runs
+# the bot until killed. Used by the ``voice-agent-livekit`` Docker service
+# (#383). When the operator disables the surface via
+# ``voice_agent_livekit_enabled = false``, the process exits 0 — docker's
+# ``unless-stopped`` policy then leaves it stopped without crash-looping.
+# ---------------------------------------------------------------------------
+
+
+async def run_service() -> int:
+    """Start the always-on LiveKit voice bot.
+
+    Reads every knob from ``app_settings``:
+      - ``voice_agent_livekit_enabled`` — if false/0/no, exit 0 immediately
+      - ``voice_agent_room_name``      — LiveKit room to join
+      - ``voice_agent_identity``       — bot identity in the room
+      - ``voice_agent_brain``          — 'ollama' or 'claude-code'
+
+    Returns the desired process exit code.
+    """
+    _ensure_brain_on_path()
+    import asyncpg
+
+    from brain.bootstrap import require_database_url
+    from services.site_config import SiteConfig
+
+    dsn = require_database_url(source="voice_agent_livekit_service")
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    try:
+        site_config = SiteConfig()
+        await site_config.load(pool)
+
+        enabled = str(
+            site_config.get("voice_agent_livekit_enabled", "true"),
+        ).strip().lower()
+        if enabled in {"false", "0", "no", "off"}:
+            log.info(
+                "voice_agent_livekit_enabled=%s — surface disabled, "
+                "exiting 0 so docker leaves us stopped under unless-stopped.",
+                enabled,
+            )
+            return 0
+
+        room = str(
+            site_config.get("voice_agent_room_name", "poindexter"),
+        ).strip() or "poindexter"
+        identity = str(
+            site_config.get("voice_agent_identity", "poindexter-bot"),
+        ).strip() or "poindexter-bot"
+        brain_choice = str(
+            site_config.get("voice_agent_brain", "ollama"),
+        ).strip().lower() or "ollama"
+        if brain_choice not in {"ollama", "claude-code"}:
+            # Fail loud — silent fallback to ollama would mask a typo
+            # and leave the operator wondering why claude-code never
+            # actually engages. (per feedback_no_silent_defaults)
+            raise SystemExit(
+                f"voice_agent_brain={brain_choice!r} is invalid. "
+                f"Valid values: ollama, claude-code.",
+            )
+    finally:
+        # ``run_bot`` opens its own pool (it needs the lifecycle to
+        # mirror the Pipecat task), so close this one and avoid double
+        # use.
+        await pool.close()
+
+    await run_bot(room, identity, brain=brain_choice)
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Poindexter voice agent — LiveKit room participant.",
+    )
+    parser.add_argument(
+        "--service", action="store_true",
+        help=(
+            "Run as the always-on container daemon (#383). Reads room, "
+            "identity, brain, and enabled-flag from app_settings; ignores "
+            "--room/--identity/--brain. Exits 0 if voice_agent_livekit_"
+            "enabled is false."
+        ),
     )
     parser.add_argument(
         "--room", default="matt-test",
@@ -459,6 +567,13 @@ def main() -> None:
     if args.print_client_token:
         _print_client_token(args.room, args.identity)
         return
+
+    if args.service:
+        try:
+            rc = asyncio.run(run_service())
+        except KeyboardInterrupt:
+            rc = 0
+        sys.exit(rc)
 
     try:
         asyncio.run(

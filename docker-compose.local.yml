@@ -1072,6 +1072,131 @@ services:
         condition: service_healthy
 
   # ===========================================
+  # Always-on voice agents (Glad-Labs/poindexter#383)
+  # ===========================================
+  # Two containers, one image (scripts/Dockerfile.voice-agent), each
+  # running the same Pipecat pipeline (Whisper -> Ollama -> Kokoro)
+  # against a different transport:
+  #
+  #   voice-agent-livekit  — joins the configured LiveKit room and stays
+  #                          joined. The headline "talk to Poindexter
+  #                          from anywhere" surface; Matt joins via the
+  #                          LiveKit hosted client (https://meet.livekit.io)
+  #                          or a mobile LiveKit app.
+  #
+  #   voice-agent-webrtc   — serves the Pipecat prebuilt SmallWebRTC UI on
+  #                          port 8003. Direct browser-to-bot (no LiveKit
+  #                          SFU in the loop) — useful when the SFU is
+  #                          flaky or for local-only quick tests.
+  #
+  # Both are sibling services to the legacy `voice-bot` (Discord-only).
+  # The legacy bot stays running for slash-command + Discord-voice flows
+  # that aren't Pipecat-driven; the new pair is the always-live STT->TTS
+  # surface.
+  #
+  # `unless-stopped` restart policy + DB-driven enabled flag means an
+  # operator can take either surface offline by:
+  #   poindexter set voice_agent_livekit_enabled false
+  #   docker restart poindexter-voice-agent-livekit
+  # ...and the container will exit 0 on next boot (no crash-loop).
+  voice-agent-livekit:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.voice-agent
+    image: poindexter-voice-agent:latest
+    container_name: poindexter-voice-agent-livekit
+    restart: unless-stopped
+    command: ["python", "-m", "services.voice_agent_livekit", "--service"]
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      # Symmetric key for pgcrypto-decrypted is_secret rows. The voice
+      # agent only reads non-secret settings today, but the SiteConfig
+      # loader needs the key present so secret-row decryption errors
+      # don't crash startup.
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+      # LiveKit credentials. Match the pair on the `livekit` service so
+      # the bot can mint a valid room-join JWT. Override both halves
+      # together when rotating away from the dev defaults.
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret_change_me_change_me_change_me}"
+      # Bot's POV of the LiveKit server is in-network (compose service
+      # name); the human-facing URL goes to the SFU's exposed host port.
+      LIVEKIT_URL: "ws://livekit:7880"
+    volumes:
+      - ./src/cofounder_agent:/app:ro
+      - ./brain:/opt/poindexter/brain:ro
+      # Persist Whisper / Silero / Kokoro model weights across rebuilds.
+      # First boot downloads ~470 MB total; cached after that.
+      - voice-agent-cache:/root/.cache
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Healthcheck: the bot has no HTTP listener, so we probe the python
+    # process. PID 1 alive == voice loop running. Same pattern as
+    # voice-bot + brain-daemon.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import os,signal; os.kill(1, 0)' 2>/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      brain-daemon:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+
+  voice-agent-webrtc:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.voice-agent
+    image: poindexter-voice-agent:latest
+    container_name: poindexter-voice-agent-webrtc
+    restart: unless-stopped
+    command: ["python", "-m", "services.voice_agent_webrtc"]
+    ports:
+      # voice_agent_webrtc_port default = 8003 (migration 0108). Host
+      # port matches container port for a copy-pasteable URL.
+      - "8003:8003"
+    environment:
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+    volumes:
+      - ./src/cofounder_agent:/app:ro
+      - ./brain:/opt/poindexter/brain:ro
+      - voice-agent-cache:/root/.cache
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      # FastAPI exposes /healthz — same shape as the worker. Probe it
+      # rather than the prebuilt UI's /client/ route so a UI-asset load
+      # error doesn't flag the whole pipeline as unhealthy.
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8003/healthz | grep -q ok"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      brain-daemon:
+        condition: service_healthy
+
+  # ===========================================
   # LiveKit Server — multi-party WebRTC for the conference-call voice agent.
   # MIT-licensed. One container hosts every voice room.
   # ``--dev`` mode: in-memory room store, no TLS (Tailscale Funnel terminates
@@ -1106,6 +1231,11 @@ services:
 # Volumes are rarely customer-visible (only in `docker volume ls`) so the
 # name mismatch is acceptable to preserve user data across the rebrand.
 volumes:
+  # Voice-agent model cache (Whisper / Silero / Kokoro weights). Shared
+  # across both voice-agent containers so first-boot downloads benefit
+  # both surfaces. ~470 MB after first run.
+  voice-agent-cache:
+    name: gladlabs-voice-agent-cache
   prefect-redis-data:
   langfuse-clickhouse-data:
   langfuse-clickhouse-logs:

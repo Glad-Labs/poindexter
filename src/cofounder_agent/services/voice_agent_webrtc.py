@@ -279,12 +279,18 @@ app = _build_app()
 # ---------------------------------------------------------------------------
 
 
-async def _serve() -> None:
+async def _serve() -> int:
     """Read host/port from app_settings then start uvicorn.
 
     Uvicorn is normally driven by a CLI invocation, but reading host/port
     from the DB requires loading SiteConfig first — so we do that here
     and then hand a configured ``uvicorn.Config`` to ``uvicorn.Server``.
+
+    Honors ``voice_agent_webrtc_enabled`` (#383) — when false the process
+    exits 0 immediately so docker's ``unless-stopped`` policy leaves the
+    container stopped without crash-looping.
+
+    Returns the desired process exit code.
     """
     import asyncpg
     import uvicorn
@@ -301,6 +307,18 @@ async def _serve() -> None:
     try:
         site_config = SiteConfig()
         await site_config.load(pool)
+
+        enabled = str(
+            site_config.get("voice_agent_webrtc_enabled", "true"),
+        ).strip().lower()
+        if enabled in {"false", "0", "no", "off"}:
+            log.info(
+                "voice_agent_webrtc_enabled=%s — surface disabled, "
+                "exiting 0 so docker leaves us stopped under unless-stopped.",
+                enabled,
+            )
+            return 0
+
         host = site_config.get("voice_agent_webrtc_host", "0.0.0.0")
         port = int(site_config.get("voice_agent_webrtc_port", "8003"))
     finally:
@@ -317,10 +335,12 @@ async def _serve() -> None:
     )
     server = uvicorn.Server(config)
     await server.serve()
+    return 0
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(_serve())
+        rc = asyncio.run(_serve())
     except KeyboardInterrupt:
-        sys.exit(0)
+        rc = 0
+    sys.exit(rc or 0)

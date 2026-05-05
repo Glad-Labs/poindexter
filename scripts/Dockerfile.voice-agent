@@ -1,0 +1,73 @@
+# Pipecat-based always-on voice agent (Glad-Labs/poindexter#383)
+#
+# One image powers two compose services:
+#   - voice-agent-livekit  : services.voice_agent_livekit --service
+#   - voice-agent-webrtc   : services.voice_agent_webrtc
+#
+# Both share the same Whisper -> Ollama -> Kokoro Pipecat pipeline; only
+# the transport differs (LiveKit room participant vs SmallWebRTC server).
+#
+# CUDA base — faster-whisper + Silero VAD both happily run on the 5090
+# under torch + onnxruntime-gpu. Pipecat's whisper service auto-selects
+# the GPU when one is reserved to the container (see compose `deploy:`).
+
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+
+# System deps:
+#   ffmpeg / libsndfile1 / portaudio  — Pipecat audio decode + Kokoro
+#   build-essential / libffi-dev      — onnxruntime-gpu wheels need them on
+#                                       this base image at install time
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libsndfile1 \
+        libportaudio2 \
+        libportaudiocpp0 \
+        portaudio19-dev \
+        libffi-dev \
+        build-essential \
+        ca-certificates \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pin pipecat + voice deps. Kept in lockstep with the imports in
+# services/voice_agent.py + services/voice_agent_livekit.py +
+# services/voice_agent_webrtc.py.
+#
+# Versions sourced from the docstring at the top of services/voice_agent.py
+# (the install command Matt's been running by hand). Locking explicitly so
+# `docker build` is reproducible, vs `pipecat-ai[silero,whisper,...]`
+# floating to whatever happens to be on PyPI today.
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
+        "pipecat-ai[silero,whisper,ollama,kokoro,local,webrtc,livekit]" \
+        pipecat-ai-small-webrtc-prebuilt \
+        sounddevice \
+        numpy \
+        asyncpg \
+        httpx \
+        fastapi \
+        "uvicorn[standard]" \
+        livekit \
+        livekit-api \
+        cryptography
+
+# Pre-create the cache directory the model loaders write into. Bind-mounted
+# to a host volume in compose so first-boot model downloads (Silero ~2 MB,
+# Whisper base ~140 MB, Kokoro ~325 MB) survive container rebuilds.
+RUN mkdir -p /root/.cache/huggingface /root/.cache/pipecat
+
+# /opt/poindexter holds the brain package (sibling import path used by
+# require_database_url + SiteConfig); /app is the cofounder_agent root
+# so `from services.voice_agent import ...` resolves cleanly. Both
+# directories are mounted from the host in docker-compose.local.yml so
+# host-side edits land in the container without a rebuild.
+ENV PYTHONPATH="/app:/opt/poindexter" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+# Default command — overridden by each compose service. Setting one here
+# so an interactive `docker run` of the image at least surfaces help text
+# instead of dropping into bash.
+CMD ["python", "-m", "services.voice_agent_livekit", "--help"]
