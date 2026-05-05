@@ -191,14 +191,47 @@ document.getElementById('connect').addEventListener('click', async () => {{
         room
             .on(LivekitClient.RoomEvent.ParticipantConnected, p => log('Joined: ' + p.identity, 'ok'))
             .on(LivekitClient.RoomEvent.TrackSubscribed, (track, _pub, p) => {{
-                log('Audio from: ' + p.identity, 'ok');
+                log('Track from ' + p.identity + ': ' + track.kind, 'ok');
                 if (track.kind === 'audio') {{
                     const audioEl = track.attach();
                     audioEl.autoplay = true;
+                    audioEl.controls = true;
+                    audioEl.style = 'width:100%;margin-top:8px';
                     document.body.appendChild(audioEl);
+                    // Mobile Chrome aggressively blocks autoplay even after
+                    // user interaction. Try play() and if it rejects, surface
+                    // a tap-to-enable button.
+                    const playPromise = audioEl.play();
+                    if (playPromise !== undefined) {{
+                        playPromise
+                            .then(() => log('Audio playback started', 'ok'))
+                            .catch(err => {{
+                                log('Autoplay blocked: ' + err.name + '. Use the audio controls below.', 'err');
+                                const btn = document.createElement('button');
+                                btn.textContent = '▶ Tap to enable audio';
+                                btn.style = 'margin-top:8px;background:#2a8c4a';
+                                btn.onclick = () => audioEl.play().then(() => {{
+                                    log('Audio playback started (manual)', 'ok');
+                                    btn.remove();
+                                }}).catch(e => log('Still blocked: ' + e.message, 'err'));
+                                document.body.appendChild(btn);
+                            }});
+                    }}
                 }}
             }})
-            .on(LivekitClient.RoomEvent.Disconnected, () => log('Disconnected', 'err'));
+            .on(LivekitClient.RoomEvent.Disconnected, () => log('Disconnected', 'err'))
+            .on(LivekitClient.RoomEvent.MediaDevicesError, e => log('Media error: ' + e.message, 'err'))
+            .on(LivekitClient.RoomEvent.AudioPlaybackStatusChanged, () => {{
+                log('Audio playback status: ' + (room.canPlaybackAudio ? 'OK' : 'BLOCKED'),
+                    room.canPlaybackAudio ? 'ok' : 'err');
+                if (!room.canPlaybackAudio) {{
+                    const btn = document.createElement('button');
+                    btn.textContent = '▶ Tap to start audio';
+                    btn.style = 'margin-top:8px;background:#2a8c4a';
+                    btn.onclick = () => room.startAudio().then(() => btn.remove());
+                    document.body.appendChild(btn);
+                }}
+            }});
         await room.connect(WSS_URL, TOKEN);
         log('Connected to ' + room.name, 'ok');
         log('Participants: ' + (room.numParticipants || 1));
