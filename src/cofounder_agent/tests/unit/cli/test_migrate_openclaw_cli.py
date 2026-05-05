@@ -5,7 +5,7 @@ typos at command-registration without hitting the DB. The actual
 provisioning helper (``_provision_consumer_client``) is exercised by
 the ``migrate-cli`` / ``migrate-mcp`` paths and shares one code path.
 
-We also smoke-test the bash helper at ``skills/openclaw/_lib/get_token.sh``
+We also smoke-test the bash helper at ``skills/poindexter/_lib/get_token.sh``
 end-to-end: it must round-trip a fake JWT through the
 ``_oauth_decode_exp`` + ``_oauth_token_is_fresh`` helpers, and fall
 back to ``POINDEXTER_KEY`` when no OAuth creds are set. We shell out
@@ -150,7 +150,7 @@ _BASH = shutil.which("bash")
 
 @pytest.mark.skipif(_BASH is None, reason="bash not on PATH")
 class TestBashHelper:
-    """Exercise ``skills/openclaw/_lib/get_token.sh`` via subprocess.
+    """Exercise ``skills/poindexter/_lib/get_token.sh`` via subprocess.
 
     The helper has been hand-tested against a real worker; this
     suite locks in the contract:

@@ -92,7 +92,11 @@ git rm --cached --quiet .github/workflows/sync-to-public-poindexter.yml 2>/dev/n
 # === Operator-specific files (Glad Labs internal, not customer-facing) ===
 git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full local stack with pgAdmin, SDXL, etc.
 
-# === Operator OpenClaw skill toggles (private to Glad Labs install) ===
+# === Operator skill toggles (private to Glad Labs install) ===
+# Renamed skills/openclaw/ → skills/poindexter/ on 2026-05-05; keep the
+# legacy path strip for one rotation cycle in case any in-flight branch
+# still has the old layout.
+git rm --cached --quiet skills/poindexter/gladlabs-config.json 2>/dev/null || true
 git rm --cached --quiet skills/openclaw/gladlabs-config.json 2>/dev/null || true
 git rm --cached --quiet .env.example 2>/dev/null || true                      # Legacy; customers use poindexter setup
 

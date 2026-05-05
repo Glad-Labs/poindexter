@@ -760,6 +760,11 @@ services:
       # newlines/control bytes — a crash-loop that hid behind unhelpful
       # "Newline in headers" tracebacks.
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+      # Unbuffered stdout/stderr so docker logs see [INIT] / [SKILLS] /
+      # [BOT] lines as they happen (otherwise Python block-buffers under
+      # a piped FD and the only visible line for minutes is the HF Hub
+      # warning — confusing during a real boot diagnosis).
+      PYTHONUNBUFFERED: "1"
     volumes:
       - ./scripts/discord-voice-bot.py:/app/discord-voice-bot.py:ro
       # _oauth_helper.py is the operator-side OAuth client mirror that
@@ -769,6 +774,16 @@ services:
       # '_oauth_helper'`.
       - ./scripts/_oauth_helper.py:/app/_oauth_helper.py:ro
       - ./brain:/brain:ro
+      # Skill catalog (poindexter#385 sibling). Bot scans
+      # /skills/poindexter/*/SKILL.md at boot and exposes them to the
+      # local LLM as JSON-action dispatch targets. Each skill's
+      # scripts/run.sh hits the worker via OAuth (the helper at
+      # _lib/get_token.sh handles JWT mint+cache).
+      - ./skills:/skills:ro
+      # Kokoro TTS model weights cache. Same volume the voice-agent
+      # containers use — first-boot download happens once, all three
+      # services share the cached weights.
+      - voice-agent-cache:/root/.cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:

@@ -4,13 +4,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg libffi-dev libsodium-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# webrtcvad-wheels is a drop-in for webrtcvad that ships binary wheels
+# for modern Python (the upstream wheel-less webrtcvad needs gcc which
+# isn't in this base image; adding build-essential bloats the image
+# ~80 MB for one C-extension build). The Python import name is
+# identical (`import webrtcvad`).
+#
+# kokoro-onnx replaces edge-tts (poindexter#390) — same engine the
+# voice-agent containers use, way better quality than edge-tts. ~370 MB
+# of model weights downloaded on first run, cached in
+# /root/.cache/huggingface (mounted as a docker volume so re-pulls
+# don't repeat the download).
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     "py-cord[voice]" \
     faster-whisper \
-    edge-tts \
+    kokoro-onnx \
+    soundfile \
     asyncpg \
     httpx \
-    webrtcvad
+    webrtcvad-wheels
 
 WORKDIR /app
 

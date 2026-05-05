@@ -1,5 +1,5 @@
 #!/bin/bash
-# skills/openclaw/_lib/get_token.sh — shared OAuth-token helper.
+# skills/poindexter/_lib/get_token.sh — shared OAuth-token helper.
 #
 # Glad-Labs/poindexter#246 (provisioning) + #249 (Phase 3 cleanup).
 # OAuth 2.1 Client Credentials mint against the worker's /token endpoint.

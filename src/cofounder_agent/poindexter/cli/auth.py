@@ -697,10 +697,11 @@ def migrate_openclaw(name: str, scopes: str) -> None:
     * The CLI prints an env block — paste it into ``~/.openclaw/openclaw.json``
       under ``processes.<entry>.env`` so every skill subprocess inherits
       ``POINDEXTER_OAUTH_CLIENT_ID`` + ``POINDEXTER_OAUTH_CLIENT_SECRET``.
-      The shared ``skills/openclaw/_lib/get_token.sh`` helper picks them
-      up automatically and mints a fresh JWT per skill invocation
+      The shared ``skills/poindexter/_lib/get_token.sh`` helper picks
+      them up automatically and mints a fresh JWT per skill invocation
       (cached at ``~/.openclaw/.token-cache-<client_id>`` until 30s
-      before exp).
+      before exp). Renamed from ``skills/openclaw/`` 2026-05-05 to
+      drop external-platform branding from the local skill registry.
 
     The legacy ``POINDEXTER_KEY`` static-Bearer fallback was removed in
     Phase 3 (#249).
@@ -745,7 +746,7 @@ def migrate_openclaw(name: str, scopes: str) -> None:
             fg="yellow",
         ))
         click.echo("")
-        click.echo("Skill scripts source skills/openclaw/_lib/get_token.sh,")
+        click.echo("Skill scripts source skills/poindexter/_lib/get_token.sh,")
         click.echo("which mints + caches a JWT per OAuth client. The legacy")
         click.echo("POINDEXTER_KEY fallback was removed in Phase 3 (#249).")
 

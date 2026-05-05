@@ -17,7 +17,7 @@ Usage:
     python scripts/discord-voice-bot.py
 
 Requires:
-    pip install py-cord[voice] faster-whisper edge-tts asyncpg webrtcvad
+    pip install py-cord[voice] faster-whisper kokoro-onnx soundfile asyncpg webrtcvad-wheels
 
 Configuration (all from app_settings DB, no env vars):
     discord_bot_token          — Discord bot token
@@ -49,8 +49,9 @@ sys.path.insert(0, str(_project_root / "scripts"))
 
 import asyncpg
 import discord
-import edge_tts
+import soundfile as sf
 from faster_whisper import WhisperModel
+from kokoro_onnx import Kokoro
 
 # OAuth helper for the Poindexter worker API (Glad-Labs/poindexter#248).
 # Picks OAuth client_credentials when configured, else legacy Bearer.
@@ -130,7 +131,10 @@ _pool, _cfg, _oauth_client = asyncio.run(_bootstrap_init())
 DISCORD_TOKEN = _cfg.get("discord_voice_bot_token", "") or _cfg.get("discord_bot_token", "")
 VOICE_CHANNEL_ID = int(_cfg.get("discord_voice_channel_id", "0"))
 WHISPER_MODEL = _cfg.get("whisper_model", "base.en")
-TTS_VOICE = _cfg.get("tts_voice", "en-US-GuyNeural")
+# Kokoro voice slug. The default `af_heart` is the warmest of the
+# bundled voices; `am_michael` is the masculine equivalent. Full list:
+# https://github.com/thewh1teagle/kokoro-onnx#voices
+TTS_VOICE = _cfg.get("tts_voice", "af_heart")
 
 SILENCE_THRESHOLD_S = 1.5
 MIN_SPEECH_S = 0.5
@@ -165,6 +169,84 @@ conversation_history = []
 _vad_tasks = {}
 
 
+# ---------------------------------------------------------------------------
+# Slice 2: persistent conversation memory (poindexter#391).
+#
+# The in-memory conversation_history above is per-process (lost on restart).
+# Slice 2 backs it with a `voice_messages` table so the bot can pick up "where
+# we left off" across restarts. Initialised lazily on first save (CREATE TABLE
+# IF NOT EXISTS), so no migration coupling — the bot is self-bootstrapping.
+#
+# Schema is deliberately small: one row per turn, scoped to discord_user_id
+# (so multi-user voice channels don't blend transcripts). For now everyone
+# sees a shared conversation since the bot has one mic; per-user-only memory
+# is a future refinement.
+# ---------------------------------------------------------------------------
+
+_VOICE_MEMORY_LIMIT = int(os.environ.get("VOICE_MEMORY_LIMIT", "20"))
+
+
+async def _memory_conn():
+    """Open a fresh single-shot asyncpg connection on the calling loop.
+
+    The module-level ``_pool`` was created at import-time via
+    ``asyncio.run(_bootstrap_init())``, binding it to a loop that's
+    now closed; using it from the discord.Bot loop triggers
+    ``cannot perform operation: another operation is in progress``.
+    Memory ops are infrequent (one per voice turn), so per-call connect
+    is cheap and avoids the loop-binding gotcha entirely.
+    """
+    return await asyncpg.connect(_DB_URL)
+
+
+async def _ensure_voice_messages_table() -> None:
+    conn = await _memory_conn()
+    try:
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_messages (
+                id BIGSERIAL PRIMARY KEY,
+                discord_user_id TEXT,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_voice_messages_recent ON voice_messages (created_at DESC)"
+        )
+    finally:
+        await conn.close()
+
+
+async def _load_recent_messages(limit: int = _VOICE_MEMORY_LIMIT) -> list[dict]:
+    """Return the last `limit` voice turns oldest→newest for prompt context."""
+    conn = await _memory_conn()
+    try:
+        rows = await conn.fetch(
+            "SELECT role, content FROM voice_messages ORDER BY created_at DESC LIMIT $1",
+            limit,
+        )
+    finally:
+        await conn.close()
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
+async def _save_message(role: str, content: str, discord_user_id: str | None = None) -> None:
+    try:
+        conn = await _memory_conn()
+        try:
+            await conn.execute(
+                "INSERT INTO voice_messages (discord_user_id, role, content) VALUES ($1, $2, $3)",
+                discord_user_id, role, content,
+            )
+        finally:
+            await conn.close()
+    except Exception as exc:  # noqa: BLE001 — memory is best-effort, never block the conversation
+        print(f"[MEMORY] save failed (non-fatal): {exc}")
+
+
 async def transcribe_audio(audio_bytes: bytes) -> str:
     tmp_path = DATA_DIR / f"recording_{int(time.time() * 1000)}.wav"
     tmp_path.write_bytes(audio_bytes)
@@ -178,10 +260,54 @@ async def transcribe_audio(audio_bytes: bytes) -> str:
         tmp_path.unlink(missing_ok=True)
 
 
+# Kokoro is loaded once at import-time. Same model the voice-agent
+# containers use. Output is float32 mono at 24 kHz; we write a WAV that
+# Discord's FFmpegPCMAudio will resample to its native 48 kHz on play.
+#
+# First-run: model + voices are downloaded from the official Kokoro
+# Hugging Face mirror into /root/.cache/kokoro (mounted as a docker
+# volume so re-builds don't re-pull ~370 MB).
+_KOKORO_DIR = Path(os.environ.get("KOKORO_DIR", "/root/.cache/kokoro"))
+_KOKORO_MODEL_URL = os.environ.get(
+    "KOKORO_MODEL_URL",
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
+)
+_KOKORO_VOICES_URL = os.environ.get(
+    "KOKORO_VOICES_URL",
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
+)
+
+
+def _ensure_kokoro_assets() -> tuple[str, str]:
+    """Download Kokoro model + voices on first run, cache thereafter."""
+    import urllib.request
+    _KOKORO_DIR.mkdir(parents=True, exist_ok=True)
+    model_path = _KOKORO_DIR / "kokoro-v1.0.onnx"
+    voices_path = _KOKORO_DIR / "voices-v1.0.bin"
+    for url, target in ((_KOKORO_MODEL_URL, model_path), (_KOKORO_VOICES_URL, voices_path)):
+        if target.is_file() and target.stat().st_size > 0:
+            continue
+        print(f"[INIT] Downloading {url} → {target} (one-time, ~325 MB for model)...")
+        urllib.request.urlretrieve(url, str(target))
+        print(f"[INIT]   wrote {target.stat().st_size} bytes")
+    return str(model_path), str(voices_path)
+
+
+_kokoro_model_path, _kokoro_voices_path = _ensure_kokoro_assets()
+print(f"[INIT] Loading Kokoro TTS from {_kokoro_model_path}...")
+_kokoro = Kokoro(_kokoro_model_path, _kokoro_voices_path)
+print("[INIT] Kokoro ready.")
+
+
 async def text_to_speech(text: str) -> str:
-    out_path = str(DATA_DIR / f"reply_{int(time.time() * 1000)}.mp3")
-    communicate = edge_tts.Communicate(text, TTS_VOICE)
-    await communicate.save(out_path)
+    out_path = str(DATA_DIR / f"reply_{int(time.time() * 1000)}.wav")
+    # kokoro.create() is synchronous and CPU-bound (~1-3s for typical
+    # response length); run it in the default executor so the bot's
+    # event loop stays responsive to other Discord events.
+    samples, sample_rate = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: _kokoro.create(text, voice=TTS_VOICE, speed=1.0, lang="en-us"),
+    )
+    sf.write(out_path, samples, sample_rate)
     return out_path
 
 
@@ -220,12 +346,14 @@ async def process_speech(audio_pcm: bytes, text_channel, guild):
 
     print(f"[VAD] Transcribed: {text}")
     conversation_history.append({"role": "user", "content": text})
+    await _save_message("user", text)
     await text_channel.send(f"🎤 **You:** {text}")
 
     response_text = await get_claude_response(text)
     print(f"[CLAUDE] {response_text[:100]}...")
     conversation_history.append({"role": "assistant", "content": response_text})
-    await text_channel.send(f"🤖 **Claude:** {response_text[:1900]}")
+    await _save_message("assistant", response_text)
+    await text_channel.send(f"🤖 **Poindexter:** {response_text[:1900]}")
 
     vc = guild.voice_client
     if vc and vc.is_connected() and not vc.is_playing():
@@ -315,80 +443,156 @@ class VADSink(discord.sinks.Sink):
 
 OLLAMA_URL = _cfg.get("ollama_base_url", "http://host.docker.internal:11434")
 
-SYSTEM_PROMPT = """You are Poindexter, an AI content pipeline assistant. You help the operator manage their content pipeline through voice conversation. Keep responses concise — they'll be spoken aloud.
+# ---------------------------------------------------------------------------
+# Skill catalog — load operator skills from skills/poindexter/*/SKILL.md
+# and expose them to the LLM as JSON-action dispatch targets. The skill
+# registry was originally namespaced as `skills/openclaw/` (after the
+# OpenClaw orchestration platform); renamed 2026-05-05 to drop the
+# external-platform branding (no openclaw service in the loop — each
+# skill's run.sh hits the local worker via OAuth).
+# ---------------------------------------------------------------------------
 
-You can take pipeline actions by including JSON on its own line:
-  {"action": "health"}
-  {"action": "tasks"}
-  {"action": "approve", "task_id": "123"}
-  {"action": "reject", "task_id": "123", "reason": "off-topic"}
-  {"action": "stats"}
-  {"action": "publish", "topic": "Why Docker matters"}
+SKILLS_DIR = Path(os.environ.get(
+    "POINDEXTER_SKILLS_DIR", "/skills/poindexter",
+))
 
-Include action JSON when the user wants something done. Otherwise just chat naturally."""
+
+def _load_skills_catalog() -> dict[str, dict]:
+    """Scan SKILLS_DIR for SKILL.md frontmatter + return name → metadata.
+
+    Each entry: {description, run_path, raw_md}. The LLM gets `name +
+    description` only — full SKILL.md isn't needed for tool selection,
+    keeping the prompt token count low matters for voice-loop latency.
+    """
+    catalog: dict[str, dict] = {}
+    if not SKILLS_DIR.is_dir():
+        print(f"[SKILLS] {SKILLS_DIR} not present — voice falls back to chat-only mode")
+        return catalog
+    for skill_dir in sorted(SKILLS_DIR.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        md_path = skill_dir / "SKILL.md"
+        run_path = skill_dir / "scripts" / "run.sh"
+        if not md_path.is_file() or not run_path.is_file():
+            continue
+        try:
+            md = md_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        name = ""
+        description = ""
+        in_frontmatter = False
+        for line in md.splitlines():
+            line = line.strip()
+            if line == "---":
+                if not in_frontmatter:
+                    in_frontmatter = True
+                    continue
+                break
+            if in_frontmatter:
+                if line.startswith("name:"):
+                    name = line.split(":", 1)[1].strip()
+                elif line.startswith("description:"):
+                    description = line.split(":", 1)[1].strip()
+        if name and description:
+            catalog[name] = {
+                "description": description,
+                "run_path": str(run_path),
+            }
+    print(f"[SKILLS] Loaded {len(catalog)} skills: {', '.join(sorted(catalog.keys()))}")
+    return catalog
+
+
+_SKILLS_CATALOG = _load_skills_catalog()
+
+
+def _build_system_prompt() -> str:
+    """Compose the qwen3:8b system prompt with the live skill catalog.
+
+    Updated catalog requires container restart (not a hot-reload concern
+    for a single-operator voice bot — restart cycle is seconds).
+    """
+    lines = [
+        "You are Poindexter, an AI content pipeline assistant. You help the",
+        "operator manage their content pipeline through voice. Keep replies",
+        "concise — they'll be spoken aloud (3 sentences max).",
+        "",
+        "To take an action, output JSON on its own line in this shape:",
+        '  {"skill": "<skill-name>", "args": ["arg1", "arg2"]}',
+        "",
+        "Available skills (pick the most fitting one based on what the user",
+        "asks for; pass positional args matching the skill's run.sh):",
+        "",
+    ]
+    for name in sorted(_SKILLS_CATALOG):
+        lines.append(f"- {name}: {_SKILLS_CATALOG[name]['description']}")
+    lines += [
+        "",
+        "If no skill fits, just chat — no JSON needed. Never make up a skill",
+        "name not in the list above.",
+    ]
+    return "\n".join(lines)
+
+
+SYSTEM_PROMPT = _build_system_prompt()
 
 
 async def _execute_action(action: dict) -> str:
-    """Execute a pipeline action and return result as spoken text.
+    """Dispatch to a SKILLS_DIR skill via its run.sh and return spoken result.
 
-    All worker-API calls go through the shared OAuth client so the
-    cached JWT is reused across actions. The DB stats path uses the
-    shared asyncpg pool directly because that's a non-API query.
+    Backwards-compat: if the LLM emits the legacy ``{"action": "..."}``
+    shape from earlier prompts (in old conversation history), map it
+    onto the equivalent skill name when one exists.
     """
-    act = action.get("action", "")
+    skill_name = action.get("skill") or action.get("action", "")
+    args: list[str] = action.get("args") or []
 
-    if act == "health":
-        resp = await _oauth_client.get("/api/health")
-        d = resp.json()
-        te = d.get("components", {}).get("task_executor", {})
-        return f"System is {d.get('status', '?')}. {te.get('pending_task_count', 0)} pending, {te.get('in_progress_count', 0)} in progress."
+    # Legacy keys (action=approve / reject / publish) → skill names.
+    legacy_map = {
+        "approve": ("approve-post", [str(action.get("task_id", ""))]),
+        "reject": ("reject-post", [str(action.get("task_id", "")), str(action.get("reason", ""))]),
+        "publish": ("create-post", [str(action.get("topic", ""))]),
+        "tasks": ("list-tasks", []),
+        "stats": ("list-tasks", []),
+        "health": ("list-tasks", []),
+    }
+    if skill_name in legacy_map and skill_name not in _SKILLS_CATALOG:
+        skill_name, args = legacy_map[skill_name]
 
-    elif act == "tasks":
-        resp = await _oauth_client.get("/api/tasks?status=awaiting_approval")
-        body = resp.json()
-        tasks = body if isinstance(body, list) else body.get("tasks", [])
-        if not tasks:
-            return "No posts awaiting approval."
-        lines = [f"{str(t.get('id','?'))[:6]}: {t.get('title', t.get('topic','?'))[:40]}, score {t.get('quality_score','?')}" for t in tasks[:5]]
-        return f"{len(tasks)} posts waiting. " + ". ".join(lines)
+    skill = _SKILLS_CATALOG.get(skill_name)
+    if not skill:
+        return f"I don't know the skill '{skill_name}'."
 
-    elif act == "approve":
-        tid = action.get("task_id", "")
-        resp = await _oauth_client.post(
-            f"/api/tasks/{tid}/approve",
-            json={"approved": True, "auto_publish": True},
+    cmd = ["bash", skill["run_path"], *[a for a in args if a != ""]]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "FASTAPI_URL": API_URL},
         )
-        return f"Task {tid} {resp.json().get('status', 'done')}."
+        stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=60)
+        out = (stdout_b or b"").decode("utf-8", errors="replace").strip()
+        err = (stderr_b or b"").decode("utf-8", errors="replace").strip()
+    except asyncio.TimeoutError:
+        proc.kill()
+        return f"Skill {skill_name} timed out."
+    except Exception as exc:  # noqa: BLE001 — surface any subprocess error
+        return f"Skill {skill_name} failed to launch: {exc}"
 
-    elif act == "reject":
-        tid = action.get("task_id", "")
-        reason = action.get("reason", "Rejected via voice")
-        resp = await _oauth_client.post(
-            f"/api/tasks/{tid}/reject",
-            json={"feedback": reason, "reason": "operator"},
-        )
-        return f"Task {tid} rejected. {reason}."
+    if proc.returncode != 0:
+        # First line of stderr is usually the most useful for spoken context.
+        first_err = (err.splitlines() or ["unknown error"])[0]
+        return f"Skill {skill_name} failed: {first_err}"
 
-    elif act == "stats":
-        # Direct DB read — not a worker API call, no auth needed.
-        async with _pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT status, COUNT(*) as c FROM pipeline_tasks_view "
-                "WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY status ORDER BY c DESC"
-            )
-            total = await conn.fetchval("SELECT COUNT(*) FROM posts WHERE status = 'published'")
-        parts = [f"{r['c']} {r['status']}" for r in rows]
-        return f"Last 24 hours: {', '.join(parts)}. Total published: {total}."
-
-    elif act == "publish":
-        topic = action.get("topic", "")
-        resp = await _oauth_client.post(
-            "/api/tasks",
-            json={"topic": topic, "category": "technology"},
-        )
-        return f"Queued new topic: {topic}."
-
-    return "I didn't understand that action."
+    # Strip JSON output to a spoken-friendly summary if obvious. The skills
+    # mostly print "Action succeeded." then a JSON dump; speak the first
+    # human-readable line.
+    for line in out.splitlines():
+        line = line.strip()
+        if line and not line.startswith("{") and not line.startswith("["):
+            return line[:200]
+    return f"Skill {skill_name} ran."
 
 
 async def get_claude_response(user_text: str) -> str:
@@ -422,7 +626,11 @@ async def get_claude_response(user_text: str) -> str:
                     if line.startswith("{") and line.endswith("}"):
                         try:
                             action = _json.loads(line)
-                            if "action" in action:
+                            # `skill` is the new shape (OpenClaw catalog);
+                            # `action` is the legacy shape from older
+                            # SYSTEM_PROMPT versions. _execute_action handles
+                            # both transparently.
+                            if "skill" in action or "action" in action:
                                 result = await _execute_action(action)
                                 clean = response_text.replace(line, "").strip()
                                 return f"{clean} {result}".strip() if clean else result
@@ -447,6 +655,17 @@ async def get_claude_response(user_text: str) -> str:
 @bot.event
 async def on_ready():
     print(f"[BOT] Logged in as {bot.user}")
+    # Slice 2: bring up persistent memory + warm in-memory history with the
+    # last N turns from the previous session. Best-effort — table-create or
+    # load failures don't block the bot from coming up.
+    try:
+        await _ensure_voice_messages_table()
+        prior = await _load_recent_messages()
+        if prior:
+            conversation_history.extend(prior)
+            print(f"[MEMORY] Loaded {len(prior)} prior turns from voice_messages")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[MEMORY] init failed (non-fatal): {exc}")
     if VOICE_CHANNEL_ID:
         channel = bot.get_channel(VOICE_CHANNEL_ID)
         if channel and isinstance(channel, discord.VoiceChannel):
@@ -527,7 +746,14 @@ async def leave(ctx):
 @bot.slash_command(name="clear", description="Clear conversation history")
 async def clear(ctx):
     conversation_history.clear()
-    await ctx.respond("Conversation history cleared.")
+    # Slice 2: also wipe the persistent table so the bot doesn't re-load
+    # the cleared turns on next restart. Best-effort.
+    try:
+        async with _pool.acquire() as conn:
+            await conn.execute("TRUNCATE voice_messages")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[MEMORY] truncate failed (non-fatal): {exc}")
+    await ctx.respond("Conversation history cleared (in-memory + persistent).")
 
 
 # =========================================================================
