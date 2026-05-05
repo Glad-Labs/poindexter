@@ -95,15 +95,41 @@ the territory. Make the post as long or as short as the work needs
 produces a longer arc. Be concise: cut every sentence that doesn't
 earn its place. Each paragraph carries weight.
 
+OPERATOR NOTE — THE PERSONALITY ANCHOR:
+
+When the BUNDLE includes an OPERATOR_NOTES section, those notes
+are the operator's first-person words about today's work. They
+ARE the post's voice and emotional through-line. Build the post
+AROUND them: the operator's phrasing, mood, and observations are
+the connective tissue; the technical bundle facts are the
+substance the prose threads through.
+
+- Treat operator notes as ground truth: their opinions, frustrations,
+  asides, and small triumphs all belong in the post.
+- When a note says "today felt like a slog", the post register
+  reflects that — slower paragraphs, vulnerability, the long road
+  to the fix.
+- When a note says "this one clicked", the post celebrates the
+  fix — quick paragraphs, craft-ego, the satisfying mechanics.
+- The operator's phrasing is the seed for opening lines. When
+  they wrote "the regex bug felt cursed", lead with that.
+
+When OPERATOR_NOTES is empty, fall back to inferring the day's
+mood from the bundle's nature (lots of revert commits = a rough
+day; clean fix-and-ship cycles = a flow day) but keep the voice
+restrained — without an operator note, you don't have authentic
+personality to project.
+
 THE ARC:
 
 1. Open with stakes. Lead with the surprising thing, the broken
-   thing, the moment of insight from today. Match this shape:
-   "Today's biggest fight was X." "We almost shipped Y until we
-   caught Z." "We'd been telling ourselves W was fine — today we
-   admitted it wasn't." Pick the most interesting thread in the
-   bundle and put the reader inside it. Frame around the work
-   itself, not around a duration claim.
+   thing, the moment of insight from today. When an operator note
+   exists, lead with the operator's framing. Otherwise: "Today's
+   biggest fight was X." "We almost shipped Y until we caught Z."
+   "We'd been telling ourselves W was fine — today we admitted it
+   wasn't." Pick the most interesting thread in the bundle and
+   put the reader inside it. Frame around the work itself, not
+   around a duration claim.
 
 2. Thread the bundle facts through the narrative. When you mention
    a change, name the underlying system that broke ("the validator
@@ -151,8 +177,13 @@ is grounded in the bundle):
 - Code references: name a function, column, or flag only when it
   appears verbatim in the bundle. Inline backticks are fine; full
   code blocks only when the snippet itself is in the bundle.
-- URLs: every url comes from the bundle. The inline PR reference
-  shape is "[PR #N](url-from-bundle's-pr-url-field)".
+- URLs: every url comes from the bundle. When you describe a
+  specific change that came from a particular PR, link that PR
+  inline using its bundle url field — shape is
+  "[PR #N](url-from-bundle's-pr-url-field)". Cite at least the
+  PRs that anchor each section's main claim. Citations are how
+  readers verify the work is real; aim for several inline links
+  in the post.
 
 VOICE TIGHTENING (positive directives — what good looks like):
 
@@ -181,10 +212,26 @@ def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
     """
     prs = bundle.get("merged_prs") or []
     commits = bundle.get("notable_commits") or []
+    operator_notes = bundle.get("operator_notes") or []
 
     lines: list[str] = []
     lines.append(f"DATE: {bundle.get('date') or 'today'}")
     lines.append("")
+    # Operator notes lead the bundle text — they're the personality
+    # anchor the prompt directs the LLM to build the post around.
+    if operator_notes:
+        lines.append(f"OPERATOR_NOTES ({len(operator_notes)}):")
+        lines.append("")
+        for n in operator_notes:
+            note_text = (n.get("note") or "").strip() if isinstance(n, dict) else str(n).strip()
+            mood = (n.get("mood") or "").strip() if isinstance(n, dict) else ""
+            if not note_text:
+                continue
+            if mood:
+                lines.append(f'- [{mood}] "{note_text}"')
+            else:
+                lines.append(f'- "{note_text}"')
+        lines.append("")
     if prs:
         lines.append(f"MERGED PRs ({len(prs)}):")
         lines.append("")

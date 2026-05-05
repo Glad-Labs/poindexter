@@ -31,7 +31,7 @@ import logging
 import os
 import re
 import subprocess  # nosec B404 — invoking trusted local tools (git, gh) by absolute name
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -71,6 +71,12 @@ class DevDiaryContext:
     audit_resolved: list[dict[str, Any]]
     recent_posts: list[dict[str, Any]]
     cost_summary: dict[str, Any]
+    # Operator-supplied 1-2 sentence emotional through-line for the
+    # day. Per feedback_dev_diary_voice_is_founder_not_journalist:
+    # bundle facts are dry by design; the operator note is the
+    # authentic personality the post draws from. Empty string when
+    # the operator didn't submit a note today.
+    operator_notes: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +87,7 @@ class DevDiaryContext:
             "audit_resolved": self.audit_resolved,
             "recent_posts": self.recent_posts,
             "cost_summary": self.cost_summary,
+            "operator_notes": self.operator_notes,
         }
 
     def is_empty(self) -> bool:
@@ -463,6 +470,46 @@ async def _collect_cost_summary(pool: Any, hours: int) -> dict[str, Any]:
     }
 
 
+async def _collect_operator_notes(
+    pool: Any, niche_slug: str,
+) -> list[dict[str, Any]]:
+    """Pull today's operator notes for the niche (UTC date), oldest first.
+
+    Per ``feedback_dev_diary_voice_is_founder_not_journalist``: bundle
+    facts are dry by design. The operator's note is the authentic
+    emotional through-line the post draws personality from. Multiple
+    notes may exist per day; the prompt threads them in the order
+    they were submitted.
+
+    Best-effort: returns ``[]`` on table-missing / fetch failure.
+    """
+    if pool is None:
+        return []
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT note, mood, created_at, created_by
+              FROM operator_notes
+             WHERE niche_slug = $1
+               AND note_date = CURRENT_DATE
+             ORDER BY created_at ASC
+            """,
+            niche_slug,
+        )
+    except Exception as exc:
+        logger.debug("DevDiarySource: operator_notes fetch failed: %s", exc)
+        return []
+    return [
+        {
+            "note": r["note"],
+            "mood": r["mood"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "created_by": r["created_by"],
+        }
+        for r in rows
+    ]
+
+
 # ---------------------------------------------------------------------------
 # DevDiarySource — public entry point
 # ---------------------------------------------------------------------------
@@ -515,9 +562,11 @@ class DevDiarySource:
         audit_task = _collect_audit_resolved(pool, hours_lookback)
         posts_task = _collect_recent_posts(pool, hours_lookback)
         cost_task = _collect_cost_summary(pool, hours_lookback)
+        notes_task = _collect_operator_notes(pool, "dev_diary")
 
-        prs, commits, decisions, audit, posts, cost = await asyncio.gather(
-            prs_task, commits_task, decisions_task, audit_task, posts_task, cost_task,
+        prs, commits, decisions, audit, posts, cost, notes = await asyncio.gather(
+            prs_task, commits_task, decisions_task, audit_task, posts_task,
+            cost_task, notes_task,
         )
 
         # Day label — UTC, as that's what all the source timestamps are in.
@@ -531,12 +580,13 @@ class DevDiarySource:
             audit_resolved=audit,
             recent_posts=posts,
             cost_summary=cost,
+            operator_notes=notes,
         )
         logger.info(
             "DevDiarySource: gathered context (date=%s prs=%d commits=%d "
-            "decisions=%d audit=%d posts=%d cost=$%.4f)",
+            "decisions=%d audit=%d posts=%d cost=$%.4f notes=%d)",
             ctx.date, len(prs), len(commits), len(decisions), len(audit),
-            len(posts), cost.get("total_usd", 0.0),
+            len(posts), cost.get("total_usd", 0.0), len(notes),
         )
         return ctx
 

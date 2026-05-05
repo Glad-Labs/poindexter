@@ -9,6 +9,7 @@ import click
 from .auth import auth_group
 from .auto_publish import auto_publish_group
 from .costs import costs_group
+from .dev_diary import dev_diary_group
 from .experiments import experiments_group
 from .memory import memory_group
 from .posts import post_group, posts_group
@@ -58,6 +59,7 @@ main.add_command(topics_group, name="topics")
 main.add_command(experiments_group, name="experiments")
 main.add_command(validators_group, name="validators")
 main.add_command(auto_publish_group, name="auto-publish")
+main.add_command(dev_diary_group, name="dev-diary")
 
 
 if __name__ == "__main__":
