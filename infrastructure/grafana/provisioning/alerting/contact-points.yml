@@ -1,8 +1,35 @@
 # Grafana Contact Points
-# Configure alert destinations via the Grafana UI after first boot.
-# Tokens are stored in app_settings, not env vars — Grafana can't
-# read them from provisioning files without causing crash loops
-# when the env vars are empty.
+#
+# `Poindexter Webhook` is the receiver referenced by
+# notification-policies.yml — it MUST exist or Grafana fails to
+# provision alerting at boot ("receiver does not exist" → crash loop,
+# observed on fresh installs after Docker Desktop reinstall wiped
+# Grafana's runtime DB on 2026-05-05). The webhook itself authenticates
+# via app_settings.alertmanager_webhook_token; that token is set on the
+# receiver via the Grafana UI after first boot (Settings → Contact
+# points → Edit → Authorization Header). Provisioning the token from
+# env vars caused crash loops on fresh installs where the token isn't
+# generated yet (see commit bef375a6) — the receiver shape below is
+# the durable, env-free version. Stub `empty` receiver kept so the
+# default no-op route in alert_configuration still resolves.
 apiVersion: 1
 
-contactPoints: []
+contactPoints:
+  - orgId: 1
+    name: Poindexter Webhook
+    receivers:
+      - uid: poindexter-webhook
+        type: webhook
+        settings:
+          url: http://worker:8002/api/webhooks/alertmanager
+          httpMethod: POST
+        disableResolveMessage: false
+  - orgId: 1
+    name: empty
+    receivers:
+      - uid: empty-receiver
+        type: webhook
+        settings:
+          url: http://localhost:1/discard
+          httpMethod: POST
+        disableResolveMessage: true
