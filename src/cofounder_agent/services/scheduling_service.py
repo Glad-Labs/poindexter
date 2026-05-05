@@ -41,18 +41,20 @@ Audit
 -----
 
 Every public mutation (``assign_slot``, ``assign_batch``, ``shift``,
-``clear``) writes a ``pipeline_events`` row with ``event_type``
-``schedule.<verb>`` so the dashboard / event bus picks it up.
+``clear``) writes an ``audit_log`` row with ``event_type``
+``schedule.<verb>`` so the dashboard picks it up. (Phase 3 of
+poindexter#366 moved this off the dead-end ``pipeline_events`` sink —
+no consumer was reading those event types.)
 """
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
+from services.audit_log import audit_log_bg
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -357,24 +359,25 @@ async def _emit_event(
     event_type: str,
     payload: dict[str, Any],
 ) -> None:
-    """Insert a ``pipeline_events`` row. Silent failure here is logged
-    but does not abort the calling action — the schedule write itself
-    is the source of truth, the event row is for observability."""
-    try:
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO pipeline_events (event_type, payload)
-                VALUES ($1, $2::jsonb)
-                """,
-                event_type,
-                json.dumps(payload, default=str),
-            )
-    except Exception as e:  # pragma: no cover — best-effort log
-        logger.warning(
-            "[scheduling] Failed to write pipeline_events row %s: %s",
-            event_type, e,
-        )
+    """Record a scheduling action in ``audit_log``.
+
+    Phase 3 of poindexter#366 (the pipeline_events split-migration)
+    moved scheduling history off ``pipeline_events`` (which had no
+    readers for these event types) and onto ``audit_log`` — the
+    canonical historical record. Same fire-and-forget contract:
+    failures inside the audit logger are swallowed and logged so the
+    schedule write (which already committed) is never rolled back.
+
+    The ``pool`` parameter is now unused; kept on the signature so the
+    four call sites don't churn. Removable in a follow-up.
+    """
+    del pool  # parameter kept for source-compat; audit_log_bg owns its own writer
+    audit_log_bg(
+        event_type=event_type,
+        source="scheduling_service",
+        details=payload,
+        severity="info",
+    )
 
 
 def _normalise_post_id(post_id: Any) -> str:

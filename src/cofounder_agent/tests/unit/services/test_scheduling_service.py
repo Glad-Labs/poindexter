@@ -98,21 +98,41 @@ class _FakePool:
         return _Ctx()
 
 
-def _events_emitted(conn: _FakeConn) -> list[dict]:
-    """Pull pipeline_events insert calls out of the recorded queries.
+_AUDIT_CALLS: list[dict] = []
 
-    Returns the JSON-decoded payload for each row so tests can assert
-    on event_type and payload fields.
+
+@pytest.fixture(autouse=True)
+def _capture_audit(monkeypatch):
+    """Replace ``audit_log_bg`` with a capture so tests can assert on
+    the schedule.* events the service used to write to pipeline_events
+    and now writes to audit_log (Phase 3 of poindexter#366).
     """
-    import json
+    _AUDIT_CALLS.clear()
 
-    out: list[dict] = []
-    for sql, args in conn.queries:
-        if "INSERT INTO pipeline_events" in sql:
-            event_type = args[0]
-            payload = json.loads(args[1]) if isinstance(args[1], str) else args[1]
-            out.append({"event_type": event_type, "payload": payload})
-    return out
+    def _capture(event_type, source, details=None, task_id=None, severity="info"):
+        _AUDIT_CALLS.append({
+            "event_type": event_type,
+            "source": source,
+            "details": details or {},
+            "task_id": task_id,
+            "severity": severity,
+        })
+
+    monkeypatch.setattr(
+        "services.scheduling_service.audit_log_bg", _capture,
+    )
+    yield
+
+
+def _events_emitted(_conn: _FakeConn | None = None) -> list[dict]:
+    """Return the schedule.* audit_log calls the service emitted on
+    this test. Shape kept compatible with the old pipeline_events
+    fixture: ``[{"event_type": ..., "payload": ...}]``.
+    """
+    return [
+        {"event_type": call["event_type"], "payload": call["details"]}
+        for call in _AUDIT_CALLS
+    ]
 
 
 # ---------------------------------------------------------------------------
