@@ -26,6 +26,19 @@ Config (``plugin.llm_provider.litellm`` in app_settings):
 - ``drop_params`` (default true) — strip params the target backend
   doesn't recognize so a single call signature works across backends.
 
+Observability — Langfuse tracing (poindexter#373):
+
+- ``langfuse_tracing_enabled`` (bool, default true) — when true,
+  ``configure_langfuse_callback`` registers Langfuse as LiteLLM's
+  ``success_callback`` + ``failure_callback`` so every call emits a
+  span to the Langfuse host configured via the same three credential
+  rows that the prompt manager already uses (``langfuse_host``,
+  ``langfuse_public_key``, ``langfuse_secret_key``).
+- This is ADDITIVE — ``cost_guard.record_cost`` keeps working. The
+  Langfuse SDK batches + retries spans in a background worker and
+  never blocks the calling LLM request, so a Langfuse outage doesn't
+  break content generation.
+
 Per ``feedback_design_for_llm_consumers``: this provider name flows
 through the dispatcher's structured logging so future LLM operators
 reading capability_outcomes see "model_used=litellm:ollama/glm-4.7-5090"
@@ -35,12 +48,169 @@ and can ground decisions on that.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
 from plugins.llm_provider import Completion, Token
 
 logger = logging.getLogger(__name__)
+
+
+# Module-level idempotency guard — Langfuse callback registration is a
+# process-wide mutation of ``litellm.success_callback`` /
+# ``failure_callback``, so we only do it once even if the worker calls
+# ``configure_langfuse_callback`` multiple times (e.g. main.py +
+# CLI re-init paths).
+_LANGFUSE_CALLBACK_REGISTERED = False
+
+
+class LangfuseConfigError(RuntimeError):
+    """Raised when ``langfuse_tracing_enabled=true`` but a credential is
+    missing.
+
+    Per ``feedback_no_silent_defaults``: rather than quietly skipping
+    callback registration (which would mean zero spans land while the
+    operator believes tracing is on), we raise loudly at worker
+    startup. The fix is either populate the missing row in
+    ``app_settings`` or set ``langfuse_tracing_enabled=false`` to
+    explicitly opt out.
+    """
+
+
+async def configure_langfuse_callback(site_config: Any) -> bool:
+    """Wire LiteLLM → Langfuse success/failure callbacks at startup.
+
+    Reads three credential rows from ``app_settings`` (the same ones
+    the prompt manager uses — see ``services/prompt_manager.py:317``)
+    and a fourth bool toggle ``langfuse_tracing_enabled``.
+
+    Behavior:
+
+    - ``langfuse_tracing_enabled=false`` → log + return False without
+      touching ``litellm.success_callback``. Lets the operator kill
+      tracing without nuking prompt management if Langfuse is down.
+    - ``langfuse_tracing_enabled=true`` and any credential empty →
+      raise :class:`LangfuseConfigError`. No silent defaults.
+    - ``langfuse_tracing_enabled=true`` and credentials present →
+      stamp the three values into ``LANGFUSE_HOST`` /
+      ``LANGFUSE_PUBLIC_KEY`` / ``LANGFUSE_SECRET_KEY`` env vars
+      (which is how LiteLLM's built-in Langfuse integration discovers
+      them — see litellm.utils._init_logging_callbacks), then set
+      ``litellm.success_callback = ["langfuse"]`` +
+      ``litellm.failure_callback = ["langfuse"]``.
+
+    Idempotent — safe to call multiple times, only the first call
+    registers the callbacks.
+
+    Returns True if the callback got registered (or was already
+    registered on a prior call), False if tracing is explicitly
+    disabled. Caller doesn't need to act on the return value; it's
+    there for tests + diagnostic logging.
+
+    Per the issue brief: this lives in ``LiteLLMProvider`` so it ships
+    with the provider that needs it, but it's intentionally a
+    module-level async function (not an instance method) because the
+    underlying ``litellm`` config is process-global. main.py invokes
+    this once at lifespan startup, after ``site_config`` is loaded
+    but before any LLM call fires.
+    """
+    global _LANGFUSE_CALLBACK_REGISTERED
+
+    if site_config is None:
+        # No-op when called outside the worker (e.g. CLI scripts that
+        # don't construct a SiteConfig). Tests can still exercise the
+        # function by passing a fake site_config.
+        logger.debug(
+            "[litellm_provider] configure_langfuse_callback: "
+            "site_config is None, skipping",
+        )
+        return False
+
+    enabled = site_config.get_bool("langfuse_tracing_enabled", True)
+    if not enabled:
+        logger.info(
+            "[litellm_provider] Langfuse tracing disabled "
+            "(langfuse_tracing_enabled=false); skipping callback "
+            "registration. LLM calls will NOT emit spans.",
+        )
+        return False
+
+    host = (site_config.get("langfuse_host", "") or "").strip()
+    public_key = (site_config.get("langfuse_public_key", "") or "").strip()
+    try:
+        secret_key_raw = await site_config.get_secret("langfuse_secret_key", "")
+    except Exception as exc:  # noqa: BLE001
+        raise LangfuseConfigError(
+            f"langfuse_tracing_enabled=true but reading "
+            f"langfuse_secret_key failed: {exc!s}. Either populate the "
+            f"row in app_settings (see migration 0153) or set "
+            f"langfuse_tracing_enabled=false.",
+        ) from exc
+    secret_key = (secret_key_raw or "").strip()
+
+    missing = [
+        name for name, val in (
+            ("langfuse_host", host),
+            ("langfuse_public_key", public_key),
+            ("langfuse_secret_key", secret_key),
+        ) if not val
+    ]
+    if missing:
+        joined = ", ".join(missing)
+        raise LangfuseConfigError(
+            f"langfuse_tracing_enabled=true but the following "
+            f"app_settings rows are empty: {joined}. Populate them via "
+            f"migration 0153 + the settings CLI, or set "
+            f"langfuse_tracing_enabled=false to opt out of tracing.",
+        )
+
+    # LiteLLM's Langfuse integration (litellm/integrations/langfuse.py)
+    # reads these three env vars on first callback fire. Stamping them
+    # at startup means we don't need a custom Langfuse client wired in
+    # — LiteLLM constructs its own + reuses across calls.
+    os.environ["LANGFUSE_HOST"] = host
+    os.environ["LANGFUSE_PUBLIC_KEY"] = public_key
+    os.environ["LANGFUSE_SECRET_KEY"] = secret_key
+
+    if _LANGFUSE_CALLBACK_REGISTERED:
+        logger.debug(
+            "[litellm_provider] Langfuse callback already registered "
+            "(refreshed env vars in case credentials rotated)",
+        )
+        return True
+
+    try:
+        import litellm
+    except ImportError as exc:
+        raise LangfuseConfigError(
+            "langfuse_tracing_enabled=true but the litellm package is "
+            "not installed. Install it (it's pulled in by the standard "
+            "poindexter dependencies) or set langfuse_tracing_enabled "
+            "=false.",
+        ) from exc
+
+    # LiteLLM accepts callback names as strings; the integration
+    # registry turns "langfuse_otel" into a LangfuseOtelLogger instance
+    # that ships spans via OTLP to ``LANGFUSE_HOST/api/public/otel``.
+    # Per LiteLLM docs, success + failure go to the same callback
+    # (different code paths in the logger).
+    #
+    # We use ``langfuse_otel`` (not the older ``langfuse``) because the
+    # legacy integration constructs the v2 ``Langfuse`` SDK client
+    # which is incompatible with langfuse>=3.0 — passing the dropped
+    # ``sdk_integration`` kwarg raises ``TypeError`` on every call.
+    # ``langfuse_otel`` talks to the public OTEL ingest endpoint
+    # directly and reads the same three env vars we just stamped.
+    litellm.success_callback = ["langfuse_otel"]
+    litellm.failure_callback = ["langfuse_otel"]
+    _LANGFUSE_CALLBACK_REGISTERED = True
+    logger.info(
+        "[litellm_provider] Langfuse tracing active (host=%s) — every "
+        "LLM call routed through LiteLLMProvider will emit a span.",
+        host,
+    )
+    return True
 
 
 class LiteLLMProvider:
@@ -267,4 +437,8 @@ class LiteLLMProvider:
         return list(embedding)
 
 
-__all__ = ["LiteLLMProvider"]
+__all__ = [
+    "LangfuseConfigError",
+    "LiteLLMProvider",
+    "configure_langfuse_callback",
+]

@@ -261,6 +261,33 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.warning("[LIFESPAN] Prompt DB load failed (using YAML fallback): %s", e)
 
+        # Wire LiteLLM → Langfuse success/failure callbacks
+        # (poindexter#373). Registers a process-wide callback so every
+        # LLM call routed through ``LiteLLMProvider`` emits a span.
+        # Reads the same three credential rows the prompt manager
+        # uses (langfuse_host / langfuse_public_key /
+        # langfuse_secret_key) plus the ``langfuse_tracing_enabled``
+        # kill switch (default true). Per ``feedback_no_silent_defaults``,
+        # missing creds with tracing enabled raises LangfuseConfigError —
+        # we log it as a warning here rather than failing lifespan
+        # startup so the worker can still boot for non-tracing flows
+        # (the operator gets a loud log line + can fix the row + restart).
+        try:
+            from services.llm_providers.litellm_provider import (
+                configure_langfuse_callback,
+            )
+            registered = await configure_langfuse_callback(_site_cfg)
+            logger.info(
+                "[LIFESPAN] Langfuse LLM tracing %s",
+                "active" if registered else "disabled",
+            )
+        except Exception as e:
+            logger.warning(
+                "[LIFESPAN] Langfuse callback registration failed: %s — "
+                "LLM calls will NOT emit spans until this is resolved",
+                e,
+            )
+
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
         # Phase H (GH#95): thread site_config through ctor so pattern-
