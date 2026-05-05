@@ -156,14 +156,16 @@ TASKS_CREATED = Counter(
 # GH-90: surface stale-sweeper cancellations so operators notice when the
 # race-mitigation kicks in a lot (suggests worker heartbeats are missing
 # or stale_task_timeout_minutes is tuned too aggressively). The brain
-# daemon writes one pipeline_events row per cancelled task; on each
-# scrape we re-read the cumulative event count into this Gauge so the
-# value is persistent across worker restarts (a raw prometheus Counter
-# would reset to 0 every time the worker process cycles).
+# daemon stamps ``pipeline_tasks.auto_cancelled_at`` in the same UPDATE
+# that flips status='failed'; on each scrape we re-read the cumulative
+# count into this Gauge so the value is persistent across worker
+# restarts (a raw prometheus Counter would reset to 0 every time the
+# worker process cycles). Phase 2 of poindexter#366 moved this off
+# pipeline_events onto the column.
 AUTO_CANCELLED_TOTAL = Gauge(
     "poindexter_pipeline_auto_cancelled_total",
     "Cumulative count of tasks auto-cancelled by the stale-task sweeper "
-    "(read from pipeline_events where event_type='task.auto_cancelled')",
+    "(read from pipeline_tasks.auto_cancelled_at)",
 )
 
 DAILY_SPEND_USD = Gauge(

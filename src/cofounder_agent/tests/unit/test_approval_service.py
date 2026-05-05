@@ -9,7 +9,7 @@ Coverage:
 
 - ``is_gate_enabled`` reads the right setting key with default-off.
 - ``pause_at_gate`` writes the gate columns and audit row.
-- ``approve`` clears the gate + inserts a pipeline_events row.
+- ``approve`` clears the gate + inserts a pipeline_gate_history row.
 - ``approve`` raises TaskNotFoundError when the task is missing.
 - ``approve`` raises GateMismatchError on wrong --gate.
 - ``approve`` raises TaskNotPausedError when no gate is active.
@@ -90,9 +90,13 @@ class FakeConnection:
                 if error_message is not None:
                     row["error_message"] = error_message
             return "UPDATE 1"
-        if sql_norm.startswith("INSERT INTO pipeline_events"):
-            event_type, payload = args
-            self._store.events.append({"event_type": event_type, "payload": payload})
+        if sql_norm.startswith("INSERT INTO pipeline_gate_history"):
+            task_id, gate_name, feedback, metadata = args
+            self._store.events.append({
+                "task_id": task_id, "gate_name": gate_name,
+                "event_kind": "approved", "feedback": feedback,
+                "metadata": metadata,
+            })
             return "INSERT 0 1"
         if sql_norm.startswith("INSERT INTO app_settings"):
             key, value, description = args
@@ -315,9 +319,11 @@ class TestApprove:
         assert result["gate_name"] == "topic_decision"
         # Gate cleared.
         assert fake_pool.store.tasks["t-1"]["awaiting_gate"] is None
-        # Pipeline event emitted.
+        # pipeline_gate_history row emitted (Phase 1 of poindexter#366).
         assert any(
-            e["event_type"] == "task.gate_approved"
+            e.get("event_kind") == "approved"
+            and e.get("task_id") == "t-1"
+            and e.get("gate_name") == "topic_decision"
             for e in fake_pool.store.events
         )
 

@@ -32,8 +32,9 @@ _SEEDS: list[tuple[str, str, str, str]] = [
         "false",
         "pipeline",
         "When on, TemplateRunner emits per-node progress to operator "
-        "Telegram chat via notify_operator(). Off by default — leaves "
-        "the pipeline_events table as the audit trail without spamming.",
+        "Telegram chat via notify_operator(). Off by default — Discord "
+        "(via the spam-friendly route) is the routine progress surface; "
+        "Telegram is reserved for critical alerts.",
     ),
     (
         "pipeline_architect_model",

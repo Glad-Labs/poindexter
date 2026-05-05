@@ -7,7 +7,7 @@ The stale-task sweeper lives in ``brain/brain_daemon.py``. GH-90 requires:
    auto-cancel.
 2. Every auto-cancel emits a warn-level log with the task_id + reason.
 3. Every auto-cancel inserts a ``task.auto_cancelled`` row in
-   ``pipeline_events`` so the Prometheus exporter can surface the count.
+   ``pipeline_tasks.auto_cancelled_at`` so the Prometheus exporter can surface the count.
 
 All DB I/O is mocked via AsyncMock.
 """
@@ -89,7 +89,8 @@ def _make_pool_for_sweeper(
         {"recent_fails": 0, "recent_total": 0},
     ])
 
-    # execute: swallows any emit (e.g. pipeline_events insert).
+    # execute: swallows any emit (e.g. pipeline_tasks UPDATE for the
+    # auto_cancelled_at stamp written by _stamp_auto_cancelled).
     pool.execute = AsyncMock()
 
     return pool
@@ -128,11 +129,14 @@ class TestAutoRemediateSweeper:
         # check (protects rows that legitimately never ran).
         assert "COALESCE(started_at, updated_at)" in sweeper_sql
 
-    async def test_sweeper_emits_pipeline_event_per_cancel(self):
-        """GH-90 AC #4: each auto-cancelled task gets a
-        ``task.auto_cancelled`` row in pipeline_events. The Prometheus
-        exporter reads the count on scrape, so this is the persistent
-        signal operators see in the dashboard."""
+    async def test_sweeper_stamps_auto_cancelled_at_per_cancel(self):
+        """GH-90 AC #4: each auto-cancelled task gets its
+        ``pipeline_tasks.auto_cancelled_at`` column stamped (Phase 2 of
+        poindexter#366 moved this off pipeline_events). The Prometheus
+        exporter reads ``COUNT(*) WHERE auto_cancelled_at IS NOT NULL``
+        on scrape, so this is the persistent signal operators see in
+        the dashboard.
+        """
         stuck = [
             {"task_id": "bbb07318", "topic": "The Shadow Price of Speed"},
             {"task_id": "ccc12345", "topic": "Another stuck task topic"},
@@ -140,21 +144,26 @@ class TestAutoRemediateSweeper:
         pool = _make_pool_for_sweeper(stuck_rows=stuck)
         await bd.auto_remediate(pool)
 
-        # execute() is called once per cancelled task to insert the event.
-        # (It may also be called elsewhere in auto_remediate for the
-        # idle-alert branch, but only when hours_idle > 48 with
-        # last_task set — our mock sets last_task=None so that branch
-        # is skipped.)
         exec_sqls = [c.args[0] for c in pool.execute.call_args_list]
-        auto_cancel_inserts = [
+        # _stamp_auto_cancelled fires ONE UPDATE for all stuck task_ids
+        # via ANY($1::text[]), not one INSERT per row like the old
+        # pipeline_events flow.
+        stamps = [
             s for s in exec_sqls
-            if "INSERT INTO pipeline_events" in s
-            and "task.auto_cancelled" in s
+            if "UPDATE pipeline_tasks" in s
+            and "auto_cancelled_at" in s
+            and "ANY($1::text[])" in s
         ]
-        assert len(auto_cancel_inserts) == len(stuck), (
-            f"expected {len(stuck)} pipeline_events inserts, "
-            f"got {len(auto_cancel_inserts)}: {exec_sqls}"
+        assert len(stamps) == 1, (
+            f"expected 1 _stamp_auto_cancelled UPDATE, got "
+            f"{len(stamps)}: {exec_sqls}"
         )
+        # And the task_ids array passed in matches the stuck list.
+        stamp_call = next(
+            c for c in pool.execute.call_args_list
+            if "auto_cancelled_at" in c.args[0]
+        )
+        assert stamp_call.args[1] == [r["task_id"] for r in stuck]
 
     async def test_sweeper_logs_warning_per_cancelled_task(self, caplog):
         """GH-90 AC #4: one warn log per cancelled task containing its
@@ -189,32 +198,33 @@ class TestAutoRemediateSweeper:
         assert "180m" in line  # stale_minutes (not cutoff_minutes) in the message
 
     async def test_sweeper_does_nothing_when_no_stuck_rows(self):
-        """Cleanroom check: no stuck rows → no events, no warn logs."""
+        """Cleanroom check: no stuck rows → no auto_cancelled stamps."""
         pool = _make_pool_for_sweeper(stuck_rows=[])
         await bd.auto_remediate(pool)
 
         exec_sqls = [c.args[0] for c in pool.execute.call_args_list]
-        auto_cancel_inserts = [
-            s for s in exec_sqls
-            if "task.auto_cancelled" in s
-        ]
-        assert auto_cancel_inserts == []
+        stamps = [s for s in exec_sqls if "auto_cancelled_at" in s]
+        assert stamps == []
 
-    async def test_bump_helper_inserts_one_event_per_count(self):
-        """_bump_auto_cancelled_metric inserts exactly N rows for a
-        caller's count=N."""
+    async def test_stamp_helper_one_update_for_n_tasks(self):
+        """``_stamp_auto_cancelled`` issues a single batched UPDATE for
+        a caller's task_ids list, not one statement per row."""
         pool = MagicMock()
         pool.execute = AsyncMock()
 
-        await bd._bump_auto_cancelled_metric(pool, 3)
+        await bd._stamp_auto_cancelled(pool, ["t-1", "t-2", "t-3"])
 
-        assert pool.execute.await_count == 3
-        for call in pool.execute.call_args_list:
-            assert "task.auto_cancelled" in call.args[0]
+        assert pool.execute.await_count == 1
+        sql = pool.execute.call_args.args[0]
+        assert "UPDATE pipeline_tasks" in sql
+        assert "auto_cancelled_at" in sql
+        assert "ANY($1::text[])" in sql
+        # Second positional arg is the task_ids array.
+        assert pool.execute.call_args.args[1] == ["t-1", "t-2", "t-3"]
 
-    async def test_bump_helper_noop_when_count_zero(self):
-        """Defensive: count<=0 is a no-op, no DB roundtrips."""
+    async def test_stamp_helper_noop_when_empty_list(self):
+        """Defensive: empty task_ids is a no-op, no DB roundtrips."""
         pool = MagicMock()
         pool.execute = AsyncMock()
-        await bd._bump_auto_cancelled_metric(pool, 0)
+        await bd._stamp_auto_cancelled(pool, [])
         assert pool.execute.await_count == 0

@@ -108,8 +108,9 @@ def approve_command(
 ) -> None:
     """Approve a task at its current (or named) HITL gate.
 
-    Clears the gate columns and re-queues the pipeline by inserting a
-    ``pipeline_events`` row. The runner picks up where it left off.
+    Clears the gate columns and writes a ``pipeline_gate_history`` row
+    so the resume-pass idempotency check sees the gate cleared. The
+    runner picks up where it left off.
     """
     from services.approval_service import (
         ApprovalServiceError,

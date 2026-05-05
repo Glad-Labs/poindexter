@@ -47,17 +47,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Progress streaming — Phase 2 of the dynamic-pipeline-composition spec.
 #
-# Emit one event per node start / completion / failure so the operator's
-# Telegram chat shows live progress instead of silent multi-minute waits.
-# Two surfaces, both best-effort:
+# Emit one notification per node start / completion / failure so the
+# operator's Discord chat shows live progress instead of silent
+# multi-minute waits.
 #
-# 1. ``pipeline_events`` table — every node transition gets a row, picked
-#    up by future EventBus listeners + Grafana panels for replay/audit.
-# 2. ``notify_operator(critical=False)`` — routes to Discord (the
-#    spam-friendly channel). Gated by ``template_runner_progress_streaming``
-#    setting; default ON because Discord is meant to be noisy.
-#    NEVER routes to Telegram — Matt's phone is for critical alerts
-#    only (worker offline, GPU temp, cost overrun).
+# History: this used to also INSERT into ``pipeline_events`` for "future
+# EventBus listeners + Grafana panels for replay/audit," but the 2026-05-04
+# audit (poindexter#366) found no consumer ever materialized — Grafana
+# panels read audit_log instead, no listener subscribed to NOTIFY,
+# nothing replayed the rows. Phase 4 of the split-migration drops the
+# write here; Langfuse traces are the future replacement when we wire
+# full per-run tracing.
+#
+# Discord routing: gated by ``template_runner_progress_streaming``
+# setting; default ON because Discord is meant to be noisy. NEVER
+# routes to Telegram — Matt's phone is for critical alerts only
+# (worker offline, GPU temp, cost overrun).
 # ---------------------------------------------------------------------------
 
 
@@ -68,35 +73,30 @@ async def _emit_progress(
     payload: dict[str, Any],
     notify_operator_message: str | None = None,
 ) -> None:
-    """Insert into pipeline_events + optionally fan out to Telegram."""
-    if pool is None:
+    """Fan progress events out to Discord (when enabled).
+
+    The ``pool`` and ``event_type`` / ``payload`` parameters are kept
+    on the signature so the dozen call sites don't churn — they're now
+    unused at this layer. A future Langfuse-tracing wire-up will read
+    ``event_type`` + ``payload`` to populate span attributes.
+    """
+    del pool, event_type, payload  # see docstring — kept for source-compat
+    if not notify_operator_message:
         return
     try:
-        import json as _json
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO pipeline_events (event_type, payload) "
-                "VALUES ($1, $2::jsonb)",
-                event_type, _json.dumps(payload, default=str),
+        from services.integrations.operator_notify import notify_operator
+        from services.site_config import site_config
+        stream_on = bool(
+            site_config.get_bool(
+                "template_runner_progress_streaming", True,
             )
+        )
+        if stream_on:
+            # critical=False routes to Discord — the spam channel.
+            # Never bump to critical=True for routine progress.
+            await notify_operator(notify_operator_message, critical=False)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("[template_runner] event insert failed: %s", exc)
-
-    if notify_operator_message:
-        try:
-            from services.integrations.operator_notify import notify_operator
-            from services.site_config import site_config
-            stream_on = bool(
-                site_config.get_bool(
-                    "template_runner_progress_streaming", True,
-                )
-            )
-            if stream_on:
-                # critical=False routes to Discord — the spam channel.
-                # Never bump to critical=True for routine progress.
-                await notify_operator(notify_operator_message, critical=False)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("[template_runner] operator notify failed: %s", exc)
+        logger.debug("[template_runner] operator notify failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
