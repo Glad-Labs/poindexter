@@ -528,6 +528,26 @@ gate-disabled passthrough, skip_if_setting passthrough, enabled-halt
 
 ---
 
+## Adding a database migration
+
+Database migrations live in `src/cofounder_agent/services/migrations/`
+and run on every worker startup. The naming convention changed in
+Glad-Labs/poindexter#378 — **new migrations use a UTC timestamp
+prefix** (`YYYYMMDD_HHMMSS_<slug>.py`) instead of the legacy 4-digit
+integer prefix. Eliminates the parallel-PR collision class of bug.
+
+Generate one with:
+
+```bash
+python scripts/new-migration.py "describe what the migration does"
+```
+
+Read [`migrations.md`](migrations.md) for the full convention,
+runner mechanics, common patterns, and anti-patterns. The fresh-DB
+verification walkthrough lives in [`fresh-db-setup.md`](fresh-db-setup.md).
+
+---
+
 ## See also
 
 - [Plugin architecture](../architecture/plugin-architecture) —
@@ -538,5 +558,7 @@ gate-disabled passthrough, skip_if_setting passthrough, enabled-halt
   Stage chain fits together
 - [App settings reference](../reference/app-settings) — every
   DB-backed config key
+- [Database migrations convention](migrations.md) — Glad-Labs/poindexter#378
+- [Fresh DB setup walkthrough](fresh-db-setup.md) — verified end-to-end
 
 <!-- DOC-SYNC 2026-04-25: stale references — brain/probe_registry.py (use brain/probe_interface.py), services/social_publisher.py, and threads.py adapter no longer exist. Extension-point docs may be out of date. -->

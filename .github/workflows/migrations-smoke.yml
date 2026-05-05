@@ -68,5 +68,11 @@ jobs:
           echo "postgres never became ready" >&2
           exit 1
 
+      # Lint runs first — cheaper than the smoke test and catches the
+      # convention drift class of bug (collisions, missing interface,
+      # invalid filename) before we even touch Postgres. Glad-Labs/poindexter#378.
+      - name: Lint migration filenames + interface
+        run: python scripts/ci/migrations_lint.py
+
       - name: Run migrations against empty database
         run: python scripts/ci/migrations_smoke.py

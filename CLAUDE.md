@@ -265,6 +265,27 @@ Self-healing agent: hourly at :13 — health check + auto-fix
 Code quality agent: every 4h at :37 — security/dead code/error handling scans
 ```
 
+## Database migrations
+
+Migrations live in `src/cofounder_agent/services/migrations/`. As of
+Glad-Labs/poindexter#378 (2026-05-05) **new migrations use a UTC
+timestamp prefix** (`YYYYMMDD_HHMMSS_<slug>.py`) — old `0xxx_*.py`
+files stay as-is. The runner sorts lexically; `0xxx` (starts with
+`0`) always sorts before `2xxx_xxxxxx_*` (starts with `2`).
+
+Generate one with:
+
+```bash
+python scripts/new-migration.py "describe what the migration does"
+```
+
+Read [`docs/operations/migrations.md`](docs/operations/migrations.md)
+for the full convention. Verify against a fresh DB with
+[`docs/operations/fresh-db-setup.md`](docs/operations/fresh-db-setup.md)
+or the CI smoke test (`python scripts/ci/migrations_smoke.py`). Lint
+with `python scripts/ci/migrations_lint.py` — it catches collisions,
+missing runner interface, and post-cutoff legacy prefixes.
+
 ## Reference Documentation
 
 - **Operations docs:** `docs/operations/` (troubleshooting, local-development-setup, disaster-recovery, ci-deploy-chain, etc.)
