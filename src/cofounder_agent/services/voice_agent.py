@@ -271,6 +271,16 @@ def build_voice_pipeline_task(
             enable_metrics=True,
             enable_usage_metrics=True,
         ),
+        # Pipecat defaults to cancel_on_idle_timeout=True with a 300-second
+        # idle window: if no BotSpeakingFrame / UserSpeakingFrame fires for
+        # 5 minutes, the pipeline is cancelled and the bot disconnects from
+        # the LiveKit room. For a local-mic / Discord / phone-summon flow
+        # that's reasonable, but for the always-on /voice/join surface it
+        # makes the bot vanish during a quiet stretch — the operator taps
+        # Connect mid-reconnect and gets silence. Disable the cancel; the
+        # service-mode wrapper handles graceful shutdown via SIGINT.
+        idle_timeout_secs=None,
+        cancel_on_idle_timeout=False,
     )
 
 
