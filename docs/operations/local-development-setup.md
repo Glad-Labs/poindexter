@@ -49,13 +49,15 @@ The setup wizard does the following:
 2. **Tests the database connection** and reports success/failure.
 3. **Runs migrations** against the target database. Safe to re-run —
    migrations are idempotent.
-4. **Generates secrets** — creates a random `api_token`,
-   `local_postgres_password`, `grafana_password`, and
-   `pgadmin_password`.
+4. **Generates secrets** — creates random `local_postgres_password`,
+   `grafana_password`, and `pgadmin_password`.
 5. **Writes `~/.poindexter/bootstrap.toml`** with the database URL +
    generated secrets. This is the only config file on disk.
-6. **Seeds `api_token` into `app_settings`** so the worker can read
-   it from the database at runtime.
+6. **Provisions the initial CLI OAuth client** — registers a row in
+   `oauth_clients`, encrypts the credentials into
+   `app_settings.cli_oauth_client_id` / `cli_oauth_client_secret`, and
+   prints the plaintext secret once for capture. (Worker auth uses
+   OAuth 2.1 only as of Glad-Labs/poindexter#249.)
 
 No `.env` file is created. All secrets live in `bootstrap.toml`
 (safe permissions, never committed to git).
@@ -111,9 +113,15 @@ docker compose -f docker-compose.local.yml stop gladlabs-gitea gladlabs-gitea-ru
 # Worker health (expect "healthy" for every subsystem)
 curl http://localhost:8002/api/health
 
+# Mint a JWT for the CLI client (printed plaintext during `poindexter
+# setup`; if you missed it, re-run `poindexter auth migrate-cli` to
+# rotate to a new client).
+JWT=$(poindexter auth mint-token \
+  --client-id <pdx_xxx> --client-secret <secret>)
+
 # Create a task end-to-end
 curl -X POST http://localhost:8002/api/tasks \
-  -H "Authorization: Bearer $(grep api_token ~/.poindexter/bootstrap.toml | cut -d'"' -f2)" \
+  -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
   -d '{"topic": "Why Docker changed everything", "category": "technology"}'
 ```
@@ -161,13 +169,17 @@ All runtime configuration lives in the `app_settings` Postgres
 table, not env vars. After setup, change settings with:
 
 ```bash
+# Mint a JWT (or use `poindexter settings get/set` directly — the CLI
+# handles auth for you). $JWT below is the value printed during setup
+# or by `poindexter auth mint-token --client-id ... --client-secret ...`.
+
 # View all settings
 curl http://localhost:8002/api/settings \
-  -H "Authorization: Bearer $API_TOKEN"
+  -H "Authorization: Bearer $JWT"
 
 # Change a setting
 curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
-  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
   -d '{"value": "80"}'
 ```

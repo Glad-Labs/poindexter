@@ -59,10 +59,8 @@ POINDEXTER_API_URL = (
     os.getenv("POINDEXTER_API_URL")
     or os.getenv("GLADLABS_API_URL", "http://localhost:8002")
 )
-POINDEXTER_API_TOKEN = (
-    os.getenv("POINDEXTER_API_TOKEN")
-    or os.getenv("GLADLABS_API_TOKEN", "")
-)
+# POINDEXTER_API_TOKEN was removed in Phase 3 (#249) — worker auth uses
+# OAuth JWTs minted via app_settings.mcp_gladlabs_oauth_client_*.
 
 # OpenClaw Gateway — tools/invoke HTTP API. Default Gateway port is 18789.
 # See: https://docs.openclaw.ai/gateway/tools-invoke-http-api.md
@@ -104,12 +102,14 @@ async def _get_http() -> httpx.AsyncClient:
 async def _get_oauth() -> GladlabsMcpOAuthClient:
     """Get or build the worker-API OAuth client for operator tools.
 
-    Resolution (Glad-Labs/poindexter#244):
+    Resolution (Glad-Labs/poindexter#244, finalised in #249):
 
     1. ``app_settings.mcp_gladlabs_oauth_client_id`` +
        ``mcp_gladlabs_oauth_client_secret`` → mints + caches a JWT.
-    2. ``app_settings.api_token`` (legacy, encrypted) → static Bearer.
-    3. ``POINDEXTER_API_TOKEN`` env → static Bearer fallback.
+    2. Otherwise raises loudly — run
+       ``poindexter auth migrate-mcp-gladlabs`` to provision the OAuth
+       client. The legacy static-Bearer fallback was removed in
+       Phase 3 (#249).
 
     The first call opens a credential read against the local pool.
     Subsequent calls return the cached client.
@@ -122,8 +122,6 @@ async def _get_oauth() -> GladlabsMcpOAuthClient:
             base_url=POINDEXTER_API_URL,
             client_id_key=MCP_GLADLABS_CLIENT_ID_KEY,
             client_secret_key=MCP_GLADLABS_CLIENT_SECRET_KEY,
-            api_token_key="api_token",
-            static_bearer_fallback=POINDEXTER_API_TOKEN or "",
             scopes=None,  # Use the client's full grant.
         )
     return _oauth
@@ -288,16 +286,15 @@ async def operator_status() -> str:
     lines = ["Glad Labs operator MCP status:"]
     lines.append(f"  Local DB DSN:          {'set' if LOCAL_DB_DSN else 'unset'}")
     lines.append(f"  Poindexter API URL:    {POINDEXTER_API_URL}")
-    lines.append(f"  Poindexter API token:  {'set' if POINDEXTER_API_TOKEN else 'unset'}")
 
-    # OAuth credential state (Glad-Labs/poindexter#244). We only check
-    # if the helper *would* use OAuth — we don't actually mint, since
-    # operator_status is a diagnostic and a 401 here would be
-    # misleading noise.
+    # OAuth credential state (Glad-Labs/poindexter#244, finalised in
+    # #249). We only check if the helper *would* mint a JWT — we don't
+    # actually mint, since operator_status is a diagnostic and a 401
+    # here would be misleading noise.
     try:
         oauth = await _get_oauth()
         lines.append(
-            f"  OAuth (worker API):     {'OAuth' if oauth.using_oauth else 'legacy static Bearer'}"
+            f"  OAuth (worker API):     {'configured' if oauth.using_oauth else 'NOT configured — run poindexter auth migrate-mcp-gladlabs'}"
         )
     except Exception as e:  # noqa: BLE001
         lines.append(f"  OAuth (worker API):     init failed: {type(e).__name__}: {e}")

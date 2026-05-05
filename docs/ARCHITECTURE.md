@@ -516,7 +516,7 @@ The roadmap is tracked via GitHub milestones at
 
 ## Security
 
-- **Bearer token auth** for all API access (single `api_token` in bootstrap.toml + app_settings)
+- **OAuth 2.1 client credentials** for all API access (JWT minted via `POST /token` against a registered `oauth_clients` row — Glad-Labs/poindexter#241 / #249)
 - **Dev-token bypass** blocked in production (`DEVELOPMENT_MODE` check)
 - **Secrets in DB** (`is_secret=true` keys fetched via `site_config.get_secret()`, filtered from in-memory cache)
 - **No cloud keys in env** — LLM API keys set via settings API, not env vars

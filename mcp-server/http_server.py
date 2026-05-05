@@ -28,8 +28,9 @@ via the operator CLI:
 
 The static-Bearer path that earlier revisions of this file accepted is
 GONE — there's no longer any way to call this server with the legacy
-``app_settings.api_token``. The worker's other endpoints still accept
-both during the dual-auth window (#241 Phase 2/3 will retire those).
+``app_settings.api_token``. The worker's other endpoints align with
+the same posture: Phase 3 (#249) closed the dual-auth window across
+the entire surface — every consumer must mint OAuth JWTs.
 
 ## Run
 
@@ -40,10 +41,6 @@ Env vars:
 - ``POINDEXTER_MCP_HTTP_HOST``  (default ``127.0.0.1``)
 - ``POINDEXTER_MCP_HTTP_PORT``  (default ``8004``)
 - ``POINDEXTER_API_URL``        (default ``http://localhost:8002``)
-- ``POINDEXTER_API_TOKEN``      (sourced from ``~/.poindexter/bootstrap.toml``
-                                 ``api_token`` if the env var isn't set;
-                                 used for *outbound* worker calls from the
-                                 MCP tools — not for *inbound* auth)
 - ``POINDEXTER_SECRET_KEY``     (sourced from bootstrap.toml; required —
                                  the JWT signing key shared with the issuer)
 - ``OLLAMA_URL``                (default ``http://localhost:11434``)
@@ -106,28 +103,18 @@ def _seed_env_from_bootstrap() -> None:
     """Populate the env vars ``server.setup_runtime`` expects, sourcing
     from ``~/.poindexter/bootstrap.toml`` where appropriate.
 
-    Two distinct secrets are pulled here:
+    Pulls one secret:
 
-    - ``api_token`` → ``POINDEXTER_API_TOKEN`` — the MCP tools use this
-      for *outbound* calls into the worker. Still on the legacy static
-      Bearer until #242 retires it.
     - ``poindexter_secret_key`` → ``POINDEXTER_SECRET_KEY`` — the JWT
       signing key. Required for *inbound* auth on this server; without
       it we can't verify any token.
+
+    Outbound worker calls authenticate via OAuth JWTs minted from
+    ``app_settings.mcp_oauth_client_*`` — no env var is required.
+    Phase 3 (#249) removed the legacy static-Bearer path.
     """
     _ensure_brain_on_path()
     from brain.bootstrap import get_bootstrap_value  # type: ignore[import-not-found]
-
-    api_token = (
-        os.environ.get("POINDEXTER_API_TOKEN")
-        or os.environ.get("GLADLABS_API_TOKEN")
-        or get_bootstrap_value("api_token", "")
-    )
-    if not api_token:
-        raise RuntimeError(
-            "api_token not found — set POINDEXTER_API_TOKEN env var or "
-            "ensure ~/.poindexter/bootstrap.toml has api_token = '...'.",
-        )
 
     secret_key = (
         os.environ.get("POINDEXTER_SECRET_KEY")
@@ -141,7 +128,6 @@ def _seed_env_from_bootstrap() -> None:
         )
 
     os.environ.setdefault("POINDEXTER_API_URL", "http://localhost:8002")
-    os.environ["POINDEXTER_API_TOKEN"] = api_token
     os.environ["POINDEXTER_SECRET_KEY"] = secret_key
     os.environ.setdefault("OLLAMA_URL", "http://localhost:11434")
 

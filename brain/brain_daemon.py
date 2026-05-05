@@ -310,8 +310,10 @@ _alert_sync_cycle_counter = 0
 
 # OAuth client used for any authenticated worker-API call brain probes
 # need to make. Initialised once in main() after the DB pool is ready.
-# When OAuth credentials aren't configured (pre-#245 migration) the
-# helper falls back to app_settings.api_token automatically.
+# OAuth credentials are required (Phase 3 / Glad-Labs/poindexter#249
+# removed the static-Bearer fallback); the helper raises loudly if
+# `brain_oauth_client_id` / `_secret` aren't provisioned via
+# `poindexter auth migrate-brain`.
 _OAUTH_CLIENT = None
 
 

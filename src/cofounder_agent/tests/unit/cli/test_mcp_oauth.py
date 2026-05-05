@@ -1,4 +1,4 @@
-"""Unit tests for the MCP-server OAuth helpers (Glad-Labs/poindexter#243, #244).
+"""Unit tests for the MCP-server OAuth helpers (Glad-Labs/poindexter#243, #244, #249).
 
 Each MCP server ships its own local mirror of
 ``services.auth.oauth_client`` (see ``mcp-server/oauth_client.py`` and
@@ -14,11 +14,9 @@ Coverage per consumer:
 - Mint then cache-hit on a fresh token (one /token round trip for two
   ``get_token()`` calls).
 - 401 invalidates the cache and retries exactly once with a fresh JWT.
-- Legacy static-Bearer fallback when OAuth credentials are blank.
-- Hard failure when neither path is configured.
-- Pool-backed constructor reads creds from app_settings, including the
-  ``static_bearer_fallback`` parameter that lets the existing
-  ``POINDEXTER_API_TOKEN`` env value be threaded in.
+- Hard failure when OAuth credentials aren't configured. The legacy
+  static-Bearer fallback was removed in Phase 3 (#249).
+- Pool-backed constructor reads creds from app_settings.
 """
 
 from __future__ import annotations
@@ -213,32 +211,11 @@ class TestMcpOAuthClient:
         await c.aclose()
 
     @pytest.mark.asyncio
-    async def test_legacy_static_bearer_when_oauth_unset(self):
-        oac = _import_mcp_oauth()
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            assert request.url.path == "/api/health"
-            assert request.headers["Authorization"] == "Bearer mcp-legacy"
-            return httpx.Response(200, json={"ok": True})
-
-        c = oac.McpOAuthClient(
-            base_url="http://test",
-            client_id="", client_secret="",
-            static_bearer_token="mcp-legacy",
-        )
-        c._http = httpx.AsyncClient(  # noqa: SLF001
-            transport=httpx.MockTransport(handler), base_url="http://test",
-        )
-        assert c.using_oauth is False
-        resp = await c.get("/api/health")
-        assert resp.status_code == 200
-        await c.aclose()
-
-    @pytest.mark.asyncio
     async def test_no_credentials_raises(self):
+        """Phase 3 (#249): no static-Bearer fallback. Fail loud."""
         oac = _import_mcp_oauth()
         c = oac.McpOAuthClient(base_url="http://test")
-        with pytest.raises(RuntimeError, match="neither client_id"):
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
             await c.get_token()
 
 
@@ -249,7 +226,6 @@ class TestMcpPoolConstructor:
         rows_by_key = {
             "mcp_oauth_client_id": {"value": "pdx_mcp123", "is_secret": True},
             "mcp_oauth_client_secret": {"value": "msecret", "is_secret": True},
-            "api_token": {"value": "legacy-token", "is_secret": True},
         }
 
         async def _fetchrow(_sql, key):
@@ -266,16 +242,14 @@ class TestMcpPoolConstructor:
         assert client.using_oauth is True
         assert client._client_id == "pdx_mcp123"  # noqa: SLF001
         assert client._client_secret == "msecret"  # noqa: SLF001
-        assert client._static_bearer_token == "legacy-token"  # noqa: SLF001
         await client.aclose()
 
     @pytest.mark.asyncio
-    async def test_falls_back_when_oauth_keys_missing(self):
+    async def test_raises_when_oauth_keys_missing(self):
+        """Phase 3 (#249): no api_token fallback in pool constructor."""
         oac = _import_mcp_oauth()
 
         async def _fetchrow(_sql, key):
-            if key == "api_token":
-                return {"value": "legacy-token", "is_secret": False}
             return None
 
         pool = MagicMock()
@@ -284,33 +258,8 @@ class TestMcpPoolConstructor:
 
         client = await oac.oauth_client_from_pool(pool, base_url="http://test")
         assert client.using_oauth is False
-        token = await client.get_token()
-        assert token == "legacy-token"
-        await client.aclose()
-
-    @pytest.mark.asyncio
-    async def test_static_bearer_fallback_param_is_used(self):
-        """When neither OAuth keys nor api_token row exist, the
-        ``static_bearer_fallback`` argument should populate the
-        consumer's static-Bearer slot. Mirrors how the MCP servers
-        thread the existing ``POINDEXTER_API_TOKEN`` env var into the
-        helper so unmigrated setups keep working."""
-        oac = _import_mcp_oauth()
-
-        async def _fetchrow(_sql, _key):
-            return None  # All rows missing.
-
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
-        pool.fetchval = AsyncMock()
-
-        client = await oac.oauth_client_from_pool(
-            pool,
-            base_url="http://test",
-            static_bearer_fallback="env-token",
-        )
-        assert client.using_oauth is False
-        assert await client.get_token() == "env-token"
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
+            await client.get_token()
         await client.aclose()
 
 
@@ -387,31 +336,11 @@ class TestGladlabsMcpOAuthClient:
         await c.aclose()
 
     @pytest.mark.asyncio
-    async def test_legacy_static_bearer_when_oauth_unset(self):
-        oac = _import_gladlabs_oauth()
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            assert request.headers["Authorization"] == "Bearer gladlabs-legacy"
-            return httpx.Response(200, json={"ok": True})
-
-        c = oac.GladlabsMcpOAuthClient(
-            base_url="http://test",
-            client_id="", client_secret="",
-            static_bearer_token="gladlabs-legacy",
-        )
-        c._http = httpx.AsyncClient(  # noqa: SLF001
-            transport=httpx.MockTransport(handler), base_url="http://test",
-        )
-        assert c.using_oauth is False
-        resp = await c.get("/api/health")
-        assert resp.status_code == 200
-        await c.aclose()
-
-    @pytest.mark.asyncio
     async def test_no_credentials_raises(self):
+        """Phase 3 (#249): no static-Bearer fallback. Fail loud."""
         oac = _import_gladlabs_oauth()
         c = oac.GladlabsMcpOAuthClient(base_url="http://test")
-        with pytest.raises(RuntimeError, match="neither client_id"):
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
             await c.get_token()
 
 
@@ -429,7 +358,6 @@ class TestGladlabsPoolConstructor:
             "mcp_gladlabs_oauth_client_secret": {
                 "value": "gsecret", "is_secret": True,
             },
-            "api_token": {"value": "legacy-token", "is_secret": True},
         }
 
         async def _fetchrow(_sql, key):
@@ -468,12 +396,12 @@ class TestGladlabsPoolConstructor:
 
         client = await oac.oauth_client_from_pool(
             pool, base_url="http://test",
-            static_bearer_fallback="fallback-static",
         )
         # Public MCP keys present but irrelevant here — gladlabs helper
-        # ignores them and falls through to the static bearer.
+        # ignores them and (post-#249) raises loudly on first get_token.
         assert client.using_oauth is False
-        assert await client.get_token() == "fallback-static"
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
+            await client.get_token()
         await client.aclose()
 
 

@@ -20,14 +20,21 @@ bootstrap.toml format:
 
     # ~/.poindexter/bootstrap.toml
     database_url = "postgresql://..."
-    api_token = "poindexter-..."
     local_postgres_password = "..."
     grafana_password = "..."
     pgadmin_password = "..."
+    # OAuth scripts client (optional — written by `poindexter auth migrate-scripts`)
+    scripts_oauth_client_id = "pdx_..."
+    scripts_oauth_client_secret = "..."
 
 Only infrastructure secrets needed to bootstrap the Docker stack.
 No API keys, webhook URLs, or notification tokens — those belong in
 app_settings (set via the settings API after first boot).
+
+Worker auth uses OAuth 2.1 (Glad-Labs/poindexter#241) — the legacy
+``api_token`` field is no longer recognised after Phase 3 (#249).
+``poindexter setup`` provisions an initial CLI OAuth client; other
+consumers register theirs via ``poindexter auth migrate-*``.
 
 The file is written by `poindexter setup` on first run. No tool should
 read or write it except through this module.

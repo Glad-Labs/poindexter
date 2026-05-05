@@ -20,13 +20,12 @@ Behaviour matches the worker helper exactly:
 - Caches by reading the JWT's ``exp`` claim (no signature verification
   client-side — the MCP server doesn't have the signing key) and
   refreshing ~30 s before the deadline.
-- Falls back to the legacy static Bearer (``app_settings.api_token``,
-  surfaced via ``POINDEXTER_API_TOKEN`` env) when OAuth credentials
-  aren't configured, so the MCP server keeps working through the
-  migration window.
 - 401-aware: invalidates the cache and retries once on a 401 from any
   wrapped downstream call.
 - Async-only.
+- OAuth credentials are required. The legacy static-Bearer fallback
+  (``app_settings.api_token`` / ``POINDEXTER_API_TOKEN`` env) was
+  removed in Phase 3 (#249).
 """
 
 from __future__ import annotations
@@ -161,14 +160,12 @@ class McpOAuthClient:
         *,
         client_id: str = "",
         client_secret: str = "",
-        static_bearer_token: str = "",
         scopes: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
-        self._static_bearer_token = static_bearer_token
         self._scopes = scopes
         self._timeout = timeout
 
@@ -216,15 +213,11 @@ class McpOAuthClient:
 
     async def get_token(self) -> str:
         if not self.using_oauth:
-            if not self._static_bearer_token:
-                raise RuntimeError(
-                    "McpOAuthClient: neither client_id/client_secret nor a "
-                    "static bearer token was configured. Run "
-                    "`poindexter auth migrate-mcp`, or set "
-                    "app_settings.api_token (surfaced via "
-                    "POINDEXTER_API_TOKEN env)."
-                )
-            return self._static_bearer_token
+            raise RuntimeError(
+                "McpOAuthClient: client_id/client_secret are required. "
+                "Run `poindexter auth migrate-mcp` to provision an OAuth "
+                "client. Static-Bearer fallback was removed in #249."
+            )
 
         cached = self._cached
         now = time.time()
@@ -294,7 +287,7 @@ class McpOAuthClient:
         headers["Authorization"] = f"Bearer {token}"
 
         resp = await http.request(method, url, headers=headers, **kwargs)
-        if resp.status_code == 401 and retry_on_401 and self.using_oauth:
+        if resp.status_code == 401 and retry_on_401:
             logger.info(
                 "[MCP.OAUTH] 401 on %s %s — invalidating cache and retrying",
                 method, url,
@@ -329,8 +322,6 @@ async def oauth_client_from_pool(
     base_url: str,
     client_id_key: str = MCP_CLIENT_ID_KEY,
     client_secret_key: str = MCP_CLIENT_SECRET_KEY,
-    api_token_key: str = "api_token",
-    static_bearer_fallback: str = "",
     scopes: str | None = None,
     timeout: float = 30.0,
 ) -> McpOAuthClient:
@@ -343,35 +334,25 @@ async def oauth_client_from_pool(
             the OAuth credentials. Override these to provision a
             distinct client per consumer (the gladlabs MCP uses
             ``mcp_gladlabs_oauth_client_id`` / ``..._secret``).
-        api_token_key: legacy fallback row in app_settings.
-        static_bearer_fallback: extra fallback bearer token to use when
-            both the OAuth keys AND the api_token row are blank.
-            Lets callers thread the existing ``POINDEXTER_API_TOKEN``
-            env value in so we don't break setups where the operator
-            still provides the token via env (the current MCP server
-            entry points do exactly this).
         scopes: optional space-delimited subset of the client's grant.
             ``None`` requests the full grant.
         timeout: httpx timeout for both mints and downstream calls.
 
-    Resolution order, per consumer:
+    Resolution:
 
     1. ``app_settings[client_id_key]`` + ``app_settings[client_secret_key]``
        → use OAuth client credentials grant.
-    2. ``app_settings[api_token_key]`` → legacy static Bearer.
-    3. ``static_bearer_fallback`` (e.g. ``POINDEXTER_API_TOKEN`` env) →
-       legacy static Bearer.
-    4. Neither set → the returned client raises on first ``get_token()``
+    2. Neither set → the returned client raises on first ``get_token()``
        — fail loud per the codebase's no-silent-defaults rule (#198).
+
+    The legacy static-Bearer fallback was removed in Phase 3 (#249).
     """
     client_id = await read_app_setting(pool, client_id_key, "")
     client_secret = await read_app_setting(pool, client_secret_key, "")
-    api_token = await read_app_setting(pool, api_token_key, "")
     return McpOAuthClient(
         base_url=base_url,
         client_id=client_id,
         client_secret=client_secret,
-        static_bearer_token=api_token or static_bearer_fallback,
         scopes=scopes,
         timeout=timeout,
     )

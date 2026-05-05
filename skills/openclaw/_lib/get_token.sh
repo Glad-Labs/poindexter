@@ -1,9 +1,9 @@
 #!/bin/bash
 # skills/openclaw/_lib/get_token.sh — shared OAuth-token helper.
 #
-# Glad-Labs/poindexter#246 (Phase 2 round 2C). Replaces the static
-# ${POINDEXTER_KEY} static-Bearer pattern with an OAuth 2.1 Client
-# Credentials mint against the worker's /token endpoint.
+# Glad-Labs/poindexter#246 (provisioning) + #249 (Phase 3 cleanup).
+# OAuth 2.1 Client Credentials mint against the worker's /token endpoint.
+# The legacy ${POINDEXTER_KEY} static-Bearer fallback was removed in #249.
 #
 # Usage (sourced):
 #
@@ -11,13 +11,12 @@
 #   TOKEN="$(get_poindexter_token)" || exit 1
 #   curl -H "Authorization: Bearer ${TOKEN}" "${FASTAPI_URL}/api/tasks"
 #
-# Resolution (first match wins):
+# Resolution:
 #
 #   1. POINDEXTER_OAUTH_CLIENT_ID + POINDEXTER_OAUTH_CLIENT_SECRET env vars
 #      → mint a fresh JWT via /token (cached under ~/.openclaw/.token-cache
 #      until 30s before exp)
-#   2. POINDEXTER_KEY env var (legacy static-Bearer) → echo as-is
-#      (kept until Phase 3 #249 retires the static path)
+#   2. Otherwise, fail loud with a pointer to `poindexter auth migrate-openclaw`.
 #
 # Provision OAuth credentials with:
 #
@@ -117,9 +116,9 @@ sys.exit(1)
 # ---------------------------------------------------------------------------
 
 get_poindexter_token() {
-    # Echo a Bearer-eligible token to stdout. Honors the cache when
-    # OAuth creds are configured; falls back to legacy ${POINDEXTER_KEY}
-    # when they aren't.
+    # Echo a Bearer-eligible JWT to stdout. The legacy
+    # ${POINDEXTER_KEY} / ${GLADLABS_KEY} static-Bearer fallback was
+    # removed in Phase 3 (#249) — OAuth credentials are required.
     if [ -n "$POINDEXTER_OAUTH_CLIENT_ID" ] && [ -n "$POINDEXTER_OAUTH_CLIENT_SECRET" ]; then
         local cache_path cached new
         cache_path=$(_oauth_cache_path)
@@ -137,13 +136,8 @@ get_poindexter_token() {
         return 0
     fi
 
-    # Legacy static-Bearer fallback. Phase 3 (#249) removes it.
-    local legacy="${POINDEXTER_KEY:-${GLADLABS_KEY}}"
-    if [ -z "$legacy" ]; then
-        echo "get_token: no auth configured." >&2
-        echo "  Run 'poindexter auth migrate-openclaw' to provision OAuth creds," >&2
-        echo "  or set POINDEXTER_KEY for the legacy static-Bearer path." >&2
-        return 1
-    fi
-    echo "$legacy"
+    echo "get_token: no auth configured." >&2
+    echo "  Run 'poindexter auth migrate-openclaw' to provision OAuth creds." >&2
+    echo "  The legacy POINDEXTER_KEY static-Bearer path was removed in #249." >&2
+    return 1
 }

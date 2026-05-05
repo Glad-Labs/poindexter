@@ -115,14 +115,12 @@ class GladlabsMcpOAuthClient:
         *,
         client_id: str = "",
         client_secret: str = "",
-        static_bearer_token: str = "",
         scopes: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
-        self._static_bearer_token = static_bearer_token
         self._scopes = scopes
         self._timeout = timeout
 
@@ -161,15 +159,11 @@ class GladlabsMcpOAuthClient:
 
     async def get_token(self) -> str:
         if not self.using_oauth:
-            if not self._static_bearer_token:
-                raise RuntimeError(
-                    "GladlabsMcpOAuthClient: neither client_id/client_secret "
-                    "nor a static bearer token was configured. Run "
-                    "`poindexter auth migrate-mcp-gladlabs`, or set "
-                    "app_settings.api_token (surfaced via "
-                    "POINDEXTER_API_TOKEN env)."
-                )
-            return self._static_bearer_token
+            raise RuntimeError(
+                "GladlabsMcpOAuthClient: client_id/client_secret are required. "
+                "Run `poindexter auth migrate-mcp-gladlabs` to provision "
+                "an OAuth client. Static-Bearer fallback was removed in #249."
+            )
 
         cached = self._cached
         now = time.time()
@@ -235,7 +229,7 @@ class GladlabsMcpOAuthClient:
         headers["Authorization"] = f"Bearer {token}"
 
         resp = await http.request(method, url, headers=headers, **kwargs)
-        if resp.status_code == 401 and retry_on_401 and self.using_oauth:
+        if resp.status_code == 401 and retry_on_401:
             logger.info(
                 "[MCP.GLADLABS.OAUTH] 401 on %s %s — invalidating cache and retrying",
                 method, url,
@@ -265,8 +259,6 @@ async def oauth_client_from_pool(
     base_url: str,
     client_id_key: str = MCP_GLADLABS_CLIENT_ID_KEY,
     client_secret_key: str = MCP_GLADLABS_CLIENT_SECRET_KEY,
-    api_token_key: str = "api_token",
-    static_bearer_fallback: str = "",
     scopes: str | None = None,
     timeout: float = 30.0,
 ) -> GladlabsMcpOAuthClient:
@@ -277,16 +269,15 @@ async def oauth_client_from_pool(
     ``mcp_gladlabs_oauth_*`` so revoking the public MCP's client doesn't
     take this server down.
 
-    See the public MCP helper docstring for the resolution order.
+    See the public MCP helper docstring for the resolution order. The
+    legacy static-Bearer fallback was removed in Phase 3 (#249).
     """
     client_id = await read_app_setting(pool, client_id_key, "")
     client_secret = await read_app_setting(pool, client_secret_key, "")
-    api_token = await read_app_setting(pool, api_token_key, "")
     return GladlabsMcpOAuthClient(
         base_url=base_url,
         client_id=client_id,
         client_secret=client_secret,
-        static_bearer_token=api_token or static_bearer_fallback,
         scopes=scopes,
         timeout=timeout,
     )

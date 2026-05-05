@@ -1,20 +1,20 @@
-"""Shared OAuth Client Credentials helper (Glad-Labs/poindexter#241 Phase 2).
+"""Shared OAuth Client Credentials helper (Glad-Labs/poindexter#241).
 
-Round 1 helper for consumers of the worker API that want to migrate off
-the static Bearer token onto OAuth 2.1 JWTs without each consumer
-reimplementing the mint+cache+401-retry dance.
+Helper for consumers of the worker API to mint + cache OAuth 2.1 JWTs
+without each consumer reimplementing the mint+cache+401-retry dance.
 
-## Why this exists
+## History
 
-Phase 1 (PR #166) shipped:
-- ``POST /oauth/token`` with ``grant_type=client_credentials``
-- Dual-auth middleware that accepts JWTs OR the legacy static Bearer
+Phase 1 (PR #166) shipped ``POST /oauth/token`` with
+``grant_type=client_credentials`` plus dual-auth middleware that accepted
+JWTs OR a legacy static Bearer token.
 
-Phase 2 starts moving consumers onto JWTs one at a time. The dual-auth
-bridge means migrations can land independently — the helper here is
-what each consumer plugs into. Round 1 covers the Poindexter CLI
-(#242) and the brain daemon (#245); subsequent rounds cover MCP
-servers, OpenClaw skills, and Grafana webhooks.
+Phase 2 (#242–#248) migrated every consumer to OAuth one at a time. The
+static-Bearer fallback was the bridge that let those migrations land
+independently.
+
+Phase 3 (#249) removed the static-Bearer fallback. The helper now mints
+JWTs only — no fallback path.
 
 ## Behaviour
 
@@ -29,13 +29,9 @@ servers, OpenClaw skills, and Grafana webhooks.
 - On 401 from any downstream call wrapped by ``request()``, the cache
   is invalidated and the call is retried exactly once with a fresh
   token. After that, the 401 propagates.
-- If ``client_id`` / ``client_secret`` are empty (i.e., OAuth not yet
-  configured for this consumer), the helper falls back to the legacy
-  static Bearer (``app_settings.api_token`` via ``site_config``).
-  This is the back-compat seam the dual-auth middleware was built for
-  — consumers can ship the migration code, defer running
-  ``poindexter auth migrate-*`` until they're ready, and nothing
-  breaks in the meantime.
+- ``client_id`` / ``client_secret`` are required. ``get_token()`` raises
+  loudly when they aren't configured — fail-loud per the codebase's
+  no-silent-defaults rule (#198).
 
 ## Wiring
 
@@ -137,15 +133,10 @@ class OAuthClient:
             the ``/oauth/token`` alias is registered in
             ``services.routes.oauth_routes`` and points to the same
             handler.
-        client_id: OAuth client identifier (``pdx_...``). Empty string
-            means "OAuth not configured" — the helper falls back to
-            ``static_bearer_token``.
-        client_secret: OAuth client secret. Same empty-string semantics
-            as ``client_id``.
-        static_bearer_token: Legacy ``app_settings.api_token`` value.
-            Used as the back-compat fallback when OAuth credentials
-            aren't configured. Empty string means "no fallback either"
-            and the helper raises on first request.
+        client_id: OAuth client identifier (``pdx_...``). Required —
+            ``get_token()`` raises if empty.
+        client_secret: OAuth client secret. Required — ``get_token()``
+            raises if empty.
         scopes: Optional space-delimited subset of the client's granted
             scopes. ``None`` requests the client's full grant.
         timeout: httpx request timeout, applied to both token mints and
@@ -158,14 +149,12 @@ class OAuthClient:
         *,
         client_id: str = "",
         client_secret: str = "",
-        static_bearer_token: str = "",
         scopes: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
-        self._static_bearer_token = static_bearer_token
         self._scopes = scopes
         self._timeout = timeout
 
@@ -208,7 +197,12 @@ class OAuthClient:
 
     @property
     def using_oauth(self) -> bool:
-        """``True`` when OAuth client credentials are configured."""
+        """``True`` when OAuth client credentials are configured.
+
+        Always ``True`` for a properly constructed client post-#249;
+        retained for backwards compatibility with callers that
+        introspect this flag (mostly tests).
+        """
         return bool(self._client_id and self._client_secret)
 
     def invalidate_cache(self) -> None:
@@ -223,21 +217,18 @@ class OAuthClient:
     async def get_token(self) -> str:
         """Return a usable bearer token.
 
-        OAuth path: returns the cached JWT if it's still fresh, else
-        mints a new one from the token endpoint.
-
-        Legacy fallback path: returns the static bearer token directly
-        — there's nothing to cache or refresh.
+        Returns the cached JWT if it's still fresh, else mints a new
+        one from the token endpoint. Raises ``RuntimeError`` when the
+        OAuth credentials aren't configured — there is no fallback
+        path post-#249.
         """
         if not self.using_oauth:
-            if not self._static_bearer_token:
-                raise RuntimeError(
-                    "OAuthClient: neither client_id/client_secret nor a "
-                    "static bearer token was configured. Run `poindexter "
-                    "auth migrate-cli` (or migrate-brain), or set "
-                    "app_settings.api_token."
-                )
-            return self._static_bearer_token
+            raise RuntimeError(
+                "OAuthClient: client_id/client_secret are required. Run "
+                "`poindexter auth migrate-cli` (or migrate-brain / "
+                "migrate-mcp / migrate-scripts) to provision an OAuth "
+                "client. Static-Bearer fallback was removed in #249."
+            )
 
         cached = self._cached
         now = time.time()
@@ -316,7 +307,7 @@ class OAuthClient:
         headers["Authorization"] = f"Bearer {token}"
 
         resp = await http.request(method, url, headers=headers, **kwargs)
-        if resp.status_code == 401 and retry_on_401 and self.using_oauth:
+        if resp.status_code == 401 and retry_on_401:
             logger.info(
                 "OAuthClient got 401 on %s %s — invalidating cache and retrying",
                 method, url,
@@ -351,36 +342,30 @@ async def oauth_client_from_site_config(
     base_url: str,
     client_id_key: str,
     client_secret_key: str,
-    api_token_key: str = "api_token",
     scopes: str | None = None,
     timeout: float = 30.0,
 ) -> OAuthClient:
     """Build an ``OAuthClient`` by reading creds from app_settings.
 
-    Resolution order, per consumer:
+    Resolution:
 
     1. ``app_settings[client_id_key]`` + ``app_settings[client_secret_key]``
        → use OAuth client credentials grant.
-    2. ``app_settings[api_token_key]`` → fall back to legacy static
-       Bearer (the consumer's existing behaviour).
-    3. Neither set → the returned client raises on first ``get_token()``
-       — fail loud per the codebase's no-silent-defaults rule.
+    2. Neither set → the returned client raises on first ``get_token()``
+       — fail loud per the codebase's no-silent-defaults rule (#198).
 
-    The two OAuth keys are read with ``site_config.get_secret`` because
-    ``oauth_clients`` registration stores plaintext-equivalent secrets;
-    the api_token row is also a secret. Using the secret accessor
-    ensures decryption happens for ``is_secret=true`` rows.
+    Both keys are read with ``site_config.get_secret`` because
+    ``oauth_clients`` registration stores plaintext-equivalent secrets.
+    The legacy ``api_token`` fallback was removed in Phase 3 (#249).
     """
     client_id = await site_config.get_secret(client_id_key, "") if site_config else ""
     client_secret = (
         await site_config.get_secret(client_secret_key, "") if site_config else ""
     )
-    api_token = await site_config.get_secret(api_token_key, "") if site_config else ""
     return OAuthClient(
         base_url=base_url,
         client_id=client_id,
         client_secret=client_secret,
-        static_bearer_token=api_token,
         scopes=scopes,
         timeout=timeout,
     )
@@ -404,7 +389,6 @@ async def oauth_client_from_secret_reader(
     base_url: str,
     client_id_key: str,
     client_secret_key: str,
-    api_token_key: str = "api_token",
     scopes: str | None = None,
     timeout: float = 30.0,
 ) -> OAuthClient:
@@ -417,12 +401,10 @@ async def oauth_client_from_secret_reader(
     """
     client_id = await reader(client_id_key)
     client_secret = await reader(client_secret_key)
-    api_token = await reader(api_token_key)
     return OAuthClient(
         base_url=base_url,
         client_id=client_id,
         client_secret=client_secret,
-        static_bearer_token=api_token,
         scopes=scopes,
         timeout=timeout,
     )

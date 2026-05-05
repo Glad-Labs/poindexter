@@ -436,13 +436,18 @@ curl -s http://localhost:9840/health | jq '.idle_timeout_s'
 **Root cause.** The Claude Desktop MCP config (`claude_desktop_config.json`) has wrong values:
 
 1. `POINDEXTER_API_URL` pointing at a dead Railway URL instead of `http://localhost:8002`
-2. `POINDEXTER_API_TOKEN` is stale (doesn't match the current `api_token` in bootstrap.toml)
+2. The MCP server's OAuth client (`mcp_oauth_client_id` /
+   `mcp_oauth_client_secret` in `app_settings`) hasn't been provisioned
+   or has been revoked
 3. `OPENCLAW_GATEWAY_TOKEN` is missing from the gladlabs MCP env
 
 **Fix.** Edit `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json`:
 
 - Set `POINDEXTER_API_URL` to `http://localhost:8002`
-- Set `POINDEXTER_API_TOKEN` to the value from `~/.poindexter/bootstrap.toml`
+- Run `poindexter auth migrate-mcp` to (re)provision the MCP OAuth
+  client. The static-Bearer fallback (`POINDEXTER_API_TOKEN` /
+  `app_settings.api_token`) was removed in
+  Glad-Labs/poindexter#249 — there is no env-var path back.
 - Add `OPENCLAW_GATEWAY_TOKEN` matching the token in `~/.openclaw/openclaw.json`
 
 Restart Claude Desktop after editing.

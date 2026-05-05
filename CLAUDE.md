@@ -101,26 +101,26 @@ npm run type:check            # Python mypy
 
 **Key services (18 load-bearing):**
 
-| Service                                   | Purpose                                                                                                                                                                                            |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `content_router_service.py`               | 6-stage content pipeline with cross-model QA                                                                                                                                                       |
-| `content_validator.py`                    | Anti-hallucination rules (programmatic, no LLM)                                                                                                                                                    |
-| `multi_model_qa.py`                       | Adversarial review (different LLMs check each other)                                                                                                                                               |
-| `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                                                                                                                                                        |
-| `workflow_executor.py`                    | Legacy phase-based orchestration — being replaced by `template_runner.py` (LangGraph). Still load-bearing for content_agent + custom_workflows; migration tracked in poindexter#356.               |
-| `template_runner.py`                      | LangGraph-backed dynamic-pipeline orchestrator (TemplateRunner). Drives the dev_diary template + future architect-composed pipelines.                                                              |
-| `prompt_manager.py`                       | UnifiedPromptManager — Langfuse-first, then DB overrides, then YAML defaults (poindexter#47). Edits land in the Langfuse UI.                                                                       |
-| `settings_service.py`                     | DB-backed config (app_settings, 453 active keys)                                                                                                                                                   |
-| `site_config.py`                          | DI seam over settings (Phase H singleton replacement)                                                                                                                                              |
-| `cost_guard.py`                           | Daily/monthly spend limits                                                                                                                                                                         |
-| `model_router.py`                         | Cost-tiered model selection (free/budget/standard/premium). LiteLLM is the next-gen replacement (poindexter#199 phase 1 shipped — `LiteLLMProvider` plugin available; production cutover pending). |
-| `llm_providers/litellm_provider.py`       | LiteLLM-backed `LLMProvider` plugin (provider routing + cost tracking + retries via mature OSS). Activated by setting `plugin.llm_provider.primary.standard='litellm'`.                            |
-| `research_service.py` / `web_research.py` | Topic research + web fact-check                                                                                                                                                                    |
-| `publish_service.py`                      | Final publish + scheduled_publisher integration                                                                                                                                                    |
-| `quality_service.py`                      | Quality scoring orchestration                                                                                                                                                                      |
-| `internal_link_coherence.py`              | Auto-adds related post links                                                                                                                                                                       |
-| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama                                                                                                                                                              |
-| `newsletter_service.py`                   | Weekly digest generator                                                                                                                                                                            |
+| Service                                   | Purpose                                                                                                                                                                                                              |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `content_router_service.py`               | 6-stage content pipeline with cross-model QA                                                                                                                                                                         |
+| `content_validator.py`                    | Anti-hallucination rules (programmatic, no LLM)                                                                                                                                                                      |
+| `multi_model_qa.py`                       | Adversarial review (different LLMs check each other)                                                                                                                                                                 |
+| `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                                                                                                                                                                          |
+| `workflow_executor.py`                    | Legacy phase-based orchestration — being replaced by `template_runner.py` (LangGraph). Still load-bearing for content_agent + custom_workflows; migration tracked in poindexter#356.                                 |
+| `template_runner.py`                      | LangGraph-backed dynamic-pipeline orchestrator (TemplateRunner). Drives the dev_diary template + future architect-composed pipelines.                                                                                |
+| `prompt_manager.py`                       | UnifiedPromptManager — Langfuse-first, then DB overrides, then YAML defaults (poindexter#47). Edits land in the Langfuse UI.                                                                                         |
+| `settings_service.py`                     | DB-backed config (app_settings, 453 active keys)                                                                                                                                                                     |
+| `site_config.py`                          | DI seam over settings (Phase H singleton replacement)                                                                                                                                                                |
+| `cost_guard.py`                           | Daily/monthly spend limits                                                                                                                                                                                           |
+| `cost_lookup.py`                          | LiteLLM-backed cost lookup (wraps `litellm.model_cost`). Replaced the deprecated `model_router.py` / `usage_tracker.py` / `model_constants.py` trio in poindexter#199.                                               |
+| `llm_providers/litellm_provider.py`       | LiteLLM-backed `LLMProvider` plugin (provider routing + cost tracking + retries via mature OSS). Distinct from #199; activated by setting `plugin.llm_provider.primary.standard='litellm'`. Production cutover gate. |
+| `research_service.py` / `web_research.py` | Topic research + web fact-check                                                                                                                                                                                      |
+| `publish_service.py`                      | Final publish + scheduled_publisher integration                                                                                                                                                                      |
+| `quality_service.py`                      | Quality scoring orchestration                                                                                                                                                                                        |
+| `internal_link_coherence.py`              | Auto-adds related post links                                                                                                                                                                                         |
+| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama                                                                                                                                                                                |
+| `newsletter_service.py`                   | Weekly digest generator                                                                                                                                                                                              |
 
 **Content pipeline stages:**
 
@@ -156,14 +156,16 @@ Next.js 15 app router. ISR with 5-minute revalidation. Features:
 
 Custom MCP server for Claude desktop app. 25 tools across content / approval / settings / memory / observability surfaces. The sibling `mcp-server-gladlabs/` adds 3 operator-only tools layered on top (private to the Glad Labs operator overlay; not in the public mirror).
 
-**Authentication:** OAuth 2.1 Client Credentials Grant (Phase 2 shipped 2026-05-02). Static Bearer tokens still accepted as a dual-auth fallback during the soak window — Phase 3 (#249) removes them once every consumer is verified on OAuth.
+**Authentication:** OAuth 2.1 Client Credentials Grant only (Phase 3 #249 closed the dual-auth window 2026-05-05). Every consumer mints JWTs through `POST /token` against a registered `oauth_clients` row; the legacy static-Bearer fallback (and the `POINDEXTER_KEY` / `GLADLABS_KEY` / `app_settings.api_token` plumbing) was removed. Provision a client with `poindexter auth migrate-cli` (or `migrate-mcp` / `migrate-brain` / `migrate-scripts` / `migrate-mcp-gladlabs` / `migrate-openclaw` / `mint-grafana-token` per consumer). `poindexter setup` provisions the initial CLI client out-of-the-box on fresh installs.
 
 ### Configuration (#198 — no hardcoded values in code)
 
 **Bootstrap is the only config on disk.** Written by `poindexter setup`
-to `~/.poindexter/bootstrap.toml`. Contains ONE value: `database_url`
-(plus optional operator-notification channels for when the system
-can't start cleanly). **No `.env` required.**
+to `~/.poindexter/bootstrap.toml`. Contains the database URL plus the
+machine secrets needed to bring the Docker stack up before any DB row
+is reachable (Postgres / Grafana / pgAdmin passwords, the OAuth
+signing key, etc.) plus optional operator-notification channels for
+when the system can't start cleanly. **No `.env` required.**
 
 ```toml
 # ~/.poindexter/bootstrap.toml
@@ -171,6 +173,9 @@ database_url = "postgresql://..."
 telegram_bot_token = ""
 telegram_chat_id = ""
 discord_ops_webhook_url = ""
+# Worker auth — OAuth 2.1 only as of Phase 3 (#249). The initial CLI
+# client is provisioned by `poindexter setup`; other consumers register
+# theirs via `poindexter auth migrate-*`.
 ```
 
 Resolution priority in `brain.bootstrap.resolve_database_url()`:

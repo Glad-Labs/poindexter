@@ -1,16 +1,13 @@
-"""Unit tests for ``poindexter.cli._api_client.WorkerClient`` (#242).
+"""Unit tests for ``poindexter.cli._api_client.WorkerClient`` (#242, #249).
 
-Covers the OAuth migration of the CLI's HTTP transport. Two paths to
-exercise:
+Covers the OAuth-only HTTP transport that ships post-Phase 3.
 
-1. **OAuth path** — when ``cli_oauth_client_id`` + ``cli_oauth_client_secret``
-   are present, the client mints a JWT and attaches it as ``Bearer
-   <jwt>``.
-2. **Legacy path** — when those keys are blank, the client falls back
-   to ``app_settings.api_token`` (or the ``POINDEXTER_KEY`` env var).
-
-Both share the same outer surface (``async with WorkerClient() as c:
-await c.get(...)``) so subcommand modules don't need migration.
+* **OAuth path** — when ``cli_oauth_client_id`` + ``cli_oauth_client_secret``
+  are present, the client mints a JWT and attaches it as ``Bearer <jwt>``.
+* **Fail-loud** — when those keys are blank, the client raises a
+  ``RuntimeError`` with a pointer to ``poindexter auth migrate-cli``.
+  The legacy static-Bearer fallback (``app_settings.api_token`` /
+  ``POINDEXTER_KEY`` env var) was removed in Phase 3 (#249).
 """
 
 from __future__ import annotations
@@ -128,62 +125,39 @@ class TestWorkerClientOAuthPath:
 
 
 # ---------------------------------------------------------------------------
-# Legacy path — only static bearer token configured. WorkerClient
-# should NOT hit /token at all.
+# Fail-loud — Phase 3 (#249) removed the static-Bearer fallback.
+# Empty OAuth credentials should raise on context-manager entry rather
+# than silently degrading to a legacy path.
 # ---------------------------------------------------------------------------
 
 
-class TestWorkerClientLegacyPath:
-    @pytest.mark.asyncio
-    async def test_legacy_bearer_via_env_var(self, monkeypatch):
-        from poindexter.cli._api_client import WorkerClient
-
-        monkeypatch.setenv("POINDEXTER_KEY", "legacy-bearer-from-env")
-        downstream_calls = 0
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            nonlocal downstream_calls
-            assert request.url.path != "/token", (
-                "Legacy path must not hit /token"
-            )
-            downstream_calls += 1
-            assert request.headers["Authorization"] == "Bearer legacy-bearer-from-env"
-            return httpx.Response(200, json={"ok": True})
-
-        from services.auth import oauth_client as oac_module
-
-        original_async_client = httpx.AsyncClient
-
-        def mocked_async_client(*args, **kwargs):
-            kwargs.pop("transport", None)
-            return original_async_client(
-                *args, transport=httpx.MockTransport(handler), **kwargs,
-            )
-
-        with patch.object(oac_module.httpx, "AsyncClient", mocked_async_client):
-            with patch(
-                "poindexter.cli._api_client.httpx.AsyncClient",
-                mocked_async_client,
-            ):
-                # client_id/secret blank → triggers legacy fallback.
-                # Token comes from the env var via _resolve_credentials's
-                # short-circuit when no DSN is reachable.
-                async with WorkerClient(
-                    client_id="",
-                    client_secret="",
-                ) as c:
-                    resp = await c.get("/api/posts")
-                    assert resp.status_code == 200
-        assert downstream_calls == 1
-
+class TestWorkerClientFailLoud:
     @pytest.mark.asyncio
     async def test_no_creds_at_all_raises_on_enter(self, monkeypatch):
         from poindexter.cli._api_client import WorkerClient
 
-        monkeypatch.delenv("POINDEXTER_KEY", raising=False)
-        monkeypatch.delenv("GLADLABS_KEY", raising=False)
+        # Even with the legacy env vars set, the client must refuse —
+        # the static-Bearer slot is gone post-#249.
+        monkeypatch.setenv("POINDEXTER_KEY", "stale-legacy-value")
 
-        with pytest.raises(RuntimeError, match="No CLI credentials available"):
+        with pytest.raises(RuntimeError, match="No CLI OAuth credentials"):
+            async with WorkerClient(client_id="", client_secret="") as _c:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_legacy_env_var_does_not_satisfy_credentials(self, monkeypatch):
+        """Regression test for Glad-Labs/poindexter#249.
+
+        ``POINDEXTER_KEY`` and ``GLADLABS_KEY`` used to populate the
+        static-Bearer slot. Phase 3 removed that path — the env vars
+        must be ignored entirely.
+        """
+        from poindexter.cli._api_client import WorkerClient
+
+        monkeypatch.setenv("POINDEXTER_KEY", "legacy-bearer")
+        monkeypatch.setenv("GLADLABS_KEY", "another-legacy-bearer")
+
+        with pytest.raises(RuntimeError, match="No CLI OAuth credentials"):
             async with WorkerClient(client_id="", client_secret="") as _c:
                 pass
 

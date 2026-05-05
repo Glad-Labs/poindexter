@@ -5,24 +5,19 @@ posts, costs, quality, settings) imports ``WorkerClient`` from this
 module so they all share authentication, URL resolution, and error
 handling logic.
 
-## Authentication (Glad-Labs/poindexter#242)
+## Authentication (Glad-Labs/poindexter#242, finalised in #249)
 
-Two paths, picked at construction time:
+OAuth 2.1 Client Credentials only. When
+``app_settings.cli_oauth_client_id`` + ``cli_oauth_client_secret``
+are present, the CLI mints a JWT via ``POST /token`` and caches it
+in-memory until ~30 s before expiry. 401 from a downstream call
+invalidates the cache and retries once with a fresh token.
 
-1. **OAuth Client Credentials (preferred).** When
-   ``app_settings.cli_oauth_client_id`` + ``cli_oauth_client_secret``
-   are present, the CLI mints a JWT via ``POST /token`` and caches it
-   in-memory until ~30 s before expiry. 401 from a downstream call
-   invalidates the cache and retries once with a fresh token.
-2. **Static Bearer (legacy fallback).** When the OAuth credentials
-   are blank, the client falls back to ``app_settings.api_token``
-   (matching the pre-#242 behaviour). The ``POINDEXTER_KEY`` /
-   ``GLADLABS_KEY`` env vars are still honoured for back-compat with
-   developers who set them in their shell.
-
-Run ``poindexter auth migrate-cli`` to switch from path (2) to
-path (1) — it registers a new OAuth client with ``api:read api:write``
-scopes and writes the credentials into app_settings.
+If the OAuth credentials aren't configured, the client raises loudly —
+run ``poindexter auth migrate-cli`` to register a new OAuth client and
+persist the credentials. The legacy static-Bearer fallback (and the
+``POINDEXTER_KEY`` / ``GLADLABS_KEY`` env vars) was removed in Phase 3
+(#249).
 
 ## URL resolution (#198: no silent defaults)
 
@@ -66,39 +61,24 @@ def _resolve_base_url(base_url: str | None) -> str:
 
 async def _resolve_credentials(
     base_url: str,
-    explicit_token: str | None,
-) -> tuple[str, str, str]:
-    """Pull (client_id, client_secret, static_token) from app_settings.
-
-    Falls back to the ``POINDEXTER_KEY`` / ``GLADLABS_KEY`` env vars
-    for the static-bearer slot so developers who set those today keep
-    a working CLI through the migration window.
+) -> tuple[str, str]:
+    """Pull (client_id, client_secret) from app_settings.
 
     DSN resolution mirrors ``cli/auth.py`` and ``cli/migrate.py`` —
     bootstrap-toml first, then the env-var triplet. We open a tiny
-    pool, read three rows, close the pool. This adds one DB round
+    pool, read two rows, close the pool. This adds one DB round
     trip per CLI invocation; the alternative is a long-lived pool
     that races CLI shutdown.
     """
-    env_static = (
-        explicit_token
-        or os.getenv("POINDEXTER_KEY")
-        or os.getenv("GLADLABS_KEY")
-        or ""
-    )
-
     dsn = _dsn_or_none()
     if not dsn:
-        # No DSN reachable — surface the env-var static token (or
-        # nothing). The OAuthClient will raise loudly if neither path
-        # is usable.
-        return "", "", env_static
+        # No DSN reachable — return empty creds so the OAuthClient
+        # raises loudly with the migrate-cli pointer.
+        return "", ""
 
     # Make sure the secrets key is loaded from bootstrap.toml so the
     # encrypted client_id/client_secret can decrypt — otherwise we'd
-    # silently fall through to static-bearer auth (and the inevitable
-    # stale POINDEXTER_KEY env var) for every operator who relies on
-    # bootstrap.toml for the secret key (i.e. every operator).
+    # see empty creds and fail loudly without a useful pointer.
     from poindexter.cli._bootstrap import ensure_secret_key
     ensure_secret_key()
 
@@ -116,12 +96,10 @@ async def _resolve_credentials(
             client_secret = (
                 await _plugin_get_secret(conn, CLI_CLIENT_SECRET_KEY) or ""
             )
-            api_token = await _plugin_get_secret(conn, "api_token") or ""
     finally:
         await pool.close()
 
-    static_token = env_static or api_token
-    return client_id, client_secret, static_token
+    return client_id, client_secret
 
 
 def _dsn_or_none() -> str:
@@ -156,7 +134,7 @@ class WorkerClient:
     def __init__(
         self,
         base_url: str | None = None,
-        token: str | None = None,
+        token: str | None = None,  # noqa: ARG002 — accepted for back-compat, unused post-#249
         *,
         client_id: str | None = None,
         client_secret: str | None = None,
@@ -165,7 +143,6 @@ class WorkerClient:
         self.base_url = _resolve_base_url(base_url)
         # Hold the explicit overrides; finalise during __aenter__ so the
         # async DB lookup happens off the main constructor path.
-        self._explicit_token = token
         self._explicit_client_id = client_id
         self._explicit_client_secret = client_secret
         self._scopes = scopes
@@ -177,42 +154,24 @@ class WorkerClient:
 
     async def __aenter__(self) -> "WorkerClient":
         # Resolve credentials. Explicit args (for tests) win over
-        # app_settings; app_settings wins over env vars.
+        # app_settings.
         if self._explicit_client_id is not None or self._explicit_client_secret is not None:
             client_id = self._explicit_client_id or ""
             client_secret = self._explicit_client_secret or ""
-            # Static-bearer fallback honours the env vars even when the
-            # caller passed explicit OAuth args — preserves existing
-            # operator workflows (POINDEXTER_KEY in shell rc) while a
-            # half-configured OAuth setup still gracefully degrades.
-            static_token = (
-                self._explicit_token
-                or os.getenv("POINDEXTER_KEY")
-                or os.getenv("GLADLABS_KEY")
-                or ""
-            )
         else:
             try:
-                client_id, client_secret, static_token = await _resolve_credentials(
-                    self.base_url, self._explicit_token,
-                )
+                client_id, client_secret = await _resolve_credentials(self.base_url)
             except Exception:  # noqa: BLE001
-                # DB-unreachable shouldn't break legacy env-var-only
-                # workflows. Fall through to env-only resolution.
+                # DB-unreachable still gives the OAuthClient a chance
+                # to raise its own canonical "run migrate-cli" error.
                 client_id, client_secret = "", ""
-                static_token = (
-                    self._explicit_token
-                    or os.getenv("POINDEXTER_KEY")
-                    or os.getenv("GLADLABS_KEY")
-                    or ""
-                )
 
-        if not (client_id and client_secret) and not static_token:
+        if not (client_id and client_secret):
             raise RuntimeError(
-                "No CLI credentials available. Run `poindexter auth migrate-cli` "
-                "to register an OAuth client, or set app_settings.api_token "
-                "(legacy). POINDEXTER_KEY / GLADLABS_KEY env vars are still "
-                "honoured for the static-bearer fallback."
+                "No CLI OAuth credentials configured. Run `poindexter auth "
+                "migrate-cli` to register an OAuth client. The legacy "
+                "static-Bearer fallback (POINDEXTER_KEY / GLADLABS_KEY env "
+                "vars, app_settings.api_token) was removed in #249."
             )
 
         # Lazy import so the CLI doesn't hard-depend on the worker
@@ -224,7 +183,6 @@ class WorkerClient:
             base_url=self.base_url,
             client_id=client_id,
             client_secret=client_secret,
-            static_bearer_token=static_token,
             scopes=self._scopes,
         )
         # Backwards-compat introspection: callers that read

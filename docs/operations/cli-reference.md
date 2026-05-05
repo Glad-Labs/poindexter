@@ -240,7 +240,7 @@ poindexter settings list --limit 100 --json-output
 
 ```bash
 poindexter settings get qa_final_score_threshold
-poindexter settings get api_token --json-output
+poindexter settings get cli_oauth_client_id --json-output
 ```
 
 ### `settings set <key> <value>`

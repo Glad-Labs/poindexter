@@ -493,9 +493,11 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c 
   "SELECT key FROM app_settings WHERE is_secret=TRUE AND value=''"
 # Expected: empty after you've re-seeded all the secrets you actually use.
 
-# Trigger a real downstream that uses a secret (e.g. Telegram alert)
+# Trigger a real downstream that uses a secret (e.g. Telegram alert).
+# Mint a fresh JWT for the CLI client first — see `poindexter auth
+# mint-token --client-id <pdx_xxx> --client-secret <secret>`.
 curl -s -X POST http://localhost:8002/api/test/notify-operator \
-  -H "Authorization: Bearer $(grep ^api_token ~/.poindexter/bootstrap.toml | cut -d'"' -f2)"
+  -H "Authorization: Bearer $JWT"
 # Expected: Telegram message arrives.
 ```
 

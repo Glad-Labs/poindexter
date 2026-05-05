@@ -502,9 +502,8 @@ def migrate_cli(name: str, scopes: str) -> None:
     * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
     * ``app_settings.cli_oauth_client_id`` + ``cli_oauth_client_secret``
       hold the new credentials (encrypted via plugins.secrets).
-    * The CLI's ``WorkerClient`` automatically prefers the new OAuth
-      path; the static-Bearer fallback stays available until Phase 3
-      (#249) removes it.
+    * The CLI's ``WorkerClient`` uses the OAuth path for every call
+      (the static-Bearer fallback was removed in Phase 3 / #249).
 
     Idempotent in the sense that re-running creates a *new* client +
     secret pair (the previous client stays registered until you
@@ -535,7 +534,7 @@ def migrate_cli(name: str, scopes: str) -> None:
         click.echo(f"  app_settings:   {CLI_CLIENT_ID_KEY} + {CLI_CLIENT_SECRET_KEY}")
         click.echo("")
         click.echo("The CLI will use OAuth on the next invocation. The legacy")
-        click.echo("static-Bearer fallback stays active until Phase 3 (#249).")
+        click.echo("static-Bearer fallback was removed in Phase 3 (#249).")
 
     _run(_impl())
 
@@ -561,10 +560,8 @@ def migrate_mcp(name: str, scopes: str) -> None:
     * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
     * ``app_settings.mcp_oauth_client_id`` + ``mcp_oauth_client_secret``
       hold the new credentials (encrypted via plugins.secrets).
-    * The MCP server's ``_api()`` calls automatically prefer the new
-      OAuth path on the next process restart; the static-Bearer
-      fallback (``app_settings.api_token`` and ``POINDEXTER_API_TOKEN``
-      env) stays available until Phase 3 retires it.
+    * The MCP server's ``_api()`` calls use OAuth on the next process
+      restart. The static-Bearer fallback was removed in Phase 3 (#249).
 
     Re-running creates a fresh client + secret pair; revoke the old one
     with ``poindexter auth revoke-client --client-id ...``.
@@ -631,9 +628,8 @@ def migrate_mcp_gladlabs(name: str, scopes: str) -> None:
     * ``app_settings.mcp_gladlabs_oauth_client_id`` +
       ``mcp_gladlabs_oauth_client_secret`` hold the new credentials
       (encrypted via plugins.secrets).
-    * The gladlabs MCP server's worker-API calls (when added) will use
-      OAuth automatically; the static-Bearer fallback (api_token /
-      POINDEXTER_API_TOKEN) stays available until Phase 3.
+    * The gladlabs MCP server's worker-API calls use OAuth. The
+      static-Bearer fallback was removed in Phase 3 (#249).
 
     Distinct from ``migrate-mcp`` because the operator MCP is a separate
     consumer — different scopes, separate audit trail, independent
@@ -706,8 +702,8 @@ def migrate_openclaw(name: str, scopes: str) -> None:
       (cached at ``~/.openclaw/.token-cache-<client_id>`` until 30s
       before exp).
 
-    The legacy ``POINDEXTER_KEY`` static-Bearer fallback stays available
-    until Phase 3 (#249) — the helper prefers OAuth when both are set.
+    The legacy ``POINDEXTER_KEY`` static-Bearer fallback was removed in
+    Phase 3 (#249).
     """
     _bootstrap_path_for_secret_key()
     scope_list = [s.strip() for s in scopes.split() if s.strip()]
@@ -751,7 +747,7 @@ def migrate_openclaw(name: str, scopes: str) -> None:
         click.echo("")
         click.echo("Skill scripts source skills/openclaw/_lib/get_token.sh,")
         click.echo("which mints + caches a JWT per OAuth client. The legacy")
-        click.echo("POINDEXTER_KEY fallback stays active until Phase 3 (#249).")
+        click.echo("POINDEXTER_KEY fallback was removed in Phase 3 (#249).")
 
     _run(_impl())
 
@@ -960,8 +956,8 @@ def migrate_brain(name: str, scopes: str) -> None:
     * A new ``oauth_clients`` row exists with ``client_credentials`` grant.
     * ``app_settings.brain_oauth_client_id`` + ``brain_oauth_client_secret``
       hold the new credentials (encrypted via plugins.secrets).
-    * The brain daemon's HTTP probes will use OAuth on the next cycle;
-      the static-Bearer fallback stays available until Phase 3.
+    * The brain daemon's HTTP probes use OAuth on the next cycle. The
+      static-Bearer fallback was removed in Phase 3 (#249).
 
     Re-running creates a fresh client + secret pair; revoke the old one
     afterwards with ``poindexter auth revoke-client --client-id ...``.
@@ -1015,7 +1011,7 @@ def _write_bootstrap_oauth_creds(client_id: str, client_secret: str) -> bool:
     pool is opened). Storing the creds in both places lets those
     scripts use OAuth without an extra DB roundtrip. The values are
     plaintext on disk in bootstrap.toml — same risk profile as the
-    legacy ``api_token`` line that already lives there.
+    other secrets that live there.
     """
     import re
     from pathlib import Path
@@ -1091,11 +1087,10 @@ def migrate_scripts(name: str, scopes: str, no_bootstrap: bool) -> None:
       (encrypted via plugins.secrets).
     * Unless ``--no-bootstrap`` is passed, ``~/.poindexter/bootstrap.toml``
       gets the same two keys in plaintext so host-side scripts that
-      don't open a DB pool can still mint JWTs (matches the existing
-      ``api_token`` plaintext line already in bootstrap.toml).
-    * Every script in ``scripts/`` that has been migrated to
-      ``ScriptsOAuthClient`` will pick up OAuth on its next start;
-      legacy static-Bearer fallback stays active until Phase 3 (#249).
+      don't open a DB pool can still mint JWTs.
+    * Every script in ``scripts/`` that uses ``ScriptsOAuthClient``
+      will pick up OAuth on its next start. The legacy static-Bearer
+      fallback was removed in Phase 3 (#249).
 
     A single shared client per operator covers all migrated scripts —
     per-script clients would be overkill at our scale and create
@@ -1141,6 +1136,6 @@ def migrate_scripts(name: str, scopes: str, no_bootstrap: bool) -> None:
         click.echo("")
         click.echo("Migrated scripts (telegram-bot.py, discord-voice-bot.py,")
         click.echo("daemon.py, ...) will use OAuth on next start. The legacy")
-        click.echo("static-Bearer fallback stays active until Phase 3 (#249).")
+        click.echo("static-Bearer fallback was removed in Phase 3 (#249).")
 
     _run(_impl())

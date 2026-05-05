@@ -14,12 +14,11 @@ Behaviour matches the worker helper exactly:
 - Caches by reading the JWT's ``exp`` claim (no signature verification
   client-side — brain doesn't have the signing key) and refreshing
   ~30 s before the deadline.
-- Falls back to the legacy static Bearer (``app_settings.api_token``)
-  when OAuth credentials aren't configured, so the brain keeps working
-  through the migration window.
 - 401-aware: invalidates the cache and retries once on a 401 from
   any wrapped downstream call.
 - Async-only.
+- OAuth credentials are required. The legacy static-Bearer fallback
+  was removed in Phase 3 (#249).
 
 The shared wire format is the only contract; if the worker helper's
 behaviour is updated, this file needs the matching update — there's
@@ -121,14 +120,12 @@ class BrainOAuthClient:
         *,
         client_id: str = "",
         client_secret: str = "",
-        static_bearer_token: str = "",
         scopes: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
-        self._static_bearer_token = static_bearer_token
         self._scopes = scopes
         self._timeout = timeout
 
@@ -176,14 +173,11 @@ class BrainOAuthClient:
 
     async def get_token(self) -> str:
         if not self.using_oauth:
-            if not self._static_bearer_token:
-                raise RuntimeError(
-                    "BrainOAuthClient: neither client_id/client_secret nor a "
-                    "static bearer token was configured. Run "
-                    "`poindexter auth migrate-brain`, or set "
-                    "app_settings.api_token."
-                )
-            return self._static_bearer_token
+            raise RuntimeError(
+                "BrainOAuthClient: client_id/client_secret are required. "
+                "Run `poindexter auth migrate-brain` to provision an "
+                "OAuth client. Static-Bearer fallback was removed in #249."
+            )
 
         cached = self._cached
         now = time.time()
@@ -251,7 +245,7 @@ class BrainOAuthClient:
         headers["Authorization"] = f"Bearer {token}"
 
         resp = await http.request(method, url, headers=headers, **kwargs)
-        if resp.status_code == 401 and retry_on_401 and self.using_oauth:
+        if resp.status_code == 401 and retry_on_401:
             logger.info(
                 "[BRAIN.OAUTH] 401 on %s %s — invalidating cache and retrying",
                 method, url,
@@ -288,7 +282,6 @@ async def oauth_client_from_pool(
     base_url: str,
     client_id_key: str = BRAIN_CLIENT_ID_KEY,
     client_secret_key: str = BRAIN_CLIENT_SECRET_KEY,
-    api_token_key: str = "api_token",
     scopes: str | None = None,
     timeout: float = 30.0,
 ) -> BrainOAuthClient:
@@ -302,12 +295,10 @@ async def oauth_client_from_pool(
     """
     client_id = await read_app_setting(pool, client_id_key, "")
     client_secret = await read_app_setting(pool, client_secret_key, "")
-    api_token = await read_app_setting(pool, api_token_key, "")
     return BrainOAuthClient(
         base_url=base_url,
         client_id=client_id,
         client_secret=client_secret,
-        static_bearer_token=api_token,
         scopes=scopes,
         timeout=timeout,
     )

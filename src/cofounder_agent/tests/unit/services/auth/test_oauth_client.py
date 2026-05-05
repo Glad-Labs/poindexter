@@ -1,6 +1,6 @@
 """Unit tests for ``services.auth.oauth_client``.
 
-Covers the five behaviours the helper is responsible for:
+Covers the four behaviours the helper is responsible for (post-#249):
 
 * mint+cache — first call mints a JWT, second call returns the same
   token from cache.
@@ -10,8 +10,9 @@ Covers the five behaviours the helper is responsible for:
   segment without verifying the signature.
 * 401-invalidate-and-retry — a 401 from a downstream call drops the
   cached token and retries once with a freshly minted one.
-* legacy fallback — when client_id/secret are blank, ``get_token()``
-  hands back the static bearer instead.
+* fail-loud — when client_id/secret are blank, ``get_token()`` raises
+  with a pointer to ``poindexter auth migrate-cli``. The static-Bearer
+  fallback was removed in Phase 3 (Glad-Labs/poindexter#249).
 
 Token endpoint and downstream API are stubbed via httpx's
 ``MockTransport`` so no real network or DB is touched.
@@ -235,45 +236,23 @@ class TestOAuthClient401Retry:
         await client.aclose()
 
 
-class TestOAuthClientLegacyFallback:
-    """When OAuth credentials are blank, fall through to the static
-    bearer. ``get_token`` returns the bearer as-is, no minting."""
+class TestOAuthClientFailLoud:
+    """When OAuth credentials are blank, ``get_token`` raises loudly —
+    the static-Bearer fallback was removed in Phase 3 (#249)."""
 
     @pytest.mark.asyncio
-    async def test_static_bearer_used_when_oauth_unconfigured(self):
-        called = False
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            nonlocal called
-            called = True
-            # If we hit /token in legacy mode, the test should fail —
-            # only the downstream API path is expected.
-            if request.url.path == "/token":
-                pytest.fail("/token should not be hit in legacy fallback")
-            assert request.headers["Authorization"] == "Bearer legacy-static-token"
-            return httpx.Response(200, json={"ok": True})
-
-        client = OAuthClient(
-            base_url="http://test",
-            client_id="",
-            client_secret="",
-            static_bearer_token="legacy-static-token",
-        )
-        client._http = httpx.AsyncClient(  # noqa: SLF001
-            transport=httpx.MockTransport(handler), base_url="http://test",
-        )
-        assert client.using_oauth is False
-        token = await client.get_token()
-        assert token == "legacy-static-token"
-        resp = await client.get("/api/posts")
-        assert resp.status_code == 200
-        assert called is True
-        await client.aclose()
-
-    @pytest.mark.asyncio
-    async def test_no_credentials_at_all_raises(self):
+    async def test_no_credentials_raises_with_migrate_pointer(self):
         client = OAuthClient(base_url="http://test")
-        with pytest.raises(RuntimeError, match="neither client_id"):
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
+            await client.get_token()
+
+    @pytest.mark.asyncio
+    async def test_partial_credentials_raises(self):
+        """Only client_id, no secret → still no fallback path post-#249."""
+        client = OAuthClient(
+            base_url="http://test", client_id="pdx_test", client_secret="",
+        )
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
             await client.get_token()
 
 
@@ -291,7 +270,6 @@ class TestSecretReaderConstructor:
             return {
                 "cli_oauth_client_id": "pdx_from_reader",
                 "cli_oauth_client_secret": "reader-secret",
-                "api_token": "reader-fallback",
             }.get(key, "")
 
         client = await oauth_client_from_secret_reader(
@@ -301,9 +279,9 @@ class TestSecretReaderConstructor:
             client_secret_key="cli_oauth_client_secret",
         )
         assert client.using_oauth is True
+        # Post-#249 the reader is no longer asked for "api_token".
         assert seen_keys == [
             "cli_oauth_client_id",
             "cli_oauth_client_secret",
-            "api_token",
         ]
         await client.aclose()

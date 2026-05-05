@@ -145,29 +145,10 @@ class TestBrainOAuthClient:
         await c.aclose()
 
     @pytest.mark.asyncio
-    async def test_legacy_static_bearer_when_oauth_unset(self):
-        def handler(request: httpx.Request) -> httpx.Response:
-            assert request.url.path == "/api/health"
-            assert request.headers["Authorization"] == "Bearer brain-legacy"
-            return httpx.Response(200, json={"ok": True})
-
-        c = oac.BrainOAuthClient(
-            base_url="http://test",
-            client_id="", client_secret="",
-            static_bearer_token="brain-legacy",
-        )
-        c._http = httpx.AsyncClient(  # noqa: SLF001
-            transport=httpx.MockTransport(handler), base_url="http://test",
-        )
-        assert c.using_oauth is False
-        resp = await c.get("/api/health")
-        assert resp.status_code == 200
-        await c.aclose()
-
-    @pytest.mark.asyncio
     async def test_no_credentials_raises(self):
+        """Phase 3 (#249): no static-Bearer fallback. Fail loud."""
         c = oac.BrainOAuthClient(base_url="http://test")
-        with pytest.raises(RuntimeError, match="neither client_id"):
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
             await c.get_token()
 
 
@@ -185,7 +166,6 @@ class TestPoolConstructor:
         rows_by_key = {
             "brain_oauth_client_id": {"value": "pdx_brain123", "is_secret": True},
             "brain_oauth_client_secret": {"value": "bsecret", "is_secret": True},
-            "api_token": {"value": "legacy-token", "is_secret": True},
         }
 
         async def _fetchrow(_sql, key):
@@ -206,14 +186,12 @@ class TestPoolConstructor:
         assert client.using_oauth is True
         assert client._client_id == "pdx_brain123"  # noqa: SLF001
         assert client._client_secret == "bsecret"  # noqa: SLF001
-        assert client._static_bearer_token == "legacy-token"  # noqa: SLF001
         await client.aclose()
 
     @pytest.mark.asyncio
-    async def test_falls_back_when_oauth_keys_missing(self):
+    async def test_raises_when_oauth_keys_missing(self):
+        """Phase 3 (#249): no api_token fallback in pool constructor."""
         async def _fetchrow(_sql, key):
-            if key == "api_token":
-                return {"value": "legacy-token", "is_secret": False}
             return None
 
         pool = MagicMock()
@@ -224,6 +202,6 @@ class TestPoolConstructor:
             pool, base_url="http://test",
         )
         assert client.using_oauth is False
-        token = await client.get_token()
-        assert token == "legacy-token"
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
+            await client.get_token()
         await client.aclose()

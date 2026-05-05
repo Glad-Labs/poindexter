@@ -230,44 +230,16 @@ class TestScriptsOAuthClient401Retry:
 
 
 # ---------------------------------------------------------------------------
-# Legacy fallback
+# Fail-loud when OAuth credentials are missing (Phase 3 #249)
 # ---------------------------------------------------------------------------
 
 
-class TestScriptsOAuthClientLegacyFallback:
-    @pytest.mark.asyncio
-    async def test_static_bearer_used_when_oauth_unconfigured(self):
-        called = False
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            nonlocal called
-            called = True
-            if request.url.path == "/token":
-                pytest.fail("/token should not be hit in legacy fallback")
-            assert request.headers["Authorization"] == "Bearer legacy-static-token"
-            return httpx.Response(200, json={"ok": True})
-
-        client = ScriptsOAuthClient(
-            base_url="http://test",
-            client_id="",
-            client_secret="",
-            static_bearer_token="legacy-static-token",
-        )
-        client._http = httpx.AsyncClient(  # noqa: SLF001
-            transport=httpx.MockTransport(handler), base_url="http://test",
-        )
-        assert client.using_oauth is False
-        token = await client.get_token()
-        assert token == "legacy-static-token"
-        resp = await client.get("/api/posts")
-        assert resp.status_code == 200
-        assert called is True
-        await client.aclose()
-
+class TestScriptsOAuthClientFailLoud:
     @pytest.mark.asyncio
     async def test_no_credentials_at_all_raises(self):
+        """Phase 3 (#249): no static-Bearer fallback. Fail loud."""
         client = ScriptsOAuthClient(base_url="http://test")
-        with pytest.raises(RuntimeError, match="neither client_id"):
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
             await client.get_token()
 
 
@@ -308,9 +280,12 @@ class TestBootstrapValueReader:
 
 
 class TestResolveCredentialsResolutionOrder:
-    """The resolver layers four sources: explicit args >
-    bootstrap.toml > app_settings > legacy api_token. Walk through
-    each layer to make sure higher-priority values win."""
+    """The resolver layers three sources: explicit args >
+    bootstrap.toml > app_settings. Walk through each layer to make
+    sure higher-priority values win.
+
+    Phase 3 (#249) removed the legacy ``api_token`` fallback layer.
+    """
 
     @pytest.mark.asyncio
     async def test_explicit_args_win_over_everything(self, tmp_path, monkeypatch):
@@ -328,7 +303,7 @@ class TestResolveCredentialsResolutionOrder:
         import _oauth_helper as helper
         importlib.reload(helper)
 
-        client_id, client_secret, static_token = await helper.resolve_credentials(
+        client_id, client_secret = await helper.resolve_credentials(
             pool=None,
             explicit_client_id="explicit-id",
             explicit_client_secret="explicit-secret",
@@ -343,8 +318,7 @@ class TestResolveCredentialsResolutionOrder:
         bootstrap_dir.mkdir(parents=True, exist_ok=True)
         (bootstrap_dir / "bootstrap.toml").write_text(
             'scripts_oauth_client_id = "pdx_from_toml"\n'
-            'scripts_oauth_client_secret = "toml-secret"\n'
-            'api_token = "legacy-fallback"\n',
+            'scripts_oauth_client_secret = "toml-secret"\n',
             encoding="utf-8",
         )
         import importlib
@@ -352,12 +326,11 @@ class TestResolveCredentialsResolutionOrder:
         import _oauth_helper as helper
         importlib.reload(helper)
 
-        client_id, client_secret, static_token = await helper.resolve_credentials(
+        client_id, client_secret = await helper.resolve_credentials(
             pool=None,
         )
         assert client_id == "pdx_from_toml"
         assert client_secret == "toml-secret"
-        assert static_token == "legacy-fallback"
 
     @pytest.mark.asyncio
     async def test_app_settings_consulted_when_bootstrap_blank(self, tmp_path, monkeypatch):
@@ -378,7 +351,6 @@ class TestResolveCredentialsResolutionOrder:
             mapping = {
                 "scripts_oauth_client_id": ("pdx_from_db", False),
                 "scripts_oauth_client_secret": ("db-secret", False),
-                "api_token": ("legacy-from-db", False),
             }
             value, is_secret = mapping.get(key, (None, False))
             if value is None:
@@ -389,15 +361,14 @@ class TestResolveCredentialsResolutionOrder:
             fetchrow = staticmethod(_fetchrow)
 
         pool = _StubPool()
-        client_id, client_secret, static_token = await helper.resolve_credentials(pool=pool)
+        client_id, client_secret = await helper.resolve_credentials(pool=pool)
 
         assert client_id == "pdx_from_db"
         assert client_secret == "db-secret"
-        assert static_token == "legacy-from-db"
-        # All three keys were queried (id, secret, api_token).
+        # Only the OAuth keys are queried — api_token is no longer read (#249).
         assert "scripts_oauth_client_id" in seen_keys
         assert "scripts_oauth_client_secret" in seen_keys
-        assert "api_token" in seen_keys
+        assert "api_token" not in seen_keys
 
     @pytest.mark.asyncio
     async def test_no_creds_anywhere_returns_empty(self, tmp_path, monkeypatch):
@@ -407,9 +378,8 @@ class TestResolveCredentialsResolutionOrder:
         import _oauth_helper as helper
         importlib.reload(helper)
 
-        client_id, client_secret, static_token = await helper.resolve_credentials(
+        client_id, client_secret = await helper.resolve_credentials(
             pool=None,
         )
         assert client_id == ""
         assert client_secret == ""
-        assert static_token == ""

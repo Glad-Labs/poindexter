@@ -71,7 +71,8 @@ def _first_env(*names: str) -> str | None:
 # Module globals — populated from env at import (lazy, no exit). Validated
 # in setup_runtime(); read at call time inside individual tool functions.
 API_URL: str | None = _first_env("POINDEXTER_API_URL", "GLADLABS_API_URL")
-API_TOKEN: str | None = _first_env("POINDEXTER_API_TOKEN", "GLADLABS_API_TOKEN")
+# POINDEXTER_API_TOKEN was removed in Phase 3 (#249) — worker auth uses
+# OAuth JWTs minted via app_settings.mcp_oauth_client_*.
 OLLAMA_URL: str | None = _first_env("OLLAMA_URL")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 LOCAL_DB_DSN: str | None = None  # Populated by setup_runtime()
@@ -132,14 +133,12 @@ def setup_runtime() -> None:
     required value is missing; callers are expected to surface that
     cleanly (operator-notify + exit for stdio, return 500 for HTTP).
 
-    Auth note (#243): ``POINDEXTER_API_TOKEN`` is no longer strictly
-    required — once ``poindexter auth migrate-mcp`` has run, the MCP
-    tools mint OAuth JWTs from app_settings and the env token only
-    matters as a back-compat fallback. We log a warning when both
-    paths look unconfigured (the token is blank AND we can't see the
-    OAuth credentials), but don't fail at startup; the OAuth helper
-    raises loudly on first ``_api`` call with a pointer to the
-    migration command.
+    Auth note (#243, finalised in #249): MCP tools mint OAuth JWTs
+    from app_settings (``mcp_oauth_client_id`` / ``mcp_oauth_client_secret``).
+    ``POINDEXTER_API_TOKEN`` is no longer consulted — Phase 3 removed
+    the static-Bearer fallback. Run ``poindexter auth migrate-mcp`` if
+    the OAuth client hasn't been provisioned; the helper raises loudly
+    on the first ``_api`` call with a pointer to the migration command.
     """
     global LOCAL_DB_DSN
     missing = []
@@ -156,16 +155,11 @@ def setup_runtime() -> None:
             "from app_settings before mounting (see issue #237)."
         )
 
-    if not API_TOKEN:
-        # Soft-warn rather than fail: the OAuth helper reads creds from
-        # app_settings on first ``_api`` call and the migration may
-        # already have happened. If it hasn't, the OAuth helper raises
-        # with a clear pointer to ``poindexter auth migrate-mcp``.
-        logger.warning(
-            "POINDEXTER_API_TOKEN not set — assuming OAuth migration "
-            "(`poindexter auth migrate-mcp`) has run. If it hasn't, "
-            "the first worker-API call will fail with a clear error.",
-        )
+    # POINDEXTER_API_TOKEN is no longer consulted (Phase 3 / #249).
+    # The OAuth helper reads ``mcp_oauth_client_id`` /
+    # ``mcp_oauth_client_secret`` from app_settings on the first
+    # ``_api`` call and raises loudly with a pointer to
+    # ``poindexter auth migrate-mcp`` if they're missing.
 
     if LOCAL_DB_DSN is None:
         # Route through the bootstrap resolver so
@@ -210,13 +204,13 @@ async def _get_http() -> httpx.AsyncClient:
 async def _get_oauth() -> McpOAuthClient:
     """Get or build the worker-API OAuth client.
 
-    Resolution (Glad-Labs/poindexter#243):
+    Resolution (Glad-Labs/poindexter#243, finalised in #249):
 
     1. ``app_settings.mcp_oauth_client_id`` + ``mcp_oauth_client_secret``
        → mints + caches a JWT against ``POST /token``.
-    2. ``app_settings.api_token`` (legacy, encrypted) → static Bearer.
-    3. ``POINDEXTER_API_TOKEN`` env var (still set by ``http_server.py``
-       and Claude Desktop config) → static Bearer fallback.
+    2. Otherwise raises loudly — run ``poindexter auth migrate-mcp`` to
+       provision the OAuth client. The legacy static-Bearer fallback was
+       removed in Phase 3 (#249).
 
     Re-uses the same asyncpg pool the rest of this module uses, so the
     credential read is one extra DB round-trip on first call.
@@ -229,8 +223,6 @@ async def _get_oauth() -> McpOAuthClient:
             base_url=API_URL or "",
             client_id_key=MCP_CLIENT_ID_KEY,
             client_secret_key=MCP_CLIENT_SECRET_KEY,
-            api_token_key="api_token",
-            static_bearer_fallback=API_TOKEN or "",
             # Don't request a scope subset — let the client use its full
             # grant. The migration helper provisions ``api:read api:write``
             # by default; tighter scoping (e.g. mcp:read for a read-only

@@ -221,24 +221,23 @@ class TestBashHelper:
         assert result.returncode == 0
         assert "STALE" in result.stdout
 
-    def test_legacy_static_bearer_fallback(self):
-        result = self._bash(
-            "get_poindexter_token",
-            env_extra={"POINDEXTER_KEY": "legacy-token-abc"},
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == "legacy-token-abc"
+    def test_legacy_static_bearer_no_longer_accepted(self):
+        """Phase 3 regression (Glad-Labs/poindexter#249).
 
-    def test_legacy_gladlabs_key_fallback(self):
-        """The historical ``GLADLABS_KEY`` env var also resolves —
-        it's the renamed version of POINDEXTER_KEY and some old
-        OpenClaw configs still set it."""
+        ``POINDEXTER_KEY`` and ``GLADLABS_KEY`` used to populate a
+        static-Bearer slot. The helper now refuses to use them — the
+        operator must run ``poindexter auth migrate-openclaw``.
+        """
         result = self._bash(
             "get_poindexter_token",
-            env_extra={"GLADLABS_KEY": "legacy-gladlabs-token"},
+            env_extra={
+                "POINDEXTER_KEY": "legacy-token-abc",
+                "GLADLABS_KEY": "another-legacy",
+            },
         )
-        assert result.returncode == 0
-        assert result.stdout.strip() == "legacy-gladlabs-token"
+        assert result.returncode != 0
+        assert "no auth configured" in result.stderr.lower()
+        assert "migrate-openclaw" in result.stderr
 
     def test_no_creds_at_all_exits_nonzero(self):
         result = self._bash("get_poindexter_token")

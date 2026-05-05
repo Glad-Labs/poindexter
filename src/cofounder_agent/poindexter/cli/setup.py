@@ -235,31 +235,6 @@ async def _check_telegram(token: str, chat_id: str) -> tuple[bool, str]:
         return False, f"{type(e).__name__}: {e}"
 
 
-async def _seed_minimum_settings(dsn: str, values: dict[str, str]) -> int:
-    """Upsert a small set of app_settings keys. Returns count written."""
-    import asyncpg
-
-    conn = await asyncpg.connect(dsn, timeout=8)
-    try:
-        n = 0
-        for key, value in values.items():
-            if not value:
-                continue
-            await conn.execute(
-                """
-                INSERT INTO app_settings (key, value)
-                VALUES ($1, $2)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                """,
-                key,
-                value,
-            )
-            n += 1
-        return n
-    finally:
-        await conn.close()
-
-
 # ---------------------------------------------------------------------------
 # --auto: spin a local Docker Postgres (Phase 4)
 # ---------------------------------------------------------------------------
@@ -425,11 +400,17 @@ def _auto_provision() -> str:
 
 
 def _generate_secrets() -> dict[str, str]:
-    """Generate the machine secrets that every stack needs."""
+    """Generate the machine secrets that every stack needs.
+
+    Note: ``api_token`` is intentionally NOT generated here — Phase 3
+    (Glad-Labs/poindexter#249) removed the static-Bearer auth path.
+    Worker authentication uses OAuth 2.1 client credentials only; the
+    setup wizard provisions an initial OAuth client via
+    ``_provision_initial_oauth_client`` after migrations have run.
+    """
     import secrets
 
     return {
-        "api_token": f"poindexter-{secrets.token_hex(24)}",
         "local_postgres_password": secrets.token_hex(32),
         "grafana_password": secrets.token_hex(32),
         "pgadmin_password": secrets.token_hex(32),
@@ -460,13 +441,14 @@ def _prompt_defaults() -> dict[str, str]:
     secrets = _generate_secrets()
     click.echo()
     click.secho("Generated secrets (stored in bootstrap.toml):", fg="cyan")
-    click.echo(f"  API token:  {secrets['api_token'][:20]}...")
     click.echo(f"  Postgres:   {secrets['local_postgres_password'][:12]}...")
     click.echo(f"  Grafana:    {secrets['grafana_password'][:12]}...")
     click.echo(f"  pgAdmin:    {secrets['pgadmin_password'][:12]}...")
     click.echo(f"  GlitchTip:  {secrets['glitchtip_secret_key'][:12]}...")
     click.echo()
     click.echo(
+        "Worker auth uses OAuth 2.1 — an initial client is provisioned\n"
+        "automatically after migrations run (no manual register-client needed).\n"
         "Notification channels (Telegram, Discord) are set via the\n"
         "settings API after first boot — not in bootstrap.toml."
     )
@@ -559,26 +541,97 @@ def setup_command(db_url: str | None, auto: bool, check: bool, force: bool) -> N
     click.secho(f"OK — wrote {path}", fg="green")
 
     click.echo()
-    click.secho("4/4 — seeding app_settings…", fg="cyan")
+    click.secho("4/4 — provisioning initial OAuth client…", fg="cyan")
     if migrations_ok:
-        seed = {
-            "api_token": values.get("api_token", ""),
-        }
         try:
-            n = asyncio.run(_seed_minimum_settings(values["database_url"], seed))
-            click.secho(f"OK — wrote {n} settings keys", fg="green")
-        except Exception as e:
-            click.secho(f"Could not seed settings: {e}", fg="yellow")
+            client_id, client_secret = asyncio.run(
+                _provision_initial_oauth_client(values["database_url"])
+            )
+            click.secho("OK — initial OAuth client provisioned", fg="green")
+            click.echo(f"  client_id:      {client_id}")
+            click.echo(f"  client_secret:  {client_secret}")
             click.echo(
-                "bootstrap.toml is saved; you can seed app_settings later via "
-                "`poindexter settings set`."
+                "  app_settings:   cli_oauth_client_id + cli_oauth_client_secret"
+            )
+            click.echo()
+            click.secho(
+                "  Capture the client_secret NOW — it is not recoverable.",
+                fg="yellow",
+            )
+        except Exception as e:  # noqa: BLE001
+            click.secho(f"Could not provision OAuth client: {e}", fg="yellow")
+            click.echo(
+                "bootstrap.toml is saved; provision an OAuth client later via "
+                "`poindexter auth migrate-cli`."
             )
     else:
-        click.echo("Skipped — migrations haven't run yet.")
+        click.echo(
+            "Skipped — migrations haven't run yet. Run `poindexter auth "
+            "migrate-cli` after the worker boots once."
+        )
 
     click.echo()
     click.secho("Setup complete.", fg="green", bold=True)
     click.echo("Start the worker and brain daemon — they'll read from bootstrap.toml.")
+
+
+async def _provision_initial_oauth_client(dsn: str) -> tuple[str, str]:
+    """Provision a fresh OAuth client for the CLI on first setup.
+
+    Mirrors the ``_provision_consumer_client`` helper in
+    ``cli/auth.py`` but inlined here so the setup wizard doesn't
+    pull the larger auth module's import graph during a fresh
+    install. Encrypts secrets via ``plugins.secrets.set_secret``.
+
+    The wizard creates a CLI OAuth client by default — every other
+    consumer (brain, mcp, scripts, openclaw, grafana) gets its own
+    client via the matching ``poindexter auth migrate-*`` command,
+    which the operator runs once per consumer.
+    """
+    import asyncpg
+
+    from mcp.shared.auth import OAuthClientInformationFull
+    from pydantic import AnyUrl
+    from services.auth.oauth_issuer import (
+        generate_client_id,
+        generate_client_secret,
+    )
+    from services.auth.oauth_provider import PoindexterOAuthProvider
+    from plugins.secrets import set_secret
+
+    client_id = generate_client_id()
+    client_secret = generate_client_secret()
+
+    client_info = OAuthClientInformationFull(
+        client_id=client_id,
+        client_secret=client_secret,
+        # Headless client; localhost placeholder satisfies the SDK's
+        # min_length=1 requirement on redirect_uris but is never used.
+        redirect_uris=[AnyUrl("http://localhost/")],
+        token_endpoint_auth_method="client_secret_post",
+        grant_types=["client_credentials"],
+        response_types=["code"],
+        scope="api:read api:write",
+        client_name="poindexter-cli (initial)",
+    )
+
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    try:
+        provider = PoindexterOAuthProvider(pool)
+        await provider.register_client(client_info)
+        async with pool.acquire() as conn:
+            await set_secret(
+                conn, "cli_oauth_client_id", client_id,
+                description="OAuth client_id for poindexter CLI (initial setup #249)",
+            )
+            await set_secret(
+                conn, "cli_oauth_client_secret", client_secret,
+                description="OAuth client_secret for poindexter CLI (initial setup #249)",
+            )
+    finally:
+        await pool.close()
+
+    return client_id, client_secret
 
 
 def _mask_dsn(dsn: str) -> str:

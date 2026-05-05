@@ -22,9 +22,9 @@ from ``services/``. Only stdlib + ``httpx`` + ``asyncpg`` are required
   worker's issuer uses.
 - 401 from any wrapped downstream call invalidates the cache and
   retries exactly once.
-- Falls back to the legacy static Bearer when OAuth credentials are
-  empty, so scripts ship the migration code and defer running
-  ``poindexter auth migrate-scripts`` until the operator is ready.
+- OAuth credentials are required. The legacy static-Bearer fallback
+  (``app_settings.api_token`` / bootstrap.toml ``api_token``) was
+  removed in Phase 3 (#249).
 
 ## Credential resolution order
 
@@ -39,9 +39,7 @@ asyncpg + app_settings.
 2. ``~/.poindexter/bootstrap.toml`` keys
    ``scripts_oauth_client_id`` / ``scripts_oauth_client_secret``.
 3. ``app_settings`` table (decrypted via pgcrypto, mirroring the brain).
-4. Legacy static Bearer from ``app_settings.api_token`` or the
-   ``api_token`` field in ``bootstrap.toml``.
-5. Failing all of the above, ``get_token()`` raises with a pointer to
+4. Failing all of the above, ``get_token()`` raises with a pointer to
    ``poindexter auth migrate-scripts``.
 """
 
@@ -214,14 +212,12 @@ class ScriptsOAuthClient:
         *,
         client_id: str = "",
         client_secret: str = "",
-        static_bearer_token: str = "",
         scopes: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
-        self._static_bearer_token = static_bearer_token
         self._scopes = scopes
         self._timeout = timeout
 
@@ -269,14 +265,11 @@ class ScriptsOAuthClient:
 
     async def get_token(self) -> str:
         if not self.using_oauth:
-            if not self._static_bearer_token:
-                raise RuntimeError(
-                    "ScriptsOAuthClient: neither client_id/client_secret "
-                    "nor a static bearer token was configured. Run "
-                    "`poindexter auth migrate-scripts`, or set "
-                    "app_settings.api_token."
-                )
-            return self._static_bearer_token
+            raise RuntimeError(
+                "ScriptsOAuthClient: client_id/client_secret are required. "
+                "Run `poindexter auth migrate-scripts` to provision an "
+                "OAuth client. Static-Bearer fallback was removed in #249."
+            )
 
         cached = self._cached
         now = time.time()
@@ -346,7 +339,7 @@ class ScriptsOAuthClient:
         headers["Authorization"] = f"Bearer {token}"
 
         resp = await http.request(method, url, headers=headers, **kwargs)
-        if resp.status_code == 401 and retry_on_401 and self.using_oauth:
+        if resp.status_code == 401 and retry_on_401:
             logger.info(
                 "[SCRIPTS.OAUTH] 401 on %s %s — invalidating cache and retrying",
                 method, url,
@@ -385,13 +378,12 @@ async def resolve_credentials(
     explicit_client_secret: str = "",
     client_id_key: str = SCRIPTS_CLIENT_ID_KEY,
     client_secret_key: str = SCRIPTS_CLIENT_SECRET_KEY,
-    api_token_key: str = "api_token",
-) -> tuple[str, str, str]:
-    """Resolve (client_id, client_secret, static_bearer_token).
+) -> tuple[str, str]:
+    """Resolve (client_id, client_secret).
 
     Resolution order matches the docstring at the top of this module:
     explicit args > bootstrap.toml > app_settings (via pool, decrypts
-    secrets) > legacy api_token.
+    secrets).
 
     ``pool`` is optional — when ``None``, only bootstrap.toml is
     consulted (useful for scripts that genuinely run without DB
@@ -407,7 +399,6 @@ async def resolve_credentials(
         client_id = _read_bootstrap_value(client_id_key)
     if not client_secret:
         client_secret = _read_bootstrap_value(client_secret_key)
-    static_token = _read_bootstrap_value(api_token_key)
 
     # Layer 3 — app_settings (decrypted)
     if pool is not None:
@@ -415,10 +406,8 @@ async def resolve_credentials(
             client_id = await read_app_setting(pool, client_id_key, "")
         if not client_secret:
             client_secret = await read_app_setting(pool, client_secret_key, "")
-        if not static_token:
-            static_token = await read_app_setting(pool, api_token_key, "")
 
-    return client_id, client_secret, static_token
+    return client_id, client_secret
 
 
 async def oauth_client_from_pool(
@@ -429,7 +418,6 @@ async def oauth_client_from_pool(
     explicit_client_secret: str = "",
     client_id_key: str = SCRIPTS_CLIENT_ID_KEY,
     client_secret_key: str = SCRIPTS_CLIENT_SECRET_KEY,
-    api_token_key: str = "api_token",
     scopes: str | None = None,
     timeout: float = 30.0,
 ) -> ScriptsOAuthClient:
@@ -439,19 +427,17 @@ async def oauth_client_from_pool(
     open an asyncpg pool to do other work. Mirrors
     ``brain.oauth_client.oauth_client_from_pool``.
     """
-    client_id, client_secret, static_token = await resolve_credentials(
+    client_id, client_secret = await resolve_credentials(
         pool,
         explicit_client_id=explicit_client_id,
         explicit_client_secret=explicit_client_secret,
         client_id_key=client_id_key,
         client_secret_key=client_secret_key,
-        api_token_key=api_token_key,
     )
     return ScriptsOAuthClient(
         base_url=base_url,
         client_id=client_id,
         client_secret=client_secret,
-        static_bearer_token=static_token,
         scopes=scopes,
         timeout=timeout,
     )
@@ -462,7 +448,6 @@ async def oauth_client_from_bootstrap_only(
     base_url: str,
     explicit_client_id: str = "",
     explicit_client_secret: str = "",
-    explicit_static_token: str = "",
     scopes: str | None = None,
     timeout: float = 30.0,
 ) -> ScriptsOAuthClient:
@@ -475,12 +460,10 @@ async def oauth_client_from_bootstrap_only(
     """
     client_id = explicit_client_id or _read_bootstrap_value(SCRIPTS_CLIENT_ID_KEY)
     client_secret = explicit_client_secret or _read_bootstrap_value(SCRIPTS_CLIENT_SECRET_KEY)
-    static_token = explicit_static_token or _read_bootstrap_value("api_token")
     return ScriptsOAuthClient(
         base_url=base_url,
         client_id=client_id,
         client_secret=client_secret,
-        static_bearer_token=static_token,
         scopes=scopes,
         timeout=timeout,
     )

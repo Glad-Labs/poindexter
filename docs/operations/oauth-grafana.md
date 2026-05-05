@@ -139,12 +139,15 @@ operator pastes the new one in — same procedure as a normal rotation.
 
 ## Troubleshooting
 
-| Symptom from Grafana                   | Likely cause                                                                                                                                                                                    |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `401 Unauthorized` on test             | Token typo, missing `Bearer ` prefix, or the token's `exp` elapsed. Re-mint and re-paste.                                                                                                       |
-| `503 Service Unavailable`              | Worker reached the static-Bearer fallback path AND `app_settings.alertmanager_webhook_token` is empty. Either mint a JWT (this guide) or `poindexter set alertmanager_webhook_token "<value>"`. |
-| Test succeeds, real alerts never fire  | Check the Grafana alert rule's `Notifications` block — the contact point must be selected.                                                                                                      |
-| Worker logs `auth=static_bearer` lines | Grafana is still using the legacy static path. Re-paste a JWT-format token into the contact-point header.                                                                                       |
+| Symptom from Grafana                  | Likely cause                                                                                                                       |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `401 Unauthorized` on test            | Token typo, missing `Bearer ` prefix, the token's `exp` elapsed, or the underlying OAuth client was revoked. Re-mint and re-paste. |
+| `503 Service Unavailable`             | `app_settings.alertmanager_webhook_token` is empty. Run `poindexter set alertmanager_webhook_token "<value>"`.                     |
+| Test succeeds, real alerts never fire | Check the Grafana alert rule's `Notifications` block — the contact point must be selected.                                         |
+
+The middleware no longer accepts static-Bearer tokens — the dual-auth
+window closed in Glad-Labs/poindexter#249. Anything in the
+contact-point header that isn't a JWT minted by this command will 401.
 
 ## See also
 
