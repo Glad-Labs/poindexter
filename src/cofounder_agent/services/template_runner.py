@@ -47,11 +47,126 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Callable, TypedDict
 
+import ormsgpack
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# State-vs-services partition (Glad-Labs/poindexter#382)
+#
+# LangGraph's checkpointer (MemorySaver, AsyncPostgresSaver) serializes the
+# entire StateGraph state via ``ormsgpack`` so it can survive worker
+# restarts. The legacy content_router code seeded live Python service
+# handles (DatabaseService, ImageService, settings_service, image_style_
+# tracker) onto the state dict — those are not msgpack-serializable, so
+# every checkpoint write raised
+#
+#   TypeError: Type is not msgpack serializable: DatabaseService
+#
+# in the checkpointer's encoder. The error was non-fatal (LangGraph
+# logged + continued) but spammed every dev_diary run.
+#
+# Fix: partition the runner's input. Pure-data values stay on the
+# StateGraph (and thus get checkpointed). Service handles ride alongside
+# in ``RunnableConfig.configurable["__services__"]``, which LangGraph
+# threads through to node functions WITHOUT serializing. The make_stage_
+# node adapter merges the services back into the legacy ``context`` dict
+# before invoking the wrapped Stage, so existing stages that read
+# ``context.get("database_service")`` keep working unchanged.
+# ---------------------------------------------------------------------------
+
+
+_CONFIG_SERVICES_KEY = "__services__"
+"""Key under ``RunnableConfig.configurable`` where service handles live.
+
+Off-limits for normal state keys; we never let a node write through this
+slot (services flow only one direction: caller → node, never node →
+state)."""
+
+
+# Well-known keys seeded by ``content_router_service`` /
+# ``run_dev_diary_post`` that always carry live service handles. We
+# always partition these out, even if the value happens to be None,
+# so the partition is deterministic and easy to reason about.
+_KNOWN_SERVICE_KEYS: frozenset[str] = frozenset({
+    "database_service",
+    "image_service",
+    "settings_service",
+    "image_style_tracker",
+    "site_config",
+})
+
+
+def _is_msgpack_serializable(value: Any) -> bool:
+    """Return True if ``value`` round-trips through ormsgpack cleanly.
+
+    Used as the fallback heuristic for keys not in
+    ``_KNOWN_SERVICE_KEYS`` — same encoder LangGraph's JsonPlusSerializer
+    invokes, so the answer here matches what the checkpointer would do.
+    """
+    try:
+        ormsgpack.packb(value)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _partition_state_and_services(
+    initial_state: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Split ``initial_state`` into (data_state, services).
+
+    Keys whose values are Python objects ormsgpack can't encode (live
+    service handles, custom dataclasses without ``__getstate__``, etc.)
+    move to the services bucket. Everything else stays on the data
+    state. Known service keys (``_KNOWN_SERVICE_KEYS``) are always
+    routed to services regardless of their value, so a None handle
+    still partitions consistently.
+
+    The data_state is what LangGraph sees + checkpoints. The services
+    dict is threaded through ``RunnableConfig.configurable`` so node
+    functions can reach the live handles without serialization.
+    """
+    data: dict[str, Any] = {}
+    services: dict[str, Any] = {}
+    for key, value in initial_state.items():
+        if key in _KNOWN_SERVICE_KEYS:
+            services[key] = value
+            continue
+        if _is_msgpack_serializable(value):
+            data[key] = value
+        else:
+            services[key] = value
+    return data, services
+
+
+def _services_from_config(config: RunnableConfig | None) -> dict[str, Any]:
+    """Extract the services dict from a LangGraph ``RunnableConfig``.
+
+    Returns an empty dict when no services were threaded — the caller
+    decides whether a missing handle is fatal (per
+    ``feedback_no_silent_defaults``, stages that REQUIRE a handle should
+    raise loud, not return None).
+
+    NOTE: LangGraph only injects the ``config`` kwarg when its
+    annotation matches ``RunnableConfig`` (or ``Optional[RunnableConfig]``,
+    or no annotation at all) — see
+    ``langgraph._internal._runnable.KWARGS_CONFIG_KEYS``. Using
+    ``dict[str, Any] | None`` as the annotation will silently get the
+    node called with ``config=None``. This wrapper accepts the right
+    type so both the public helpers and node adapters get LangGraph's
+    runtime injection.
+    """
+    if not config:
+        return {}
+    configurable = config.get("configurable") or {}
+    services = configurable.get(_CONFIG_SERVICES_KEY) or {}
+    return dict(services) if isinstance(services, dict) else {}
 
 
 # ---------------------------------------------------------------------------
@@ -247,13 +362,21 @@ def make_stage_node(
     pool: Any,
     *,
     record_sink: list[TemplateRunRecord] | None = None,
-) -> Callable[[PipelineState], Awaitable[dict[str, Any]]]:
+) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Wrap an existing Stage instance as a LangGraph node.
 
     The returned coroutine reads the stage's plugin config from
     ``app_settings`` (same as StageRunner does), enforces the stage's
     timeout, calls ``stage.execute(context, cfg.config)``, and merges
     the resulting ``StageResult.context_updates`` back into the state.
+
+    The node accepts the standard LangGraph ``(state, config)``
+    signature. Service handles (``database_service``, ``image_service``,
+    etc.) are pulled from ``config["configurable"]["__services__"]`` —
+    NOT from the state — and merged into the legacy ``context`` dict
+    before invoking the stage. This keeps service handles off the
+    checkpointed state (see Glad-Labs/poindexter#382) without forcing
+    every wrapped stage to change how it reads them.
 
     On failure with halts_on_failure=True (the stage default), the node
     raises so LangGraph stops the run. ``record_sink`` (if provided)
@@ -263,7 +386,7 @@ def make_stage_node(
     The wrapped stage code is NOT modified — Phase 1 keeps coarse stages
     coarse.
 
-    Implements: Glad-Labs/poindexter#357.
+    Implements: Glad-Labs/poindexter#357, Glad-Labs/poindexter#382.
     """
 
     from plugins.config import PluginConfig
@@ -271,11 +394,33 @@ def make_stage_node(
 
     name = getattr(stage, "name", stage.__class__.__name__)
 
-    async def node(state: PipelineState) -> dict[str, Any]:
-        # Treat the LangGraph state dict as the legacy ``context`` dict.
-        # In v1 they're the same shape; Phase 3 will tighten with atom
-        # I/O contracts.
+    # NOTE: ``config`` MUST be annotated as ``RunnableConfig`` (or
+    # ``Optional[RunnableConfig]``, or no annotation) — LangGraph's
+    # injection checks the runtime annotation against a fixed allow-
+    # list (``langgraph._internal._runnable.KWARGS_CONFIG_KEYS``). With
+    # ``from __future__ import annotations`` active, the annotation is
+    # a string at runtime, so ``RunnableConfig | None`` becomes the
+    # string "RunnableConfig | None" — which is NOT in the allow-list.
+    # The result: LangGraph silently calls the node with config=None
+    # and our service injection breaks. Use ``RunnableConfig`` here
+    # (default ``None`` keeps the call ergonomics).
+    async def node(
+        state: PipelineState,
+        config: RunnableConfig = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
+        # Treat the LangGraph state dict as the legacy ``context`` dict
+        # plus the live service handles threaded via RunnableConfig.
+        # In v1 they're the same shape (services merged in on top);
+        # Phase 3 will tighten with atom I/O contracts.
         context: dict[str, Any] = dict(state)
+        services = _services_from_config(config)
+        # State takes precedence on collision — a stage that explicitly
+        # wrote ``database_service`` into context_updates wins over the
+        # caller-provided handle. In practice no stage does this, but
+        # the precedence rule keeps behavior identical to the pre-#382
+        # "everything in one dict" model.
+        for svc_key, svc_value in services.items():
+            context.setdefault(svc_key, svc_value)
         task_id = context.get("task_id")
 
         cfg = await PluginConfig.load(pool, "stage", name)
@@ -557,22 +702,37 @@ class TemplateRunner:
             ),
         )
 
+        # Partition input into (data_state, services) so the
+        # checkpointer only sees msgpack-serializable values. Service
+        # handles ride in RunnableConfig.configurable["__services__"]
+        # and are merged back into the legacy ``context`` dict by the
+        # node adapters (see Glad-Labs/poindexter#382).
+        data_state, services = _partition_state_and_services(initial_state)
+        if services:
+            logger.debug(
+                "[template_runner] partitioned %d service handle(s) out of "
+                "state: %s",
+                len(services), sorted(services.keys()),
+            )
+
         # Resolve the checkpointer. The Postgres path is opt-in via
         # app_settings (default false) so Phase 1.5 cutover stays under
-        # operator control — see Glad-Labs/poindexter#371. The pipeline
-        # state contains live service objects (DatabaseService,
-        # ImageService, settings_service) that aren't msgpack-
-        # serializable; LangGraph's default serializer skips fields it
-        # can't encode, but a future tighter atom contract will need
-        # custom serializers. For now durability is best-effort:
-        # checkpoints capture serializable state, the rest is re-
-        # injected on resume by the caller.
+        # operator control — see Glad-Labs/poindexter#371. With the
+        # state/services partition (#382) the checkpointer now sees
+        # only msgpack-serializable data — the live service handles
+        # never enter the StateGraph, so MemorySaver and
+        # AsyncPostgresSaver both encode cleanly.
         try:
             async with self._resolve_checkpointer() as checkpointer:
-                config = {"configurable": {"thread_id": thread_id}}
+                config = {
+                    "configurable": {
+                        "thread_id": thread_id,
+                        _CONFIG_SERVICES_KEY: services,
+                    },
+                }
                 compiled = graph.compile(checkpointer=checkpointer)
                 try:
-                    final_state = await compiled.ainvoke(initial_state, config)
+                    final_state = await compiled.ainvoke(data_state, config)
                 except Exception as exc:
                     return await self._handle_run_exception(
                         exc, template_slug, initial_state, records,

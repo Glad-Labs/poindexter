@@ -596,15 +596,30 @@ def _wrap_atom(
     record_sink: list | None,
 ) -> Callable[..., Any]:
     """Wrap a pure atom into the LangGraph node signature with
-    record_sink integration so observability matches stage nodes."""
+    record_sink integration so observability matches stage nodes.
 
-    from services.template_runner import TemplateRunRecord
+    Mirrors the state-vs-services merge from ``make_stage_node``
+    (Glad-Labs/poindexter#382): live service handles are pulled from
+    ``RunnableConfig.configurable["__services__"]`` and merged into the
+    atom's input dict so atoms that read ``state.get("database_service")``
+    keep working unchanged. ``config`` MUST be annotated as bare
+    ``RunnableConfig`` — see the matching note in ``make_stage_node``.
+    """
 
-    async def node(state: PipelineState) -> dict[str, Any]:
+    from langchain_core.runnables import RunnableConfig
+    from services.template_runner import TemplateRunRecord, _services_from_config
+
+    async def node(
+        state: PipelineState,
+        config: RunnableConfig = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
         import time as _time
         t0 = _time.time()
+        atom_input: dict[str, Any] = dict(state)
+        for svc_key, svc_value in _services_from_config(config).items():
+            atom_input.setdefault(svc_key, svc_value)
         try:
-            result = await run_fn(dict(state))
+            result = await run_fn(atom_input)
             elapsed_ms = int((_time.time() - t0) * 1000)
             if record_sink is not None:
                 record_sink.append(

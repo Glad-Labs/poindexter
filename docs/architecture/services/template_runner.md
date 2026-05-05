@@ -1,7 +1,7 @@
 # Template Runner
 
 **File:** `src/cofounder_agent/services/template_runner.py`
-**Tested by:** `src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py` + integration fan-out tests
+**Tested by:** `src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py`, `tests/unit/services/test_template_runner_state_partition.py` + integration fan-out tests
 **Last reviewed:** 2026-05-05
 
 ## What it does
@@ -16,6 +16,7 @@ Three things make it useful beyond a vanilla LangGraph wrapper:
 - **`_emit_progress`** — fans node start/completion/failure events out to Discord via `notify_operator(critical=False)`. Gated by the `template_runner_progress_streaming` setting (default ON; Discord is the spam-friendly channel). NEVER routes to Telegram — that channel is reserved for critical alerts per `feedback_telegram_vs_discord`.
 - **`PipelineState.qa_reviews: Annotated[list, operator.add]`** — the parallel-fan-out reducer. Critic atoms in an architect-composed graph (narrate → [critic_1, critic_2] → aggregate) all append to `qa_reviews` on the same step; without `operator.add` LangGraph's default last-value channel rejects concurrent writes with `InvalidUpdateError`. Each critic returns its review wrapped in a one-element list; the reducer concats.
 - **`_resolve_checkpointer()`** — gated by the `template_runner_use_postgres_checkpointer` setting (default off). When on, builds an `AsyncPostgresSaver.from_conn_string(dsn)` per `run()` invocation and passes it into `compile(checkpointer=...)` so LangGraph state survives worker restarts and is resumable by `thread_id`. DSN comes from the constructor kwarg (tests) or `brain.bootstrap.resolve_database_url`. Fall-back posture per #371: missing DSN / missing dep / connection failure → log warning, fall back to `MemorySaver`. **Setup-time failure on a reachable Postgres** → raise `_CheckpointerSetupError` (loud) so a half-broken schema doesn't silently degrade durability.
+- **State-vs-services partition (`_partition_state_and_services`, poindexter#382)** — `run()` splits the caller's `initial_state` into two channels before invoking the graph. Pure data (`task_id`, `topic`, `tags`, etc.) stays on the StateGraph and is checkpointed. Live service handles (`database_service`, `image_service`, `settings_service`, `image_style_tracker`, `site_config`, plus any other key whose value isn't `ormsgpack`-encodable) ride in `RunnableConfig.configurable["__services__"]`, which LangGraph threads through node calls without serializing. The `make_stage_node` adapter merges the services back into the legacy `context` dict so wrapped stages still read `context.get("database_service")` unchanged. Pre-#382 the runner pushed everything onto state and every checkpoint write logged `TypeError: Type is not msgpack serializable: DatabaseService` (non-fatal but noisy on every dev_diary run). **Annotation gotcha:** node `config` parameters MUST be annotated as bare `RunnableConfig` (or `Optional[RunnableConfig]`, or unannotated) — the `RunnableConfig | None` pipe form becomes a string under `from __future__ import annotations` and falls outside LangGraph's `KWARGS_CONFIG_KEYS` allow-list, so config silently arrives as `None`.
 
 ## Key methods
 
@@ -29,7 +30,7 @@ After a run completes, the runner writes per-node training signal into `capabili
 
 ## Reads from / writes to
 
-- **Reads:** `state['database_service']` → asyncpg pool for the stage adapters; `site_config` for the `template_runner_progress_streaming` setting.
+- **Reads:** `config['configurable']['__services__']['database_service']` → asyncpg pool for the stage adapters (legacy `state['database_service']` also works inside wrapped stages because the adapter merges services into the context dict — see partition note above); `site_config` for the `template_runner_progress_streaming` setting.
 - **Writes:**
   - `audit_log` (via stage adapters that call `audit_log_bg`) — the canonical historical record.
   - `capability_outcomes` — per-node metrics for the router's training loop.

@@ -28,11 +28,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from services.template_runner import (
     PipelineState,
     TemplateRunRecord,
+    _services_from_config,
     halt_or_continue,
     make_stage_node,
 )
@@ -162,11 +164,28 @@ def dev_diary(
 
     # Build the wrapped narrate node so it appears in the run record
     # alongside the wrapped stage nodes (uniform observability).
-    async def narrate_node(state: PipelineState) -> dict[str, Any]:
+    # ``config`` annotated as ``RunnableConfig`` so LangGraph's
+    # KWARGS_CONFIG_KEYS injector recognizes it and threads the
+    # configurable dict through. ``RunnableConfig | None`` would NOT
+    # match (the union annotation becomes a string at runtime under
+    # ``from __future__ import annotations`` and isn't on the allow-
+    # list) — config would silently arrive as None and the partition
+    # would lose service handles. See template_runner.make_stage_node.
+    async def narrate_node(
+        state: PipelineState,
+        config: RunnableConfig = None,  # type: ignore[assignment]
+    ) -> dict[str, Any]:
         import time as _time
         t0 = _time.time()
+        # Merge service handles from RunnableConfig (Glad-Labs/poindexter#382)
+        # so the atom sees the same shape it did pre-partition. Without
+        # this the atom's ``state.get("database_service")`` would be
+        # None and the bundle-fallback DB read would silently no-op.
+        atom_input: dict[str, Any] = dict(state)
+        for svc_key, svc_value in _services_from_config(config).items():
+            atom_input.setdefault(svc_key, svc_value)
         try:
-            result = await _narrate_atom.run(dict(state))
+            result = await _narrate_atom.run(atom_input)
             elapsed_ms = int((_time.time() - t0) * 1000)
             if record_sink is not None:
                 # Surface the deterministic quality_score atom returns so
