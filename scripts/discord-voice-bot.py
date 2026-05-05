@@ -161,13 +161,26 @@ if HAS_VAD:
 # never responds".
 try:
     if not discord.opus.is_loaded():
-        # libopus0 from apt installs the .so.0 symlink under
-        # /usr/lib/x86_64-linux-gnu on Debian/Ubuntu bases.
-        for opus_path in (
+        # py-cord ships libopus DLLs alongside the discord package on
+        # Windows installs (discord/bin/libopus-0.x64.dll). Try those
+        # first; fall back to system-level Linux paths for the docker /
+        # Linux-host case.
+        _opus_candidates = []
+        try:
+            _discord_pkg_dir = Path(discord.__file__).resolve().parent
+            _opus_candidates.extend([
+                str(_discord_pkg_dir / "bin" / "libopus-0.x64.dll"),
+                str(_discord_pkg_dir / "bin" / "libopus-0.x86.dll"),
+            ])
+        except Exception:  # noqa: BLE001
+            pass
+        _opus_candidates.extend([
             "/usr/lib/x86_64-linux-gnu/libopus.so.0",
             "/usr/lib/libopus.so.0",
             "libopus.so.0",
-        ):
+            "opus",
+        ])
+        for opus_path in _opus_candidates:
             try:
                 discord.opus.load_opus(opus_path)
                 if discord.opus.is_loaded():
