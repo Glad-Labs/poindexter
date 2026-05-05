@@ -158,7 +158,7 @@ Check these specific failure modes:
      the writer pivot to a tangential point they preferred?
 
 Respond with ONLY valid JSON:
-{{"delivers": true/false, "score": NUMBER 0-100, "reason": "1-2 sentences naming the specific gap if any"}}
+{{"delivers": true/false, "score": NUMBER 0-100, "reason": "concise — name the specific gap when one exists"}}
 
 Scoring guidance: delivers=true and score 85-100 if the body is a faithful
 execution of the topic. delivers=false and score 0-40 if the body is a
@@ -262,7 +262,7 @@ knowledge using the cutoff rubric above.
 
 Output one JSON object. The first character is `{{` and the last
 character is `}}`:
-{{"approved": true/false, "quality_score": NUMBER 0-100, "feedback": "2-3 sentences"}}
+{{"approved": true/false, "quality_score": NUMBER 0-100, "feedback": "concise — name what's strong and what needs revision"}}
 """
 
 

@@ -58,9 +58,10 @@ Score the draft 0-100 on these axes:
 - clarity: every sentence carries information; readable on first pass
 - structure: logical flow from claim to evidence to implication
 
-List up to 3 SPECIFIC issues (one sentence each, naming the exact
-fix) the writer should apply. When the draft is solid as-is, return
-an empty issues list.
+List the SPECIFIC issues (each entry concise — name the exact fix)
+the writer should apply. Cap at the issues that actually need
+fixing — empty list when the draft is solid as-is, longer list when
+multiple distinct problems exist.
 
 Output one JSON object matching this schema. The first character
 is `{` and the last character is `}`:

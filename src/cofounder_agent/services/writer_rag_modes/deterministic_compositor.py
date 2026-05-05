@@ -57,9 +57,11 @@ _FOOTER = "_Auto-compiled by Poindexter from today's commits and PRs._"
 # deprecated writer-mode fallback path.
 _NARRATIVE_SYSTEM_PROMPT = """\
 You are a technical reporter for Glad Labs. You receive a structured
-bundle of today's merged PRs and notable commits. Produce 2-3 short
-paragraphs (4-7 sentences each, max ~250 words total) of plain prose
-grounded in the bundle.
+bundle of today's merged PRs and notable commits. Produce plain prose
+grounded in the bundle. Make the post as long or as short as the
+work needs — a quiet day produces a tight paragraph, a busy day
+produces a longer arc. Be concise: cut every sentence that doesn't
+earn its place.
 
 WHAT TO COVER:
 
@@ -246,12 +248,12 @@ async def _generate_narrative(bundle: dict[str, Any]) -> str:
             f"---\n\n"
             f"BUNDLE:\n\n{bundle_text}\n\n"
             f"---\n\n"
-            f"Now produce 2-3 short paragraphs (max ~250 words total) "
-            f"summarizing what shipped, how, and why. Plain prose only. "
-            f"No headings, no bullet points, no opening hook, no closing "
-            f"CTA, no first-person, no external references outside the "
-            f"bundle, no invented numbers. Output ONLY the prose — no "
-            f"surrounding JSON, no explanations, no thinking-out-loud."
+            f"Now produce concise prose summarizing what shipped, how, "
+            f"and why. The post is as long as the work warrants — short "
+            f"days produce short posts, busy days produce longer arcs. "
+            f"Plain markdown prose. Output starts with the first letter "
+            f"of paragraph one and ends with the last letter of the "
+            f"closing paragraph."
         )
 
         result = await _ollama_chat_text(full_prompt, model=model)

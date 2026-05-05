@@ -90,9 +90,10 @@ work for other indie builders who'll find the post on the blog.
 
 Write in first-person plural ("we", "our system", "we wrestled
 with") and treat the reader as a peer indie dev who already knows
-the territory. Produce 2-3 short paragraphs (4-7 sentences each,
-max ~280 words total) of plain prose that draws the reader into
-the arc of today's work.
+the territory. Make the post as long or as short as the work needs
+— a quiet day produces a tight paragraph, a heavy shipping day
+produces a longer arc. Be concise: cut every sentence that doesn't
+earn its place. Each paragraph carries weight.
 
 THE ARC:
 
@@ -394,7 +395,7 @@ def _compute_quality_score(
     - 100: starts at the ceiling.
     - Stays at ceiling when prose is real (not the quiet-day fallback)
       AND the post cites at least min(8, N_prs) PRs inline as
-      markdown links AND length sits inside the target band.
+      markdown links AND length is non-stub.
     - Drops by deductions:
         - 50 deduction when the prose is empty or the quiet-day
           fallback (no real shipped work to narrate).
@@ -403,9 +404,13 @@ def _compute_quality_score(
           ``min(8, N_prs)`` because the writer prompt asks for
           thematic grouping, not enumeration — citing 8 representative
           PRs is sufficient even on busy days with 30+ merges.
-        - 15 deduction when word count is outside the 80-450 band
-          (matches the prompt's 2-3 paragraph / ~280 word target).
-    - Floor 30 once any prose rendered (the post still ships, just
+        - 20 deduction when word count is below 40 — that's a stub,
+          not a post. Long posts are NOT penalized: per
+          ``feedback_no_hardcoded_lengths_in_prompts`` length follows
+          content. Short days produce short posts; busy days produce
+          longer arcs. The score reflects citation + non-stub, not
+          length-band conformity.
+    - Floor 30 once non-stub prose rendered (the post still ships,
       with operator review).
 
     Returns the score rounded to one decimal. The auto_publish_gate
@@ -432,10 +437,12 @@ def _compute_quality_score(
         miss_rate = max(0.0, 1 - (cited / max(1, target)))
         score -= round(miss_rate * 30, 1)
 
-    if word_count < 80 or word_count > 450:
-        score -= 15
+    # Stub-length penalty only — no upper bound. Length follows
+    # content per feedback_no_hardcoded_lengths_in_prompts.
+    if word_count < 40:
+        score -= 20
 
-    if not quiet_day and score < 30:
+    if not quiet_day and word_count >= 40 and score < 30:
         score = 30.0
     score = max(0.0, min(100.0, score))
     return round(score, 1)
