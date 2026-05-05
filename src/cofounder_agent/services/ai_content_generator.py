@@ -249,10 +249,31 @@ class AIContentGenerator:
         target_length: int,
         tags: list[str],
         research_context: str = "",
+        target_audience: str | None = None,
+        domain: str | None = None,
     ) -> tuple[str, str, Any]:
         """Load system prompt, generation prompt, and refinement prompt getter from prompt manager.
 
         Returns (system_prompt, generation_prompt, get_refinement_prompt_fn).
+
+        ``target_audience`` and ``domain`` flow in from the
+        ``pipeline_tasks`` row (target_audience column + category column,
+        respectively) via ``content_router_service`` -> ``stages.
+        generate_content`` -> ``generate_blog_post``. Both are required
+        placeholders in the YAML default
+        ``blog_generation.blog_system_prompt``; missing them used to
+        fall through to a DB-override prompt that didn't reference them,
+        but Phase 2 of poindexter#47 dropped that DB layer (commit
+        5b2cc543), so the call site has to supply them now. See
+        Glad-Labs/poindexter#369.
+
+        When a task row has these columns NULL (older tasks created
+        before the niche-pivot wiring) the values fall back to visible
+        sentinel strings -- ``"a general audience"`` / ``"general"`` --
+        chosen so the operator can grep for them in published posts and
+        retrofit the missing data. Per CLAUDE.md
+        ``feedback_no_silent_defaults``: the fallback is observable, not
+        an invisible empty-string substitution.
         """
         # Get prompt manager for centralized prompt management
         try:
@@ -272,6 +293,29 @@ class AIContentGenerator:
             _max_ratio = _sc.get_float("content_gen_max_word_ratio", 1.1)
             min_words = int(target_length * _min_ratio)
             max_words = int(target_length * _max_ratio)
+            # Sentinels for missing target_audience / domain are
+            # intentionally visible strings so the operator can spot
+            # them in rendered prompts + published posts and retrofit
+            # the missing pipeline_tasks columns. Per CLAUDE.md
+            # feedback_no_silent_defaults.
+            _audience = (target_audience or "").strip() or "a general audience"
+            _domain = (domain or "").strip() or "general"
+            if not (target_audience or "").strip():
+                logger.warning(
+                    "[blog_system_prompt] target_audience missing -- "
+                    "rendering with sentinel %r. Backfill the "
+                    "pipeline_tasks.target_audience column for this "
+                    "task to silence this warning.",
+                    _audience,
+                )
+            if not (domain or "").strip():
+                logger.warning(
+                    "[blog_system_prompt] domain missing -- rendering "
+                    "with sentinel %r. Backfill the "
+                    "pipeline_tasks.category column for this task to "
+                    "silence this warning.",
+                    _domain,
+                )
             system_prompt = pm.get_prompt(
                 "blog_generation.blog_system_prompt",
                 style=style,
@@ -280,6 +324,8 @@ class AIContentGenerator:
                 min_words=min_words,
                 max_words=max_words,
                 tags=", ".join(tags) if tags else "general",
+                target_audience=_audience,
+                domain=_domain,
             )
             logger.info("[OK] System prompt loaded (%d chars)", len(system_prompt))
         except Exception as e:
@@ -292,14 +338,25 @@ class AIContentGenerator:
             internal_link_titles = getattr(self, "_internal_links_cache", [])
             internal_links_str = "\n".join(internal_link_titles) if internal_link_titles else "No existing articles to link to."
 
+            # Kwargs match BOTH the YAML default placeholders
+            # ({topic}, {style}, {tone}, {target_length},
+            # {research_context}) AND the historical premium-prompt
+            # placeholders ({target_audience}, {primary_keyword},
+            # {internal_link_titles}). str.format ignores extras, so
+            # passing both shapes keeps Langfuse premium overrides
+            # working without the call site needing to know which
+            # variant is live. See Glad-Labs/poindexter#369 for why
+            # the historical-only set started crashing once the
+            # prompt_templates DB layer was retired (commit 5b2cc543).
             generation_prompt = pm.get_prompt(
                 "blog_generation.initial_draft",
                 topic=topic,
-                target_audience=style,
+                target_audience=_audience,
                 primary_keyword=tags[0] if tags else "",
                 research_context=research_context,
                 internal_link_titles=internal_links_str,
-                word_count=target_length,
+                target_length=target_length,
+                word_count=target_length,  # legacy alias for premium override
                 style=style,
                 tone=tone,
             )
@@ -313,12 +370,23 @@ class AIContentGenerator:
         # Create a callable refinement prompt getter
         def get_refinement_prompt(feedback: str, issues: list, content: str) -> str:
             try:
+                # Same dual-shape kwarg pattern as the initial_draft
+                # call above -- {content}/{feedback} are the YAML
+                # default placeholders; {draft}/{critique}/
+                # {word_count_constraint}/{target_audience} are the
+                # historical premium-prompt placeholders. Pass both
+                # so either variant renders cleanly. See #369.
+                _critique = (
+                    f"FEEDBACK: {feedback}\nISSUES: {chr(10).join(issues)}"
+                )
                 return pm.get_prompt(
                     "blog_generation.iterative_refinement",
-                    draft=content,
-                    critique=f"FEEDBACK: {feedback}\nISSUES: {chr(10).join(issues)}",
+                    content=content,
+                    feedback=_critique,
+                    draft=content,  # legacy alias for premium override
+                    critique=_critique,  # legacy alias for premium override
                     word_count_constraint=f"Target: {target_length} words",
-                    target_audience=style,
+                    target_audience=_audience,
                 )
             except Exception as e:
                 logger.error("Failed to load refinement prompt: %s", e, exc_info=True)
@@ -337,6 +405,8 @@ class AIContentGenerator:
         preferred_provider: str | None,
         writing_style_context: str | None = None,
         research_context: str | None = None,
+        target_audience: str | None = None,
+        domain: str | None = None,
     ) -> dict[str, Any]:
         """Set up logging, check providers, load prompts, and initialize metrics.
 
@@ -378,6 +448,8 @@ class AIContentGenerator:
             target_length,
             tags,
             research_context=research_context or "",
+            target_audience=target_audience,
+            domain=domain,
         )
 
         # Inject writing style context into system prompt if provided
@@ -892,6 +964,8 @@ class AIContentGenerator:
         preferred_provider: str | None = None,
         writing_style_context: str | None = None,
         research_context: str | None = None,
+        target_audience: str | None = None,
+        domain: str | None = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """
         Generate a blog post using best available model with self-checking.
@@ -925,6 +999,8 @@ class AIContentGenerator:
             topic, style, tone, target_length, tags, preferred_model, preferred_provider,
             writing_style_context=writing_style_context,
             research_context=research_context,
+            target_audience=target_audience,
+            domain=domain,
         )
 
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)

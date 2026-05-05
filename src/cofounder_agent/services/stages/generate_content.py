@@ -92,6 +92,14 @@ class GenerateContentStage:
         tags = context.get("tags") or []
         models_by_phase = context.get("models_by_phase") or {}
         database_service = context.get("database_service")
+        # target_audience + domain feed the writer's blog_system_prompt
+        # placeholders. content_router_service seeds both on the
+        # context dict from the pipeline_tasks row (target_audience +
+        # category columns). Empty/None passes through to the
+        # generator's visible-sentinel fallback per
+        # feedback_no_silent_defaults. See Glad-Labs/poindexter#369.
+        target_audience = context.get("target_audience")
+        domain = context.get("category")
 
         if not task_id or database_service is None:
             return StageResult(
@@ -159,6 +167,8 @@ class GenerateContentStage:
                     preferred_provider=preferred_provider,
                     writing_style_context=writing_style_context,
                     research_context=research_context,
+                    target_audience=target_audience,
+                    domain=domain,
                 )
 
         if not content_text:

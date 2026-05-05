@@ -764,6 +764,82 @@ class TestLoadGenerationPrompts:
         gen_call = fake_pm.get_prompt.call_args_list[1]
         assert "Existing Post" in gen_call.kwargs["internal_link_titles"]
 
+    # -- Glad-Labs/poindexter#369 regression --------------------------------
+    # Until this fix landed, _load_generation_prompts called
+    # pm.get_prompt("blog_generation.blog_system_prompt", ...) without
+    # target_audience or domain. That worked while the prompt_templates
+    # DB layer was injecting a different (premium) blog_system_prompt
+    # that didn't reference those placeholders — but Phase 2 of #47
+    # (commit 5b2cc543, 2026-05-04) dropped the DB layer, leaving the
+    # YAML default as the only source of truth. The YAML default DOES
+    # require target_audience + domain, so every legacy-stage-runner
+    # generation has been crashing with KeyError since the drop. These
+    # two tests exercise the real UnifiedPromptManager (no mock) so the
+    # format-string substitution actually runs end-to-end.
+
+    def test_system_prompt_renders_with_real_prompt_manager(self):
+        """End-to-end render of blog_system_prompt via real UPM (no mock).
+
+        Regresses Glad-Labs/poindexter#369: the YAML default declares
+        ``{target_audience}`` and ``{domain}`` placeholders; the call
+        site must pass them or KeyError fires inside ``str.format``.
+        """
+        from services.prompt_manager import UnifiedPromptManager
+
+        gen = _make_generator()
+        real_pm = UnifiedPromptManager()
+
+        with patch(
+            "services.ai_content_generator.get_prompt_manager",
+            return_value=real_pm,
+        ):
+            system, generation, refine_fn = gen._load_generation_prompts(
+                topic="dev diary daily roll-up",
+                style="first_person",
+                tone="candid",
+                target_length=600,
+                tags=["dev_diary"],
+                target_audience="indie-devs, ai-curious, build-in-public",
+                domain="dev_diary",
+            )
+
+        # Substitution actually happened; the rendered prompt has
+        # neither raw placeholder nor empty-string artifacts.
+        assert "{target_audience}" not in system
+        assert "{domain}" not in system
+        assert "indie-devs" in system
+        assert "dev_diary" in system
+
+    def test_system_prompt_falls_back_when_target_audience_missing(self):
+        """With no target_audience kwarg, render still succeeds via
+        a documented sentinel (``"a general audience"`` / ``"general"``
+        for domain). No silent default value masking; the sentinels are
+        explicit and observable in the rendered prompt.
+
+        Per CLAUDE.md ``feedback_no_silent_defaults``: the fallback is
+        a visible string the operator can grep for, not an invisible
+        empty-substitution.
+        """
+        from services.prompt_manager import UnifiedPromptManager
+
+        gen = _make_generator()
+        real_pm = UnifiedPromptManager()
+
+        with patch(
+            "services.ai_content_generator.get_prompt_manager",
+            return_value=real_pm,
+        ):
+            # Call without target_audience / domain — used to KeyError.
+            system, _, _ = gen._load_generation_prompts(
+                topic="x",
+                style="narrative",
+                tone="professional",
+                target_length=1200,
+                tags=[],
+            )
+        assert "{target_audience}" not in system
+        assert "{domain}" not in system
+
 
 # ---------------------------------------------------------------------------
 # _prepare_generation_context
