@@ -1342,7 +1342,19 @@ services:
     image: livekit/livekit-server:latest
     container_name: poindexter-livekit
     restart: unless-stopped
-    command: ["--dev", "--bind", "0.0.0.0"]
+    # --node-ip pins what LiveKit advertises to clients in the SDP
+    # answer. Without it, --dev auto-detects via STUN and picks the
+    # docker-internal IP (e.g. 172.18.0.x) — which the phone's WebRTC
+    # client can't reach. Pinning to the Tailscale IP means clients on
+    # the tailnet (Matt's pixel-9, his desktop, etc.) hit the LiveKit
+    # RTC port directly, bypassing Docker NAT entirely. Override via
+    # LIVEKIT_NODE_IP for non-tailnet operators.
+    command:
+      - "--dev"
+      - "--bind"
+      - "0.0.0.0"
+      - "--node-ip"
+      - "${LIVEKIT_NODE_IP:-100.81.93.12}"
     ports:
       - "7880:7880"        # HTTP/WebSocket signalling
       - "7881:7881"        # TCP RTC fallback
