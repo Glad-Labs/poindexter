@@ -154,6 +154,32 @@ if HAS_VAD:
     vad = webrtcvad.Vad(2)
     print("[INIT] WebRTC VAD ready (aggressiveness=2)")
 
+# discord.py / py-cord don't auto-load libopus; the voice gateway hop
+# completes without it (so /join superficially works) but actual audio
+# encode/decode silently no-ops. Force-load early so any failure is
+# visible in the boot log instead of as "bot is in the channel but
+# never responds".
+try:
+    if not discord.opus.is_loaded():
+        # libopus0 from apt installs the .so.0 symlink under
+        # /usr/lib/x86_64-linux-gnu on Debian/Ubuntu bases.
+        for opus_path in (
+            "/usr/lib/x86_64-linux-gnu/libopus.so.0",
+            "/usr/lib/libopus.so.0",
+            "libopus.so.0",
+        ):
+            try:
+                discord.opus.load_opus(opus_path)
+                if discord.opus.is_loaded():
+                    print(f"[INIT] libopus loaded from {opus_path}")
+                    break
+            except OSError:
+                continue
+        if not discord.opus.is_loaded():
+            print("[INIT] WARN: libopus not found — voice frames will silently drop")
+except Exception as exc:  # noqa: BLE001
+    print(f"[INIT] WARN: opus init crashed: {exc}")
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True
@@ -679,21 +705,35 @@ async def join(ctx):
         await ctx.respond("You're not in a voice channel.", ephemeral=True)
         return
 
+    # Defer immediately — the slash-command interaction token expires
+    # after 3s. Voice handshake + Whisper/Kokoro warmup can blow past
+    # that, and the original /join would crash with "Unknown interaction"
+    # while trying to send the success response.
+    await ctx.defer()
+
     vc = ctx.guild.voice_client
     if vc and vc.is_connected():
         await vc.move_to(ctx.author.voice.channel)
     else:
         vc = await ctx.author.voice.channel.connect()
+        # Brief settle so the voice WS task is fully spun up before the
+        # sink starts polling. ws=_MissingSentinel errors come from
+        # poll_voice_ws firing before the WS attribute is assigned.
+        await asyncio.sleep(1.5)
 
     if HAS_VAD:
         sink = VADSink(ctx.channel, ctx.guild)
-        vc.start_recording(sink, lambda *a: None, ctx.channel)
-        await ctx.respond(
+        try:
+            vc.start_recording(sink, lambda *a: None, ctx.channel)
+        except Exception as exc:  # noqa: BLE001
+            await ctx.followup.send(f"Couldn't start recording: {exc}", ephemeral=True)
+            return
+        await ctx.followup.send(
             f"Joined **{ctx.author.voice.channel.name}** — listening with VAD. "
             f"Just talk naturally. I'll respond when you pause."
         )
     else:
-        await ctx.respond(
+        await ctx.followup.send(
             f"Joined **{ctx.author.voice.channel.name}**. "
             f"VAD not available — use `/listen` and `/stop`."
         )

@@ -1,7 +1,7 @@
 FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg libffi-dev libsodium-dev \
+    ffmpeg libffi-dev libsodium-dev libopus0 libopus-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # webrtcvad-wheels is a drop-in for webrtcvad that ships binary wheels
