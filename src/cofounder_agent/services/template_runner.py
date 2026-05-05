@@ -11,13 +11,21 @@ What this is in v1 (POC):
 - Lookup of named template factories from
   ``services.pipeline_templates.TEMPLATES`` (stub for now; templates
   land in their own module).
+- Optional Postgres-backed checkpointer (Phase 1.5,
+  Glad-Labs/poindexter#371). Gated by app_setting
+  ``template_runner_use_postgres_checkpointer`` (default false). When
+  on, ``run()`` constructs an ``AsyncPostgresSaver.from_conn_string``
+  per invocation, calls ``setup()``, and passes it to
+  ``StateGraph.compile(checkpointer=...)`` so LangGraph state survives
+  worker restarts and can be resumed by ``thread_id``. Falls back to
+  ``MemorySaver`` on construction or setup failure (warning logged).
+  Default off pending operator review of the durability cutover.
 
 What this is NOT in v1 (deferred to Phase 2-5):
 
 - No atom granularity refactor — existing stages stay coarse.
 - No capability-tier abstraction — model_router stays as-is.
 - No streaming events to operator (silent multi-minute waits remain).
-- No Postgres checkpointer (uses MemorySaver; durability is Phase 2).
 - No LLM-architect composition (templates are hand-coded Python).
 - No outcome-feedback loop on the router (Phase 2).
 
@@ -25,7 +33,7 @@ Coexists with the legacy :class:`plugins.stage_runner.StageRunner`. Tasks
 opt into the LangGraph path by setting ``pipeline_tasks.template_slug``
 (non-NULL); tasks without that field continue to flow through StageRunner.
 
-Implements: Glad-Labs/poindexter#356.
+Implements: Glad-Labs/poindexter#356, Glad-Labs/poindexter#371.
 """
 
 from __future__ import annotations
@@ -34,10 +42,12 @@ import asyncio
 import logging
 import operator
 import time
-from collections.abc import Awaitable
+from collections.abc import AsyncIterator, Awaitable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Callable, TypedDict
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
@@ -467,16 +477,32 @@ class TemplateRunner:
     stamp the stage column). ``run`` accepts a template slug and an
     initial state, looks up the template factory from
     ``services.pipeline_templates.TEMPLATES``, compiles the StateGraph
-    (with MemorySaver for v1 — Postgres checkpointer is Phase 2), and
-    invokes it.
+    with the resolved checkpointer (Postgres if
+    ``template_runner_use_postgres_checkpointer`` is on, else
+    MemorySaver), and invokes it.
+
+    Postgres checkpointer is gated by app_settings —
+    ``template_runner_use_postgres_checkpointer`` must be true AND a
+    DSN must be resolvable (constructor kwarg, then
+    ``brain.bootstrap.resolve_database_url``). Failures during
+    construction or schema setup degrade to MemorySaver with a logged
+    warning, matching the spec for Glad-Labs/poindexter#371.
 
     The returned :class:`TemplateRunSummary` mirrors
     :class:`plugins.stage_runner.StageRunSummary` shape so existing call
     sites (content_router_service, task_executor) can swap minimally.
     """
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(
+        self,
+        pool: Any,
+        *,
+        checkpointer_dsn: str | None = None,
+    ) -> None:
         self._pool = pool
+        # Optional override; production resolves via brain.bootstrap when
+        # None. Tests inject a sandbox DSN explicitly.
+        self._checkpointer_dsn = checkpointer_dsn
 
     async def run(
         self,
@@ -505,13 +531,6 @@ class TemplateRunner:
 
         records: list[TemplateRunRecord] = []
         graph: StateGraph = factory(pool=self._pool, record_sink=records)
-        # No checkpointer in v1 — the pipeline state contains live
-        # service objects (DatabaseService, ImageService, settings_service)
-        # that aren't msgpack-serializable, and v1 doesn't need
-        # durability. Phase 2 introduces a Postgres checkpointer with
-        # custom serializers that strip the non-pickleable fields and
-        # re-inject them on resume.
-        compiled = graph.compile()
 
         thread_id = (
             thread_id
@@ -538,32 +557,32 @@ class TemplateRunner:
             ),
         )
 
+        # Resolve the checkpointer. The Postgres path is opt-in via
+        # app_settings (default false) so Phase 1.5 cutover stays under
+        # operator control — see Glad-Labs/poindexter#371. The pipeline
+        # state contains live service objects (DatabaseService,
+        # ImageService, settings_service) that aren't msgpack-
+        # serializable; LangGraph's default serializer skips fields it
+        # can't encode, but a future tighter atom contract will need
+        # custom serializers. For now durability is best-effort:
+        # checkpoints capture serializable state, the rest is re-
+        # injected on resume by the caller.
         try:
-            final_state = await compiled.ainvoke(initial_state)
-        except Exception as exc:
-            logger.exception(
-                "[template_runner] template %r raised: %s", template_slug, exc,
-            )
-            await _emit_progress(
-                self._pool,
-                event_type="template.run_failed",
-                payload={
-                    "task_id": str(initial_state.get("task_id") or ""),
-                    "template_slug": template_slug,
-                    "reason": f"{type(exc).__name__}: {exc}",
-                },
-                notify_operator_message=(
-                    f"💥 Pipeline {template_slug} crashed: {type(exc).__name__} "
-                    f"(task {str(initial_state.get('task_id') or '')[:8]})"
-                ),
-            )
-            return TemplateRunSummary(
-                ok=False,
-                template_slug=template_slug,
-                halted_at=records[-1].name if records else None,
-                records=records,
-                final_state=dict(initial_state),
-            )
+            async with self._resolve_checkpointer() as checkpointer:
+                config = {"configurable": {"thread_id": thread_id}}
+                compiled = graph.compile(checkpointer=checkpointer)
+                try:
+                    final_state = await compiled.ainvoke(initial_state, config)
+                except Exception as exc:
+                    return await self._handle_run_exception(
+                        exc, template_slug, initial_state, records,
+                    )
+        except _CheckpointerSetupError:
+            # Re-raise — _handle_run_exception already logged the upstream
+            # failure. This indicates a Postgres-was-reachable-but-failed-
+            # to-setup case which we surface loudly per
+            # feedback_no_silent_defaults.
+            raise
 
         ok = not any(r.halted for r in records)
         halted_at = next((r.name for r in records if r.halted), None)
@@ -610,3 +629,190 @@ class TemplateRunner:
             records=records,
             final_state=dict(final_state) if isinstance(final_state, dict) else {},
         )
+
+    async def _handle_run_exception(
+        self,
+        exc: Exception,
+        template_slug: str,
+        initial_state: dict[str, Any],
+        records: list[TemplateRunRecord],
+    ) -> TemplateRunSummary:
+        """Build the run-failed summary + emit progress. Centralized so
+        the new checkpointer-context-managed call site stays readable."""
+        logger.exception(
+            "[template_runner] template %r raised: %s", template_slug, exc,
+        )
+        await _emit_progress(
+            self._pool,
+            event_type="template.run_failed",
+            payload={
+                "task_id": str(initial_state.get("task_id") or ""),
+                "template_slug": template_slug,
+                "reason": f"{type(exc).__name__}: {exc}",
+            },
+            notify_operator_message=(
+                f"💥 Pipeline {template_slug} crashed: {type(exc).__name__} "
+                f"(task {str(initial_state.get('task_id') or '')[:8]})"
+            ),
+        )
+        return TemplateRunSummary(
+            ok=False,
+            template_slug=template_slug,
+            halted_at=records[-1].name if records else None,
+            records=records,
+            final_state=dict(initial_state),
+        )
+
+    @asynccontextmanager
+    async def _resolve_checkpointer(
+        self,
+    ) -> AsyncIterator[BaseCheckpointSaver]:
+        """Yield a checkpointer for one ``run()`` invocation.
+
+        Resolution order:
+
+        1. If ``template_runner_use_postgres_checkpointer`` is false (the
+           default in this PR — see Glad-Labs/poindexter#371), yield a
+           transient ``MemorySaver``. Identical to pre-#371 behavior.
+        2. If true, attempt ``AsyncPostgresSaver.from_conn_string(dsn)``
+           + ``setup()``. On success, yield it (the async-context-
+           manager scope owns the underlying psycopg connection).
+        3. On import error, missing DSN, or connection failure: log a
+           warning and fall back to ``MemorySaver``. Pipelines keep
+           running with in-memory checkpoints.
+        4. On *partial* failure (Postgres reachable but ``setup()``
+           raised — e.g. permission denied creating tables, schema
+           drift), re-raise as ``_CheckpointerSetupError`` so the
+           pipeline halts loudly. Per ``feedback_no_silent_defaults``,
+           a half-broken Postgres MUST NOT silently degrade — that
+           masks real config issues.
+        """
+        use_postgres = await self._postgres_enabled()
+        if not use_postgres:
+            yield MemorySaver()
+            return
+
+        dsn = self._resolve_dsn()
+        if not dsn:
+            logger.warning(
+                "[template_runner] template_runner_use_postgres_checkpointer "
+                "is true but no DSN resolved — falling back to MemorySaver. "
+                "Set DATABASE_URL or write database_url to bootstrap.toml."
+            )
+            yield MemorySaver()
+            return
+
+        try:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        except ImportError as exc:
+            logger.warning(
+                "[template_runner] langgraph-checkpoint-postgres not "
+                "installed (%s) — falling back to MemorySaver. Run "
+                "`poetry install` to pick up the dep.",
+                exc,
+            )
+            yield MemorySaver()
+            return
+
+        # Connection construction — failures here mean Postgres is
+        # unreachable, which we treat as the same class of degradation
+        # as a missing dep: warn + fall back. Setup-time failures are
+        # treated differently (see below) because they signal Postgres
+        # IS reachable but the schema migration broke.
+        try:
+            cm = AsyncPostgresSaver.from_conn_string(dsn)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[template_runner] AsyncPostgresSaver.from_conn_string "
+                "failed (%s: %s) — falling back to MemorySaver",
+                type(exc).__name__, exc,
+            )
+            yield MemorySaver()
+            return
+
+        try:
+            async with cm as checkpointer:
+                try:
+                    await checkpointer.setup()
+                except Exception as exc:
+                    # Postgres was REACHABLE (we got an open
+                    # checkpointer) but schema setup failed. Per
+                    # feedback_no_silent_defaults: don't quietly switch
+                    # to MemorySaver — surface the failure so the
+                    # operator notices and fixes the underlying schema/
+                    # permission issue.
+                    logger.error(
+                        "[template_runner] AsyncPostgresSaver.setup() "
+                        "raised %s: %s — refusing to silently fall back "
+                        "to MemorySaver (Postgres is reachable; this is "
+                        "a real schema/permission problem)",
+                        type(exc).__name__, exc,
+                    )
+                    raise _CheckpointerSetupError(
+                        f"AsyncPostgresSaver.setup() failed: {exc}"
+                    ) from exc
+                logger.debug(
+                    "[template_runner] using AsyncPostgresSaver checkpointer",
+                )
+                yield checkpointer
+        except _CheckpointerSetupError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Any failure inside the async-context boundary other than
+            # the explicit setup-failed marker — e.g. connect timeout
+            # while opening the underlying psycopg connection — counts
+            # as "Postgres unreachable" and falls back to MemorySaver.
+            logger.warning(
+                "[template_runner] AsyncPostgresSaver context failed "
+                "(%s: %s) — falling back to MemorySaver",
+                type(exc).__name__, exc,
+            )
+            yield MemorySaver()
+            return
+
+    async def _postgres_enabled(self) -> bool:
+        """Read the gating flag from app_settings. Lazy import to avoid
+        the SiteConfig DI cycle at module import time."""
+        try:
+            from services.site_config import site_config
+            return bool(
+                site_config.get_bool(
+                    "template_runner_use_postgres_checkpointer", False,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "[template_runner] could not read flag, defaulting to "
+                "MemorySaver: %s", exc,
+            )
+            return False
+
+    def _resolve_dsn(self) -> str | None:
+        """Resolve the Postgres DSN for the checkpointer.
+
+        Order: explicit ctor kwarg → ``brain.bootstrap.resolve_database_url``
+        (which itself unifies bootstrap.toml + DATABASE_URL +
+        LOCAL_DATABASE_URL + POINDEXTER_MEMORY_DSN). Returns None if
+        nothing is configured — caller falls back to MemorySaver.
+        """
+        if self._checkpointer_dsn:
+            return self._checkpointer_dsn
+        try:
+            from brain.bootstrap import resolve_database_url
+            return resolve_database_url()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "[template_runner] resolve_database_url raised: %s", exc,
+            )
+            return None
+
+
+class _CheckpointerSetupError(RuntimeError):
+    """Raised when AsyncPostgresSaver.setup() fails on a reachable DB.
+
+    Distinct from connection-time failures (which fall back silently to
+    MemorySaver) because a successful connect + failed setup() means
+    Postgres IS available but the schema migration broke — silent
+    fallback would mask a real config problem (per
+    ``feedback_no_silent_defaults``).
+    """

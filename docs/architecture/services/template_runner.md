@@ -1,8 +1,8 @@
 # Template Runner
 
 **File:** `src/cofounder_agent/services/template_runner.py`
-**Tested by:** `src/cofounder_agent/tests/unit/services/test_template_runner.py` + integration fan-out tests
-**Last reviewed:** 2026-05-04
+**Tested by:** `src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py` + integration fan-out tests
+**Last reviewed:** 2026-05-05
 
 ## What it does
 
@@ -15,6 +15,7 @@ Three things make it useful beyond a vanilla LangGraph wrapper:
 - **`make_stage_node(stage)`** — adapts an existing `Stage` instance (the legacy `services/stages/*.py` shape) into a LangGraph-compatible async node. The Stage's `execute(context)` becomes a node that reads `state`, runs the stage, returns the diff to merge back. Lets us migrate one stage at a time without rewriting them as atoms first.
 - **`_emit_progress`** — fans node start/completion/failure events out to Discord via `notify_operator(critical=False)`. Gated by the `template_runner_progress_streaming` setting (default ON; Discord is the spam-friendly channel). NEVER routes to Telegram — that channel is reserved for critical alerts per `feedback_telegram_vs_discord`.
 - **`PipelineState.qa_reviews: Annotated[list, operator.add]`** — the parallel-fan-out reducer. Critic atoms in an architect-composed graph (narrate → [critic_1, critic_2] → aggregate) all append to `qa_reviews` on the same step; without `operator.add` LangGraph's default last-value channel rejects concurrent writes with `InvalidUpdateError`. Each critic returns its review wrapped in a one-element list; the reducer concats.
+- **`_resolve_checkpointer()`** — gated by the `template_runner_use_postgres_checkpointer` setting (default off). When on, builds an `AsyncPostgresSaver.from_conn_string(dsn)` per `run()` invocation and passes it into `compile(checkpointer=...)` so LangGraph state survives worker restarts and is resumable by `thread_id`. DSN comes from the constructor kwarg (tests) or `brain.bootstrap.resolve_database_url`. Fall-back posture per #371: missing DSN / missing dep / connection failure → log warning, fall back to `MemorySaver`. **Setup-time failure on a reachable Postgres** → raise `_CheckpointerSetupError` (loud) so a half-broken schema doesn't silently degrade durability.
 
 ## Key methods
 

@@ -108,6 +108,18 @@ langgraph = ">=1.0.10,<2.0"
 # prefers the older 3.x without prodding. <4.0 has a BaseCache RCE
 # (Deserialization of Untrusted Data, GHSA-via-#17). Pin to 4.x+.
 langgraph-checkpoint = ">=4.0.0,<5.0"
+# Postgres-backed checkpointer for TemplateRunner. Wired Phase 1.5
+# (Glad-Labs/poindexter#371) — gated by the
+# ``template_runner_use_postgres_checkpointer`` app_settings key
+# (default false). When the flag is on, ``services/template_runner.py``
+# constructs an ``AsyncPostgresSaver.from_conn_string`` per run() call
+# so LangGraph state survives restarts. Bundles psycopg 3 with the
+# pre-built binary wheel so Windows hosts (Matt's worker) don't need
+# the libpq toolchain. v3.x is the current line; depends transitively
+# on langgraph-checkpoint>=2.1.2,<5.0 which is a subset of the >=4.0
+# floor we already declare above.
+langgraph-checkpoint-postgres = ">=3.0.0,<4.0"
+psycopg = { version = ">=3.2.0,<4.0", extras = ["binary", "pool"] }
 # datasets pinned to ^3.0 to override the legacy 1.1.1 transitive dep
 # pulled in by ragas — 1.1.1 calls `pyarrow.PyExtensionType` which was
 # removed in pyarrow 14, breaking topic_discovery_signals at runtime
