@@ -300,14 +300,34 @@ def _resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, st
 
 
 def _ensure_brain_on_path() -> None:
-    """Add the repo root to sys.path so brain.bootstrap is importable."""
+    """Add the repo root to sys.path so brain.bootstrap is importable.
+
+    Lookup order:
+      1. ``$POINDEXTER_BRAIN_PARENT`` env var (must contain
+         ``brain/bootstrap.py``). Used by the docker container, where
+         ``brain/`` is mounted under ``/opt/poindexter/`` and the
+         walk-up-parents heuristic can't reach it through the read-only
+         ``/app`` overlay.
+      2. Walk parents of this file until a ``brain/bootstrap.py``
+         neighbour appears. Standard local-dev path.
+    """
+    env_parent = os.environ.get("POINDEXTER_BRAIN_PARENT", "").strip()
+    if env_parent:
+        candidate = Path(env_parent)
+        if (candidate / "brain" / "bootstrap.py").is_file():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            return
     here = Path(__file__).resolve()
     for parent in here.parents:
         if (parent / "brain" / "bootstrap.py").is_file():
             if str(parent) not in sys.path:
                 sys.path.insert(0, str(parent))
             return
-    raise RuntimeError("Could not locate brain/bootstrap.py")
+    raise RuntimeError(
+        "Could not locate brain/bootstrap.py "
+        "(set POINDEXTER_BRAIN_PARENT or run from a checkout)"
+    )
 
 
 # ---------------------------------------------------------------------------

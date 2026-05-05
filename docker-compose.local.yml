@@ -296,6 +296,9 @@ services:
       # Dev mount: edit Python files on host, restart worker to pick up changes.
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
       - ./src/cofounder_agent:/app:ro
+      # Mount brain alongside /app (which is :ro and can't host a child
+      # mount) and tell voice_agent_*.py where to find it via
+      # POINDEXTER_BRAIN_PARENT below.
       - ./brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
       # Shared with the prometheus container — RenderPrometheusRulesJob
@@ -356,6 +359,9 @@ services:
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ./src/cofounder_agent:/app:ro
+      # Mount brain alongside /app (which is :ro and can't host a child
+      # mount) and tell voice_agent_*.py where to find it via
+      # POINDEXTER_BRAIN_PARENT below.
       - ./brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
     extra_hosts:
@@ -1122,8 +1128,14 @@ services:
       # Bot's POV of the LiveKit server is in-network (compose service
       # name); the human-facing URL goes to the SFU's exposed host port.
       LIVEKIT_URL: "ws://livekit:7880"
+      # Tell _ensure_brain_on_path() where brain/bootstrap.py lives,
+      # since /app:ro hides the parent-walk from finding it.
+      POINDEXTER_BRAIN_PARENT: "/opt/poindexter"
     volumes:
       - ./src/cofounder_agent:/app:ro
+      # Mount brain alongside /app (which is :ro and can't host a child
+      # mount) and tell voice_agent_*.py where to find it via
+      # POINDEXTER_BRAIN_PARENT below.
       - ./brain:/opt/poindexter/brain:ro
       # Persist Whisper / Silero / Kokoro model weights across rebuilds.
       # First boot downloads ~470 MB total; cached after that.
@@ -1168,8 +1180,12 @@ services:
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+      POINDEXTER_BRAIN_PARENT: "/opt/poindexter"
     volumes:
       - ./src/cofounder_agent:/app:ro
+      # Mount brain alongside /app (which is :ro and can't host a child
+      # mount) and tell voice_agent_*.py where to find it via
+      # POINDEXTER_BRAIN_PARENT below.
       - ./brain:/opt/poindexter/brain:ro
       - voice-agent-cache:/root/.cache
     extra_hosts:
