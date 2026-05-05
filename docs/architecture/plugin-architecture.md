@@ -115,13 +115,13 @@ class LLMProvider(Protocol):
     async def embed(text, model) -> list[float]: ...
 ```
 
-**Current state:** `services/ollama_client.py` is concrete; `ModelProvider` enum has only OLLAMA + HUGGINGFACE. Hardcoded instantiation.
+**Current state (2026-05-04):** Three core providers shipped:
 
-**After refactor:** Three plugins cover the OSS landscape:
-
-1. **`OpenAICompatProvider`** — generic HTTP client with configurable `base_url` + `model`. One plugin covers Ollama (`/v1` endpoint), llama.cpp server, vllm, SGLang, HuggingFace TGI, LM Studio, LocalAI, and the LiteLLM gateway — all by changing one `app_settings` row. Because OSS inference converged on OpenAI-compat.
+1. **`OpenAICompatProvider`** — generic HTTP client with configurable `base_url` + `model`. Reaches Ollama (`/v1` endpoint), llama.cpp server, vllm, SGLang, HuggingFace TGI, LM Studio, LocalAI by config.
 2. **`OllamaNativeProvider`** — keeps Ollama-specific features (electricity cost tracking, `/api/embed`, model pull). Default for the out-of-box experience.
-3. **`HuggingFaceProvider`** — uses the transformers library directly for on-machine model hosting without a separate server. Lower priority.
+3. **`LiteLLMProvider`** _(shipped 2026-05-04, poindexter#199 phase 1)_ — see [`services/litellm_provider.md`](services/litellm_provider.md). Wraps the LiteLLM SDK so one plugin covers 100+ providers (Ollama, OpenAI, Anthropic, Gemini, Bedrock, Vertex, OpenRouter, etc.) with authoritative cost tracking + retries-with-backoff via mature OSS. Activates by setting `plugin.llm_provider.primary.standard='litellm'`. Phase 2 (delete `services/model_router.py`) waits on production validation.
+
+**Future plugins** (lower priority): `HuggingFaceProvider` for on-machine transformers hosting without a separate server.
 
 Core ships OSS-only. Community plugins can wrap paid providers (Anthropic, OpenAI, Google Gemini, Groq, OpenRouter, etc.) and distribute via pypi. The `OpenAICompatProvider` already reaches some paid vendors by config (OpenRouter, Groq, Together, Fireworks; Anthropic has an OpenAI-compat mode). "No paid APIs" is a default shipping policy, not a contract constraint.
 
