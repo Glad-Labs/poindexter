@@ -290,6 +290,15 @@ services:
       LANGFUSE_HOST: "http://langfuse-web:3000"
       LANGFUSE_PUBLIC_KEY: "pk-lf-KCi8EdrTVh6kg4_YNmB63UD6N7E"
       LANGFUSE_SECRET_KEY: "sk-lf-gXIcHW6U_krse_PC5rP4BZT8fl6aYF9X7H9ki-aJQXE"
+      # LiveKit credentials — voice_routes.py mints a 7-day JWT for the
+      # phone-tap-to-join HTML page (poindexter#389). Same key/secret as
+      # the livekit + voice-agent-livekit containers; LIVEKIT_PUBLIC_WSS_URL
+      # is the user-facing wss endpoint (Tailscale-funneled).
+      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-devkey}"
+      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-devsecret_change_me_change_me_change_me}"
+      LIVEKIT_ROOM: "${LIVEKIT_ROOM:-poindexter}"
+      LIVEKIT_DEFAULT_IDENTITY: "${LIVEKIT_DEFAULT_IDENTITY:-matt}"
+      LIVEKIT_PUBLIC_WSS_URL: "${LIVEKIT_PUBLIC_WSS_URL:-wss://nightrider.taild4f626.ts.net/livekit-signal/}"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images

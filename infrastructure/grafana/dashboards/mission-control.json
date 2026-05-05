@@ -157,10 +157,10 @@
       "keepTime": false,
       "tags": [],
       "targetBlank": true,
-      "title": "✏ LiveKit room (multi-party) — setup pending",
-      "tooltip": "LiveKit SFU room ‘poindexter’ — multi-party voice. Phone-tap-join blocked by mixed-content (https client → ws:// signal). Tracked in poindexter#389.",
+      "title": "✏ Talk to Poindexter (LiveKit)",
+      "tooltip": "Self-hosted LiveKit web client (poindexter#389). Same-origin wss via Tailscale Funnel — no mixed-content. 7-day token minted server-side; tap Connect, allow mic. Multi-party-capable: voice-agent-livekit + you in the same ‘poindexter’ room.",
       "type": "link",
-      "url": "https://github.com/Glad-Labs/poindexter/issues/389"
+      "url": "https://nightrider.taild4f626.ts.net/voice/join"
     }
   ],
   "panels": [

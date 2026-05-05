@@ -715,11 +715,32 @@ async def join(ctx):
     if vc and vc.is_connected():
         await vc.move_to(ctx.author.voice.channel)
     else:
-        vc = await ctx.author.voice.channel.connect()
-        # Brief settle so the voice WS task is fully spun up before the
-        # sink starts polling. ws=_MissingSentinel errors come from
-        # poll_voice_ws firing before the WS attribute is assigned.
-        await asyncio.sleep(1.5)
+        # py-cord's connect() returns when the gateway voice-state hop
+        # completes, but the underlying voice-WS handshake (which is
+        # what is_connected() actually checks) is still in flight.
+        # Pass a generous timeout + reconnect=True so transient handshake
+        # failures retry instead of crashing.
+        vc = await ctx.author.voice.channel.connect(timeout=30.0, reconnect=True)
+
+    # Poll is_connected() for up to 15s before start_recording. py-cord's
+    # poll_voice_ws task can raise `_MissingSentinel.poll_event` if the
+    # ws attribute is still MISSING when the task fires — manifests as
+    # "Not connected to voice channel" from start_recording.
+    for _ in range(30):
+        if vc.is_connected() and getattr(vc, "ws", None) and not isinstance(vc.ws, type(discord.utils.MISSING)):
+            break
+        await asyncio.sleep(0.5)
+
+    if not vc.is_connected():
+        try:
+            await vc.disconnect(force=True)
+        except Exception:  # noqa: BLE001
+            pass
+        await ctx.followup.send(
+            "Voice WS handshake didn't complete in 15s — Discord region issue?",
+            ephemeral=True,
+        )
+        return
 
     if HAS_VAD:
         sink = VADSink(ctx.channel, ctx.guild)

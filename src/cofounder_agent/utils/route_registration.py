@@ -71,6 +71,7 @@ _WORKER_ROUTES = [
     ("routes.memory_dashboard_routes", "router", "memory_dashboard_router", "shared-memory observability (/api/memory/*, /memory)"),
     ("routes.alertmanager_webhook_routes", "router", "alertmanager_webhook_router", "Alertmanager webhook consumer (Phase D4)"),
     ("routes.external_webhooks", "external_webhooks_router", "external_webhooks_router", "Lemon Squeezy + Resend webhook sinks (gitea#271 Phase 3.B)"),
+    ("routes.voice_routes", "router", "voice_router", "voice agent web client (LiveKit web join page, poindexter#389)"),
 ]
 
 # Backward-compatible alias: defaults to coordinator manifest
