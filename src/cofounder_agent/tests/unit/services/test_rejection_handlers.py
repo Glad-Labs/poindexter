@@ -52,10 +52,12 @@ class FakeConnection:
                 "confidence": confidence, "source": source,
             })
             return "INSERT 0 1"
-        if sql_norm.startswith("INSERT INTO pipeline_events"):
-            event_type, payload = args
-            self._store.pipeline_events.append({
-                "event_type": event_type, "payload": payload,
+        if sql_norm.startswith("INSERT INTO pipeline_gate_history"):
+            task_id, post_id, gate_name, event_kind, feedback, metadata = args
+            self._store.gate_history.append({
+                "task_id": task_id, "post_id": post_id,
+                "gate_name": gate_name, "event_kind": event_kind,
+                "feedback": feedback, "metadata": metadata,
             })
             return "INSERT 0 1"
         raise AssertionError(
@@ -64,12 +66,21 @@ class FakeConnection:
 
     async def fetchval(self, sql: str, *args):
         sql_norm = " ".join(sql.split())
-        if sql_norm.startswith("SELECT COUNT(*) FROM pipeline_events"):
-            event_type, primary_id = args
+        if sql_norm.startswith("SELECT COUNT(*) FROM pipeline_gate_history WHERE task_id"):
+            task_id, gate_name, event_kind = args
             return sum(
-                1 for e in self._store.pipeline_events
-                if e["event_type"] == event_type
-                and primary_id in (e.get("payload") or "")
+                1 for e in self._store.gate_history
+                if e["task_id"] == task_id
+                and e["gate_name"] == gate_name
+                and e["event_kind"] == event_kind
+            )
+        if sql_norm.startswith("SELECT COUNT(*) FROM pipeline_gate_history WHERE post_id"):
+            post_id, gate_name, event_kind = args
+            return sum(
+                1 for e in self._store.gate_history
+                if e["post_id"] == post_id
+                and e["gate_name"] == gate_name
+                and e["event_kind"] == event_kind
             )
         raise AssertionError(
             f"FakeConnection.fetchval saw unexpected SQL: {sql_norm[:80]}"
@@ -79,7 +90,7 @@ class FakeConnection:
 class FakeStore:
     def __init__(self) -> None:
         self.brain_knowledge: list[dict[str, Any]] = []
-        self.pipeline_events: list[dict[str, Any]] = []
+        self.gate_history: list[dict[str, Any]] = []
 
 
 class FakePool:
@@ -192,7 +203,7 @@ class TestTopicDecisionHandler:
             site_config=None,
         )
         await topic_decision_handler(ctx)
-        assert fake_pool.store.pipeline_events == []
+        assert fake_pool.store.gate_history == []
 
 
 # ---------------------------------------------------------------------------
@@ -213,20 +224,23 @@ class TestPreviewApprovalHandler:
             site_config=None,
         )
         await preview_approval_handler(ctx)
-        assert len(fake_pool.store.pipeline_events) == 1
-        ev = fake_pool.store.pipeline_events[0]
-        assert ev["event_type"] == "task.regen_draft"
-        assert "title is clickbait" in ev["payload"]
-        assert "t-1" in ev["payload"]
-        assert "retry_n" in ev["payload"]
+        assert len(fake_pool.store.gate_history) == 1
+        ev = fake_pool.store.gate_history[0]
+        assert ev["event_kind"] == "regen_draft"
+        assert ev["task_id"] == "t-1"
+        assert ev["post_id"] is None
+        assert ev["feedback"] == "title is clickbait"
+        assert "retry_n" in (ev["metadata"] or "")
 
     async def test_retry_cap_blocks_third_emit(self, fake_pool):
-        # Pre-seed two prior regen events for this task.
-        fake_pool.store.pipeline_events = [
-            {"event_type": "task.regen_draft",
-             "payload": '{"primary_id": "t-1", "retry_n": 1}'},
-            {"event_type": "task.regen_draft",
-             "payload": '{"primary_id": "t-1", "retry_n": 2}'},
+        # Pre-seed two prior regen rows for this task.
+        fake_pool.store.gate_history = [
+            {"task_id": "t-1", "post_id": None, "gate_name": "preview_approval",
+             "event_kind": "regen_draft", "feedback": "",
+             "metadata": '{"retry_n": 1}'},
+            {"task_id": "t-1", "post_id": None, "gate_name": "preview_approval",
+             "event_kind": "regen_draft", "feedback": "",
+             "metadata": '{"retry_n": 2}'},
         ]
         ctx = RejectionContext(
             gate_name="preview_approval",
@@ -240,8 +254,8 @@ class TestPreviewApprovalHandler:
         await preview_approval_handler(ctx)
         # Third regen must NOT fire — store stays at 2.
         regen_events = [
-            e for e in fake_pool.store.pipeline_events
-            if e["event_type"] == "task.regen_draft"
+            e for e in fake_pool.store.gate_history
+            if e["event_kind"] == "regen_draft"
         ]
         assert len(regen_events) == 2
 
@@ -260,14 +274,16 @@ class TestPreviewApprovalHandler:
         )
         # Pre-seed 2 prior regens.
         for i in range(2):
-            fake_pool.store.pipeline_events.append({
-                "event_type": "task.regen_draft",
-                "payload": f'{{"primary_id": "t-1", "retry_n": {i+1}}}',
+            fake_pool.store.gate_history.append({
+                "task_id": "t-1", "post_id": None,
+                "gate_name": "preview_approval",
+                "event_kind": "regen_draft", "feedback": "",
+                "metadata": f'{{"retry_n": {i+1}}}',
             })
         await preview_approval_handler(ctx)
         regen_events = [
-            e for e in fake_pool.store.pipeline_events
-            if e["event_type"] == "task.regen_draft"
+            e for e in fake_pool.store.gate_history
+            if e["event_kind"] == "regen_draft"
         ]
         # 2 prior + 1 new = 3 (cap raised to 5).
         assert len(regen_events) == 3
@@ -283,7 +299,7 @@ class TestPreviewApprovalHandler:
             site_config=None,
         )
         await preview_approval_handler(ctx)
-        assert fake_pool.store.pipeline_events == []
+        assert fake_pool.store.gate_history == []
 
 
 # ---------------------------------------------------------------------------
@@ -304,18 +320,21 @@ class TestFinalPublishApprovalHandler:
             site_config=None,
         )
         await final_publish_approval_handler(ctx)
-        assert len(fake_pool.store.pipeline_events) == 1
-        ev = fake_pool.store.pipeline_events[0]
+        assert len(fake_pool.store.gate_history) == 1
+        ev = fake_pool.store.gate_history[0]
         # Specifically NOT regen_draft — the writing was fine.
-        assert ev["event_type"] == "task.regen_media"
-        assert "p-1" in ev["payload"]
-        assert "podcast voice is wrong" in ev["payload"]
+        assert ev["event_kind"] == "regen_media"
+        assert ev["post_id"] == "p-1"
+        assert ev["task_id"] is None
+        assert ev["feedback"] == "podcast voice is wrong"
 
     async def test_retry_cap_default_2(self, fake_pool):
         for i in range(2):
-            fake_pool.store.pipeline_events.append({
-                "event_type": "task.regen_media",
-                "payload": f'{{"primary_id": "p-1", "retry_n": {i+1}}}',
+            fake_pool.store.gate_history.append({
+                "task_id": None, "post_id": "p-1",
+                "gate_name": "final_publish_approval",
+                "event_kind": "regen_media", "feedback": "",
+                "metadata": f'{{"retry_n": {i+1}}}',
             })
         ctx = RejectionContext(
             gate_name="final_publish_approval",
@@ -328,8 +347,8 @@ class TestFinalPublishApprovalHandler:
         )
         await final_publish_approval_handler(ctx)
         regen_events = [
-            e for e in fake_pool.store.pipeline_events
-            if e["event_type"] == "task.regen_media"
+            e for e in fake_pool.store.gate_history
+            if e["event_kind"] == "regen_media"
         ]
         assert len(regen_events) == 2  # cap held
 
@@ -344,7 +363,7 @@ class TestFinalPublishApprovalHandler:
             site_config=None,
         )
         await final_publish_approval_handler(ctx)
-        assert fake_pool.store.pipeline_events == []
+        assert fake_pool.store.gate_history == []
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +400,7 @@ class TestDispatchRejection:
         )
         await dispatch_rejection(ctx)  # no exception
         assert fake_pool.store.brain_knowledge == []
-        assert fake_pool.store.pipeline_events == []
+        assert fake_pool.store.gate_history == []
 
     async def test_handler_exception_is_swallowed(self, fake_pool):
         """A buggy handler must NOT propagate — the rejection itself
