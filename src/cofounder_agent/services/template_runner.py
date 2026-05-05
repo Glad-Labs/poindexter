@@ -32,10 +32,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import operator
 import time
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import Any, Callable, TypedDict
+from typing import Annotated, Any, Callable, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
@@ -141,7 +142,15 @@ class PipelineState(TypedDict, total=False):
     quality_result: object  # services.quality_service.QualityResult
     quality_passing: bool
     quality_details_initial: dict
-    qa_reviews: list
+    # qa_reviews uses operator.add as its reducer so parallel critic
+    # atoms (architect-composed fan-out: narrate -> [critic_1, critic_2]
+    # -> aggregate) can both append a Review on the same step. Without
+    # the reducer, LangGraph's default last-value channel rejects
+    # concurrent writes with InvalidUpdateError. Each critic returns
+    # its review wrapped in a one-element list; the reducer concats
+    # them. The aggregator atom reads the merged list as a normal
+    # state value.
+    qa_reviews: Annotated[list, operator.add]
     qa_rewrite_attempts: int
     stages: dict
     generate_metrics: dict

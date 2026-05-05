@@ -141,6 +141,18 @@ def _surface_stages_as_atoms() -> None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("[atom_registry] get_core_samples() stages failed: %s", exc)
 
+    # Resolve a default pool the runner shim can fall back to when the
+    # caller hasn't seeded ``state['database_service']`` (e.g. an
+    # architect-composed graph executed outside the worker context).
+    # The shared_context module already holds the process-wide DatabaseService.
+    fallback_pool = None
+    try:
+        from services.integrations.shared_context import get_database_service
+        _db = get_database_service()
+        fallback_pool = getattr(_db, "pool", None) if _db else None
+    except Exception:  # noqa: BLE001
+        fallback_pool = None
+
     surfaced = 0
     for stage_name, stage in stages_by_name.items():
         atom_slug = f"stage.{stage_name}"
@@ -150,7 +162,7 @@ def _surface_stages_as_atoms() -> None:
         if meta is None:
             continue
         _ATOMS[atom_slug] = meta
-        _RUNNERS[atom_slug] = _make_stage_runner(stage)
+        _RUNNERS[atom_slug] = _make_stage_runner(stage, fallback_pool=fallback_pool)
         surfaced += 1
     if surfaced:
         logger.info(
@@ -201,14 +213,23 @@ def _stage_to_atom_meta(stage_name: str, stage: Any) -> AtomMeta | None:
     ) if halts is not None else None  # always returns; halts kept for clarity
 
 
-def _make_stage_runner(stage: Any) -> Callable[..., Any]:
+def _make_stage_runner(
+    stage: Any, *, fallback_pool: Any = None,
+) -> Callable[..., Any]:
     """Build the atom-runner shim for a virtual stage atom.
 
     Calls ``services.template_runner.make_stage_node`` to get the
     canonical LangGraph node wrapper, then unwraps it as a plain
     awaitable that accepts the state dict — same contract real atoms
-    expose. We resolve pool from ``state['database_service']`` because
-    that's how stages already get their pool today.
+    expose.
+
+    Pool resolution order:
+    1. ``state['database_service'].pool`` — what the worker seeds when
+       running through content_router_service.
+    2. ``fallback_pool`` — captured from shared_context at registration
+       time, so architect-composed graphs executed outside the worker
+       context (CLI tools, smoke tests, ad-hoc compose() runs) can still
+       call PluginConfig.load() without crashing on a None pool.
     """
 
     async def runner(state: dict[str, Any]) -> dict[str, Any]:
@@ -216,6 +237,8 @@ def _make_stage_runner(stage: Any) -> Callable[..., Any]:
 
         db = state.get("database_service")
         pool = getattr(db, "pool", None) if db else None
+        if pool is None:
+            pool = fallback_pool
         node = make_stage_node(stage, pool, record_sink=None)
         return await node(state)  # type: ignore[arg-type]
 

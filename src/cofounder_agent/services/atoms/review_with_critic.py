@@ -196,9 +196,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     review["model_used"] = model
     review["raw_response"] = raw[:2000]
 
-    prior = list(state.get("qa_reviews") or [])
-    prior.append(review)
-    return {"qa_reviews": prior}
+    # PipelineState.qa_reviews has an ``operator.add`` reducer so
+    # parallel critics in a fan-out graph can both write on the same
+    # step. Returning a one-element list lets the reducer concat
+    # {"qa_reviews": [r1]} + {"qa_reviews": [r2]} = [r1, r2]. The
+    # aggregator atom reads the merged list as a regular state value.
+    return {"qa_reviews": [review]}
 
 
 def _parse_review(raw: str) -> dict[str, Any] | None:
