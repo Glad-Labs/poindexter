@@ -57,7 +57,27 @@ from services.template_runner import (
 logger = logging.getLogger(__name__)
 
 
-_ARCHITECT_SYSTEM_PROMPT = """\
+# Prompt key in UnifiedPromptManager + prompt_templates table. YAML
+# default lives at prompts/atoms.yaml; runtime overrides come from the
+# prompt_templates DB row. Per feedback_prompts_must_be_db_configurable.
+_PROMPT_KEY = "atoms.pipeline_architect.system_prompt"
+
+
+def _resolve_system_prompt() -> str:
+    """Pull the architect system prompt via UnifiedPromptManager."""
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(_PROMPT_KEY)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[pipeline_architect] prompt_manager lookup for %r failed (%s) — "
+            "using inline fallback",
+            _PROMPT_KEY, exc,
+        )
+        return _ARCHITECT_SYSTEM_PROMPT_FALLBACK
+
+
+_ARCHITECT_SYSTEM_PROMPT_FALLBACK = """\
 You are the Glad Labs pipeline architect. Given an INTENT (high-level
 request) and an ATOM CATALOG (one bullet line per atom, with PURPOSE
 / INPUTS / OUTPUTS / REQUIRES / PRODUCES blocks), produce a JSON
@@ -207,7 +227,7 @@ async def compose(
             )
 
         full_prompt = (
-            f"{_ARCHITECT_SYSTEM_PROMPT}\n\n"
+            f"{_resolve_system_prompt()}\n\n"
             f"---\n\n"
             f"{base_user_prompt}{retry_block}\n\n"
             f"---\n\n"

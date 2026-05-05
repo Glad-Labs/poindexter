@@ -1043,9 +1043,17 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     try:
         from services.auto_publish_gate import record_post_approve_metrics
+        # Pre-approve snapshot lives in task_metadata under "pre_approve_content"
+        # (written by finalize_task). Falls back to "content" — same key
+        # publish_service reads as the post-approve content. Falling back to
+        # post_approve when the snapshot is missing produces a 0-char-diff
+        # row (operator made no edits or snapshot wasn't captured), which
+        # is a more accurate signal than a fabricated full-content delta.
         pre_approve = (
-            merged.get("content_text")
-            or task_metadata.get("content_text")
+            task_metadata.get("pre_approve_content")
+            or merged.get("pre_approve_content")
+            or task_metadata.get("content")
+            or merged.get("content")
             or ""
         )
         post_approve = draft_content or ""

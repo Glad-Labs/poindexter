@@ -165,6 +165,15 @@ class FinalizeTaskStage:
             "featured_image_photographer": context.get("featured_image_photographer"),
             "featured_image_source": context.get("featured_image_source"),
             "content": content_text,
+            # Pre-approve snapshot for the auto_publish_gate edit-distance
+            # signal. publish_service.publish_post_from_task diffs this
+            # against the post-approve content (which may include operator
+            # edits) when writing published_post_edit_metrics. The snapshot
+            # is only written here on the awaiting_approval terminal step
+            # so any operator edits made between this row landing and the
+            # operator pressing approve land in `content` and produce a
+            # real diff against this snapshot.
+            "pre_approve_content": content_text,
             "seo_title": seo_title,
             "seo_description": seo_description,
             "seo_keywords": seo_keywords_list,

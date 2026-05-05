@@ -45,7 +45,32 @@ from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 logger = logging.getLogger(__name__)
 
 
-_REVIEW_SYSTEM_PROMPT = """\
+# Prompt key in UnifiedPromptManager + prompt_templates table. YAML
+# default lives at prompts/atoms.yaml; runtime overrides come from the
+# prompt_templates DB row. Per feedback_prompts_must_be_db_configurable.
+_PROMPT_KEY = "atoms.review_with_critic.system_prompt"
+
+
+def _resolve_system_prompt() -> str:
+    """Pull the critic system prompt via UnifiedPromptManager.
+
+    DB overrides win > YAML defaults > inline fallback. The inline
+    constant below stays as a last-resort fallback for bootstrap /
+    test paths where the prompt registry isn't initialized.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(_PROMPT_KEY)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[atoms.review_with_critic] prompt_manager lookup for %r failed "
+            "(%s) — using inline fallback",
+            _PROMPT_KEY, exc,
+        )
+        return _REVIEW_SYSTEM_PROMPT_FALLBACK
+
+
+_REVIEW_SYSTEM_PROMPT_FALLBACK = """\
 You are an editorial critic reviewing a draft article for a tech
 audience. Your job is to surface concrete, fixable issues so the
 writer can iterate — keep the post structure intact and report
@@ -179,7 +204,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             model=model,
             timeout_setting="pipeline_critic_timeout_seconds",
             timeout_default=90.0,
-            system=_REVIEW_SYSTEM_PROMPT,
+            system=_resolve_system_prompt(),
         )
     except Exception as exc:
         logger.exception("[atoms.review_with_critic] ollama call failed: %s", exc)

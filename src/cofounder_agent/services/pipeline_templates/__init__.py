@@ -169,12 +169,21 @@ def dev_diary(
             result = await _narrate_atom.run(dict(state))
             elapsed_ms = int((_time.time() - t0) * 1000)
             if record_sink is not None:
+                # Surface the deterministic quality_score atom returns so
+                # capability_outcomes captures the per-node score (the
+                # auto_publish_gate's training signal). Without this,
+                # quality_score lands on pipeline_versions but never on
+                # the per-node outcome row.
                 record_sink.append(
                     TemplateRunRecord(
                         name="atoms.narrate_bundle", ok=True,
                         detail=f"{len(result.get('content','') or '')} chars",
                         elapsed_ms=elapsed_ms,
-                        metrics={"model_used": result.get("model_used", "")},
+                        metrics={
+                            "model_used": result.get("model_used", ""),
+                            "quality_score": result.get("quality_score"),
+                            "word_count": len((result.get("content") or "").split()),
+                        },
                     )
                 )
             return result

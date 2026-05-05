@@ -82,7 +82,42 @@ _HEADER_PREFIX = "# What we shipped — "
 _FOOTER = "_Auto-compiled by Poindexter from today's commits and PRs._"
 
 
-_NARRATIVE_SYSTEM_PROMPT = """\
+# Prompt key in UnifiedPromptManager + prompt_templates table. The
+# YAML default lives at prompts/atoms.yaml; runtime overrides come
+# from the prompt_templates DB row with the matching key. Per
+# feedback_prompts_must_be_db_configurable: every prompt is
+# DB-configurable; inline constants are tech debt.
+_PROMPT_KEY = "atoms.narrate_bundle.system_prompt"
+
+
+def _resolve_system_prompt() -> str:
+    """Pull the narrate-bundle system prompt from UnifiedPromptManager.
+
+    DB overrides win > YAML defaults > inline fallback. Inline fallback
+    only fires when the prompt registry hasn't been initialized
+    (early bootstrap, test paths) — production reads from YAML at
+    minimum. Operators editing the prompt via Langfuse / SQL update
+    the prompt_templates row; next ``load_from_db()`` call (or app
+    restart) picks up the change.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(_PROMPT_KEY)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[atoms.narrate_bundle] prompt_manager lookup for %r failed (%s) — "
+            "falling back to inline constant",
+            _PROMPT_KEY, exc,
+        )
+        return _NARRATIVE_SYSTEM_PROMPT_FALLBACK
+
+
+# Inline fallback — kept in the codebase as the "last resort" prompt for
+# bootstrap / test / DB-unreachable paths. The canonical prompt lives in
+# prompts/atoms.yaml under the key above. Update both when the prompt
+# changes or remove this fallback once Langfuse + DB-only is the
+# established norm.
+_NARRATIVE_SYSTEM_PROMPT_FALLBACK = """\
 You are writing a daily dev diary entry for Glad Labs — a one-person
 indie shop building Poindexter, an AI-operated content business.
 This is autobiographical: you ARE Glad Labs writing about today's
@@ -369,17 +404,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     ).removeprefix("ollama/")
 
     bundle_text = _format_bundle_for_narrative(bundle)
+    system_prompt = _resolve_system_prompt()
     full_prompt = (
-        f"{_NARRATIVE_SYSTEM_PROMPT}\n\n"
+        f"{system_prompt}\n\n"
         f"---\n\n"
         f"BUNDLE:\n\n{bundle_text}\n\n"
         f"---\n\n"
-        f"Now produce 2-3 short paragraphs (max ~280 words total) "
-        f"summarizing what shipped, how, and why. Embed PR references "
-        f"inline as markdown links using the urls from the bundle. "
-        f"No headings, no bullets, no opening hook, no closing CTA, "
-        f"no first-person, no external references outside the bundle, "
-        f"no invented numbers. Output ONLY the prose."
+        f"Now write the dev_diary post. Follow the system prompt's "
+        f"voice + grounding rules. Output starts with the first "
+        f"letter of paragraph one and ends with the last letter of "
+        f"the closing paragraph."
     )
 
     try:
