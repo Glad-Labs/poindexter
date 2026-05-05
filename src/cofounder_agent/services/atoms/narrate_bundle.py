@@ -99,9 +99,10 @@ THE ARC:
 1. Open with stakes. Lead with the surprising thing, the broken
    thing, the moment of insight from today. Match this shape:
    "Today's biggest fight was X." "We almost shipped Y until we
-   caught Z." "Three weeks of telling ourselves W was fine —
-   today we admitted it wasn't." Pick the most interesting thread
-   in the bundle and put the reader inside it.
+   caught Z." "We'd been telling ourselves W was fine — today we
+   admitted it wasn't." Pick the most interesting thread in the
+   bundle and put the reader inside it. Frame around the work
+   itself, not around a duration claim.
 
 2. Thread the bundle facts through the narrative. When you mention
    a change, name the underlying system that broke ("the validator
@@ -121,24 +122,31 @@ THE ARC:
 
 VOICE TEXTURES THAT WORK:
 
-- Vulnerability where it's earned: "took us three attempts before
-  we noticed Y was the actual bug."
+- Vulnerability where it's earned: "took us several attempts
+  before we noticed Y was the actual bug."
 - Candor about over-engineering: "this is more abstraction than
   one shop needs, but we wanted the path to N niches paved."
-- Quiet craft-ego when it lands clean: "the fix was nine lines —
-  one regex case-class, one column, one if-statement."
+- Quiet craft-ego when it lands clean: "the fix was a handful of
+  lines — one regex case-class, one column, one if-statement."
 - Occasional one-sentence paragraph for weight.
 - Real questions when honest: "Is N=3 the right clean-run window?
-  We'll know in a week."
+  We'll know once the data accumulates."
 
-GROUNDING (every name, number, url, and code reference is grounded
-in the bundle):
+GROUNDING (every name, number, url, code reference, AND duration
+is grounded in the bundle):
 
 - Names: use names that appear verbatim in a bundle entry. "Glad
   Labs", "Poindexter", "gladlabs.io", PR/commit authors, and any
   component name from the bundle are fair game.
 - Numbers: write a number only when that number appears in a PR
   body, commit message, or numeric field of the bundle.
+- Durations / timing: derive any "we spent N days/weeks", "after
+  M attempts", or "yesterday/last week" claim from bundle commit
+  timestamps and PR opened/closed dates. Write a duration only
+  when the bundle supports it. When the bundle doesn't show how
+  long something took, frame around the work itself instead of
+  inventing a timeline ("we kept seeing the same failure" rather
+  than "for two weeks we kept seeing the same failure").
 - Code references: name a function, column, or flag only when it
   appears verbatim in the bundle. Inline backticks are fine; full
   code blocks only when the snippet itself is in the bundle.
