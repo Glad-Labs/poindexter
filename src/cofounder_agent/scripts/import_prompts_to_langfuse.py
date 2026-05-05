@@ -40,8 +40,15 @@ async def main() -> int:
         )
         return 1
 
+    from poindexter.cli._bootstrap import ensure_secret_key
     from services.prompt_manager import get_prompt_manager
     from services.site_config import SiteConfig
+
+    # Decrypting langfuse_secret_key requires POINDEXTER_SECRET_KEY in
+    # the env. Inside the worker container the startup path sets it; for
+    # bare ``poetry run`` invocations we have to lift it from
+    # bootstrap.toml ourselves.
+    ensure_secret_key()
 
     # Build a SiteConfig + DB pool so prompt_manager can layer DB
     # overrides on top of YAML. We only need this for the load — the
@@ -61,18 +68,16 @@ async def main() -> int:
         print(f"WARN: prompt DB load failed (continuing with YAML only): {e}",
               file=sys.stderr)
 
-    # Build the snapshot we'll push to Langfuse. Premium overrides win
-    # when active; otherwise default DB > YAML. Mirrors the runtime
-    # ``get_prompt`` priority so what we push matches what would have
-    # been served had Langfuse not been in front.
-    premium_active = pm._is_premium_active()
+    # Build the snapshot we'll push to Langfuse. DB override wins,
+    # YAML default falls through. Mirrors the runtime ``get_prompt``
+    # priority so what we push matches what would have been served had
+    # Langfuse not been in front. Premium-vs-default source filtering
+    # happens inside ``load_from_db`` via the premium_active setting,
+    # so by the time we read ``_db_overrides`` it already reflects the
+    # right sources.
     snapshot: dict[str, dict[str, Any]] = {}
     for key, entry in pm.prompts.items():
-        template = None
-        if premium_active:
-            template = pm._db_overrides_premium.get(key)
-        if template is None:
-            template = pm._db_overrides.get(key)
+        template = pm._db_overrides.get(key)
         if template is None:
             template = entry.get("template", "")
 
@@ -90,18 +95,33 @@ async def main() -> int:
               file=sys.stderr)
         return 1
 
-    client = Langfuse()
+    # Pull keys from app_settings (DB-first config), not env vars. The
+    # worker also reads these from site_config — keeping the import
+    # script consistent with runtime auth means rotating keys is one
+    # SQL UPDATE, not env + restart.
+    host = site_config.get("langfuse_host", "") or ""
+    public_key = site_config.get("langfuse_public_key", "") or ""
+    secret_key = await site_config.get_secret("langfuse_secret_key", "") or ""
+    if not (host and public_key and secret_key):
+        print(
+            "Langfuse credentials missing in app_settings (langfuse_host / "
+            "langfuse_public_key / langfuse_secret_key). Run scripts/"
+            "activate_langfuse.py first.",
+            file=sys.stderr,
+        )
+        return 1
+
+    client = Langfuse(host=host, public_key=public_key, secret_key=secret_key)
     try:
         if not client.auth_check():
-            print("Langfuse auth_check failed — verify LANGFUSE_HOST + keys.",
+            print("Langfuse auth_check failed — verify host + keys.",
                   file=sys.stderr)
             return 1
     except Exception as e:
         print(f"Langfuse unreachable: {e}", file=sys.stderr)
         return 1
 
-    print(f"Importing {len(snapshot)} prompts into Langfuse "
-          f"(premium_active={premium_active})...")
+    print(f"Importing {len(snapshot)} prompts into Langfuse...")
 
     imported = 0
     skipped = 0
@@ -122,12 +142,14 @@ async def main() -> int:
                 },
             )
             imported += 1
-            print(f"  ✓ {key} ({info['category']})")
+            print(f"  [ok] {key} ({info['category']})")
         except Exception as e:
             # ``create_prompt`` is idempotent at the name level — it
             # creates a new VERSION rather than failing. Real errors
-            # are network or schema. Surface and continue.
-            print(f"  ✗ {key}: {type(e).__name__}: {e}", file=sys.stderr)
+            # are network or schema. Surface and continue. ASCII-only
+            # markers because the Windows console default codepage
+            # (cp1252) crashes on unicode checkmarks.
+            print(f"  [FAIL] {key}: {type(e).__name__}: {e}", file=sys.stderr)
             failed += 1
 
     client.flush()
@@ -138,11 +160,17 @@ async def main() -> int:
 
 
 async def _connect_pool() -> Any:
-    """Connect to Postgres using the same DSN the worker uses."""
-    import asyncpg
-    from brain.bootstrap import resolve_database_url
+    """Connect to Postgres using the same DSN the worker uses.
 
-    dsn = resolve_database_url()
+    Uses the cofounder_agent-local bootstrap resolver so this script
+    runs both inside the worker container (where brain/ is on path)
+    and from a host poetry shell (where it isn't).
+    """
+    import asyncpg
+
+    from poindexter.cli._bootstrap import resolve_dsn
+
+    dsn = resolve_dsn()
     return await asyncpg.create_pool(dsn, min_size=1, max_size=2)
 
 

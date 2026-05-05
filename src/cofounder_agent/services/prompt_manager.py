@@ -99,6 +99,16 @@ class UnifiedPromptManager:
         self.prompts: dict[str, dict[str, Any]] = {}
         self.metadata: dict[str, PromptMetadata] = {}
         self._db_overrides: dict[str, str] = {}  # DB prompt overrides (loaded async)
+        # Site config injected by load_from_db — used by the Langfuse
+        # init path. The module-level site_config singleton is never
+        # .load()'d in process, so we have to capture the loaded one
+        # at the same DI seam as the DB pool.
+        self._site_config: Any = None
+        # Langfuse secret pre-fetched at load_from_db time. The Langfuse
+        # client init runs in a sync code path (get_prompt is sync), so
+        # the async-only get_secret call has to happen earlier and the
+        # value gets cached here.
+        self._langfuse_secret_key: str = ""
         # Langfuse client — lazy-initialized on first get_prompt call so
         # apps that don't use Langfuse don't pay the connect cost. None
         # when langfuse SDK isn't installed OR app_settings lacks the
@@ -198,6 +208,22 @@ class UnifiedPromptManager:
         Returns number of prompts loaded from DB.
         """
         self._site_config = site_config
+
+        # Pre-fetch the Langfuse secret while we're in async context —
+        # the Langfuse init runs sync from get_prompt. Best-effort: if
+        # the secret isn't readable (no key, not provisioned yet,
+        # etc.) we leave the cached value empty and the init path logs
+        # the "not configured" message + falls through to DB+YAML.
+        if site_config is not None:
+            try:
+                self._langfuse_secret_key = (
+                    await site_config.get_secret("langfuse_secret_key", "") or ""
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "[prompt_manager] langfuse secret pre-fetch failed: %s", exc,
+                )
+
         if pool is None:
             return 0
 
@@ -334,11 +360,18 @@ class UnifiedPromptManager:
     def _init_langfuse_client(self):
         """Build the Langfuse client lazily on first use.
 
-        Reads connection config from ``app_settings`` via the global
-        site_config (no env-var dependency per Matt's preference). When
-        any required setting is missing, returns None — the caller
-        gracefully falls through to the DB+YAML stack and Langfuse
-        becomes a no-op until the operator provisions credentials.
+        Reads connection config from ``app_settings`` via the SiteConfig
+        the worker handed us at ``load_from_db`` time (no env-var
+        dependency per Matt's preference). When any required setting is
+        missing, returns None — the caller gracefully falls through to
+        the DB+YAML stack and Langfuse becomes a no-op until the
+        operator provisions credentials.
+
+        Per CLAUDE.md §Configuration: the module-level
+        ``site_config`` singleton was retired in Phase H step 5; the DI
+        seam is the one passed to ``load_from_db``. Falling back to the
+        module singleton keeps the no-DB unit-test paths green when
+        ``load_from_db`` was never called.
         """
         if self._langfuse_client is not None:
             return self._langfuse_client
@@ -347,24 +380,23 @@ class UnifiedPromptManager:
         except ImportError:
             return None
 
+        site_config = self._site_config
+        if site_config is None:
+            try:
+                from services.site_config import site_config as _module_singleton
+                site_config = _module_singleton
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("[prompt_manager] site_config unavailable: %s", exc)
+                return None
+
         try:
-            from services.site_config import site_config
             host = site_config.get("langfuse_host", "")
             public_key = site_config.get("langfuse_public_key", "")
-            # Secret key is a SECRET, so it routes through get_secret
-            # which hits the encrypted column synchronously via cache.
-            # Falls back to plain get when get_secret isn't available.
-            try:
-                # site_config.get_secret is async — use the sync
-                # accessor that reads from the secret cache.
-                secret_key = (
-                    getattr(site_config, "_secrets", {}).get("langfuse_secret_key")
-                    or site_config.get("langfuse_secret_key", "")
-                )
-            except Exception:
-                secret_key = ""
+            # Secret pre-fetched at load_from_db time (async path);
+            # this sync init can't await get_secret itself.
+            secret_key = self._langfuse_secret_key
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[prompt_manager] site_config unavailable: %s", exc)
+            logger.debug("[prompt_manager] site_config read failed: %s", exc)
             return None
 
         host = (host or "").strip()
