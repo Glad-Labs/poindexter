@@ -900,12 +900,22 @@ class TaskExecutor:
                     })
                 except Exception:
                     logger.warning("[WEBHOOK] Failed to emit task.failed event", exc_info=True)
-                from services.integrations.operator_notify import (
-                    notify_operator,
+                # Routine task failures route via the dedup + severity helper
+                # (Glad-Labs/poindexter#370). Default destination is Discord;
+                # operators can opt back into Telegram via app_settings if they
+                # genuinely want every failure to page their phone. Dedup
+                # window prevents the 8-pages-in-35-seconds storm.
+                from services.task_failure_alerts import send_failure_alert
+                _pool = (
+                    getattr(self.database_service, "cloud_pool", None)
+                    or getattr(self.database_service, "pool", None)
                 )
-                await notify_operator(
-                    f"Failed: \"{topic}\" - {str(error_msg)[:100]}",
-                    critical=True,
+                await send_failure_alert(
+                    task_id=str(task_id),
+                    topic=topic or "",
+                    error_message=str(error_msg),
+                    pool=_pool,
+                    get_setting=self._get_setting,
                 )
             else:
                 logger.info(
@@ -1231,22 +1241,82 @@ class TaskExecutor:
         'rejected_retry' statuses are eligible; approval_status
         is NOT checked because case 2 has approval_status='rejected' but
         should still retry.
+
+        **Backoff + opt-in gate (Glad-Labs/poindexter#370).** As of
+        migration 0158 the auto-retry sweeper is OFF BY DEFAULT
+        (``task_retry_max_attempts=0``). Operators must explicitly retry
+        via the CLI / approval UI. When the operator opts back in by
+        setting ``task_retry_max_attempts > 0``, attempts are
+        exponentially backed off via
+        ``task_retry_backoff_initial_seconds`` * ``2^(retry_count)``
+        starting from the row's ``updated_at``. ``max_task_retries``
+        (the legacy stale-sweep ceiling) is left untouched so the
+        in-progress timeout sweeper still works.
         """
         if not self.database_service or not self.database_service.pool:
             return
         try:
-            max_retries = int(await self._get_setting("max_task_retries", str(MAX_TASK_RETRIES)))
+            # New gate: task_retry_max_attempts replaces the implicit
+            # max_task_retries-driven retry. Default 0 = no auto-retry.
+            try:
+                max_attempts = int(
+                    await self._get_setting("task_retry_max_attempts", "0")
+                )
+            except (TypeError, ValueError):
+                # Fail loud per feedback_no_silent_defaults — a typo'd
+                # value should not silently re-enable the auto-retry storm.
+                logger.error(
+                    "[AUTO_RETRY] Invalid task_retry_max_attempts value — "
+                    "treating as 0 (auto-retry disabled). Fix the "
+                    "app_settings row to re-enable.",
+                )
+                max_attempts = 0
+            if max_attempts <= 0:
+                logger.debug(
+                    "[AUTO_RETRY] task_retry_max_attempts=%d — auto-retry "
+                    "disabled; operator must explicitly retry failed tasks.",
+                    max_attempts,
+                )
+                return
+
+            try:
+                backoff_initial = max(
+                    1,
+                    int(await self._get_setting(
+                        "task_retry_backoff_initial_seconds", "60"
+                    )),
+                )
+            except (TypeError, ValueError):
+                logger.error(
+                    "[AUTO_RETRY] Invalid task_retry_backoff_initial_seconds "
+                    "— falling back to 60s.",
+                )
+                backoff_initial = 60
+
+            # Legacy retry_window_hours bound stays in place — never
+            # auto-retry a row that's been sitting around for days.
             retry_window_h = int(await self._get_setting("task_retry_window_hours", "24"))
+
+            # Eligibility: status in retry-able set, inside the window,
+            # under the new attempt cap, allow_revisions != false, AND
+            # the exponential-backoff delay since updated_at has elapsed.
+            # `EXTRACT(EPOCH FROM (NOW() - updated_at))` is the number of
+            # seconds since the row last transitioned (the failure or the
+            # previous retry). We compare against
+            # backoff_initial * 2^retry_count.
             rows = await self.database_service.pool.fetch(f"""
                 SELECT task_id, status, topic, task_metadata,
-                       COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) as retry_count
+                       COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) as retry_count,
+                       updated_at
                 FROM content_tasks
                 WHERE status IN ('failed', 'rejected_retry', 'failed_revisions_requested')
                 AND created_at > NOW() - INTERVAL '{retry_window_h} hours'
                 AND COALESCE((task_metadata::jsonb->>'retry_count')::int, 0) < $1
                 AND COALESCE((task_metadata::jsonb->>'allow_revisions')::text, 'true') != 'false'
+                AND EXTRACT(EPOCH FROM (NOW() - updated_at))
+                    >= $2 * POWER(2, COALESCE((task_metadata::jsonb->>'retry_count')::int, 0))
                 LIMIT 3
-            """, max_retries)  # nosec B608  # retry_window_h is int from app_settings (cast above); max_retries uses $1
+            """, max_attempts, backoff_initial)  # nosec B608  # retry_window_h is int from app_settings (cast above); max_attempts and backoff_initial use $1/$2
 
             for row in rows:
                 task_id = row["task_id"]
@@ -1285,8 +1355,10 @@ class TaskExecutor:
                     "task_metadata": meta,
                 })
                 logger.info(
-                    "[AUTO_RETRY] Reset task %s to pending (retry %d/%d, topic: %s)",
-                    task_id[:8], retry_count + 1, MAX_TASK_RETRIES, topic[:40],
+                    "[AUTO_RETRY] Reset task %s to pending (retry %d/%d, "
+                    "topic: %s, backoff_base=%ds)",
+                    task_id[:8], retry_count + 1, max_attempts,
+                    topic[:40], backoff_initial,
                 )
         except Exception:
             logger.warning("[AUTO_RETRY] Auto-retry sweep failed", exc_info=True)
