@@ -332,11 +332,79 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         f"{prose}\n\n"
         f"{_FOOTER}\n"
     )
+
+    quality_score = _compute_quality_score(bundle, prose, body)
+
     return {
         "content": body,
         "model_used": model,
         "_narrate_bundle_ran": True,
+        # Deterministic quality_score for downstream finalize_task +
+        # auto_publish_gate. The dev_diary template skips the legacy
+        # quality_evaluation / cross_model_qa stages because the post
+        # is fact-narration grounded in real bundle data — but the
+        # gate still needs SOMETHING to score against. This computes
+        # a calculated score from bundle integrity + citation rate +
+        # length, per feedback_calculated_vs_generated.
+        "quality_score": quality_score,
     }
+
+
+def _compute_quality_score(
+    bundle: dict[str, Any], prose: str, full_body: str,
+) -> float:
+    """Deterministic 0-100 quality score for the rendered dev_diary.
+
+    Scoring rubric (positive directives — what good looks like):
+
+    - 100: starts at the ceiling.
+    - Stays at ceiling when prose is real (not the quiet-day fallback)
+      AND the post cites at least min(8, N_prs) PRs inline as
+      markdown links AND length sits inside the target band.
+    - Drops by deductions:
+        - 50 deduction when the prose is empty or the quiet-day
+          fallback (no real shipped work to narrate).
+        - Citation deduction up to 30 points based on how short of
+          target the inline citation count fell. Target is
+          ``min(8, N_prs)`` because the writer prompt asks for
+          thematic grouping, not enumeration — citing 8 representative
+          PRs is sufficient even on busy days with 30+ merges.
+        - 15 deduction when word count is outside the 80-450 band
+          (matches the prompt's 2-3 paragraph / ~280 word target).
+    - Floor 30 once any prose rendered (the post still ships, just
+      with operator review).
+
+    Returns the score rounded to one decimal. The auto_publish_gate
+    compares this against ``dev_diary_auto_publish_threshold`` (default
+    -1 = disabled), so even when scores hover at 100 nothing
+    auto-publishes until the operator opts in.
+    """
+    score = 100.0
+    prose_clean = (prose or "").strip().lower()
+    word_count = len((prose or "").split())
+
+    quiet_day = "quiet day" in prose_clean or len(prose_clean) < 40
+    if quiet_day:
+        score -= 50
+
+    prs = bundle.get("merged_prs") or []
+    if prs:
+        cited = 0
+        for pr in prs:
+            url = (pr.get("url") or "").strip() if isinstance(pr, dict) else ""
+            if url and url in full_body:
+                cited += 1
+        target = min(8, len(prs))
+        miss_rate = max(0.0, 1 - (cited / max(1, target)))
+        score -= round(miss_rate * 30, 1)
+
+    if word_count < 80 or word_count > 450:
+        score -= 15
+
+    if not quiet_day and score < 30:
+        score = 30.0
+    score = max(0.0, min(100.0, score))
+    return round(score, 1)
 
 
 async def _load_bundle_from_db(pool: Any, task_id: Any) -> dict[str, Any]:
