@@ -913,25 +913,31 @@ async def process_queue(pool, max_items: int = 5):
         logger.error("[BRAIN] Queue processing failed: %s", e, exc_info=True)
 
 
-async def _bump_auto_cancelled_metric(pool, count: int) -> None:
-    """Record sweeper-auto-cancel events so Prometheus can track the rate.
+async def _stamp_auto_cancelled(pool, task_ids: list) -> None:
+    """Stamp ``pipeline_tasks.auto_cancelled_at`` for the given rows.
 
-    GH-90 AC #4: expose ``pipeline_auto_cancelled_total`` as an operator
-    metric. The brain daemon is standalone (no prometheus_client import),
-    so it writes events to ``pipeline_events`` and the worker's
-    ``metrics_exporter`` counts them on scrape. This keeps the signal
-    persistent across process restarts — a scrape-only counter in
-    brain-daemon memory would reset to zero on every restart.
+    GH-90 AC #4 + poindexter#366 phase 2: the sweeper used to write
+    one row per cancellation into ``pipeline_events`` so the worker's
+    metrics_exporter could COUNT them on Prometheus scrape (a raw
+    in-memory counter would reset on brain restart). The signal now
+    lives on ``pipeline_tasks.auto_cancelled_at`` directly — the
+    worker reads ``COUNT(*) WHERE auto_cancelled_at IS NOT NULL`` for
+    the same gauge, no separate event row.
+
+    Idempotent: a re-stamp on the same task_ids leaves the original
+    cancel timestamp in place (COALESCE) so a sweeper retry can't
+    inflate the count.
     """
-    if count <= 0:
+    if not task_ids:
         return
-    for _ in range(count):
-        await pool.execute(
-            """
-            INSERT INTO pipeline_events (event_type, payload)
-            VALUES ('task.auto_cancelled', '{"reason": "stale_task_sweeper"}'::jsonb)
-            """
-        )
+    await pool.execute(
+        """
+        UPDATE pipeline_tasks
+           SET auto_cancelled_at = COALESCE(auto_cancelled_at, NOW())
+         WHERE task_id = ANY($1::text[])
+        """,
+        [str(t) for t in task_ids],
+    )
 
 
 async def auto_remediate(pool):
@@ -973,9 +979,9 @@ async def auto_remediate(pool):
                     _tid, _topic, stale_minutes,
                 )
             try:
-                await _bump_auto_cancelled_metric(pool, len(stuck))
+                await _stamp_auto_cancelled(pool, task_ids)
             except Exception as _metric_err:
-                logger.debug("[BRAIN] auto_cancelled metric bump failed: %s", _metric_err)
+                logger.debug("[BRAIN] auto_cancelled stamp failed: %s", _metric_err)
 
         # 2. Auto-expire awaiting_approval tasks older than 7 days
         # #198: auto-reject stale approval window tunable via app_settings.

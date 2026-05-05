@@ -404,14 +404,16 @@ async def refresh_metrics(
         logger.debug("refresh_metrics: approval queue query failed: %s", e)
 
     # GH-90: cumulative count of sweeper auto-cancels. Read from
-    # pipeline_events so the value survives worker restarts (a raw
-    # Counter would reset to 0 every deploy, making rate() useless on
-    # short windows).
+    # pipeline_tasks.auto_cancelled_at so the value survives worker
+    # restarts (a raw Counter would reset to 0 every deploy, making
+    # rate() useless on short windows). Phase 2 of poindexter#366
+    # moved this off pipeline_events; the partial index makes COUNT
+    # cheap.
     try:
         async with pool.acquire() as conn:
             cancelled_n = await conn.fetchval(
-                "SELECT COUNT(*) FROM pipeline_events "
-                "WHERE event_type = 'task.auto_cancelled'"
+                "SELECT COUNT(*) FROM pipeline_tasks "
+                "WHERE auto_cancelled_at IS NOT NULL"
             )
         AUTO_CANCELLED_TOTAL.set(int(cancelled_n or 0))
     except Exception as e:
