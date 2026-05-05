@@ -127,6 +127,21 @@ psycopg = { version = ">=3.2.0,<4.0", extras = ["binary", "pool"] }
 # datasets >=2.16 handles the new pyarrow API; 3.x is the current
 # stable line. Closes Glad-Labs/poindexter#308.
 datasets = "^3.0"
+# LiteLLM — backs services/cost_lookup.py (model_cost table — #199),
+# the LiteLLMProvider plugin (services/llm_providers/litellm_provider.py
+# — #372 cutover), and the Langfuse callback wiring used at lifespan
+# startup. Without this dep declared, both the cost layer and the
+# Langfuse tracer silently no-op (try/except ImportError guards) — see
+# the migration 0160 docstring for the gap analysis. Pinned to the
+# 1.83.x line that ships the langfuse_otel callback name we register.
+litellm = ">=1.83.0,<2.0"
+
+# Langfuse — same gap as litellm. PR #47 (Langfuse-first prompt manager)
+# and PR #241 (LiteLLM→Langfuse callback) both import langfuse with
+# try/except ImportError guards but the dep was never declared, so both
+# integrations have been silently no-opping in production. Adding here
+# so the worker image rebuild picks both up alongside litellm.
+langfuse = ">=3.0,<4.0"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]
@@ -243,6 +258,12 @@ cross_model_qa = "cofounder_agent.services.stages.cross_model_qa:CrossModelQASta
 [tool.poetry.plugins."poindexter.llm_providers"]
 ollama_native = "cofounder_agent.services.llm_providers.ollama_native:OllamaNativeProvider"
 openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAICompatProvider"
+# LiteLLM-backed provider — the production default after migration 0160
+# (Glad-Labs/poindexter#372). Also discoverable via plugins/registry.py
+# core_samples so it's available even when entry_points haven't been
+# refreshed (e.g. dev installs where `poetry install` hasn't re-run
+# since this entry was added).
+litellm = "cofounder_agent.services.llm_providers.litellm_provider:LiteLLMProvider"
 
 [build-system]
 requires = ["poetry-core"]
