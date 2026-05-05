@@ -1213,6 +1213,100 @@ services:
         condition: service_healthy
 
   # ===========================================
+  # In-stack Postgres backup (Glad-Labs/poindexter#385)
+  # ===========================================
+  # Tier 1 of the backup story: hourly + daily pg_dump → bind-mounted host
+  # directory (~/.poindexter/backups/auto/). Bind mount, NOT a docker named
+  # volume — named volumes die with `docker volume prune` and Docker
+  # Desktop reinstalls (the exact failure mode that bit us 2026-05-05).
+  #
+  # Two sibling containers, one image, two cadences:
+  #   backup-hourly  — every hour, keeps last 24 dumps
+  #   backup-daily   — every 24h, keeps last 7 dumps
+  #
+  # Tier 2 (off-machine: USB / S3 / B2 via restic) is a separate concern;
+  # see Matt's GladLabs-DR-Backup scheduled task or future
+  # `poindexter setup` --backup-target prompts. The two tiers are
+  # independent so a failure in one doesn't take down the other.
+  #
+  # Failure path: writes a row to alert_events, severity=critical. The
+  # brain daemon's alert_dispatcher picks it up on its 30s sweep and
+  # routes to Telegram (critical) + Discord (warning) through the same
+  # pipeline Grafana alerts use. One notification surface.
+  backup-hourly:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.backup
+    image: poindexter-backup:latest
+    container_name: poindexter-backup-hourly
+    restart: unless-stopped
+    environment:
+      BACKUP_TIER: hourly
+      PG_HOST: postgres-local
+      PG_PORT: "5432"
+      PG_USER: ${LOCAL_POSTGRES_USER:-poindexter}
+      PG_DATABASE: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      PGPASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
+      TZ: ${TZ:-UTC}
+    volumes:
+      # Bind mount (NOT named volume) so backups survive `docker volume
+      # prune` and Docker Desktop reinstalls. Tilde doesn't expand in
+      # compose env-var defaults; ${HOME} does. Operators can override
+      # POINDEXTER_BACKUP_DIR (e.g. to a second drive) without editing
+      # compose.
+      - ${POINDEXTER_BACKUP_DIR:-${HOME}/.poindexter/backups/auto}:/backups
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+    healthcheck:
+      # Container is healthy if the latest hourly dump is < 90 minutes old.
+      # Detects the silent-stop failure mode where the loop exits cleanly
+      # but stops producing output (one-off mtime check is cheap).
+      test:
+        - "CMD-SHELL"
+        - "find /backups/hourly -name 'poindexter_brain_*.dump' -mmin -90 | grep -q ."
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 5m
+
+  backup-daily:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.backup
+    image: poindexter-backup:latest
+    container_name: poindexter-backup-daily
+    restart: unless-stopped
+    environment:
+      BACKUP_TIER: daily
+      PG_HOST: postgres-local
+      PG_PORT: "5432"
+      PG_USER: ${LOCAL_POSTGRES_USER:-poindexter}
+      PG_DATABASE: ${LOCAL_POSTGRES_DB:-poindexter_brain}
+      PGPASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
+      TZ: ${TZ:-UTC}
+    volumes:
+      # Bind mount (NOT named volume) so backups survive `docker volume
+      # prune` and Docker Desktop reinstalls. Tilde doesn't expand in
+      # compose env-var defaults; ${HOME} does. Operators can override
+      # POINDEXTER_BACKUP_DIR (e.g. to a second drive) without editing
+      # compose.
+      - ${POINDEXTER_BACKUP_DIR:-${HOME}/.poindexter/backups/auto}:/backups
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+    healthcheck:
+      # Daily dumps are only produced every 24h; healthy if the latest
+      # is < 26 hours old (90 min slack like the hourly).
+      test:
+        - "CMD-SHELL"
+        - "find /backups/daily -name 'poindexter_brain_*.dump' -mmin -1560 | grep -q ."
+      interval: 30m
+      timeout: 10s
+      retries: 3
+      start_period: 30m
+
+  # ===========================================
   # LiveKit Server — multi-party WebRTC for the conference-call voice agent.
   # MIT-licensed. One container hosts every voice room.
   # ``--dev`` mode: in-memory room store, no TLS (Tailscale Funnel terminates

@@ -1,0 +1,34 @@
+# Poindexter in-stack backup service.
+#
+# Tier 1 of the backup story (Glad-Labs/poindexter#385): hourly pg_dump
+# + daily full snapshot of poindexter_brain → bind-mounted host directory
+# (NOT a docker named volume — those die with `docker volume prune` and
+# Docker Desktop reinstalls, which would defeat the purpose).
+#
+# Tier 2 (off-machine: USB / S3 / B2 via restic) lives elsewhere — this
+# service is the always-on first line of defense.
+#
+# Image is intentionally tiny: alpine + postgresql-client + bash + curl.
+# No python, no app code — keeps the image surface small and the failure
+# modes obvious. The brain handles alert dispatch downstream via the
+# alert_events insert this script does on failure.
+
+FROM alpine:3.20
+
+RUN apk add --no-cache \
+    bash \
+    postgresql16-client \
+    curl \
+    coreutils \
+    findutils \
+    tzdata
+
+WORKDIR /app
+COPY scripts/backup/run.sh /app/run.sh
+RUN chmod +x /app/run.sh
+
+# Default to hourly cadence; the script honours BACKUP_TIER (hourly|daily)
+# and reads further config from app_settings via psql.
+ENV BACKUP_TIER=hourly
+
+ENTRYPOINT ["/app/run.sh"]
