@@ -388,8 +388,9 @@ async def approve(
 
     # Clear the gate columns. Keep status as-is (the runner flipped it
     # to in_progress when the Stage halted; clearing the gate lets the
-    # next pipeline tick pick up where it left off). The pipeline_events
-    # row below is what wakes the runner.
+    # next pipeline tick pick up where it left off). The
+    # pipeline_gate_history row below is what the resume-pass
+    # idempotency check reads (services/atoms/approval_gate.py).
     async with pool.acquire() as conn:
         await conn.execute(
             """
@@ -405,16 +406,15 @@ async def approve(
 
         await conn.execute(
             """
-            INSERT INTO pipeline_events (event_type, payload)
-            VALUES ($1, $2::jsonb)
+            INSERT INTO pipeline_gate_history
+                (task_id, gate_name, event_kind, feedback, metadata)
+            VALUES ($1, $2, 'approved', $3, $4::jsonb)
             """,
-            "task.gate_approved",
+            str(task_id),
+            cleared_gate,
+            feedback or "",
             json.dumps(
-                {
-                    "task_id": str(task_id),
-                    "gate_name": cleared_gate,
-                    "feedback": feedback or "",
-                },
+                {"previous_status": previous_status},
                 default=str,
             ),
         )

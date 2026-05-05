@@ -174,23 +174,45 @@ async def dispatch_rejection(ctx: RejectionContext) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _retry_count(pool: Any, primary_id: str, event_type: str) -> int:
-    """How many times has this regen event already fired for this row?
+async def _retry_count(
+    pool: Any,
+    *,
+    gate_name: str,
+    event_kind: str,
+    task_id: str | None = None,
+    post_id: str | None = None,
+) -> int:
+    """How many times has this regen kind already fired for this row?
 
-    Uses ``pipeline_events`` as the source of truth — every regen
-    write goes there with the primary_id in the payload. A separate
-    counter table would be more explicit but adds a schema +
-    maintenance burden for one boolean question.
+    Reads from ``pipeline_gate_history`` — the typed side-table that
+    Phase 1 of the pipeline_events split-migration (poindexter#366)
+    introduced. Exactly one of ``task_id`` or ``post_id`` must be set.
     """
-    try:
-        count = await pool.fetchval(
-            """
-            SELECT COUNT(*) FROM pipeline_events
-             WHERE event_type = $1
-               AND payload ->> 'primary_id' = $2
-            """,
-            event_type, primary_id,
+    if (task_id is None) == (post_id is None):
+        raise ValueError(
+            "_retry_count requires exactly one of task_id or post_id"
         )
+    try:
+        if task_id is not None:
+            count = await pool.fetchval(
+                """
+                SELECT COUNT(*) FROM pipeline_gate_history
+                 WHERE task_id = $1
+                   AND gate_name = $2
+                   AND event_kind = $3
+                """,
+                task_id, gate_name, event_kind,
+            )
+        else:
+            count = await pool.fetchval(
+                """
+                SELECT COUNT(*) FROM pipeline_gate_history
+                 WHERE post_id = $1
+                   AND gate_name = $2
+                   AND event_kind = $3
+                """,
+                post_id, gate_name, event_kind,
+            )
         return int(count or 0)
     except Exception as exc:
         logger.warning(
@@ -213,22 +235,44 @@ def _max_retries(site_config: Any, gate_name: str, default: int = 2) -> int:
         return default
 
 
-async def _emit_event(
-    pool: Any, event_type: str, payload: dict[str, Any],
+async def _emit_regen(
+    pool: Any,
+    *,
+    gate_name: str,
+    event_kind: str,
+    feedback: str,
+    retry_n: int,
+    task_id: str | None = None,
+    post_id: str | None = None,
 ) -> None:
-    """Insert a ``pipeline_events`` row. Logs + swallows failures."""
+    """Insert a ``pipeline_gate_history`` row. Logs + swallows failures.
+
+    Exactly one of ``task_id`` / ``post_id`` must be set — the schema's
+    CHECK constraint enforces this, but we validate up-front so the
+    error message is useful instead of "violates check constraint."
+    """
+    if (task_id is None) == (post_id is None):
+        raise ValueError(
+            "_emit_regen requires exactly one of task_id or post_id"
+        )
     try:
         await pool.execute(
             """
-            INSERT INTO pipeline_events (event_type, payload)
-            VALUES ($1, $2::jsonb)
+            INSERT INTO pipeline_gate_history
+                (task_id, post_id, gate_name, event_kind, feedback, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
             """,
-            event_type,
-            json.dumps(payload, default=str),
+            task_id,
+            post_id,
+            gate_name,
+            event_kind,
+            feedback,
+            json.dumps({"retry_n": retry_n}, default=str),
         )
     except Exception as exc:
         logger.warning(
-            "[rejection_handlers] emit %s failed: %s", event_type, exc,
+            "[rejection_handlers] emit %s/%s failed: %s",
+            gate_name, event_kind, exc,
         )
 
 
@@ -325,7 +369,12 @@ async def preview_approval_handler(ctx: RejectionContext) -> None:
         return
 
     cap = _max_retries(ctx.site_config, ctx.gate_name)
-    prior = await _retry_count(ctx.pool, ctx.task_id, "task.regen_draft")
+    prior = await _retry_count(
+        ctx.pool,
+        gate_name=ctx.gate_name,
+        event_kind="regen_draft",
+        task_id=ctx.task_id,
+    )
     if prior >= cap:
         logger.info(
             "[preview_approval_handler] task=%s already retried %d times "
@@ -346,14 +395,14 @@ async def preview_approval_handler(ctx: RejectionContext) -> None:
         )
         return
 
-    payload = {
-        "primary_id": ctx.task_id,
-        "task_id": ctx.task_id,
-        "gate_name": ctx.gate_name,
-        "feedback": ctx.reason or "",
-        "retry_n": prior + 1,
-    }
-    await _emit_event(ctx.pool, "task.regen_draft", payload)
+    await _emit_regen(
+        ctx.pool,
+        gate_name=ctx.gate_name,
+        event_kind="regen_draft",
+        feedback=ctx.reason or "",
+        retry_n=prior + 1,
+        task_id=ctx.task_id,
+    )
     audit_log_bg(
         event_type="rejection_handler_preview_approval",
         source="rejection_handlers",
@@ -388,7 +437,12 @@ async def final_publish_approval_handler(ctx: RejectionContext) -> None:
         return
 
     cap = _max_retries(ctx.site_config, ctx.gate_name)
-    prior = await _retry_count(ctx.pool, ctx.post_id, "task.regen_media")
+    prior = await _retry_count(
+        ctx.pool,
+        gate_name=ctx.gate_name,
+        event_kind="regen_media",
+        post_id=ctx.post_id,
+    )
     if prior >= cap:
         logger.info(
             "[final_publish_approval_handler] post=%s already retried %d "
@@ -408,14 +462,14 @@ async def final_publish_approval_handler(ctx: RejectionContext) -> None:
         )
         return
 
-    payload = {
-        "primary_id": ctx.post_id,
-        "post_id": ctx.post_id,
-        "gate_name": ctx.gate_name,
-        "feedback": ctx.reason or "",
-        "retry_n": prior + 1,
-    }
-    await _emit_event(ctx.pool, "task.regen_media", payload)
+    await _emit_regen(
+        ctx.pool,
+        gate_name=ctx.gate_name,
+        event_kind="regen_media",
+        feedback=ctx.reason or "",
+        retry_n=prior + 1,
+        post_id=ctx.post_id,
+    )
     audit_log_bg(
         event_type="rejection_handler_final_publish_approval",
         source="rejection_handlers",

@@ -196,22 +196,22 @@ def _resolve_pool(state: dict[str, Any]) -> Any:
 
 async def _gate_already_cleared(pool: Any, task_id: str, gate_name: str) -> bool:
     """Return True if the task previously paused at this gate and was
-    approved. Detected by ``content_tasks.awaiting_gate IS NULL`` AND
-    a ``task.gate_approved`` event for this (task_id, gate) pair.
+    approved.
 
-    We check the pipeline_events trail rather than relying on awaiting_gate
-    alone because the column also reads NULL for tasks that never hit
-    the gate at all.
+    We check ``pipeline_gate_history`` rather than relying on
+    ``content_tasks.awaiting_gate`` alone because the column also reads
+    NULL for tasks that never hit the gate at all — the history row is
+    what tells us "this gate was specifically cleared, not just absent."
     """
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchval(
                 """
                 SELECT EXISTS(
-                  SELECT 1 FROM pipeline_events
-                  WHERE event_type = 'task.gate_approved'
-                    AND payload->>'task_id' = $1
-                    AND payload->>'gate_name' = $2
+                  SELECT 1 FROM pipeline_gate_history
+                  WHERE task_id = $1
+                    AND gate_name = $2
+                    AND event_kind = 'approved'
                 )
                 """,
                 str(task_id), gate_name,
