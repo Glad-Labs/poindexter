@@ -191,8 +191,8 @@ class TestTopicDecisionHandler:
         # entity:"" row.
         assert fake_pool.store.brain_knowledge == []
 
-    async def test_no_pipeline_events_emitted(self, fake_pool):
-        """Topic rejection is terminal — no regen, no event."""
+    async def test_no_gate_history_row_emitted(self, fake_pool):
+        """Topic rejection is terminal — no regen, no gate-history row."""
         ctx = RejectionContext(
             gate_name="topic_decision",
             task_id="t-1",

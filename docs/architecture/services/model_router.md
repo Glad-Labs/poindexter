@@ -4,6 +4,17 @@
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_model_router.py`
 **Last reviewed:** 2026-04-30
 
+> **Status: legacy.** Being replaced by the LiteLLM-backed `LLMProvider`
+> plugin (`services/llm_providers/litellm_provider.py`). Migration is
+> tracked in poindexter#199 — phase 1 shipped 2026-05-04 (provider
+> plugin + smoke-test against local Ollama). Phase 2 (delete
+> model_router + cost_guard / usage_tracker hand-rolling) waits on
+> production validation: flip
+> `plugin.llm_provider.primary.standard='litellm'` and observe a
+> typical pipeline run before the deletion lands. **Do not extend
+> this module** with new tier-routing or fallback logic — LiteLLM
+> already does it as mature OSS.
+
 ## What it does
 
 `ModelRouter` picks an Ollama model for a given task based on a

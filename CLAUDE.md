@@ -40,7 +40,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 ### Key Numbers (as of May 3, 2026)
 
 - 51 live posts on gladlabs.io (217 posts total: 143 drafts, 23 archived; 1,467 pipeline_tasks across all generation runs)
-- 400 Python files under `src/cofounder_agent/services/` (15 highlighted in the table below are the load-bearing ones)
+- 400 Python files under `src/cofounder_agent/services/` (18 highlighted in the table below are the load-bearing ones — added template_runner, prompt_manager, and the LiteLLM provider plugin during the 2026-05-04 OSS-migration push)
 - 6 Grafana dashboards (post-merge consolidation), 4 alert rules
 - 7,900+ Python unit tests passing (329 test files)
 - 453 app_settings keys (the in-code DI layer accepts hundreds more — see PR sweeps #198 + #221)
@@ -99,25 +99,28 @@ npm run type:check            # Python mypy
 - `DEPLOYMENT_MODE=coordinator` — minimal read-only API (intended for future cloud host; currently unused)
 - `DEPLOYMENT_MODE=worker` (local PC) — claims tasks, runs content pipeline via Ollama
 
-**Key services (15 load-bearing):**
+**Key services (18 load-bearing):**
 
-| Service                                   | Purpose                                                    |
-| ----------------------------------------- | ---------------------------------------------------------- |
-| `content_router_service.py`               | 6-stage content pipeline with cross-model QA               |
-| `content_validator.py`                    | Anti-hallucination rules (programmatic, no LLM)            |
-| `multi_model_qa.py`                       | Adversarial review (different LLMs check each other)       |
-| `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                |
-| `workflow_executor.py`                    | Step-based workflow orchestration                          |
-| `settings_service.py`                     | DB-backed config (app_settings, 453 active keys)           |
-| `site_config.py`                          | DI seam over settings (Phase H singleton replacement)      |
-| `cost_guard.py`                           | Daily/monthly spend limits                                 |
-| `model_router.py`                         | Cost-tiered model selection (free/budget/standard/premium) |
-| `research_service.py` / `web_research.py` | Topic research + web fact-check                            |
-| `publish_service.py`                      | Final publish + scheduled_publisher integration            |
-| `quality_service.py`                      | Quality scoring orchestration                              |
-| `internal_link_coherence.py`              | Auto-adds related post links                               |
-| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama                      |
-| `newsletter_service.py`                   | Weekly digest generator                                    |
+| Service                                   | Purpose                                                                                                                                                                                            |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `content_router_service.py`               | 6-stage content pipeline with cross-model QA                                                                                                                                                       |
+| `content_validator.py`                    | Anti-hallucination rules (programmatic, no LLM)                                                                                                                                                    |
+| `multi_model_qa.py`                       | Adversarial review (different LLMs check each other)                                                                                                                                               |
+| `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                                                                                                                                                        |
+| `workflow_executor.py`                    | Legacy phase-based orchestration — being replaced by `template_runner.py` (LangGraph). Still load-bearing for content_agent + custom_workflows; migration tracked in poindexter#356.               |
+| `template_runner.py`                      | LangGraph-backed dynamic-pipeline orchestrator (TemplateRunner). Drives the dev_diary template + future architect-composed pipelines.                                                              |
+| `prompt_manager.py`                       | UnifiedPromptManager — Langfuse-first, then DB overrides, then YAML defaults (poindexter#47). Edits land in the Langfuse UI.                                                                       |
+| `settings_service.py`                     | DB-backed config (app_settings, 453 active keys)                                                                                                                                                   |
+| `site_config.py`                          | DI seam over settings (Phase H singleton replacement)                                                                                                                                              |
+| `cost_guard.py`                           | Daily/monthly spend limits                                                                                                                                                                         |
+| `model_router.py`                         | Cost-tiered model selection (free/budget/standard/premium). LiteLLM is the next-gen replacement (poindexter#199 phase 1 shipped — `LiteLLMProvider` plugin available; production cutover pending). |
+| `llm_providers/litellm_provider.py`       | LiteLLM-backed `LLMProvider` plugin (provider routing + cost tracking + retries via mature OSS). Activated by setting `plugin.llm_provider.primary.standard='litellm'`.                            |
+| `research_service.py` / `web_research.py` | Topic research + web fact-check                                                                                                                                                                    |
+| `publish_service.py`                      | Final publish + scheduled_publisher integration                                                                                                                                                    |
+| `quality_service.py`                      | Quality scoring orchestration                                                                                                                                                                      |
+| `internal_link_coherence.py`              | Auto-adds related post links                                                                                                                                                                       |
+| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama                                                                                                                                                              |
+| `newsletter_service.py`                   | Weekly digest generator                                                                                                                                                                            |
 
 **Content pipeline stages:**
 
@@ -133,7 +136,8 @@ npm run type:check            # Python mypy
 - `brain_knowledge` — knowledge graph (entity/attribute/value)
 - `brain_queue` — reasoning queue for the brain
 - `brain_decisions` — decision audit trail
-- `pipeline_events` — event bus (PostgreSQL LISTEN/NOTIFY)
+- `pipeline_gate_history` — typed history of HITL gate approvals + regen retries (poindexter#366 phase 1, replaces gate-state slice of the dropped pipeline_events table)
+- `audit_log` — canonical historical record (queried by `routes/pipeline_events_routes.py` despite the legacy URL prefix)
 - `cost_logs` — LLM API cost tracking
 
 ### Frontend (`web/public-site/`)

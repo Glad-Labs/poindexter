@@ -4,6 +4,16 @@
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_workflow_executor.py`
 **Last reviewed:** 2026-04-30
 
+> **Status: legacy.** Being replaced by
+> `services/template_runner.py` (LangGraph-backed). Migration is tracked
+> in poindexter#356 — phase 1 of the dynamic-pipeline-composition spec
+> already lifted LangGraph as the orchestration runner; the remaining
+> work is migrating each WorkflowExecutor caller (custom_workflows_service,
+> template_execution_service, the 5 content_agent modules) onto
+> TemplateRunner and then deleting WorkflowExecutor. **Do not extend
+> this module** with new features — add them on `template_runner.py`
+> so the migration doesn't grow.
+
 ## What it does
 
 `WorkflowExecutor` runs a `CustomWorkflow` (a user-defined sequence of

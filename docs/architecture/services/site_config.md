@@ -131,6 +131,6 @@ WHERE key = '<key>';` — then update callers to use `get_secret()`
   that takes `site_config` in `__init__` and reads its limits via
   `_limit()` helper.
 - `services.settings_service.SettingsService` — the write path
-  (mutate settings + emit `pipeline_events`).
+  (mutates settings; logs to `audit_log` for the change history).
 - `~/.claude/projects/C--Users-mattm/memory/feedback_no_env_vars.md`
   and `feedback_db_first_config.md` — why this exists.

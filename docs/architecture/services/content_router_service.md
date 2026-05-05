@@ -70,8 +70,11 @@ Every other tunable lives on the individual stages — see
   - `audit_log` (multiple event_types: `task_started`,
     `generation_complete`, `qa_passed`/`qa_failed`,
     `pipeline_complete`, `dry_run_halt`, `error`, `writer_fallback`)
-  - `pipeline_events` indirectly via webhook delivery
-    (`emit_webhook_event("task.failed", ...)` on failure)
+  - `webhook_events` indirectly via webhook delivery
+    (`emit_webhook_event("task.failed", ...)` on failure). Earlier
+    docs called this `pipeline_events`; the actual writer was always
+    `webhook_events`. The unrelated `pipeline_events` table was
+    dropped 2026-05-04 (poindexter#366).
 - **External APIs:** none directly — stages own the LLM/HTTP calls.
 
 ## Failure modes

@@ -194,9 +194,10 @@ class TestRefreshMetrics:
     async def test_auto_cancelled_total_reflects_event_count(self):
         """GH-90 AC #4: sweeper cancellations are exposed as
         ``poindexter_pipeline_auto_cancelled_total``. Value comes from
-        counting ``pipeline_events`` rows with
-        ``event_type='task.auto_cancelled'`` — persistent across worker
-        restarts so short-window rate() queries stay useful."""
+        ``COUNT(*) FROM pipeline_tasks WHERE auto_cancelled_at IS NOT NULL``
+        (poindexter#366 phase 2 moved this off pipeline_events) —
+        persistent across worker restarts so short-window rate()
+        queries stay useful."""
         from services import metrics_exporter as mx
 
         # fetchval queue (7 values post-GH-227):

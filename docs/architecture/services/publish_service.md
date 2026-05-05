@@ -85,7 +85,7 @@ Bootstrap-only env var:
   - `tags` (upserts each new term — `ON CONFLICT (slug) DO UPDATE`)
   - `post_tags` (via `db_service.create_post`'s `tag_ids` handling)
   - `content_tasks` (status → `published`, result JSON updated)
-  - `pipeline_events` indirectly via `emit_webhook_event("post.published", ...)`
+  - `webhook_events` indirectly via `emit_webhook_event("post.published", ...)` (the helper's actual target — earlier docs miscalled it `pipeline_events`; that unrelated table was dropped 2026-05-04 in poindexter#366)
   - `audit_log` indirectly via the `[content_published]` log line
 - **External APIs (all fire-and-forget, errors swallowed):**
   - Vercel ISR (`trigger_nextjs_revalidation`)

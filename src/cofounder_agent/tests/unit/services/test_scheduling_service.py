@@ -303,7 +303,8 @@ class TestAssignSlot:
         )
         assert update_sql is not None
         assert "status = 'scheduled'" in update_sql
-        # pipeline_events row written.
+        # audit_log row written (Phase 3 of poindexter#366 redirected
+        # these schedule.* events from pipeline_events to audit_log).
         events = _events_emitted(conn)
         assert any(e["event_type"] == "schedule.assigned" for e in events)
 
@@ -376,7 +377,9 @@ class TestAssignBatch:
         assert result.ok is True
         assert result.count == 20
         # 20 UPDATE statements were issued (one per post) plus the
-        # initial SELECT and the pipeline_events INSERT.
+        # initial SELECT. The schedule.batch_assigned audit row goes
+        # via audit_log_bg, not the conn — captured via the autouse
+        # fixture, not the conn.queries list.
         update_calls = [
             (sql, args) for sql, args in conn.queries
             if "UPDATE posts" in sql
