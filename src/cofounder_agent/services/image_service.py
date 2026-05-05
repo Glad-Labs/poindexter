@@ -231,20 +231,42 @@ class ImageService:
     All operations are async-first to prevent blocking in FastAPI event loop.
     """
 
-    def __init__(self):
+    def __init__(self, site_config: Any = None):
         """Initialize image service.
 
         The Pexels API key is a secret (encrypted in app_settings) and
-        therefore NOT loaded into site_config at startup. We defer the
-        actual fetch to ``_refresh_pexels_key()``, which runs on first
-        use from an async context with a real DB pool.
+        therefore NOT loaded into site_config's in-memory cache at
+        startup. We defer the actual fetch to ``_ensure_pexels_key()``,
+        which runs on first use from an async context via
+        ``SiteConfig.get_secret()``.
+
+        Args:
+            site_config: Injected ``SiteConfig`` instance. Required for
+                resolving the Pexels API key (a secret). Falls back to
+                the module-level singleton when not provided so legacy
+                callers (most ``get_image_service()`` sites) keep
+                working — but new code should pass the lifespan-loaded
+                instance from ``app.state.site_config`` /
+                ``context["site_config"]`` to avoid relying on a stale
+                singleton (poindexter#381).
         """
+        # Resolve the SiteConfig DI seam. Prefer the explicit ctor arg;
+        # fall back to the module singleton, which lifespan rebinds to
+        # the DB-loaded instance (main.py — Phase H step 5). Tests that
+        # build a fresh ImageService() outside lifespan will get the
+        # empty default-only singleton, which is fine for the non-secret
+        # paths and is overridden by the explicit ctor arg in the
+        # regression tests.
+        if site_config is None:
+            from services.site_config import site_config as _module_site_config
+            site_config = _module_site_config
+        self._site_config = site_config
+
         self.pexels_api_key: str | None = None
         self._pexels_key_checked_db = False
         self.pexels_available = False
         # #198: tunable for API version changes / private image proxies
-        from services.site_config import site_config as _sc_pex
-        self.pexels_base_url = _sc_pex.get(
+        self.pexels_base_url = self._site_config.get(
             "pexels_api_base", "https://api.pexels.com/v1"
         ).rstrip("/")
         self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
@@ -510,31 +532,45 @@ class ImageService:
         """Load + decrypt the Pexels API key from app_settings.
 
         Cached per service instance — subsequent calls are no-ops once
-        the key is resolved. Uses the shared DatabaseService pool from
-        the DI container, not a fresh asyncpg.connect — that kept a
-        LOCAL_DATABASE_URL fallback hardcoded here, contradicting the
-        DB-first/bootstrap-only env-var policy.
+        the key is resolved. Routes through ``SiteConfig.get_secret``
+        (the canonical Phase H DI seam — see CLAUDE.md "Configuration"
+        section) so any caller with a properly-wired ``SiteConfig``
+        gets the key without needing the legacy DI-container "database"
+        registration that was missed during the Phase H cutover
+        (poindexter#381).
 
-        Raises on any pool/decryption failure (no try/except swallowing).
-        Callers that need a soft-fail path should catch upstream.
+        Raises ``RuntimeError`` if the SiteConfig has no DB pool — that
+        means the lifespan hasn't run, and we cannot tell the
+        difference between "key intentionally unset" and "lookup
+        broken". Per ``feedback_no_silent_defaults``, surfacing the
+        gap is required.
         """
         if self._pexels_key_checked_db:
             return
 
-        from plugins.secrets import get_secret
-        from services.container import get_service
-
-        db_service = get_service("database")
-        if db_service is None or not getattr(db_service, "pool", None):
-            logger.warning(
-                "DatabaseService not registered in DI container — "
-                "pexels_api_key cannot be loaded. Callers will see pexels_available=False."
+        # The SiteConfig MUST have a DB pool to fetch secrets — without
+        # it, `get_secret` silently returns the env-var fallback (or
+        # default ""), masking config-loading bugs. Refuse to declare
+        # pexels unavailable in that state — surface the gap loudly.
+        if getattr(self._site_config, "_pool", None) is None:
+            raise RuntimeError(
+                "ImageService cannot resolve pexels_api_key: SiteConfig "
+                "has no DB pool. Wire site_config from app.state (FastAPI) "
+                "or context['site_config'] (pipeline stages) into "
+                "ImageService(site_config=...) — see CLAUDE.md "
+                "Configuration / poindexter#381."
             )
-            self._pexels_key_checked_db = True
-            return
 
-        async with db_service.pool.acquire() as conn:
-            value = await get_secret(conn, "pexels_api_key")
+        try:
+            value = await self._site_config.get_secret("pexels_api_key", "")
+        except Exception as exc:
+            # Loud failure: a DB error mid-lookup is a real problem; do
+            # not silently mark pexels unavailable.
+            self._pexels_key_checked_db = True
+            raise RuntimeError(
+                f"pexels_api_key lookup failed: {exc}. Refusing to silently "
+                "fall back to pexels_available=False (feedback_no_silent_defaults)."
+            ) from exc
 
         self._pexels_key_checked_db = True
         if value:
@@ -543,7 +579,12 @@ class ImageService:
             self.pexels_headers = {"Authorization": value}
             logger.info("Pexels API key loaded from app_settings (encrypted)")
         else:
-            logger.warning("pexels_api_key not set in app_settings")
+            # Empty key is a legitimate state — Pexels is a fallback
+            # image source, SDXL is primary. Log info, leave unavailable.
+            logger.info(
+                "pexels_api_key not set in app_settings — Pexels search "
+                "disabled (SDXL remains primary)"
+            )
 
     # =========================================================================
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)
@@ -1143,6 +1184,14 @@ class ImageService:
         self.search_cache[query] = results
 
 
-def get_image_service() -> ImageService:
-    """Factory function for dependency injection"""
-    return ImageService()
+def get_image_service(site_config: Any = None) -> ImageService:
+    """Factory function for dependency injection.
+
+    Args:
+        site_config: Optional ``SiteConfig`` instance. Forwarded to
+            ``ImageService.__init__``. Pipeline stages should pull
+            this from ``context['site_config']`` and pass it through
+            so secrets resolve via the lifespan-loaded SiteConfig
+            instead of relying on the module singleton (#381).
+    """
+    return ImageService(site_config=site_config)

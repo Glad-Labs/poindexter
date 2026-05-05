@@ -8,6 +8,7 @@ Heavy GPU/SDXL paths are not exercised; they are tested via flag checks only.
 """
 
 from contextlib import asynccontextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -866,46 +867,57 @@ class TestGenerateImage:
 
 
 class TestEnsurePexelsKey:
-    """Tests for the DB-first (encrypted) Pexels API key loader.
+    """Tests for the SiteConfig-first Pexels API key loader.
 
-    Post-refactor, ``_ensure_pexels_key`` only has two paths:
+    Post-#381 refactor, ``_ensure_pexels_key`` resolves through the
+    canonical Phase H DI seam — ``SiteConfig.get_secret`` — instead of
+    fishing for the legacy DI-container "database" registration that
+    was missed during Phase H cutover. Three paths:
+
     1. Already-checked flag → no-op
-    2. Query ``plugins.secrets.get_secret`` via the shared pool from
-       ``services.container.get_service("database")``
-
-    No more site_config fallback, no more ``os.getenv("LOCAL_DATABASE_URL")``
-    fresh-connection fallback — those contradicted the "DB-first, no
-    hardcoded configs" policy.
+    2. SiteConfig has no DB pool → RuntimeError (loud failure per
+       feedback_no_silent_defaults — we cannot tell "key intentionally
+       unset" from "lookup broken")
+    3. SiteConfig.get_secret returns a value → set state and continue
+       (or empty value → leave unavailable, log info)
     """
+
+    def _make_site_config(self, secret_value: str | None) -> Any:
+        """Build a SiteConfig stub with a mock pool + ``get_secret``.
+
+        Mirrors what the lifespan-loaded singleton looks like to
+        ImageService — non-None ``_pool`` (so the loud-failure guard
+        passes) plus an async ``get_secret`` returning ``secret_value``.
+        """
+        from services.site_config import SiteConfig
+
+        cfg = SiteConfig()
+        cfg._pool = MagicMock()  # non-None — passes the loud-failure guard
+
+        async def _fake_get_secret(key: str, default: str = "") -> str:
+            return secret_value if secret_value is not None else default
+
+        cfg.get_secret = _fake_get_secret  # type: ignore[assignment]
+        return cfg
 
     @pytest.mark.asyncio
     async def test_already_checked_noop(self):
-        svc = ImageService()
+        cfg = self._make_site_config("never-fetched")
+        svc = ImageService(site_config=cfg)
         svc.pexels_api_key = "existing-key"
         svc._pexels_key_checked_db = True
 
-        # Should not touch the container at all.
-        with patch("services.container.get_service") as mock_get:
-            await svc._ensure_pexels_key()
-        mock_get.assert_not_called()
+        # Should not call get_secret at all.
+        cfg.get_secret = AsyncMock(side_effect=AssertionError("must not run"))
+        await svc._ensure_pexels_key()
 
     @pytest.mark.asyncio
-    async def test_loads_from_db_via_get_secret(self):
-        svc = ImageService()
+    async def test_loads_from_site_config_get_secret(self):
+        cfg = self._make_site_config("decrypted-key")
+        svc = ImageService(site_config=cfg)
         svc._pexels_key_checked_db = False
 
-        fake_conn = AsyncMock()
-        fake_pool_ctx = AsyncMock()
-        fake_pool_ctx.__aenter__ = AsyncMock(return_value=fake_conn)
-        fake_pool_ctx.__aexit__ = AsyncMock(return_value=False)
-
-        fake_db_service = MagicMock()
-        fake_db_service.pool = MagicMock()
-        fake_db_service.pool.acquire = MagicMock(return_value=fake_pool_ctx)
-
-        with patch("services.container.get_service", return_value=fake_db_service), \
-             patch("plugins.secrets.get_secret", new=AsyncMock(return_value="decrypted-key")):
-            await svc._ensure_pexels_key()
+        await svc._ensure_pexels_key()
 
         assert svc.pexels_api_key == "decrypted-key"
         assert svc.pexels_available is True
@@ -913,37 +925,109 @@ class TestEnsurePexelsKey:
         assert svc._pexels_key_checked_db is True
 
     @pytest.mark.asyncio
-    async def test_no_db_service_sets_unavailable(self):
-        svc = ImageService()
+    async def test_no_pool_raises_loud(self):
+        """SiteConfig with no DB pool → loud RuntimeError, not silent unavailable.
+
+        feedback_no_silent_defaults: we cannot distinguish "key
+        intentionally unset" from "lookup mechanism broken" without a
+        DB pool, so refuse to continue with pexels_available=False.
+        """
+        from services.site_config import SiteConfig
+
+        cfg = SiteConfig()  # no pool — fresh test instance
+        svc = ImageService(site_config=cfg)
         svc._pexels_key_checked_db = False
 
-        with patch("services.container.get_service", return_value=None):
+        with pytest.raises(RuntimeError, match="SiteConfig has no DB pool"):
             await svc._ensure_pexels_key()
+
+    @pytest.mark.asyncio
+    async def test_db_returns_empty_leaves_unavailable(self):
+        """Empty value is a legitimate state — Pexels is a fallback source."""
+        cfg = self._make_site_config("")
+        svc = ImageService(site_config=cfg)
+        svc._pexels_key_checked_db = False
+
+        await svc._ensure_pexels_key()
 
         assert svc.pexels_api_key is None
         assert svc.pexels_available is False
         assert svc._pexels_key_checked_db is True
 
     @pytest.mark.asyncio
-    async def test_db_returns_empty_leaves_unavailable(self):
-        svc = ImageService()
+    async def test_get_secret_exception_raises_loud(self):
+        """A DB error mid-lookup must raise, not silently fall back."""
+        from services.site_config import SiteConfig
+
+        cfg = SiteConfig()
+        cfg._pool = MagicMock()  # passes pool guard
+
+        async def _boom(key: str, default: str = "") -> str:
+            raise RuntimeError("db connection lost")
+
+        cfg.get_secret = _boom  # type: ignore[assignment]
+
+        svc = ImageService(site_config=cfg)
         svc._pexels_key_checked_db = False
 
-        fake_conn = AsyncMock()
-        fake_pool_ctx = AsyncMock()
-        fake_pool_ctx.__aenter__ = AsyncMock(return_value=fake_conn)
-        fake_pool_ctx.__aexit__ = AsyncMock(return_value=False)
-
-        fake_db_service = MagicMock()
-        fake_db_service.pool = MagicMock()
-        fake_db_service.pool.acquire = MagicMock(return_value=fake_pool_ctx)
-
-        with patch("services.container.get_service", return_value=fake_db_service), \
-             patch("plugins.secrets.get_secret", new=AsyncMock(return_value=None)):
+        with pytest.raises(RuntimeError, match="pexels_api_key lookup failed"):
             await svc._ensure_pexels_key()
 
-        assert svc.pexels_api_key is None
-        assert svc.pexels_available is False
+
+# ---------------------------------------------------------------------------
+# Regression test for poindexter#381 — pexels resolution does NOT depend on
+# the legacy `services.container.get_service("database")` registration.
+# ---------------------------------------------------------------------------
+
+
+class TestPexelsResolutionViaSiteConfigDI:
+    """Regression for poindexter#381.
+
+    Pre-fix: ``_ensure_pexels_key`` reached for ``get_service("database")``
+    in the global ``service_container``. main.py registers that service
+    under the key ``database_service`` (not ``database``), so the lookup
+    silently returned None and the worker emitted
+    "DatabaseService not registered in DI container — pexels_api_key
+    cannot be loaded." for every pipeline run.
+
+    Fix: route through the injected ``SiteConfig`` instance, which is
+    threaded from the lifespan-loaded ``app.state.site_config`` /
+    ``context['site_config']`` into the ImageService ctor.
+    """
+
+    @pytest.mark.asyncio
+    async def test_pexels_available_when_only_site_config_is_wired(self):
+        """Fresh ImageService + SiteConfig (no global container mutation)
+        → pexels_api_key resolves and pexels_available flips to True.
+
+        Critically, this test does NOT touch ``services.container`` at
+        all. If the implementation ever re-introduces a global lookup,
+        this test still passes — but the loud guard in
+        ``_ensure_pexels_key`` ensures the warning that triggered #381
+        cannot silently re-emerge.
+        """
+        from services.image_service import ImageService, get_image_service
+        from services.site_config import SiteConfig
+
+        cfg = SiteConfig()
+        cfg._pool = MagicMock()  # non-None: passes the loud-failure guard
+
+        async def _fake_get_secret(key: str, default: str = "") -> str:
+            assert key == "pexels_api_key"
+            return "stress-test-key-381"
+
+        cfg.get_secret = _fake_get_secret  # type: ignore[assignment]
+
+        # Construct via factory + ctor — both must accept site_config
+        svc_via_factory = get_image_service(site_config=cfg)
+        svc_via_ctor = ImageService(site_config=cfg)
+
+        for svc in (svc_via_factory, svc_via_ctor):
+            assert svc.pexels_available is False  # before key resolution
+            await svc._ensure_pexels_key()
+            assert svc.pexels_available is True
+            assert svc.pexels_api_key == "stress-test-key-381"
+            assert svc.pexels_headers == {"Authorization": "stress-test-key-381"}
 
 
 # ---------------------------------------------------------------------------

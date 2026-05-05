@@ -100,7 +100,14 @@ async def process_content_generation_task(
     # plugins. Stages read/write via context.get() / StageResult.context_updates.
     # Populating the orchestrator's inputs here means every stage can pull
     # what it needs without a separate adapter layer.
-    image_service = get_image_service()
+    #
+    # Pull the lifespan-loaded SiteConfig instance and thread it into
+    # the ImageService ctor so the Pexels secret lookup goes through
+    # the canonical Phase H DI seam (poindexter#381). Falling back to
+    # the module singleton matches what main.py rebinds, so legacy
+    # paths still work.
+    from services.site_config import site_config as _site_cfg_for_pipeline
+    image_service = get_image_service(site_config=_site_cfg_for_pipeline)
     # Settings + style tracker — pulled from the container/app.state during
     # transition to full DI (#242). Falls back to fresh instances when a
     # stage is invoked outside the lifespan-wired context (e.g. tests).
@@ -151,6 +158,10 @@ async def process_content_generation_task(
         "generate_featured_image": generate_featured_image,
         "database_service": database_service,
         "image_service": image_service,
+        # Phase H DI seam — every stage can pull `site_config` from
+        # context.get('site_config') and forward it into services that
+        # need DB-backed settings or secrets (poindexter#381).
+        "site_config": _site_cfg_for_pipeline,
         "models_by_phase": _models_by_phase,
         "quality_preference": quality_preference,
         "target_audience": target_audience,
