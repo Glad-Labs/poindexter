@@ -185,35 +185,29 @@ class UnifiedPromptManager:
         logger.debug("Registered prompt: %s (%s)", key, category.value)
 
     async def load_from_db(self, pool, *, site_config=None) -> int:
-        """Load prompt overrides from the prompt_templates database table.
+        """Worker-startup hook: capture site_config + pre-fetch Langfuse secret.
 
-        Call this once at app startup (after DB pool is ready).
-        DB prompts take priority over YAML prompts — enabling runtime editing.
+        This used to ALSO load prompt overrides from the
+        ``prompt_templates`` table (migrations 0092 + 0141 wired premium
+        gating via the ``source`` column). Phase 2 of poindexter#47
+        retired the table — Langfuse is the live edit surface, YAML is
+        the OSS distribution default, and the parallel DB store added
+        no value over those two layers. The ``pool`` argument is kept
+        on the signature so the dozen callers don't churn.
 
-        Premium gating (migration 0092 added the ``source`` column;
-        0141 wired the loader): when ``app_settings.premium_active`` is
-        truthy, rows with ``source='premium'`` AND ``source='default'``
-        load, with ``premium`` overriding ``default`` for matching keys
-        (``ORDER BY source`` puts ``default`` first, ``premium`` later;
-        last-write-wins on the dict so ``premium`` wins). When the flag
-        is absent or false (the OSS default), only ``'default'`` rows
-        load — premium prompts ship as a separate file drop and arrive
-        as DB rows that are inert until the operator flips
-        ``premium_active=true``.
+        ``site_config`` is captured on ``self._site_config`` for the
+        Langfuse client init path (sync code can't await get_secret).
+        Pre-fetching the Langfuse secret here is best-effort; an empty
+        cache trips the "Langfuse not configured" log + falls through
+        to YAML, which is the documented OSS path.
 
-        ``site_config`` is read for the ``premium_active`` lookup. When
-        ``None`` (test paths, early bootstrap), the loader behaves as if
-        ``premium_active=false``.
-
-        Returns number of prompts loaded from DB.
+        Returns 0 (no rows loaded — the DB layer is gone). The return
+        type stays `int` so callers that ignore-or-log the count don't
+        churn either.
         """
+        del pool  # parameter kept for source-compat; see docstring
         self._site_config = site_config
 
-        # Pre-fetch the Langfuse secret while we're in async context —
-        # the Langfuse init runs sync from get_prompt. Best-effort: if
-        # the secret isn't readable (no key, not provisioned yet,
-        # etc.) we leave the cached value empty and the init path logs
-        # the "not configured" message + falls through to DB+YAML.
         if site_config is not None:
             try:
                 self._langfuse_secret_key = (
@@ -224,55 +218,23 @@ class UnifiedPromptManager:
                     "[prompt_manager] langfuse secret pre-fetch failed: %s", exc,
                 )
 
-        if pool is None:
-            return 0
-
-        premium_active = False
-        if site_config is not None:
-            try:
-                premium_active = bool(site_config.get_bool("premium_active", False))
-            except AttributeError:
-                premium_active = (
-                    str(site_config.get("premium_active", "false")).lower() == "true"
-                )
-
-        sources = ("default", "premium") if premium_active else ("default",)
-        try:
-            rows = await pool.fetch(
-                # ORDER BY source: 'default' < 'premium' alphabetically, so
-                # default rows assign first and premium rows overwrite.
-                "SELECT key, template, source FROM prompt_templates "
-                "WHERE is_active = true AND source = ANY($1::text[]) "
-                "ORDER BY source",
-                list(sources),
-            )
-            for row in rows:
-                self._db_overrides[row["key"]] = row["template"]
-            logger.info(
-                "Loaded %d prompt templates from database (premium_active=%s, sources=%s)",
-                len(rows), premium_active, sources,
-            )
-            return len(rows)
-        except Exception as e:
-            logger.warning("Could not load prompts from DB (using YAML fallback): %s", e)
-            return 0
+        return 0
 
     def get_prompt(self, key: str, **kwargs) -> str:
         """
         Get a prompt by key and format with provided kwargs.
 
-        Priority: Langfuse production label > DB override > YAML file > KeyError.
-        Langfuse comes first because it's the operator's edit surface;
-        when an operator updates a prompt in the Langfuse UI it should
-        take effect on the next get_prompt call without a worker
-        restart. The Langfuse SDK caches in-process so the lookup is
-        cheap after the first call.
+        Priority: Langfuse production label > YAML file > KeyError.
+        Langfuse is the operator's edit surface; edits in the Langfuse
+        UI take effect on the next get_prompt call without a worker
+        restart (the SDK caches in-process for ~60s). When Langfuse
+        isn't configured (OSS distribution without a Langfuse host /
+        key) or the lookup fails, the call falls through to the
+        baked-in YAML defaults — the open-source path.
 
-        When Langfuse isn't configured (no host + key in app_settings)
-        or the lookup fails (network/auth/missing prompt), the call
-        falls through to the existing DB-override → YAML → KeyError
-        chain. This keeps the OSS distribution working without a
-        Langfuse account.
+        Phase 2 of poindexter#47 dropped the prompt_templates DB
+        override layer; the parallel store added no value over Langfuse
+        + YAML and made it harder to know "which prompt is live."
 
         Args:
             key: Prompt key (e.g., "blog_generation.initial_draft")
@@ -290,12 +252,7 @@ class UnifiedPromptManager:
         # window expires (default 60s in langfuse SDK).
         template = self._fetch_from_langfuse(key)
 
-        # DB overrides take second priority (editable at runtime via
-        # SQL or the prompt_templates table).
-        if template is None:
-            template = self._db_overrides.get(key)
-
-        # Fall back to YAML-loaded prompts.
+        # Fall back to YAML-loaded prompts (the OSS default).
         if template is None:
             if key not in self.prompts:
                 available = ", ".join(self.prompts.keys())

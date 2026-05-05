@@ -68,18 +68,14 @@ async def main() -> int:
         print(f"WARN: prompt DB load failed (continuing with YAML only): {e}",
               file=sys.stderr)
 
-    # Build the snapshot we'll push to Langfuse. DB override wins,
-    # YAML default falls through. Mirrors the runtime ``get_prompt``
-    # priority so what we push matches what would have been served had
-    # Langfuse not been in front. Premium-vs-default source filtering
-    # happens inside ``load_from_db`` via the premium_active setting,
-    # so by the time we read ``_db_overrides`` it already reflects the
-    # right sources.
+    # Build the snapshot we'll push to Langfuse. After phase 2 of
+    # poindexter#47 retired the prompt_templates DB layer, the source
+    # of truth for an operator who's standing up Langfuse for the
+    # first time is the baked-in YAML — same content the runtime
+    # ``get_prompt`` falls back to when Langfuse isn't configured.
     snapshot: dict[str, dict[str, Any]] = {}
     for key, entry in pm.prompts.items():
-        template = pm._db_overrides.get(key)
-        if template is None:
-            template = entry.get("template", "")
+        template = entry.get("template", "")
 
         meta = pm.metadata.get(key)
         snapshot[key] = {

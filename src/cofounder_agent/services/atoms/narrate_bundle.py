@@ -93,12 +93,12 @@ _PROMPT_KEY = "atoms.narrate_bundle.system_prompt"
 def _resolve_system_prompt() -> str:
     """Pull the narrate-bundle system prompt from UnifiedPromptManager.
 
-    DB overrides win > YAML defaults > inline fallback. Inline fallback
-    only fires when the prompt registry hasn't been initialized
-    (early bootstrap, test paths) — production reads from YAML at
-    minimum. Operators editing the prompt via Langfuse / SQL update
-    the prompt_templates row; next ``load_from_db()`` call (or app
-    restart) picks up the change.
+    Langfuse production label wins > YAML defaults > inline fallback.
+    Inline fallback only fires when the prompt registry hasn't been
+    initialized (early bootstrap, test paths) — production reads from
+    YAML at minimum. Operators editing the prompt land their changes
+    in the Langfuse UI; the next get_prompt call picks up the new
+    version (60s SDK cache).
     """
     try:
         from services.prompt_manager import get_prompt_manager
