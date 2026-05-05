@@ -93,7 +93,10 @@ class MemoryClient:
       3. OLLAMA_URL env var, then OLLAMA_BASE_URL (Poindexter worker
          containers set OLLAMA_BASE_URL; the standalone CLI path still
          accepts OLLAMA_URL — GH#93 Phase 1 consolidation)
-      4. RuntimeError — no silent localhost fallback
+      4. ``app_settings.ollama_base_url`` (then ``ollama_url``) read via the
+         pool during ``connect()`` — DB-first config (#368). Lets fresh CLI
+         installs work without operator-managed env vars.
+      5. RuntimeError — no silent localhost fallback
     """
 
     def __init__(
@@ -131,17 +134,15 @@ class MemoryClient:
             )
         # OLLAMA_URL kept for the standalone CLI path; OLLAMA_BASE_URL is
         # the name the worker container + compose stack uses, so accept
-        # both and prefer OLLAMA_URL when set (GH#93 Phase 1).
+        # both and prefer OLLAMA_URL when set (GH#93 Phase 1). When neither
+        # the kwarg nor an env var is set, defer the failure to connect()
+        # which can fall through to app_settings via the DB pool (#368).
         resolved_ollama = (
             ollama_url or os.getenv("OLLAMA_URL") or os.getenv("OLLAMA_BASE_URL")
         )
-        if not resolved_ollama:
-            raise RuntimeError(
-                "MemoryClient requires an Ollama URL. Pass ollama_url= or set "
-                "one of OLLAMA_URL / OLLAMA_BASE_URL in the environment (no "
-                "hardcoded default — #198)."
-            )
-        self.ollama_url = resolved_ollama.rstrip("/")
+        self.ollama_url: str | None = (
+            resolved_ollama.rstrip("/") if resolved_ollama else None
+        )
         self.embed_model = embed_model
         self.embed_dim = embed_dim
         self._pool_min_size = pool_min_size
@@ -159,10 +160,42 @@ class MemoryClient:
                 min_size=self._pool_min_size,
                 max_size=self._pool_max_size,
             )
+        if self.ollama_url is None:
+            self.ollama_url = await self._resolve_ollama_url_from_settings()
         if self._http is None:
             # 30s is generous for a single embed call; raise if you're
             # embedding very long documents in one shot.
             self._http = httpx.AsyncClient(timeout=30.0)
+
+    async def _resolve_ollama_url_from_settings(self) -> str:
+        """Look up ``ollama_base_url`` (then ``ollama_url``) from app_settings.
+
+        Last step of the resolution chain — runs only when no kwarg or env
+        var supplied a value. Uses the pool we just created in connect()
+        so we don't open a second connection. Raises a descriptive
+        RuntimeError when nothing is configured anywhere.
+        """
+        assert self._pool is not None  # connect() created it
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT value
+                FROM app_settings
+                WHERE key IN ('ollama_base_url', 'ollama_url')
+                ORDER BY key = 'ollama_base_url' DESC
+                LIMIT 1
+                """
+            )
+        value = (row["value"] if row else None) or ""
+        if not value:
+            raise RuntimeError(
+                "MemoryClient requires an Ollama URL. None resolved from "
+                "explicit kwarg, OLLAMA_URL/OLLAMA_BASE_URL env vars, or "
+                "app_settings.ollama_base_url. Set it via "
+                "`poindexter settings set ollama_base_url <url>` "
+                "(DB-first config — no hardcoded default, #198/#368)."
+            )
+        return value.rstrip("/")
 
     async def close(self) -> None:
         """Close the pool + HTTP client. Safe to call multiple times.
