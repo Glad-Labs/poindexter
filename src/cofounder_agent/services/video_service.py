@@ -341,6 +341,20 @@ async def generate_video_for_post(
                     "[VIDEO] Generated: %s (%d bytes, %ds, rendered in %ss)",
                     post_id, size, duration, elapsed,
                 )
+                # Glad-Labs/poindexter#161 — legacy video path now records
+                # the media_assets row that the V0 stitch Stage already
+                # lands. Best-effort.
+                await _record_video_asset(
+                    post_id=post_id,
+                    asset_type="video",
+                    output_path=str(output_path),
+                    duration_seconds=duration,
+                    file_size_bytes=size,
+                    width=1920,
+                    height=1080,
+                    images_used=len(image_paths),
+                    title=title,
+                )
                 return VideoResult(
                     success=True,
                     file_path=str(output_path),
@@ -357,6 +371,62 @@ async def generate_video_for_post(
     except Exception as e:
         logger.exception("[VIDEO] Video server error: %s", e)
         return VideoResult(success=False, error=str(e))
+
+
+async def _record_video_asset(
+    *,
+    post_id: str,
+    asset_type: str,
+    output_path: str,
+    duration_seconds: int,
+    file_size_bytes: int,
+    width: int,
+    height: int,
+    images_used: int,
+    title: str,
+) -> None:
+    """Best-effort ``media_assets`` insert for a legacy-pipeline video.
+
+    Closes Glad-Labs/poindexter#161 — the V0 stitch Stages already
+    write rows; this brings the legacy slideshow path to parity so
+    cleanup / retention / cost-attribution find every video.
+
+    Reads the asyncpg pool from the module-level ``site_config``
+    singleton (set by ``site_config.load(pool)`` during app startup).
+    Pool is best-effort: ``record_media_asset`` itself no-ops cleanly
+    when the pool is None.
+    """
+    try:
+        from services import media_asset_recorder
+    except Exception as exc:  # noqa: BLE001 — defensive import guard
+        logger.debug("[VIDEO] media_asset_recorder unavailable: %s", exc)
+        return
+    pool = getattr(site_config, "_pool", None)
+    try:
+        await media_asset_recorder.record_media_asset(
+            pool=pool,
+            post_id=post_id,
+            asset_type=asset_type,
+            storage_path=output_path,
+            public_url="",  # uploaded separately via upload_video_episode
+            mime_type="video/mp4",
+            duration_ms=int(duration_seconds * 1000),
+            file_size_bytes=file_size_bytes,
+            width=width,
+            height=height,
+            provider_plugin="video.ken_burns_slideshow",
+            source="pipeline",
+            storage_provider="local",
+            metadata={
+                "title": title,
+                "images_used": images_used,
+            },
+        )
+    except Exception as exc:
+        logger.debug(
+            "[VIDEO] media_assets record failed for %s: %s",
+            post_id, exc,
+        )
 
 
 async def _generate_short_summary_audio(
@@ -519,6 +589,19 @@ async def generate_short_video_for_post(
                 size = output_path.stat().st_size
 
                 logger.info("[SHORT] Generated: %s (%d bytes, %ds)", post_id, size, duration)
+                # Glad-Labs/poindexter#161 — short-form variant of the
+                # legacy slideshow path.
+                await _record_video_asset(
+                    post_id=post_id,
+                    asset_type="video_short",
+                    output_path=str(output_path),
+                    duration_seconds=duration,
+                    file_size_bytes=size,
+                    width=1080,
+                    height=1920,
+                    images_used=len(image_paths),
+                    title=title,
+                )
                 return VideoResult(
                     success=True,
                     file_path=str(output_path),

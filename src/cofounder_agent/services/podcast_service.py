@@ -543,6 +543,15 @@ class PodcastService:
                         result.duration_seconds,
                         voice,
                     )
+                    # Glad-Labs/poindexter#161 — record media_assets row
+                    # so cleanup / retention / cost-attribution find the
+                    # podcast file. Best-effort; never propagates.
+                    await self._record_episode_asset(
+                        post_id=post_id,
+                        result=result,
+                        voice=voice,
+                        title=title,
+                    )
                     return result
                 last_error = result.error
             except Exception as e:
@@ -552,6 +561,64 @@ class PodcastService:
         error_msg = f"All voices failed. Last error: {last_error}"
         logger.error("[PODCAST] %s", error_msg)
         return EpisodeResult(success=False, error=error_msg)
+
+    async def _record_episode_asset(
+        self,
+        *,
+        post_id: str,
+        result: "EpisodeResult",
+        voice: str,
+        title: str,
+    ) -> None:
+        """Best-effort ``media_assets`` insert for the rendered podcast.
+
+        Closes Glad-Labs/poindexter#161 — pre-fix, the legacy podcast
+        path produced an MP3 on disk but never wrote the DB row, so
+        cleanup / retention / cost-attribution missed it. Failures
+        here must NEVER bubble up; the episode itself is fine.
+
+        Reads the asyncpg pool from the module-level ``site_config``
+        singleton (set by ``site_config.load(pool)`` during app
+        startup). Pool is best-effort: ``record_media_asset`` itself
+        no-ops cleanly when the pool is None.
+        """
+        try:
+            from services import media_asset_recorder
+        except Exception as exc:  # noqa: BLE001 — defensive import guard
+            logger.debug("[PODCAST] media_asset_recorder unavailable: %s", exc)
+            return
+        pool = getattr(site_config, "_pool", None)
+        try:
+            engine = (
+                site_config.get("podcast_tts_engine", "edge_tts")
+                or "edge_tts"
+            )
+        except Exception:
+            engine = "edge_tts"
+        try:
+            await media_asset_recorder.record_media_asset(
+                pool=pool,
+                post_id=post_id,
+                asset_type="podcast",
+                storage_path=result.file_path or "",
+                public_url="",  # podcasts upload separately via R2 sync
+                mime_type="audio/mpeg",
+                duration_ms=int((result.duration_seconds or 0) * 1000),
+                file_size_bytes=result.file_size_bytes or 0,
+                provider_plugin=f"tts.{engine}",
+                source="pipeline",
+                storage_provider="local",
+                metadata={
+                    "voice": voice,
+                    "title": title,
+                    "engine": engine,
+                },
+            )
+        except Exception as exc:
+            logger.debug(
+                "[PODCAST] media_assets record failed for %s: %s",
+                post_id, exc,
+            )
 
     async def _generate_with_voice(
         self, script: str, voice: str, output_path: Path

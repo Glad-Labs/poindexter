@@ -49,12 +49,16 @@ def _fake_site_config(pool: Any | None = None, **overrides: Any):
 
 @pytest.mark.asyncio
 class TestPodcastServiceRecordsAsset:
-    async def test_success_records_media_asset(self, tmp_path: Path):
+    async def test_success_records_media_asset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
         pool = MagicMock()
         sc = _fake_site_config(pool=pool)
-        # site_config kwarg removed — PodcastService reads it from the
-        # singleton import at call time. `sc` is still constructed because
-        # other parts of the test inject it into mocks downstream.
+        # PodcastService reads site_config from the module-level
+        # singleton at call time (no DI kwarg). Stamp the test's pool
+        # onto that singleton so the recorder sees the expected ref.
+        from services import podcast_service as ps_mod
+        monkeypatch.setattr(ps_mod.site_config, "_pool", pool, raising=False)
         svc = PodcastService(output_dir=tmp_path)
 
         # Mock the TTS render — write the file inside the mock so the
