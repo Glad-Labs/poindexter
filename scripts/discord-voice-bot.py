@@ -59,6 +59,14 @@ from _oauth_helper import (  # noqa: E402
     oauth_client_from_pool,
     read_app_setting,
 )
+# Slice 3 (poindexter#390): semantic recall helpers — embed-on-save +
+# pgvector cosine search over voice_messages. Best-effort by design;
+# any failure logs WARNING and the conversation continues.
+from _voice_memory import (  # noqa: E402
+    format_recalled_context,
+    recall_similar_turns,
+    save_message_with_embedding,
+)
 
 try:
     import webrtcvad
@@ -87,6 +95,11 @@ async def _load_config_from_db(pool) -> dict:
         "whisper_model",
         "tts_voice",
         "ollama_base_url",
+        # Slice 3 (poindexter#390): semantic recall tunables. Operators
+        # nudge these at runtime via `poindexter settings set` — bot
+        # picks them up on next restart.
+        "voice_agent_recall_k",
+        "voice_agent_recall_min_similarity",
     )
     cfg: dict = {}
     for k in secret_keys:
@@ -224,6 +237,36 @@ _vad_tasks = {}
 
 _VOICE_MEMORY_LIMIT = int(os.environ.get("VOICE_MEMORY_LIMIT", "20"))
 
+# Slice 3 (poindexter#390): semantic recall config. Defaults match the
+# migration 20260506_051355 seeds + settings_defaults.py registry.
+def _get_recall_int(key: str, default: int) -> int:
+    raw = _cfg.get(key, "")
+    try:
+        return int(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _get_recall_float(key: str, default: float) -> float:
+    raw = _cfg.get(key, "")
+    try:
+        return float(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+VOICE_RECALL_K = _get_recall_int("voice_agent_recall_k", 3)
+VOICE_RECALL_MIN_SIM = _get_recall_float("voice_agent_recall_min_similarity", 0.5)
+
+# The embedder URL is the same Ollama base used for the LLM call. We
+# resolve it here (early in the module) because _save_message + recall
+# fire long before the OLLAMA_URL constant further down would bind.
+OLLAMA_URL_FOR_EMBED = (
+    os.getenv("OLLAMA_URL")
+    or _cfg.get("ollama_base_url", "")
+    or "http://host.docker.internal:11434"
+)
+
 
 async def _memory_conn():
     """Open a fresh single-shot asyncpg connection on the calling loop.
@@ -239,21 +282,59 @@ async def _memory_conn():
 
 
 async def _ensure_voice_messages_table() -> None:
+    """Lazy-bootstrap the table on first use.
+
+    Mirrors migration 20260506_051355 (Slice 3, poindexter#390) so
+    fresh installs that haven't yet run the migration get the same
+    shape — embedding column + discord_channel_id + HNSW index. The
+    pgvector extension is created defensively in case this is the
+    first vector-typed column in the DB; a no-op on existing installs.
+    """
     conn = await _memory_conn()
     try:
+        # pgvector is part of the base schema for poindexter installs,
+        # but defending against ad-hoc / stripped-down environments is
+        # cheap (CREATE EXTENSION IF NOT EXISTS is a no-op when present).
+        try:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception as exc:  # noqa: BLE001 — operator may lack perms
+            print(f"[MEMORY] pgvector extension check failed (non-fatal): {exc}")
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS voice_messages (
                 id BIGSERIAL PRIMARY KEY,
                 discord_user_id TEXT,
+                discord_channel_id TEXT,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
+                embedding vector(768),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
             """
         )
+        # Pre-existing tables (Slice 2) need the new columns ALTERed in.
+        await conn.execute(
+            "ALTER TABLE voice_messages ADD COLUMN IF NOT EXISTS discord_channel_id TEXT"
+        )
+        await conn.execute(
+            "ALTER TABLE voice_messages ADD COLUMN IF NOT EXISTS embedding vector(768)"
+        )
         await conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_voice_messages_recent ON voice_messages (created_at DESC)"
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_voice_messages_embedding_hnsw
+                ON voice_messages
+                USING hnsw (embedding vector_cosine_ops)
+                WITH (m = 16, ef_construction = 64)
+            """
+        )
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_voice_messages_user_channel
+                ON voice_messages (discord_user_id, discord_channel_id, created_at DESC)
+            """
         )
     finally:
         await conn.close()
@@ -272,18 +353,70 @@ async def _load_recent_messages(limit: int = _VOICE_MEMORY_LIMIT) -> list[dict]:
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 
-async def _save_message(role: str, content: str, discord_user_id: str | None = None) -> None:
+async def _save_message(
+    role: str,
+    content: str,
+    discord_user_id: str | None = None,
+    discord_channel_id: str | None = None,
+) -> int | None:
+    """Persist a turn + best-effort embed it for semantic recall.
+
+    Returns the inserted row id (or None if even the INSERT failed).
+    Embedding failure does NOT propagate — the row stays in the table
+    with a NULL embedding, recall queries skip those rows, and linear
+    last-N memory is unaffected.
+    """
     try:
         conn = await _memory_conn()
         try:
-            await conn.execute(
-                "INSERT INTO voice_messages (discord_user_id, role, content) VALUES ($1, $2, $3)",
-                discord_user_id, role, content,
+            return await save_message_with_embedding(
+                conn,
+                role=role,
+                content=content,
+                discord_user_id=discord_user_id,
+                discord_channel_id=discord_channel_id,
+                ollama_url=OLLAMA_URL_FOR_EMBED,
             )
         finally:
             await conn.close()
     except Exception as exc:  # noqa: BLE001 — memory is best-effort, never block the conversation
         print(f"[MEMORY] save failed (non-fatal): {exc}")
+        return None
+
+
+async def _recall_for(
+    user_text: str,
+    *,
+    discord_user_id: str | None,
+    discord_channel_id: str | None,
+    exclude_ids: list[int] | None = None,
+) -> list[dict]:
+    """Return top-K prior voice_messages turns similar to ``user_text``.
+
+    Always returns a list (empty on any failure) so the caller can
+    splat it into the prompt unconditionally. The voice loop is
+    latency-sensitive — a 10s embedder timeout caps the worst case.
+    """
+    if VOICE_RECALL_K <= 0:
+        return []
+    try:
+        conn = await _memory_conn()
+        try:
+            return await recall_similar_turns(
+                conn,
+                query_text=user_text,
+                ollama_url=OLLAMA_URL_FOR_EMBED,
+                discord_user_id=discord_user_id,
+                discord_channel_id=discord_channel_id,
+                k=VOICE_RECALL_K,
+                min_similarity=VOICE_RECALL_MIN_SIM,
+                exclude_ids=exclude_ids or [],
+            )
+        finally:
+            await conn.close()
+    except Exception as exc:  # noqa: BLE001 — recall is best-effort
+        print(f"[MEMORY] recall failed (non-fatal): {exc}")
+        return []
 
 
 async def transcribe_audio(audio_bytes: bytes) -> str:
@@ -368,8 +501,13 @@ def _stereo_to_mono_16k(pcm_data: bytes, from_rate: int = 48000) -> bytes:
     return struct.pack(f"<{len(downsampled)}h", *downsampled)
 
 
-async def process_speech(audio_pcm: bytes, text_channel, guild):
-    """Transcribe speech, get Claude response, play TTS."""
+async def process_speech(audio_pcm: bytes, text_channel, guild, user_id=None):
+    """Transcribe speech, get Claude response, play TTS.
+
+    ``user_id`` + ``text_channel.id`` get threaded into the
+    voice_messages rows so Slice 3 (poindexter#390) recall queries can
+    scope to the current conversation.
+    """
     wav_data = _pcm_to_wav(audio_pcm)
     duration = len(audio_pcm) / (SAMPLE_RATE * 2 * 2)
 
@@ -384,14 +522,31 @@ async def process_speech(audio_pcm: bytes, text_channel, guild):
         return
 
     print(f"[VAD] Transcribed: {text}")
+
+    discord_user_id = str(user_id) if user_id is not None else None
+    discord_channel_id = str(getattr(text_channel, "id", "")) or None
+
+    # Slice 3: pull semantic-recall context BEFORE saving the new user
+    # turn so we don't recall the turn we're about to write. Result is
+    # spliced into the LLM prompt as a separate "recalled context"
+    # block (distinct from the linear last-N already in
+    # conversation_history).
+    recall_hits = await _recall_for(
+        text,
+        discord_user_id=discord_user_id,
+        discord_channel_id=discord_channel_id,
+    )
+    if recall_hits:
+        print(f"[RECALL] {len(recall_hits)} prior turn(s) injected")
+
     conversation_history.append({"role": "user", "content": text})
-    await _save_message("user", text)
+    await _save_message("user", text, discord_user_id, discord_channel_id)
     await text_channel.send(f"🎤 **You:** {text}")
 
-    response_text = await get_claude_response(text)
+    response_text = await get_claude_response(text, recall_hits=recall_hits)
     print(f"[CLAUDE] {response_text[:100]}...")
     conversation_history.append({"role": "assistant", "content": response_text})
-    await _save_message("assistant", response_text)
+    await _save_message("assistant", response_text, discord_user_id, discord_channel_id)
     await text_channel.send(f"🤖 **Poindexter:** {response_text[:1900]}")
 
     vc = guild.voice_client
@@ -470,7 +625,7 @@ class VADSink(discord.sinks.Sink):
 
         if len(audio_data) > MIN_SPEECH_S * SAMPLE_RATE * 4:
             asyncio.run_coroutine_threadsafe(
-                process_speech(audio_data, self.text_channel, self.guild),
+                process_speech(audio_data, self.text_channel, self.guild, user_id),
                 bot.loop,
             )
 
@@ -634,14 +789,31 @@ async def _execute_action(action: dict) -> str:
     return f"Skill {skill_name} ran."
 
 
-async def get_claude_response(user_text: str) -> str:
-    """Send text to local Ollama with tool awareness, return spoken response."""
+async def get_claude_response(
+    user_text: str,
+    *,
+    recall_hits: list[dict] | None = None,
+) -> str:
+    """Send text to local Ollama with tool awareness, return spoken response.
+
+    ``recall_hits`` is the Slice 3 (poindexter#390) semantic-recall
+    payload — top-K prior voice_messages turns similar to ``user_text``.
+    They get rendered as a separate "recalled context" block prepended
+    to the system prompt so the LLM can distinguish them from the live
+    last-N linear history.
+    """
     import json as _json
 
     history_text = "\n".join(
         f"{m['role']}: {m['content']}" for m in conversation_history[-6:]
     )
     prompt = f"{history_text}\nuser: {user_text}\nassistant:"
+
+    system_prompt = SYSTEM_PROMPT
+    if recall_hits:
+        recall_block = format_recalled_context(recall_hits)
+        if recall_block:
+            system_prompt = f"{recall_block}\n\n---\n\n{SYSTEM_PROMPT}"
 
     try:
         import httpx
@@ -652,7 +824,7 @@ async def get_claude_response(user_text: str) -> str:
                 json={
                     "model": "qwen3:8b",
                     "prompt": prompt,
-                    "system": SYSTEM_PROMPT,
+                    "system": system_prompt,
                     "stream": False,
                     "options": {"temperature": 0.7, "num_predict": 300},
                 },
@@ -789,7 +961,7 @@ async def listen(ctx):
         for user_id, audio in sink.audio_data.items():
             audio_bytes = audio.file.read()
             if len(audio_bytes) > 5000:
-                await process_speech(audio_bytes, channel, ctx.guild)
+                await process_speech(audio_bytes, channel, ctx.guild, user_id)
 
     vc.start_recording(sink, _on_done, ctx.channel)
     await ctx.respond("Listening... Use `/stop` when done.")
