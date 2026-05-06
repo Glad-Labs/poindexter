@@ -160,6 +160,21 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_ALERT_DISPATCHER = False
 
+try:
+    # GH#388 — backup-watcher probe + auto-retry. Stats the host-side
+    # bind-mount used by the in-stack backup tiers (#385); on staleness,
+    # `docker restart`s the responsible container before letting the
+    # alert_dispatcher page the operator. Auto-resolves the original
+    # alert via a status='resolved' row when the dump self-heals.
+    from backup_watcher import run_backup_watcher_probe
+    _HAS_BACKUP_WATCHER = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.backup_watcher import run_backup_watcher_probe
+        _HAS_BACKUP_WATCHER = True
+    except ImportError:
+        _HAS_BACKUP_WATCHER = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1417,6 +1432,21 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] compose_drift probe failed: %s", e)
+
+    # Backup watcher (#388). Stats the in-stack backup bind-mount each
+    # cycle, kicks the backup containers when dumps go stale, and writes
+    # a status='resolved' alert_events row when freshness recovers.
+    # Disabled gracefully via app_settings.backup_watcher_enabled=false.
+    if _HAS_BACKUP_WATCHER:
+        try:
+            bw_summary = await run_backup_watcher_probe(pool)
+            probe_results["backup_watcher"] = {
+                "ok": bool(bw_summary.get("ok", False)),
+                "detail": bw_summary.get("detail", ""),
+                "summary": bw_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] backup_watcher probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on

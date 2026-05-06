@@ -74,6 +74,29 @@ case: it flips to unhealthy if the latest hourly dump is > 90 minutes
 old, which Grafana surfaces directly via the standard container-down
 alert path.
 
+### Brain backup-watcher (auto-retry before paging)
+
+`brain/backup_watcher.py` (Glad-Labs/poindexter#388) sits between a
+backup failure and the operator's phone. Every cycle it stats the
+newest dump in each tier; if either is past its threshold it
+`docker restart`s the relevant container, waits the configured delay,
+and re-stats. When a fresh dump appears it writes a
+`status='resolved'` row to `alert_events` so the dispatcher pages the
+operator with `[RESOLVED · ...]` instead of leaving them wondering. If
+the retry budget is exhausted without recovery, the watcher backs off
+and lets the original firing alert stand — the operator still gets
+paged, just on the actual problem rather than on a transient hiccup.
+
+| Setting                                 | Default                      | Notes                                                      |
+| --------------------------------------- | ---------------------------- | ---------------------------------------------------------- |
+| `backup_watcher_enabled`                | `true`                       | Master switch                                              |
+| `backup_watcher_poll_interval_minutes`  | `5`                          | Cadence; matches the brain cycle                           |
+| `backup_watcher_hourly_max_age_minutes` | `90`                         | Hourly staleness threshold (matches container healthcheck) |
+| `backup_watcher_daily_max_age_hours`    | `26`                         | Daily staleness threshold (24h cadence + 90 min slack)     |
+| `backup_watcher_max_retries`            | `2`                          | Cumulative across cycles before escalation                 |
+| `backup_watcher_retry_delay_seconds`    | `120`                        | Wait between `docker restart` and the post-restart re-stat |
+| `backup_watcher_backup_dir`             | `~/.poindexter/backups/auto` | Host path where the backup containers write dumps          |
+
 ## Operational hygiene
 
 - Disk: 24h × 128 MB ≈ 3 GB hourly + 7d × 128 MB ≈ 900 MB daily.
@@ -93,6 +116,3 @@ alert path.
 - [poindexter#387](https://github.com/Glad-Labs/poindexter/issues/387):
   brain daemon SMART monitoring — surface drive-failing-soon warnings
   before drives actually die.
-- [poindexter#388](https://github.com/Glad-Labs/poindexter/issues/388):
-  brain backup-watcher with auto-retry on failure, before the
-  alert_dispatcher fires the page.
