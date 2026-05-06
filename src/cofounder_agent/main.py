@@ -244,7 +244,15 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.warning("[LIFESPAN] telemetry re-init failed: %s", e)
         try:
             from services.profiling import setup_pyroscope
-            setup_pyroscope(_site_cfg)
+            # Glad-Labs/poindexter#406 — pass the loaded SiteConfig via the
+            # DI seam (the keyword arg) and a service-specific name so the
+            # Pyroscope flame graph in Grafana can slice on
+            # service="poindexter-worker". Without an explicit name the
+            # default "cofounder-agent" gets shared across worker / brain
+            # / voice agents, defeating per-service profiling.
+            setup_pyroscope(
+                service_name="poindexter-worker", site_config=_site_cfg,
+            )
         except Exception as e:
             logger.warning("[LIFESPAN] pyroscope re-init failed: %s", e)
 
@@ -627,9 +635,17 @@ except Exception as e:
 
 # Initialize Pyroscope continuous profiling (opt-in via
 # app_settings.enable_pyroscope). LGTM+P stack, GH #75.
+#
+# Module-level call only sees env defaults — the canonical wiring runs
+# in lifespan after _site_cfg.load(pool) (Glad-Labs/poindexter#406).
+# Kept here only so the agent can configure pre-lifespan if the
+# environment already has enable_pyroscope=true; otherwise the lifespan
+# pass overrides with the DB-loaded values.
 try:
     from services.profiling import setup_pyroscope
-    setup_pyroscope(_site_cfg)
+    setup_pyroscope(
+        service_name="poindexter-worker", site_config=_site_cfg,
+    )
 except Exception as _e:
     logger.debug(f"[PYROSCOPE] setup skipped: {_e}")
 

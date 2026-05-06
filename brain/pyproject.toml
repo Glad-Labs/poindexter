@@ -56,6 +56,23 @@ opentelemetry-api = ">=1.33,<2"
 opentelemetry-sdk = ">=1.33,<2"
 opentelemetry-exporter-otlp-proto-grpc = ">=1.33,<2"
 
+[tool.poetry.group.profiling]
+# Optional Pyroscope continuous-profiling agent for the brain
+# (Glad-Labs/poindexter#406). brain_daemon imports pyroscope inside a
+# try/except in setup_pyroscope() and warns + skips if missing, so the
+# daemon still boots without this group. Install with
+# `poetry install --with profiling` to enable. The brain Dockerfile
+# pulls this group in by default so the always-on container ships
+# CPU profiles to Pyroscope under service="poindexter-brain".
+#
+# sys_platform marker mirrors src/cofounder_agent/pyproject.toml — the
+# wheel has no Windows build, so a Windows-host poetry install (Matt's
+# dev machine) skips it cleanly while the Linux container picks it up.
+optional = true
+
+[tool.poetry.group.profiling.dependencies]
+pyroscope-io = { version = "^0.8.5", markers = "sys_platform != 'win32'" }
+
 [build-system]
 requires = ["poetry-core>=1.8"]
 build-backend = "poetry.core.masonry.api"

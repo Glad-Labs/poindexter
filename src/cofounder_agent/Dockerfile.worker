@@ -88,10 +88,32 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir poetr
 # Copy dependency files first (cache layer)
 COPY pyproject.toml poetry.lock ./
 
-# Install Python deps (no dev deps, no virtualenv)
+# Install Python deps (no dev deps, no virtualenv).
+#
+# --extras profiling pulls in ``pyroscope-io`` so services/profiling.py
+# can ship CPU profiles to the Pyroscope server (Glad-Labs/poindexter#406).
+# Without the extra the import in profiling.py silently fails and
+# Pyroscope only ever sees its own self-profile — exactly the gap #406
+# closes. Outside this Linux container the extra is gated by the
+# ``sys_platform != 'win32'`` marker on the dependency, so Matt's
+# Windows host `poetry install --extras profiling` still skips cleanly.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-root --no-dev --no-interaction 2>/dev/null || \
-    poetry install --no-root --no-interaction
+    poetry install --no-root --no-dev --no-interaction --extras profiling 2>/dev/null || \
+    poetry install --no-root --no-interaction --extras profiling
+
+# Fail-fast verification — confirm the pyroscope-io wheel actually
+# landed in the image. If `[profiling]` was silently dropped (resolver
+# fallback, marker mismatch, partial layer cache), the worker would
+# boot, log "[PYROSCOPE] pyroscope-io not installed", and we'd notice
+# only by spotting the absence of `poindexter-worker` in the
+# Pyroscope UI — too easy to miss. Failing the build instead surfaces
+# the regression at CI time.
+#
+# Asserting on ``configure`` (the API surface profiling.py calls)
+# rather than ``__version__`` (which pyroscope-io 0.8.x doesn't expose)
+# — the contract we need to verify is that the symbol exists, not the
+# version number. Closes Glad-Labs/poindexter#406.
+RUN python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')"
 
 # Install Playwright's bundled chromium to a shared location so the
 # runtime user (if different from the build user) can find it.

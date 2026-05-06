@@ -257,6 +257,7 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 - **Dashboards:** Ops (home), Performance, Hardware, Pipeline, Cost, Quality, plus built-in
 - **Alerts → Telegram + Discord:** stuck tasks, failure rate, worker offline, GPU temp, VRAM usage
 - **Playlist:** "Glad Labs Command Center" cycles all dashboards every 30s
+- **Pyroscope app-profiles (Glad-Labs/poindexter#406):** CPU flame graphs ship from the worker, brain, and voice agents under four `service_name` values — `poindexter-worker`, `poindexter-brain`, `poindexter-voice-livekit`, `poindexter-voice-webrtc`. Master switch is `app_settings.enable_pyroscope` (default true post-#406); per-service panel lives on the Observability dashboard.
 
 ## Cron Jobs (re-create on new sessions)
 

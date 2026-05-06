@@ -125,6 +125,21 @@ def _build_app() -> FastAPI:
         site_config = SiteConfig()
         await site_config.load(pool)
 
+        # Pyroscope continuous profiling (Glad-Labs/poindexter#406).
+        # Opt-in via app_settings.enable_pyroscope; ships CPU samples
+        # under service="poindexter-voice-webrtc" so the WebRTC bot
+        # shows up next to the worker / brain / LiveKit bot in the
+        # Grafana flame-graph panel. Best-effort — any failure is
+        # logged inside setup_pyroscope, never raised.
+        try:
+            from services.profiling import setup_pyroscope
+            setup_pyroscope(
+                service_name="poindexter-voice-webrtc",
+                site_config=site_config,
+            )
+        except Exception as e:  # noqa: BLE001 — profiling must never block startup
+            log.warning("Pyroscope setup failed (webrtc): %s", e)
+
         handler = SmallWebRTCRequestHandler()
 
         app.state.pool = pool

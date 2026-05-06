@@ -15,9 +15,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # src/cofounder_agent. Poetry is installed transiently and uninstalled after
 # resolving deps system-wide, so the runtime image only carries the deps.
 COPY pyproject.toml poetry.lock /app/
+# --with profiling pulls in pyroscope-io so brain_daemon can ship CPU
+# profiles under service="poindexter-brain" (Glad-Labs/poindexter#406).
+# The group is optional so a Windows-host install (Matt's dev box,
+# where pyroscope-io has no wheel) skips cleanly without --with.
 RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     poetry config virtualenvs.create false && \
-    poetry install --no-root --no-interaction --no-ansi && \
+    poetry install --no-root --no-interaction --no-ansi --with profiling && \
+    python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')" && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
 

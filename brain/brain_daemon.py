@@ -349,6 +349,70 @@ async def _setting_int(pool, key: str, default: int) -> int:
         return default
 
 
+async def _setup_brain_pyroscope(pool, service_name: str = "poindexter-brain") -> None:
+    """Configure the pyroscope-io agent for the brain daemon.
+
+    The brain is standalone (no SiteConfig DI seam, no
+    services.profiling import) so it reads ``enable_pyroscope`` /
+    ``pyroscope_server_url`` / ``environment`` directly from
+    app_settings via the existing pool. Mirrors the worker-side
+    services/profiling.py logic — opt-in gate, missing-package
+    graceful path, structured success log line — so operators see the
+    same breadcrumb regardless of which service shipped the profile.
+
+    Closes Glad-Labs/poindexter#406. Best-effort: any failure is
+    logged at WARNING and swallowed; the daemon must never refuse to
+    start because the profiler couldn't decide whether to run.
+    """
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT key, value FROM app_settings
+            WHERE key IN ('enable_pyroscope', 'pyroscope_server_url', 'environment')
+            """
+        )
+        cfg = {r["key"]: r["value"] for r in rows}
+    except Exception as e:  # noqa: BLE001 — DB readiness is the broader concern
+        logger.debug("[PYROSCOPE] could not read app_settings: %s — skipping", e)
+        return
+
+    enabled = (cfg.get("enable_pyroscope") or "false").lower() == "true"
+    if not enabled:
+        logger.debug("[PYROSCOPE] disabled via app_settings.enable_pyroscope")
+        return
+
+    server_url = cfg.get("pyroscope_server_url") or "http://pyroscope:4040"
+    environment = cfg.get("environment") or "development"
+
+    try:
+        import pyroscope  # type: ignore[import-not-found]
+    except ImportError:
+        logger.warning(
+            "[PYROSCOPE] pyroscope-io not installed but enable_pyroscope=true "
+            "(brain). Install the brain image's profiling group with: "
+            "poetry install --with profiling",
+        )
+        return
+
+    try:
+        pyroscope.configure(
+            application_name=service_name,
+            server_address=server_url,
+            tags={
+                "service": service_name,
+                "environment": environment,
+            },
+        )
+        logger.info(
+            "[PYROSCOPE] agent configured — app=%s server=%s env=%s",
+            service_name, server_url, environment,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[PYROSCOPE] configure failed (brain): %s", e, exc_info=True,
+        )
+
+
 # Local services always monitored (Poindexter runs on the operator's own machine).
 # In Docker, other containers are on the Docker network; host services use host.docker.internal.
 _local_host = "host.docker.internal" if IS_DOCKER else "localhost"
@@ -1867,6 +1931,12 @@ async def main():
 
     # Load config from DB (site URLs, Telegram tokens, etc.)
     await _load_config_from_db(pool)
+
+    # Pyroscope continuous profiling (Glad-Labs/poindexter#406). Opt-in
+    # via app_settings.enable_pyroscope; ships CPU samples to Pyroscope
+    # under service="poindexter-brain" so the daemon shows up alongside
+    # the worker / voice agents in the Grafana flame-graph panel.
+    await _setup_brain_pyroscope(pool)
 
     # Build the shared OAuth client so probes can hit authenticated
     # worker endpoints with cached JWTs (#245). Falls back to the

@@ -1436,13 +1436,76 @@
         "colorMode": "background",
         "orientation": "horizontal"
       }
+    },
+    {
+      "type": "flamegraph",
+      "title": "CPU flamegraph — by service ($service)",
+      "description": "Per-service flame graph for the four poindexter app profiles wired in #406 (poindexter-worker, poindexter-brain, poindexter-voice-livekit, poindexter-voice-webrtc). Use the $service variable at the top of the dashboard to switch between them.",
+      "datasource": {
+        "type": "grafana-pyroscope-datasource",
+        "uid": "local-pyroscope"
+      },
+      "gridPos": {
+        "h": 20,
+        "w": 24,
+        "x": 0,
+        "y": 200
+      },
+      "id": 230,
+      "targets": [
+        {
+          "labelSelector": "{service=\"$service\"}",
+          "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+          "groupBy": [],
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
   "tags": ["observability", "lgtm", "tempo", "pyroscope", "loki", "kuma"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "service",
+        "label": "Pyroscope service",
+        "description": "Filter the per-service flame graph panel (#406). Default is poindexter-worker; the dropdown lists all four app profiles wired by the issue.",
+        "type": "custom",
+        "query": "poindexter-worker,poindexter-brain,poindexter-voice-livekit,poindexter-voice-webrtc",
+        "current": {
+          "selected": false,
+          "text": "poindexter-worker",
+          "value": "poindexter-worker"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "poindexter-worker",
+            "value": "poindexter-worker"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-brain",
+            "value": "poindexter-brain"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-voice-livekit",
+            "value": "poindexter-voice-livekit"
+          },
+          {
+            "selected": false,
+            "text": "poindexter-voice-webrtc",
+            "value": "poindexter-voice-webrtc"
+          }
+        ],
+        "hide": 0,
+        "skipUrlSync": false,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
   },
   "time": {
     "from": "now-6h",
