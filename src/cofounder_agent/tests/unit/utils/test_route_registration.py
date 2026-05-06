@@ -93,8 +93,10 @@ class TestRouteManifestStructure:
         Updated 2026-05-02 (PR #166 OAuth recovery): added oauth_metadata_router
         + oauth_token_router (RFC 8414 + RFC 6749 §4.4).
         Updated 2026-05-05 (#389): added voice_routes (LiveKit web join page).
+        Updated 2026-05-06 (#347 step 3): added triage_router (firefighter
+        ops LLM diagnosis route).
         """
-        assert len(_WORKER_ROUTES) == 17
+        assert len(_WORKER_ROUTES) == 18
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

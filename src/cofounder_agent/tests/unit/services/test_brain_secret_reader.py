@@ -241,7 +241,12 @@ class TestEndToEndAlertDispatch:
             "PoindexterPostgresDown — pg unreachable", pool=pool,
         )
 
-        assert result is True, "notify should return True when telegram POST succeeded"
+        # #347 step 5: notify returns a dict carrying per-channel
+        # message ids. ``ok=True`` preserves the success contract.
+        assert isinstance(result, dict), "notify should return dict"
+        assert result.get("ok") is True, (
+            "notify should report ok=True when telegram POST succeeded"
+        )
         # At least one POST went out; the first one is to Telegram.
         assert captured_requests, "notify did not hit the network"
         telegram_req = captured_requests[0]
@@ -306,6 +311,11 @@ class TestEndToEndAlertDispatch:
 
         # No discord either — both channels should fail.
         result = await bd.notify("test alert", pool=pool)
-        assert result is False, "notify must return False when no channel reached the operator"
+        # #347 step 5: notify returns a dict; ok=False signals total
+        # send failure so the alert_dispatcher adapter raises NotifyFailed.
+        assert isinstance(result, dict)
+        assert result.get("ok") is False, (
+            "notify must report ok=False when no channel reached the operator"
+        )
         # And nothing should have been POSTed.
         assert captured == []

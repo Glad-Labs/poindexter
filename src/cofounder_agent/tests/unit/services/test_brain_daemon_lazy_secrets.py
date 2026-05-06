@@ -95,7 +95,11 @@ class TestSendTelegramLazyFetch:
 
         result = await bd.send_telegram("hello operator", pool=pool)
 
-        assert result is True
+        # send_telegram now returns int message_id (or sentinel 1) on
+        # success / None on failure (#347 step 5). Truthy on success
+        # preserves the dispatcher contract.
+        assert result  # truthy: 1 sentinel or actual message_id
+        assert isinstance(result, int)
         assert len(captured) == 1
         url = captured[0].full_url
         # The plaintext token landed in the URL (no env: prefix).
@@ -126,7 +130,8 @@ class TestSendTelegramLazyFetch:
         monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
 
         result = await bd.send_telegram("test", pool=pool)
-        assert result is False
+        # Missing token -> None (was False pre-#347 step 5; both falsy).
+        assert not result
         assert captured == []
 
     async def test_returns_false_when_chat_id_missing(self, monkeypatch):
@@ -150,13 +155,15 @@ class TestSendTelegramLazyFetch:
         monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
 
         result = await bd.send_telegram("test", pool=pool)
-        assert result is False
+        # Missing chat_id -> None (was False pre-#347 step 5; both falsy).
+        assert not result
         assert captured == []
 
     async def test_returns_false_with_no_pool_and_no_registry(self):
-        """No pool, no env, no registry → log + return False (no crash)."""
+        """No pool, no env, no registry → log + return None (no crash)."""
         result = await bd.send_telegram("test")
-        assert result is False
+        # Returns None (was False pre-#347 step 5; both falsy).
+        assert not result
 
 
 @pytest.mark.unit
@@ -186,7 +193,10 @@ class TestSendDiscordLazyFetch:
             "hello", webhook_url="https://discord.com/webhook/explicit",
             pool=pool,
         )
-        assert ok is True
+        # send_discord now returns str (message id or sentinel "1") on
+        # success / None on failure (#347 step 5).
+        assert ok  # truthy
+        assert isinstance(ok, str)
         # Pool was never queried — explicit URL short-circuits.
         pool.fetchrow.assert_not_awaited()
         assert captured[0].full_url == "https://discord.com/webhook/explicit"
@@ -213,7 +223,7 @@ class TestSendDiscordLazyFetch:
         monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
 
         ok = await bd.send_discord("hello", pool=pool)
-        assert ok is True
+        assert ok  # truthy str sentinel / message id
         assert captured[0].full_url == "https://discord.com/webhook/lab-logs"
 
 
@@ -250,7 +260,11 @@ class TestNotifyLazyFetch:
         monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
 
         result = await bd.notify("ALERT", pool=pool)
-        assert result is True
+        # notify now returns a dict carrying per-channel message ids
+        # (#347 step 5). Truthy + ok=True preserves the dispatcher
+        # contract.
+        assert isinstance(result, dict)
+        assert result["ok"] is True
         # First POST is Telegram, second is Discord ops.
         assert len(captured) == 2
         assert "botBOT_TOK" in captured[0].full_url
@@ -312,5 +326,5 @@ class TestPoolRegistry:
 
         # No pool kwarg — must still send because registry has one.
         result = await bd.send_telegram("hello")
-        assert result is True
+        assert result  # truthy int (message_id or sentinel 1)
         assert "botREG_TOK" in captured[0].full_url

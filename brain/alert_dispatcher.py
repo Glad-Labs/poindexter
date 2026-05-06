@@ -80,8 +80,12 @@ discussion; cleanup tracked in #340.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import sys
+import urllib.error
+import urllib.request
 from typing import Any, Awaitable, Callable, Optional
 
 logger = logging.getLogger("brain.alert_dispatcher")
@@ -95,6 +99,26 @@ class NotifyFailed(RuntimeError):
     Surfaced as its own type so tests can assert on it without
     string-matching exception messages.
     """
+
+
+# ---------------------------------------------------------------------------
+# Triage retry / network constants. Defaults match the seeded
+# app_settings rows from migration 20260506_052451 (#347 step 1) but the
+# dispatcher reads the live values per call so an operator can tune
+# without restarting the brain.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_TRIAGE_RETRY_MAX = 3
+_DEFAULT_TRIAGE_BACKOFF_SECONDS: tuple[float, ...] = (10.0, 30.0, 90.0)
+# Brain → worker HTTP timeout. Conservative — model_router calls can take
+# several seconds on a cold model load; we don't want the brain to give
+# up while the worker is mid-Ollama-stream.
+_TRIAGE_HTTP_TIMEOUT_SECONDS = 30.0
+# Status codes that should NOT trigger a retry. 503 means the tier has
+# no provider (config issue); 402 means the cost guard denied the call
+# (also config). 401 is auth misconfiguration. Retrying these would
+# burn budget chasing the same failure on every cycle.
+_TRIAGE_NO_RETRY_STATUSES: frozenset[int] = frozenset({401, 402, 503})
 
 
 # ---------------------------------------------------------------------------
@@ -184,9 +208,12 @@ def _row_to_alert_dict(row: dict[str, Any]) -> dict[str, Any]:
 
 
 # Type for the notify callable: takes (message, *, critical) and returns
-# an awaitable. Defined as a Callable so tests can inject their own
-# without monkeypatching the import path.
-NotifyFn = Callable[..., Awaitable[None]]
+# an awaitable that resolves to the brain.notify dict (with
+# ``telegram_message_id`` / ``discord_message_id`` keys) or ``None`` for
+# legacy (worker-side) notifiers that don't surface message ids. Defined
+# as a Callable so tests can inject their own without monkeypatching the
+# import path.
+NotifyFn = Callable[..., Awaitable[Optional[dict[str, Any]]]]
 
 
 async def _resolve_notify_fn(pool: Any = None) -> Optional[NotifyFn]:
@@ -236,7 +263,7 @@ async def _resolve_notify_fn(pool: Any = None) -> Optional[NotifyFn]:
     if brain_daemon_mod is not None and hasattr(brain_daemon_mod, "notify"):
         notify_callable = brain_daemon_mod.notify
 
-        async def _adapter(message: str, *, critical: bool = False) -> None:
+        async def _adapter(message: str, *, critical: bool = False) -> Optional[dict[str, Any]]:
             # critical is a no-op for the brain helper — it always sends
             # to both Telegram and Discord ops. Severity is encoded in
             # the message header itself, which is enough for Matt to
@@ -247,27 +274,44 @@ async def _resolve_notify_fn(pool: Any = None) -> Optional[NotifyFn]:
             # Discord secrets via ``read_app_setting``. We thread the
             # dispatcher's pool in so the secret read hits the right DB
             # and dodges the module-instance landmine the old global
-            # cache fell into. Some tests still stub notify as a sync
-            # ``MagicMock`` returning True/False — handle both paths.
+            # cache fell into.
+            #
+            # #347 step 5: brain.notify now returns a dict carrying the
+            # per-channel message ids so the firefighter follow-up can
+            # quote-reply the same Telegram thread. Legacy/worker-side
+            # notifiers and old test stubs may still return ``None`` or
+            # a ``bool`` — we normalise here.
             result = notify_callable(message, pool=pool) if pool is not None else notify_callable(message)
             if hasattr(result, "__await__"):
-                ok = await result
+                value = await result
             else:
-                ok = result
-            # The brain notify returns True iff at least one channel
-            # accepted the message. False = operator did NOT receive
-            # the alert (no token, malformed URL, all transports down).
-            # Raise so poll_and_dispatch's try/except marks the row
-            # with an honest ``dispatch_result = 'error: ...'`` instead
-            # of silently recording ``'sent'`` while the page vanished
-            # into a black hole — the exact failure
-            # Glad-Labs/poindexter#342 traced.
-            if ok is False:  # explicit identity — None from legacy stubs is treated as success
+                value = result
+            # The brain notify returns ``{ok, telegram_message_id,
+            # discord_message_id}``. ``ok=False`` means the operator did
+            # NOT receive the alert (no token, malformed URL, all
+            # transports down). Raise so poll_and_dispatch's try/except
+            # marks the row with an honest ``dispatch_result = 'error: ...'``
+            # instead of silently recording ``'sent'`` while the page
+            # vanished into a black hole — Glad-Labs/poindexter#342.
+            if value is False:  # legacy bool path
                 raise NotifyFailed(
                     "brain.notify reported no channel accepted the message "
                     "(check telegram_bot_token, telegram_chat_id, "
                     "discord_ops_webhook_url in app_settings)"
                 )
+            if isinstance(value, dict) and value.get("ok") is False:
+                raise NotifyFailed(
+                    "brain.notify reported no channel accepted the message "
+                    "(check telegram_bot_token, telegram_chat_id, "
+                    "discord_ops_webhook_url in app_settings)"
+                )
+            # Surface the dict so _dispatch_one can hand it to _triage_one
+            # for follow-up threading. Legacy stubs returning None / True
+            # bypass triage threading — the diagnosis still posts but as a
+            # standalone message.
+            if isinstance(value, dict):
+                return value
+            return None
 
         return _adapter
 
@@ -376,38 +420,472 @@ async def poll_and_dispatch(
         )
         return summary
 
+    # _triage_tasks accumulates parallel triage tasks scheduled this
+    # cycle so the dispatcher can short-poll them in tests / one-shot
+    # mode. In production the loop runs forever; orphaned tasks finish
+    # in the background and log their own outcome. We attach them to a
+    # name so the asyncio debug tooling shows what's running.
+    _triage_tasks: list[asyncio.Task[Any]] = []
+    triage_enabled = await _read_triage_enabled(pool)
+
     for row in rows:
-        row_id = row["id"]
-        try:
-            alert = _row_to_alert_dict(dict(row))
-            severity = (alert.get("labels") or {}).get("severity") or ""
-            critical = severity.lower() == "critical"
-            message = _format_alert_message(alert)
-            await notify_fn(message, critical=critical)
-            await pool.execute(_MARK_SENT_SQL, row_id)
-            summary["sent"] += 1
-        except Exception as e:  # noqa: BLE001
-            err_msg = f"error: {str(e)[:400]}"
+        notify_result = await _dispatch_one(pool, row, notify_fn, summary)
+        # Schedule the parallel triage task — never awaited inline so the
+        # operator's page never waits on the LLM (the spec's hard NO).
+        # Triage is scheduled regardless of notify outcome so a flaky
+        # Telegram doesn't block the LLM analysis the operator wants
+        # for diagnosing the OTHER half of the failure. When notify
+        # fails the parent message ids are absent and the follow-up
+        # falls back to a standalone diagnosis send (still useful).
+        if triage_enabled:
             try:
-                await pool.execute(_MARK_ERROR_SQL, row_id, err_msg)
-            except Exception as mark_err:  # noqa: BLE001
-                # If we can't even mark the row, log and move on — the
-                # next cycle will pick it up again. This is the only
-                # path that can cause re-delivery, and it's gated on a
-                # second DB failure so the surface is small.
-                logger.warning(
-                    "[alert_dispatcher] failed to mark row %s after "
-                    "dispatch error %r: %s", row_id, e, mark_err,
+                task = asyncio.create_task(
+                    _triage_one(pool, row, notify_result or {}),
+                    name=f"triage_one_{row.get('id')}",
                 )
-            summary["errors"] += 1
-            logger.warning(
-                "[alert_dispatcher] dispatch failed for row %s: %s",
-                row_id, e,
-            )
+                _triage_tasks.append(task)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[alert_dispatcher] failed to schedule triage for row %s: %s",
+                    row.get("id"), e,
+                )
 
     if summary["sent"] or summary["errors"]:
         logger.info(
-            "[alert_dispatcher] cycle: polled=%d sent=%d errors=%d",
+            "[alert_dispatcher] cycle: polled=%d sent=%d errors=%d "
+            "triage_scheduled=%d",
             summary["polled"], summary["sent"], summary["errors"],
+            len(_triage_tasks),
         )
     return summary
+
+
+async def _dispatch_one(
+    pool: Any,
+    row: Any,
+    notify_fn: NotifyFn,
+    summary: dict[str, int],
+) -> Optional[dict[str, Any]]:
+    """Notify the operator about ONE alert row + mark it dispatched.
+
+    Returns the notify_fn result dict (carrying ``telegram_message_id`` /
+    ``discord_message_id``) on success so the caller can hand it to the
+    parallel triage task. Returns ``None`` on failure — the row is
+    already marked errored before we return.
+
+    Failure isolation: any exception from the notify path is caught,
+    logged, and recorded on the row. Callers MUST NOT raise from this
+    helper — the loop in ``poll_and_dispatch`` is best-effort and a
+    single bad row can't take the dispatcher down.
+    """
+    row_id = row["id"]
+    try:
+        alert = _row_to_alert_dict(dict(row))
+        severity = (alert.get("labels") or {}).get("severity") or ""
+        critical = severity.lower() == "critical"
+        message = _format_alert_message(alert)
+        notify_result = await notify_fn(message, critical=critical)
+        await pool.execute(_MARK_SENT_SQL, row_id)
+        summary["sent"] += 1
+        # The adapter normalises legacy ``None`` / ``True`` returns to
+        # ``None`` here; only the new dict shape (#347 step 5) flows
+        # through to triage. Legacy notifiers still get the raw alert,
+        # they just lose the threading on the follow-up.
+        return notify_result if isinstance(notify_result, dict) else None
+    except Exception as e:  # noqa: BLE001
+        err_msg = f"error: {str(e)[:400]}"
+        try:
+            await pool.execute(_MARK_ERROR_SQL, row_id, err_msg)
+        except Exception as mark_err:  # noqa: BLE001
+            # If we can't even mark the row, log and move on — the
+            # next cycle will pick it up again. This is the only
+            # path that can cause re-delivery, and it's gated on a
+            # second DB failure so the surface is small.
+            logger.warning(
+                "[alert_dispatcher] failed to mark row %s after "
+                "dispatch error %r: %s", row_id, e, mark_err,
+            )
+        summary["errors"] += 1
+        logger.warning(
+            "[alert_dispatcher] dispatch failed for row %s: %s",
+            row_id, e,
+        )
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Triage path — Glad-Labs/poindexter#347 step 4. Parallel asyncio task
+# spawned per dispatched row; POSTs to the worker's /api/triage
+# endpoint, retries transient errors per app_settings, sends the
+# diagnosis as a follow-up reply when the LLM produces one.
+# ---------------------------------------------------------------------------
+
+
+async def _read_triage_enabled(pool: Any) -> bool:
+    """Read the master kill-switch from app_settings.
+
+    Defaults to ``True`` so a fresh install with the migration applied
+    gets enrichment automatically. Returns ``False`` on any read error
+    (don't enrich if we can't even read the setting — fail-closed).
+    """
+    try:
+        value = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "ops_triage_enabled",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(
+            "[alert_dispatcher] could not read ops_triage_enabled "
+            "(treating as disabled): %s", e,
+        )
+        return False
+    if value is None:
+        return True  # missing row = default ON (matches seed migration)
+    return str(value).strip().lower() in ("true", "1", "yes", "on")
+
+
+async def _read_triage_retry_config(pool: Any) -> tuple[int, list[float]]:
+    """Read retry max + backoff list from app_settings.
+
+    Returns ``(max_attempts, [backoff_seconds, ...])``. Both fields
+    fall back to module-level defaults when the rows are missing or
+    unparseable. ``len(backoff)`` is padded / trimmed to match
+    ``max_attempts`` so a misconfigured pair doesn't crash the loop.
+    """
+    max_attempts = _DEFAULT_TRIAGE_RETRY_MAX
+    backoff: list[float] = list(_DEFAULT_TRIAGE_BACKOFF_SECONDS)
+    try:
+        max_value = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "ops_triage_retry_max",
+        )
+        if max_value is not None:
+            max_attempts = max(1, int(str(max_value).strip()))
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[alert_dispatcher] ops_triage_retry_max parse failed: %s", e)
+    try:
+        backoff_value = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "ops_triage_retry_backoff_seconds",
+        )
+        if backoff_value:
+            parsed = json.loads(backoff_value)
+            if isinstance(parsed, list):
+                backoff = [float(x) for x in parsed if x is not None]
+    except Exception as e:  # noqa: BLE001
+        logger.debug(
+            "[alert_dispatcher] ops_triage_retry_backoff_seconds parse failed: %s", e
+        )
+    # Pad / trim to match max_attempts so the loop never index-errors.
+    if len(backoff) < max_attempts:
+        last = backoff[-1] if backoff else _DEFAULT_TRIAGE_BACKOFF_SECONDS[-1]
+        backoff.extend([last] * (max_attempts - len(backoff)))
+    elif len(backoff) > max_attempts:
+        backoff = backoff[:max_attempts]
+    return max_attempts, backoff
+
+
+async def _read_api_base_url(pool: Any) -> str:
+    """Resolve the worker base URL the brain should POST /api/triage to.
+
+    Matches the existing ``api_base_url`` setting (seeded by
+    ``brain/seed_app_settings.json`` to ``http://worker:8002`` — the
+    canonical worker URL inside the brain container).
+    """
+    try:
+        value = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "api_base_url",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[alert_dispatcher] api_base_url read failed: %s", e)
+        return ""
+    return (value or "").strip().rstrip("/")
+
+
+async def _mint_oauth_token(pool: Any, base_url: str) -> Optional[str]:
+    """Mint a brain OAuth JWT via the existing brain.oauth_client helper.
+
+    The helper does its own caching (~30 s skew) so calling per-triage
+    is cheap. Returns ``None`` when OAuth credentials aren't configured;
+    the caller logs and skips triage in that case rather than firing
+    unauthenticated calls at the worker.
+    """
+    try:
+        try:
+            from oauth_client import oauth_client_from_pool  # flat import
+        except ImportError:  # pragma: no cover — package-qualified path
+            from brain.oauth_client import oauth_client_from_pool
+        client = await oauth_client_from_pool(pool, base_url=base_url)
+        if not client.using_oauth:
+            await client.aclose()
+            return None
+        token = await client.get_token()
+        await client.aclose()
+        return token
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[alert_dispatcher] OAuth token mint for triage failed: %s", e
+        )
+        return None
+
+
+def _post_triage_sync(
+    url: str, payload: bytes, token: str, timeout: float
+) -> tuple[int, bytes]:
+    """Synchronous urllib POST helper. Caller wraps in ``to_thread``.
+
+    Brain stays on the stdlib + asyncpg + urllib triad (see
+    ``brain/pyproject.toml``). Returns ``(status_code, body_bytes)``.
+    Network / DNS failures raise; HTTP error responses (4xx/5xx) come
+    back through the ``HTTPError`` branch and are mapped to a tuple so
+    the caller can branch on ``_TRIAGE_NO_RETRY_STATUSES`` cleanly.
+    """
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "PoinDexterBrain-Triage/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        # Read the body so the caller can surface the worker's reason
+        # in the audit log / follow-up message.
+        body = b""
+        try:
+            body = e.read()
+        except Exception:  # noqa: BLE001
+            pass
+        return e.code, body
+
+
+async def _send_triage_followup(
+    diagnosis: str,
+    notify_result: dict[str, Any],
+    pool: Any,
+) -> None:
+    """Post the diagnosis as a follow-up to the original notify message.
+
+    Resolves :func:`brain.brain_daemon.send_followup` lazily so the
+    dispatcher module stays decoupled from the brain daemon's import
+    side effects. Threads on Telegram's ``reply_to_message_id`` and
+    Discord's ``message_reference`` when the parent ids are present.
+    Skipped silently when the diagnosis is empty (per the spec's
+    "LLM returned empty -> brain skips the follow-up entirely" row).
+    """
+    if not diagnosis:
+        return
+    brain_daemon_mod = sys.modules.get("brain_daemon") or sys.modules.get("brain.brain_daemon")
+    if brain_daemon_mod is None:
+        try:
+            import brain_daemon as brain_daemon_mod  # type: ignore  # noqa: F811
+        except ImportError:
+            try:
+                from brain import brain_daemon as brain_daemon_mod  # type: ignore  # noqa: F811
+            except ImportError:
+                logger.warning(
+                    "[alert_dispatcher] brain_daemon unavailable — "
+                    "cannot send triage follow-up"
+                )
+                return
+    if not hasattr(brain_daemon_mod, "send_followup"):
+        logger.warning(
+            "[alert_dispatcher] brain_daemon.send_followup missing — "
+            "the brain image needs the #347 step 5 patch applied"
+        )
+        return
+    try:
+        await brain_daemon_mod.send_followup(
+            diagnosis,
+            parent_telegram_message_id=notify_result.get("telegram_message_id"),
+            parent_discord_message_id=notify_result.get("discord_message_id"),
+            pool=pool,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[alert_dispatcher] send_followup raised: %s — diagnosis "
+            "produced but not delivered", e,
+        )
+
+
+async def _triage_one(
+    pool: Any,
+    row: Any,
+    notify_result: dict[str, Any],
+    *,
+    sleep_fn: Optional[Callable[[float], Awaitable[None]]] = None,
+) -> Optional[dict[str, Any]]:
+    """Run firefighter triage for ONE alert row in the background.
+
+    Posts to the worker's ``/api/triage`` endpoint, retries transient
+    errors per ``ops_triage_retry_max`` / ``ops_triage_retry_backoff_seconds``,
+    then sends a follow-up reply with the diagnosis text via
+    :func:`brain.brain_daemon.send_followup`.
+
+    Args:
+        pool: asyncpg pool — used for app_settings + OAuth mint.
+        row: ``alert_events`` row dict (the dispatcher just polled it).
+        notify_result: The dict returned by ``notify_fn`` on the parent
+            message — carries ``telegram_message_id`` and
+            ``discord_message_id`` for follow-up threading.
+        sleep_fn: Override for ``asyncio.sleep`` used between retries.
+            Tests pass a no-op so the suite doesn't actually wait minutes
+            between attempts.
+
+    Returns:
+        The triage response dict on success (``{diagnosis, model,
+        tokens, ms}``), or ``None`` when the call was abandoned (no
+        provider, retries exhausted, etc.). Always logged either way.
+
+    Per the spec (#347 failure-handling table):
+
+    - 200 / empty diagnosis → no follow-up sent.
+    - 402 ``cost_guarded`` → operator gets a one-line ``[triage skipped:
+      cost_guard]`` follow-up so they know why no diagnosis arrived.
+    - 503 ``no_provider`` → no follow-up; logged ``triage_no_provider``.
+      No retry (config issue, not transient).
+    - 5xx / network timeout → retry per backoff. After exhaustion the
+      original alert is left alone (operator already has the page).
+
+    Exception isolation: never raises out of this coroutine. Any blow-up
+    here would otherwise become an "unhandled task exception" log line
+    that obscures the real signal — we catch + log and the alert stays
+    enriched-or-not based on what actually happened.
+    """
+    sleep_fn = sleep_fn or asyncio.sleep
+    row_id = row["id"]
+    try:
+        base_url = await _read_api_base_url(pool)
+        if not base_url:
+            logger.warning(
+                "[alert_dispatcher] triage skipped row=%s: api_base_url "
+                "unset — set app_settings.api_base_url=http://worker:8002",
+                row_id,
+            )
+            return None
+
+        token = await _mint_oauth_token(pool, base_url)
+        if not token:
+            logger.warning(
+                "[alert_dispatcher] triage skipped row=%s: brain OAuth "
+                "client unconfigured — run `poindexter auth migrate-brain`",
+                row_id,
+            )
+            return None
+
+        # Reshape the row labels/annotations the way the worker expects.
+        alert = _row_to_alert_dict(dict(row))
+        triage_payload = {
+            "alert_event_id": row_id,
+            "alertname": row.get("alertname") or "",
+            "severity": row.get("severity") or "",
+            "labels": alert.get("labels") or {},
+            "annotations": alert.get("annotations") or {},
+        }
+        payload_bytes = json.dumps(triage_payload, default=str).encode("utf-8")
+        url = f"{base_url}/api/triage"
+
+        max_attempts, backoff = await _read_triage_retry_config(pool)
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                status_code, body = await asyncio.to_thread(
+                    _post_triage_sync, url, payload_bytes, token,
+                    _TRIAGE_HTTP_TIMEOUT_SECONDS,
+                )
+            except Exception as e:  # noqa: BLE001 — network / dns / timeout
+                logger.warning(
+                    "[alert_dispatcher] triage row=%s attempt %d/%d network "
+                    "failure: %s", row_id, attempt, max_attempts, e,
+                )
+                if attempt >= max_attempts:
+                    logger.warning(
+                        "[alert_dispatcher] triage_dropped row=%s: retries "
+                        "exhausted on network failure", row_id,
+                    )
+                    return None
+                await sleep_fn(backoff[attempt - 1])
+                continue
+
+            if 200 <= status_code < 300:
+                try:
+                    response_obj = json.loads(body.decode("utf-8")) if body else {}
+                except (ValueError, UnicodeDecodeError) as e:
+                    logger.warning(
+                        "[alert_dispatcher] triage row=%s: 200 with "
+                        "unparseable body (%s); skipping follow-up",
+                        row_id, e,
+                    )
+                    return None
+                diagnosis = (response_obj.get("diagnosis") or "").strip() if isinstance(response_obj, dict) else ""
+                if diagnosis:
+                    await _send_triage_followup(diagnosis, notify_result, pool)
+                    logger.info(
+                        "[alert_dispatcher] triage_ok row=%s model=%s tokens=%d "
+                        "ms=%d", row_id,
+                        response_obj.get("model", "?"),
+                        response_obj.get("tokens", 0),
+                        response_obj.get("ms", 0),
+                    )
+                else:
+                    logger.info(
+                        "[alert_dispatcher] triage_ok_empty row=%s — LLM "
+                        "produced nothing, skipping follow-up", row_id,
+                    )
+                return response_obj if isinstance(response_obj, dict) else None
+
+            # Non-2xx. Branch on the no-retry set.
+            if status_code in _TRIAGE_NO_RETRY_STATUSES:
+                if status_code == 402:
+                    # Cost-guard denial — operator gets a one-line
+                    # follow-up so they know enrichment was suppressed
+                    # by the budget cap, not by an LLM error.
+                    await _send_triage_followup(
+                        "[triage skipped: cost_guard]",
+                        notify_result, pool,
+                    )
+                    logger.info(
+                        "[alert_dispatcher] triage_cost_guarded row=%s "
+                        "(no retry)", row_id,
+                    )
+                elif status_code == 503:
+                    logger.info(
+                        "[alert_dispatcher] triage_no_provider row=%s "
+                        "(no retry, config issue)", row_id,
+                    )
+                else:
+                    logger.warning(
+                        "[alert_dispatcher] triage_auth_failed row=%s "
+                        "status=%d (no retry, config issue)",
+                        row_id, status_code,
+                    )
+                return None
+
+            # Transient (5xx) — retry with backoff if budget remains.
+            logger.warning(
+                "[alert_dispatcher] triage row=%s attempt %d/%d "
+                "HTTP %d — %s",
+                row_id, attempt, max_attempts, status_code,
+                body[:200].decode("utf-8", "replace") if body else "",
+            )
+            if attempt >= max_attempts:
+                logger.warning(
+                    "[alert_dispatcher] triage_dropped row=%s: retries "
+                    "exhausted on HTTP %d", row_id, status_code,
+                )
+                return None
+            await sleep_fn(backoff[attempt - 1])
+
+        return None
+    except Exception as e:  # noqa: BLE001 — wholesale safety net
+        logger.warning(
+            "[alert_dispatcher] _triage_one row=%s raised: %s",
+            row_id, e, exc_info=True,
+        )
+        return None

@@ -465,36 +465,50 @@ async def _resolve_pool(pool):
     return getattr(holder, "pool", None)
 
 
-async def send_telegram(message: str, *, pool=None) -> bool:
+async def send_telegram(
+    message: str,
+    *,
+    pool=None,
+    reply_to_message_id: int | None = None,
+) -> int | None:
     """Send alert to Telegram — direct bot API, no dependencies.
 
-    Returns ``True`` if the API accepted the request (HTTP 2xx),
-    ``False`` for any failure (no token, malformed URL, transport
-    error, non-2xx response). Callers like ``alert_dispatcher`` rely
-    on this signal to set ``alert_events.dispatch_result`` honestly
-    instead of recording every cycle as ``'sent'`` (#342).
+    Returns the Telegram ``message_id`` (int) on success, or ``None`` on
+    any failure (no token, malformed URL, transport error, non-2xx
+    response). The message_id is what Glad-Labs/poindexter#347 step 5
+    needs so the firefighter follow-up can quote-reply the original
+    alert in the same Telegram thread.
 
-    Glad-Labs/poindexter#344: this function previously read a
-    module-level ``TELEGRAM_BOT_TOKEN`` global. The brain Docker image
-    mirrors files into both ``/app`` and ``/app/brain/`` so a process
-    that imports ``brain.brain_daemon`` AND has ``brain_daemon`` in
-    ``sys.modules`` (e.g. ``__main__`` aliased + a sibling import)
+    Args:
+        message: Body text. Prefixed with "🧠 Brain: " before send.
+        pool: Optional asyncpg pool. When ``None``, falls back to
+            ``_resolve_pool`` to discover the cross-instance pool.
+        reply_to_message_id: When set, Telegram threads the new message
+            as a quote-reply to the supplied message id. Used by the
+            firefighter ops follow-up (#347 step 5) so the diagnosis
+            lands under the raw alert in the operator's chat.
+
+    History — #344: this function previously read a module-level
+    ``TELEGRAM_BOT_TOKEN`` global. The brain Docker image mirrors files
+    into both ``/app`` and ``/app/brain/`` so a process that imports
+    ``brain.brain_daemon`` AND has ``brain_daemon`` in ``sys.modules``
     sees TWO module instances each with their own copy of the global.
-    ``_load_config_from_db`` populated one; the alert dispatcher
-    happened to read the other and silently dropped every page.
-
     The fix is to re-read the secret from app_settings on every call
-    via ``read_app_setting`` (which decrypts the pgcrypto envelope per
-    #342). One DB roundtrip per alert is negligible — the dispatcher
-    polls every 30s and notify is rare. Callers that already have a
-    pool should pass it as ``pool=`` to skip the lazy-pool path.
+    via ``read_app_setting`` (one DB roundtrip per alert is negligible).
+
+    History — #342: callers like ``alert_dispatcher`` rely on the
+    success/failure signal to set ``alert_events.dispatch_result``
+    honestly instead of recording every cycle as ``'sent'``. The new
+    return shape (``int | None``) preserves that contract — ``None`` is
+    falsy and the dispatcher's adapter still raises ``NotifyFailed``
+    when no channel accepts.
     """
     pool = await _resolve_pool(pool)
     if pool is None:
         logger.warning(
             "[BRAIN] No DB pool available — can't fetch telegram_bot_token"
         )
-        return False
+        return None
 
     token = await _read_app_setting(
         pool, "telegram_bot_token", default=os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -504,12 +518,25 @@ async def send_telegram(message: str, *, pool=None) -> bool:
     )
     if not token:
         logger.warning("[BRAIN] No Telegram bot token — can't send alert")
-        return False
+        return None
     if not chat_id:
         logger.warning("[BRAIN] No Telegram chat ID — can't send alert")
-        return False
+        return None
     try:
-        payload = json.dumps({"chat_id": chat_id, "text": f"🧠 Brain: {message}"}).encode()
+        body: dict[str, object] = {
+            "chat_id": chat_id,
+            "text": f"🧠 Brain: {message}",
+        }
+        if reply_to_message_id is not None:
+            # Telegram Bot API: ``reply_to_message_id`` threads the new
+            # message under the referenced one. Coupled with
+            # ``allow_sending_without_reply=True`` so a deleted parent
+            # doesn't make the API reject the follow-up — the operator
+            # gets the diagnosis even if the original alert message was
+            # cleaned up.
+            body["reply_to_message_id"] = int(reply_to_message_id)
+            body["allow_sending_without_reply"] = True
+        payload = json.dumps(body).encode()
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{token}/sendMessage",
             data=payload,
@@ -519,19 +546,63 @@ async def send_telegram(message: str, *, pool=None) -> bool:
         def _do_post():
             return urllib.request.urlopen(req, timeout=10)
         resp = await asyncio.to_thread(_do_post)
-        return 200 <= resp.status < 300
+        if not (200 <= resp.status < 300):
+            return None
+        # Parse the message_id out of the response so callers can thread
+        # follow-ups against it. Telegram returns
+        # ``{"ok": true, "result": {"message_id": N, ...}}``. Unparseable
+        # bodies degrade to "1" so we still report success — the brain's
+        # alert_dispatcher only needs truthiness, the firefighter follow-up
+        # is a best-effort enhancement.
+        try:
+            response_text = await asyncio.to_thread(resp.read)
+            if isinstance(response_text, bytes):
+                response_data = json.loads(response_text.decode("utf-8"))
+                if isinstance(response_data, dict):
+                    message_id = response_data.get("result", {}).get("message_id")
+                    if isinstance(message_id, int):
+                        return message_id
+        except Exception as parse_err:  # noqa: BLE001 — best-effort parse
+            logger.debug(
+                "[BRAIN] Telegram response parse failed: %s — "
+                "send succeeded but message_id unavailable",
+                parse_err,
+            )
+        # Sentinel — non-zero falsy-safe value preserves the "send
+        # accepted" semantics for the dispatcher when message_id parsing
+        # fails (e.g. mocked responses without a body).
+        return 1
     except Exception as e:
         logger.error("[BRAIN] Telegram send failed: %s", e, exc_info=True)
-        return False
+        return None
 
 
-async def send_discord(message: str, webhook_url: str | None = None, *, pool=None) -> bool:
+async def send_discord(
+    message: str,
+    webhook_url: str | None = None,
+    *,
+    pool=None,
+    message_reference_id: str | int | None = None,
+) -> str | None:
     """Send message to Discord via webhook — no dependencies.
 
-    Returns ``True`` for an HTTP 2xx response (Discord webhooks return
-    204 No Content on success), ``False`` for any failure. See
-    ``send_telegram`` for the rationale on the bool return AND the
-    rationale for lazy-fetching the webhook URL on every call (#344).
+    Returns the Discord ``message.id`` on success (when ``?wait=true``
+    surfaces the created message), or a sentinel ``"1"`` when the POST
+    succeeded but the response was empty (vanilla webhooks return 204
+    No Content), or ``None`` on any failure. The string return preserves
+    truthiness for the dispatcher's send-failure detection.
+
+    Args:
+        message: Body text. Truncated to Discord's 1900-char soft cap to
+            leave room for follow-up suffixes.
+        webhook_url: Explicit webhook to use; otherwise resolved from
+            ``discord_lab_logs_webhook_url`` (or env fallback).
+        pool: Optional asyncpg pool for lazy app_settings fetches.
+        message_reference_id: Discord ``message_reference.message_id``.
+            Used by the firefighter ops follow-up (#347 step 5) to
+            quote-reply the diagnosis under the original alert. Webhook
+            replies require ``?wait=true`` on the URL so Discord returns
+            the created message body — we add it transparently.
 
     Resolution order for the webhook URL:
         1. Explicit ``webhook_url=`` arg (used by ``notify`` for the
@@ -552,11 +623,24 @@ async def send_discord(message: str, webhook_url: str | None = None, *, pool=Non
             webhook_url = os.getenv("DISCORD_LAB_LOGS_WEBHOOK_URL", "")
     if not webhook_url:
         logger.debug("[BRAIN] No Discord webhook URL — skipping")
-        return False
+        return None
     try:
-        payload = json.dumps({"content": message}).encode()
+        body: dict[str, object] = {"content": message}
+        post_url = webhook_url
+        if message_reference_id is not None:
+            # Discord webhooks support ``message_reference`` to thread a
+            # message under another. ``?wait=true`` makes the API echo
+            # the created message back so we can capture its id for
+            # downstream chains. Some Discord webhook variants reject
+            # message_reference for cross-channel replies — best-effort
+            # only; failure to thread is logged and the message still
+            # ships normally.
+            body["message_reference"] = {"message_id": str(message_reference_id)}
+            sep = "&" if "?" in post_url else "?"
+            post_url = f"{post_url}{sep}wait=true"
+        payload = json.dumps(body).encode()
         req = urllib.request.Request(
-            webhook_url,
+            post_url,
             data=payload,
             headers={
                 "Content-Type": "application/json",
@@ -566,31 +650,59 @@ async def send_discord(message: str, webhook_url: str | None = None, *, pool=Non
         def _do_post():
             return urllib.request.urlopen(req, timeout=10)
         resp = await asyncio.to_thread(_do_post)
-        return 200 <= resp.status < 300
+        if not (200 <= resp.status < 300):
+            return None
+        # Try to extract message.id when ``?wait=true`` was set. Vanilla
+        # webhook posts return 204 No Content — the sentinel "1" keeps
+        # truthiness so the dispatcher counts the send as accepted.
+        try:
+            response_text = await asyncio.to_thread(resp.read)
+            if isinstance(response_text, bytes) and response_text:
+                response_data = json.loads(response_text.decode("utf-8"))
+                if isinstance(response_data, dict):
+                    message_id = response_data.get("id")
+                    if message_id:
+                        return str(message_id)
+        except Exception as parse_err:  # noqa: BLE001 — best-effort parse
+            logger.debug(
+                "[BRAIN] Discord response parse failed: %s — "
+                "send succeeded but message_id unavailable",
+                parse_err,
+            )
+        return "1"
     except Exception as e:
         logger.error("[BRAIN] Discord send failed: %s", e)
-        return False
+        return None
 
 
-async def notify(message: str, *, pool=None) -> bool:
+async def notify(message: str, *, pool=None) -> dict[str, object]:
     """Send to both Telegram (urgent) and Discord #ops (ops log).
 
     Telegram = alarm bell (phone push notification).
     Discord #ops = system's voice (scrollable ops history).
     Discord #lab-logs = public-facing (daily digest only).
 
-    Returns ``True`` if AT LEAST ONE channel actually accepted the
-    message. ``False`` means the operator did not receive the alert —
-    the brain ``alert_dispatcher`` raises on this so the
-    ``alert_events`` row gets ``dispatch_result = 'error: ...'``
-    instead of a phantom ``'sent'`` (#342).
+    Returns a dict carrying the per-channel message ids so callers can
+    thread follow-ups (Glad-Labs/poindexter#347 step 5)::
+
+        {
+            "telegram_message_id": int | None,
+            "discord_message_id": str | None,
+            "ok": bool,                     # True iff at least one channel accepted
+        }
+
+    Backward compat: the dict is truthy when ``ok=True`` (mappings are
+    truthy when non-empty) and falsy-ish via the ``ok`` key, so the
+    alert_dispatcher's adapter only needs ``not result.get("ok")`` to
+    detect total failure. Raising ``NotifyFailed`` on that path keeps
+    the dispatched_at write honest (#342).
 
     Lazy-fetches ``discord_ops_webhook_url`` from app_settings each
     call (#344). Callers that already hold a pool should pass it as
     ``pool=`` to share the connection across the two sends.
     """
     pool = await _resolve_pool(pool)
-    tg_ok = await send_telegram(message, pool=pool)
+    tg_id = await send_telegram(message, pool=pool)
     # Operational messages go to #ops; fall back to lab-logs only if
     # ops isn't configured. The ops webhook is read from app_settings
     # on every call (no cached global — see #344 docstring above).
@@ -604,10 +716,86 @@ async def notify(message: str, *, pool=None) -> bool:
     else:
         ops_url = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
     if ops_url:
-        dc_ok = await send_discord(message, webhook_url=ops_url, pool=pool)
+        dc_id = await send_discord(message, webhook_url=ops_url, pool=pool)
     else:
-        dc_ok = await send_discord(message, pool=pool)  # fallback to lab-logs
-    return tg_ok or dc_ok
+        dc_id = await send_discord(message, pool=pool)  # fallback to lab-logs
+    return {
+        "telegram_message_id": tg_id if isinstance(tg_id, int) else None,
+        "discord_message_id": dc_id if isinstance(dc_id, str) else None,
+        "ok": bool(tg_id) or bool(dc_id),
+    }
+
+
+async def send_followup(
+    text: str,
+    *,
+    parent_telegram_message_id: int | None = None,
+    parent_discord_message_id: str | int | None = None,
+    pool=None,
+) -> dict[str, object]:
+    """Send a follow-up message threaded under the original notify.
+
+    Glad-Labs/poindexter#347 step 5 — the firefighter ops LLM produces
+    a diagnosis paragraph that should appear as a quote-reply to the
+    raw alert in the same Telegram (and Discord) thread, so the
+    operator sees both messages together on their phone.
+
+    Both parent ids are optional. When ``parent_telegram_message_id``
+    is set the Telegram send threads via ``reply_to_message_id``;
+    similarly for Discord via ``message_reference``. When neither is
+    provided the message goes through as a normal notify (degraded —
+    the operator still gets the diagnosis, just not threaded).
+
+    Mirrors :func:`notify`'s return shape so callers can chain (e.g.
+    quote-reply a follow-up to the follow-up). The ``[triage]`` prefix
+    on the text is the caller's job — this helper makes no assumption
+    about content shape.
+
+    No retry / backoff in this helper. The ``alert_dispatcher`` owns
+    the retry policy (per ``ops_triage_retry_*`` settings) and decides
+    when to give up; this is the leaf send.
+    """
+    pool = await _resolve_pool(pool)
+    tg_id: int | None = None
+    if parent_telegram_message_id is not None:
+        tg_id = await send_telegram(
+            text,
+            pool=pool,
+            reply_to_message_id=parent_telegram_message_id,
+        )
+    elif parent_discord_message_id is None:
+        # Caller has neither id — fall back to a normal notify so the
+        # operator still gets the message. This branch is the "degraded
+        # but useful" path; the dispatcher logs when it lands here.
+        tg_id = await send_telegram(text, pool=pool)
+
+    dc_id: str | None = None
+    if parent_discord_message_id is not None:
+        ops_url = ""
+        if pool is not None:
+            ops_url = await _read_app_setting(
+                pool,
+                "discord_ops_webhook_url",
+                default=os.getenv("DISCORD_OPS_WEBHOOK_URL", ""),
+            )
+        if ops_url:
+            dc_id = await send_discord(
+                text,
+                webhook_url=ops_url,
+                pool=pool,
+                message_reference_id=parent_discord_message_id,
+            )
+        else:
+            dc_id = await send_discord(
+                text,
+                pool=pool,
+                message_reference_id=parent_discord_message_id,
+            )
+    return {
+        "telegram_message_id": tg_id if isinstance(tg_id, int) else None,
+        "discord_message_id": dc_id if isinstance(dc_id, str) else None,
+        "ok": bool(tg_id) or bool(dc_id),
+    }
 
 
 async def restart_service(name: str, *, pool=None):
