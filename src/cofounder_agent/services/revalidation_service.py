@@ -30,7 +30,7 @@ from services.logger_config import get_logger
 # existing tests that ``patch("services.revalidation_service.site_config",
 # mock)`` keep working without churn. New code paths should accept a
 # ``site_config`` parameter (DI) instead of relying on the singleton.
-from services.site_config import site_config
+from services.site_config import site_config  # noqa: F401  # dynamic use via test patches
 
 logger = get_logger(__name__)
 
