@@ -206,6 +206,26 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_DOCKER_PORT_FORWARD_PROBE = False
 
+try:
+    # GH#338 — auto-expire stale pending approval gates. Pulls every
+    # post_approval_gates row in state='pending' older than
+    # gate_pending_max_age_hours (default 168 = 7d), transitions them
+    # to rejected with the sentinel ``auto_rejected_after_<N>_hours``
+    # reason, writes one pipeline_gate_history + one audit_log row per
+    # cycle, and sends a single coalesced Telegram notification when
+    # the batch meets the configurable threshold. Implements the
+    # auto-reject branch of the issue's "auto-reject + notify" /
+    # "notify-louder" choice — stale review queues don't drain on
+    # their own.
+    from gate_auto_expire_probe import run_gate_auto_expire_probe
+    _HAS_GATE_AUTO_EXPIRE_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.gate_auto_expire_probe import run_gate_auto_expire_probe
+        _HAS_GATE_AUTO_EXPIRE_PROBE = True
+    except ImportError:
+        _HAS_GATE_AUTO_EXPIRE_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1700,6 +1720,25 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] docker_port_forward probe failed: %s", e)
+
+    # Gate auto-expire (#338). Sweeps post_approval_gates for pending
+    # rows older than gate_pending_max_age_hours (default 168 = 7d),
+    # transitions them to rejected with the sentinel reason
+    # ``auto_rejected_after_<N>_hours``, writes per-gate
+    # pipeline_gate_history rows + one batch-summary audit_log row, and
+    # sends one coalesced Telegram notify when the batch meets
+    # gate_auto_expire_notify_threshold. Disabled gracefully via
+    # app_settings.gate_auto_expire_enabled=false.
+    if _HAS_GATE_AUTO_EXPIRE_PROBE:
+        try:
+            ge_summary = await run_gate_auto_expire_probe(pool)
+            probe_results["gate_auto_expire"] = {
+                "ok": bool(ge_summary.get("ok", False)),
+                "detail": ge_summary.get("detail", ""),
+                "summary": ge_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] gate_auto_expire probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on
