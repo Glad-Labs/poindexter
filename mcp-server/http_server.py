@@ -44,6 +44,13 @@ Env vars:
 - ``POINDEXTER_SECRET_KEY``     (sourced from bootstrap.toml; required —
                                  the JWT signing key shared with the issuer)
 - ``OLLAMA_URL``                (default ``http://localhost:11434``)
+- ``POINDEXTER_MCP_HTTP_TOOL_ALLOWLIST``  (optional, comma-separated tool
+                                 names — see ``DEFAULT_VOICE_MOBILE_ALLOWLIST``
+                                 below for the recommended read-only set
+                                 used for phone/voice connectors. Unset
+                                 means "expose all registered tools",
+                                 matching pre-#239 behaviour. Only the HTTP
+                                 transport honours this; stdio is unaffected.)
 
 ## Reaching it from a phone
 
@@ -80,6 +87,80 @@ from typing import Any, Awaitable, Callable, MutableMapping
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("poindexter-mcp-http")
+
+
+# ---------------------------------------------------------------------------
+# Tool allowlist (#239)
+# ---------------------------------------------------------------------------
+
+#: Recommended read-only set for "phone voice mode" / mobile Custom
+#: Connector use. Set ``POINDEXTER_MCP_HTTP_TOOL_ALLOWLIST`` to this
+#: comma-joined list to drop every write-capable tool from the HTTP
+#: surface — covers "what's the system state", "what did I decide
+#: about X", "what's in the queue" without risking a misheard query
+#: publishing or rejecting content. See Glad-Labs/poindexter#239.
+#:
+#: Adjust per-deployment by exporting your own comma-separated list;
+#: this constant is documentation, not the default at runtime — an
+#: unset env var means "expose ALL registered tools" so behaviour
+#: stays backwards compatible with pre-#239 deployments.
+DEFAULT_VOICE_MOBILE_ALLOWLIST: tuple[str, ...] = (
+    "search_memory",
+    "recall_decision",
+    "find_similar_posts",
+    "list_tasks",
+    "get_post_count",
+    "get_setting",
+    "list_settings",
+    "get_audit_log",
+    "get_audit_summary",
+    "get_brain_knowledge",
+    "check_health",
+    "get_budget",
+    "memory_stats",
+)
+
+
+def _parse_tool_allowlist(raw: str | None) -> frozenset[str] | None:
+    """Parse the comma-separated allowlist env var.
+
+    Returns:
+        ``None`` when ``raw`` is unset (env var absent) — caller
+        should NOT filter the registry, matching pre-#239 behaviour.
+        A ``frozenset`` of names otherwise — including the empty
+        set, which is the explicit "no tools exposed" choice for
+        operators who want to hard-stop access without unmounting
+        the route. Whitespace is stripped from each entry; empty
+        entries (e.g. trailing commas) are dropped.
+    """
+    if raw is None:
+        return None
+    return frozenset(name.strip() for name in raw.split(",") if name.strip())
+
+
+def _apply_tool_allowlist(mcp_instance, allowlist: frozenset[str]) -> list[str]:
+    """Trim the FastMCP tool manager's registry down to ``allowlist``.
+
+    Mutates ``mcp_instance._tool_manager`` in place via the public
+    ``remove_tool`` method, so subsequent ``list_tools`` / ``call_tool``
+    calls (whether reached via HTTP or any other transport sharing the
+    same instance) see only the allowed names. Run this BEFORE
+    ``streamable_http_app()`` to keep the HTTP ``tools/list`` response
+    in sync with the filter.
+
+    Names in the allowlist that aren't actually registered are silently
+    ignored — easier to maintain a static "voice mode" list across
+    versions than to keep it perfectly aligned with the current tool
+    set.
+
+    Returns the names that were REMOVED — useful for logging.
+    """
+    tm = mcp_instance._tool_manager
+    registered = {t.name for t in tm.list_tools()}
+    to_remove = sorted(registered - allowlist)
+    for name in to_remove:
+        tm.remove_tool(name)
+    return to_remove
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +389,23 @@ def build_app():
         enable_dns_rebinding_protection=bool(allowed),
         allowed_hosts=allowed,
     )
+
+    # Tool allowlist (#239) — drop write-capable tools from the HTTP
+    # surface BEFORE building the streamable_http app so that
+    # ``tools/list`` and ``tools/call`` both reflect the trimmed set.
+    # Stdio (``server.py`` direct entry point) doesn't go through
+    # build_app, so it stays unaffected and exposes the full registry.
+    allowlist = _parse_tool_allowlist(
+        os.environ.get("POINDEXTER_MCP_HTTP_TOOL_ALLOWLIST"),
+    )
+    if allowlist is not None:
+        removed = _apply_tool_allowlist(poindexter_mcp.mcp, allowlist)
+        logger.info(
+            "Tool allowlist active: %d tool(s) exposed, %d removed (%s)",
+            len({t.name for t in poindexter_mcp.mcp._tool_manager.list_tools()}),
+            len(removed),
+            ", ".join(removed) if removed else "none",
+        )
 
     inner = poindexter_mcp.mcp.streamable_http_app()  # also creates session_manager
 

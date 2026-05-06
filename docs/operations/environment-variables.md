@@ -67,13 +67,14 @@ is no `API_TOKEN` env var.
 
 ## Optional (no default — feature off unless set)
 
-| Variable                 | Feature gated on it                                  |
-| ------------------------ | ---------------------------------------------------- |
-| `PEXELS_API_KEY`         | Fallback stock-photo search when SDXL is unavailable |
-| `TELEGRAM_BOT_TOKEN`     | Brain daemon alerts via Telegram                     |
-| `TELEGRAM_CHAT_ID`       | Destination chat for Telegram alerts                 |
-| `OPENCLAW_GATEWAY_URL`   | Discord + Telegram bridge via OpenClaw               |
-| `OPENCLAW_GATEWAY_TOKEN` | Bearer token for OpenClaw Tools Invoke API           |
+| Variable                             | Feature gated on it                                                                                                                                                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PEXELS_API_KEY`                     | Fallback stock-photo search when SDXL is unavailable                                                                                                                                                             |
+| `TELEGRAM_BOT_TOKEN`                 | Brain daemon alerts via Telegram                                                                                                                                                                                 |
+| `TELEGRAM_CHAT_ID`                   | Destination chat for Telegram alerts                                                                                                                                                                             |
+| `OPENCLAW_GATEWAY_URL`               | Discord + Telegram bridge via OpenClaw                                                                                                                                                                           |
+| `OPENCLAW_GATEWAY_TOKEN`             | Bearer token for OpenClaw Tools Invoke API                                                                                                                                                                       |
+| `POINDEXTER_MCP_HTTP_TOOL_ALLOWLIST` | Comma-separated tool names exposed by the remote MCP HTTP transport. Unset = expose all 25+ tools. Set to the recommended voice/mobile read-only list when registering a Custom Connector to a phone (see below) |
 
 > **Local Ollama only in the core stack.** Paid-API providers (OpenAI,
 > Anthropic, Google) live in community plugins, never the core. If you
@@ -110,6 +111,47 @@ PEXELS_API_KEY=
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 ```
+
+## MCP HTTP tool allowlist (`POINDEXTER_MCP_HTTP_TOOL_ALLOWLIST`)
+
+The remote MCP HTTP server (`mcp-server/http_server.py`) exposes the
+same tool registry as the stdio transport — by default that's all 25+
+tools, **including write-capable ones** like `publish_post`,
+`approve_post`, `reject_post`, `set_setting`, and `create_post`.
+
+When you register the HTTP server as a Custom Connector for the mobile
+or voice Claude app, write tools become a real risk: a misheard query
+plus an LLM that "follows through" can publish or reject content from
+the road, exactly when you're least able to course-correct quickly.
+
+Set `POINDEXTER_MCP_HTTP_TOOL_ALLOWLIST` to the comma-separated list
+below to expose only the 13 read-only tools — covers "what's the
+system state?", "what did I decide about X?", and "what's in the
+queue?" without giving voice mode the keys to the publishing button:
+
+```bash
+export POINDEXTER_MCP_HTTP_TOOL_ALLOWLIST="search_memory,recall_decision,find_similar_posts,list_tasks,get_post_count,get_setting,list_settings,get_audit_log,get_audit_summary,get_brain_knowledge,check_health,get_budget,memory_stats"
+```
+
+The same list lives as the `DEFAULT_VOICE_MOBILE_ALLOWLIST` constant
+in `mcp-server/http_server.py` for in-code reference.
+
+Behaviour notes:
+
+- **Unset** ⇒ all registered tools exposed (pre-#239 default).
+- **Empty string** (`""`) ⇒ explicit "expose nothing" — useful if you
+  want the route mounted but locked down without unmounting it.
+- **Whitespace-tolerant** — `a, b ,c` parses as `{a, b, c}`.
+- **Unknown names silently ignored** — copying the recommended list
+  verbatim never crashes startup, even after a tool is renamed
+  upstream.
+- **Stdio transport unaffected** — running `python mcp-server/server.py`
+  always exposes the full registry, since the stdio path doesn't go
+  through `http_server.build_app`.
+
+The filter runs **before** FastMCP builds its `streamable_http_app()`,
+so both `tools/list` and `tools/call` reflect the trimmed registry —
+unlisted tools surface as `Unknown tool: <name>` to the client.
 
 ## How the worker actually reads these
 
