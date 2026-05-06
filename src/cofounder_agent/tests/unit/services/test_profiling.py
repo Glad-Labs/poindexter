@@ -126,6 +126,7 @@ class TestSiteConfigUnavailable:
         function must swallow the exception and return — startup must
         not fail because the profiler couldn't decide whether to run."""
         import builtins
+
         from services import profiling
 
         real_import = builtins.__import__
@@ -234,3 +235,220 @@ class TestDefaultsAndFallbacks:
         assert "brain-daemon" in msgs
         assert "http://prof.internal:4040" in msgs
         assert "staging" in msgs
+
+
+# ---------------------------------------------------------------------------
+# PR #245 edge cases — preserved alongside the HEAD edge-case suites above.
+# These overlap with TestEnablePyroscopeParsing / TestSiteConfigUnavailable /
+# TestDefaultsAndFallbacks but exercise slightly different scenarios
+# (separate `test_empty_environment_string_*` and `test_default_environment_*`
+# cases, an exact-equality `tags == {...}` assertion, etc.). Keeping both
+# sets per merge instructions: additive coverage on profiling guarantees.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSetupPyroscopeEdgeCases:
+    """Edge cases not covered by TestSetupPyroscope:
+
+    - default ``service_name`` when omitted
+    - default ``pyroscope_server_url`` when not configured
+    - empty ``environment`` value falling back via the ``or 'development'`` clause
+    - mixed-case ``enable_pyroscope`` values (the lower() guard)
+    - ``site_config`` import failure path
+    - tag completeness
+    - success-path logging
+    """
+
+    def test_default_service_name_used_when_omitted(self):
+        """Calling setup_pyroscope() with no args must use the default
+        application_name 'cofounder-agent' (matches the worker process)."""
+        from services.profiling import setup_pyroscope
+
+        fake_pyroscope = MagicMock()
+        fake_pyroscope.configure = MagicMock()
+
+        def _fake_get(key: str, default: str = "") -> str:
+            return {"enable_pyroscope": "true"}.get(key, default)
+
+        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope()
+
+        kwargs = fake_pyroscope.configure.call_args.kwargs
+        assert kwargs["application_name"] == "cofounder-agent"
+        assert kwargs["tags"]["service"] == "cofounder-agent"
+
+    def test_default_server_url_when_setting_missing(self):
+        """When ``pyroscope_server_url`` is not in app_settings the fallback
+        ``http://pyroscope:4040`` (the docker-compose service hostname)
+        must be passed as ``server_address``."""
+        from services.profiling import setup_pyroscope
+
+        fake_pyroscope = MagicMock()
+        fake_pyroscope.configure = MagicMock()
+
+        def _fake_get(key: str, default: str = "") -> str:
+            # Only enable_pyroscope is set; server URL falls through to default.
+            return {"enable_pyroscope": "true"}.get(key, default)
+
+        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope()
+
+        kwargs = fake_pyroscope.configure.call_args.kwargs
+        assert kwargs["server_address"] == "http://pyroscope:4040"
+
+    def test_empty_environment_string_falls_back_to_development(self):
+        """``site_config.get('environment', 'development')`` can still
+        return an empty string when the key exists but is blank. The
+        ``or 'development'`` clause guards that — verify the tag ends
+        up as 'development', not ''."""
+        from services.profiling import setup_pyroscope
+
+        fake_pyroscope = MagicMock()
+        fake_pyroscope.configure = MagicMock()
+
+        def _fake_get(key: str, default: str = "") -> str:
+            return {
+                "enable_pyroscope": "true",
+                "environment": "",  # explicitly blank — bug-class trap
+            }.get(key, default)
+
+        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope()
+
+        kwargs = fake_pyroscope.configure.call_args.kwargs
+        assert kwargs["tags"]["environment"] == "development"
+
+    def test_default_environment_is_development_when_unset(self):
+        """When ``environment`` is missing entirely the ``get``-default
+        path ('development') must apply."""
+        from services.profiling import setup_pyroscope
+
+        fake_pyroscope = MagicMock()
+        fake_pyroscope.configure = MagicMock()
+
+        def _fake_get(key: str, default: str = "") -> str:
+            return {"enable_pyroscope": "true"}.get(key, default)
+
+        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope()
+
+        kwargs = fake_pyroscope.configure.call_args.kwargs
+        assert kwargs["tags"]["environment"] == "development"
+
+    @pytest.mark.parametrize("flag_value", ["TRUE", "True", "tRuE"])
+    def test_mixed_case_true_enables_agent(self, flag_value):
+        """The ``.lower() == 'true'`` guard must accept any casing —
+        operator config edits are free-form strings."""
+        from services.profiling import setup_pyroscope
+
+        fake_pyroscope = MagicMock()
+        fake_pyroscope.configure = MagicMock()
+
+        def _fake_get(key: str, default: str = "") -> str:
+            return {"enable_pyroscope": flag_value}.get(key, default)
+
+        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope()
+
+        fake_pyroscope.configure.assert_called_once()
+
+    @pytest.mark.parametrize("flag_value", ["1", "yes", "on", ""])
+    def test_non_true_strings_disable_agent(self, flag_value):
+        """Only the literal string 'true' (case-insensitive) enables
+        Pyroscope — '1', 'yes', 'on', or empty must NOT trip configure.
+        Avoids accidental truthy interpretations diverging from the
+        documented ``enable_pyroscope=true`` contract."""
+        from services.profiling import setup_pyroscope
+
+        fake_pyroscope = MagicMock()
+        fake_pyroscope.configure = MagicMock()
+
+        def _fake_get(key: str, default: str = "") -> str:
+            return {"enable_pyroscope": flag_value}.get(key, default)
+
+        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope()
+
+        fake_pyroscope.configure.assert_not_called()
+
+    def test_site_config_import_failure_returns_cleanly(self, caplog):
+        """If ``services.site_config`` cannot be imported (broken DB
+        bootstrap, missing module), setup_pyroscope must log at DEBUG
+        and return without raising. Profiling is best-effort and must
+        never block worker startup."""
+        import builtins
+
+        from services.profiling import setup_pyroscope
+
+        real_import = builtins.__import__
+
+        def _raising_import(name, *args, **kwargs):
+            if name == "services.site_config":
+                raise RuntimeError("simulated bootstrap failure")
+            return real_import(name, *args, **kwargs)
+
+        with caplog.at_level("DEBUG", logger="services.profiling"), \
+             patch.object(builtins, "__import__", side_effect=_raising_import):
+            # Must not raise.
+            setup_pyroscope()
+
+        msgs = " ".join(r.message for r in caplog.records)
+        assert "site_config unavailable" in msgs
+
+    def test_tags_include_both_service_and_environment(self):
+        """Both required tag keys must be present — Pyroscope queries
+        slice on these in Grafana dashboards (`service`, `environment`)."""
+        from services.profiling import setup_pyroscope
+
+        fake_pyroscope = MagicMock()
+        fake_pyroscope.configure = MagicMock()
+
+        def _fake_get(key: str, default: str = "") -> str:
+            return {
+                "enable_pyroscope": "true",
+                "environment": "staging",
+            }.get(key, default)
+
+        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope("brain-daemon")
+
+        kwargs = fake_pyroscope.configure.call_args.kwargs
+        assert kwargs["tags"] == {
+            "service": "brain-daemon",
+            "environment": "staging",
+        }
+
+    def test_logs_info_on_successful_configuration(self, caplog):
+        """The success path must emit an INFO log so operators can
+        confirm Pyroscope wired up at startup (otherwise a silent miss
+        looks identical to it being disabled)."""
+        from services.profiling import setup_pyroscope
+
+        fake_pyroscope = MagicMock()
+        fake_pyroscope.configure = MagicMock()
+
+        def _fake_get(key: str, default: str = "") -> str:
+            return {
+                "enable_pyroscope": "true",
+                "pyroscope_server_url": "http://pyro.local:4040",
+                "environment": "production",
+            }.get(key, default)
+
+        with caplog.at_level("INFO", logger="services.profiling"), \
+             patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
+            setup_pyroscope("worker-x")
+
+        msgs = " ".join(r.message for r in caplog.records)
+        assert "agent configured" in msgs
+        assert "worker-x" in msgs
+        assert "http://pyro.local:4040" in msgs
+        assert "production" in msgs
