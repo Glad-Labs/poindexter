@@ -26,25 +26,28 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 ### Production URLs
 
-| Service       | URL                                                               |
-| ------------- | ----------------------------------------------------------------- |
-| Public site   | https://gladlabs.io (→ www.gladlabs.io)                           |
-| Backend API   | http://localhost:8002                                             |
-| Brain daemon  | Local process (brain/)                                            |
-| Grafana       | http://localhost:3000 (or http://100.81.93.12:3000 via Tailscale) |
-| Public docs   | https://gladlabs.mintlify.app                                     |
-| Private repo  | https://github.com/Glad-Labs/glad-labs-stack                      |
-| Public repo   | https://github.com/Glad-Labs/poindexter (auto-mirror)             |
-| Project board | https://github.com/orgs/Glad-Labs/projects/2                      |
+| Service         | URL                                                                             |
+| --------------- | ------------------------------------------------------------------------------- |
+| Public site     | https://gladlabs.io (→ www.gladlabs.io)                                         |
+| Backend API     | http://localhost:8002                                                           |
+| Brain daemon    | Local process (brain/)                                                          |
+| Grafana         | http://localhost:3000 (or http://100.81.93.12:3000 via Tailscale)               |
+| Pyroscope       | http://localhost:4040                                                           |
+| Voice (LiveKit) | https://nightrider.taild4f626.ts.net/voice/join (tap-to-join, Tailscale Funnel) |
+| Public docs     | https://gladlabs.mintlify.app                                                   |
+| Private repo    | https://github.com/Glad-Labs/glad-labs-stack                                    |
+| Public repo     | https://github.com/Glad-Labs/poindexter (auto-mirror)                           |
+| Project board   | https://github.com/orgs/Glad-Labs/projects/2                                    |
 
-### Key Numbers (as of May 3, 2026)
+### Key Numbers (as of May 6, 2026)
 
-- 51 live posts on gladlabs.io (217 posts total: 143 drafts, 23 archived; 1,467 pipeline_tasks across all generation runs)
-- 452 Python files under `src/cofounder_agent/services/` (18 highlighted in the table below are the load-bearing ones — added template_runner, prompt_manager, and the LiteLLM provider plugin during the 2026-05-04 OSS-migration push)
-- 7 Grafana dashboards (post-merge consolidation), 4 alert rules
+- 52 live posts on gladlabs.io (218 posts total: 143 drafts, 23 archived; 1,515 pipeline_tasks across all generation runs)
+- 459 Python files under `src/cofounder_agent/services/` (18 highlighted in the table below are the load-bearing ones — added template_runner, prompt_manager, and the LiteLLM provider plugin during the 2026-05-04 OSS-migration push)
+- 161 migration files in `services/migrations/` (UTC-timestamp prefix post-#378; old `0xxx_*.py` stay as-is)
+- 7 Grafana dashboards (post-merge consolidation), 4 alert rules; Pyroscope app-profiles ship from worker/brain/voice agents under `service_name` tags (poindexter#406)
 - 7,900+ Python unit tests passing (329 test files)
-- 453 app_settings keys (the in-code DI layer accepts hundreds more — see PR sweeps #198 + #221)
-- 25,000 embeddings across posts / issues / audit / memory / brain / claude_sessions (≈25× growth since logging started)
+- 674 app_settings keys (up from 453 on May 3 — the in-code DI layer accepts hundreds more; see PR sweeps #198, #221, and the 2026-05-06 audit)
+- 25,000+ embeddings across posts / issues / audit / memory / brain / claude_sessions
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
