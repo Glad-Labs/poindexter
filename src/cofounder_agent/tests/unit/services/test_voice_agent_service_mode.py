@@ -75,6 +75,23 @@ def _ensure_pipecat_stubs() -> None:
         LLMContextAggregatorPair=type("LLMContextAggregatorPair", (), {"__init__": lambda self, **kw: None}),
         LLMUserAggregatorParams=type("LLMUserAggregatorParams", (), {"__init__": lambda self, **kw: None}),
     )
+    # User-turn strategy modules added when smart-turn was replaced with
+    # VAD speech-timeout (#265 — fix(voice): replace smart-turn ML stop).
+    _stub_module("pipecat.turns")
+    _stub_module("pipecat.turns.user_start")
+    _stub_module(
+        "pipecat.turns.user_start.vad_user_turn_start_strategy",
+        VADUserTurnStartStrategy=type("VADUserTurnStartStrategy", (), {"__init__": lambda self, **kw: None}),
+    )
+    _stub_module("pipecat.turns.user_stop")
+    _stub_module(
+        "pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy",
+        SpeechTimeoutUserTurnStopStrategy=type("SpeechTimeoutUserTurnStopStrategy", (), {"__init__": lambda self, **kw: None}),
+    )
+    _stub_module(
+        "pipecat.turns.user_turn_strategies",
+        UserTurnStrategies=type("UserTurnStrategies", (), {"__init__": lambda self, **kw: None}),
+    )
     _stub_module("pipecat.services")
     _stub_module("pipecat.services.kokoro")
     _kokoro_cls = type(

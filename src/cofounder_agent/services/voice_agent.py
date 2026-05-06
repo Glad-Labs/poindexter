@@ -92,6 +92,13 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
+from pipecat.turns.user_start.vad_user_turn_start_strategy import (
+    VADUserTurnStartStrategy,
+)
+from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import (
+    SpeechTimeoutUserTurnStopStrategy,
+)
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.services.kokoro.tts import KokoroTTSService
 from pipecat.services.ollama.llm import OLLamaLLMService
 from pipecat.services.whisper.stt import (
@@ -243,11 +250,31 @@ def build_voice_pipeline_task(
     # transport params. Passing vad_analyzer to a transport's params is
     # silently dropped by pydantic v2 — speech-start/stop events never
     # fire and STT never runs.
+    #
+    # Default user_turn_strategies includes TurnAnalyzerUserTurnStopStrategy
+    # (the smart-turn ML detector). Live testing 2026-05-05 showed it
+    # over-classifies as INCOMPLETE — Matt would speak a full sentence and
+    # the model kept waiting for "more", forcing a 3s silence-fallback for
+    # every turn. Many turns never reached the LLM at all. Replace with
+    # the simpler SpeechTimeoutUserTurnStopStrategy (VAD-only, fixed
+    # timeout after STT emits a transcript). Tunable via
+    # voice_agent_user_speech_timeout (default 0.8s).
+    user_speech_timeout = float(
+        site_config.get("voice_agent_user_speech_timeout", 0.8)
+    )
     context_aggregator = LLMContextAggregatorPair(
         context=context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(stop_secs=vad_stop_secs),
+            ),
+            user_turn_strategies=UserTurnStrategies(
+                start=[VADUserTurnStartStrategy()],
+                stop=[
+                    SpeechTimeoutUserTurnStopStrategy(
+                        user_speech_timeout=user_speech_timeout,
+                    )
+                ],
             ),
         ),
     )
