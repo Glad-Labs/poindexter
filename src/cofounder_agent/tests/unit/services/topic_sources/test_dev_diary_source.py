@@ -183,6 +183,33 @@ def _fake_subprocess_run(stdout: str, returncode: int = 0):
     return lambda *a, **kw: _Result()
 
 
+class _CapturingSubprocess:
+    """subprocess.run double that records the kwargs of the most recent call.
+
+    Used to assert that ``env`` (and other args) propagate correctly
+    from the collector callsites down into ``subprocess.run``. Returns
+    a stdout-only fake result so existing parsing logic still works.
+    """
+
+    def __init__(self, stdout: str = "", returncode: int = 0):
+        self._stdout = stdout
+        self._returncode = returncode
+        self.last_kwargs: dict = {}
+        self.last_args: tuple = ()
+
+    def __call__(self, *args, **kwargs):
+        self.last_args = args
+        self.last_kwargs = kwargs
+
+        class _Result:
+            def __init__(self_inner):
+                self_inner.stdout = self._stdout
+                self_inner.stderr = ""
+                self_inner.returncode = self._returncode
+
+        return _Result()
+
+
 @pytest.mark.unit
 class TestCollectMergedPRs:
     def test_returns_empty_when_gh_not_installed(self):
@@ -237,6 +264,52 @@ class TestCollectMergedPRs:
                    _fake_subprocess_run(gh_output)):
             result = _collect_merged_prs(hours=24, repo_root=None)
         assert result[0]["author"] == ""
+
+    def test_gh_token_exported_into_subprocess_env(self):
+        """A non-empty gh_token must land in the subprocess env as
+        ``GH_TOKEN`` (and ``GITHUB_TOKEN``) so ``gh pr list`` authenticates.
+
+        Closes Glad-Labs/poindexter#348 — the worker now ships with
+        ``gh`` installed but the secret has to be plumbed into the
+        subprocess env (NOT the worker process env, NOT the Docker
+        layer) for each call. Verify the wiring with a capturing
+        subprocess double.
+        """
+        capture = _CapturingSubprocess(stdout="[]", returncode=0)
+        with patch("services.topic_sources.dev_diary_source.subprocess.run",
+                   capture):
+            _collect_merged_prs(
+                hours=24, repo_root=None, gh_token="ghp_secret_123",
+            )
+        env = capture.last_kwargs.get("env")
+        assert env is not None, "subprocess.run was called without env="
+        assert env.get("GH_TOKEN") == "ghp_secret_123"
+        # gh respects either GH_TOKEN or GITHUB_TOKEN — set both so
+        # nested invocations / scripts reading either name authenticate.
+        assert env.get("GITHUB_TOKEN") == "ghp_secret_123"
+        # Inherited env keys (e.g. PATH) must still be present —
+        # _run_subprocess merges on top of os.environ rather than
+        # replacing it. PATH is the canary because gh + git both
+        # need it to resolve their helper binaries.
+        import os as _os
+        if "PATH" in _os.environ:
+            assert env.get("PATH") == _os.environ["PATH"]
+
+    def test_no_gh_token_means_no_env_override(self):
+        """When gh_token is empty/None, subprocess.run must be called with
+        ``env=None`` so the child inherits the worker env unmodified
+        (not a stripped-down dict missing PATH/HOME)."""
+        capture = _CapturingSubprocess(stdout="[]", returncode=0)
+        with patch("services.topic_sources.dev_diary_source.subprocess.run",
+                   capture):
+            _collect_merged_prs(hours=24, repo_root=None, gh_token=None)
+        assert capture.last_kwargs.get("env") is None
+
+        capture2 = _CapturingSubprocess(stdout="[]", returncode=0)
+        with patch("services.topic_sources.dev_diary_source.subprocess.run",
+                   capture2):
+            _collect_merged_prs(hours=24, repo_root=None, gh_token="")
+        assert capture2.last_kwargs.get("env") is None
 
 
 @pytest.mark.unit
@@ -508,3 +581,75 @@ class TestExtract:
             topics = await source.extract(pool=None, config={})
 
         assert topics == []
+
+
+# ---------------------------------------------------------------------------
+# gather_context — gh_token plumbing (no DB needed)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestGatherContextGhTokenWiring:
+    """Verify gh_token flows from the explicit override through
+    _collect_merged_prs without touching the DB.
+
+    The end-to-end DB-backed wiring (app_settings → plugins.secrets →
+    _fetch_gh_token) is exercised by TestCollectMergedPRs above for
+    the subprocess-side, and by integration tests for the secret
+    decryption side. This test class isolates the in-process plumbing
+    so we don't need a Postgres fixture for it.
+    """
+
+    async def test_explicit_token_passed_through_to_collector(self):
+        captured: dict = {}
+
+        def fake_collect_prs(hours, repo_root, gh_token=None):
+            captured["hours"] = hours
+            captured["repo_root"] = repo_root
+            captured["gh_token"] = gh_token
+            return []
+
+        with (
+            patch(
+                "services.topic_sources.dev_diary_source._collect_merged_prs",
+                fake_collect_prs,
+            ),
+            patch(
+                "services.topic_sources.dev_diary_source._collect_notable_commits",
+                return_value=[],
+            ),
+        ):
+            ctx = await DevDiarySource().gather_context(
+                pool=None,
+                hours_lookback=12,
+                gh_token="explicit_test_token",
+            )
+
+        assert captured["gh_token"] == "explicit_test_token"
+        assert captured["hours"] == 12
+        assert ctx.merged_prs == []
+
+    async def test_pool_none_means_no_token_fetch_attempt(self):
+        """With pool=None and no explicit token, the source must not
+        crash trying to fetch the secret — it falls back to empty."""
+        captured: dict = {}
+
+        def fake_collect_prs(hours, repo_root, gh_token=None):
+            captured["gh_token"] = gh_token
+            return []
+
+        with (
+            patch(
+                "services.topic_sources.dev_diary_source._collect_merged_prs",
+                fake_collect_prs,
+            ),
+            patch(
+                "services.topic_sources.dev_diary_source._collect_notable_commits",
+                return_value=[],
+            ),
+        ):
+            await DevDiarySource().gather_context(pool=None)
+
+        # Empty string from _fetch_gh_token's pool-None short-circuit.
+        assert captured["gh_token"] == ""

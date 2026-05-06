@@ -310,6 +310,14 @@ services:
       # POINDEXTER_BRAIN_PARENT below.
       - ./brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
+      # Read-only mount of the host repo's .git directory so the
+      # dev_diary topic source (services/topic_sources/dev_diary_source.py)
+      # can run `git log --since=...` against the actual repo. The
+      # source resolves repo_root by walking up from /app looking for
+      # `.git`, and now finds /app/.git pointing at the host worktree.
+      # Read-only so a buggy gh/git invocation can never mutate history
+      # from inside the container. Closes Glad-Labs/poindexter#348.
+      - ./.git:/app/.git:ro
       # Shared with the prometheus container — RenderPrometheusRulesJob
       # writes the DB-sourced rule YAML here; prometheus reads it.
       - prometheus-rules:/etc/prometheus/rules

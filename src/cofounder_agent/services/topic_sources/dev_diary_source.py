@@ -170,12 +170,27 @@ def _short(text: str, width: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _run_subprocess(cmd: list[str], cwd: str | None = None, timeout: int = 30) -> str:
+def _run_subprocess(
+    cmd: list[str],
+    cwd: str | None = None,
+    timeout: int = 30,
+    env: dict[str, str] | None = None,
+) -> str:
     """Run a subprocess, returning stdout on success, '' on any failure.
 
     Failures are logged at debug level — this source must not crash the
     job if ``gh`` isn't installed or ``git`` is in a weird state.
+
+    ``env``: when provided, **merged on top of the current process env**
+    (``os.environ``) rather than replacing it. ``gh`` and ``git`` rely
+    on a populated ``PATH`` / ``HOME`` / ``LANG`` / etc. to function;
+    passing a bare ``{"GH_TOKEN": ...}`` would strip those and break
+    everything. Caller-supplied keys (e.g. ``GH_TOKEN``) override the
+    inherited env. ``None`` means "inherit unmodified".
     """
+    proc_env: dict[str, str] | None = None
+    if env:
+        proc_env = {**os.environ, **{k: v for k, v in env.items() if v is not None}}
     try:
         result = subprocess.run(  # nosec B603 — fixed argv list, not shell-interpolated
             cmd,
@@ -186,6 +201,7 @@ def _run_subprocess(cmd: list[str], cwd: str | None = None, timeout: int = 30) -
             errors="replace",
             timeout=timeout,
             check=False,
+            env=proc_env,
         )
         if result.returncode != 0:
             logger.debug(
@@ -199,7 +215,11 @@ def _run_subprocess(cmd: list[str], cwd: str | None = None, timeout: int = 30) -
         return ""
 
 
-def _collect_merged_prs(hours: int, repo_root: str | None) -> list[dict[str, Any]]:
+def _collect_merged_prs(
+    hours: int,
+    repo_root: str | None,
+    gh_token: str | None = None,
+) -> list[dict[str, Any]]:
     """Use ``gh pr list`` to collect PRs merged in the last ``hours``.
 
     Returns a list of ``{number, title, url, merged_at, author, body}``
@@ -212,6 +232,13 @@ def _collect_merged_prs(hours: int, repo_root: str | None) -> list[dict[str, Any
     Body is capped to ~2000 chars per PR upstream of the prompt
     formatter, which applies its own cap; the gh fetch itself is
     unbounded so we always have the full text available for fallback.
+
+    ``gh_token``: when truthy, exported into the subprocess env as
+    ``GH_TOKEN`` so ``gh`` authenticates against the GitHub API.
+    Sourced from ``app_settings('gh_token')`` (is_secret=true) and
+    threaded through ``gather_context``. Empty / None falls back to
+    unauthenticated mode (works on public repos, returns nothing on
+    private ones).
     """
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
     # gh's --search supports "merged:>=YYYY-MM-DDTHH:MM:SSZ"
@@ -222,7 +249,14 @@ def _collect_merged_prs(hours: int, repo_root: str | None) -> list[dict[str, Any
         "--limit", "30",
         "--json", "number,title,url,mergedAt,author,body",
     ]
-    raw = _run_subprocess(cmd, cwd=repo_root, timeout=30)
+    sub_env: dict[str, str] | None = None
+    if gh_token:
+        # GH_TOKEN takes precedence over GITHUB_TOKEN inside gh; we set
+        # both so child processes / nested invocations also see it. The
+        # subprocess inherits the rest of the worker env (PATH, HOME,
+        # etc.) — see _run_subprocess for the merge semantics.
+        sub_env = {"GH_TOKEN": gh_token, "GITHUB_TOKEN": gh_token}
+    raw = _run_subprocess(cmd, cwd=repo_root, timeout=30, env=sub_env)
     if not raw.strip():
         return []
     try:
@@ -521,12 +555,38 @@ def _resolve_repo_root() -> str | None:
     Returns the absolute path as a string, or None when the source is
     invoked from a directory that isn't inside a git repo (CI sandbox,
     test fixture).
+
+    In the worker container the host's ``.git`` is bind-mounted at
+    ``/app/.git`` (see docker-compose.local.yml worker.volumes), so the
+    walk-up from this file (``/app/services/topic_sources/...``) hits
+    ``/app`` and returns it as the repo root.
     """
     here = Path(__file__).resolve()
     for parent in (here, *here.parents):
         if (parent / ".git").exists():
             return str(parent)
     return None
+
+
+async def _fetch_gh_token(pool: Any) -> str:
+    """Read the ``gh_token`` secret from app_settings, decrypted.
+
+    Uses ``plugins.secrets.get_secret`` so encrypted (``enc:v1:...``)
+    and legacy plaintext rows are both handled transparently. Returns
+    an empty string when the row is missing, empty, or the fetch
+    fails (e.g. during early-boot / unit tests without a real pool).
+    Empty token is fine — the subprocess just runs gh unauthenticated.
+    """
+    if pool is None:
+        return ""
+    try:
+        from plugins.secrets import get_secret
+        async with pool.acquire() as conn:
+            value = await get_secret(conn, "gh_token")
+        return value or ""
+    except Exception as exc:
+        logger.debug("DevDiarySource: gh_token fetch failed: %s", exc)
+        return ""
 
 
 class DevDiarySource:
@@ -546,6 +606,7 @@ class DevDiarySource:
         hours_lookback: int = _DEFAULT_LOOKBACK_HOURS,
         confidence_floor: float = _DEFAULT_BRAIN_CONFIDENCE_FLOOR,
         repo_root: str | None = None,
+        gh_token: str | None = None,
     ) -> DevDiaryContext:
         """Pull all six context sections concurrently and return a bundle.
 
@@ -553,10 +614,20 @@ class DevDiarySource:
         DB sections run as native asyncpg coroutines. Failures in any
         single section produce an empty list / dict for that section,
         never an exception.
+
+        ``gh_token``: explicit override for the GitHub auth token.
+        When ``None`` (the typical path), the token is loaded from
+        ``app_settings('gh_token')`` via ``plugins.secrets.get_secret``
+        — see ``_fetch_gh_token``. Passing an empty string explicitly
+        forces unauthenticated mode without touching the DB.
         """
         repo_root = repo_root or _resolve_repo_root()
+        if gh_token is None:
+            gh_token = await _fetch_gh_token(pool)
 
-        prs_task = asyncio.to_thread(_collect_merged_prs, hours_lookback, repo_root)
+        prs_task = asyncio.to_thread(
+            _collect_merged_prs, hours_lookback, repo_root, gh_token,
+        )
         commits_task = asyncio.to_thread(_collect_notable_commits, hours_lookback, repo_root)
         decisions_task = _collect_brain_decisions(pool, hours_lookback, confidence_floor)
         audit_task = _collect_audit_resolved(pool, hours_lookback)

@@ -7,9 +7,20 @@ WORKDIR /app
 # reviewer launches Playwright's bundled chromium from inside the
 # container. They're a few hundred MB but cold bytes when the feature
 # is off (qa_preview_screenshot_enabled=false by default).
+#
+# git + gh (GitHub CLI) are installed for the dev_diary topic source
+# (services/topic_sources/dev_diary_source.py), which subprocess-calls
+# `git log` and `gh pr list` to assemble the daily build-in-public
+# context bundle. The host repo is bind-mounted at /app/.git read-only
+# (see docker-compose.local.yml worker.volumes) so `git log` has a
+# repo to inspect; `gh` reads its auth token from the GH_TOKEN env
+# var which the worker injects from app_settings('gh_token') at
+# subprocess time. Closes Glad-Labs/poindexter#348.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl postgresql-client \
     ca-certificates \
+    git \
+    gnupg \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -35,6 +46,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# Install GitHub CLI (gh) from the official cli.github.com apt repo.
+# Following the canonical recipe documented at
+# https://github.com/cli/cli/blob/trunk/docs/install_linux.md — keyring
+# fetched, repo registered, then `apt-get install gh`. Kept as a
+# separate RUN layer so the cache invalidates only when this recipe
+# changes, not on every base-deps tweak above.
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Mark /app as a globally-safe git directory.
+#
+# The dev_diary topic source bind-mounts the host's .git into /app/.git
+# (read-only). Since git 2.35.2 (CVE-2022-24765 mitigation), git refuses
+# to operate on a repo whose owning UID differs from the current user's
+# UID — and inside the container we run as appuser (uid 1001) while
+# the host bind-mount preserves the host filesystem UID. Without this
+# allow-list entry every `git log` invocation from the dev_diary source
+# would fail with "fatal: detected dubious ownership in repository at
+# '/app'", and merged_prs would be unavailable for the post.
+#
+# /etc/gitconfig is the system-wide config that takes effect for ALL
+# users in the container (root + appuser), so the value applies before
+# we drop privileges below. Read-only mount for /app/.git makes the
+# safety relaxation low-risk: nothing in the container can mutate the
+# host repo regardless of git's ownership check.
+RUN git config --system --add safe.directory /app \
+    && git config --system --add safe.directory '*'
 
 # Install poetry
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir poetry
