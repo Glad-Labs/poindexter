@@ -3,13 +3,13 @@
 Two layers:
 
 1. **Pure-function helpers** (``_collect_merged_prs``, ``_collect_notable_commits``,
-   ``DevDiaryContext``) — no DB, no network, no subprocess. Patched
-   subprocess output covers the gh + git collectors.
+   ``DevDiaryContext``) — no DB. The GitHub REST API is mocked via
+   ``httpx.MockTransport``; no live network access.
 2. **End-to-end ``gather_context``** — uses the ``db_pool`` fixture
    (a real Postgres database with all migrations applied) so we
    actually exercise the brain_decisions / audit_log / posts /
-   cost_logs queries against real schema. Subprocess calls are
-   patched out.
+   cost_logs queries against real schema. GitHub calls are patched
+   out at the collector level.
 
 Per Matt's directive (PR #155): no row-faker MagicMocks for DB
 behavior. The ``db_pool`` fixture provides a real pool.
@@ -18,23 +18,24 @@ behavior. The ``db_pool`` fixture provides a real pool.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
+import httpx
 import pytest
 import pytest_asyncio
 
 from plugins.topic_source import TopicSource
 from services.topic_sources.dev_diary_source import (
+    _CC_RE,
+    _NOTABLE_COMMIT_PREFIXES,
     DevDiaryContext,
     DevDiarySource,
     _collect_merged_prs,
     _collect_notable_commits,
-    _CC_RE,
-    _NOTABLE_COMMIT_PREFIXES,
 )
-
 
 # ---------------------------------------------------------------------------
 # Protocol conformance
@@ -169,181 +170,356 @@ class TestConventionalCommitRegex:
 
 
 # ---------------------------------------------------------------------------
-# Subprocess collectors (mocked subprocess.run)
+# httpx MockTransport helpers — wire fake GitHub REST API responses
 # ---------------------------------------------------------------------------
 
 
-def _fake_subprocess_run(stdout: str, returncode: int = 0):
-    """Build a callable that mimics subprocess.run with the given output."""
-    class _Result:
-        def __init__(self):
-            self.stdout = stdout
-            self.stderr = ""
-            self.returncode = returncode
-    return lambda *a, **kw: _Result()
+def _mock_transport(
+    responses: dict[str, httpx.Response],
+    captured_requests: list[httpx.Request] | None = None,
+) -> httpx.MockTransport:
+    """Build an ``httpx.MockTransport`` that dispatches by URL substring.
 
+    ``responses`` keys are case-sensitive substrings looked up against
+    ``str(request.url)`` — pick something distinctive like ``"/pulls"``
+    or ``"/commits"``. Returns a 599 placeholder if no key matches so
+    surprises surface as a clear failure rather than passing silently.
 
-class _CapturingSubprocess:
-    """subprocess.run double that records the kwargs of the most recent call.
-
-    Used to assert that ``env`` (and other args) propagate correctly
-    from the collector callsites down into ``subprocess.run``. Returns
-    a stdout-only fake result so existing parsing logic still works.
+    ``captured_requests`` (optional): when provided, every dispatched
+    request is appended so the test can inspect headers / URL params.
     """
 
-    def __init__(self, stdout: str = "", returncode: int = 0):
-        self._stdout = stdout
-        self._returncode = returncode
-        self.last_kwargs: dict = {}
-        self.last_args: tuple = ()
+    def handler(request: httpx.Request) -> httpx.Response:
+        if captured_requests is not None:
+            captured_requests.append(request)
+        url = str(request.url)
+        for needle, resp in responses.items():
+            if needle in url:
+                return resp
+        return httpx.Response(599, text=f"no mock for {url}")
 
-    def __call__(self, *args, **kwargs):
-        self.last_args = args
-        self.last_kwargs = kwargs
+    return httpx.MockTransport(handler)
 
-        class _Result:
-            def __init__(self_inner):
-                self_inner.stdout = self._stdout
-                self_inner.stderr = ""
-                self_inner.returncode = self._returncode
 
-        return _Result()
+def _gh_pull_payload(
+    *,
+    number: int,
+    title: str,
+    merged_at: str | None,
+    author_login: str = "matty",
+    body: str = "",
+    repo: str = "Glad-Labs/glad-labs-stack",
+) -> dict:
+    """Shape of an item in the GitHub ``GET /repos/.../pulls`` response."""
+    return {
+        "number": number,
+        "title": title,
+        "html_url": f"https://github.com/{repo}/pull/{number}",
+        "merged_at": merged_at,
+        "user": {"login": author_login} if author_login else None,
+        "body": body,
+        "state": "closed",
+    }
+
+
+def _gh_commit_payload(
+    *,
+    sha: str,
+    subject: str,
+    author_name: str = "Matt",
+    date: str = "2026-05-06T12:00:00Z",
+    parents: int = 1,
+) -> dict:
+    """Shape of an item in the GitHub ``GET /repos/.../commits`` response."""
+    return {
+        "sha": sha,
+        "commit": {
+            "message": subject,
+            "author": {"name": author_name, "date": date},
+        },
+        "parents": [{"sha": "p" * 40} for _ in range(parents)],
+    }
+
+
+# ---------------------------------------------------------------------------
+# _collect_merged_prs — async, talks to GitHub REST via httpx
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
 class TestCollectMergedPRs:
-    def test_returns_empty_when_gh_not_installed(self):
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   side_effect=FileNotFoundError("gh")):
-            result = _collect_merged_prs(hours=24, repo_root="/tmp")
+    async def test_returns_empty_on_network_error(self):
+        def boom(request):
+            raise httpx.ConnectError("dns failed")
+
+        transport = httpx.MockTransport(boom)
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_merged_prs(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
         assert result == []
 
-    def test_returns_empty_when_gh_returns_nothing(self):
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   _fake_subprocess_run("", returncode=0)):
-            result = _collect_merged_prs(hours=24, repo_root=None)
+    async def test_returns_empty_when_api_returns_empty_list(self):
+        transport = _mock_transport({
+            "/pulls": httpx.Response(200, json=[]),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_merged_prs(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
         assert result == []
 
-    def test_parses_gh_json_output(self):
-        gh_output = json.dumps([
-            {
-                "number": 156,
-                "title": "feat(gates): per-medium approval gate engine",
-                "url": "https://github.com/Glad-Labs/poindexter/pull/156",
-                "mergedAt": "2026-05-01T12:00:00Z",
-                "author": {"login": "matty"},
-            },
-            {
-                "number": 155,
-                "title": "test: tighten _make_row helpers",
-                "url": "https://github.com/Glad-Labs/poindexter/pull/155",
-                "mergedAt": "2026-05-01T11:30:00Z",
-                "author": {"login": "matty"},
-            },
-        ])
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   _fake_subprocess_run(gh_output)):
-            result = _collect_merged_prs(hours=24, repo_root=None)
+    async def test_parses_api_response(self):
+        recent = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        payload = [
+            _gh_pull_payload(
+                number=156,
+                title="feat(gates): per-medium approval gate engine",
+                merged_at=recent,
+                body="A long PR description that explains the change.",
+            ),
+            _gh_pull_payload(
+                number=155,
+                title="test: tighten _make_row helpers",
+                merged_at=recent,
+            ),
+        ]
+        transport = _mock_transport({
+            "/pulls": httpx.Response(200, json=payload),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_merged_prs(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
         assert len(result) == 2
         assert result[0]["number"] == 156
         assert result[0]["title"] == "feat(gates): per-medium approval gate engine"
         assert result[0]["author"] == "matty"
-        assert "Glad-Labs/poindexter/pull/156" in result[0]["url"]
+        assert result[0]["body"] == "A long PR description that explains the change."
+        assert "Glad-Labs/glad-labs-stack/pull/156" in result[0]["url"]
 
-    def test_handles_malformed_json_gracefully(self):
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   _fake_subprocess_run("not valid json {{{")):
-            result = _collect_merged_prs(hours=24, repo_root=None)
+    async def test_filters_closed_unmerged_prs(self):
+        recent = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        payload = [
+            _gh_pull_payload(number=1, title="feat: kept", merged_at=recent),
+            # Closed-but-not-merged — merged_at is null on the wire.
+            _gh_pull_payload(number=2, title="abandoned", merged_at=None),
+        ]
+        transport = _mock_transport({
+            "/pulls": httpx.Response(200, json=payload),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_merged_prs(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
+        assert [pr["number"] for pr in result] == [1]
+
+    async def test_filters_prs_outside_lookback_window(self):
+        # GitHub returns the most-recently-updated 30 closed PRs; we
+        # have to filter by merged_at >= since on the client side.
+        recent = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        old = (
+            datetime.now(timezone.utc) - timedelta(hours=72)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        payload = [
+            _gh_pull_payload(number=1, title="feat: in window", merged_at=recent),
+            _gh_pull_payload(number=2, title="feat: too old", merged_at=old),
+        ]
+        transport = _mock_transport({
+            "/pulls": httpx.Response(200, json=payload),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_merged_prs(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
+        assert [pr["number"] for pr in result] == [1]
+
+    async def test_handles_malformed_json_gracefully(self):
+        transport = _mock_transport({
+            "/pulls": httpx.Response(
+                200, text="not valid json {{{",
+                headers={"content-type": "application/json"},
+            ),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_merged_prs(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
         assert result == []
 
-    def test_handles_missing_author_dict(self):
-        gh_output = json.dumps([{
-            "number": 1, "title": "x", "url": "y", "mergedAt": "z", "author": None,
-        }])
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   _fake_subprocess_run(gh_output)):
-            result = _collect_merged_prs(hours=24, repo_root=None)
+    async def test_handles_missing_user_dict(self):
+        recent = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        payload = [{
+            "number": 1, "title": "x", "html_url": "y",
+            "merged_at": recent, "user": None,
+        }]
+        transport = _mock_transport({
+            "/pulls": httpx.Response(200, json=payload),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_merged_prs(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
         assert result[0]["author"] == ""
 
-    def test_gh_token_exported_into_subprocess_env(self):
-        """A non-empty gh_token must land in the subprocess env as
-        ``GH_TOKEN`` (and ``GITHUB_TOKEN``) so ``gh pr list`` authenticates.
+    async def test_5xx_returns_empty_with_warning(self, caplog):
+        transport = _mock_transport({
+            "/pulls": httpx.Response(503, text="service unavailable"),
+        })
+        with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
+            async with httpx.AsyncClient(transport=transport) as client:
+                result = await _collect_merged_prs(
+                    hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                )
+        assert result == []
+        assert any(
+            "503" in rec.getMessage() and "GitHub API" in rec.getMessage()
+            for rec in caplog.records
+        ), f"expected a 503 warning, got: {[r.getMessage() for r in caplog.records]}"
 
-        Closes Glad-Labs/poindexter#348 — the worker now ships with
-        ``gh`` installed but the secret has to be plumbed into the
-        subprocess env (NOT the worker process env, NOT the Docker
-        layer) for each call. Verify the wiring with a capturing
-        subprocess double.
-        """
-        capture = _CapturingSubprocess(stdout="[]", returncode=0)
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   capture):
-            _collect_merged_prs(
-                hours=24, repo_root=None, gh_token="ghp_secret_123",
+    async def test_401_bad_token_returns_empty_with_warning(self, caplog):
+        transport = _mock_transport({
+            "/pulls": httpx.Response(401, json={"message": "Bad credentials"}),
+        })
+        with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
+            async with httpx.AsyncClient(transport=transport) as client:
+                result = await _collect_merged_prs(
+                    hours=24, repo="Glad-Labs/glad-labs-stack",
+                    gh_token="bad_token", client=client,
+                )
+        assert result == []
+        assert any(
+            "401" in rec.getMessage() for rec in caplog.records
+        ), f"expected a 401 warning, got: {[r.getMessage() for r in caplog.records]}"
+
+    async def test_gh_token_set_as_authorization_bearer_header(self):
+        captured: list[httpx.Request] = []
+        transport = _mock_transport(
+            {"/pulls": httpx.Response(200, json=[])},
+            captured_requests=captured,
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            await _collect_merged_prs(
+                hours=24, repo="Glad-Labs/glad-labs-stack",
+                gh_token="ghp_secret_123", client=client,
             )
-        env = capture.last_kwargs.get("env")
-        assert env is not None, "subprocess.run was called without env="
-        assert env.get("GH_TOKEN") == "ghp_secret_123"
-        # gh respects either GH_TOKEN or GITHUB_TOKEN — set both so
-        # nested invocations / scripts reading either name authenticate.
-        assert env.get("GITHUB_TOKEN") == "ghp_secret_123"
-        # Inherited env keys (e.g. PATH) must still be present —
-        # _run_subprocess merges on top of os.environ rather than
-        # replacing it. PATH is the canary because gh + git both
-        # need it to resolve their helper binaries.
-        import os as _os
-        if "PATH" in _os.environ:
-            assert env.get("PATH") == _os.environ["PATH"]
+        assert len(captured) == 1
+        assert captured[0].headers["Authorization"] == "Bearer ghp_secret_123"
 
-    def test_no_gh_token_means_no_env_override(self):
-        """When gh_token is empty/None, subprocess.run must be called with
-        ``env=None`` so the child inherits the worker env unmodified
-        (not a stripped-down dict missing PATH/HOME)."""
-        capture = _CapturingSubprocess(stdout="[]", returncode=0)
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   capture):
-            _collect_merged_prs(hours=24, repo_root=None, gh_token=None)
-        assert capture.last_kwargs.get("env") is None
+    async def test_missing_token_logs_debug_and_omits_auth_header(self, caplog):
+        captured: list[httpx.Request] = []
+        transport = _mock_transport(
+            {"/pulls": httpx.Response(200, json=[])},
+            captured_requests=captured,
+        )
+        with caplog.at_level(logging.DEBUG, logger="services.topic_sources.dev_diary_source"):
+            async with httpx.AsyncClient(transport=transport) as client:
+                await _collect_merged_prs(
+                    hours=24, repo="Glad-Labs/glad-labs-stack",
+                    gh_token=None, client=client,
+                )
+        assert "Authorization" not in captured[0].headers
+        assert any(
+            "unauthenticated" in rec.getMessage().lower()
+            for rec in caplog.records
+        ), f"expected unauth debug log, got: {[r.getMessage() for r in caplog.records]}"
 
-        capture2 = _CapturingSubprocess(stdout="[]", returncode=0)
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   capture2):
-            _collect_merged_prs(hours=24, repo_root=None, gh_token="")
-        assert capture2.last_kwargs.get("env") is None
+
+# ---------------------------------------------------------------------------
+# _collect_notable_commits — async, talks to GitHub REST via httpx
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
+@pytest.mark.asyncio
 class TestCollectNotableCommits:
-    def test_filters_to_notable_prefixes_only(self):
-        # tab-separated %H \t %s \t %an \t %aI
-        git_output = "\n".join([
-            "abc12345aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\tfeat: new feature\tMatt\t2026-05-01T12:00:00Z",
-            "bcd23456bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\tfix: a bug\tMatt\t2026-05-01T11:00:00Z",
-            "cde34567cccccccccccccccccccccccccccccccc\tchore: bump deps\tMatt\t2026-05-01T10:00:00Z",
-            "def45678dddddddddddddddddddddddddddddddd\tdocs: add readme line\tMatt\t2026-05-01T09:00:00Z",
-            "efa56789eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\trefactor(svc): split file\tMatt\t2026-05-01T08:00:00Z",
-            "fab67890ffffffffffffffffffffffffffffffff\tNot a CC commit at all\tMatt\t2026-05-01T07:00:00Z",
-        ])
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   _fake_subprocess_run(git_output)):
-            result = _collect_notable_commits(hours=24, repo_root=None)
-        # Should keep feat, fix, refactor; drop chore, docs, non-CC.
+    async def test_filters_to_notable_prefixes_only(self):
+        payload = [
+            _gh_commit_payload(sha="abc12345" + "a" * 32, subject="feat: new feature"),
+            _gh_commit_payload(sha="bcd23456" + "b" * 32, subject="fix: a bug"),
+            _gh_commit_payload(sha="cde34567" + "c" * 32, subject="chore: bump deps"),
+            _gh_commit_payload(sha="def45678" + "d" * 32, subject="docs: add readme line"),
+            _gh_commit_payload(
+                sha="efa56789" + "e" * 32, subject="refactor(svc): split file",
+            ),
+            _gh_commit_payload(
+                sha="fab67890" + "f" * 32, subject="Not a CC commit at all",
+            ),
+        ]
+        transport = _mock_transport({
+            "/commits": httpx.Response(200, json=payload),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_notable_commits(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
         prefixes = [c["prefix"] for c in result]
         assert prefixes == ["feat", "fix", "refactor"]
         assert result[0]["sha"] == "abc12345"
         assert result[0]["author"] == "Matt"
 
-    def test_empty_when_git_returns_nothing(self):
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   _fake_subprocess_run("", returncode=0)):
-            result = _collect_notable_commits(hours=24, repo_root=None)
+    async def test_skips_merge_commits(self):
+        payload = [
+            _gh_commit_payload(
+                sha="m" * 40, subject="feat: real feature", parents=2,
+            ),
+            _gh_commit_payload(
+                sha="kept0000" + "0" * 32, subject="feat: kept", parents=1,
+            ),
+        ]
+        transport = _mock_transport({
+            "/commits": httpx.Response(200, json=payload),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_notable_commits(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
+        assert [c["sha"] for c in result] == ["kept0000"]
+
+    async def test_empty_when_api_returns_empty(self):
+        transport = _mock_transport({
+            "/commits": httpx.Response(200, json=[]),
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_notable_commits(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
         assert result == []
 
-    def test_handles_git_not_installed(self):
-        with patch("services.topic_sources.dev_diary_source.subprocess.run",
-                   side_effect=FileNotFoundError("git")):
-            result = _collect_notable_commits(hours=24, repo_root=None)
+    async def test_handles_network_error(self):
+        def boom(request):
+            raise httpx.ConnectError("dns failed")
+
+        transport = httpx.MockTransport(boom)
+        async with httpx.AsyncClient(transport=transport) as client:
+            result = await _collect_notable_commits(
+                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+            )
         assert result == []
+
+    async def test_5xx_returns_empty_with_warning(self, caplog):
+        transport = _mock_transport({
+            "/commits": httpx.Response(500, text="boom"),
+        })
+        with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
+            async with httpx.AsyncClient(transport=transport) as client:
+                result = await _collect_notable_commits(
+                    hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                )
+        assert result == []
+        assert any(
+            "500" in rec.getMessage() and "GitHub API" in rec.getMessage()
+            for rec in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -398,14 +574,18 @@ class TestGatherContextDB:
                 "Not sure about this one", 0.5,
             )
 
+        async def _empty_collector(*args, **kwargs):
+            return []
+
         with (
             patch("services.topic_sources.dev_diary_source._collect_merged_prs",
-                  return_value=[]),
+                  _empty_collector),
             patch("services.topic_sources.dev_diary_source._collect_notable_commits",
-                  return_value=[]),
+                  _empty_collector),
         ):
             ctx = await DevDiarySource().gather_context(
                 pool, hours_lookback=24, confidence_floor=0.7,
+                gh_token="",
             )
 
         assert len(ctx.brain_decisions) == 1
@@ -424,14 +604,18 @@ class TestGatherContextDB:
                 "Stale decision", "Reason", 0.95, old_ts,
             )
 
+        async def _empty_collector(*args, **kwargs):
+            return []
+
         with (
             patch("services.topic_sources.dev_diary_source._collect_merged_prs",
-                  return_value=[]),
+                  _empty_collector),
             patch("services.topic_sources.dev_diary_source._collect_notable_commits",
-                  return_value=[]),
+                  _empty_collector),
         ):
             ctx = await DevDiarySource().gather_context(
                 pool, hours_lookback=24, confidence_floor=0.7,
+                gh_token="",
             )
         assert ctx.brain_decisions == []
 
@@ -481,14 +665,17 @@ class TestGatherContextDB:
                 now - timedelta(hours=3),
             )
 
+        async def _empty_collector(*args, **kwargs):
+            return []
+
         with (
             patch("services.topic_sources.dev_diary_source._collect_merged_prs",
-                  return_value=[]),
+                  _empty_collector),
             patch("services.topic_sources.dev_diary_source._collect_notable_commits",
-                  return_value=[]),
+                  _empty_collector),
         ):
             ctx = await DevDiarySource().gather_context(
-                pool, hours_lookback=24,
+                pool, hours_lookback=24, gh_token="",
             )
 
         assert len(ctx.audit_resolved) == 1
@@ -518,13 +705,18 @@ class TestGatherContextDB:
                     str(tid), "draft", model, "ollama", tokens, cost,
                 )
 
+        async def _empty_collector(*args, **kwargs):
+            return []
+
         with (
             patch("services.topic_sources.dev_diary_source._collect_merged_prs",
-                  return_value=[]),
+                  _empty_collector),
             patch("services.topic_sources.dev_diary_source._collect_notable_commits",
-                  return_value=[]),
+                  _empty_collector),
         ):
-            ctx = await DevDiarySource().gather_context(pool, hours_lookback=24)
+            ctx = await DevDiarySource().gather_context(
+                pool, hours_lookback=24, gh_token="",
+            )
 
         cost = ctx.cost_summary
         assert cost["total_inferences"] == 3
@@ -584,30 +776,32 @@ class TestExtract:
 
 
 # ---------------------------------------------------------------------------
-# gather_context — gh_token plumbing (no DB needed)
+# gather_context — gh_token + gh_repo plumbing (no DB needed)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestGatherContextGhTokenWiring:
-    """Verify gh_token flows from the explicit override through
-    _collect_merged_prs without touching the DB.
+class TestGatherContextWiring:
+    """Verify gh_token + gh_repo flow from the explicit overrides
+    through the API collectors without touching the DB.
 
     The end-to-end DB-backed wiring (app_settings → plugins.secrets →
-    _fetch_gh_token) is exercised by TestCollectMergedPRs above for
-    the subprocess-side, and by integration tests for the secret
-    decryption side. This test class isolates the in-process plumbing
-    so we don't need a Postgres fixture for it.
+    _fetch_gh_token / _fetch_gh_repo) is exercised by integration
+    tests. This class isolates the in-process plumbing so we don't
+    need a Postgres fixture for it.
     """
 
     async def test_explicit_token_passed_through_to_collector(self):
         captured: dict = {}
 
-        def fake_collect_prs(hours, repo_root, gh_token=None):
+        async def fake_collect_prs(hours, repo, gh_token=None, client=None):
             captured["hours"] = hours
-            captured["repo_root"] = repo_root
+            captured["repo"] = repo
             captured["gh_token"] = gh_token
+            return []
+
+        async def fake_collect_commits(hours, repo, gh_token=None, client=None):
             return []
 
         with (
@@ -617,17 +811,19 @@ class TestGatherContextGhTokenWiring:
             ),
             patch(
                 "services.topic_sources.dev_diary_source._collect_notable_commits",
-                return_value=[],
+                fake_collect_commits,
             ),
         ):
             ctx = await DevDiarySource().gather_context(
                 pool=None,
                 hours_lookback=12,
                 gh_token="explicit_test_token",
+                gh_repo="Glad-Labs/glad-labs-stack",
             )
 
         assert captured["gh_token"] == "explicit_test_token"
         assert captured["hours"] == 12
+        assert captured["repo"] == "Glad-Labs/glad-labs-stack"
         assert ctx.merged_prs == []
 
     async def test_pool_none_means_no_token_fetch_attempt(self):
@@ -635,8 +831,12 @@ class TestGatherContextGhTokenWiring:
         crash trying to fetch the secret — it falls back to empty."""
         captured: dict = {}
 
-        def fake_collect_prs(hours, repo_root, gh_token=None):
+        async def fake_collect_prs(hours, repo, gh_token=None, client=None):
             captured["gh_token"] = gh_token
+            captured["repo"] = repo
+            return []
+
+        async def fake_collect_commits(hours, repo, gh_token=None, client=None):
             return []
 
         with (
@@ -646,10 +846,93 @@ class TestGatherContextGhTokenWiring:
             ),
             patch(
                 "services.topic_sources.dev_diary_source._collect_notable_commits",
-                return_value=[],
+                fake_collect_commits,
             ),
         ):
             await DevDiarySource().gather_context(pool=None)
 
         # Empty string from _fetch_gh_token's pool-None short-circuit.
         assert captured["gh_token"] == ""
+        # Default repo when no overrides + no pool.
+        assert captured["repo"] == "Glad-Labs/glad-labs-stack"
+
+    async def test_site_config_supplies_gh_repo(self):
+        captured: dict = {}
+
+        async def fake_collect_prs(hours, repo, gh_token=None, client=None):
+            captured["repo"] = repo
+            return []
+
+        async def fake_collect_commits(hours, repo, gh_token=None, client=None):
+            return []
+
+        class _FakeSiteConfig:
+            def get(self, key, default=None):
+                if key == "gh_repo":
+                    return "operator-fork/example"
+                return default
+
+        with (
+            patch(
+                "services.topic_sources.dev_diary_source._collect_merged_prs",
+                fake_collect_prs,
+            ),
+            patch(
+                "services.topic_sources.dev_diary_source._collect_notable_commits",
+                fake_collect_commits,
+            ),
+        ):
+            await DevDiarySource().gather_context(
+                pool=None, site_config=_FakeSiteConfig(),
+            )
+
+        assert captured["repo"] == "operator-fork/example"
+
+    async def test_constructor_gh_repo_used_when_no_other_source(self):
+        captured: dict = {}
+
+        async def fake_collect_prs(hours, repo, gh_token=None, client=None):
+            captured["repo"] = repo
+            return []
+
+        async def fake_collect_commits(hours, repo, gh_token=None, client=None):
+            return []
+
+        with (
+            patch(
+                "services.topic_sources.dev_diary_source._collect_merged_prs",
+                fake_collect_prs,
+            ),
+            patch(
+                "services.topic_sources.dev_diary_source._collect_notable_commits",
+                fake_collect_commits,
+            ),
+        ):
+            await DevDiarySource(gh_repo="ctor/repo").gather_context(pool=None)
+
+        assert captured["repo"] == "ctor/repo"
+
+
+# ---------------------------------------------------------------------------
+# Smoke serialization — the writer expects dict shapes to be JSON-safe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_dict_output_is_json_serializable():
+    ctx = DevDiaryContext(
+        date="2026-05-06",
+        merged_prs=[{"number": 1, "title": "feat: x", "url": "u",
+                     "merged_at": "2026-05-06T12:00:00Z",
+                     "author": "matty", "body": "b"}],
+        notable_commits=[{"sha": "abc12345", "subject": "feat: y",
+                          "prefix": "feat", "author": "Matt",
+                          "date": "2026-05-06T12:00:00Z"}],
+        brain_decisions=[],
+        audit_resolved=[],
+        recent_posts=[],
+        cost_summary={"total_usd": 0.0, "total_inferences": 0, "by_model": []},
+    )
+    blob = json.dumps(ctx.to_dict())
+    assert "feat: x" in blob
+    assert "abc12345" in blob

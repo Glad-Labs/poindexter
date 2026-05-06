@@ -2,8 +2,9 @@
 
 Pulls a structured snapshot of the last 24h of Glad Labs activity:
 
-- Merged PRs        (via ``gh pr list --state merged``)
-- Notable commits   (via ``git log`` filtered by feat:/fix:/refactor:/perf: prefixes)
+- Merged PRs        (via the GitHub REST API ``GET /repos/{repo}/pulls``)
+- Notable commits   (via ``GET /repos/{repo}/commits`` filtered by
+                     feat:/fix:/refactor:/perf:/security: prefixes)
 - Brain decisions   (high-confidence rows from the ``brain_decisions`` table)
 - Resolved audit    (warning/error events that have a corresponding
                      "resolved" / "fixed" / "completed" follow-up)
@@ -17,24 +18,25 @@ Protocol so the niche topic-discovery sweep also picks up dev-diary
 candidates if/when an operator wires it in (low priority — the
 scheduled job is the primary driver).
 
-Subprocess calls (``gh``, ``git``) are wrapped in ``asyncio.to_thread``
-so they don't block the event loop. Failures are non-fatal — an empty
-list is returned and the corresponding section of the context bundle
-is just empty. The "skip if quiet day" decision lives in the job, not
-here, so the source's contract stays small + testable.
+GitHub data is fetched via direct REST API calls using ``httpx`` —
+no subprocess dependency on ``gh`` or ``git`` binaries, no requirement
+that ``.git`` be bind-mounted into the worker container. Failures are
+non-fatal but LOUD: 4xx/5xx responses, network timeouts, and JSON
+decode errors all log at ``warning`` level so Loki picks them up,
+then return an empty list. The "skip if quiet day" decision lives in
+the job, not here, so the source's contract stays small + testable.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re
-import subprocess  # nosec B404 — invoking trusted local tools (git, gh) by absolute name
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
+
+import httpx
 
 from plugins.topic_source import DiscoveredTopic
 
@@ -53,6 +55,17 @@ _NOTABLE_COMMIT_PREFIXES = ("feat", "fix", "refactor", "perf", "security")
 # Confidence floor for brain_decisions inclusion. Lower = noisier;
 # higher = misses lower-confidence-but-still-interesting calls.
 _DEFAULT_BRAIN_CONFIDENCE_FLOOR = 0.7
+
+# Default GitHub repo when no app_setting / SiteConfig override is provided.
+_DEFAULT_GH_REPO = "Glad-Labs/glad-labs-stack"
+
+# GitHub REST API base URL.
+_GITHUB_API_BASE = "https://api.github.com"
+
+# Per-PR body cap upstream of the prompt formatter. The formatter
+# applies its own cap; the API fetch itself is unbounded so we always
+# have the full text available for fallback.
+_PR_BODY_CAP_CHARS = 2000
 
 
 # ---------------------------------------------------------------------------
@@ -166,61 +179,96 @@ def _short(text: str, width: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Subprocess collectors (gh + git) — sync helpers wrapped in to_thread
+# GitHub REST API collectors
 # ---------------------------------------------------------------------------
 
 
-def _run_subprocess(
-    cmd: list[str],
-    cwd: str | None = None,
-    timeout: int = 30,
-    env: dict[str, str] | None = None,
-) -> str:
-    """Run a subprocess, returning stdout on success, '' on any failure.
+def _build_gh_headers(gh_token: str | None) -> dict[str, str]:
+    """Build request headers for the GitHub REST API.
 
-    Failures are logged at debug level — this source must not crash the
-    job if ``gh`` isn't installed or ``git`` is in a weird state.
-
-    ``env``: when provided, **merged on top of the current process env**
-    (``os.environ``) rather than replacing it. ``gh`` and ``git`` rely
-    on a populated ``PATH`` / ``HOME`` / ``LANG`` / etc. to function;
-    passing a bare ``{"GH_TOKEN": ...}`` would strip those and break
-    everything. Caller-supplied keys (e.g. ``GH_TOKEN``) override the
-    inherited env. ``None`` means "inherit unmodified".
+    Always sets ``Accept`` and ``X-GitHub-Api-Version``. Includes
+    ``Authorization: Bearer <token>`` when a non-empty token is
+    available; otherwise emits a debug log and lets the request fly
+    unauthenticated (works for public repos at the lower rate limit).
     """
-    proc_env: dict[str, str] | None = None
-    if env:
-        proc_env = {**os.environ, **{k: v for k, v in env.items() if v is not None}}
-    try:
-        result = subprocess.run(  # nosec B603 — fixed argv list, not shell-interpolated
-            cmd,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            check=False,
-            env=proc_env,
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "poindexter-dev-diary",
+    }
+    if gh_token:
+        headers["Authorization"] = f"Bearer {gh_token}"
+    else:
+        logger.debug(
+            "DevDiarySource: no gh_token configured — calling GitHub API "
+            "unauthenticated (works for public repos at the lower rate limit)"
         )
-        if result.returncode != 0:
-            logger.debug(
-                "DevDiarySource: %s exited %s — stderr: %s",
-                cmd[0], result.returncode, (result.stderr or "")[:300],
-            )
-            return ""
-        return result.stdout or ""
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-        logger.debug("DevDiarySource: subprocess %r failed: %s", cmd[0], exc)
-        return ""
+    return headers
 
 
-def _collect_merged_prs(
+async def _gh_get_json(
+    client: httpx.AsyncClient, url: str, headers: dict[str, str],
+) -> Any | None:
+    """Issue a single ``GET`` against the GitHub REST API and parse JSON.
+
+    Returns the parsed payload on success, ``None`` on any failure mode
+    (4xx/5xx, network error, timeout, JSON decode error). All failure
+    modes are logged at ``warning`` so Loki picks them up — the silent-
+    debug logging the subprocess version used was the root cause of
+    Glad-Labs/poindexter#405 (worker reported "quiet day" instead of
+    surfacing that the API call was failing).
+    """
+    try:
+        resp = await client.get(url, headers=headers)
+    except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPError) as exc:
+        logger.warning(
+            "DevDiarySource: GitHub API request to %s failed: %s",
+            url, exc,
+        )
+        return None
+
+    if resp.status_code >= 400:
+        body_preview = (resp.text or "")[:300]
+        logger.warning(
+            "DevDiarySource: GitHub API %s returned %s — body: %s",
+            url, resp.status_code, body_preview,
+        )
+        return None
+
+    try:
+        return resp.json()
+    except (ValueError, TypeError) as exc:
+        logger.warning(
+            "DevDiarySource: GitHub API %s returned non-JSON: %s",
+            url, exc,
+        )
+        return None
+
+
+def _parse_iso_utc(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 GitHub timestamp into a UTC-aware datetime."""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        # GitHub uses ``...Z`` suffix; ``fromisoformat`` accepts both
+        # ``Z`` (Python 3.11+) and explicit offsets. Normalise to be
+        # safe for older interpreters.
+        normalized = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+async def _collect_merged_prs(
     hours: int,
-    repo_root: str | None,
+    repo: str,
     gh_token: str | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict[str, Any]]:
-    """Use ``gh pr list`` to collect PRs merged in the last ``hours``.
+    """Use the GitHub REST API to collect PRs merged in the last ``hours``.
 
     Returns a list of ``{number, title, url, merged_at, author, body}``
     dicts. The ``body`` field is critical for technical accuracy: with
@@ -230,53 +278,56 @@ def _collect_merged_prs(
     writer has the actual change description to ground against.
 
     Body is capped to ~2000 chars per PR upstream of the prompt
-    formatter, which applies its own cap; the gh fetch itself is
+    formatter, which applies its own cap; the GitHub fetch itself is
     unbounded so we always have the full text available for fallback.
 
-    ``gh_token``: when truthy, exported into the subprocess env as
-    ``GH_TOKEN`` so ``gh`` authenticates against the GitHub API.
-    Sourced from ``app_settings('gh_token')`` (is_secret=true) and
-    threaded through ``gather_context``. Empty / None falls back to
-    unauthenticated mode (works on public repos, returns nothing on
-    private ones).
+    ``gh_token``: when truthy, sent as ``Authorization: Bearer <token>``
+    for authenticated rate limits + private-repo access. Sourced from
+    ``app_settings('gh_token')`` (is_secret=true) and threaded through
+    ``gather_context``. Empty / None falls back to unauthenticated mode
+    (works on public repos, returns nothing on private ones).
+
+    ``client``: optional pre-built ``httpx.AsyncClient``. Used by tests
+    to inject a ``MockTransport``. When ``None``, a default client is
+    constructed for the duration of the call.
     """
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # gh's --search supports "merged:>=YYYY-MM-DDTHH:MM:SSZ"
-    cmd = [
-        "gh", "pr", "list",
-        "--state", "merged",
-        "--search", f"merged:>={since}",
-        "--limit", "30",
-        "--json", "number,title,url,mergedAt,author,body",
-    ]
-    sub_env: dict[str, str] | None = None
-    if gh_token:
-        # GH_TOKEN takes precedence over GITHUB_TOKEN inside gh; we set
-        # both so child processes / nested invocations also see it. The
-        # subprocess inherits the rest of the worker env (PATH, HOME,
-        # etc.) — see _run_subprocess for the merge semantics.
-        sub_env = {"GH_TOKEN": gh_token, "GITHUB_TOKEN": gh_token}
-    raw = _run_subprocess(cmd, cwd=repo_root, timeout=30, env=sub_env)
-    if not raw.strip():
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    url = (
+        f"{_GITHUB_API_BASE}/repos/{repo}/pulls"
+        "?state=closed&sort=updated&direction=desc&per_page=30"
+    )
+    headers = _build_gh_headers(gh_token)
+
+    if client is None:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=5.0)
+        ) as owned_client:
+            data = await _gh_get_json(owned_client, url, headers)
+    else:
+        data = await _gh_get_json(client, url, headers)
+
+    if not isinstance(data, list):
         return []
-    try:
-        import json
-        data = json.loads(raw)
-    except (ValueError, TypeError) as exc:
-        logger.debug("DevDiarySource: gh pr list returned non-JSON: %s", exc)
-        return []
+
     out: list[dict[str, Any]] = []
     for pr in data:
         if not isinstance(pr, dict):
             continue
-        author = pr.get("author") or {}
+        merged_at_raw = pr.get("merged_at")
+        merged_at = _parse_iso_utc(merged_at_raw)
+        if merged_at is None:
+            # Closed-but-not-merged PRs have ``merged_at: null``.
+            continue
+        if merged_at < since:
+            continue
+        author = pr.get("user") or {}
         out.append({
             "number": pr.get("number"),
             "title": pr.get("title", ""),
-            "url": pr.get("url", ""),
-            "merged_at": pr.get("mergedAt", ""),
+            "url": pr.get("html_url", ""),
+            "merged_at": merged_at_raw,
             "author": author.get("login", "") if isinstance(author, dict) else "",
-            "body": (pr.get("body") or "")[:2000],
+            "body": (pr.get("body") or "")[:_PR_BODY_CAP_CHARS],
         })
     return out
 
@@ -286,41 +337,80 @@ def _collect_merged_prs(
 _CC_RE = re.compile(r"^([a-z]+)(?:\([^)]+\))?!?:\s*(.+)$")
 
 
-def _collect_notable_commits(hours: int, repo_root: str | None) -> list[dict[str, Any]]:
-    """Use ``git log`` to collect commits in the last ``hours``, filtered
-    to ``feat:/fix:/refactor:/perf:/security:`` prefixes.
+async def _collect_notable_commits(
+    hours: int,
+    repo: str,
+    gh_token: str | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> list[dict[str, Any]]:
+    """Use the GitHub REST API to collect commits in the last ``hours``,
+    filtered to ``feat:/fix:/refactor:/perf:/security:`` prefixes.
 
-    Returns ``{sha, subject, prefix, author, date}`` dicts.
+    Returns ``{sha, subject, prefix, author, date}`` dicts. Subject is
+    parsed from the first line of the commit message (GitHub's
+    ``commit.message`` field includes the full message body too).
     """
-    since = f"{int(hours)} hours ago"
-    cmd = [
-        "git", "log",
-        f"--since={since}",
-        "--pretty=format:%H%x09%s%x09%an%x09%aI",
-        "--no-merges",
-        "-n", "100",
-    ]
-    raw = _run_subprocess(cmd, cwd=repo_root, timeout=20)
-    if not raw.strip():
+    since_iso = (
+        datetime.now(timezone.utc) - timedelta(hours=hours)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    url = (
+        f"{_GITHUB_API_BASE}/repos/{repo}/commits"
+        f"?since={since_iso}&per_page=100"
+    )
+    headers = _build_gh_headers(gh_token)
+
+    if client is None:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=5.0)
+        ) as owned_client:
+            data = await _gh_get_json(owned_client, url, headers)
+    else:
+        data = await _gh_get_json(client, url, headers)
+
+    if not isinstance(data, list):
         return []
+
     out: list[dict[str, Any]] = []
-    for line in raw.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 4:
+    for entry in data:
+        if not isinstance(entry, dict):
             continue
-        sha, subject, author, date = parts[0], parts[1], parts[2], parts[3]
-        m = _CC_RE.match(subject.strip())
+        sha = entry.get("sha", "") or ""
+        commit = entry.get("commit") or {}
+        if not isinstance(commit, dict):
+            continue
+        full_message = commit.get("message", "") or ""
+        subject = full_message.split("\n", 1)[0].strip()
+        if not subject:
+            continue
+        m = _CC_RE.match(subject)
         if not m:
             continue
         prefix = m.group(1).lower()
         if prefix not in _NOTABLE_COMMIT_PREFIXES:
             continue
+
+        author_block = commit.get("author") or {}
+        author_name = (
+            author_block.get("name", "") if isinstance(author_block, dict) else ""
+        )
+        date_str = (
+            author_block.get("date", "") if isinstance(author_block, dict) else ""
+        )
+
+        # Skip merge commits (they have multiple parents); the GitHub
+        # commits endpoint returns them by default. Conventional-commit
+        # parsing already filters most of these out (merge subjects
+        # rarely match), but this is a belt-and-suspenders guard.
+        parents = entry.get("parents") or []
+        if isinstance(parents, list) and len(parents) > 1:
+            continue
+
         out.append({
-            "sha": sha[:8],
-            "subject": subject.strip(),
+            "sha": sha[:8] if sha else "",
+            "subject": subject,
             "prefix": prefix,
-            "author": author,
-            "date": date,
+            "author": author_name,
+            "date": date_str,
         })
     return out
 
@@ -549,25 +639,6 @@ async def _collect_operator_notes(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_repo_root() -> str | None:
-    """Find the repo root by walking up until we hit a ``.git`` dir.
-
-    Returns the absolute path as a string, or None when the source is
-    invoked from a directory that isn't inside a git repo (CI sandbox,
-    test fixture).
-
-    In the worker container the host's ``.git`` is bind-mounted at
-    ``/app/.git`` (see docker-compose.local.yml worker.volumes), so the
-    walk-up from this file (``/app/services/topic_sources/...``) hits
-    ``/app`` and returns it as the repo root.
-    """
-    here = Path(__file__).resolve()
-    for parent in (here, *here.parents):
-        if (parent / ".git").exists():
-            return str(parent)
-    return None
-
-
 async def _fetch_gh_token(pool: Any) -> str:
     """Read the ``gh_token`` secret from app_settings, decrypted.
 
@@ -575,7 +646,7 @@ async def _fetch_gh_token(pool: Any) -> str:
     and legacy plaintext rows are both handled transparently. Returns
     an empty string when the row is missing, empty, or the fetch
     fails (e.g. during early-boot / unit tests without a real pool).
-    Empty token is fine — the subprocess just runs gh unauthenticated.
+    Empty token is fine — the GitHub API call just runs unauthenticated.
     """
     if pool is None:
         return ""
@@ -589,6 +660,27 @@ async def _fetch_gh_token(pool: Any) -> str:
         return ""
 
 
+async def _fetch_gh_repo(pool: Any) -> str:
+    """Read the ``gh_repo`` setting from app_settings.
+
+    Non-secret, plain string. Empty / missing / fetch error all fall
+    back to the default. Returns ``""`` only if the operator deliberately
+    blanked the row, which the caller treats as "use the constructor /
+    default value".
+    """
+    if pool is None:
+        return ""
+    try:
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key = 'gh_repo'"
+            )
+        return value or ""
+    except Exception as exc:
+        logger.debug("DevDiarySource: gh_repo fetch failed: %s", exc)
+        return ""
+
+
 class DevDiarySource:
     """Daily dev-diary context bundler.
 
@@ -599,42 +691,77 @@ class DevDiarySource:
 
     name = "dev_diary"
 
+    def __init__(self, *, gh_repo: str | None = None) -> None:
+        """Build a DevDiarySource.
+
+        ``gh_repo``: optional ``owner/name`` override. Resolution order
+        in ``gather_context``: explicit ``gh_repo`` kwarg → SiteConfig
+        ``gh_repo`` setting → ``app_settings.gh_repo`` row → constructor
+        ``gh_repo`` arg → ``_DEFAULT_GH_REPO`` constant.
+        """
+        self._ctor_gh_repo = (gh_repo or "").strip()
+
     async def gather_context(
         self,
         pool: Any,
         *,
         hours_lookback: int = _DEFAULT_LOOKBACK_HOURS,
         confidence_floor: float = _DEFAULT_BRAIN_CONFIDENCE_FLOOR,
-        repo_root: str | None = None,
+        gh_repo: str | None = None,
         gh_token: str | None = None,
+        site_config: Any = None,
     ) -> DevDiaryContext:
-        """Pull all six context sections concurrently and return a bundle.
+        """Pull all context sections concurrently and return a bundle.
 
-        Subprocess sections (gh + git) run via ``asyncio.to_thread``;
-        DB sections run as native asyncpg coroutines. Failures in any
-        single section produce an empty list / dict for that section,
-        never an exception.
+        DB sections run as native asyncpg coroutines; GitHub sections
+        run as ``httpx`` coroutines. Failures in any single section
+        produce an empty list / dict for that section, never an
+        exception.
+
+        ``gh_repo``: explicit ``owner/name`` override. When ``None``
+        (the typical path), the source resolves the repo via
+        ``site_config.get('gh_repo')`` if a SiteConfig is supplied,
+        then falls back to the ``app_settings.gh_repo`` row, then the
+        constructor arg, then ``_DEFAULT_GH_REPO``.
 
         ``gh_token``: explicit override for the GitHub auth token.
         When ``None`` (the typical path), the token is loaded from
         ``app_settings('gh_token')`` via ``plugins.secrets.get_secret``
         — see ``_fetch_gh_token``. Passing an empty string explicitly
         forces unauthenticated mode without touching the DB.
+
+        ``site_config``: optional ``SiteConfig`` DI seam. When provided,
+        ``gh_repo`` is read from it before any DB lookup (matches the
+        pattern used by other topic sources).
         """
-        repo_root = repo_root or _resolve_repo_root()
+        repo = (gh_repo or "").strip()
+        if not repo and site_config is not None:
+            try:
+                repo = (site_config.get("gh_repo", "") or "").strip()
+            except Exception as exc:
+                logger.debug(
+                    "DevDiarySource: site_config.get('gh_repo') failed: %s", exc,
+                )
+                repo = ""
+        if not repo:
+            repo = (await _fetch_gh_repo(pool)).strip()
+        if not repo:
+            repo = self._ctor_gh_repo
+        if not repo:
+            repo = _DEFAULT_GH_REPO
+
         if gh_token is None:
             gh_token = await _fetch_gh_token(pool)
 
-        prs_task = asyncio.to_thread(
-            _collect_merged_prs, hours_lookback, repo_root, gh_token,
-        )
-        commits_task = asyncio.to_thread(_collect_notable_commits, hours_lookback, repo_root)
+        prs_task = _collect_merged_prs(hours_lookback, repo, gh_token)
+        commits_task = _collect_notable_commits(hours_lookback, repo, gh_token)
         decisions_task = _collect_brain_decisions(pool, hours_lookback, confidence_floor)
         audit_task = _collect_audit_resolved(pool, hours_lookback)
         posts_task = _collect_recent_posts(pool, hours_lookback)
         cost_task = _collect_cost_summary(pool, hours_lookback)
         notes_task = _collect_operator_notes(pool, "dev_diary")
 
+        import asyncio
         prs, commits, decisions, audit, posts, cost, notes = await asyncio.gather(
             prs_task, commits_task, decisions_task, audit_task, posts_task,
             cost_task, notes_task,
@@ -654,9 +781,9 @@ class DevDiarySource:
             operator_notes=notes,
         )
         logger.info(
-            "DevDiarySource: gathered context (date=%s prs=%d commits=%d "
+            "DevDiarySource: gathered context (date=%s repo=%s prs=%d commits=%d "
             "decisions=%d audit=%d posts=%d cost=$%.4f notes=%d)",
-            ctx.date, len(prs), len(commits), len(decisions), len(audit),
+            ctx.date, repo, len(prs), len(commits), len(decisions), len(audit),
             len(posts), cost.get("total_usd", 0.0), len(notes),
         )
         return ctx
@@ -679,13 +806,15 @@ class DevDiarySource:
             config.get("confidence_floor", _DEFAULT_BRAIN_CONFIDENCE_FLOOR)
             or _DEFAULT_BRAIN_CONFIDENCE_FLOOR
         )
-        repo_root = config.get("repo_root") or os.environ.get("DEV_DIARY_REPO_ROOT")
+        gh_repo = config.get("gh_repo") or os.environ.get("DEV_DIARY_GH_REPO") or None
+        site_config = config.get("_site_config")
 
         ctx = await self.gather_context(
             pool,
             hours_lookback=hours,
             confidence_floor=confidence,
-            repo_root=repo_root,
+            gh_repo=gh_repo,
+            site_config=site_config,
         )
         if ctx.is_empty():
             return []
