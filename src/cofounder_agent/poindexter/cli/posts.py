@@ -366,6 +366,35 @@ def post_group() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _compute_idempotency_key(
+    *,
+    topic: str,
+    media: list[str],
+    gates: list[str],
+    operator: str,
+) -> str:
+    """Derive a stable 16-hex-char key from create-intent inputs.
+
+    Same inputs → same key, every time. Sorted media/gates so the key
+    is order-insensitive (``--media a,b`` and ``--media b,a`` are the
+    same intent). Operator identity is included so two different
+    humans both running the same command don't shadow each other's
+    posts. Keep this in sync with the strategy name seeded in
+    migration 20260506_131123 (``slug_or_content_hash``) — when a new
+    strategy lands, switch on
+    ``cli_post_create_idempotency_strategy`` here.
+    """
+    import hashlib
+
+    payload = "|".join([
+        topic.strip(),
+        ",".join(sorted(m.strip() for m in media)),
+        ",".join(sorted(g.strip() for g in gates)),
+        operator.strip(),
+    ])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 @post_group.command("create")
 @click.option("--topic", required=True, help="Topic / working title for the post.")
 @click.option(
@@ -382,11 +411,18 @@ def post_group() -> None:
     "(topic,draft,podcast,video,short,final). Empty string ('') = fully "
     "autonomous. Omitted = use default_workflow_gates from app_settings.",
 )
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Bypass idempotency. Always create a fresh post even if an "
+    "identical create-intent fired within the dedup window (#338).",
+)
 @click.option("--json", "json_output", is_flag=True)
 def post_create(
     topic: str,
     media: str | None,
     gates: str | None,
+    force: bool,
     json_output: bool,
 ) -> None:
     """Create a new post + its gate row(s) and kick off the writer.
@@ -395,6 +431,14 @@ def post_create(
     convenience entry point that creates the ``posts`` row and the
     matching ``post_approval_gates`` rows so the worker has everything
     it needs to advance.
+
+    Idempotency (#338): a stable key is computed from
+    ``topic + media + gates + operator``. If an identical invocation
+    fired inside the configured window
+    (``cli_post_create_idempotency_window_minutes``, default 30), the
+    existing post id is returned instead of inserting a duplicate.
+    Pass ``--force`` to override, or set
+    ``cli_post_create_idempotency_enabled=false`` to disable globally.
     """
     from services.gates.post_approval_gates import (
         CANONICAL_GATE_NAMES,
@@ -429,6 +473,82 @@ def post_create(
                         f"Unknown gate {g!r}. Valid: {', '.join(CANONICAL_GATE_NAMES)}"
                     )
 
+            # --- Idempotency check (#338) -------------------------------
+            #
+            # Compute the key up-front so we can include it in the
+            # INSERT below (miss path) or short-circuit to an existing
+            # post id (hit path). The lookup runs against the partial
+            # index ``idx_posts_cli_idempotency_key`` from migration
+            # 20260506_131123 — no full table scan even at scale.
+            operator = _operator_identity()
+            idempotency_enabled = (
+                site_cfg.get("cli_post_create_idempotency_enabled", "true")
+                .strip().lower() == "true"
+            )
+            try:
+                window_minutes = int(
+                    site_cfg.get(
+                        "cli_post_create_idempotency_window_minutes", "30"
+                    )
+                )
+            except (ValueError, TypeError):
+                window_minutes = 30
+
+            idempotency_key = _compute_idempotency_key(
+                topic=topic,
+                media=resolved_media,
+                gates=resolved_gates,
+                operator=operator,
+            )
+
+            if idempotency_enabled and not force:
+                async with pool.acquire() as conn:
+                    existing = await conn.fetchrow(
+                        """
+                        SELECT id::text AS id, slug, title, status,
+                               media_to_generate
+                          FROM posts
+                         WHERE cli_idempotency_key = $1
+                           AND created_at > NOW() - ($2::int || ' minutes')::interval
+                         ORDER BY created_at DESC
+                         LIMIT 1
+                        """,
+                        idempotency_key, window_minutes,
+                    )
+                if existing is not None:
+                    # Idempotent hit — log loudly + reuse existing
+                    # gates so the caller sees the same shape.
+                    click.echo(
+                        f"[CLI] post create idempotent hit — returning "
+                        f"existing post {existing['id']}",
+                        err=True,
+                    )
+                    from services.gates.post_approval_gates import (
+                        get_gates_for_post,
+                    )
+                    existing_gates = await get_gates_for_post(
+                        pool, existing["id"]
+                    )
+                    return {
+                        "post_id": existing["id"],
+                        "slug": existing["slug"],
+                        "title": existing["title"],
+                        "status": existing["status"],
+                        "media_to_generate": list(
+                            existing["media_to_generate"] or []
+                        ),
+                        "gates": [
+                            {
+                                "gate_name": g["gate_name"],
+                                "ordinal": g["ordinal"],
+                                "state": g["state"],
+                            }
+                            for g in existing_gates
+                        ],
+                        "idempotent_hit": True,
+                        "idempotency_key": idempotency_key,
+                    }
+
             # Insert a minimal posts row. Title = topic, slug = sanitized
             # topic + short random suffix (CLI-created posts don't yet
             # have a writer-generated slug, so they live under a
@@ -439,15 +559,24 @@ def post_create(
             slug_root = re.sub(r"[^\w\s-]", "", topic).lower().replace(" ", "-")[:48]
             slug = f"{slug_root}-{secrets.token_hex(3)}"
 
+            # Persist the idempotency key on the row when the feature
+            # is enabled (and not forced — forced inserts skip dedup
+            # so don't poison the lookup with a key that an earlier
+            # post already owns).
+            stored_key = (
+                idempotency_key if (idempotency_enabled and not force) else None
+            )
+
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts
-                        (title, slug, content, status, media_to_generate)
-                    VALUES ($1, $2, '', 'draft', $3::text[])
+                        (title, slug, content, status, media_to_generate,
+                         cli_idempotency_key)
+                    VALUES ($1, $2, '', 'draft', $3::text[], $4)
                     RETURNING id::text AS id, slug, title, status
                     """,
-                    topic, slug, resolved_media,
+                    topic, slug, resolved_media, stored_key,
                 )
 
             post_id = row["id"]
@@ -475,6 +604,8 @@ def post_create(
                     {"gate_name": g["gate_name"], "ordinal": g["ordinal"], "state": g["state"]}
                     for g in inserted_gates
                 ],
+                "idempotent_hit": False,
+                "idempotency_key": stored_key,
             }
         finally:
             await pool.close()
@@ -489,11 +620,18 @@ def post_create(
         click.echo(json.dumps(result, indent=2, default=str))
         return
 
-    click.secho(
-        f"Created post {result['post_id'][:8]}  "
-        f"({result['title'][:60]})",
-        fg="green",
-    )
+    if result.get("idempotent_hit"):
+        click.secho(
+            f"Reused post {result['post_id'][:8]}  "
+            f"({result['title'][:60]})  [idempotent]",
+            fg="cyan",
+        )
+    else:
+        click.secho(
+            f"Created post {result['post_id'][:8]}  "
+            f"({result['title'][:60]})",
+            fg="green",
+        )
     click.echo(f"  slug              {result['slug']}")
     click.echo(f"  media_to_generate {result['media_to_generate'] or '(none)'}")
     click.echo(f"  gates             {[g['gate_name'] for g in result['gates']] or '(autonomous)'}")
