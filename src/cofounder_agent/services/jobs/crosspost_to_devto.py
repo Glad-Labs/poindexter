@@ -5,6 +5,21 @@ default. Finds published posts without a ``metadata->>'devto_url'``,
 cross-posts each via ``DevToCrossPostService``, and stores the
 returned Dev.to URL back on the post's metadata so we don't re-post.
 
+## Dedup (#397)
+
+The candidate query filters on TWO metadata flags so the cron can't
+loop on a post forever:
+
+- ``metadata->>'devto_url'`` set on 2xx success (existing behavior).
+- ``metadata->>'devto_status' = 'gave_up'`` set after a permanent
+  Dev.to rejection (4xx other than 429 — most commonly 422
+  "Canonical url has already been taken" when the article exists on
+  Dev.to but we lost the URL locally). See
+  ``services/devto_service.py`` for where this is written.
+
+Transient failures (5xx, 429, network) intentionally leave metadata
+untouched so the next tick retries.
+
 ## Config (``plugin.job.crosspost_to_devto``)
 
 - ``config.batch_size`` (default 3) — posts to cross-post per run
@@ -66,6 +81,12 @@ class CrosspostToDevtoJob:
                       AND (metadata IS NULL
                            OR metadata->>'devto_url' IS NULL
                            OR metadata->>'devto_url' = '')
+                      -- Skip posts we've already permanently given up
+                      -- on (e.g. Dev.to returned 422 "Canonical url
+                      -- has already been taken" because the article
+                      -- exists there but we lost the URL locally).
+                      -- See services/devto_service.py and #397.
+                      AND COALESCE(metadata->>'devto_status', '') <> 'gave_up'
                     ORDER BY published_at DESC
                     LIMIT $1
                     """,

@@ -221,3 +221,24 @@ class TestRun:
             result = await job.run(pool, {})
         assert result.ok is False
         assert "pool closed" in result.detail
+
+    @pytest.mark.asyncio
+    async def test_candidate_query_excludes_gave_up_posts(self):
+        """#397 — the SELECT must skip posts marked
+        ``metadata->>'devto_status' = 'gave_up'`` so the cron stops
+        retrying canonical-URL collisions every tick."""
+        pool, conn = _make_pool([])
+        svc = _patched_svc()
+        with patch(
+            "services.devto_service.DevToCrossPostService",
+            return_value=svc,
+        ):
+            job = CrosspostToDevtoJob()
+            await job.run(pool, {})
+        sql = conn.fetch.call_args.args[0]
+        # Canonical filters present
+        assert "devto_url" in sql
+        # The new gave_up filter — both the column reference and the
+        # 'gave_up' literal must appear.
+        assert "devto_status" in sql
+        assert "gave_up" in sql

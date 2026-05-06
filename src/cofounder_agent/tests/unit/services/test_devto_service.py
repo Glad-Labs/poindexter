@@ -19,7 +19,13 @@ site_config._config["site_url"] = "https://test.example.com"
 # silent swallow). Call it once to get the value for test assertions.
 # E402 suppressed because site_config._config must be seeded before
 # devto_service's module-level lookups run.
-from services.devto_service import DevToCrossPostService, _site_url  # noqa: E402
+from services.devto_service import (  # noqa: E402
+    DEVTO_STATUS_GAVE_UP,
+    DEVTO_STATUS_POSTED,
+    CrossPostResult,
+    DevToCrossPostService,
+    _site_url,
+)
 
 SITE_URL = _site_url()
 
@@ -176,7 +182,7 @@ class TestCrossPostNoApiKey:
     """Test graceful skip when devto_api_key is not configured."""
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_api_key_in_settings(self):
+    async def test_skipped_when_no_api_key_in_settings(self):
         pool = make_mock_pool(api_key_row=None)
         svc = DevToCrossPostService(pool)
         result = await svc.cross_post(
@@ -184,10 +190,12 @@ class TestCrossPostNoApiKey:
             content_markdown="Content",
             canonical_url="https://www.gladlabs.io/posts/test",
         )
-        assert result is None
+        assert isinstance(result, CrossPostResult)
+        assert result.status == "skipped"
+        assert result.url is None
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_api_key_empty(self):
+    async def test_skipped_when_api_key_empty(self):
         pool = make_mock_pool(api_key_row={"value": ""})
         svc = DevToCrossPostService(pool)
         result = await svc.cross_post(
@@ -195,7 +203,7 @@ class TestCrossPostNoApiKey:
             content_markdown="Content",
             canonical_url="https://www.gladlabs.io/posts/test",
         )
-        assert result is None
+        assert result.status == "skipped"
 
     @pytest.mark.asyncio
     async def test_db_fetch_failure_propagates(self):
@@ -241,7 +249,7 @@ class TestCrossPostSuccess:
     """Test cross_post with a mocked httpx client."""
 
     @pytest.mark.asyncio
-    async def test_successful_cross_post_returns_url(self):
+    async def test_successful_cross_post_returns_posted_result(self):
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
         svc = DevToCrossPostService(pool)
 
@@ -267,7 +275,9 @@ class TestCrossPostSuccess:
                 tags=["ai", "python"],
             )
 
-        assert result == "https://dev.to/gladlabs/test-article"
+        assert result.status == "posted"
+        assert result.url == "https://dev.to/gladlabs/test-article"
+        assert result.article_id == "12345"
         # Verify the POST was called with the right structure
         call_kwargs = mock_client_instance.post.call_args
         assert call_kwargs[0][0] == "https://dev.to/api/articles"
@@ -282,13 +292,20 @@ class TestCrossPostSuccess:
         assert call_kwargs[1]["headers"]["api-key"] == "fake-api-key"
 
     @pytest.mark.asyncio
-    async def test_api_error_returns_none(self):
+    async def test_422_canonical_url_taken_returns_gave_up(self):
+        """Regression test for #397 — Dev.to returns 422 when the
+        canonical URL is already on the platform (typically because a
+        previous run posted but we lost the URL locally). Must be
+        terminal so the cron doesn't loop on it."""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
         svc = DevToCrossPostService(pool)
 
         mock_response = MagicMock()
         mock_response.status_code = 422
-        mock_response.text = "Unprocessable Entity"
+        mock_response.text = (
+            '{"error":"Canonical url has already been taken. '
+            'Email support@dev.to for further details.","status":422}'
+        )
 
         with patch("services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
@@ -304,10 +321,67 @@ class TestCrossPostSuccess:
                 canonical_url="https://www.gladlabs.io/posts/test",
             )
 
-        assert result is None
+        assert result.status == "gave_up"
+        assert result.http_status == 422
+        assert "Canonical url has already been taken" in (result.error or "")
 
     @pytest.mark.asyncio
-    async def test_network_error_returns_none(self):
+    async def test_503_returns_transient(self):
+        """5xx responses should NOT be terminal — the cron retries on
+        the next tick. (#397 distinguishes these from 422.)"""
+        pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        mock_response.text = "Service Unavailable"
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(
+                return_value=mock_client_instance
+            )
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await svc.cross_post(
+                title="Test",
+                content_markdown="Content",
+                canonical_url="https://www.gladlabs.io/posts/test",
+            )
+
+        assert result.status == "transient"
+        assert result.http_status == 503
+
+    @pytest.mark.asyncio
+    async def test_429_rate_limit_returns_transient(self):
+        """429 is rate-limit, not a permanent reject — keep retrying."""
+        pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.text = "Too Many Requests"
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            mock_client_instance = AsyncMock()
+            mock_client_instance.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(
+                return_value=mock_client_instance
+            )
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await svc.cross_post(
+                title="Test",
+                content_markdown="Content",
+                canonical_url="https://www.gladlabs.io/posts/test",
+            )
+
+        assert result.status == "transient"
+        assert result.http_status == 429
+
+    @pytest.mark.asyncio
+    async def test_network_error_returns_transient(self):
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
         svc = DevToCrossPostService(pool)
 
@@ -327,7 +401,8 @@ class TestCrossPostSuccess:
                 canonical_url="https://www.gladlabs.io/posts/test",
             )
 
-        assert result is None
+        assert result.status == "transient"
+        assert "Connection timeout" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_tags_normalized_in_payload(self):
@@ -358,3 +433,175 @@ class TestCrossPostSuccess:
         assert len(tags) <= 4
         assert all(t == t.lower() for t in tags)
         assert all(t.isalnum() for t in tags)
+
+
+# ---------------------------------------------------------------------------
+# cross_post_by_post_id — dedup metadata writes (#397)
+# ---------------------------------------------------------------------------
+
+
+class TestCrossPostByPostIdDedup:
+    """Verify the post-by-id wrapper writes the right ``devto_status``
+    into ``posts.metadata`` so the cron stops retrying permanent
+    rejections (#397)."""
+
+    @staticmethod
+    def _make_post_pool(api_key="fake-api-key", post_row=None):
+        """Build a pool that supports both pool.acquire (API key path)
+        AND pool.fetchrow (post lookup) AND pool.execute (metadata
+        UPDATE). Returns (pool, executions_list) so tests can assert
+        on what UPDATE statements ran."""
+        pool = MagicMock()
+
+        # pool.acquire context for the API key lookup
+        secret_conn = AsyncMock()
+        secret_conn.fetchrow = AsyncMock(
+            return_value={"value": api_key, "is_secret": False} if api_key else None
+        )
+        secret_ctx = AsyncMock()
+        secret_ctx.__aenter__ = AsyncMock(return_value=secret_conn)
+        secret_ctx.__aexit__ = AsyncMock(return_value=False)
+        pool.acquire = MagicMock(return_value=secret_ctx)
+
+        # pool.fetchrow handles BOTH the devto_publish_immediately
+        # toggle (returns None, default True) AND the post row lookup.
+        # We discriminate by the SQL string.
+        async def _fetchrow(sql, *args, **kwargs):
+            if "posts" in sql.lower():
+                return post_row
+            return None  # devto_publish_immediately = use default
+
+        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+
+        executions: list[tuple] = []
+
+        async def _execute(sql, *args, **kwargs):
+            executions.append((sql, args))
+            return "UPDATE 1"
+
+        pool.execute = AsyncMock(side_effect=_execute)
+
+        return pool, executions
+
+    @pytest.mark.asyncio
+    async def test_2xx_records_devto_url_and_status_posted(self):
+        post_id = "11111111-1111-1111-1111-111111111111"
+        post_row = {
+            "id": post_id,
+            "title": "Hello World",
+            "slug": "hello-world",
+            "content": "Body",
+            "seo_keywords": "ai,python",
+            "metadata": {},
+        }
+        pool, executions = self._make_post_pool(post_row=post_row)
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {
+            "url": "https://dev.to/g/hello-world",
+            "id": 999,
+        }
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            client = AsyncMock()
+            client.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            url = await svc.cross_post_by_post_id(post_id)
+
+        assert url == "https://dev.to/g/hello-world"
+        # Exactly one metadata UPDATE happened, and it carried the
+        # posted marker plus the article id.
+        update_sqls = [
+            (sql, args) for sql, args in executions if "UPDATE posts" in sql
+        ]
+        assert len(update_sqls) == 1
+        patch_json = update_sqls[0][1][0]
+        assert '"devto_url": "https://dev.to/g/hello-world"' in patch_json
+        assert f'"devto_status": "{DEVTO_STATUS_POSTED}"' in patch_json
+        assert '"devto_article_id": "999"' in patch_json
+
+    @pytest.mark.asyncio
+    async def test_422_marks_post_gave_up_so_cron_stops_retrying(self):
+        """Regression for #397 — the canonical-URL-already-taken 422
+        must persist devto_status='gave_up' to break the every-tick
+        retry loop."""
+        post_id = "22222222-2222-2222-2222-222222222222"
+        post_row = {
+            "id": post_id,
+            "title": "Already Posted",
+            "slug": "already-posted",
+            "content": "Body",
+            "seo_keywords": "",
+            "metadata": {},
+        }
+        pool, executions = self._make_post_pool(post_row=post_row)
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.text = (
+            '{"error":"Canonical url has already been taken. '
+            'Email support@dev.to for further details.","status":422}'
+        )
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            client = AsyncMock()
+            client.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            url = await svc.cross_post_by_post_id(post_id)
+
+        assert url is None
+        update_sqls = [
+            (sql, args) for sql, args in executions if "UPDATE posts" in sql
+        ]
+        assert len(update_sqls) == 1, (
+            "Expected exactly one metadata UPDATE marking the post "
+            "as gave_up; got %r" % executions
+        )
+        patch_json = update_sqls[0][1][0]
+        assert f'"devto_status": "{DEVTO_STATUS_GAVE_UP}"' in patch_json
+        assert '"devto_last_http_status": "422"' in patch_json
+        assert "Canonical url has already been taken" in patch_json
+
+    @pytest.mark.asyncio
+    async def test_503_leaves_metadata_alone_so_cron_retries(self):
+        """5xx must NOT write devto_status — the next tick should
+        pick the post up again."""
+        post_id = "33333333-3333-3333-3333-333333333333"
+        post_row = {
+            "id": post_id,
+            "title": "Transient",
+            "slug": "transient",
+            "content": "Body",
+            "seo_keywords": "",
+            "metadata": {},
+        }
+        pool, executions = self._make_post_pool(post_row=post_row)
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        mock_response.text = "Service Unavailable"
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            client = AsyncMock()
+            client.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            url = await svc.cross_post_by_post_id(post_id)
+
+        assert url is None
+        update_sqls = [
+            (sql, args) for sql, args in executions if "UPDATE posts" in sql
+        ]
+        assert update_sqls == [], (
+            "5xx must leave metadata untouched so the next cron tick "
+            "retries; saw %r" % update_sqls
+        )

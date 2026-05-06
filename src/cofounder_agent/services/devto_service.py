@@ -23,6 +23,8 @@ Usage:
 import json
 import re
 import uuid
+from dataclasses import dataclass
+from typing import Literal
 
 import httpx
 
@@ -30,6 +32,33 @@ from services.logger_config import get_logger
 from services.site_config import site_config
 
 logger = get_logger(__name__)
+
+
+# Terminal markers we write into ``posts.metadata->>'devto_status'`` so
+# the crosspost cron can dedup. ``posted`` blocks the row from re-entry
+# because the URL was recorded; ``gave_up`` blocks it after a permanent
+# Dev.to rejection (e.g. 422 canonical-URL collision) so we stop
+# retrying once an hour forever (#397).
+DEVTO_STATUS_POSTED = "posted"
+DEVTO_STATUS_GAVE_UP = "gave_up"
+
+
+@dataclass
+class CrossPostResult:
+    """Outcome of a single Dev.to cross-post attempt.
+
+    See ``DevToCrossPostService.cross_post`` for the status enum.
+    Callers (notably ``cross_post_by_post_id`` and the
+    ``CrosspostToDevtoJob``) branch on ``status`` to decide whether
+    to record success metadata, mark the post as ``gave_up`` so the
+    cron stops retrying, or leave the row alone for the next tick.
+    """
+
+    status: Literal["posted", "gave_up", "transient", "skipped"]
+    url: str | None = None
+    article_id: str | None = None
+    http_status: int | None = None
+    error: str | None = None
 
 
 def _devto_api_base() -> str:
@@ -157,7 +186,7 @@ class DevToCrossPostService:
         content_markdown: str,
         canonical_url: str,
         tags: list[str] | None = None,
-    ) -> str | None:
+    ) -> "CrossPostResult":
         """Cross-post an article to Dev.to as a draft.
 
         Args:
@@ -167,12 +196,24 @@ class DevToCrossPostService:
             tags: Up to 4 tags (will be normalized)
 
         Returns:
-            The Dev.to article URL if successful, None otherwise.
+            A ``CrossPostResult`` describing the outcome. Callers
+            distinguish three terminal cases:
+
+            - ``status='posted'`` — 2xx, ``url`` populated.
+            - ``status='gave_up'`` — Dev.to rejected the request with
+              a 4xx that retrying won't fix (e.g. 422 "Canonical url
+              has already been taken"). Callers should mark the post
+              as gave_up so the cron stops re-submitting it.
+            - ``status='transient'`` — 5xx / network error. Safe (and
+              expected) to retry on the next tick.
+
+            On ``status='skipped'`` the API key isn't configured —
+            treat as a no-op, neither success nor failure.
         """
         api_key = await self._get_api_key()
         if not api_key:
             logger.debug("[DEVTO] No API key configured — skipping cross-post")
-            return None
+            return CrossPostResult(status="skipped")
 
         cleaned_content = self._clean_markdown(content_markdown)
         normalized_tags = self._normalize_tags(tags or [])
@@ -217,27 +258,70 @@ class DevToCrossPostService:
                     logger.info(
                         "[DEVTO] Cross-posted draft: %s (id=%s)", devto_url, devto_id
                     )
-                    return devto_url
-                else:
-                    logger.warning(
-                        "[DEVTO] API returned %d: %s",
-                        resp.status_code,
-                        resp.text[:500],
+                    return CrossPostResult(
+                        status="posted",
+                        url=devto_url or None,
+                        article_id=str(devto_id) if devto_id else None,
                     )
-                    return None
+
+                # 4xx (other than rate-limit) is a permanent reject —
+                # most commonly 422 "Canonical url has already been
+                # taken" when a previous run succeeded but we lost the
+                # devto_url metadata. Don't keep hammering Dev.to.
+                # 429 is rate-limit (transient); everything else 4xx
+                # we treat as terminal so the cron stops looping.
+                if 400 <= resp.status_code < 500 and resp.status_code != 429:
+                    error_text = resp.text[:500]
+                    logger.warning(
+                        "[DEVTO] API returned %d (giving up, will not retry): %s",
+                        resp.status_code,
+                        error_text,
+                    )
+                    return CrossPostResult(
+                        status="gave_up",
+                        http_status=resp.status_code,
+                        error=error_text,
+                    )
+
+                # 5xx + 429 — transient, will retry on the next tick.
+                error_text = resp.text[:500]
+                logger.warning(
+                    "[DEVTO] API returned %d (transient, will retry): %s",
+                    resp.status_code,
+                    error_text,
+                )
+                return CrossPostResult(
+                    status="transient",
+                    http_status=resp.status_code,
+                    error=error_text,
+                )
 
         except Exception as e:
             logger.warning("[DEVTO] Cross-post failed: %s", e)
-            return None
+            return CrossPostResult(status="transient", error=str(e))
 
     async def cross_post_by_post_id(self, post_id: str) -> str | None:
         """Cross-post a published post by its database ID.
 
-        Fetches the post from DB, cross-posts to Dev.to, and stores the
-        Dev.to URL in the post's metadata.
+        Fetches the post from DB, cross-posts to Dev.to, and updates
+        the post's metadata with one of:
+
+        - On 2xx success — ``devto_url``, ``devto_article_id``,
+          ``devto_status='posted'`` so the row is permanently
+          excluded from the cron's candidate set.
+        - On a permanent Dev.to rejection (4xx other than 429) —
+          ``devto_status='gave_up'`` plus ``devto_last_error`` /
+          ``devto_last_http_status`` for operator visibility. This
+          is what stops the every-tick 422 retry loop in #397.
+        - On a transient failure (5xx, 429, network) — no metadata
+          change, so the cron retries on its next tick.
 
         Returns:
-            The Dev.to article URL if successful, None otherwise.
+            The Dev.to article URL if successful, ``None`` for every
+            other outcome (transient retry, gave_up, skipped, missing
+            post). Callers that need to distinguish the cases should
+            invoke ``cross_post()`` directly and inspect the
+            ``CrossPostResult.status``.
         """
         try:
             row = await self.pool.fetchrow(
@@ -261,28 +345,69 @@ class DevToCrossPostService:
         if row["seo_keywords"]:
             tags = [k.strip() for k in row["seo_keywords"].split(",") if k.strip()]
 
-        devto_url = await self.cross_post(
+        result = await self.cross_post(
             title=row["title"],
             content_markdown=row["content"],
             canonical_url=canonical_url,
             tags=tags,
         )
 
-        if devto_url:
-            # Store the Dev.to URL in post metadata
-            try:
-                await self.pool.execute(
-                    """
-                    UPDATE posts
-                    SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
-                        updated_at = NOW()
-                    WHERE id = $2
-                    """,
-                    json.dumps({"devto_url": devto_url}),
-                    row["id"],
-                )
-                logger.info("[DEVTO] Stored devto_url in post metadata: %s", post_id)
-            except Exception as e:
-                logger.warning("[DEVTO] Failed to store devto_url (non-fatal): %s", e)
+        if result.status == "posted" and result.url:
+            metadata_patch: dict[str, str] = {
+                "devto_url": result.url,
+                "devto_status": DEVTO_STATUS_POSTED,
+            }
+            if result.article_id:
+                metadata_patch["devto_article_id"] = result.article_id
+            await self._merge_post_metadata(row["id"], metadata_patch)
+            logger.info("[DEVTO] Stored devto_url in post metadata: %s", post_id)
+            return result.url
 
-        return devto_url
+        if result.status == "gave_up":
+            # Permanent reject — the most common case is 422
+            # "Canonical url has already been taken" when a previous
+            # run posted to Dev.to but we lost the response (network
+            # blip, worker crash, missing devto_url write). The post
+            # exists on Dev.to; retrying every tick wastes a request
+            # and litters the log with WARNING (#397).
+            metadata_patch = {
+                "devto_status": DEVTO_STATUS_GAVE_UP,
+                "devto_last_http_status": str(result.http_status or ""),
+                "devto_last_error": (result.error or "")[:500],
+            }
+            await self._merge_post_metadata(row["id"], metadata_patch)
+            logger.warning(
+                "[DEVTO] Marked post %s as gave_up (HTTP %s) — will not retry. "
+                "Reason: %s",
+                post_id,
+                result.http_status,
+                (result.error or "")[:200],
+            )
+
+        # status == "transient" — leave metadata untouched so the
+        # cron picks the post up again next tick.
+        return None
+
+    async def _merge_post_metadata(self, post_uuid, patch: dict[str, str]) -> None:
+        """Shallow-merge a dict into ``posts.metadata`` JSONB.
+
+        Best-effort: a UPDATE failure here is logged and swallowed so
+        a transient DB hiccup doesn't poison the in-memory state of a
+        successful cross-post. The cron's dedup will recover on the
+        next tick once the DB is reachable.
+        """
+        try:
+            await self.pool.execute(
+                """
+                UPDATE posts
+                SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+                    updated_at = NOW()
+                WHERE id = $2
+                """,
+                json.dumps(patch),
+                post_uuid,
+            )
+        except Exception as e:
+            logger.warning(
+                "[DEVTO] Failed to merge metadata %s (non-fatal): %s", patch, e
+            )
