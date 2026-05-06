@@ -47,6 +47,20 @@ git checkout -b "$TEMP_BRANCH" 2>/dev/null
 # operator-only tooling, or a file that leaks personal context (bank balance,
 # memory paths, internal URLs). Nothing here should ship to the public repo.
 
+# === Repo-divergent configs that must be SWAPPED, not deleted ===
+# release-please-config.json on glad-labs-stack lists web/public-site/package.json
+# as an extra-file. That path is private — stripped below — so on the public
+# mirror release-please can't find it and skips the entry. Keep a parallel
+# release-please-config.poindexter.json checked in to glad-labs-stack with the
+# public-safe extra-files list and swap it into place here so the public mirror
+# ships a config whose every extra-file path actually exists in the public tree.
+# Closes Glad-Labs/poindexter#394.
+if [ -f release-please-config.poindexter.json ]; then
+  cp release-please-config.poindexter.json release-please-config.json
+  git add release-please-config.json
+fi
+git rm --cached --quiet release-please-config.poindexter.json 2>/dev/null || true   # the alt config itself stays internal
+
 # === Premium product surfaces and private branding ===
 git rm -r --cached --quiet web/public-site/ 2>/dev/null || true              # branded Next.js site
 git rm -r --cached --quiet web/storefront/ 2>/dev/null || true               # gladlabs.ai storefront (Lemon Squeezy checkout + copy)
