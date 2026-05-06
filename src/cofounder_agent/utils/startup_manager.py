@@ -279,7 +279,15 @@ class StartupManager:
             raise SystemExit(1) from e
 
     async def _run_migrations(self) -> None:
-        """Run database migrations"""
+        """Run database migrations, then seed any missing app_settings defaults.
+
+        ``seed_all_defaults`` runs AFTER ``run_migrations`` so any keys
+        the migrations explicitly seeded keep their migration value
+        (the seeder uses ``ON CONFLICT DO NOTHING``). Closes the
+        fresh-DB gap documented in #379 — out of the box every
+        ``site_config.get(key, default)`` call site has a real DB row
+        to read instead of falling through to the inline default.
+        """
         logger.info("  [INFO] Running database migrations...")
         try:
             from services.migrations import run_migrations
@@ -292,6 +300,30 @@ class StartupManager:
         except Exception as e:
             logger.warning(
                 f"   [WARNING] Migration error: {e!s} (proceeding anyway)", exc_info=True
+            )
+
+        # Seed any code-side defaults that migrations didn't cover (#379).
+        # Best-effort — a failure here doesn't abort startup; the lazy
+        # SettingsService default path still works as a fallback.
+        try:
+            from services.settings_defaults import seed_all_defaults
+
+            if self.database_service and self.database_service.pool:
+                inserted = await seed_all_defaults(self.database_service.pool)
+                if inserted:
+                    logger.info(
+                        "   [OK] settings_defaults seeded %d missing app_settings key(s)",
+                        inserted,
+                    )
+                else:
+                    logger.debug(
+                        "   [INFO] settings_defaults: no missing keys to seed"
+                    )
+        except Exception as e:
+            logger.warning(
+                f"   [WARNING] settings_defaults seed failed: {e!s} "
+                "(falling back to lazy defaults)",
+                exc_info=True,
             )
 
         # ContentTaskStore: no longer a singleton (Phase G1). Routes that

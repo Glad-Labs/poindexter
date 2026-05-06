@@ -44,8 +44,16 @@ jobs:
               if: ${{ steps.release.outputs.pr }}
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  # Pipe the JSON via env var (NOT inline interpolation).
+                  # The release-please PR body contains apostrophes,
+                  # backticks, and parens from the changelog — inlining
+                  # `${{ steps.release.outputs.pr }}` into a single-quoted
+                  # bash string breaks on the first apostrophe and bash
+                  # exits with `syntax error near unexpected token '('`.
+                  # Failure pattern repeated 5×/day until this fix.
+                  RELEASE_PR_JSON: ${{ steps.release.outputs.pr }}
               run: |
-                  pr_number=$(echo '${{ steps.release.outputs.pr }}' | jq -r .number)
+                  pr_number=$(jq -r .number <<< "$RELEASE_PR_JSON")
                   echo "Enabling auto-merge on release PR #${pr_number}"
                   gh pr merge "${pr_number}" --squash --auto --repo "${{ github.repository }}"
 

@@ -102,6 +102,18 @@ log = logging.getLogger("voice_agent_livekit")
 # call time). It's stripped from the LLM-facing schema so the model
 # only sees the user-facing kwargs (none, in our read-only set).
 #
+# CRITICAL: tool results must be delivered via ``params.result_callback(...)``,
+# NOT via ``return``. Pipecat's runner ignores the function's return value;
+# what it does is broadcast a ``FunctionCallInProgressFrame`` (which the
+# universal aggregator stamps as the literal "IN_PROGRESS" placeholder in
+# the LLM context) and then waits for the function to call its
+# ``result_callback``, which broadcasts ``FunctionCallResultFrame`` and
+# replaces the placeholder with the real result. A function that ``return``s
+# a string instead leaks the "IN_PROGRESS" sentinel into the conversation
+# forever, and the LLM keeps re-issuing the same tool call thinking the
+# previous one is still running. (Bug discovered 2026-05-05; fix in
+# fix/voice-agent-in-progress-tool-results.)
+#
 # We DON'T reuse mcp-server/server.py's tool functions even though
 # they exist — those use sync urllib with multi-second timeouts that
 # would block the audio pipeline's event loop and leave Emma silent
@@ -124,14 +136,24 @@ async def _worker_get(path: str) -> dict[str, Any]:
         return resp.json()
 
 
-async def check_pipeline_health(params: Any) -> str:
+async def check_pipeline_health(params: Any) -> None:
     """Check the current health of the Poindexter content pipeline.
 
     Returns a one-sentence summary of database, worker, and LLM
     connectivity. Use this when the operator asks how the system is
     doing, whether anything is broken, system status, or health.
     """
-    _ = params
+    result = await _check_pipeline_health_text()
+    await params.result_callback(result)
+
+
+async def _check_pipeline_health_text() -> str:
+    """Build the spoken summary string for ``check_pipeline_health``.
+
+    Split out from the tool entry point so the unit tests can assert on
+    the actual payload without having to hand-roll a full
+    ``FunctionCallParams`` (which requires an LLMService instance).
+    """
     try:
         data = await _worker_get("/api/health")
     except Exception as e:  # noqa: BLE001
@@ -162,13 +184,17 @@ async def check_pipeline_health(params: Any) -> str:
     return ". ".join(parts) + "."
 
 
-async def get_published_post_count(params: Any) -> str:
+async def get_published_post_count(params: Any) -> None:
     """Get the total number of published blog posts on the operator's site.
 
     Use this when the operator asks how many posts are live, the number
     of articles, or pipeline output volume.
     """
-    _ = params
+    result = await _get_published_post_count_text()
+    await params.result_callback(result)
+
+
+async def _get_published_post_count_text() -> str:
     try:
         data = await _worker_get("/api/posts?limit=1")
     except Exception as e:  # noqa: BLE001
@@ -177,13 +203,17 @@ async def get_published_post_count(params: Any) -> str:
     return f"There are {total} published posts on the site."
 
 
-async def get_ai_spending_status(params: Any) -> str:
+async def get_ai_spending_status(params: Any) -> None:
     """Get current AI spending — daily and monthly totals across providers.
 
     Use this when the operator asks about budget, costs, spend, or how
     much money the system has burned today.
     """
-    _ = params
+    result = await _get_ai_spending_status_text()
+    await params.result_callback(result)
+
+
+async def _get_ai_spending_status_text() -> str:
     try:
         data = await _worker_get("/api/costs/summary")
     except Exception as e:  # noqa: BLE001

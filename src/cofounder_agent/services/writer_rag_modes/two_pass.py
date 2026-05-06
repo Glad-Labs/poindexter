@@ -121,6 +121,12 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
         "writer_rag_two_pass_snippet_limit", 20,
     )
     qvec = await embed_text(f"{state['topic']} — {state['angle']}")
+    # Convert to pgvector text format. asyncpg has no built-in codec for
+    # Python list → pgvector; passing the raw list crashes with
+    # "expected str, got list" before the ::vector cast can run.
+    # Pattern matches services/embeddings_db.py:151 (the established way
+    # this codebase passes vectors to pgvector queries).
+    qvec_str = "[" + ",".join(str(v) for v in qvec) + "]"
     pool = _POOL_REGISTRY[state["pool_thread"]]
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -130,7 +136,7 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
              ORDER BY embedding <=> $1::vector
              LIMIT $2
             """,
-            qvec,
+            qvec_str,
             snippet_limit,
         )
     snippets = [{"source": r["source_table"], "ref": str(r["source_id"]),
