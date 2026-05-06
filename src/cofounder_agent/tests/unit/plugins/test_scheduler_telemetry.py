@@ -80,3 +80,52 @@ async def test_record_last_run_swallows_db_errors():
 
     scheduler = PluginScheduler(_BrokenPool())
     await scheduler._record_last_run("anything", ok=True)  # must NOT raise
+
+
+def test_get_stats_returns_safe_defaults_before_any_jobs_fire():
+    """Fresh scheduler exposes the contract used by /api/metrics/operational
+    (poindexter#395) — zeros + ``last_tick_epoch=None`` instead of raising.
+    """
+    pool, _ = _pool_with_conn()
+    scheduler = PluginScheduler(pool)
+
+    stats = scheduler.get_stats()
+
+    # All seven contract keys present.
+    assert set(stats.keys()) == {
+        "is_running",
+        "registered_job_count",
+        "jobs_run",
+        "jobs_succeeded",
+        "jobs_failed",
+        "last_tick_epoch",
+        "next_run_epoch",
+    }
+    # Zero state before any fires.
+    assert stats["is_running"] is False
+    assert stats["registered_job_count"] == 0
+    assert stats["jobs_run"] == 0
+    assert stats["jobs_succeeded"] == 0
+    assert stats["jobs_failed"] == 0
+    assert stats["last_tick_epoch"] is None
+    assert stats["next_run_epoch"] is None
+
+
+def test_get_stats_reflects_in_process_counters():
+    """Counters bump as the runner records fires — verified by mutating
+    the same private fields the runner mutates."""
+    import time as _time
+
+    pool, _ = _pool_with_conn()
+    scheduler = PluginScheduler(pool)
+
+    scheduler._jobs_run = 7
+    scheduler._jobs_succeeded = 6
+    scheduler._jobs_failed = 1
+    scheduler._last_tick_epoch = _time.time()
+
+    stats = scheduler.get_stats()
+    assert stats["jobs_run"] == 7
+    assert stats["jobs_succeeded"] == 6
+    assert stats["jobs_failed"] == 1
+    assert stats["last_tick_epoch"] is not None

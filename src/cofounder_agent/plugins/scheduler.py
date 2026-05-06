@@ -80,6 +80,13 @@ class PluginScheduler:
         self._site_config = site_config
         self._scheduler = AsyncIOScheduler()
         self._registered: list[str] = []
+        # In-process run counters for /api/metrics/operational. Not persistent
+        # — they reset on worker restart, which is fine for "is the scheduler
+        # firing?" health signals. See ``get_stats``.
+        self._jobs_run: int = 0
+        self._jobs_succeeded: int = 0
+        self._jobs_failed: int = 0
+        self._last_tick_epoch: float | None = None
 
     async def register_job(self, job: Any) -> bool:
         """Add a single Job to the schedule.
@@ -109,19 +116,27 @@ class PluginScheduler:
 
         async def _runner():
             # Each fire: load fresh config (enables live-toggle without restart)
+            import time as _time
             live_cfg = await PluginConfig.load(self._pool, "job", job.name)
             if not live_cfg.enabled:
                 logger.debug("scheduler: job %r disabled at fire-time; skip", job.name)
                 return
+            self._jobs_run += 1
+            self._last_tick_epoch = _time.time()
             try:
                 result = await job.run(self._pool, live_cfg.config)
                 logger.info(
                     "scheduler: job %r ran ok=%s detail=%r changes=%d",
                     job.name, result.ok, result.detail, result.changes_made,
                 )
+                if bool(result.ok):
+                    self._jobs_succeeded += 1
+                else:
+                    self._jobs_failed += 1
                 await self._record_last_run(job.name, ok=bool(result.ok))
             except Exception as e:
                 logger.exception("scheduler: job %r raised: %s", job.name, e)
+                self._jobs_failed += 1
                 await self._record_last_run(job.name, ok=False)
 
         self._scheduler.add_job(
@@ -157,6 +172,51 @@ class PluginScheduler:
     def jobs(self) -> list[str]:
         """Return registered Job names."""
         return list(self._registered)
+
+    def get_stats(self) -> dict[str, Any]:
+        """Return live in-process scheduler health stats.
+
+        Used by ``/api/metrics/operational`` (poindexter#395) to replace
+        the legacy ``TaskExecutor`` block. Counters are process-local —
+        they reset on restart. That's intentional: the endpoint exists to
+        answer "is the scheduler firing right now?", which is exactly the
+        cycle these counters describe.
+
+        Returns:
+            dict with keys:
+                ``is_running`` — True iff apscheduler's loop is up
+                ``registered_job_count`` — number of accepted Jobs
+                ``jobs_run`` — total fires since last restart
+                ``jobs_succeeded`` — fires that returned ok=True
+                ``jobs_failed`` — fires that raised or returned ok=False
+                ``last_tick_epoch`` — Unix epoch (float) of the most
+                    recent fire, or None if the scheduler hasn't fired
+                ``next_run_epoch`` — Unix epoch (float) of the next
+                    scheduled fire across all jobs, or None if nothing
+                    is queued
+        """
+        next_run_epoch: float | None = None
+        try:
+            jobs = self._scheduler.get_jobs()
+            next_runs = [
+                j.next_run_time.timestamp()
+                for j in jobs
+                if getattr(j, "next_run_time", None) is not None
+            ]
+            if next_runs:
+                next_run_epoch = min(next_runs)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.debug("scheduler.get_stats: next_run probe failed: %s", e)
+
+        return {
+            "is_running": bool(self._scheduler.running),
+            "registered_job_count": len(self._registered),
+            "jobs_run": self._jobs_run,
+            "jobs_succeeded": self._jobs_succeeded,
+            "jobs_failed": self._jobs_failed,
+            "last_tick_epoch": self._last_tick_epoch,
+            "next_run_epoch": next_run_epoch,
+        }
 
     async def _record_last_run(self, name: str, ok: bool) -> None:
         """Stamp ``app_settings`` with this job's last-run epoch + status.
