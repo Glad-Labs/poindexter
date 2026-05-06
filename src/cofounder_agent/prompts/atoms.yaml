@@ -92,6 +92,13 @@
     GROUNDING (every name, number, url, code reference, AND duration
     is grounded in the bundle):
 
+    - The BUNDLE block in the user message is the only source of truth.
+      Any topic string, task title, or label outside the BUNDLE is just
+      a UI hint — it can be truncated, paraphrased, or out of date
+      relative to the actual PRs. When the topic string and the BUNDLE
+      disagree, the BUNDLE wins. Open the post by referencing a
+      specific merged PR from the BUNDLE by its real title and number;
+      do not lead with a generic riff on a topic phrase.
     - Names: use names that appear verbatim in a bundle entry. "Glad
       Labs", "Poindexter", "gladlabs.io", PR/commit authors, and any
       component name from the bundle are fair game.

@@ -197,6 +197,13 @@ VOICE TEXTURES THAT WORK:
 GROUNDING (every name, number, url, code reference, AND duration
 is grounded in the bundle):
 
+- The BUNDLE block in the user message is the only source of truth.
+  Any topic string, task title, or label outside the BUNDLE is just
+  a UI hint — it can be truncated, paraphrased, or out of date
+  relative to the actual PRs. When the topic string and the BUNDLE
+  disagree, the BUNDLE wins. Open the post by referencing a
+  specific merged PR from the BUNDLE by its real title and number;
+  do not lead with a generic riff on a topic phrase.
 - Names: use names that appear verbatim in a bundle entry. "Glad
   Labs", "Poindexter", "gladlabs.io", PR/commit authors, and any
   component name from the bundle are fair game.
@@ -377,14 +384,43 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # task_metadata key). We also accept state['context_bundle'] for
     # callers that pass it directly (architect-LLM compositions in
     # Phase 4).
+    task_id = state.get("task_id")
     bundle = state.get("context_bundle")
+    bundle_source = "state.context_bundle"
     if not bundle:
         # Fall back to reading from pipeline_versions.stage_data.
-        task_id = state.get("task_id")
         database_service = state.get("database_service")
         if task_id and database_service is not None:
             bundle = await _load_bundle_from_db(database_service.pool, task_id)
+            bundle_source = "pipeline_versions.stage_data._dev_diary_bundle"
+        else:
+            bundle_source = (
+                f"unavailable (task_id={'set' if task_id else 'missing'}, "
+                f"database_service={'set' if database_service is not None else 'missing'})"
+            )
     bundle = bundle or {}
+    # Log loud when the bundle is missing or empty — this is the
+    # condition that produces "writer riffs on the topic string"
+    # output (Glad-Labs/poindexter#354). Warning level so it surfaces
+    # in normal log review without being lost to debug noise; on a
+    # real shipping day, an empty bundle here means the DB read
+    # silently failed and the operator needs to investigate
+    # pipeline_versions.stage_data for this task_id.
+    pr_count = len(bundle.get("merged_prs") or []) if isinstance(bundle, dict) else 0
+    commit_count = len(bundle.get("notable_commits") or []) if isinstance(bundle, dict) else 0
+    if not bundle or _bundle_is_empty(bundle):
+        logger.warning(
+            "[atoms.narrate_bundle] task=%s no usable bundle "
+            "(source=%s, prs=%d, commits=%d) — post will short-circuit "
+            "to quiet-day text",
+            task_id, bundle_source, pr_count, commit_count,
+        )
+    else:
+        logger.info(
+            "[atoms.narrate_bundle] task=%s bundle loaded "
+            "(source=%s, prs=%d, commits=%d)",
+            task_id, bundle_source, pr_count, commit_count,
+        )
 
     date = (bundle.get("date") or "").strip() or "today"
 
@@ -405,15 +441,29 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     bundle_text = _format_bundle_for_narrative(bundle)
     system_prompt = _resolve_system_prompt()
+    # The BUNDLE is the canonical source. Any "topic" string the caller
+    # may have stamped on the task row is just a UI label — it can be
+    # truncated, semantic-only, or stale relative to the actual PRs in
+    # the bundle. The user-message portion repeats the grounding
+    # contract here (in addition to the system prompt) so the LLM sees
+    # it adjacent to the BUNDLE block, not 5K tokens earlier in the
+    # system preamble. Closes Glad-Labs/poindexter#354.
     full_prompt = (
         f"{system_prompt}\n\n"
         f"---\n\n"
-        f"BUNDLE:\n\n{bundle_text}\n\n"
+        f"BUNDLE (this is the only source of truth — the post is about "
+        f"these specific PRs and commits, NOT about any title or topic "
+        f"string outside this block):\n\n{bundle_text}\n\n"
         f"---\n\n"
-        f"Now write the dev_diary post. Follow the system prompt's "
-        f"voice + grounding rules. Output starts with the first "
-        f"letter of paragraph one and ends with the last letter of "
-        f"the closing paragraph."
+        f"Now write the dev_diary post. Open by referencing a specific "
+        f"merged PR from the BUNDLE above by its actual title and "
+        f"number — quote the title verbatim or paraphrase tightly from "
+        f"the PR body. Every claim about what shipped today comes from "
+        f"a PR or commit in the BUNDLE. Cite PRs inline as "
+        f"[PR #N](url-from-the-bundle's-url-field). Follow the system "
+        f"prompt's voice + grounding rules. Output starts with the "
+        f"first letter of paragraph one and ends with the last letter "
+        f"of the closing paragraph."
     )
 
     try:
