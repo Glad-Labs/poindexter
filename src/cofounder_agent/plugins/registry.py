@@ -344,15 +344,31 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
         ("image_providers", "services.image_providers.sdxl", "SdxlProvider"),
         ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
+        # FLUX.1-schnell — second-generation text-to-image alternative to
+        # SDXL Lightning. Apache-2.0 licensed (the non-commercial flux_dev
+        # variant is intentionally NOT registered). GH#123.
+        ("image_providers", "services.image_providers.flux_schnell", "FluxSchnellProvider"),
         # Core VideoProviders. Imperative load until the packaging issue
         # (entry_points discovery in Docker) is resolved — same pattern
         # as the image_providers above.
         ("video_providers", "services.video_providers.wan2_1", "Wan21Provider"),
         ("video_providers", "services.video_providers.ken_burns_slideshow", "KenBurnsSlideshowProvider"),
+        # Core AudioGenProviders. Stable Audio Open 1.0 — text-to-music/SFX
+        # via dedicated inference server (Stability AI Community license,
+        # free <$1M ARR). GH-Glad-Labs/poindexter#125.
+        (
+            "audio_gen_providers",
+            "services.audio_gen_providers.stable_audio_open",
+            "StableAudioOpenProvider",
+        ),
         # Core LLM providers.
         ("llm_providers", "services.llm_providers.ollama_native", "OllamaNativeProvider"),
         ("llm_providers", "services.llm_providers.openai_compat", "OpenAICompatProvider"),
         ("llm_providers", "services.llm_providers.litellm_provider", "LiteLLMProvider"),
+        # Plugin-namespaced LLM providers (paid-vendor SDKs, opt-in via
+        # ``app_settings.plugin.llm_provider.<name>.enabled``). Each ships
+        # disabled by default so the core install stays free + self-hostable.
+        ("llm_providers", "plugins.llm_providers.gemini", "GeminiProvider"),
         # Core Stages (Phase E migration — one per file, unblocks tearing
         # down content_router_service.py over a handful of commits).
         ("stages", "services.stages.verify_task", "VerifyTaskStage"),
