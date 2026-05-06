@@ -252,10 +252,485 @@ async def _spending_from_db() -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Read-only tools added in #voice-tools-expand
+# ---------------------------------------------------------------------------
+
+
+async def _connect_db() -> Any:
+    """Open a short-lived asyncpg connection with the standard 2s budget.
+
+    All voice DB tools share this helper so the resolution path (brain
+    bootstrap → resolve_database_url) and the timeout stay consistent.
+    Caller is responsible for ``await conn.close()`` in a ``finally``.
+    """
+    import asyncpg
+    _ensure_brain_on_path()
+    from brain.bootstrap import resolve_database_url
+    dsn = resolve_database_url()
+    return await asyncpg.connect(dsn, timeout=2.0)
+
+
+def _shorten(text: str, words: int = 12) -> str:
+    """Trim ``text`` to ~``words`` whitespace tokens for voice playback.
+
+    Memory previews and audit details can be paragraphs long. Spoken aloud,
+    that's 10-15s of dead air per hit. Caller already builds short summary
+    strings; this is the belt-and-suspenders cap so a stray newline-rich
+    blob doesn't blow the 15s-per-tool budget.
+    """
+    parts = (text or "").replace("\n", " ").split()
+    if len(parts) <= words:
+        return " ".join(parts)
+    return " ".join(parts[:words]) + "..."
+
+
+async def search_memory(params: Any) -> None:
+    """Semantic recall over the operator's pgvector memory store.
+
+    Use this when the operator asks what we know about a topic, whether
+    a decision was made, if there's a memory of something, or asks
+    "remember when". The query is the natural-language phrase to search
+    for; up to three relevant snippets are summarised.
+    """
+    query = _extract_query_arg(params)
+    result = await _search_memory_text(query)
+    await params.result_callback(result)
+
+
+def _extract_query_arg(params: Any) -> str:
+    """Pull a free-form ``query`` arg from a Pipecat function-call params.
+
+    Pipecat passes tool kwargs through ``params.arguments`` (dict). We
+    accept ``query``, ``q``, ``topic``, or ``text`` so the LLM has some
+    leeway picking a name. Returns an empty string if nothing matches.
+    """
+    args = getattr(params, "arguments", None) or {}
+    if not isinstance(args, dict):
+        return ""
+    for k in ("query", "q", "topic", "text", "note", "content"):
+        v = args.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+async def _search_memory_text(query: str) -> str:
+    if not query:
+        return "I need a phrase to search for. What should I look up?"
+    try:
+        data = await _worker_get(f"/api/memory/search?q={query}&limit=3")
+    except Exception as e:  # noqa: BLE001
+        return (
+            f"I couldn't reach the memory search. The worker might be down. "
+            f"Error: {e}."
+        )
+    hits = data.get("hits") or []
+    if not hits:
+        return f"I found nothing in memory about {query}."
+    pieces: list[str] = []
+    for h in hits[:3]:
+        source = h.get("source_table") or "memory"
+        preview = _shorten(str(h.get("text_preview") or ""), 12)
+        pieces.append(f"from {source}: {preview}")
+    return f"Top matches for {query}. " + ". ".join(pieces) + "."
+
+
+async def list_recent_pipeline_tasks(params: Any) -> None:
+    """List the most recent items in the content pipeline.
+
+    Use this when the operator asks what's running, the current pipeline
+    state, what tasks are in flight, or what the worker is doing right
+    now. Returns a count plus a one-line breakdown by status.
+    """
+    result = await _list_recent_pipeline_tasks_text()
+    await params.result_callback(result)
+
+
+async def _list_recent_pipeline_tasks_text() -> str:
+    # /api/tasks requires auth — fall back to a direct DB read against
+    # content_tasks. The voice agent runs in the same process tree as
+    # Postgres so a 2s connect budget is generous.
+    try:
+        conn = await _connect_db()
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't reach the database. Error: {e}."
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT status
+            FROM content_tasks
+            ORDER BY created_at DESC
+            LIMIT 5
+            """,
+        )
+    except Exception as e:  # noqa: BLE001
+        await conn.close()
+        return f"I couldn't read the task list. Error: {e}."
+    finally:
+        try:
+            await conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not rows:
+        return "There are no recent pipeline tasks."
+    counts: dict[str, int] = {}
+    for r in rows:
+        status = (r["status"] or "unknown").replace("_", " ")
+        counts[status] = counts.get(status, 0) + 1
+    total = len(rows)
+    parts = [f"{n} {status}" for status, n in sorted(counts.items(), key=lambda x: -x[1])]
+    return f"Latest {total} pipeline tasks. " + ", ".join(parts) + "."
+
+
+async def get_audit_summary(params: Any) -> None:
+    """Summarise the last 24 hours of audit-log activity.
+
+    Use this when the operator asks if anything's broken, whether there
+    are errors, or asks for a quick audit summary. Reports the top three
+    event types by count along with their severity.
+    """
+    result = await _get_audit_summary_text()
+    await params.result_callback(result)
+
+
+async def _get_audit_summary_text() -> str:
+    # No /api/audit/summary endpoint exists yet — query audit_log directly,
+    # same way _spending_from_db() handles its missing summary endpoint.
+    try:
+        conn = await _connect_db()
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't reach the database. Error: {e}."
+    try:
+        rows = await conn.fetch(
+            """
+            SELECT event_type, severity, COUNT(*) AS n
+            FROM audit_log
+            WHERE timestamp > NOW() - INTERVAL '24 hours'
+            GROUP BY event_type, severity
+            ORDER BY n DESC
+            LIMIT 3
+            """,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't read the audit log. Error: {e}."
+    finally:
+        try:
+            await conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not rows:
+        return "The audit log is quiet for the last twenty-four hours."
+    parts = []
+    for r in rows:
+        et = (r["event_type"] or "unknown").replace("_", " ")
+        sev = r["severity"] or "info"
+        parts.append(f"{int(r['n'])} {sev} {et}")
+    return "Top audit events in the last day. " + ", ".join(parts) + "."
+
+
+async def find_similar_posts(params: Any) -> None:
+    """Find published posts similar to a topic — duplicate-avoidance check.
+
+    Use this when the operator asks whether we've already covered a topic,
+    if a topic would be a duplicate, or wants similar posts about a
+    subject. The argument is the topic phrase; up to three closest matches
+    are summarised by title.
+    """
+    topic = _extract_query_arg(params)
+    result = await _find_similar_posts_text(topic)
+    await params.result_callback(result)
+
+
+async def _find_similar_posts_text(topic: str) -> str:
+    if not topic:
+        return "I need a topic to check. What should I compare against?"
+    # No /api/posts/similar endpoint — use MemoryClient.find_similar_posts
+    # directly. Embedding lookup is fast (single Ollama call) and stays
+    # within the 4s tool budget on the local stack.
+    _ensure_brain_on_path()
+    try:
+        from poindexter.memory.client import MemoryClient
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't load the memory client. Error: {e}."
+    mem = MemoryClient()
+    try:
+        await mem.connect()
+        hits = await mem.find_similar_posts(topic, limit=3, min_similarity=0.5)
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't search published posts. Error: {e}."
+    finally:
+        try:
+            await mem.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not hits:
+        return f"No published posts look similar to {topic}."
+    parts = []
+    for h in hits[:3]:
+        title = _shorten(str(h.text_preview or ""), 10)
+        parts.append(title)
+    return f"Top posts similar to {topic}. " + "; ".join(parts) + "."
+
+
+async def get_recent_pull_requests(params: Any) -> None:
+    """Report recent merged pull requests across the operator's repos.
+
+    Use this when the operator asks what shipped, what got merged, recent
+    pull requests, or recent merges. Covers the glad-labs-stack and
+    poindexter repositories and reports the three most recent merges.
+    """
+    result = await _get_recent_pull_requests_text()
+    await params.result_callback(result)
+
+
+# Read-only repo list — covers Matt's two active repos. New ones can land
+# here without app_settings churn; if the list ever grows past four it
+# should migrate to a setting per feedback_no_silent_defaults.
+_VOICE_AGENT_PR_REPOS: tuple[str, ...] = (
+    "Glad-Labs/glad-labs-stack",
+    "Glad-Labs/poindexter",
+)
+
+
+async def _get_recent_pull_requests_text() -> str:
+    import httpx
+
+    _ensure_brain_on_path()
+    try:
+        import asyncpg
+        from brain.bootstrap import resolve_database_url
+
+        from plugins.secrets import get_secret
+        dsn = resolve_database_url()
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=1, timeout=2.0)
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't reach the secrets store. Error: {e}."
+    try:
+        async with pool.acquire() as conn:
+            gh_token = await get_secret(conn, "gh_token") or ""
+    finally:
+        await pool.close()
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "poindexter-voice-agent",
+    }
+    if gh_token:
+        headers["Authorization"] = f"Bearer {gh_token}"
+
+    merged: list[dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=_TOOL_TIMEOUT_SECONDS) as client:
+            for repo in _VOICE_AGENT_PR_REPOS:
+                url = (
+                    f"https://api.github.com/repos/{repo}/pulls"
+                    "?state=closed&sort=updated&direction=desc&per_page=10"
+                )
+                resp = await client.get(url, headers=headers)
+                if resp.status_code >= 400:
+                    continue
+                data = resp.json()
+                if not isinstance(data, list):
+                    continue
+                for pr in data:
+                    if not isinstance(pr, dict) or not pr.get("merged_at"):
+                        continue
+                    merged.append({
+                        "repo": repo.split("/", 1)[-1],
+                        "number": pr.get("number"),
+                        "title": pr.get("title", ""),
+                        "merged_at": pr.get("merged_at", ""),
+                    })
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't reach GitHub. Error: {e}."
+
+    if not merged:
+        return "No merged pull requests showed up in the last batch."
+    merged.sort(key=lambda m: m["merged_at"], reverse=True)
+    parts = []
+    for pr in merged[:3]:
+        title = _shorten(pr["title"], 8)
+        parts.append(f"PR {pr['number']} on {pr['repo']}, {title}")
+    return "Most recent merged PRs. " + "; ".join(parts) + "."
+
+
+async def get_brain_decisions(params: Any) -> None:
+    """Report the brain daemon's recent non-routine decisions.
+
+    Use this when the operator asks what the brain is doing, whether
+    there's been any self-healing activity, or asks for brain status.
+    Filters out the routine cycle heartbeats and returns up to three
+    real decisions with their reasoning.
+    """
+    result = await _get_brain_decisions_text()
+    await params.result_callback(result)
+
+
+async def _get_brain_decisions_text() -> str:
+    try:
+        conn = await _connect_db()
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't reach the database. Error: {e}."
+    try:
+        # Same noise filter as dev_diary_source._collect_brain_decisions:
+        # the cycle heartbeat and "Monitored N internal" rows are pure
+        # housekeeping and would crowd out anything interesting.
+        rows = await conn.fetch(
+            """
+            SELECT decision, reasoning
+            FROM brain_decisions
+            WHERE created_at > NOW() - INTERVAL '6 hours'
+              AND decision NOT LIKE 'Cycle complete:%%'
+              AND decision NOT LIKE 'Monitored %% internal%%'
+              AND COALESCE(reasoning, '') NOT LIKE 'Monitored %% internal%%'
+            ORDER BY created_at DESC
+            LIMIT 3
+            """,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't read brain decisions. Error: {e}."
+    finally:
+        try:
+            await conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not rows:
+        return "The brain has been quiet for the last six hours."
+    parts = []
+    for r in rows:
+        decision = _shorten(str(r["decision"] or ""), 10)
+        parts.append(decision)
+    return "Recent brain decisions. " + "; ".join(parts) + "."
+
+
+# ---------------------------------------------------------------------------
+# Input-requiring tools — additive only, no destructive surface
+# ---------------------------------------------------------------------------
+
+
+_VALID_DEV_DIARY_MOODS = frozenset(
+    {"slog", "triumph", "flow", "frustrated", "curious", "relief"},
+)
+
+
+async def submit_dev_diary_note(params: Any) -> None:
+    """Save an operator note for today's dev diary post.
+
+    Use this when the operator says "save a note that...", "log this for
+    today's diary...", "note this...", or otherwise wants something
+    captured for the daily diary. The note text is required; an optional
+    mood tag (slog, triumph, flow, frustrated, curious, relief) sets the
+    emotional through-line.
+    """
+    args = getattr(params, "arguments", None) or {}
+    note = ""
+    mood: str | None = None
+    if isinstance(args, dict):
+        note = str(args.get("note") or args.get("text") or args.get("content") or "").strip()
+        raw_mood = args.get("mood")
+        if isinstance(raw_mood, str) and raw_mood.strip():
+            mood = raw_mood.strip().lower()
+    result = await _submit_dev_diary_note_text(note, mood)
+    await params.result_callback(result)
+
+
+async def _submit_dev_diary_note_text(note: str, mood: str | None) -> str:
+    if not note:
+        return "I need note text to save. What should I write down?"
+    if mood is not None and mood not in _VALID_DEV_DIARY_MOODS:
+        valid = ", ".join(sorted(_VALID_DEV_DIARY_MOODS))
+        return (
+            f"That mood isn't one I track. "
+            f"Try one of {valid}, or omit the mood entirely."
+        )
+    try:
+        conn = await _connect_db()
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't reach the database. Error: {e}."
+    try:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO operator_notes (niche_slug, note, mood, created_by)
+            VALUES ('dev_diary', $1, $2, 'voice')
+            RETURNING id
+            """,
+            note, mood,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't save the note. Error: {e}."
+    finally:
+        try:
+            await conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    note_id = int(row["id"]) if row else 0
+    snippet = _shorten(note, 10)
+    suffix = f" with mood {mood}" if mood else ""
+    return f"Saved diary note {note_id}{suffix}. Note reads: {snippet}"
+
+
+async def store_memory(params: Any) -> None:
+    """Save a fact spoken by the operator into the long-term memory store.
+
+    Use this when the operator says "remember that...", "save to memory
+    that...", "for the record...", or otherwise wants a fact persisted.
+    The content argument is required and is embedded as a memory row
+    the operator can later recall via search.
+    """
+    text = _extract_query_arg(params)
+    result = await _store_memory_text(text)
+    await params.result_callback(result)
+
+
+async def _store_memory_text(text: str) -> str:
+    if not text:
+        return "I need something to remember. What should I save?"
+    _ensure_brain_on_path()
+    try:
+        from poindexter.memory.client import MemoryClient
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't load the memory client. Error: {e}."
+    mem = MemoryClient()
+    try:
+        await mem.connect()
+        await mem.store(text=text, writer="user", source_table="memory")
+    except Exception as e:  # noqa: BLE001
+        return f"I couldn't save that to memory. Error: {e}."
+    finally:
+        try:
+            await mem.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    snippet = _shorten(text, 12)
+    return f"Saved to memory. Note reads: {snippet}"
+
+
 _DEFAULT_TOOLS: list[Any] = [
+    # Existing tools (do not reorder — operator-facing introspection
+    # surfaces this list as the canonical voice-tool inventory).
     check_pipeline_health,
     get_published_post_count,
     get_ai_spending_status,
+    # New read-only tools, alphabetical.
+    find_similar_posts,
+    get_audit_summary,
+    get_brain_decisions,
+    get_recent_pull_requests,
+    list_recent_pipeline_tasks,
+    search_memory,
+    # Input-requiring tools last — additive surface only (per
+    # feedback_no_silent_defaults: no destructive voice operations
+    # without a separate gate).
+    store_memory,
+    submit_dev_diary_note,
 ]
 
 
@@ -390,8 +865,8 @@ async def run_bot(
     """
     _ensure_brain_on_path()
     import asyncpg
-
     from brain.bootstrap import require_database_url
+
     from services.site_config import SiteConfig
 
     # Bootstrap a tiny pool just to read voice_agent_livekit_url before
@@ -516,8 +991,8 @@ async def run_service() -> int:
     """
     _ensure_brain_on_path()
     import asyncpg
-
     from brain.bootstrap import require_database_url
+
     from services.site_config import SiteConfig
 
     dsn = require_database_url(source="voice_agent_livekit_service")
