@@ -132,11 +132,16 @@ class TestPollAndDispatch:
         assert "critical" in message
         assert call_args.kwargs.get("critical") is True
 
-        # And the row was marked sent (not errored).
-        exec_calls = pool.execute.await_args_list
-        assert len(exec_calls) == 1
-        sql, *args = exec_calls[0].args
-        assert "UPDATE alert_events" in sql
+        # And the row was marked sent (not errored). With #420 dedup we
+        # also INSERT into alert_dedup_state on first fire, so we filter
+        # the execute calls to the alert_events UPDATE the test cares
+        # about.
+        alert_event_calls = [
+            c for c in pool.execute.await_args_list
+            if "UPDATE alert_events" in c.args[0]
+        ]
+        assert len(alert_event_calls) == 1
+        sql, *args = alert_event_calls[0].args
         assert "dispatched_at = NOW()" in sql
         assert "dispatch_result = 'sent'" in sql
         assert args[0] == 42
@@ -178,18 +183,23 @@ class TestPollAndDispatch:
         # Both rows attempted.
         assert notify.await_count == 2
 
-        # Two execute calls: row 1 marked as error, row 2 marked as sent.
-        assert pool.execute.await_count == 2
-        first_call = pool.execute.await_args_list[0]
+        # Two alert_events UPDATEs: row 1 marked as error, row 2 marked
+        # as sent. With #420 dedup the pool also receives INSERTs into
+        # alert_dedup_state per row, so we filter the calls.
+        alert_event_calls = [
+            c for c in pool.execute.await_args_list
+            if "UPDATE alert_events" in c.args[0]
+        ]
+        assert len(alert_event_calls) == 2
+        first_call = alert_event_calls[0]
         first_sql, *first_args = first_call.args
-        assert "UPDATE alert_events" in first_sql
         assert "dispatch_result = $2" in first_sql
         assert first_args[0] == 1
         # The 'error: ' prefix + the actual exception text get persisted.
         assert first_args[1].startswith("error:")
         assert "telegram timeout" in first_args[1]
 
-        second_call = pool.execute.await_args_list[1]
+        second_call = alert_event_calls[1]
         second_sql, *second_args = second_call.args
         assert "dispatch_result = 'sent'" in second_sql
         assert second_args[0] == 2
@@ -436,11 +446,17 @@ class TestBrainNotifyAdapter:
 
         result = await ad.poll_and_dispatch(pool, notify_fn=_fail_notify)
 
-        # Row was marked errored, NOT sent.
+        # Row was marked errored, NOT sent. With #420 dedup the pool
+        # also receives an INSERT into alert_dedup_state on first fire,
+        # so we filter to alert_events UPDATEs to assert the contract
+        # this test cares about.
         assert result == {"polled": 1, "sent": 0, "errors": 1}
-        assert pool.execute.await_count == 1
-        sql, *args = pool.execute.await_args_list[0].args
-        assert "UPDATE alert_events" in sql
+        alert_event_calls = [
+            c for c in pool.execute.await_args_list
+            if "UPDATE alert_events" in c.args[0]
+        ]
+        assert len(alert_event_calls) == 1
+        sql, *args = alert_event_calls[0].args
         # Uses the parameterized error path, not the literal 'sent' UPDATE.
         assert "dispatch_result = $2" in sql
         assert args[0] == 42
