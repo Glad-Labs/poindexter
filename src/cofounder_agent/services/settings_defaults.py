@@ -264,7 +264,7 @@ DEFAULTS: dict[str, str] = {
     'voice_agent_tts_voice': 'bf_emma',
     'voice_agent_vad_stop_secs': '0.2',
     'voice_agent_webrtc_enabled': 'true',
-    'voice_agent_webrtc_host': '0.0.0.0',
+    'voice_agent_webrtc_host': '0.0.0.0',  # nosec B104  # tailnet-by-design DEFAULT for voice_agent_webrtc_host; operator can override to 127.0.0.1 for local-only mode
     'voice_agent_webrtc_port': '8003',
     'voice_agent_whisper_model': 'base',
 

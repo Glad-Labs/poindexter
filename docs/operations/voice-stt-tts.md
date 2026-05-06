@@ -4,10 +4,10 @@ The Pipecat-based voice agent (Whisper -> Ollama / Claude -> Kokoro) runs
 as two always-on Docker services so you can talk to Poindexter at any
 time without launching anything by hand.
 
-| Service | Container | Surface | Use this when... |
-| --- | --- | --- | --- |
-| `voice-agent-livekit` | `poindexter-voice-agent-livekit` | Joins a LiveKit room and stays joined | You want to talk from a phone or another device on your tailnet — open the LiveKit hosted client (or a mobile LiveKit app), join the room, talk. |
-| `voice-agent-webrtc` | `poindexter-voice-agent-webrtc` | Serves the Pipecat prebuilt SmallWebRTC UI on `:8003` | You want a "click a button in a browser, talk to the bot" flow with no SFU in the loop. Local-only / quick test path. |
+| Service               | Container                        | Surface                                               | Use this when...                                                                                                                                 |
+| --------------------- | -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `voice-agent-livekit` | `poindexter-voice-agent-livekit` | Joins a LiveKit room and stays joined                 | You want to talk from a phone or another device on your tailnet — open the LiveKit hosted client (or a mobile LiveKit app), join the room, talk. |
+| `voice-agent-webrtc`  | `poindexter-voice-agent-webrtc`  | Serves the Pipecat prebuilt SmallWebRTC UI on `:8003` | You want a "click a button in a browser, talk to the bot" flow with no SFU in the loop. Local-only / quick test path.                            |
 
 Both share one image (`scripts/Dockerfile.voice-agent`) and one pipeline
 (`services.voice_agent.build_voice_pipeline_task`) — only the transport
@@ -78,6 +78,22 @@ can reach the host port. If you ever expose the port to the open
 internet, add a token gate to the `/api/offer` handler in
 `services/voice_agent_webrtc.py`.
 
+### Local-only mode (override the public bind)
+
+`voice_agent_webrtc_host` defaults to `0.0.0.0` so the agent is
+reachable from any Tailscale device on the tailnet. To restrict the
+WebRTC service to localhost only:
+
+```
+poindexter set voice_agent_webrtc_host 127.0.0.1
+docker restart poindexter-voice-agent-webrtc
+```
+
+The container picks up the new bind on the next start. Bandit's B104
+"binding to all interfaces" warnings on the `0.0.0.0` defaults are
+suppressed in code with `# nosec B104` because the tailnet exposure is
+intentional — see Glad-Labs/poindexter#402 for the audit.
+
 ## Configuration (DB-first)
 
 Every knob is an `app_settings` row. Edit at runtime:
@@ -88,23 +104,23 @@ poindexter set <key> <value>
 
 Container picks up changes on next restart.
 
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `voice_agent_livekit_enabled` | `true` | Toggle the LiveKit container |
-| `voice_agent_webrtc_enabled`  | `true` | Toggle the WebRTC container |
-| `voice_agent_room_name`       | `poindexter` | Room the bot joins on boot |
-| `voice_agent_identity`        | `poindexter-bot` | Bot's identity in the room |
-| `voice_agent_brain`           | `ollama` | LLM stage — `ollama` or `claude-code` |
-| `voice_agent_livekit_url`     | `ws://livekit:7880` | In-network LiveKit URL the bot uses |
-| `voice_agent_llm_model`       | `glm-4.7-5090:latest` | Ollama model (when brain = ollama) |
-| `voice_agent_ollama_url`      | `http://localhost:11434/v1` | Ollama base URL |
-| `voice_agent_tts_voice`       | `bf_emma` | Kokoro voice id |
-| `voice_agent_tts_speed`       | `1.0` | Kokoro playback speed |
-| `voice_agent_whisper_model`   | `base` | faster-whisper model size |
-| `voice_agent_vad_stop_secs`   | `0.2` | End-of-speech silence window |
-| `voice_agent_system_prompt`   | (Emma persona) | Agent personality |
-| `voice_agent_webrtc_host`     | `0.0.0.0` | WebRTC bind host |
-| `voice_agent_webrtc_port`     | `8003` | WebRTC bind port |
+| Key                           | Default                     | Purpose                               |
+| ----------------------------- | --------------------------- | ------------------------------------- |
+| `voice_agent_livekit_enabled` | `true`                      | Toggle the LiveKit container          |
+| `voice_agent_webrtc_enabled`  | `true`                      | Toggle the WebRTC container           |
+| `voice_agent_room_name`       | `poindexter`                | Room the bot joins on boot            |
+| `voice_agent_identity`        | `poindexter-bot`            | Bot's identity in the room            |
+| `voice_agent_brain`           | `ollama`                    | LLM stage — `ollama` or `claude-code` |
+| `voice_agent_livekit_url`     | `ws://livekit:7880`         | In-network LiveKit URL the bot uses   |
+| `voice_agent_llm_model`       | `glm-4.7-5090:latest`       | Ollama model (when brain = ollama)    |
+| `voice_agent_ollama_url`      | `http://localhost:11434/v1` | Ollama base URL                       |
+| `voice_agent_tts_voice`       | `bf_emma`                   | Kokoro voice id                       |
+| `voice_agent_tts_speed`       | `1.0`                       | Kokoro playback speed                 |
+| `voice_agent_whisper_model`   | `base`                      | faster-whisper model size             |
+| `voice_agent_vad_stop_secs`   | `0.2`                       | End-of-speech silence window          |
+| `voice_agent_system_prompt`   | (Emma persona)              | Agent personality                     |
+| `voice_agent_webrtc_host`     | `0.0.0.0`                   | WebRTC bind host                      |
+| `voice_agent_webrtc_port`     | `8003`                      | WebRTC bind port                      |
 
 ## Swap providers
 

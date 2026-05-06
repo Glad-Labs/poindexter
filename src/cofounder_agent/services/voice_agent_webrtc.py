@@ -140,7 +140,7 @@ def _build_app() -> FastAPI:
         log.info(
             "Voice WebRTC service ready — open http://%s:%s in a browser "
             "on your tailnet.",
-            site_config.get("voice_agent_webrtc_host", "0.0.0.0"),
+            site_config.get("voice_agent_webrtc_host", "0.0.0.0"),  # nosec B104  # tailnet-by-design log fallback; operator can override to 127.0.0.1 via voice_agent_webrtc_host
             site_config.get("voice_agent_webrtc_port", "8003"),
         )
 
@@ -319,7 +319,7 @@ async def _serve() -> int:
             )
             return 0
 
-        host = site_config.get("voice_agent_webrtc_host", "0.0.0.0")
+        host = site_config.get("voice_agent_webrtc_host", "0.0.0.0")  # nosec B104  # tailnet-by-design bind fallback; operator can override to 127.0.0.1 via voice_agent_webrtc_host for local-only mode
         port = int(site_config.get("voice_agent_webrtc_port", "8003"))
     finally:
         # We close the bootstrap pool — the app's lifespan will create

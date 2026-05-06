@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 _SEEDS: list[tuple[str, str, str]] = [
     (
         "voice_agent_webrtc_host",
-        "0.0.0.0",
+        "0.0.0.0",  # nosec B104  # tailnet-by-design seed for voice_agent_webrtc_host; operator can override to 127.0.0.1 via `poindexter set voice_agent_webrtc_host 127.0.0.1`
         "Bind host for the voice WebRTC service. 0.0.0.0 makes the agent "
         "reachable from any Tailscale device on the tailnet. Use "
         "127.0.0.1 for local-only.",

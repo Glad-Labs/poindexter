@@ -221,7 +221,7 @@ async def list_posts(
                 {where_sql}
                 ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST
                 LIMIT ${len(params) - 1} OFFSET ${len(params)}
-            """
+            """  # nosec B608  # where_sql is "" or " WHERE status = 'published'" (literal, line 207); LIMIT/OFFSET use $N placeholders, values via $N params
 
             rows = await conn.fetch(query, *params)
             total = rows[0]["total_count"] if rows else 0
@@ -708,7 +708,7 @@ async def update_post(
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             result = await conn.execute(
-                f"UPDATE posts SET {set_clause}, updated_at = NOW() WHERE id = ${len(params)}",
+                f"UPDATE posts SET {set_clause}, updated_at = NOW() WHERE id = ${len(params)}",  # nosec B608  # set_clause built from `allowed` allowlist (line 637) + SQLIdentifierValidator.safe_identifier (line 702); values use $N params
                 *params,
             )
             if result == "UPDATE 0":

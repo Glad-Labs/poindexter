@@ -85,7 +85,7 @@ class BackfillPostPerformanceGscJob:
                     )
                 """
                 aggregate_count = await conn.fetchval(
-                    aggregate_sql + " SELECT COUNT(*) FROM gsc",
+                    aggregate_sql + " SELECT COUNT(*) FROM gsc",  # nosec B608  # literal CTE concatenation (aggregate_sql defined line 67), no user input
                     gsc_window_days,
                 )
                 aggregate_count = int(aggregate_count or 0)
@@ -99,7 +99,7 @@ class BackfillPostPerformanceGscJob:
                           JOIN gsc g ON g.slug = pp.slug
                          WHERE COALESCE(pp.google_impressions, 0) = 0
                            AND g.google_impressions > 0
-                        """,
+                        """,  # nosec B608  # literal CTE concatenation (aggregate_sql defined line 67), no user input
                         gsc_window_days,
                     )
                     candidate_count = int(candidate_count or 0)
@@ -123,7 +123,7 @@ class BackfillPostPerformanceGscJob:
                      WHERE pp.slug = g.slug
                        AND COALESCE(pp.google_impressions, 0) = 0
                        AND g.google_impressions > 0
-                    """,
+                    """,  # nosec B608  # literal CTE concatenation (aggregate_sql defined line 67), no user input
                     gsc_window_days,
                 )
 

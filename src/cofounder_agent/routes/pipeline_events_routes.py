@@ -119,8 +119,9 @@ async def list_pipeline_events(
                 params.append(task_id)
                 idx += 1
 
+            # nosec B608 — `where` items are local literal SQL fragments with $N placeholders only (lines 104, 109, 113, 118); values use $N params
             sql = (
-                "SELECT id, timestamp, event_type, source, task_id, details, severity "
+                "SELECT id, timestamp, event_type, source, task_id, details, severity "  # nosec B608
                 "FROM audit_log WHERE "
                 + " AND ".join(where)
                 + f" ORDER BY timestamp DESC LIMIT ${idx}"
