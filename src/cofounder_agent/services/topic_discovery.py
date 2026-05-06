@@ -49,6 +49,42 @@ class DiscoveredTopic:
     is_duplicate: bool = False
 
 
+class QueueTopicsResult(int):
+    """Return value of :meth:`TopicDiscovery.queue_topics` (#400).
+
+    Subclasses ``int`` so existing callers like
+    ``queued = await discovery.queue_topics(topics)`` and the
+    ``"queued": queued`` slots in the scheduler/route response dicts
+    keep treating it as the count of inserted candidates with no
+    changes. Adds two attributes so callers (and the scheduler logs)
+    can distinguish "queued zero because nothing was discovered" from
+    "queued zero because the queue was already at capacity":
+
+    - :attr:`skipped` — ``True`` iff the cap gate short-circuited the
+      insert loop. Always ``False`` on the happy path.
+    - :attr:`reason` — short machine-readable token explaining the
+      skip (e.g. ``"at_capacity"``). ``None`` when ``skipped`` is
+      ``False``.
+
+    The visibility requirement comes from the CLAUDE.md "no silent
+    defaults" rule and the gh#400 brief — without it the scheduler
+    can't tell apart "0 new batches" from "discovery is being
+    actively throttled by the operator-set cap".
+    """
+
+    # NOTE: ``__slots__`` is intentionally NOT defined — CPython forbids
+    # non-empty slots on a variable-width built-in subtype (``int``).
+    # Two instance attributes on a return-value object are not worth
+    # the dict-suppression anyway.
+
+    def __new__(cls, value: int = 0, *, skipped: bool = False,
+                reason: str | None = None) -> "QueueTopicsResult":
+        instance = super().__new__(cls, value)
+        instance.skipped = bool(skipped)
+        instance.reason = reason
+        return instance
+
+
 # Category-specific search queries for DuckDuckGo
 CATEGORY_SEARCHES = {
     "technology": [
@@ -268,10 +304,51 @@ class TopicDiscovery:
             logger.warning("[TOPIC_DISCOVERY] Failed to read enabled_topic_sources: %s", e)
             return set(default.split(","))
 
-    async def queue_topics(self, topics: list[DiscoveredTopic]) -> int:
-        """Queue discovered topics as content tasks."""
+    async def queue_topics(
+        self, topics: list[DiscoveredTopic],
+    ) -> "QueueTopicsResult":
+        """Queue discovered topics as content tasks.
+
+        Honors ``app_settings.topic_discovery_max_pending`` via the
+        shared ``services.topic_proposal_service.queue_at_capacity``
+        helper (gh#400). When the cap gate trips, returns immediately
+        with ``QueueTopicsResult(0, skipped=True, reason="at_capacity")``
+        and logs an INFO line so the scheduler can tell the
+        operator-throttled case apart from "no fresh topics found".
+
+        A failure inside ``queue_at_capacity`` itself (DB outage,
+        malformed setting) is logged as a WARNING and treated as
+        "fall through" — better to over-queue once during a transient
+        outage than silently freeze auto-discovery.
+        """
         import json as _json
         import random
+
+        # ------------------------------------------------------------------
+        # Cap gate (gh#400). Imported lazily to avoid a hard module-load
+        # dependency cycle through services.approval_service in the small
+        # number of test rigs that build TopicDiscovery without the full
+        # plugins stack.
+        # ------------------------------------------------------------------
+        try:
+            from services.topic_proposal_service import queue_at_capacity
+            at_cap = await queue_at_capacity(
+                pool=self.pool, site_config=self._site_config,
+            )
+        except Exception as _cap_exc:
+            logger.warning(
+                "[TOPIC_DISCOVERY] queue_at_capacity check failed; "
+                "falling through and attempting to queue anyway: %s",
+                _cap_exc,
+            )
+            at_cap = False
+        if at_cap:
+            logger.info(
+                "[TOPIC_DISCOVERY] queue at capacity — skipping insert of "
+                "%d candidate(s) (topic_discovery_max_pending reached)",
+                len(topics),
+            )
+            return QueueTopicsResult(0, skipped=True, reason="at_capacity")
 
         # Vary post lengths: default 60% short / 30% medium / 10% deep dive.
         # Customers tune the mix via app_settings.topic_discovery_length_distribution
@@ -373,7 +450,7 @@ class TopicDiscovery:
                 logger.info("[TOPIC_DISCOVERY] Queued: %s [%s]", topic.title[:50], topic.category)
             except Exception as e:
                 logger.warning("[TOPIC_DISCOVERY] Failed to queue '%s': %s", topic.title[:40], e)
-        return queued
+        return QueueTopicsResult(queued)
 
     async def _discover_from_knowledge(self, categories: list[str] | None = None) -> list[DiscoveredTopic]:
         """Delegate to ``services.topic_sources.knowledge.KnowledgeSource``.

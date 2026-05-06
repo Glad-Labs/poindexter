@@ -1,20 +1,30 @@
-"""Unit tests for the topic-decision queue cap (#146).
+"""Unit tests for the topic-decision queue cap (#146 + #400).
 
 Verifies that ``TopicDiscovery.queue_topics`` consults
 ``topic_discovery_max_pending`` before inserting candidates and skips
-the propose call when the awaiting-approval queue is full. The cap is
+the insert loop when the awaiting-approval queue is full. The cap is
 only enforced when the topic_decision gate is enabled — with the gate
 off, the legacy auto-queue path runs unchanged.
+
+Pre-#400 ``queue_topics`` ignored ``queue_at_capacity()`` entirely, so
+the cap-skip case was triaged out in the #345 sweep with broken mocks.
+This file rebuilds the case against the real INSERT path using the
+async-context-manager pool stub from ``test_topic_propose``.
 """
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.site_config import SiteConfig
-from services.topic_discovery import DiscoveredTopic, TopicDiscovery
+from services.topic_discovery import (
+    DiscoveredTopic,
+    QueueTopicsResult,
+    TopicDiscovery,
+)
 
 
 def _make_site_config(values: dict[str, str] | None = None) -> SiteConfig:
@@ -30,17 +40,56 @@ def _make_topic(title: str = "Sample") -> DiscoveredTopic:
     )
 
 
-def _make_pool() -> MagicMock:
+def _make_pool() -> Any:
+    """Mock asyncpg pool — supports the connection-context-manager dance.
+
+    ``queue_topics`` uses ``async with self.pool.acquire() as conn:`` then
+    runs ``conn.transaction()`` + ``conn.execute(...)``. ``MagicMock``
+    doesn't speak the async ctx-manager protocol out of the box; we wire
+    it explicitly so the INSERT path actually runs and ``conn.execute``
+    is an ``AsyncMock`` the test can assert on.
+    """
+    conn = MagicMock()
+    conn.execute = AsyncMock(return_value="INSERT 0 1")
+    conn.fetchrow = AsyncMock(return_value=None)
+    conn.fetchval = AsyncMock(return_value=0)
+
+    class _TxnCtx:
+        async def __aenter__(self_inner):
+            return conn
+
+        async def __aexit__(self_inner, *_):
+            return False
+
+    conn.transaction = lambda: _TxnCtx()
+
+    class _AcquireCtx:
+        async def __aenter__(self_inner):
+            return conn
+
+        async def __aexit__(self_inner, *_):
+            return False
+
     pool = MagicMock()
-    pool.execute = AsyncMock()
+    pool.acquire = lambda: _AcquireCtx()
     pool.fetchrow = AsyncMock(return_value=None)
     pool.fetchval = AsyncMock(return_value=0)
+    pool._conn = conn  # exposed for the test to assert on
     return pool
 
 
 class TestQueueCap:
     @pytest.mark.asyncio
     async def test_skips_when_queue_at_capacity_with_gate_on(self):
+        """gh#400 regression — at-capacity skip MUST be visible.
+
+        Before #400, ``queue_topics`` never consulted
+        ``queue_at_capacity`` and would happily insert past the
+        operator-set ceiling. The fix returns a ``QueueTopicsResult``
+        with ``skipped=True, reason='at_capacity'`` and runs zero
+        INSERTs. Logs from this path are how the scheduler tells
+        apart "no fresh topics" vs "operator throttled discovery".
+        """
         site_cfg = _make_site_config({
             "pipeline_gate_topic_decision": "on",
             "topic_discovery_max_pending": "5",
@@ -49,7 +98,6 @@ class TestQueueCap:
         discovery = TopicDiscovery(pool, site_config=site_cfg)
         topics = [_make_topic(f"Topic {i}") for i in range(3)]
 
-        # queue_at_capacity reads via pending_topic_count → fetchval
         async def _fake_at_cap(**kwargs):
             return True
 
@@ -57,11 +105,17 @@ class TestQueueCap:
             "services.topic_proposal_service.queue_at_capacity",
             AsyncMock(side_effect=_fake_at_cap),
         ):
-            queued = await discovery.queue_topics(topics)
+            result = await discovery.queue_topics(topics)
 
-        assert queued == 0
-        # No inserts ran — the cap check short-circuits.
-        assert pool.execute.await_count == 0
+        # Back-compat: still int-shaped, still 0 inserted.
+        assert int(result) == 0
+        # New visibility surface (gh#400).
+        assert isinstance(result, QueueTopicsResult)
+        assert result.skipped is True
+        assert result.reason == "at_capacity"
+        # No inserts ran — the cap check short-circuits before the
+        # async-with-acquire block executes.
+        assert pool._conn.execute.await_count == 0
 
     @pytest.mark.asyncio
     async def test_proceeds_when_queue_under_capacity(self):
@@ -80,12 +134,15 @@ class TestQueueCap:
             "services.topic_proposal_service.queue_at_capacity",
             AsyncMock(side_effect=_fake_at_cap),
         ):
-            queued = await discovery.queue_topics(topics)
+            result = await discovery.queue_topics(topics)
 
-        # One topic should have been inserted into content_tasks (via
-        # the existing INSERT path inside queue_topics).
-        assert queued == 1
-        assert pool.execute.await_count >= 1
+        # One topic should have been inserted via the
+        # pipeline_tasks + pipeline_versions INSERT pair.
+        assert int(result) == 1
+        assert result.skipped is False
+        assert result.reason is None
+        # Two INSERTs per topic (pipeline_tasks + pipeline_versions).
+        assert pool._conn.execute.await_count == 2
 
     @pytest.mark.asyncio
     async def test_cap_skipped_when_gate_disabled(self):
@@ -107,8 +164,9 @@ class TestQueueCap:
             "services.topic_proposal_service.queue_at_capacity",
             AsyncMock(side_effect=_fake_at_cap),
         ):
-            queued = await discovery.queue_topics(topics)
-        assert queued == 2
+            result = await discovery.queue_topics(topics)
+        assert int(result) == 2
+        assert result.skipped is False
 
     @pytest.mark.asyncio
     async def test_cap_helper_failure_falls_through(self):
@@ -125,9 +183,10 @@ class TestQueueCap:
             "services.topic_proposal_service.queue_at_capacity",
             AsyncMock(side_effect=RuntimeError("DB outage")),
         ):
-            queued = await discovery.queue_topics(topics)
+            result = await discovery.queue_topics(topics)
         # Insert ran despite the helper crashing.
-        assert queued == 1
+        assert int(result) == 1
+        assert result.skipped is False
 
 
 class TestPendingTopicCount:
