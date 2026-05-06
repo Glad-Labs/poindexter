@@ -81,7 +81,7 @@ class TestRouteManifestStructure:
             assert entry[2] in worker_keys, f"Coordinator route {entry[2]} not in worker"
 
     def test_worker_manifest_has_expected_routes(self):
-        """Worker manifest should have exactly 13 route entries.
+        """Worker manifest count guard — bump alongside _WORKER_ROUTES.
 
         Updated 2026-04-12: added pipeline_events (observability) +
         memory_dashboard (shared-memory stats/search) routes.
@@ -92,8 +92,9 @@ class TestRouteManifestStructure:
         for Lemon Squeezy + Resend webhook sinks.
         Updated 2026-05-02 (PR #166 OAuth recovery): added oauth_metadata_router
         + oauth_token_router (RFC 8414 + RFC 6749 §4.4).
+        Updated 2026-05-05 (#389): added voice_routes (LiveKit web join page).
         """
-        assert len(_WORKER_ROUTES) == 16
+        assert len(_WORKER_ROUTES) == 17
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first
