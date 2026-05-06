@@ -40,7 +40,7 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 ### Key Numbers (as of May 3, 2026)
 
 - 51 live posts on gladlabs.io (217 posts total: 143 drafts, 23 archived; 1,467 pipeline_tasks across all generation runs)
-- 400 Python files under `src/cofounder_agent/services/` (18 highlighted in the table below are the load-bearing ones — added template_runner, prompt_manager, and the LiteLLM provider plugin during the 2026-05-04 OSS-migration push)
+- 452 Python files under `src/cofounder_agent/services/` (18 highlighted in the table below are the load-bearing ones — added template_runner, prompt_manager, and the LiteLLM provider plugin during the 2026-05-04 OSS-migration push)
 - 7 Grafana dashboards (post-merge consolidation), 4 alert rules
 - 7,900+ Python unit tests passing (329 test files)
 - 453 app_settings keys (the in-code DI layer accepts hundreds more — see PR sweeps #198 + #221)
