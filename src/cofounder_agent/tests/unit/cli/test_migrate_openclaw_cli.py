@@ -29,7 +29,10 @@ from click.testing import CliRunner
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_HELPER = _REPO_ROOT / "skills" / "openclaw" / "_lib" / "get_token.sh"
+# The bash helper lives under skills/poindexter/_lib (the OpenClaw
+# skill bundle reuses the poindexter skills tree); the docstring at
+# the top of this module is the source of truth for the path.
+_HELPER = _REPO_ROOT / "skills" / "poindexter" / "_lib" / "get_token.sh"
 
 
 # ---------------------------------------------------------------------------

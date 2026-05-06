@@ -150,7 +150,10 @@ class TestAnthropicDisabledByDefault:
             )
 
     @pytest.mark.asyncio
-    async def test_enabled_but_no_api_key_raises(self):
+    async def test_enabled_but_no_api_key_raises(self, monkeypatch):
+        # Provider falls back to ANTHROPIC_API_KEY env var when config is
+        # empty; the test must clear it to exercise the empty-key guard.
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         p = AnthropicProvider()
         with pytest.raises(AnthropicProviderDisabled, match="api_key"):
             await p.complete(

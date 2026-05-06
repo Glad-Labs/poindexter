@@ -5,6 +5,17 @@ factory + service-module call. We patch the pool factory and the
 service-module functions so the test suite exercises the Click glue
 (option parsing, JSON mode, --source filter, exit codes) without a
 live DB.
+
+# FIXME: This file targets the legacy topics CLI surface
+# (``list``/``show``/``approve``/``reject``/``propose`` plus the
+# ``_make_pool`` / ``_make_site_config`` helpers). That surface was
+# replaced in production by the batch-oriented commands
+# (``sweep``/``show-batch``/``rank-batch``/``edit-winner``/
+# ``resolve-batch``/``reject-batch``/``niche``) which create their pool
+# inline via ``asyncpg.create_pool``. The fixture-level patches now miss
+# every command, producing 14 setup errors and 2 ``--help`` failures
+# (the old subcommands no longer exist on ``topics_group``). Rewriting
+# against the new surface is feature work, not a test-only fix.
 """
 
 from __future__ import annotations
