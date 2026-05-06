@@ -190,6 +190,22 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_SMART_MONITOR = False
 
+try:
+    # GH#222 — Docker port-forward stuck-state probe. Detects the
+    # Windows wslrelay → com.docker.backend forwarding chain getting
+    # stuck (TCP up, HTTP empty-reply via host.docker.internal, fine
+    # via container hostname) and auto-recovers via `docker restart`.
+    # Capped at N restarts per M-minute window per container so a
+    # genuinely-broken service doesn't spin in a restart loop.
+    from docker_port_forward_probe import run_docker_port_forward_probe
+    _HAS_DOCKER_PORT_FORWARD_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.docker_port_forward_probe import run_docker_port_forward_probe
+        _HAS_DOCKER_PORT_FORWARD_PROBE = True
+    except ImportError:
+        _HAS_DOCKER_PORT_FORWARD_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1667,6 +1683,23 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] smart_monitor probe failed: %s", e)
+
+    # Docker port-forward stuck-state probe (#222). Detects the
+    # Windows wslrelay → com.docker.backend forwarding chain getting
+    # stuck (internal hostname OK, host.docker.internal returns empty
+    # reply) and auto-recovers via `docker restart`. Cap-protected
+    # against runaway restart loops. Disabled gracefully via
+    # app_settings.docker_port_forward_probe_enabled=false.
+    if _HAS_DOCKER_PORT_FORWARD_PROBE:
+        try:
+            pf_summary = await run_docker_port_forward_probe(pool)
+            probe_results["docker_port_forward"] = {
+                "ok": bool(pf_summary.get("ok", False)),
+                "detail": pf_summary.get("detail", ""),
+                "summary": pf_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] docker_port_forward probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on

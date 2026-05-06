@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
 
-COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py alert_dispatcher.py telemetry.py secret_reader.py oauth_client.py glitchtip_triage_probe.py backup_watcher.py smart_monitor.py ./
+COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py alert_dispatcher.py telemetry.py secret_reader.py oauth_client.py glitchtip_triage_probe.py backup_watcher.py smart_monitor.py docker_port_forward_probe.py ./
 COPY seed_app_settings.json /app/seed_app_settings.json
 
 # brain_daemon.py imports `from brain.bootstrap import ...` so the files
@@ -46,6 +46,7 @@ RUN mkdir -p /app/brain && \
     cp /app/glitchtip_triage_probe.py /app/brain/glitchtip_triage_probe.py && \
     cp /app/backup_watcher.py /app/brain/backup_watcher.py && \
     cp /app/smart_monitor.py /app/brain/smart_monitor.py && \
+    cp /app/docker_port_forward_probe.py /app/brain/docker_port_forward_probe.py && \
     touch /app/brain/__init__.py
 
 # Non-root user with docker group (needs socket access for container restarts)
