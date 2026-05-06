@@ -1163,6 +1163,12 @@ services:
       # Tell _ensure_brain_on_path() where brain/bootstrap.py lives,
       # since /app:ro hides the parent-walk from finding it.
       POINDEXTER_BRAIN_PARENT: "/opt/poindexter"
+      # Voice tools call the worker's HTTP API (check_pipeline_health,
+      # get_published_post_count, get_ai_spending_status). The default
+      # in voice_agent_livekit.py is localhost:8002 — wrong from inside
+      # this container; localhost there is the container itself. Use
+      # the compose service name on the shared poindexter-network.
+      POINDEXTER_API_URL: "http://worker:8002"
     volumes:
       - ./src/cofounder_agent:/app:ro
       # Mount brain alongside /app (which is :ro and can't host a child
