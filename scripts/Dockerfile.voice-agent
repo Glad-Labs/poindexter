@@ -49,7 +49,16 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
         "uvicorn[standard]" \
         livekit \
         livekit-api \
-        cryptography
+        cryptography \
+        "pyroscope-io>=0.8.5"
+
+# Fail-fast verification — confirm the pyroscope-io wheel actually
+# landed in the image. services/voice_agent_livekit.py and
+# services/voice_agent_webrtc.py both call services.profiling.setup_pyroscope()
+# at startup; without the wheel the import silently fails and the voice
+# agents never show up in Pyroscope. Mirrors brain/Dockerfile and
+# src/cofounder_agent/Dockerfile.worker. Closes Glad-Labs/poindexter#418.
+RUN python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')"
 
 # Pre-create the cache directory the model loaders write into. Bind-mounted
 # to a host volume in compose so first-boot model downloads (Silero ~2 MB,
