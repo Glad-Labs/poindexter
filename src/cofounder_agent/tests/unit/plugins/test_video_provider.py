@@ -205,9 +205,12 @@ class TestVideoProviderRegistry:
         clear_registry_cache()
 
         providers = get_video_providers()
-        assert len(providers) == 1
-        assert providers[0].name == "ok"
-        assert providers[0].kind == "generate"
+        # Core samples (Wan21Provider + KenBurnsSlideshowProvider) merge
+        # in alongside the registered fake — assert fake is present and
+        # has the expected kind, not that it's the only entry.
+        ok = next((p for p in providers if p.name == "ok"), None)
+        assert ok is not None, f"'ok' not in {[p.name for p in providers]}"
+        assert ok.kind == "generate"
 
     def test_get_core_samples_includes_video_providers_key(self):
         """``get_core_samples()`` must surface the video_providers list

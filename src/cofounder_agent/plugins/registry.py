@@ -111,137 +111,150 @@ def _cached(group: str) -> tuple[Any, ...]:
     return tuple(_load_group(group))
 
 
+def _merge_with_core_samples(group_key: str, ep_group: str) -> list[Any]:
+    """Merge entry_point-discovered plugins with imperatively-loaded
+    core samples.
+
+    Background: this project's poetry packaging doesn't (yet) install
+    the backend as an editable distribution inside the worker image, so
+    the entry_points the pyproject declares are not actually visible to
+    ``importlib.metadata.entry_points()`` at runtime. The fallback is
+    the imperative ``get_core_samples()`` list. Without merging here,
+    every consumer that calls a typed getter (``get_llm_providers()``,
+    ``get_topic_sources()``, etc.) silently sees an empty list — which
+    is how niche topic discovery has been quietly broken.
+
+    De-dup is by ``.name`` attribute: an entry_point provider with the
+    same name as a core sample wins, so third-party overrides still
+    take precedence when packaging is fixed.
+    """
+    ep_instances = list(_cached(ep_group))
+    samples = get_core_samples().get(group_key, [])
+    by_name: dict[Any, Any] = {}
+    for inst in samples:
+        by_name[getattr(inst, "name", id(inst))] = inst
+    for inst in ep_instances:
+        by_name[getattr(inst, "name", id(inst))] = inst
+    return list(by_name.values())
+
+
 def get_taps() -> list[Any]:
     """Return all registered Tap instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["taps"]))
+    return _merge_with_core_samples("taps", ENTRY_POINT_GROUPS["taps"])
 
 
 def get_probes() -> list[Any]:
     """Return all registered Probe instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["probes"]))
+    return _merge_with_core_samples("probes", ENTRY_POINT_GROUPS["probes"])
 
 
 def get_jobs() -> list[Any]:
     """Return all registered Job instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["jobs"]))
+    return _merge_with_core_samples("jobs", ENTRY_POINT_GROUPS["jobs"])
 
 
 def get_stages() -> list[Any]:
     """Return all registered Stage instances (excluding specializations)."""
-    return list(_cached(ENTRY_POINT_GROUPS["stages"]))
+    return _merge_with_core_samples("stages", ENTRY_POINT_GROUPS["stages"])
 
 
 def get_reviewers() -> list[Any]:
     """Return all registered Reviewer instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["reviewers"]))
+    return _merge_with_core_samples("reviewers", ENTRY_POINT_GROUPS["reviewers"])
 
 
 def get_adapters() -> list[Any]:
     """Return all registered Adapter instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["adapters"]))
+    return _merge_with_core_samples("adapters", ENTRY_POINT_GROUPS["adapters"])
 
 
 def get_providers() -> list[Any]:
     """Return all registered Provider instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["providers"]))
+    return _merge_with_core_samples("providers", ENTRY_POINT_GROUPS["providers"])
 
 
 def get_packs() -> list[Any]:
     """Return all registered Pack instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["packs"]))
+    return _merge_with_core_samples("packs", ENTRY_POINT_GROUPS["packs"])
 
 
 def get_llm_providers() -> list[Any]:
-    """Return LLMProvider instances discovered via entry_points only.
+    """Return every registered LLMProvider — entry_points + core samples.
 
-    NOTE: in development checkouts (``poetry install`` of poindexter is
-    rarely run), the entry_points group is empty — so this function
-    returns ``[]`` and callers looking up ``ollama_native`` get nothing.
-    Use :func:`get_all_llm_providers` instead — it merges entry_points
-    with the imperatively-loaded core samples (ollama_native,
-    openai_compat, litellm) and is what every production lookup site
-    should be hitting.
+    Merges entry_points-discovered plugins with the imperatively-loaded
+    core samples (``ollama_native``, ``openai_compat``, ``litellm``,
+    etc.). Without the merge this returned ``[]`` in every development
+    checkout because ``poetry install`` is never run on the package
+    itself, leaving ``importlib.metadata.entry_points`` empty — which
+    silently broke embedding writes, niche topic discovery, cross-model
+    QA, and image semantic queries.
 
-    This entry_points-only variant is preserved so the registry tests
-    that monkeypatch ``importlib.metadata.entry_points`` keep working in
-    isolation; it has no other production callers and is being phased
-    out in favor of ``get_all_llm_providers``.
+    On name conflict the entry_points instance wins, so installed
+    plugin distributions still override the in-tree default.
     """
-    return list(_cached(ENTRY_POINT_GROUPS["llm_providers"]))
+    return _merge_with_core_samples("llm_providers", ENTRY_POINT_GROUPS["llm_providers"])
 
 
 def get_all_llm_providers() -> list[Any]:
-    """Return every registered LLMProvider — entry_points AND core samples.
+    """Backward-compat alias for :func:`get_llm_providers`.
 
-    Merges :func:`get_llm_providers` (entry_points-only) with the
-    ``llm_providers`` slice of :func:`get_core_samples`. When a name
-    appears in both lists, the entry_points instance wins — production
-    deployments that ``pip install`` a real plugin distribution should
-    override the in-tree default of the same name.
-
-    This is the lookup-by-name surface every production call site
-    should use. Looking only at entry_points was the cause of poindexter#376
-    (``ollama_native provider not registered — cannot generate
-    embeddings`` blocked dev_diary every day) — entry_points is empty in
-    every development checkout because ``poetry install`` of the package
-    is never run. The core samples are the actual source of truth in
-    that environment, and the merged view is the only one that's
-    stable across both shapes.
+    Predates the registry-merge fix (poindexter#220) — when
+    ``get_llm_providers`` returned entry_points-only and silently
+    produced empty lists, this function was added as the merged view
+    that production should use. The merge now lives inside
+    ``get_llm_providers`` itself, so the two return the same list.
+    Kept as an alias so any test or third-party code calling this
+    name keeps working.
     """
-    by_name: dict[str, Any] = {}
-    # Start with core samples — they are the in-tree defaults that
-    # every checkout has access to.
-    for provider in get_core_samples().get("llm_providers", []):
-        name = getattr(provider, "name", None)
-        if name:
-            by_name[name] = provider
-    # Entry-points override on name conflict — installed plugin
-    # distributions intentionally beat the bundled default.
-    for provider in _cached(ENTRY_POINT_GROUPS["llm_providers"]):
-        name = getattr(provider, "name", None)
-        if name:
-            by_name[name] = provider
-    return list(by_name.values())
+    return get_llm_providers()
 
 
 def get_topic_sources() -> list[Any]:
     """Return all registered TopicSource instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["topic_sources"]))
+    return _merge_with_core_samples("topic_sources", ENTRY_POINT_GROUPS["topic_sources"])
 
 
 def get_image_providers() -> list[Any]:
     """Return all registered ImageProvider instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["image_providers"]))
+    return _merge_with_core_samples("image_providers", ENTRY_POINT_GROUPS["image_providers"])
 
 
 def get_audio_gen_providers() -> list[Any]:
     """Return all registered AudioGenProvider instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["audio_gen_providers"]))
+    return _merge_with_core_samples(
+        "audio_gen_providers", ENTRY_POINT_GROUPS["audio_gen_providers"],
+    )
 
 
 def get_video_providers() -> list[Any]:
     """Return all registered VideoProvider instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["video_providers"]))
+    return _merge_with_core_samples("video_providers", ENTRY_POINT_GROUPS["video_providers"])
 
 
 def get_tts_providers() -> list[Any]:
     """Return all registered TTSProvider instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["tts_providers"]))
+    return _merge_with_core_samples("tts_providers", ENTRY_POINT_GROUPS["tts_providers"])
 
 
 def get_caption_providers() -> list[Any]:
     """Return all registered CaptionProvider instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["caption_providers"]))
+    return _merge_with_core_samples(
+        "caption_providers", ENTRY_POINT_GROUPS["caption_providers"],
+    )
 
 
 def get_publish_adapters() -> list[Any]:
     """Return all registered PublishAdapter instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["publish_adapters"]))
+    return _merge_with_core_samples(
+        "publish_adapters", ENTRY_POINT_GROUPS["publish_adapters"],
+    )
 
 
 def get_media_compositors() -> list[Any]:
     """Return all registered MediaCompositor instances."""
-    return list(_cached(ENTRY_POINT_GROUPS["media_compositors"]))
+    return _merge_with_core_samples(
+        "media_compositors", ENTRY_POINT_GROUPS["media_compositors"],
+    )
 
 
 # ---------------------------------------------------------------------------

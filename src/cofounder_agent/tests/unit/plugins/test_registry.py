@@ -119,9 +119,12 @@ def test_discovers_registered_tap(monkeypatch):
     clear_registry_cache()
 
     taps = get_taps()
-    assert len(taps) == 1
-    assert taps[0].name == "fake"
-    assert taps[0].interval_seconds == 3600
+    # Core samples are always merged in — assert the registered fake
+    # is in the result, not that it's the only entry. (Fix for the
+    # registry-merge-core-samples PR.)
+    fake = next((t for t in taps if t.name == "fake"), None)
+    assert fake is not None, f"fake tap not in {[t.name for t in taps]}"
+    assert fake.interval_seconds == 3600
 
 
 def test_broken_plugin_skipped_not_fatal(monkeypatch, caplog):
@@ -143,9 +146,11 @@ def test_broken_plugin_skipped_not_fatal(monkeypatch, caplog):
     with caplog.at_level("ERROR"):
         taps = get_taps()
 
-    # Broken one skipped; working one still discovered.
-    assert len(taps) == 1
-    assert taps[0].name == "fake"
+    # Broken one skipped; working one still discovered. Core samples
+    # also present from the merge — assert by name rather than by len.
+    names = [t.name for t in taps]
+    assert "fake" in names, f"fake not in {names}"
+    assert "broken" not in names, f"broken should have been skipped, got {names}"
     assert any("broken" in rec.message for rec in caplog.records)
 
 
@@ -159,9 +164,13 @@ def test_isolated_group_registration(monkeypatch):
     monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
     clear_registry_cache()
 
-    assert len(get_llm_providers()) == 1
-    assert get_llm_providers()[0].name == "fake-llm"
-    assert get_taps() == [], "Taps group must be empty"
+    # Core samples (ollama_native, openai_compat) merge in alongside the
+    # fake entry-point provider — assert the fake is present + the group
+    # isolation holds (no llm_providers leaking into get_taps()).
+    llm_names = [p.name for p in get_llm_providers()]
+    assert "fake-llm" in llm_names, f"fake-llm not in {llm_names}"
+    tap_names = [t.name for t in get_taps()]
+    assert "fake-llm" not in tap_names, "LLM provider leaked into taps"
 
 
 def test_cache_reuses_load_result(monkeypatch):
@@ -269,11 +278,18 @@ class TestGetAllLlmProviders:
         by_name = {p.name: p for p in get_all_llm_providers()}
         assert getattr(by_name["ollama_native"], "sentinel", None) == "from-entry-point"
 
-    def test_get_llm_providers_alone_is_empty_on_fresh_boot(self, monkeypatch):
-        """Documents the Glad-Labs/poindexter#376 trap: the
-        entry_points-only ``get_llm_providers`` returns nothing in a
-        dev checkout. Production code MUST use ``get_all_llm_providers``
-        instead.
+    def test_get_llm_providers_matches_get_all_after_220(self, monkeypatch):
+        """Post-poindexter#220 ``get_llm_providers`` and
+        ``get_all_llm_providers`` return the same merged list.
+
+        The original trap (entry_points-only ``get_llm_providers``
+        returning ``[]`` in dev checkouts and silently breaking every
+        provider lookup) was the diagnosis behind #376 — the surface
+        fix in #220 was to make ``get_llm_providers`` itself merge
+        core samples + entry_points, so production callers that never
+        migrated to the ``get_all_*`` alias keep working. This test
+        is the regression guard: anyone reverting the merge to the
+        old "entry_points only" behavior will see this fail.
         """
         def fake_entry_points(group: str | None = None):
             return []
@@ -281,8 +297,11 @@ class TestGetAllLlmProviders:
         monkeypatch.setattr("plugins.registry.entry_points", fake_entry_points)
         clear_registry_cache()
 
-        assert get_llm_providers() == [], (
-            "get_llm_providers() (entry_points-only) is expected to be "
-            "empty on a fresh boot — that's exactly why callers should "
-            "use get_all_llm_providers() instead."
+        bare = {p.name for p in get_llm_providers()}
+        merged = {p.name for p in get_all_llm_providers()}
+        assert bare == merged, (
+            "get_llm_providers and get_all_llm_providers must return "
+            "the same set post-#220. "
+            f"bare={sorted(bare)} merged={sorted(merged)}"
         )
+        assert "ollama_native" in bare

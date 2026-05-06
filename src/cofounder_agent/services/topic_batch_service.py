@@ -333,6 +333,13 @@ class TopicBatchService:
         }
 
         async def score_one(text: str, decay: float) -> tuple[float, dict[str, float]]:
+            # Ollama refuses to embed empty input — return a zero score so
+            # the candidate sinks to the bottom of the rank rather than
+            # crashing the entire sweep. Caller already populates a
+            # placeholder title so the candidate row stays valid for the
+            # operator to see + reject.
+            if not text or not text.strip():
+                return 0.0, {g.goal_type: 0.0 for g in goals}
             vec = await embed_text(text)
             raw, breakdown = weighted_cosine_score(vec, goal_vecs, goals)
             return apply_decay(score=raw, decay_factor=decay), breakdown

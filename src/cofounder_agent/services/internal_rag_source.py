@@ -147,4 +147,9 @@ Return STRICT JSON: {{"topic": "<short title>", "angle": "<one-sentence framing>
         raw = await _ollama_chat_json(prompt, model=model)
         import json
         parsed = json.loads(raw)
-        return parsed.get("topic", "Untitled"), parsed.get("angle", "")
+        # `dict.get(k, default)` returns the actual None/empty when the key
+        # exists with that value — the default never fires. The LLM
+        # occasionally returns `{"topic": ""}`, so fall back to truthy-or
+        # to make sure topic is never an empty string downstream (which
+        # otherwise crashes embed_text on empty input).
+        return parsed.get("topic") or "Untitled", parsed.get("angle") or ""
