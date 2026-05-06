@@ -3,6 +3,7 @@
 Wraps ``services.topic_batch_service.TopicBatchService`` and
 ``services.niche_service.NicheService`` so the operator can:
 
+- ``poindexter topics sweep --niche <slug>``       — fire a discovery sweep
 - ``poindexter topics show-batch --niche <slug>``  — peek at the open batch
 - ``poindexter topics rank-batch <id> --order ...`` — set operator ranking
 - ``poindexter topics edit-winner <id> [--topic ...] [--angle ...]``
@@ -85,6 +86,72 @@ from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 )
 def topics_group() -> None:
     pass
+
+
+# ---------------------------------------------------------------------------
+# topics sweep
+# ---------------------------------------------------------------------------
+
+
+@topics_group.command("sweep")
+@click.option("--niche", required=True, help="Niche slug.")
+def sweep(niche: str) -> None:
+    """Fire a topic-discovery sweep on demand for a niche.
+
+    Calls the same ``TopicBatchService.run_sweep`` the scheduler's
+    ``run_niche_topic_sweep`` job uses, so behaviour matches the
+    background sweep exactly: cadence-floor + open-batch checks still
+    apply, and the run is recorded in ``discovery_runs``.
+
+    Prints either the new batch id + candidate count + top-ranked title,
+    or the reason a sweep was skipped (cadence floor / open batch).
+    """
+    async def _impl():
+        import asyncpg
+        from services.niche_service import NicheService
+        from services.topic_batch_service import TopicBatchService
+
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        try:
+            n = await NicheService(pool).get_by_slug(niche)
+            if not n:
+                raise click.ClickException(f"unknown niche: {niche}")
+
+            svc = TopicBatchService(pool)
+            snapshot = await svc.run_sweep(niche_id=n.id)
+
+            click.echo(f"Niche: {n.slug} ({n.name})")
+            if snapshot is None:
+                # run_sweep returns None on the two known short-circuits.
+                # Distinguish them so the operator knows which gate hit.
+                async with pool.acquire() as conn:
+                    open_batch = await conn.fetchval(
+                        "SELECT id FROM topic_batches "
+                        "WHERE niche_id = $1 AND status = 'open'",
+                        n.id,
+                    )
+                if open_batch is not None:
+                    click.echo(
+                        f"No new batch — open batch already exists: {open_batch}"
+                    )
+                else:
+                    click.echo(
+                        "No new batch — discovery cadence floor not elapsed "
+                        f"(niche.discovery_cadence_minute_floor="
+                        f"{n.discovery_cadence_minute_floor}m)"
+                    )
+                return
+
+            view = await svc.show_batch(batch_id=snapshot.id)
+            top_title = view.candidates[0].title if view.candidates else "(none)"
+            click.echo(
+                f"Created batch {snapshot.id} — "
+                f"{snapshot.candidate_count} candidates, top: {top_title}"
+            )
+        finally:
+            await pool.close()
+
+    asyncio.run(_impl())
 
 
 # ---------------------------------------------------------------------------

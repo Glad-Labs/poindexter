@@ -56,38 +56,31 @@ SQL
 
 ### 1. Trigger a sweep
 
-There is **no top-level `poindexter topics sweep --niche <slug>` command yet.**
-Sweeps run one of three ways:
+Sweeps run one of four ways:
 
-- **Idle worker auto-trigger** — the existing `IdleWorker` background loop
+- **`poindexter topics sweep --niche <slug>`** — fires an immediate sweep
+  on demand. Calls the same `TopicBatchService.run_sweep` that the
+  scheduler uses, so cadence-floor + open-batch checks still apply. Prints
+  the new batch id + candidate count or the reason a sweep was skipped.
+  This is the recommended interactive path (Glad-Labs/poindexter#349).
+- **Scheduled `run_niche_topic_sweep` job** — fires on the scheduler's
+  default cadence (every 30 minutes, gated per-niche by
+  `discovery_cadence_minute_floor`). Default for hands-off operation.
+- **Idle worker auto-trigger** — the legacy `IdleWorker` background loop
   fires periodically (subject to the niche's `discovery_cadence_minute_floor`
   and the `topic_discovery_auto_enabled` master switch — see kill-switch
-  section). This is the default for un-touched OSS installs.
+  section).
 - **Manual one-shot trigger** — set `topic_discovery_manual_trigger=true`
   via `poindexter settings set`; the next idle worker tick sees it and
   fires regardless of the auto switch.
-- **Direct service call** — for operators who want immediate, deterministic
-  control, call `TopicBatchService.run_sweep(niche_id=...)` from a Python
-  shell or a one-off worker job.
 
 ```bash
-# Manual one-shot via the settings switch:
+# Recommended interactive path:
+poindexter topics sweep --niche glad-labs
+
+# Manual one-shot via the settings switch (defers to next idle tick):
 poindexter settings set topic_discovery_manual_trigger true \
   --category topic_discovery
-```
-
-```python
-# Or directly from a python shell against the live DB:
-import asyncio, asyncpg
-from services.topic_batch_service import TopicBatchService
-from services.niche_service import NicheService
-
-async def main():
-    pool = await asyncpg.create_pool(DSN)
-    n = await NicheService(pool).get_by_slug("glad-labs")
-    await TopicBatchService(pool).run_sweep(niche_id=n.id)
-
-asyncio.run(main())
 ```
 
 ### 2. View the open batch
@@ -217,7 +210,7 @@ until the niche edit CLI lands.
 | Symptom                                                                                                   | Likely cause                                                                            | Fix                                                                                                     |
 | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Tasks land in `awaiting_approval` you never queued                                                        | Legacy auto-discovery still firing                                                      | `poindexter settings set topic_discovery_auto_enabled false --category topic_discovery`                 |
-| `topics show-batch` says "No open batch"                                                                  | Either no sweep has run yet, or the last batch is still resolving                       | Trigger via the manual switch or direct `TopicBatchService.run_sweep` call (see daily workflow §1)      |
+| `topics show-batch` says "No open batch"                                                                  | Either no sweep has run yet, or the last batch is still resolving                       | `poindexter topics sweep --niche <slug>` (see daily workflow §1)                                        |
 | Sweep runs but the batch is empty                                                                         | `internal_rag` source disabled in `niche_sources`, or no recent embeddings to mine from | `poindexter topics niche show <slug>` and check sources; verify `embeddings` table has recent rows      |
 | Writer keeps citing the wrong source                                                                      | `TOPIC_ONLY` has no enforcement; you may want `CITATION_BUDGET`                         | Switch the niche's `writer_rag_mode`, or refine the niche's prompt override (see follow-up table below) |
 | `TWO_PASS` keeps hitting the revision cap and ships drafts with `[EXTERNAL_NEEDED]` markers still in them | Hard cap of 3 loops reached                                                             | Bump `writer_rag_two_pass_max_revision_loops` cautiously — high values risk runaway cost                |
@@ -227,9 +220,6 @@ until the niche edit CLI lands.
 
 Honest gap list as of 2026-04-30:
 
-- **No top-level `poindexter topics sweep --niche <slug>` CLI.** Sweeps are
-  triggered by the idle worker, the manual-trigger setting, or a direct
-  `TopicBatchService.run_sweep` call from Python.
 - **No `poindexter niche create / edit / set-goal / enable-source` CLI.**
   New niches and goal/source edits go in via SQL or via the
   `services.niche_service.NicheService` Python API. The CLI subgroup
