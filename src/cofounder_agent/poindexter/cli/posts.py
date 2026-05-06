@@ -643,14 +643,132 @@ def post_create(
 
 
 @post_group.command("approve")
-@click.argument("post_id")
-@click.option("--gate", "gate_name", required=True, help="Gate name to approve.")
+@click.argument("post_id", required=False)
+@click.option("--gate", "gate_name", default=None, help="Gate name to approve.")
 @click.option("--notes", default=None, help="Optional approval comment.")
+@click.option(
+    "--filter",
+    "filter_expr",
+    default=None,
+    help=(
+        "Bulk mode — match many posts at once. Predicate is a strict "
+        "allowlist: state=<gate>, gate_kind=<gate>, created_after=<iso>, "
+        "created_before=<iso>, niche=<slug>, author=<id>. Combine with "
+        "'AND'. Defaults to --dry-run; pass --no-dry-run to execute. "
+        "Example: --filter 'state=draft AND created_after=2026-05-01T00:00:00Z'"
+    ),
+)
+@click.option(
+    "--dry-run/--no-dry-run",
+    default=None,
+    help=(
+        "Bulk mode safety. Default is --dry-run (count + sample, no "
+        "approvals fired). Pass --no-dry-run to actually approve. "
+        "Has no effect on single-post mode."
+    ),
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help=(
+        "Skip the y/N confirmation prompt in bulk --no-dry-run mode. "
+        "Honoured only when 'cli_post_approve_bulk_require_confirm' is "
+        "false in app_settings."
+    ),
+)
+@click.option(
+    "--max",
+    "max_count",
+    type=int,
+    default=None,
+    help=(
+        "Per-call ceiling on matched posts in bulk --no-dry-run mode. "
+        "Capped by 'cli_post_approve_bulk_max_count' (default 100)."
+    ),
+)
 @click.option("--json", "json_output", is_flag=True)
 def post_approve(
-    post_id: str, gate_name: str, notes: str | None, json_output: bool,
+    post_id: str | None,
+    gate_name: str | None,
+    notes: str | None,
+    filter_expr: str | None,
+    dry_run: bool | None,
+    yes: bool,
+    max_count: int | None,
+    json_output: bool,
 ) -> None:
-    """Approve a specific gate on a post."""
+    """Approve a gate.
+
+    Two modes:
+
+    \b
+    1. SINGLE — ``poindexter post approve <post_id> --gate <name>``
+       Approves the named gate on one post (existing behaviour).
+    2. BULK   — ``poindexter post approve --filter '<predicate>' [--no-dry-run]``
+       Matches many posts via a strict-allowlist predicate, then re-uses
+       the single-post ``approve_gate`` service per match. Each match
+       still gets its own pipeline_gate_history row + audit_log row +
+       dispatcher webhook — the bulk flag is a UX shortcut, not a
+       separate code path. Defaults to --dry-run for safety per
+       ``feedback_no_bulk_publish.md``; pass --no-dry-run to execute.
+
+    Allowed filter columns: state, gate_kind (alias of state),
+    created_after, created_before, niche, author. Values are
+    parameter-bound; arbitrary SQL is rejected.
+    """
+    # Mode dispatch — bulk if --filter provided, else single.
+    if filter_expr is not None:
+        # Single-post args must be unset in bulk mode (Click rejects
+        # gracefully via _exit_error so the operator sees the actual
+        # mistake instead of a stray approve_gate KeyError).
+        if post_id is not None:
+            _exit_error(
+                "post_id is not allowed with --filter (bulk mode infers "
+                "matches from the predicate). Drop the positional arg.",
+                code=2,
+            )
+            return
+        if gate_name is not None:
+            _exit_error(
+                "--gate is not allowed with --filter (bulk mode reads "
+                "each post's next pending gate). Drop --gate.",
+                code=2,
+            )
+            return
+        _post_approve_bulk(
+            filter_expr=filter_expr,
+            dry_run=True if dry_run is None else dry_run,
+            yes=yes,
+            max_count=max_count,
+            notes=notes,
+            json_output=json_output,
+        )
+        return
+
+    # Single mode — preserve the original signature.
+    if post_id is None:
+        _exit_error(
+            "missing POST_ID. Single mode: 'poindexter post approve "
+            "<post_id> --gate <name>'. Bulk mode: pass --filter.",
+            code=2,
+        )
+        return
+    if gate_name is None:
+        _exit_error(
+            "missing --gate. Single mode requires --gate <name>; bulk "
+            "mode (--filter) does not.",
+            code=2,
+        )
+        return
+    if dry_run is not None or yes or max_count is not None:
+        _exit_error(
+            "--dry-run / --no-dry-run / --yes / --max are bulk-mode "
+            "flags. Combine them with --filter, not a positional post_id.",
+            code=2,
+        )
+        return
+
     from services.gates.post_approval_gates import (
         GateServiceError,
         advance_workflow,
@@ -696,6 +814,271 @@ def post_approve(
             f"  → next gate: {ng['gate_name']} (ordinal {ng['ordinal']})",
             fg="yellow",
         )
+
+
+# ---------------------------------------------------------------------------
+# post approve --filter ...  (bulk mode helper)
+# ---------------------------------------------------------------------------
+
+
+def _post_approve_bulk(
+    *,
+    filter_expr: str,
+    dry_run: bool,
+    yes: bool,
+    max_count: int | None,
+    notes: str | None,
+    json_output: bool,
+) -> None:
+    """Implementation for ``poindexter post approve --filter ...``.
+
+    Exit codes:
+
+    - 0  success (or dry-run)
+    - 1  one or more per-post approvals failed (others may have succeeded)
+    - 2  filter parse error / refused before any approves fired
+    """
+    from poindexter.cli._post_approve_filter import (
+        FilterParseError,
+        parse_filter,
+    )
+    from services.gates.post_approval_gates import (
+        GateServiceError,
+        advance_workflow,
+        approve_gate,
+        get_next_pending_gate,
+    )
+    from services.site_config import SiteConfig
+
+    # Parse first — fail fast before opening a pool.
+    try:
+        parsed = parse_filter(filter_expr)
+    except FilterParseError as e:
+        _exit_error(str(e), code=2)
+        return
+
+    async def _impl() -> dict[str, Any]:
+        pool = await _make_gate_pool()
+        try:
+            site_cfg = SiteConfig(pool=pool)
+            try:
+                await site_cfg.load(pool)
+            except Exception:  # noqa: BLE001
+                # SiteConfig load failures shouldn't block bulk approve;
+                # fall back to literal defaults below.
+                pass
+
+            # Settings — read with sensible literals so the CLI degrades
+            # gracefully on a half-migrated DB.
+            try:
+                ceiling = int(
+                    site_cfg.get("cli_post_approve_bulk_max_count", 100)
+                    or 100
+                )
+            except (TypeError, ValueError):
+                ceiling = 100
+            require_confirm_raw = (
+                site_cfg.get("cli_post_approve_bulk_require_confirm", "true")
+                or "true"
+            )
+            require_confirm = str(require_confirm_raw).strip().lower() in {
+                "1", "true", "yes", "on",
+            }
+
+            # Resolve matches. Order by oldest-first so a backlog clear
+            # works through posts in the order they accumulated, and
+            # ``LIMIT`` is reproducible across runs.
+            sql = (
+                "SELECT posts.id::text AS id, posts.title, "
+                "posts.created_at "
+                "FROM posts "
+                f"WHERE {parsed.where_sql} "  # nosec B608  # whitelist-only column names; values parameterized
+                "ORDER BY posts.created_at ASC"
+            )
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(sql, *parsed.params)
+
+            matched = [dict(r) for r in rows]
+            total = len(matched)
+
+            # Apply --max ceiling AFTER counting, so the dry-run output
+            # tells the operator the true match count even when capped.
+            effective_max = ceiling if max_count is None else min(max_count, ceiling)
+
+            # Dry-run path — never approves, just summarises.
+            if dry_run:
+                return {
+                    "mode": "dry-run",
+                    "filter": filter_expr,
+                    "clauses": [{"key": k, "value": v} for k, v in parsed.clauses],
+                    "matched_count": total,
+                    "ceiling": ceiling,
+                    "effective_max": effective_max,
+                    "sample": matched[:10],
+                    "approved": 0,
+                    "failed": 0,
+                    "results": [],
+                }
+
+            # No-dry-run path — refuse if over the ceiling.
+            if total > effective_max:
+                raise click.ClickException(
+                    f"matched {total} posts; refusing to approve more than "
+                    f"{effective_max} in one bulk run "
+                    f"(cli_post_approve_bulk_max_count={ceiling}, "
+                    f"--max={'unset' if max_count is None else max_count}). "
+                    f"Tighten the --filter or raise the ceiling."
+                )
+
+            # Confirmation prompt. Honour the global "always require"
+            # setting even when --yes is passed.
+            if require_confirm or not yes:
+                prompt_default = False
+                proceed = click.confirm(
+                    f"About to approve {total} post(s) "
+                    f"matching: {filter_expr!r}. Continue?",
+                    default=prompt_default,
+                )
+                if not proceed:
+                    return {
+                        "mode": "aborted",
+                        "filter": filter_expr,
+                        "clauses": [
+                            {"key": k, "value": v} for k, v in parsed.clauses
+                        ],
+                        "matched_count": total,
+                        "approved": 0,
+                        "failed": 0,
+                        "results": [],
+                    }
+
+            # Per-post processing — same code path as a single
+            # ``poindexter post approve``: each call hits ``approve_gate``,
+            # which writes audit_log + pipeline_gate_history + fires the
+            # dispatcher webhook. Failures are collected so one bad row
+            # doesn't crash the batch.
+            approver = _operator_identity()
+            approved_count = 0
+            failed_count = 0
+            results: list[dict[str, Any]] = []
+            for i, row in enumerate(matched, start=1):
+                pid = row["id"]
+                title = (row.get("title") or "(no title)")[:60]
+                # Look up the next pending gate per post — operators
+                # don't pre-name a gate for bulk runs because the
+                # filter already restricts to a single gate kind (or
+                # the operator is happy to approve whatever's pending).
+                pending = await get_next_pending_gate(pool, pid)
+                if pending is None:
+                    failed_count += 1
+                    msg = "no pending gate"
+                    click.secho(
+                        f"Approving post {i}/{total}: {title} ({pid[:8]}) ... "
+                        f"skip ({msg})",
+                        fg="yellow",
+                    )
+                    results.append({"id": pid, "ok": False, "reason": msg})
+                    continue
+                gname = pending["gate_name"]
+                try:
+                    await approve_gate(
+                        pool, pid, gname,
+                        approver=approver, notes=notes,
+                    )
+                    await advance_workflow(pool, pid)
+                except GateServiceError as e:
+                    failed_count += 1
+                    click.secho(
+                        f"Approving post {i}/{total}: {title} ({pid[:8]}) ... "
+                        f"FAIL ({e})",
+                        fg="red",
+                    )
+                    results.append(
+                        {"id": pid, "ok": False, "reason": str(e)}
+                    )
+                    continue
+                except Exception as e:  # noqa: BLE001
+                    failed_count += 1
+                    click.secho(
+                        f"Approving post {i}/{total}: {title} ({pid[:8]}) ... "
+                        f"FAIL ({type(e).__name__}: {e})",
+                        fg="red",
+                    )
+                    results.append(
+                        {"id": pid, "ok": False, "reason": f"{type(e).__name__}: {e}"}
+                    )
+                    continue
+                approved_count += 1
+                click.secho(
+                    f"Approving post {i}/{total}: {title} ({pid[:8]}) ... ok",
+                    fg="green",
+                )
+                results.append(
+                    {"id": pid, "ok": True, "gate_name": gname}
+                )
+
+            return {
+                "mode": "executed",
+                "filter": filter_expr,
+                "clauses": [{"key": k, "value": v} for k, v in parsed.clauses],
+                "matched_count": total,
+                "approved": approved_count,
+                "failed": failed_count,
+                "results": results,
+            }
+        finally:
+            await pool.close()
+
+    try:
+        summary = _run(_impl())
+    except click.ClickException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        _exit_error(f"{type(e).__name__}: {e}")
+        return
+
+    if json_output:
+        click.echo(json.dumps(summary, indent=2, default=str))
+    else:
+        mode = summary.get("mode")
+        if mode == "dry-run":
+            click.secho(
+                f"[dry-run] {summary['matched_count']} post(s) match "
+                f"filter {summary['filter']!r}. "
+                f"(ceiling={summary['ceiling']}, max={summary['effective_max']})",
+                fg="cyan",
+            )
+            sample = summary.get("sample") or []
+            if sample:
+                click.echo()
+                click.secho("Sample (first 10):", fg="bright_black")
+                for s in sample:
+                    title = (s.get("title") or "(no title)")[:65]
+                    click.echo(f"  {s['id'][:8]}  {title}")
+            click.echo()
+            click.secho(
+                "Pass --no-dry-run to actually approve.",
+                fg="yellow",
+            )
+        elif mode == "aborted":
+            click.secho(
+                f"Aborted at confirmation. {summary['matched_count']} post(s) "
+                f"matched but none were approved.",
+                fg="yellow",
+            )
+        else:
+            colour = "green" if summary["failed"] == 0 else "yellow"
+            click.secho(
+                f"Bulk approved {summary['approved']} posts "
+                f"({summary['failed']} failed). "
+                "Audit: poindexter audit search "
+                "--event-type post_gate_approved.",
+                fg=colour,
+            )
+
+    # Exit code reflects partial failure so scripts can branch on it.
+    if summary.get("mode") == "executed" and summary.get("failed", 0) > 0:
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
