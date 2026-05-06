@@ -73,35 +73,140 @@ async def _test_db_connection(dsn: str) -> tuple[bool, str]:
         return False, f"{type(e).__name__}: {e}"
 
 
+class _PoolDatabaseService:
+    """Adapter so we can hand a bare asyncpg pool to ``run_migrations``.
+
+    ``services.migrations.run_migrations`` expects an object with a
+    ``.pool`` attribute (the real ``DatabaseService`` provides it).
+    Wrapping is cheaper than importing the full DatabaseService from a
+    setup CLI process. Mirrors the same shim used by
+    ``poindexter.cli.migrate`` and ``scripts/ci/migrations_smoke.py``.
+    """
+
+    def __init__(self, pool):
+        self.pool = pool
+
+
 async def _run_migrations(dsn: str) -> tuple[bool, str]:
-    """Run pending migrations against the target DB."""
+    """Apply all pending migrations against the target DB.
+
+    Idempotent: ``services.migrations.run_migrations`` records each
+    applied file in ``schema_migrations`` and skips anything already
+    applied, so re-running setup against an up-to-date DB is a fast
+    no-op. The runner is the same code path the worker takes on boot —
+    keeping setup on it means a fresh ``poindexter setup`` against an
+    empty DB ends with every table the next steps need (notably
+    ``oauth_clients`` for step 4 OAuth provisioning).
+    """
     try:
         import asyncpg
     except Exception as e:
         return False, f"asyncpg not installed: {e}"
 
     try:
-        # The migrations runner lives in services.migrations and expects a
-        # DatabaseService-shaped object with a .pool. For setup we want a
-        # minimal, dependency-free path, so we just check whether
-        # app_settings exists as a proxy for "previously migrated".
-        conn = await asyncpg.connect(dsn, timeout=8)
-        try:
-            exists = await conn.fetchval(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-                "WHERE table_name = 'app_settings')"
-            )
-            if exists:
-                return True, "app_settings table already present — migrations already run"
-            return (
-                False,
-                "app_settings table missing. Start the worker once to let it run "
-                "migrations, or run `alembic upgrade head` inside src/cofounder_agent.",
-            )
-        finally:
-            await conn.close()
+        from services.migrations import run_migrations
+    except Exception as e:
+        return False, f"could not import migration runner: {e}"
+
+    try:
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=8)
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
+
+    try:
+        # Snapshot applied count before/after so the success message
+        # tells the operator whether anything actually ran.
+        async with pool.acquire() as conn:
+            try:
+                before = await conn.fetchval(
+                    "SELECT COUNT(*) FROM schema_migrations"
+                )
+            except Exception:
+                # Table doesn't exist yet — runner will create it.
+                before = 0
+        try:
+            ok = await run_migrations(_PoolDatabaseService(pool))
+        except Exception as e:
+            return False, f"migration runner crashed: {type(e).__name__}: {e}"
+
+        async with pool.acquire() as conn:
+            after = await conn.fetchval(
+                "SELECT COUNT(*) FROM schema_migrations"
+            )
+
+        applied = max(0, int(after or 0) - int(before or 0))
+
+        if not ok:
+            return (
+                False,
+                f"one or more migrations failed (applied {applied} before "
+                "failure — see worker logs for the offending migration)",
+            )
+        if applied == 0:
+            return True, f"already up to date ({int(after or 0)} migrations applied)"
+        return True, f"applied {applied} migration(s) ({int(after or 0)} total)"
+    finally:
+        await pool.close()
+
+
+async def _check_migrations_status(dsn: str) -> tuple[bool, str]:
+    """Read-only migrations status for ``poindexter setup --check``.
+
+    Distinct from ``_run_migrations`` (which actually applies them) —
+    ``--check`` is meant to be a passive system probe and must not
+    mutate the DB. We compare on-disk migration files against the
+    ``schema_migrations`` table and report drift.
+    """
+    try:
+        import asyncpg
+    except Exception as e:
+        return False, f"asyncpg not installed: {e}"
+
+    try:
+        conn = await asyncpg.connect(dsn, timeout=8)
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+    try:
+        try:
+            rows = await conn.fetch("SELECT name FROM schema_migrations")
+        except Exception:
+            return (
+                False,
+                "schema_migrations table missing — run `poindexter setup` "
+                "or `poindexter migrate up` to apply migrations",
+            )
+
+        applied_names = {row["name"] for row in rows}
+
+        # Discover on-disk migration files via the same path the runner
+        # uses, so the count matches.
+        try:
+            from services import migrations as _migrations_pkg
+
+            migrations_dir = Path(_migrations_pkg.__file__).resolve().parent
+            on_disk = sorted(
+                f.name
+                for f in migrations_dir.glob("*.py")
+                if f.name != "__init__.py"
+            )
+        except Exception:
+            return (
+                True,
+                f"{len(applied_names)} migrations applied "
+                "(unable to compare against on-disk files)",
+            )
+
+        pending = [n for n in on_disk if n not in applied_names]
+        if pending:
+            return (
+                False,
+                f"{len(pending)} pending migration(s) — run "
+                "`poindexter migrate up` to apply",
+            )
+        return True, f"{len(applied_names)} migrations applied — up to date"
+    finally:
+        await conn.close()
 
 
 _DOCKER_INTERNAL_HOSTS = {"worker", "host.docker.internal", "poindexter-worker"}
@@ -522,12 +627,15 @@ def setup_command(db_url: str | None, auto: bool, check: bool, force: bool) -> N
     click.secho(f"OK — {reason}", fg="green")
 
     click.echo()
-    click.secho("2/4 — checking migrations…", fg="cyan")
+    click.secho("2/4 — applying migrations…", fg="cyan")
     ok, reason = asyncio.run(_run_migrations(values["database_url"]))
     migrations_ok = ok
     if not ok:
         click.secho(f"{reason}", fg="yellow")
-        click.echo("Continuing — the worker will run migrations on first startup.")
+        click.echo(
+            "Continuing — re-run `poindexter migrate up` once the underlying "
+            "issue is resolved (step 4 OAuth provisioning will be skipped)."
+        )
     else:
         click.secho(f"OK — {reason}", fg="green")
 
@@ -697,8 +805,9 @@ def _run_check(bootstrap) -> None:
         )
         sys.exit(2)
 
-    # --- migrations -------------------------------------------------------
-    ok, reason = asyncio.run(_run_migrations(dsn))
+    # --- migrations (read-only — does NOT apply them; that's `setup` /
+    # `migrate up`'s job)
+    ok, reason = asyncio.run(_check_migrations_status(dsn))
     _status_line("migrations", ok, reason)
     if not ok:
         failed += 1
