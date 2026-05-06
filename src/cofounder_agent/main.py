@@ -13,7 +13,7 @@ from importlib.util import find_spec
 from typing import Any
 
 # Third-party imports
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator
 
 # Import configuration
@@ -1085,6 +1085,17 @@ async def root():
         "version": config.app_version,
         "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
     }
+
+
+@app.head("/")
+async def root_head() -> Response:
+    """
+    HEAD / for uptime probes (uptime-kuma, docker host).
+
+    Returns 200 with no body so probes don't fall back to GET and the
+    405-then-200 noise stops polluting Loki + GlitchTip. See poindexter#396.
+    """
+    return Response(status_code=200)
 
 
 if __name__ == "__main__":
