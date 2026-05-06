@@ -28,11 +28,6 @@
         },
         {
           "type": "json",
-          "path": "web/public-site/package.json",
-          "jsonpath": "$.version"
-        },
-        {
-          "type": "json",
           "path": "src/cofounder_agent/package.json",
           "jsonpath": "$.version"
         }
