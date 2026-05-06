@@ -175,6 +175,21 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_BACKUP_WATCHER = False
 
+try:
+    # GH#387 — SMART monitor probe. Polls smartctl per drive, parses
+    # for warning/critical attributes (reallocated sectors, pending
+    # sectors, SSD wear, SMART self-test failure), and writes
+    # alert_events rows on regression. Degrades gracefully when
+    # smartctl isn't installed (one-time notify, status='skipped').
+    from smart_monitor import run_smart_monitor_probe
+    _HAS_SMART_MONITOR = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.smart_monitor import run_smart_monitor_probe
+        _HAS_SMART_MONITOR = True
+    except ImportError:
+        _HAS_SMART_MONITOR = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1447,6 +1462,23 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] backup_watcher probe failed: %s", e)
+
+    # SMART monitor (#387). Polls smartctl per drive, parses for
+    # warning/critical attributes, and writes alert_events rows on
+    # regression. Degrades gracefully when smartctl isn't installed
+    # (one-time notify, status='skipped' on subsequent cycles). Per-
+    # (drive, attribute) dedup window prevents re-fires for the
+    # lifetime of a bad sector.
+    if _HAS_SMART_MONITOR:
+        try:
+            sm_summary = await run_smart_monitor_probe(pool)
+            probe_results["smart_monitor"] = {
+                "ok": bool(sm_summary.get("ok", False)),
+                "detail": sm_summary.get("detail", ""),
+                "summary": sm_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] smart_monitor probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on
