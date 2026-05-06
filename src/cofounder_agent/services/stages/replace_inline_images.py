@@ -98,13 +98,16 @@ class ReplaceInlineImagesStage:
         config: dict[str, Any],
     ) -> StageResult:
         from services.image_service import get_image_service
+        from services.site_config import site_config as _module_sc
 
         task_id = context.get("task_id")
+        post_id = context.get("post_id")
         topic = context.get("topic", "")
         content_text = context.get("content", "")
         database_service = context.get("database_service")
         image_service = context.get("image_service") or get_image_service()
         category = context.get("category", "technology")
+        site_config = context.get("site_config") or _module_sc
 
         if not content_text:
             return StageResult(
@@ -159,6 +162,9 @@ class ReplaceInlineImagesStage:
                 content_text=content_text,
                 image_service=image_service,
                 used_image_ids=used_image_ids,
+                site_config=site_config,
+                task_id=task_id,
+                post_id=post_id,
             )
 
         content_text = _cleanup_leaked_descriptions(content_text)
@@ -277,10 +283,23 @@ async def _resolve_one_placeholder(
     content_text: str,
     image_service: Any,
     used_image_ids: set[str],
+    *,
+    site_config: Any,
+    task_id: str | None,
+    post_id: Any = None,
 ) -> str:
-    """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it."""
+    """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it.
+
+    ``task_id`` is forwarded to :func:`_try_sdxl` so the GPU scheduler
+    can attribute Ollama-prompt + SDXL-render electricity cost back to
+    the originating pipeline task — see Glad-Labs/poindexter#157.
+
+    ``post_id`` is forwarded so a successful image generation lands a
+    ``media_assets`` row pinned to the post it belongs to (Glad-Labs/
+    poindexter#161). When ``post_id`` is None (early-pipeline calls
+    before the post is persisted), the row is skipped.
+    """
     from services.alt_text import sanitize_alt_text
-    from services.site_config import site_config as _sc_alt
     search_query = desc.strip() if desc else topic
     alt_text = desc.strip() if desc else f"{topic} illustration"
     # Normalize structural artefacts of the placeholder format.
@@ -290,11 +309,13 @@ async def _resolve_one_placeholder(
     # DB-configurable budget with word-boundary truncation (no mid-word chop).
     alt_text = sanitize_alt_text(
         alt_text,
-        budget=_sc_alt.get_int("alt_text_budget", 120),
+        budget=site_config.get_int("alt_text_budget", 120),
     )
 
     # Strategy 1: SDXL.
-    img_url = await _try_sdxl(num, search_query, topic)
+    img_url = await _try_sdxl(
+        num, search_query, topic, site_config=site_config, task_id=task_id,
+    )
     if img_url and img_url not in used_image_ids:
         used_image_ids.add(img_url)
         content_text = _inject_html_image(
@@ -302,6 +323,21 @@ async def _resolve_one_placeholder(
             width=1024, height=1024,
         )
         logger.info("  [IMAGE-%s] SDXL generated + R2 uploaded", num)
+        await _record_inline_image_asset(
+            site_config=site_config,
+            post_id=post_id,
+            public_url=img_url,
+            provider_plugin="image.sdxl",
+            width=1024,
+            height=1024,
+            mime_type="image/png",
+            metadata={
+                "placeholder_num": num,
+                "alt_text": alt_text,
+                "task_id": str(task_id or ""),
+                "search_query": search_query,
+            },
+        )
         return content_text
 
     # Strategy 2: Pexels.
@@ -319,6 +355,21 @@ async def _resolve_one_placeholder(
                 rf"\[IMAGE-{num}[^\]]*\]", markdown_img, content_text, count=1,
             )
             logger.info("  [IMAGE-%s] Pexels image by %s", num, photographer)
+            await _record_inline_image_asset(
+                site_config=site_config,
+                post_id=post_id,
+                public_url=img_url,
+                provider_plugin="image.pexels",
+                width=650,
+                height=433,
+                mime_type="image/jpeg",
+                metadata={
+                    "placeholder_num": num,
+                    "alt_text": alt_text,
+                    "task_id": str(task_id or ""),
+                    "photographer": photographer,
+                },
+            )
             return content_text
 
     # Strategy 3: strip.
@@ -327,10 +378,72 @@ async def _resolve_one_placeholder(
     return content_text
 
 
-async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
-    """Generate an SDXL image and return its final URL (R2 or local)."""
+async def _record_inline_image_asset(
+    *,
+    site_config: Any,
+    post_id: Any,
+    public_url: str,
+    provider_plugin: str,
+    width: int,
+    height: int,
+    mime_type: str,
+    metadata: dict[str, Any],
+) -> None:
+    """Best-effort ``media_assets`` insert for one inline image.
+
+    Closes Glad-Labs/poindexter#161 — every inline image now lands a
+    DB row so cleanup / retention / cost-attribution can find it.
+    Failures log and never propagate (callers must keep going so the
+    pipeline doesn't break on a DB hiccup).
+    """
+    if post_id is None:
+        # Early pipeline runs (before the post row exists) skip the
+        # insert — backfill picks them up later from the rendered HTML.
+        return
+    try:
+        from services.media_asset_recorder import record_media_asset
+    except Exception as exc:  # noqa: BLE001 — defensive import guard
+        logger.debug("[STAGE2C] media_asset_recorder unavailable: %s", exc)
+        return
+    pool = getattr(site_config, "_pool", None)
+    storage_provider = (
+        "cloudflare_r2"
+        if public_url.startswith("http") and "r2" in public_url
+        else ("local" if public_url.startswith("/") else "external")
+    )
+    await record_media_asset(
+        pool=pool,
+        post_id=post_id,
+        asset_type="inline_image",
+        public_url=public_url,
+        storage_path="",
+        mime_type=mime_type,
+        width=width,
+        height=height,
+        provider_plugin=provider_plugin,
+        source="pipeline",
+        storage_provider=storage_provider,
+        metadata=metadata,
+    )
+
+
+async def _try_sdxl(
+    num: str,
+    search_query: str,
+    topic: str,
+    *,
+    site_config: Any,
+    task_id: str | None,
+) -> str | None:
+    """Generate an SDXL image and return its final URL (R2 or local).
+
+    ``task_id`` is threaded through to :meth:`gpu.lock` for both the
+    Ollama prompt-build and the SDXL render so ``gpu_task_sessions`` /
+    cost_logs rows attribute kWh + electricity cost to the originating
+    pipeline task. Without this, the inline-image phase logged un-
+    attributed sessions — see Glad-Labs/poindexter#157.
+    """
     from services.gpu_scheduler import gpu
-    from services.site_config import site_config
 
     try:
         sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
@@ -345,7 +458,9 @@ async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
         )
 
         # Step 1: ollama generates the SDXL prompt
-        async with gpu.lock("ollama", model=model):
+        async with gpu.lock(
+            "ollama", model=model, task_id=task_id, phase="inline_image_prompt",
+        ):
             async with httpx.AsyncClient(timeout=90) as client:
                 resp = await client.post(f"{ollama_url}/api/generate", json={
                     "model": model, "prompt": img_prompt_req, "stream": False,
@@ -360,7 +475,10 @@ async def _try_sdxl(num: str, search_query: str, topic: str) -> str | None:
         logger.info("  [IMAGE-%s] SDXL prompt: %s...", num, sdxl_prompt[:60])
 
         # Step 2: SDXL renders the image
-        async with gpu.lock("sdxl", model="sdxl_lightning"):
+        async with gpu.lock(
+            "sdxl", model="sdxl_lightning",
+            task_id=task_id, phase="inline_image",
+        ):
             async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
                 img_resp = await client.post(
                     f"{sdxl_url}/generate",
