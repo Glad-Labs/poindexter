@@ -15,13 +15,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # src/cofounder_agent. Poetry is installed transiently and uninstalled after
 # resolving deps system-wide, so the runtime image only carries the deps.
 COPY pyproject.toml poetry.lock /app/
-# --with profiling pulls in pyroscope-io so brain_daemon can ship CPU
-# profiles under service="poindexter-brain" (Glad-Labs/poindexter#406).
-# The group is optional so a Windows-host install (Matt's dev box,
-# where pyroscope-io has no wheel) skips cleanly without --with.
+# pyroscope-io installed via direct pip after poetry resolves the main
+# deps. Reason: PR #297 originally added a `[tool.poetry.group.profiling]`
+# group AND `--with profiling` here, but poetry.lock wasn't regenerated
+# to include the new group. With an out-of-sync lock, `poetry install
+# --with profiling` silently dropped the main group too — asyncpg
+# vanished, brain crashloop with `ModuleNotFoundError: No module named
+# 'asyncpg'`. Direct pip after poetry sidesteps the lock-consistency
+# requirement and stays simple. Glad-Labs/poindexter#406.
 RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     poetry config virtualenvs.create false && \
-    poetry install --no-root --no-interaction --no-ansi --with profiling && \
+    poetry install --no-root --no-interaction --no-ansi && \
+    pip install --no-cache-dir 'pyroscope-io>=0.8.5' && \
     python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')" && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
