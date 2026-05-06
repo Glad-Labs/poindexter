@@ -84,6 +84,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import sys
 import urllib.error
@@ -1194,8 +1195,26 @@ async def _routed_notify(
     if brain_daemon_mod is None or not hasattr(brain_daemon_mod, "send_discord"):
         return await notify_fn(message, critical=False)
 
+    # ``brain.send_discord`` defaults to ``discord_lab_logs_webhook_url``
+    # (the public lab-logs channel) when no webhook is passed -- but ops
+    # alerts must go to the ops channel. Mirror ``brain.notify``'s
+    # resolution order: explicit ``discord_ops_webhook_url`` from
+    # app_settings, then the env-var fallback. Without this the
+    # discord-only path fired ``no discord_ops_webhook_url`` even when
+    # the ops URL was correctly seeded -- the lookup was just being
+    # done against the wrong key downstream.
+    ops_url = ""
+    if pool is not None:
+        ops_url = await _read_app_setting_str(
+            pool, "discord_ops_webhook_url", ""
+        )
+    if not ops_url:
+        ops_url = os.getenv("DISCORD_OPS_WEBHOOK_URL", "")
+
     try:
-        dc_id = await brain_daemon_mod.send_discord(message, pool=pool)
+        dc_id = await brain_daemon_mod.send_discord(
+            message, webhook_url=ops_url or None, pool=pool
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning(
             "[alert_dispatcher] brain.send_discord raised on routed "
