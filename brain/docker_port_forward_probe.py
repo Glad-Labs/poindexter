@@ -206,9 +206,23 @@ def _parse_watch_list(raw: Any) -> list[dict[str, Any]]:
                 internal_hostname = str(container)[len(_CONTAINER_PREFIX):]
             else:
                 internal_hostname = str(container)
+        # Optional ``host_port`` override. Compose maps host:CONTAINER
+        # ports separately from container-internal ports
+        # (e.g. prometheus is ``9091:9090`` -- container listens on
+        # 9090, host exposes 9091). Without this override the external
+        # probe always failed for non-1:1-mapped services and the probe
+        # falsely flagged "stuck port-forward" every cycle.
+        host_port_raw = entry.get("host_port")
+        try:
+            host_port = (
+                int(host_port_raw) if host_port_raw is not None else port_int
+            )
+        except (TypeError, ValueError):
+            host_port = port_int
         out.append({
             "container": str(container),
             "port": port_int,
+            "host_port": host_port,
             "path": str(path),
             "internal_hostname": str(internal_hostname),
         })
@@ -626,8 +640,14 @@ async def _check_one_service(
             "detail": f"container {container} not running; skipping probe",
         }
 
+    # ``host_port`` defaults to ``port`` for 1:1 mappings; override it
+    # via the watch list entry when compose maps host:CONTAINER on
+    # different sides (e.g. ``9091:9090``). The internal probe always
+    # uses the container-side port; the external probe uses the host
+    # side, since that's what wslrelay actually forwards.
+    host_port = service.get("host_port", port)
     internal_url = f"http://{internal_hostname}:{port}{path}"
-    external_url = f"http://host.docker.internal:{port}{path}"
+    external_url = f"http://host.docker.internal:{host_port}{path}"
 
     ok_internal = http_probe_fn(internal_url, timeout)
     ok_external = http_probe_fn(external_url, timeout)
