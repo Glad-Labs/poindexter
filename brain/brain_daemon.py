@@ -213,10 +213,7 @@ try:
     # to rejected with the sentinel ``auto_rejected_after_<N>_hours``
     # reason, writes one pipeline_gate_history + one audit_log row per
     # cycle, and sends a single coalesced Telegram notification when
-    # the batch meets the configurable threshold. Implements the
-    # auto-reject branch of the issue's "auto-reject + notify" /
-    # "notify-louder" choice — stale review queues don't drain on
-    # their own.
+    # the batch meets the configurable threshold.
     from gate_auto_expire_probe import run_gate_auto_expire_probe
     _HAS_GATE_AUTO_EXPIRE_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
@@ -225,6 +222,27 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_GATE_AUTO_EXPIRE_PROBE = True
     except ImportError:
         _HAS_GATE_AUTO_EXPIRE_PROBE = False
+
+try:
+    # GH#338 — coalesced "N posts pending review" summary probe.
+    # SELECTs count + oldest age from post_approval_gates each cycle and
+    # sends ONE Telegram page per gate_pending_summary_telegram_dedup_minutes
+    # window (default 60 min) when the queue is non-empty AND the oldest
+    # gate is older than gate_pending_summary_min_age_minutes (default 60).
+    # Inside the dedup window it re-pages only when the queue grew by
+    # strictly more than gate_pending_summary_telegram_growth_threshold
+    # (default 3) new gates. Optional low-noise Discord queue-status fires
+    # every cycle (gate_pending_summary_discord_per_cycle, default true).
+    # Pairs with the per-flip Telegram demotion in
+    # services/gates/post_approval_gates.notify_gate_pending.
+    from gate_pending_summary_probe import run_gate_pending_summary_probe
+    _HAS_GATE_PENDING_SUMMARY_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.gate_pending_summary_probe import run_gate_pending_summary_probe
+        _HAS_GATE_PENDING_SUMMARY_PROBE = True
+    except ImportError:
+        _HAS_GATE_PENDING_SUMMARY_PROBE = False
 
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -1724,11 +1742,7 @@ async def run_cycle(pool):
     # Gate auto-expire (#338). Sweeps post_approval_gates for pending
     # rows older than gate_pending_max_age_hours (default 168 = 7d),
     # transitions them to rejected with the sentinel reason
-    # ``auto_rejected_after_<N>_hours``, writes per-gate
-    # pipeline_gate_history rows + one batch-summary audit_log row, and
-    # sends one coalesced Telegram notify when the batch meets
-    # gate_auto_expire_notify_threshold. Disabled gracefully via
-    # app_settings.gate_auto_expire_enabled=false.
+    # ``auto_rejected_after_<N>_hours``.
     if _HAS_GATE_AUTO_EXPIRE_PROBE:
         try:
             ge_summary = await run_gate_auto_expire_probe(pool)
@@ -1739,6 +1753,21 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] gate_auto_expire probe failed: %s", e)
+
+    # Gate pending summary (#338). Coalesces the per-flip Telegram noise
+    # from the HITL gate spine into ONE "N posts pending review" page per
+    # dedup window. Pairs with the per-flip Telegram demotion in
+    # services/gates/post_approval_gates.notify_gate_pending.
+    if _HAS_GATE_PENDING_SUMMARY_PROBE:
+        try:
+            gps_summary = await run_gate_pending_summary_probe(pool)
+            probe_results["gate_pending_summary"] = {
+                "ok": bool(gps_summary.get("ok", False)),
+                "detail": gps_summary.get("detail", ""),
+                "summary": gps_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] gate_pending_summary probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on
