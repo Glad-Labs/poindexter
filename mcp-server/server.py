@@ -1129,6 +1129,166 @@ async def topics_reject_batch(batch_id: str, reason: str = "") -> str:
         return _format_tool_error("topics_reject_batch", e)
 
 
+# ============================================================================
+# VOICE TOOLS (Half B — runtime brain-mode toggle + start_voice_call)
+# ============================================================================
+#
+# The assistant calls `start_voice_call` when it wants to talk to Matt
+# directly — typically when async chat is the wrong medium for the
+# question (e.g. "I have a draft to review with you", "let's hop on a
+# call", "talk to me about X", "demo this for me"). The tool optionally
+# flips ``voice_agent_brain_mode`` so the next pipeline build picks
+# the right brain (snappy ollama vs full Claude Code), then returns a
+# tap-to-join URL the operator opens on phone or desktop.
+#
+# Defaults pulled from app_settings (NOT hardcoded here):
+#   - voice_agent_public_join_url  → join URL ('voice' category)
+#   - voice_agent_brain_mode       → effective brain after any flip
+#
+# Both keys are seeded by migration 20260506_220613.
+
+# Mirrors _VALID_BRAIN_MODES in services/voice_agent_livekit.py. Kept
+# duplicated here so the MCP server doesn't need to drag the pipecat
+# dependency tree (livekit, kokoro, pipecat) onto the import path just
+# to validate a two-string enum. If the list grows, promote both copies
+# to a shared constants module.
+_VALID_VOICE_BRAIN_MODES: tuple[str, ...] = ("ollama", "claude-code")
+
+
+@mcp.tool()
+async def start_voice_call(
+    brain: str | None = None,
+    note: str | None = None,
+) -> str:
+    """Hand the operator a tap-to-join voice call link.
+
+    Use this when the conversation would go faster on a real call than
+    over async chat — common triggers from the assistant side: "let's
+    hop on a call", "Matt, I'd like to talk through this draft live",
+    "I want to demo this for you", "easier if we just discuss it".
+
+    The tool returns a join URL the operator (Matt) clicks on his
+    phone or desktop browser. The always-on ``voice-agent-livekit``
+    container is already in the room; he just joins.
+
+    Args:
+        brain: Optional brain-mode flip applied BEFORE returning. Valid
+            values: ``"ollama"`` (snappy local LLM, read-only Poindexter
+            tools — good for "what's the post count" / status questions)
+            or ``"claude-code"`` (Max-sub ``claude -p`` subprocess
+            bridge — slower but full repo / MCP / edit access; use this
+            for "let's pair on a bug", "review this draft with me", or
+            anything where the voice agent needs to be Claude Code, not
+            Emma). When ``None`` (default), the existing
+            ``voice_agent_brain_mode`` setting is left as-is. The flip
+            is persisted to ``app_settings`` so the always-on container
+            picks it up on the next pipeline build — no restart needed.
+
+        note: Optional one-line context the assistant wants Matt to see
+            so he knows why the call was initiated (e.g. "got a draft
+            to review", "found a bug in the publish flow"). Echoed
+            verbatim in the response and surfaced to the operator's
+            client.
+
+    Returns: a JSON string with ``join_url`` (clickable link),
+        ``brain_mode`` (the effective mode after any flip), ``note``
+        (echoed), and ``instructions`` (human-readable summary). Errors
+        are returned as a JSON object with an ``error`` key — never a
+        silent fallback (per ``feedback_no_silent_defaults``).
+    """
+    try:
+        # Validate brain BEFORE touching the DB so a typo is rejected
+        # without writing a half-applied state. The legacy
+        # voice_agent_brain key is intentionally NOT consulted on the
+        # write path — the assistant always touches the canonical new
+        # key, and run_bot's resolver still falls back to the legacy
+        # key for read.
+        if brain is not None:
+            normalised = str(brain).strip().lower()
+            if normalised not in _VALID_VOICE_BRAIN_MODES:
+                return json.dumps({
+                    "error": (
+                        f"Invalid brain={brain!r}. "
+                        f"Valid values: {', '.join(_VALID_VOICE_BRAIN_MODES)}."
+                    ),
+                    "valid_brains": list(_VALID_VOICE_BRAIN_MODES),
+                })
+            brain = normalised
+
+        pool = await _get_pool()
+
+        # Optional brain flip — persist BEFORE we read back so the
+        # response carries the just-flipped value, not whatever was
+        # there before.
+        if brain is not None:
+            await pool.execute(
+                """
+                INSERT INTO app_settings (key, value, category, description, is_secret, is_active)
+                VALUES ($1, $2, 'voice',
+                        'LLM stage the always-on voice agent uses '
+                        '(written by start_voice_call MCP tool).',
+                        FALSE, TRUE)
+                ON CONFLICT (key) DO UPDATE
+                    SET value = EXCLUDED.value,
+                        updated_at = NOW()
+                """,
+                "voice_agent_brain_mode", brain,
+            )
+
+        # Read back the effective mode + the public join URL. Falling
+        # back to the legacy ``voice_agent_brain`` key for read so
+        # operators who set the legacy key but never migrated still see
+        # the right effective mode.
+        row = await pool.fetchrow(
+            """
+            SELECT
+                COALESCE(
+                    (SELECT value FROM app_settings WHERE key = 'voice_agent_brain_mode'),
+                    (SELECT value FROM app_settings WHERE key = 'voice_agent_brain'),
+                    'ollama'
+                ) AS brain_mode,
+                COALESCE(
+                    (SELECT value FROM app_settings WHERE key = 'voice_agent_public_join_url'),
+                    ''
+                ) AS join_url
+            """,
+        )
+        brain_mode = (row["brain_mode"] or "ollama").strip().lower()
+        join_url = (row["join_url"] or "").strip()
+
+        if not join_url:
+            # No silent fallback — fail loud so the operator notices and
+            # seeds the migration / sets the value, instead of returning
+            # a hardcoded URL that might not be reachable from their
+            # network. (per feedback_no_silent_defaults)
+            return json.dumps({
+                "error": (
+                    "voice_agent_public_join_url is unset. "
+                    "Run migration 20260506_220613 to seed the default, "
+                    "or set it manually: "
+                    "`poindexter set voice_agent_public_join_url <url>`."
+                ),
+                "missing_setting": "voice_agent_public_join_url",
+            })
+
+        return json.dumps({
+            "join_url": join_url,
+            "brain_mode": brain_mode,
+            "note": note,
+            "instructions": (
+                "Tap the join_url on your phone or click it on desktop "
+                "to start the call. The voice agent is already in the "
+                f"room ({brain_mode} brain). Allow microphone access "
+                "when prompted; speak naturally."
+            ),
+        })
+    except Exception as e:
+        # _format_tool_error logs the traceback under a request id; the
+        # JSON wrapper makes it parseable client-side without losing the
+        # human-readable summary.
+        return json.dumps({"error": _format_tool_error("start_voice_call", e)})
+
+
 def _stdio_main() -> None:
     """Entry point for the stdio transport (existing local clients).
 

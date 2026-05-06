@@ -251,11 +251,13 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Voice agent -----
     'voice_agent_brain': 'ollama',
+    'voice_agent_brain_mode': 'ollama',
     'voice_agent_identity': 'poindexter-bot',
     'voice_agent_livekit_enabled': 'true',
     'voice_agent_livekit_url': '',
     'voice_agent_llm_model': 'glm-4.7-5090:latest',
     'voice_agent_ollama_url': 'http://localhost:11434/v1',
+    'voice_agent_public_join_url': 'https://nightrider.taild4f626.ts.net/voice/join',
     'voice_agent_recall_k': '3',
     'voice_agent_recall_min_similarity': '0.5',
     'voice_agent_room_name': 'poindexter',

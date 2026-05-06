@@ -312,33 +312,22 @@ async def test_run_service_disabled_accepts_common_falsy_strings(
 
 
 @pytest.mark.asyncio
-async def test_run_service_rejects_invalid_brain(fake_pool_and_config):
-    """Unknown brain value -> SystemExit, no silent fallback to ollama."""
-    fake_pool_and_config["cfg"] = _FakeSiteConfig(
-        {
-            "voice_agent_livekit_enabled": "true",
-            "voice_agent_brain": "totally-not-a-brain",
-        },
-    )
+async def test_run_service_passes_room_identity_to_run_bot(fake_pool_and_config):
+    """run_service forwards room + identity but defers brain resolution.
 
-    with pytest.raises(SystemExit) as excinfo:
-        await voice_agent_livekit.run_service()
-    msg = str(excinfo.value)
-    assert "totally-not-a-brain" in msg
-    assert "ollama" in msg and "claude-code" in msg
-
-
-@pytest.mark.asyncio
-async def test_run_service_passes_settings_to_run_bot(fake_pool_and_config):
-    """When enabled + valid brain, run_service() invokes run_bot with the
-    DB-sourced room / identity / brain.
+    Half B runtime brain-mode toggle: ``run_service`` no longer pre-reads
+    ``voice_agent_brain`` — it passes ``brain=None`` so ``run_bot`` reads
+    the (potentially-flipped-mid-shift) value at pipeline-build time.
     """
     fake_pool_and_config["cfg"] = _FakeSiteConfig(
         {
             "voice_agent_livekit_enabled": "true",
             "voice_agent_room_name": "ops-standup",
             "voice_agent_identity": "poindexter-on-call",
-            "voice_agent_brain": "claude-code",
+            # Setting this is fine but it MUST NOT leak into run_bot's
+            # `brain` arg — that's what defers resolution to pipeline-
+            # build time.
+            "voice_agent_brain_mode": "claude-code",
         },
     )
 
@@ -356,14 +345,16 @@ async def test_run_service_passes_settings_to_run_bot(fake_pool_and_config):
     assert captured == {
         "room": "ops-standup",
         "identity": "poindexter-on-call",
-        "brain": "claude-code",
+        # None signals "resolve from settings inside run_bot" — that's
+        # the runtime toggle surface.
+        "brain": None,
     }
 
 
 @pytest.mark.asyncio
 async def test_run_service_uses_defaults_when_settings_absent(fake_pool_and_config):
-    """No app_settings rows -> documented defaults
-    (poindexter / poindexter-bot / ollama).
+    """No app_settings rows -> documented defaults for room/identity, and
+    brain=None so run_bot falls back to its own default chain.
     """
     fake_pool_and_config["cfg"] = _FakeSiteConfig({})
 
@@ -381,8 +372,75 @@ async def test_run_service_uses_defaults_when_settings_absent(fake_pool_and_conf
     assert captured == {
         "room": "poindexter",
         "identity": "poindexter-bot",
-        "brain": "ollama",
+        "brain": None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Brain-mode resolution (Half B — runtime toggle).
+#
+# `_resolve_brain_mode` is the seam between the "set it at process start"
+# pre-#383 era and the "flip it mid-shift" Half B world. The MCP
+# ``start_voice_call`` tool writes ``voice_agent_brain_mode``; the next
+# pipeline build reads it through this function. Validation here is
+# load-bearing: a typo in the setting must SystemExit instead of
+# silently falling through to ollama (per feedback_no_silent_defaults).
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_brain_mode_uses_override_when_provided():
+    """Explicit override (e.g. CLI --brain) wins over any setting."""
+    cfg = _FakeSiteConfig({"voice_agent_brain_mode": "ollama"})
+    assert (
+        voice_agent_livekit._resolve_brain_mode(cfg, "claude-code")
+        == "claude-code"
+    )
+
+
+def test_resolve_brain_mode_prefers_new_key_over_legacy():
+    """voice_agent_brain_mode (new) beats voice_agent_brain (legacy)."""
+    cfg = _FakeSiteConfig(
+        {
+            "voice_agent_brain_mode": "claude-code",
+            "voice_agent_brain": "ollama",
+        },
+    )
+    assert voice_agent_livekit._resolve_brain_mode(cfg, None) == "claude-code"
+
+
+def test_resolve_brain_mode_falls_back_to_legacy_key():
+    """No new key, but legacy ``voice_agent_brain`` set -> use legacy."""
+    cfg = _FakeSiteConfig({"voice_agent_brain": "claude-code"})
+    assert voice_agent_livekit._resolve_brain_mode(cfg, None) == "claude-code"
+
+
+def test_resolve_brain_mode_default_when_both_absent():
+    """No keys set -> 'ollama' default."""
+    cfg = _FakeSiteConfig({})
+    assert voice_agent_livekit._resolve_brain_mode(cfg, None) == "ollama"
+
+
+def test_resolve_brain_mode_normalises_whitespace_and_case():
+    """A stray space / capital letter shouldn't take the surface offline."""
+    cfg = _FakeSiteConfig({"voice_agent_brain_mode": "  Claude-Code "})
+    assert voice_agent_livekit._resolve_brain_mode(cfg, None) == "claude-code"
+
+
+def test_resolve_brain_mode_rejects_invalid_setting():
+    """Unknown setting value -> SystemExit, no silent fallback to ollama."""
+    cfg = _FakeSiteConfig({"voice_agent_brain_mode": "totally-not-a-brain"})
+    with pytest.raises(SystemExit) as excinfo:
+        voice_agent_livekit._resolve_brain_mode(cfg, None)
+    msg = str(excinfo.value)
+    assert "totally-not-a-brain" in msg
+    assert "ollama" in msg and "claude-code" in msg
+
+
+def test_resolve_brain_mode_rejects_invalid_override():
+    """Bad --brain value (somehow bypassing argparse choices) -> SystemExit."""
+    cfg = _FakeSiteConfig({})
+    with pytest.raises(SystemExit):
+        voice_agent_livekit._resolve_brain_mode(cfg, "lobotomised")
 
 
 def test_resolve_livekit_creds_prefers_site_config_over_env(monkeypatch):

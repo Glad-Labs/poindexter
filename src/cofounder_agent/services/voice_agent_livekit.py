@@ -840,11 +840,57 @@ def _ensure_brain_on_path() -> None:
 # ---------------------------------------------------------------------------
 
 
+_VALID_BRAIN_MODES = ("ollama", "claude-code")
+
+
+def _resolve_brain_mode(site_config: Any, override: str | None) -> str:
+    """Resolve the voice-agent brain mode for the next pipeline build.
+
+    Resolution order (Half B — runtime brain-mode toggle):
+
+    1. ``override`` — the explicit ``--brain`` CLI flag or the ``brain``
+       kwarg passed to :func:`run_bot`. When set, wins outright. Lets
+       the operator force a specific mode for an ad-hoc invocation
+       without touching the DB.
+    2. ``site_config['voice_agent_brain_mode']`` — the canonical key
+       seeded by migration ``20260506_220613``. This is the surface the
+       ``start_voice_call`` MCP tool flips at runtime so the next
+       pipeline build picks up a different brain without bouncing the
+       always-on container.
+    3. ``site_config['voice_agent_brain']`` — the legacy key seeded by
+       ``20260505_135518``. Read second so older deployments that
+       explicitly set the legacy key keep working through the soft
+       transition; new operators only ever touch the ``_mode`` key.
+    4. ``"ollama"`` — the documented default.
+
+    Validates the result against :data:`_VALID_BRAIN_MODES` and raises
+    ``SystemExit`` (no silent fallback) on an unknown value, per
+    ``feedback_no_silent_defaults``. Whitespace and casing are
+    normalised before validation so a stray space in app_settings
+    doesn't take the surface offline.
+    """
+    if override is not None:
+        candidate = override
+    else:
+        candidate = (
+            site_config.get("voice_agent_brain_mode", None)
+            or site_config.get("voice_agent_brain", None)
+            or "ollama"
+        )
+    candidate = str(candidate).strip().lower()
+    if candidate not in _VALID_BRAIN_MODES:
+        raise SystemExit(
+            f"voice_agent_brain_mode={candidate!r} is invalid. "
+            f"Valid values: {', '.join(_VALID_BRAIN_MODES)}.",
+        )
+    return candidate
+
+
 async def run_bot(
     room: str,
     identity: str = "poindexter-bot",
     *,
-    brain: str = "ollama",
+    brain: str | None = None,
     project_dir: str | None = None,
 ) -> None:
     """Join ``room`` as ``identity`` and run the voice pipeline until killed.
@@ -853,15 +899,20 @@ async def run_bot(
         room: LiveKit room to join.
         identity: Bot's room identity. Multiple bots in the same room
             need distinct identities.
-        brain: Which LLM stage to wire in. ``"ollama"`` (default) uses
-            the local glm-4.7-5090 + the three read-only Poindexter tools.
-            ``"claude-code"`` swaps in the ClaudeCodeBridge — every voice
-            turn shells out to ``claude -p`` under the operator's Max
-            sub. Use this for "dev on the go" — Claude has full repo
-            access, MCP tools, and edit/bash powers.
-        project_dir: When ``brain == "claude-code"``, the directory the
-            Claude subprocess runs in. Determines which CLAUDE.md is
-            loaded. Defaults to the bot process's cwd.
+        brain: Optional override for the LLM stage. ``None`` (default)
+            means "read from app_settings at pipeline-build time" —
+            ``voice_agent_brain_mode`` first, then the legacy
+            ``voice_agent_brain`` key, then the documented default of
+            ``"ollama"``. Passing ``"ollama"`` or ``"claude-code"``
+            forces that mode regardless of the setting (used by the
+            ``--brain`` CLI flag for ad-hoc invocations). Resolving the
+            value INSIDE the bot rather than at process start lets the
+            ``start_voice_call`` MCP tool flip the brain mid-shift —
+            the next call's pipeline build picks up the change without
+            bouncing the always-on container.
+        project_dir: When the resolved brain is ``"claude-code"``, the
+            directory the Claude subprocess runs in. Determines which
+            CLAUDE.md is loaded. Defaults to the bot process's cwd.
     """
     _ensure_brain_on_path()
     import asyncpg
@@ -886,8 +937,8 @@ async def run_bot(
     token = _mint_token(key, secret, identity=identity, room=room)
 
     log.info(
-        "Joining LiveKit room %r as %r (brain=%s) at %s",
-        room, identity, brain, url,
+        "Joining LiveKit room %r as %r (brain=%s, override=%s) at %s",
+        room, identity, brain or "<from-settings>", brain is not None, url,
     )
 
     transport = LiveKitTransport(
@@ -918,6 +969,19 @@ async def run_bot(
         site_config = SiteConfig()
         await site_config.load(pool)
 
+        # Half B: resolve the brain mode AT pipeline-build time, not at
+        # process start. This is the runtime toggle surface — flipping
+        # ``voice_agent_brain_mode`` via the start_voice_call MCP tool
+        # (or `poindexter set ...`) takes effect on the next call's
+        # pipeline build without restarting the container.
+        resolved_brain = _resolve_brain_mode(site_config, brain)
+        if brain is None:
+            log.info(
+                "Brain mode resolved from app_settings: %s "
+                "(voice_agent_brain_mode > voice_agent_brain > 'ollama')",
+                resolved_brain,
+            )
+
         # Pyroscope continuous profiling (Glad-Labs/poindexter#406).
         # Opt-in via app_settings.enable_pyroscope; ships CPU samples
         # under service="poindexter-voice-livekit" so the LiveKit bot
@@ -933,7 +997,7 @@ async def run_bot(
         except Exception as e:  # noqa: BLE001 — profiling must never block startup
             log.warning("Pyroscope setup failed (livekit): %s", e)
 
-        if brain == "claude-code":
+        if resolved_brain == "claude-code":
             from services.voice_agent_claude_code import ClaudeCodeBridgeLLMService
 
             extra = os.environ.get("CLAUDE_BOT_EXTRA_ARGS", "").split()
@@ -996,11 +1060,19 @@ def _print_client_token(room: str, identity: str) -> None:
 async def run_service() -> int:
     """Start the always-on LiveKit voice bot.
 
-    Reads every knob from ``app_settings``:
-      - ``voice_agent_livekit_enabled`` — if false/0/no, exit 0 immediately
+    Reads room + identity + enabled flag from ``app_settings``; the
+    brain mode is intentionally NOT read here — it's resolved inside
+    :func:`run_bot` at pipeline-build time so the
+    ``start_voice_call`` MCP tool can flip it mid-shift without
+    bouncing the container (Half B runtime toggle).
+
+    Settings read here:
+      - ``voice_agent_livekit_enabled`` — if false/0/no/off, exit 0 immediately
       - ``voice_agent_room_name``      — LiveKit room to join
       - ``voice_agent_identity``       — bot identity in the room
-      - ``voice_agent_brain``          — 'ollama' or 'claude-code'
+
+    Settings read inside ``run_bot`` (per pipeline build):
+      - ``voice_agent_brain_mode`` (then ``voice_agent_brain`` legacy)
 
     Returns the desired process exit code.
     """
@@ -1033,24 +1105,16 @@ async def run_service() -> int:
         identity = str(
             site_config.get("voice_agent_identity", "poindexter-bot"),
         ).strip() or "poindexter-bot"
-        brain_choice = str(
-            site_config.get("voice_agent_brain", "ollama"),
-        ).strip().lower() or "ollama"
-        if brain_choice not in {"ollama", "claude-code"}:
-            # Fail loud — silent fallback to ollama would mask a typo
-            # and leave the operator wondering why claude-code never
-            # actually engages. (per feedback_no_silent_defaults)
-            raise SystemExit(
-                f"voice_agent_brain={brain_choice!r} is invalid. "
-                f"Valid values: ollama, claude-code.",
-            )
     finally:
         # ``run_bot`` opens its own pool (it needs the lifecycle to
         # mirror the Pipecat task), so close this one and avoid double
         # use.
         await pool.close()
 
-    await run_bot(room, identity, brain=brain_choice)
+    # brain=None signals "resolve from app_settings each pipeline build".
+    # Validation lives in `_resolve_brain_mode` and still raises SystemExit
+    # on an invalid value, so the loud-fail posture is preserved.
+    await run_bot(room, identity, brain=None)
     return 0
 
 
@@ -1085,12 +1149,17 @@ def main() -> None:
     parser.add_argument(
         "--brain",
         choices=["ollama", "claude-code"],
-        default="ollama",
+        default=None,
         help=(
-            "LLM stage to wire in. 'ollama' is the snappy local glm-4.7-5090 "
-            "with three read-only Poindexter tools. 'claude-code' shells out "
-            "to `claude -p` under the operator's Max OAuth sub — slower but "
-            "has full repo / MCP / edit access for dev-on-the-go."
+            "Override the LLM stage for this invocation. Without the flag "
+            "(default) the brain is resolved from app_settings at "
+            "pipeline-build time — voice_agent_brain_mode first, then "
+            "voice_agent_brain (legacy), then 'ollama'. Pass 'ollama' "
+            "(snappy local glm-4.7-5090 + read-only tools) or "
+            "'claude-code' (shells `claude -p` under the operator's Max "
+            "OAuth sub — slower but has full repo / MCP / edit access "
+            "for dev-on-the-go) to force a specific mode regardless of "
+            "the setting."
         ),
     )
     parser.add_argument(
