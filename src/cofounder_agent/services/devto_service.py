@@ -37,10 +37,20 @@ logger = get_logger(__name__)
 # Terminal markers we write into ``posts.metadata->>'devto_status'`` so
 # the crosspost cron can dedup. ``posted`` blocks the row from re-entry
 # because the URL was recorded; ``gave_up`` blocks it after a permanent
-# Dev.to rejection (e.g. 422 canonical-URL collision) so we stop
-# retrying once an hour forever (#397).
+# Dev.to rejection that wasn't a canonical-URL collision (e.g. 415
+# unsupported media). ``already_exists`` blocks it after Dev.to
+# specifically reports the canonical URL has already been taken — i.e.
+# the article IS on Dev.to (just not from this run / this account), so
+# we treat it as success-at-destination instead of a rejection (#404).
 DEVTO_STATUS_POSTED = "posted"
 DEVTO_STATUS_GAVE_UP = "gave_up"
+DEVTO_STATUS_ALREADY_EXISTS = "already_exists"
+
+# The exact dev.to error message for a canonical-URL collision. Match
+# is case-insensitive so future capitalization tweaks on Dev.to's side
+# don't break dedup. Substring match (not equality) so the trailing
+# "Email support@dev.to..." sentence doesn't have to match verbatim.
+_DEVTO_CANONICAL_TAKEN_FRAGMENT = "canonical url has already been taken"
 
 
 @dataclass
@@ -50,11 +60,12 @@ class CrossPostResult:
     See ``DevToCrossPostService.cross_post`` for the status enum.
     Callers (notably ``cross_post_by_post_id`` and the
     ``CrosspostToDevtoJob``) branch on ``status`` to decide whether
-    to record success metadata, mark the post as ``gave_up`` so the
-    cron stops retrying, or leave the row alone for the next tick.
+    to record success metadata, mark the post as ``already_exists``
+    or ``gave_up`` so the cron stops retrying, or leave the row alone
+    for the next tick.
     """
 
-    status: Literal["posted", "gave_up", "transient", "skipped"]
+    status: Literal["posted", "already_exists", "gave_up", "transient", "skipped"]
     url: str | None = None
     article_id: str | None = None
     http_status: int | None = None
@@ -197,13 +208,17 @@ class DevToCrossPostService:
 
         Returns:
             A ``CrossPostResult`` describing the outcome. Callers
-            distinguish three terminal cases:
+            distinguish four terminal cases:
 
             - ``status='posted'`` — 2xx, ``url`` populated.
+            - ``status='already_exists'`` — Dev.to returned 422
+              "Canonical url has already been taken" — the post IS on
+              Dev.to, just not from this run. Treated as
+              success-at-destination so the cron stops looping (#404).
             - ``status='gave_up'`` — Dev.to rejected the request with
-              a 4xx that retrying won't fix (e.g. 422 "Canonical url
-              has already been taken"). Callers should mark the post
-              as gave_up so the cron stops re-submitting it.
+              a 4xx that retrying won't fix (e.g. 415, 401, or a
+              generic 422 with a different message). Callers should
+              mark the post as gave_up so the cron stops re-submitting.
             - ``status='transient'`` — 5xx / network error. Safe (and
               expected) to retry on the next tick.
 
@@ -264,12 +279,48 @@ class DevToCrossPostService:
                         article_id=str(devto_id) if devto_id else None,
                     )
 
-                # 4xx (other than rate-limit) is a permanent reject —
-                # most commonly 422 "Canonical url has already been
-                # taken" when a previous run succeeded but we lost the
-                # devto_url metadata. Don't keep hammering Dev.to.
-                # 429 is rate-limit (transient); everything else 4xx
-                # we treat as terminal so the cron stops looping.
+                # 422 with the canonical-URL-already-taken message is
+                # NOT a real error — the post is already on Dev.to (just
+                # not from this run, e.g. a previous run posted but the
+                # response was lost, or someone else's account claimed
+                # the URL). Treat as success-at-destination so the cron
+                # stops looping AND we don't pollute the error counter
+                # / WARNING log with noise on every 4-hour tick (#404).
+                #
+                # Match against the parsed JSON ``error`` field rather
+                # than raw response text — case-insensitive substring
+                # check so future capitalization tweaks on Dev.to's
+                # side don't reopen the loop. Falls through to the
+                # generic gave_up branch on JSON-parse failure or any
+                # other 422 message (415, 401, generic 422, etc. still
+                # error loudly).
+                if resp.status_code == 422:
+                    devto_error_msg = ""
+                    try:
+                        devto_error_msg = resp.json().get("error", "") or ""
+                    except (ValueError, TypeError):
+                        devto_error_msg = ""
+                    if (
+                        _DEVTO_CANONICAL_TAKEN_FRAGMENT
+                        in devto_error_msg.lower()
+                    ):
+                        logger.info(
+                            "[DEVTO] Canonical URL already on Dev.to — "
+                            "marking already_exists (no retry, no error): %s",
+                            devto_error_msg[:200],
+                        )
+                        return CrossPostResult(
+                            status="already_exists",
+                            http_status=resp.status_code,
+                            error=devto_error_msg[:500],
+                        )
+
+                # 4xx (other than rate-limit and the canonical-URL 422
+                # handled above) is a permanent reject — 415 unsupported
+                # media, 401 bad key, generic 422 validation error, etc.
+                # Don't keep hammering Dev.to. 429 is rate-limit
+                # (transient); everything else 4xx we treat as terminal
+                # so the cron stops looping.
                 if 400 <= resp.status_code < 500 and resp.status_code != 429:
                     error_text = resp.text[:500]
                     logger.warning(
@@ -309,15 +360,23 @@ class DevToCrossPostService:
         - On 2xx success — ``devto_url``, ``devto_article_id``,
           ``devto_status='posted'`` so the row is permanently
           excluded from the cron's candidate set.
-        - On a permanent Dev.to rejection (4xx other than 429) —
+        - On Dev.to 422 "Canonical url has already been taken" —
+          ``devto_status='already_exists'`` (success-at-destination,
+          not a rejection). The post IS on Dev.to; this run just
+          didn't put it there. Returns the canonical URL so callers
+          count it as success (#404).
+        - On a permanent Dev.to rejection (other 4xx — 415, 401,
+          generic 422 with a different message) —
           ``devto_status='gave_up'`` plus ``devto_last_error`` /
           ``devto_last_http_status`` for operator visibility. This
-          is what stops the every-tick 422 retry loop in #397.
+          is what stops the every-tick retry loop seeded in #397.
         - On a transient failure (5xx, 429, network) — no metadata
           change, so the cron retries on its next tick.
 
         Returns:
-            The Dev.to article URL if successful, ``None`` for every
+            A truthy URL on ``posted`` (the Dev.to article URL) or
+            ``already_exists`` (the local canonical URL — we don't
+            get a Dev.to URL back from the 422). ``None`` for every
             other outcome (transient retry, gave_up, skipped, missing
             post). Callers that need to distinguish the cases should
             invoke ``cross_post()`` directly and inspect the
@@ -362,6 +421,30 @@ class DevToCrossPostService:
             await self._merge_post_metadata(row["id"], metadata_patch)
             logger.info("[DEVTO] Stored devto_url in post metadata: %s", post_id)
             return result.url
+
+        if result.status == "already_exists":
+            # Dev.to confirms the canonical URL is already on the
+            # platform — the post IS crossposted, we just didn't do it
+            # this run. Persist the distinct sentinel (NOT 'posted',
+            # NOT 'gave_up') so the audit trail preserves the truth
+            # while still excluding this row from the cron's candidate
+            # set. We don't have a Dev.to article URL to record (the
+            # 422 response doesn't include one), so we skip
+            # ``devto_url`` and surface the canonical URL to the
+            # caller — the JOB uses the truthy return as its "count
+            # as success, not error" signal. (#404)
+            metadata_patch = {
+                "devto_status": DEVTO_STATUS_ALREADY_EXISTS,
+                "devto_last_http_status": str(result.http_status or ""),
+                "devto_last_error": (result.error or "")[:500],
+            }
+            await self._merge_post_metadata(row["id"], metadata_patch)
+            logger.info(
+                "[DEVTO] Post %s already on Dev.to (canonical URL taken) — "
+                "marked already_exists, will not retry.",
+                post_id,
+            )
+            return canonical_url
 
         if result.status == "gave_up":
             # Permanent reject — the most common case is 422

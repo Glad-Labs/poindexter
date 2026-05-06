@@ -5,17 +5,20 @@ default. Finds published posts without a ``metadata->>'devto_url'``,
 cross-posts each via ``DevToCrossPostService``, and stores the
 returned Dev.to URL back on the post's metadata so we don't re-post.
 
-## Dedup (#397)
+## Dedup (#397, #404)
 
-The candidate query filters on TWO metadata flags so the cron can't
+The candidate query filters on THREE metadata flags so the cron can't
 loop on a post forever:
 
 - ``metadata->>'devto_url'`` set on 2xx success (existing behavior).
 - ``metadata->>'devto_status' = 'gave_up'`` set after a permanent
-  Dev.to rejection (4xx other than 429 — most commonly 422
-  "Canonical url has already been taken" when the article exists on
-  Dev.to but we lost the URL locally). See
+  non-canonical Dev.to rejection (e.g. 415 unsupported media, 401
+  bad key, generic 422 validation error). See
   ``services/devto_service.py`` for where this is written.
+- ``metadata->>'devto_status' = 'already_exists'`` set after Dev.to
+  specifically reports the canonical URL is taken — the article IS
+  on Dev.to, just not from this run, so further attempts are a
+  guaranteed 422 (#404).
 
 Transient failures (5xx, 429, network) intentionally leave metadata
 untouched so the next tick retries.
@@ -81,12 +84,15 @@ class CrosspostToDevtoJob:
                       AND (metadata IS NULL
                            OR metadata->>'devto_url' IS NULL
                            OR metadata->>'devto_url' = '')
-                      -- Skip posts we've already permanently given up
-                      -- on (e.g. Dev.to returned 422 "Canonical url
-                      -- has already been taken" because the article
-                      -- exists there but we lost the URL locally).
-                      -- See services/devto_service.py and #397.
-                      AND COALESCE(metadata->>'devto_status', '') <> 'gave_up'
+                      -- Skip posts in any terminal devto_status: we
+                      -- gave up (permanent non-canonical reject), the
+                      -- canonical URL is already taken on Dev.to
+                      -- (#404 — success-at-destination, no point
+                      -- re-asking), or the post was already crossposted
+                      -- by another path. See services/devto_service.py.
+                      AND COALESCE(metadata->>'devto_status', '') NOT IN (
+                          'gave_up', 'already_exists'
+                      )
                     ORDER BY published_at DESC
                     LIMIT $1
                     """,

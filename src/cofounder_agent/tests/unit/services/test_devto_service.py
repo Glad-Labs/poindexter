@@ -20,6 +20,7 @@ site_config._config["site_url"] = "https://test.example.com"
 # E402 suppressed because site_config._config must be seeded before
 # devto_service's module-level lookups run.
 from services.devto_service import (  # noqa: E402
+    DEVTO_STATUS_ALREADY_EXISTS,
     DEVTO_STATUS_GAVE_UP,
     DEVTO_STATUS_POSTED,
     CrossPostResult,
@@ -292,11 +293,12 @@ class TestCrossPostSuccess:
         assert call_kwargs[1]["headers"]["api-key"] == "fake-api-key"
 
     @pytest.mark.asyncio
-    async def test_422_canonical_url_taken_returns_gave_up(self):
-        """Regression test for #397 — Dev.to returns 422 when the
-        canonical URL is already on the platform (typically because a
-        previous run posted but we lost the URL locally). Must be
-        terminal so the cron doesn't loop on it."""
+    async def test_422_canonical_url_taken_returns_already_exists(self, caplog):
+        """Regression for #404 — the canonical-URL-taken 422 must be
+        promoted from ``gave_up`` (the #397 default for permanent 4xx)
+        to a distinct ``already_exists`` status that the job counts as
+        success-at-destination. Also verifies the log line is demoted
+        from WARNING to INFO so the every-4-hour message stops paging."""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
         svc = DevToCrossPostService(pool)
 
@@ -306,6 +308,13 @@ class TestCrossPostSuccess:
             '{"error":"Canonical url has already been taken. '
             'Email support@dev.to for further details.","status":422}'
         )
+        mock_response.json.return_value = {
+            "error": (
+                "Canonical url has already been taken. "
+                "Email support@dev.to for further details."
+            ),
+            "status": 422,
+        }
 
         with patch("services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
@@ -313,6 +322,86 @@ class TestCrossPostSuccess:
             MockClient.return_value.__aenter__ = AsyncMock(
                 return_value=mock_client_instance
             )
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            import logging as _logging
+            with caplog.at_level(_logging.INFO, logger="services.devto_service"):
+                result = await svc.cross_post(
+                    title="Test",
+                    content_markdown="Content",
+                    canonical_url="https://www.gladlabs.io/posts/test",
+                )
+
+        assert result.status == "already_exists"
+        assert result.http_status == 422
+        assert "Canonical url has already been taken" in (result.error or "")
+        # Log demoted from WARNING to INFO — no WARNING records should
+        # mention the canonical-URL message (#404 acceptance criterion).
+        warning_records = [
+            r for r in caplog.records
+            if r.levelno >= _logging.WARNING
+            and "canonical" in r.getMessage().lower()
+        ]
+        assert warning_records == [], (
+            "Canonical-URL 422 must log at INFO, not WARNING (#404). "
+            "Got %r" % [r.getMessage() for r in warning_records]
+        )
+
+    @pytest.mark.asyncio
+    async def test_422_canonical_url_taken_case_insensitive_match(self):
+        """The canonical-URL match must be case-insensitive so future
+        capitalization tweaks on Dev.to's side don't silently re-open
+        the retry loop. (#404 — match the JSON ``error`` field via
+        ``.lower()`` substring check.)"""
+        pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.json.return_value = {
+            "error": "CANONICAL URL HAS ALREADY BEEN TAKEN",
+            "status": 422,
+        }
+        mock_response.text = (
+            '{"error":"CANONICAL URL HAS ALREADY BEEN TAKEN","status":422}'
+        )
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            client = AsyncMock()
+            client.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await svc.cross_post(
+                title="Test",
+                content_markdown="Content",
+                canonical_url="https://www.gladlabs.io/posts/test",
+            )
+        assert result.status == "already_exists"
+
+    @pytest.mark.asyncio
+    async def test_422_other_error_message_still_gives_up(self):
+        """Generic 422 (validation error, etc.) with a different error
+        message must STILL hit the gave_up branch and log at WARNING.
+        Only the exact canonical-URL message is special-cased (#404)."""
+        pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.json.return_value = {
+            "error": "Title is too long (maximum is 128 characters)",
+            "status": 422,
+        }
+        mock_response.text = (
+            '{"error":"Title is too long (maximum is 128 characters)",'
+            '"status":422}'
+        )
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            client = AsyncMock()
+            client.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
 
             result = await svc.cross_post(
@@ -323,7 +412,60 @@ class TestCrossPostSuccess:
 
         assert result.status == "gave_up"
         assert result.http_status == 422
-        assert "Canonical url has already been taken" in (result.error or "")
+        assert "Title is too long" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_422_unparseable_json_falls_through_to_gave_up(self):
+        """If Dev.to returns 422 with a body that can't be JSON-parsed
+        (rare, but defensive), don't crash — fall through to gave_up
+        so we still stop hammering the endpoint."""
+        pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.json.side_effect = ValueError("not json")
+        mock_response.text = "<html>500 from upstream cdn</html>"
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            client = AsyncMock()
+            client.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await svc.cross_post(
+                title="Test",
+                content_markdown="Content",
+                canonical_url="https://www.gladlabs.io/posts/test",
+            )
+
+        assert result.status == "gave_up"
+
+    @pytest.mark.asyncio
+    async def test_415_unsupported_media_still_gives_up(self):
+        """Other 4xx (415, 401, etc.) must still error loudly — only
+        the canonical-URL 422 is the success-at-destination case."""
+        pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 415
+        mock_response.text = "Unsupported Media Type"
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            client = AsyncMock()
+            client.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await svc.cross_post(
+                title="Test",
+                content_markdown="Content",
+                canonical_url="https://www.gladlabs.io/posts/test",
+            )
+
+        assert result.status == "gave_up"
+        assert result.http_status == 415
 
     @pytest.mark.asyncio
     async def test_503_returns_transient(self):
@@ -525,10 +667,12 @@ class TestCrossPostByPostIdDedup:
         assert '"devto_article_id": "999"' in patch_json
 
     @pytest.mark.asyncio
-    async def test_422_marks_post_gave_up_so_cron_stops_retrying(self):
-        """Regression for #397 — the canonical-URL-already-taken 422
-        must persist devto_status='gave_up' to break the every-tick
-        retry loop."""
+    async def test_422_canonical_marks_post_already_exists_returns_url(self):
+        """Regression for #404 — the canonical-URL-already-taken 422
+        must persist devto_status='already_exists' (NOT 'gave_up' as
+        in the original #397 implementation) AND return the canonical
+        URL so the job counts it as success-at-destination. The post
+        IS on Dev.to; this run just didn't put it there."""
         post_id = "22222222-2222-2222-2222-222222222222"
         post_row = {
             "id": post_id,
@@ -547,6 +691,72 @@ class TestCrossPostByPostIdDedup:
             '{"error":"Canonical url has already been taken. '
             'Email support@dev.to for further details.","status":422}'
         )
+        mock_response.json.return_value = {
+            "error": (
+                "Canonical url has already been taken. "
+                "Email support@dev.to for further details."
+            ),
+            "status": 422,
+        }
+
+        with patch("services.devto_service.httpx.AsyncClient") as MockClient:
+            client = AsyncMock()
+            client.post = AsyncMock(return_value=mock_response)
+            MockClient.return_value.__aenter__ = AsyncMock(return_value=client)
+            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            url = await svc.cross_post_by_post_id(post_id)
+
+        # We DO get a URL back (the canonical URL — the post exists at
+        # this URL on the public site, and Dev.to confirms a copy is
+        # already on its end). The job uses this as a truthy success
+        # signal, not as the Dev.to article URL.
+        assert url == f"{SITE_URL}/posts/already-posted"
+
+        update_sqls = [
+            (sql, args) for sql, args in executions if "UPDATE posts" in sql
+        ]
+        assert len(update_sqls) == 1, (
+            "Expected exactly one metadata UPDATE marking the post "
+            "as already_exists; got %r" % executions
+        )
+        patch_json = update_sqls[0][1][0]
+        assert (
+            f'"devto_status": "{DEVTO_STATUS_ALREADY_EXISTS}"' in patch_json
+        )
+        # Distinct sentinel — must NOT regress to either 'posted' or
+        # 'gave_up' (the audit trail tracks WHO put it there).
+        assert f'"devto_status": "{DEVTO_STATUS_POSTED}"' not in patch_json
+        assert f'"devto_status": "{DEVTO_STATUS_GAVE_UP}"' not in patch_json
+        assert '"devto_last_http_status": "422"' in patch_json
+        assert "Canonical url has already been taken" in patch_json
+        # We don't write a fabricated devto_url for already_exists —
+        # we don't have the Dev.to article URL, only the canonical.
+        assert '"devto_url"' not in patch_json
+
+    @pytest.mark.asyncio
+    async def test_422_other_message_marks_post_gave_up(self):
+        """Generic 422 (validation error etc.) keeps the original
+        #397 gave_up path — only the canonical-URL 422 is special."""
+        post_id = "44444444-4444-4444-4444-444444444444"
+        post_row = {
+            "id": post_id,
+            "title": "Bad Title",
+            "slug": "bad-title",
+            "content": "Body",
+            "seo_keywords": "",
+            "metadata": {},
+        }
+        pool, executions = self._make_post_pool(post_row=post_row)
+        svc = DevToCrossPostService(pool)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.json.return_value = {
+            "error": "Title is too long",
+            "status": 422,
+        }
+        mock_response.text = '{"error":"Title is too long","status":422}'
 
         with patch("services.devto_service.httpx.AsyncClient") as MockClient:
             client = AsyncMock()
@@ -560,14 +770,13 @@ class TestCrossPostByPostIdDedup:
         update_sqls = [
             (sql, args) for sql, args in executions if "UPDATE posts" in sql
         ]
-        assert len(update_sqls) == 1, (
-            "Expected exactly one metadata UPDATE marking the post "
-            "as gave_up; got %r" % executions
-        )
+        assert len(update_sqls) == 1
         patch_json = update_sqls[0][1][0]
         assert f'"devto_status": "{DEVTO_STATUS_GAVE_UP}"' in patch_json
-        assert '"devto_last_http_status": "422"' in patch_json
-        assert "Canonical url has already been taken" in patch_json
+        assert (
+            f'"devto_status": "{DEVTO_STATUS_ALREADY_EXISTS}"'
+            not in patch_json
+        )
 
     @pytest.mark.asyncio
     async def test_503_leaves_metadata_alone_so_cron_retries(self):

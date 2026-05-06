@@ -223,10 +223,12 @@ class TestRun:
         assert "pool closed" in result.detail
 
     @pytest.mark.asyncio
-    async def test_candidate_query_excludes_gave_up_posts(self):
-        """#397 — the SELECT must skip posts marked
-        ``metadata->>'devto_status' = 'gave_up'`` so the cron stops
-        retrying canonical-URL collisions every tick."""
+    async def test_candidate_query_excludes_terminal_devto_status(self):
+        """#397 + #404 — the SELECT must skip posts marked with EITHER
+        ``devto_status = 'gave_up'`` (permanent reject) or
+        ``devto_status = 'already_exists'`` (canonical URL already on
+        Dev.to). Without the second filter the cron keeps re-asking
+        Dev.to about the same canonical URL every 4 hours forever."""
         pool, conn = _make_pool([])
         svc = _patched_svc()
         with patch(
@@ -238,7 +240,34 @@ class TestRun:
         sql = conn.fetch.call_args.args[0]
         # Canonical filters present
         assert "devto_url" in sql
-        # The new gave_up filter — both the column reference and the
-        # 'gave_up' literal must appear.
+        # Both terminal devto_status sentinels excluded by the SELECT.
         assert "devto_status" in sql
         assert "gave_up" in sql
+        assert "already_exists" in sql
+
+    @pytest.mark.asyncio
+    async def test_already_exists_url_counts_as_success_not_error(self):
+        """#404 — when ``cross_post_by_post_id`` returns the canonical
+        URL (already_exists path), the job treats it as a successful
+        crosspost (bumps changes_made / posts_crossposted, NOT
+        errors). Verifies the job's truthy-URL check works for the
+        success-at-destination case without any job-side change."""
+        pool, _ = _make_pool([
+            {"id": "p1", "title": "T1", "slug": "already"},
+        ])
+        svc = _patched_svc(
+            post_return_map={
+                # Service returns the canonical URL for already_exists.
+                "p1": "https://www.gladlabs.io/posts/already",
+            },
+        )
+        with patch(
+            "services.devto_service.DevToCrossPostService",
+            return_value=svc,
+        ):
+            job = CrosspostToDevtoJob()
+            result = await job.run(pool, {})
+        assert result.ok is True
+        assert result.changes_made == 1
+        assert result.metrics["posts_crossposted"] == 1
+        assert result.metrics["errors"] == 0
