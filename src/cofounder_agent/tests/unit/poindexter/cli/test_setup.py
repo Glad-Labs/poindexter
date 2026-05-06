@@ -201,3 +201,94 @@ class TestRunMigrationsFailure:
         assert ok is False
         assert "OSError" in reason
         assert "connection refused" in reason
+
+
+class TestRunMigrationsSeedsDefaults:
+    """After a successful migration run the CLI seeds app_settings (#379)."""
+
+    def test_seeder_invoked_after_successful_migration(self, stub_create_pool):
+        """seed_all_defaults() runs against the same pool after migrations."""
+        pool = _make_empty_db_pool(after_count=12)
+        stub_create_pool.return_value = pool
+
+        seed_stub = AsyncMock(return_value=42)
+        with patch(
+            "services.migrations.run_migrations",
+            AsyncMock(return_value=True),
+        ), patch(
+            "services.settings_defaults.seed_all_defaults", seed_stub,
+        ):
+            ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
+
+        assert ok is True, reason
+        assert "applied 12" in reason
+        assert "seeded 42 default" in reason
+        seed_stub.assert_awaited_once()
+        seeded_pool = seed_stub.await_args.args[0]
+        assert seeded_pool is pool
+
+    def test_seeder_invoked_on_idempotent_run(self, stub_create_pool):
+        """Even when no migrations applied this run, the seeder still runs.
+
+        This is what closes the gap on operators upgrading from a pre-#379
+        install: their DB is already at HEAD, but the seeder still tops
+        up any keys that never had an explicit migration.
+        """
+        pool = _make_fake_pool(before_count=12, after_count=12)
+        stub_create_pool.return_value = pool
+
+        seed_stub = AsyncMock(return_value=7)
+        with patch(
+            "services.migrations.run_migrations",
+            AsyncMock(return_value=True),
+        ), patch(
+            "services.settings_defaults.seed_all_defaults", seed_stub,
+        ):
+            ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
+
+        assert ok is True, reason
+        assert "already up to date" in reason
+        assert "seeded 7 default" in reason
+        seed_stub.assert_awaited_once()
+
+    def test_seeder_zero_count_does_not_advertise_seed(self, stub_create_pool):
+        """If seeder finds nothing to do, the message stays clean."""
+        pool = _make_fake_pool(before_count=12, after_count=12)
+        stub_create_pool.return_value = pool
+
+        with patch(
+            "services.migrations.run_migrations",
+            AsyncMock(return_value=True),
+        ), patch(
+            "services.settings_defaults.seed_all_defaults",
+            AsyncMock(return_value=0),
+        ):
+            ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
+
+        assert ok is True, reason
+        assert "already up to date" in reason
+        # No "seeded" suffix when nothing was inserted
+        assert "seeded" not in reason
+
+    def test_seeder_failure_does_not_fail_setup(self, stub_create_pool):
+        """seed_all_defaults() raising surfaces in the message but ok=True.
+
+        Migrations themselves succeeded; the seeder is best-effort because
+        the lazy SettingsService default path is still a working fallback.
+        """
+        pool = _make_empty_db_pool(after_count=12)
+        stub_create_pool.return_value = pool
+
+        with patch(
+            "services.migrations.run_migrations",
+            AsyncMock(return_value=True),
+        ), patch(
+            "services.settings_defaults.seed_all_defaults",
+            AsyncMock(side_effect=RuntimeError("seed exploded")),
+        ):
+            ok, reason = asyncio.run(_run_migrations("postgresql://x/y"))
+
+        assert ok is True
+        assert "settings seed FAILED" in reason
+        assert "RuntimeError" in reason
+        assert "seed exploded" in reason

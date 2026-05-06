@@ -142,9 +142,37 @@ async def _run_migrations(dsn: str) -> tuple[bool, str]:
                 f"one or more migrations failed (applied {applied} before "
                 "failure — see worker logs for the offending migration)",
             )
+
+        # Seed code-side defaults that aren't covered by an explicit
+        # migration (#379). Closes the fresh-DB app_settings gap so
+        # the worker boots without lazy "default at query time"
+        # surprises and `poindexter setup --check` doesn't false-flag
+        # SKIP for keys that have a real default in code.
+        seeded = 0
+        try:
+            from services.settings_defaults import seed_all_defaults
+
+            seeded = await seed_all_defaults(pool)
+        except Exception as e:  # noqa: BLE001
+            return (
+                True,
+                f"applied {applied} migration(s) "
+                f"({int(after or 0)} total); settings seed FAILED: "
+                f"{type(e).__name__}: {e}",
+            )
+
+        seed_suffix = f" + seeded {seeded} default(s)" if seeded else ""
         if applied == 0:
-            return True, f"already up to date ({int(after or 0)} migrations applied)"
-        return True, f"applied {applied} migration(s) ({int(after or 0)} total)"
+            return (
+                True,
+                f"already up to date ({int(after or 0)} migrations applied)"
+                + seed_suffix,
+            )
+        return (
+            True,
+            f"applied {applied} migration(s) ({int(after or 0)} total)"
+            + seed_suffix,
+        )
     finally:
         await pool.close()
 

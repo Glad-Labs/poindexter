@@ -294,6 +294,79 @@ class TestRunMigrations:
         ):
             _run(mgr._run_migrations())  # Must not raise
 
+    def test_seed_all_defaults_called_after_migrations(self):
+        """After successful migrations, the #379 seeder runs against the same pool."""
+        mgr = _make_manager()
+        mgr.database_service = self._mock_db()
+        pool = mgr.database_service.pool
+
+        mock_migrations = MagicMock()
+        mock_migrations.run_migrations = AsyncMock(return_value=True)
+        mock_content = MagicMock()
+        mock_seeder = MagicMock()
+        mock_seeder.seed_all_defaults = AsyncMock(return_value=42)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "services.migrations": mock_migrations,
+                "services.content_router_service": mock_content,
+                "services.settings_defaults": mock_seeder,
+            },
+        ):
+            _run(mgr._run_migrations())
+
+        mock_seeder.seed_all_defaults.assert_awaited_once()
+        # Seeder receives the database pool, not the wrapper service
+        call_args = mock_seeder.seed_all_defaults.await_args
+        assert call_args.args[0] is pool
+
+    def test_seed_failure_does_not_abort_startup(self):
+        """seed_all_defaults() raising is logged but doesn't propagate (lazy default fallback)."""
+        mgr = _make_manager()
+        mgr.database_service = self._mock_db()
+
+        mock_migrations = MagicMock()
+        mock_migrations.run_migrations = AsyncMock(return_value=True)
+        mock_content = MagicMock()
+        mock_seeder = MagicMock()
+        mock_seeder.seed_all_defaults = AsyncMock(side_effect=Exception("seed exploded"))
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "services.migrations": mock_migrations,
+                "services.content_router_service": mock_content,
+                "services.settings_defaults": mock_seeder,
+            },
+        ):
+            _run(mgr._run_migrations())  # Must not raise
+
+    def test_seed_skipped_when_no_pool(self):
+        """When the DB pool is None, the seeder import path is short-circuited."""
+        mgr = _make_manager()
+        mgr.database_service = MagicMock()
+        mgr.database_service.pool = None  # simulate degraded startup
+
+        mock_migrations = MagicMock()
+        mock_migrations.run_migrations = AsyncMock(return_value=True)
+        mock_content = MagicMock()
+        mock_seeder = MagicMock()
+        mock_seeder.seed_all_defaults = AsyncMock(return_value=0)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "services.migrations": mock_migrations,
+                "services.content_router_service": mock_content,
+                "services.settings_defaults": mock_seeder,
+            },
+        ):
+            _run(mgr._run_migrations())
+
+        # No pool — seeder should not be invoked at all
+        mock_seeder.seed_all_defaults.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # _setup_redis_cache
