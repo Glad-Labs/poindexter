@@ -58,6 +58,10 @@ jobs:
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/plugins/ -q --tb=short -p no:cacheprovider
 
+      - name: Unit tests — cli
+        working-directory: src/cofounder_agent
+        run: python -m pytest tests/unit/cli/ -q --tb=short -p no:cacheprovider
+
       # `--forked` isolates ServiceContainer / site_config singletons that
       # leak across tests in the services directory. Each --ignore below
       # has a reason — keep this list audited.
