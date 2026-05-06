@@ -24,6 +24,20 @@ BRANCH="main"
 
 echo "Syncing to GitHub (excluding private files)..."
 
+# Capture the mirror's current main SHA up front so we can lease against it on
+# push (see --force-with-lease invocation near the end). If main has moved on
+# the mirror between now and the push (i.e. someone DID push something), the
+# push aborts loudly instead of silently overwriting their commit. See #392 +
+# the e302fa5d post-mortem for why plain --force is unsafe here.
+EXPECTED_MIRROR_SHA="$(git ls-remote "$GITHUB_REMOTE" "refs/heads/${BRANCH}" | awk '{print $1}')"
+if [[ -z "$EXPECTED_MIRROR_SHA" ]]; then
+  # First-ever push (mirror branch doesn't exist yet) — the empty lease value
+  # tells git "expect this ref to NOT exist", which is the correct safety
+  # check for a brand-new branch. See `git push --help` § force-with-lease.
+  echo "[sync] Mirror $BRANCH does not exist yet; will create it on push."
+fi
+echo "[sync] Mirror $BRANCH expected SHA: ${EXPECTED_MIRROR_SHA:-<none>}"
+
 # Create a temporary branch with private files removed
 TEMP_BRANCH="github-sync-temp-$$"
 git checkout -b "$TEMP_BRANCH" 2>/dev/null
@@ -116,8 +130,27 @@ git rm --cached --quiet .gitleaks-baseline.json 2>/dev/null || true
 # Commit the removal (temporary — only pushed to github, never to origin/glad-labs-stack)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
 
-# Force push this clean branch to GitHub as main
-git push "$GITHUB_REMOTE" "${TEMP_BRANCH}:${BRANCH}" --force 2>&1
+# Force-push this clean branch to GitHub as main, but with a LEASE.
+#
+# Why force-push: this is the documented "intentional posture" for the public
+# mirror — see CLAUDE.md § Mirror force-push posture. The mirror is rebuilt
+# from scratch on every sync (filter → push), so a fast-forward-only push
+# would just keep the mirror permanently stale.
+#
+# Why --force-with-lease (NOT plain --force): if mirror/main has moved since
+# we captured EXPECTED_MIRROR_SHA at the top of this script, something
+# unexpected pushed to the mirror (a real human PR? a hand-edit?) and we
+# want to ABORT loudly instead of silently overwriting it. Plain --force
+# would just steamroll. See #392 + the e302fa5d incident, which silently
+# reverted production code from PRs #157 and #161 (#384 + #391) for ~5 days
+# of dark image / podcast / video media_assets recording.
+#
+# Edge case: if EXPECTED_MIRROR_SHA is empty (first-ever push, branch doesn't
+# exist on the mirror yet), `--force-with-lease=ref:` (empty SHA) tells git
+# "expect this ref to NOT exist" and is the right safety check for the
+# brand-new-branch case.
+git push "$GITHUB_REMOTE" "${TEMP_BRANCH}:${BRANCH}" \
+  --force-with-lease="${BRANCH}:${EXPECTED_MIRROR_SHA}" 2>&1
 
 # Switch back to original branch and delete temp.
 # Force-checkout: the temp branch has lots of files removed from the index via

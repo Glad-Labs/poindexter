@@ -9,6 +9,27 @@ name: Sync to public Poindexter mirror
 #
 # To bypass for an individual commit, include "[skip-public-sync]" in the commit
 # message. Useful for in-progress branches that aren't ready for public visibility.
+#
+# Sync mechanism — force-push with --force-with-lease (issue #392):
+#   The mirror is rebuilt from scratch on every sync (filter → push). This is the
+#   documented "intentional force-push posture" — see CLAUDE.md. We use
+#   --force-with-lease (NOT plain --force) so that if anyone pushes directly to
+#   the public mirror's main between our SHA-capture and our push, the sync
+#   ABORTS loudly instead of silently overwriting their commit. The previous
+#   `merge -X theirs` approach (one-off recovery commit e302fa5d, 2026-04-30)
+#   silently reverted production patches from PRs #157 and #161 — image,
+#   podcast, and video media_assets recording were dark for ~5 days (see #384,
+#   #391, #392). DO NOT replace force-push with a union merge — that's the bug.
+#
+# No CI guard for non-bot commits on the mirror (deliberate, per Matt 2026-05-05):
+#   We could grep `git log mirror/main` for non-bot authors and abort if a real
+#   human contributor's commit is about to be overwritten. We don't, because:
+#   (a) there are no human contributors yet — last 30 mirror merges are all
+#   bots (release-please, mintlify, github-actions); (b) Matt subscribes to
+#   GitHub notifications on the public repo and would see a real PR appear.
+#   The --force-with-lease above already protects against the most common
+#   accident (pushed-to-mirror-since-we-looked). If contributor PRs become
+#   common, revisit and add the guard.
 
 on:
   push:
