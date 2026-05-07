@@ -89,6 +89,22 @@ $Sessions = @{
         Days = "FRI"
         MaxMinutes = 20
     }
+    "alert-triage" = @{
+        Prompt = $RepoPreamble + "Sweep last 24h of alert_events. Connect via DATABASE_URL or LOCAL_DATABASE_URL env. Query: SELECT alertname, severity, COUNT(*) FROM alert_events WHERE received_at > NOW() - INTERVAL '24 hours' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20. For each alertname firing more than 5 times, look at the most recent dispatch_result + the underlying probe (brain/<name>_probe.py if it exists). If the pattern is clearly a probe bug (false positive, same fingerprint repeating because dedup is broken, etc.), open a SHORT issue at Glad-Labs/poindexter with reproduction + suspect file. If the pattern is a real failure (service genuinely down, GPU overheating, cost overrun) leave alone - the operator will see it on the morning brief. Do NOT dispatch fix agents from inside this session - just file issues. One PR per real bug, branch auto/alert-triage-{date}. Keep output minimal."
+        Cron = "0 1 * * *"
+        TimeHH = "01"
+        TimeMM = "00"
+        Days = "daily"
+        MaxMinutes = 25
+    }
+    "dependency-review" = @{
+        Prompt = $RepoPreamble + "Scan for ready-to-merge dependabot/renovate PRs. Run: gh pr list --repo Glad-Labs/glad-labs-stack --search 'is:pr is:open author:app/dependabot status:success' --json number,title,headRefName,createdAt --limit 30. For each PR: only act if (a) the title is a patch-level bump (regex: 'bump .* from \d+\.\d+\.\d+ to \d+\.\d+\.[1-9]\d*' i.e. third number changed, or 'bump .* from \d+\.X\.Y to \d+\.X\.Z' with same major/minor), (b) all checks are green, (c) PR is more than 6 hours old (so any flaky CI has stabilised). For matching PRs run: gh pr review --approve, then gh pr merge --squash --delete-branch --auto. Major-version bumps and minor-version bumps go untouched - those are operator review. Print a summary of merged + skipped + reasons. Keep output minimal."
+        Cron = "30 6 * * *"
+        TimeHH = "06"
+        TimeMM = "30"
+        Days = "daily"
+        MaxMinutes = 15
+    }
 }
 
 function Run-Session {
