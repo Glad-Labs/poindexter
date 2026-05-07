@@ -168,3 +168,4 @@ scripts/install-watchdogs.ps1
 scripts/reinstall-watchdogs.ps1
 scripts/register-auto-embed-task.bat
 scripts/register-content-qa-task.bat
+.grafana-audit/
