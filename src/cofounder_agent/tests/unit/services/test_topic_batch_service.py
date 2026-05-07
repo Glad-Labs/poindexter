@@ -409,6 +409,225 @@ async def test_reject_batch_marks_expired_and_can_re_discover(db_pool):
 
 
 # ===========================================================================
+# _discover_external — TopicSource plugin dispatch (Task 6 follow-up)
+# ===========================================================================
+
+
+class _StubTopicSource:
+    """Stub implementing the ``plugins.topic_source.TopicSource`` Protocol.
+
+    Captures the ``(pool, config)`` it was called with so tests can assert
+    the niche context propagated correctly. Returns a deterministic list
+    of ``DiscoveredTopic`` (or raises if ``error`` is set).
+    """
+
+    def __init__(self, name, topics=None, error=None):
+        self.name = name
+        self._topics = topics or []
+        self._error = error
+        self.calls = []
+
+    async def extract(self, pool, config):
+        self.calls.append({"pool": pool, "config": config})
+        if self._error is not None:
+            raise self._error
+        return list(self._topics)
+
+
+async def test_discover_external_dispatches_registered_plugins(db_pool, monkeypatch):
+    """Each enabled non-internal_rag source matches a registered plugin
+    by name; results aggregate into the {kind, data} shape consumed by
+    _embed_and_pre_rank."""
+    from plugins.topic_source import DiscoveredTopic
+
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(slug="ext-niche-dispatch", name="ExtDispatch")
+    await nsvc.set_sources(n.id, [
+        NicheSource("hackernews", enabled=True, weight_pct=60),
+        NicheSource("devto", enabled=True, weight_pct=40),
+        # internal_rag must NOT be invoked by _discover_external.
+        NicheSource("internal_rag", enabled=True, weight_pct=0),
+    ])
+
+    hn = _StubTopicSource("hackernews", topics=[
+        DiscoveredTopic(
+            title="Rust 1.80 ships with stable async iterators",
+            category="technology",
+            source="hackernews",
+            source_url="https://news.ycombinator.com/item?id=1",
+            relevance_score=4.2,
+            description="HN top story",
+        ),
+    ])
+    devto = _StubTopicSource("devto", topics=[
+        DiscoveredTopic(
+            title="Why I switched from Webpack to Vite",
+            category="technology",
+            source="devto",
+            source_url="https://dev.to/x/y",
+            relevance_score=2.5,
+            description="Dev.to trending",
+        ),
+        DiscoveredTopic(
+            title="Postgres 17 query plans demystified",
+            category="technology",
+            source="devto",
+            source_url="https://dev.to/a/b",
+            relevance_score=3.0,
+            description="Dev.to trending",
+        ),
+    ])
+
+    monkeypatch.setattr(
+        "plugins.registry.get_topic_sources",
+        lambda: [hn, devto],
+    )
+
+    svc = TopicBatchService(db_pool)
+    out = await svc._discover_external(n)
+
+    assert len(out) == 3
+    # All have the expected shape.
+    for item in out:
+        assert item["kind"] == "external"
+        data = item["data"]
+        assert {"title", "summary", "source_name", "source_ref"} <= data.keys()
+
+    # Aggregate from BOTH plugins.
+    assert {item["data"]["source_name"] for item in out} == {
+        "hackernews", "devto",
+    }
+    titles = {item["data"]["title"] for item in out}
+    assert "Rust 1.80 ships with stable async iterators" in titles
+    assert "Why I switched from Webpack to Vite" in titles
+
+    # Each plugin's extract() saw the niche context.
+    for stub in (hn, devto):
+        assert len(stub.calls) == 1
+        cfg = stub.calls[0]["config"]
+        assert cfg["niche_slug"] == n.slug
+        assert cfg["niche_id"] == str(n.id)
+        assert "_site_config" in cfg
+
+    # internal_rag must not have been routed through here at all.
+    assert "internal_rag" not in {s.name for s in (hn, devto)}
+
+
+async def test_discover_external_skips_unknown_source_with_warning(
+    db_pool, monkeypatch, caplog,
+):
+    """A niche-source name not present in the registry must log a
+    warning and be skipped — never raise."""
+    from plugins.topic_source import DiscoveredTopic
+
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(slug="ext-niche-unknown", name="ExtUnknown")
+    await nsvc.set_sources(n.id, [
+        NicheSource("hackernews", enabled=True, weight_pct=50),
+        # Not registered — must be skipped, not crashed on.
+        NicheSource("legacy_rss", enabled=True, weight_pct=50),
+    ])
+
+    hn = _StubTopicSource("hackernews", topics=[
+        DiscoveredTopic(
+            title="The case for monorepos in 2026",
+            category="technology",
+            source="hackernews",
+            source_url="https://example/1",
+        ),
+    ])
+    monkeypatch.setattr("plugins.registry.get_topic_sources", lambda: [hn])
+
+    svc = TopicBatchService(db_pool)
+    import logging
+    with caplog.at_level(logging.WARNING):
+        out = await svc._discover_external(n)
+
+    # Got hn's one topic; legacy_rss silently skipped (warned, not raised).
+    assert len(out) == 1
+    assert out[0]["data"]["source_name"] == "hackernews"
+
+    warned = [
+        r for r in caplog.records
+        if r.levelno >= logging.WARNING and "legacy_rss" in r.getMessage()
+    ]
+    assert warned, "expected a warning for the unregistered source"
+
+
+async def test_discover_external_isolates_per_source_failures(
+    db_pool, monkeypatch,
+):
+    """A plugin raising must not kill the sweep — other plugins still
+    contribute their topics."""
+    from plugins.topic_source import DiscoveredTopic
+
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(slug="ext-niche-isolate", name="ExtIsolate")
+    await nsvc.set_sources(n.id, [
+        NicheSource("hackernews", enabled=True, weight_pct=50),
+        NicheSource("devto", enabled=True, weight_pct=50),
+    ])
+
+    bad = _StubTopicSource("hackernews", error=RuntimeError("boom"))
+    good = _StubTopicSource("devto", topics=[
+        DiscoveredTopic(
+            title="Goroutines vs async/await",
+            category="technology",
+            source="devto",
+            source_url="https://dev.to/g",
+        ),
+    ])
+    monkeypatch.setattr(
+        "plugins.registry.get_topic_sources", lambda: [bad, good],
+    )
+
+    svc = TopicBatchService(db_pool)
+    out = await svc._discover_external(n)
+
+    assert len(out) == 1
+    assert out[0]["data"]["source_name"] == "devto"
+
+
+async def test_discover_external_disabled_sources_skipped(
+    db_pool, monkeypatch,
+):
+    """Disabled niche-source rows must not invoke their plugin."""
+    from plugins.topic_source import DiscoveredTopic
+
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(slug="ext-niche-disabled", name="ExtDisabled")
+    await nsvc.set_sources(n.id, [
+        NicheSource("hackernews", enabled=False, weight_pct=50),
+        NicheSource("devto", enabled=True, weight_pct=50),
+    ])
+
+    hn = _StubTopicSource("hackernews", topics=[
+        DiscoveredTopic(
+            title="should not appear",
+            category="technology",
+            source="hackernews",
+        ),
+    ])
+    devto = _StubTopicSource("devto", topics=[
+        DiscoveredTopic(
+            title="appears",
+            category="technology",
+            source="devto",
+        ),
+    ])
+    monkeypatch.setattr(
+        "plugins.registry.get_topic_sources", lambda: [hn, devto],
+    )
+
+    svc = TopicBatchService(db_pool)
+    out = await svc._discover_external(n)
+
+    assert len(out) == 1
+    assert out[0]["data"]["title"] == "appears"
+    assert hn.calls == [], "disabled source should never be invoked"
+
+
+# ===========================================================================
 # _handoff_to_pipeline — #188/#341 regression guard
 # ===========================================================================
 

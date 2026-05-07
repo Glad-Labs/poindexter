@@ -206,25 +206,107 @@ class TopicBatchService:
         return (count or 0) > 0
 
     async def _discover_external(self, niche: Niche) -> list[dict[str, Any]]:
-        """Call existing topic_discovery wiring for non-internal sources.
-
-        TODO(Task 6 follow-up): wire to ``services.topic_discovery.TopicDiscovery``
-        once the per-niche source plugin filter is exposed. Today we log
-        a warning (so misconfiguration surfaces) and return [].
-        """
+        """Dispatch every enabled non-internal_rag TopicSource plugin for
+        the niche and aggregate the resulting DiscoveredTopics into the
+        ``{"kind": "external", "data": {...}}`` shape consumed by
+        ``_embed_and_pre_rank``."""
         sources = await self._niche_svc.get_sources(niche.id)
         external_sources = [
             s for s in sources if s.enabled and s.source_name != "internal_rag"
         ]
-        if external_sources:
-            logger.warning(
-                "Niche %s has %d external source(s) configured but topic_discovery "
-                "wiring is not yet implemented in TopicBatchService — returning [] "
-                "(TODO follow-up task)",
-                niche.slug,
-                len(external_sources),
+        if not external_sources:
+            return []
+
+        # Lazy imports — keeps the registry import out of cold paths and
+        # matches the rest of this file's style.
+        from plugins.config import PluginConfig
+        from plugins.registry import get_topic_sources
+        from services.site_config import site_config
+
+        # Index registry by name so we can match niche-source rows to
+        # plugin instances. A niche may legitimately reference a source
+        # name that's not registered (legacy config, plugin uninstalled,
+        # typo) — log + skip rather than blow up the whole sweep.
+        registry = {
+            getattr(p, "name", type(p).__name__): p for p in get_topic_sources()
+        }
+
+        candidates: list[dict[str, Any]] = []
+        for source in external_sources:
+            plugin = registry.get(source.source_name)
+            if plugin is None:
+                logger.warning(
+                    "Niche %s references TopicSource %r which is not "
+                    "registered — skipping. Check plugin install or rename.",
+                    niche.slug,
+                    source.source_name,
+                )
+                continue
+
+            # Per-source config — the same plugin.topic_source.<name> row
+            # the standalone runner reads. Layered with the niche-aware
+            # context the source needs to scope its output.
+            try:
+                plugin_cfg = await PluginConfig.load(
+                    self._pool, "topic_source", source.source_name,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Niche %s: failed to load PluginConfig for %s (%s) — "
+                    "using empty config",
+                    niche.slug, source.source_name, exc,
+                )
+                plugin_cfg = None
+
+            extract_config: dict[str, Any] = dict(
+                plugin_cfg.config if plugin_cfg else {}
             )
-        return []
+            extract_config.update({
+                "_site_config": site_config,
+                "niche_slug": niche.slug,
+                "niche_id": str(niche.id),
+            })
+
+            try:
+                topics = await plugin.extract(self._pool, extract_config)
+            except Exception as exc:
+                # Per-source isolation — one bad source must not starve
+                # the rest of the sweep.
+                logger.exception(
+                    "Niche %s: TopicSource %s extract failed: %s",
+                    niche.slug, source.source_name, exc,
+                )
+                continue
+
+            for t in topics or []:
+                # Convert DiscoveredTopic → dict shape that
+                # _embed_and_pre_rank reads. ``source_url`` doubles as
+                # source_ref so the (batch_id, source_name, source_ref)
+                # uniqueness constraint on topic_candidates holds even
+                # when two sources surface the same headline.
+                title = getattr(t, "title", "") or ""
+                desc = getattr(t, "description", "") or ""
+                src_url = getattr(t, "source_url", "") or ""
+                candidates.append({
+                    "kind": "external",
+                    "data": {
+                        "title": title,
+                        "summary": desc,
+                        "source_name": source.source_name,
+                        "source_ref": src_url or title[:80],
+                        "source_url": src_url,
+                        "category": getattr(t, "category", "") or "",
+                        "relevance_score": float(
+                            getattr(t, "relevance_score", 0.0) or 0.0
+                        ),
+                    },
+                })
+
+        logger.info(
+            "Niche %s: discovered %d external candidate(s) across %d source(s)",
+            niche.slug, len(candidates), len(external_sources),
+        )
+        return candidates
 
     async def _discover_internal(self, niche: Niche) -> list[dict[str, Any]]:
         sources = await self._niche_svc.get_sources(niche.id)
@@ -346,10 +428,16 @@ class TopicBatchService:
 
         ext_scored: list[ScoredCandidate] = []
         for item in external:
-            # External candidates are dicts (carry-forward rows or plugin
-            # output). Carry-forward rows have a "row" key; fresh discovery
-            # output is the dict itself.
-            row = item["row"] if isinstance(item, dict) and "row" in item else item
+            # External candidates arrive in three shapes:
+            #   - carry-forward: {"row": <db row dict>, "decay_factor": ...}
+            #   - fresh plugin output: {"kind": "external", "data": <dict>}
+            #   - legacy flat dict (defensive — tests may still emit this)
+            if isinstance(item, dict) and "row" in item:
+                row = item["row"]
+            elif isinstance(item, dict) and "data" in item:
+                row = item["data"]
+            else:
+                row = item
             assert row is not None
             text = (row.get("title") or "") + " " + (row.get("summary") or "")
             decay = item.get("decay_factor", 1.0) if isinstance(item, dict) else 1.0
