@@ -23,8 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 def _default_script_path() -> Path | None:
-    # Container layout: /app/scripts/db-backup-local.sh
+    # ``./src/cofounder_agent`` is mounted at ``/app:ro`` in the worker
+    # compose service, and ``./scripts`` lives next to it on the host
+    # but is mounted at ``/opt/scripts:ro`` because ``/app:ro`` rejects
+    # child mounts. The original auto-resolver only checked
+    # ``/app/scripts``, so the default path was always ``None`` in the
+    # local docker stack and the job failed every 12h with
+    # "db backup script not found at None". Add ``/opt/scripts`` first
+    # since it's the canonical container location, fall back to the
+    # legacy paths.
     candidates = [
+        Path("/opt/scripts/db-backup-local.sh"),
         Path("/app/scripts/db-backup-local.sh"),
         Path.home() / "glad-labs-website" / "scripts" / "db-backup-local.sh",
     ]

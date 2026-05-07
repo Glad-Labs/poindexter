@@ -25,11 +25,45 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H%M%SZ")
 BACKUP_FILE="poindexter-db-${TIMESTAMP}.dump"
 
 # ── Detect environment ───────────────────────────────────────────────
-if [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
-    # Inside Docker — connect locally via socket
-    DB_HOST="localhost"
-    DB_PORT="5432"
-    echo "[backup] Running inside Docker container"
+# Prefer DATABASE_URL when present (set by docker-compose for the
+# worker / brain). The legacy backup *sidecars* (poindexter-backup-*)
+# share a network with postgres-local so ``localhost`` works there,
+# but the worker container doesn't — DbBackupJob inside the worker
+# would otherwise fail with "Connection refused" on every run.
+if [ -n "${DATABASE_URL:-}" ]; then
+    # Parse postgresql://user:pass@host:port/db -- bash-only, no python.
+    # Drop the scheme prefix, then split user[:pass]@host[:port][/db].
+    _url_no_scheme="${DATABASE_URL#postgresql://}"
+    _url_no_scheme="${_url_no_scheme#postgres://}"
+    _url_after_at="${_url_no_scheme#*@}"
+    _userinfo="${_url_no_scheme%@*}"
+    if [ "${_userinfo}" = "${_url_no_scheme}" ]; then
+        _userinfo=""
+    fi
+    _hostport="${_url_after_at%%/*}"
+    DB_HOST="${_hostport%%:*}"
+    _port_part="${_hostport#*:}"
+    if [ "${_port_part}" = "${_hostport}" ]; then
+        DB_PORT="5432"
+    else
+        DB_PORT="${_port_part}"
+    fi
+    if [ -n "${_userinfo}" ]; then
+        # _userinfo is user[:password]
+        _u_user="${_userinfo%%:*}"
+        if [ -n "${_u_user}" ]; then DB_USER="${_u_user}"; fi
+        _u_pass_part="${_userinfo#*:}"
+        if [ "${_u_pass_part}" != "${_userinfo}" ] && [ -z "${PGPASSWORD:-}" ]; then
+            export PGPASSWORD="${_u_pass_part}"
+        fi
+    fi
+    echo "[backup] Running with DATABASE_URL host=${DB_HOST} port=${DB_PORT} user=${DB_USER}"
+elif [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
+    # Legacy sidecar path: shared-net backup containers reach postgres
+    # via localhost on the shared loopback.
+    DB_HOST="${DB_HOST:-localhost}"
+    DB_PORT="${DB_PORT:-5432}"
+    echo "[backup] Running inside Docker (no DATABASE_URL, using ${DB_HOST}:${DB_PORT})"
 else
     # On the host — connect via mapped port
     DB_HOST="${DB_HOST:-localhost}"
