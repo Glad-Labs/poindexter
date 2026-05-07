@@ -32,9 +32,14 @@ import pytest
 _litellm_stub = MagicMock(name="litellm")
 _litellm_stub.success_callback = []
 _litellm_stub.failure_callback = []
-sys.modules.setdefault("litellm", _litellm_stub)
 
-
+# 2026-05-06 fix: previously ``sys.modules.setdefault`` was used here,
+# which permanently wedged the MagicMock into ``sys.modules`` for every
+# subsequent test. Other test modules that import the real LiteLLM
+# (notably ``test_cost_lookup.py``) then resolved ``litellm.model_cost``
+# to a MagicMock and computed bogus per-token costs. The fixture-scoped
+# ``monkeypatch.setitem`` below restores the real module on teardown so
+# downstream tests see authoritative LiteLLM data.
 from services.llm_providers import litellm_provider  # noqa: E402
 from services.llm_providers.litellm_provider import (  # noqa: E402
     LangfuseConfigError,
@@ -47,7 +52,14 @@ def _reset_module_state(monkeypatch):
     """Wipe global registration flag + env vars between tests so each
     test exercises a fresh start. Patches the ``litellm`` stub's
     callback lists so no test sees state leaked from another.
+
+    Crucially, scopes the ``sys.modules["litellm"]`` stub to this test
+    file via ``monkeypatch.setitem`` so the MagicMock is removed on
+    teardown. Without this, downstream tests that import the real
+    LiteLLM (e.g. ``test_cost_lookup.py``) get the lingering MagicMock
+    and compute nonsense costs.
     """
+    monkeypatch.setitem(sys.modules, "litellm", _litellm_stub)
     monkeypatch.setattr(
         litellm_provider, "_LANGFUSE_CALLBACK_REGISTERED", False,
     )
