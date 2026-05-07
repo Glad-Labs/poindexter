@@ -244,6 +244,22 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_GATE_PENDING_SUMMARY_PROBE = False
 
+try:
+    # PR staleness probe — every cycle, pull open PRs from GitHub and
+    # flag any that have been sitting >24h with green CI but no merge.
+    # Catches the "agent shipped a PR and the operator forgot" failure
+    # mode. Routes a single coalesced Discord-ops alert per cycle.
+    # All thresholds are DB-configurable via app_settings (master switch:
+    # pr_staleness_probe_enabled). See brain/pr_staleness_probe.py.
+    from pr_staleness_probe import run_pr_staleness_probe
+    _HAS_PR_STALENESS_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.pr_staleness_probe import run_pr_staleness_probe
+        _HAS_PR_STALENESS_PROBE = True
+    except ImportError:
+        _HAS_PR_STALENESS_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1848,6 +1864,24 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] glitchtip_triage probe failed: %s", e)
+
+    # PR staleness probe — surfaces open PRs older than the configured
+    # threshold with green CI but no merge decision. Coalesced Discord-ops
+    # alert per cycle, per-PR dedup via alert_dedup_state. Catches the
+    # "agent shipped a PR and the operator forgot" failure mode. Internal
+    # cadence gate (default 60 min) keeps the actual GitHub round-trip
+    # to once per hour even though the probe is dispatched every brain
+    # cycle. See brain/pr_staleness_probe.py.
+    if _HAS_PR_STALENESS_PROBE:
+        try:
+            pr_summary = await run_pr_staleness_probe(pool)
+            probe_results["pr_staleness"] = {
+                "ok": bool(pr_summary.get("ok", False)),
+                "detail": pr_summary.get("detail", ""),
+                "summary": pr_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] pr_staleness probe failed: %s", e)
 
     # Refresh Prometheus scrape secrets (uptime_kuma_api_key, etc.)
     # from app_settings → bind-mounted password_file paths so the next
