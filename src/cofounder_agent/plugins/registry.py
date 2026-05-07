@@ -342,6 +342,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # The pyproject.toml entry-point is also registered but isn't read
         # at runtime per the imperative-load pattern this list enforces.
         ("jobs", "services.jobs.run_dev_diary_post", "RunDevDiaryPostJob"),
+        # Daily morning brief (cron 0 7 * * * — local container time).
+        # Posts a consolidated 24h digest to Discord ops and only pings
+        # Telegram when overnight criticals appear, so the operator wakes
+        # up to one summary instead of 50+ individual Captain Hook pings.
+        ("jobs", "services.jobs.morning_brief", "MorningBriefJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
