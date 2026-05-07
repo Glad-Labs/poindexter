@@ -310,14 +310,16 @@ services:
       # POINDEXTER_BRAIN_PARENT below.
       - ./brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
-      # Read-only mount of the host repo's .git directory so the
-      # dev_diary topic source (services/topic_sources/dev_diary_source.py)
-      # can run `git log --since=...` against the actual repo. The
-      # source resolves repo_root by walking up from /app looking for
-      # `.git`, and now finds /app/.git pointing at the host worktree.
-      # Read-only so a buggy gh/git invocation can never mutate history
-      # from inside the container. Closes Glad-Labs/poindexter#348.
-      - ./.git:/app/.git:ro
+      # NOTE: The ``./.git:/app/.git:ro`` mount that #259/#348 added is
+      # gone -- after the Docker Desktop upgrade ~2026-04-30 the
+      # underlying overlayfs hard-rejects child mounts under a ``:ro``
+      # parent (``/app`` is read-only above), which prevented the
+      # worker from starting at all. The mount was originally added so
+      # ``dev_diary_source.py`` could run ``git log``; #294 (2026-05-06)
+      # rewrote that source to hit the GitHub REST API via ``httpx``
+      # instead, so the bind-mount is no longer required. If you need
+      # repo metadata in the worker, prefer the API path -- do NOT
+      # re-add this mount or the worker will refuse to start.
       # Shared with the prometheus container — RenderPrometheusRulesJob
       # writes the DB-sourced rule YAML here; prometheus reads it.
       - prometheus-rules:/etc/prometheus/rules
