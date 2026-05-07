@@ -206,76 +206,6 @@
       }
     },
     {
-      "type": "stat",
-      "title": "Monitors DOWN right now",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 0,
-        "y": 22
-      },
-      "id": 8,
-      "targets": [
-        {
-          "expr": "count(monitor_status == 0) or vector(0)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "value": null,
-                "color": "green"
-              },
-              {
-                "value": 1,
-                "color": "red"
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background"
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Monitor response time (ms)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 22
-      },
-      "id": 9,
-      "targets": [
-        {
-          "expr": "monitor_response_time",
-          "legendFormat": "{{monitor_name}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        },
-        "overrides": []
-      }
-    },
-    {
       "type": "text",
       "title": "GlitchTip issue tracker",
       "gridPos": {
@@ -287,12 +217,12 @@
       "id": 10,
       "options": {
         "mode": "markdown",
-        "content": "GlitchTip is the Sentry-compatible error sink. Events ship from the worker via the DSN stored in `app_settings.sentry_dsn`.\n\n- **UI**: [http://localhost:8080](http://localhost:8080)\n- **Org**: Glad Labs \u2192 **Project**: cofounder-agent\n- **DSN**: `http://<public_key>@glitchtip-web:8000/1` (container-network form; browser-origin events should use `http://localhost:8080/1`)\n\nTrace \u2192 log \u2192 error correlation works when `sentry-trace` is propagated into OTEL spans. Click any error \u2192 **Open Trace** to jump into Tempo."
+        "content": "GlitchTip is the Sentry-compatible error sink. Events ship from the worker via the DSN stored in `app_settings.sentry_dsn`.\n\n- **UI**: [http://localhost:8080](http://localhost:8080)\n- **Org**: Glad Labs → **Project**: cofounder-agent\n- **DSN**: `http://<public_key>@glitchtip-web:8000/1` (container-network form; browser-origin events should use `http://localhost:8080/1`)\n\nTrace → log → error correlation works when `sentry-trace` is propagated into OTEL spans. Click any error → **Open Trace** to jump into Tempo."
       }
     },
     {
       "type": "row",
-      "title": "Tracing \u2014 Tempo",
+      "title": "Tracing — Tempo",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -330,7 +260,7 @@
         },
         "overrides": []
       },
-      "description": "Server-side request rate per service (Tempo metrics-generator \u2192 Prometheus). Excludes client/internal sub-spans so the count matches actual HTTP requests."
+      "description": "Server-side request rate per service (Tempo metrics-generator → Prometheus). Excludes client/internal sub-spans so the count matches actual HTTP requests."
     },
     {
       "type": "timeseries",
@@ -616,7 +546,7 @@
     },
     {
       "type": "row",
-      "title": "Profiling \u2014 Pyroscope",
+      "title": "Profiling — Pyroscope",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -629,7 +559,7 @@
     },
     {
       "type": "flamegraph",
-      "title": "CPU flamegraph \u2014 cofounder-agent",
+      "title": "CPU flamegraph — cofounder-agent",
       "datasource": {
         "type": "grafana-pyroscope-datasource",
         "uid": "local-pyroscope"
@@ -682,7 +612,7 @@
     },
     {
       "type": "row",
-      "title": "Logs \u2014 Loki",
+      "title": "Logs — Loki",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -926,7 +856,7 @@
         "type": "loki",
         "uid": "local-loki"
       },
-      "description": "Active containers \u2014 should match docker ps count. If a service goes dark, its container drops off this list within ~1m.",
+      "description": "Active containers — should match docker ps count. If a service goes dark, its container drops off this list within ~1m.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1248,7 +1178,7 @@
     },
     {
       "type": "row",
-      "title": "Uptime \u2014 Kuma",
+      "title": "Uptime — Kuma",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1258,184 +1188,6 @@
       },
       "panels": [],
       "id": 34
-    },
-    {
-      "type": "stat",
-      "title": "Monitor status",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 160
-      },
-      "id": 35,
-      "targets": [
-        {
-          "expr": "monitor_status",
-          "legendFormat": "{{monitor_name}}",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "UP",
-                  "color": "green"
-                },
-                "2": {
-                  "text": "PENDING",
-                  "color": "yellow"
-                },
-                "3": {
-                  "text": "MAINT",
-                  "color": "blue"
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "value": null,
-                "color": "red"
-              },
-              {
-                "value": 1,
-                "color": "green"
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "value_and_name",
-        "orientation": "horizontal"
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Response time (ms) by monitor",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 168
-      },
-      "id": 36,
-      "targets": [
-        {
-          "expr": "monitor_response_time",
-          "legendFormat": "{{monitor_name}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "Uptime % (30m rolling)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 168
-      },
-      "id": 37,
-      "targets": [
-        {
-          "expr": "avg_over_time(monitor_status[30m])",
-          "legendFormat": "{{monitor_name}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "min": 0,
-          "max": 1
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "TLS days remaining (HTTPS monitors)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 24,
-        "x": 0,
-        "y": 178
-      },
-      "id": 38,
-      "targets": [
-        {
-          "expr": "monitor_cert_days_remaining",
-          "legendFormat": "{{monitor_name}}",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "d",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "value": null,
-                "color": "red"
-              },
-              {
-                "value": 14,
-                "color": "yellow"
-              },
-              {
-                "value": 30,
-                "color": "green"
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "orientation": "horizontal"
-      }
     },
     {
       "type": "flamegraph",
@@ -1517,5 +1269,5 @@
   "uid": "observability-merged",
   "version": 1,
   "weekStart": "",
-  "description": "Merged observability stack \u2014 overview at the top, then per-tool sections (Tempo, Pyroscope, Loki, Kuma). Each section is collapsable so the page stays scannable."
+  "description": "Merged observability stack — overview at the top, then per-tool sections (Tempo, Pyroscope, Loki, Kuma). Each section is collapsable so the page stays scannable."
 }

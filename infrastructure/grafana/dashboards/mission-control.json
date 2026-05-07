@@ -2,6 +2,7 @@
   "annotations": {
     "list": []
   },
+  "description": "Single-screen operator landing. Status of every component plus current pipeline + alert stats. Drill-down links at the bottom.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -26,7 +27,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Langfuse UI",
-      "tooltip": "Open Langfuse 3 \u2014 LLM traces, prompts, experiments (tailscale workstation IP, port 3010)",
+      "tooltip": "Open Langfuse 3 — LLM traces, prompts, experiments (tailscale workstation IP, port 3010)",
       "type": "link",
       "url": "http://100.81.93.12:3010"
     },
@@ -38,7 +39,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Pyroscope UI",
-      "tooltip": "Continuous profiling \u2014 CPU + memory flamegraphs (tailscale workstation IP, port 4040)",
+      "tooltip": "Continuous profiling — CPU + memory flamegraphs (tailscale workstation IP, port 4040)",
       "type": "link",
       "url": "http://100.81.93.12:4040"
     },
@@ -98,7 +99,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Tempo",
-      "tooltip": "Tempo datasource \u2014 opens Grafana Explore view (Loki/Tempo have no standalone UI)",
+      "tooltip": "Tempo datasource — opens Grafana Explore view (Loki/Tempo have no standalone UI)",
       "type": "link",
       "url": "/explore?orgId=1&left=%7B%22datasource%22%3A%20%22local-tempo%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22tempo%22%2C%20%22uid%22%3A%20%22local-tempo%22%7D%2C%20%22queryType%22%3A%20%22traceqlSearch%22%2C%20%22filters%22%3A%20%5B%5D%7D%5D%2C%20%22range%22%3A%20%7B%22from%22%3A%20%22now-1h%22%2C%20%22to%22%3A%20%22now%22%7D%7D"
     },
@@ -110,7 +111,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Loki",
-      "tooltip": "Loki datasource \u2014 opens Grafana Explore view (Loki/Tempo have no standalone UI)",
+      "tooltip": "Loki datasource — opens Grafana Explore view (Loki/Tempo have no standalone UI)",
       "type": "link",
       "url": "/explore?orgId=1&left=%7B%22datasource%22%3A%20%22local-loki%22%2C%20%22queries%22%3A%20%5B%7B%22refId%22%3A%20%22A%22%2C%20%22datasource%22%3A%20%7B%22type%22%3A%20%22loki%22%2C%20%22uid%22%3A%20%22local-loki%22%7D%2C%20%22expr%22%3A%20%22%7Bjob%3D~%5C%22.%2B%5C%22%7D%22%7D%5D%2C%20%22range%22%3A%20%7B%22from%22%3A%20%22now-1h%22%2C%20%22to%22%3A%20%22now%22%7D%7D"
     },
@@ -177,17 +178,17 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
-                  "text": "DOWN",
-                  "color": "red"
+                  "color": "red",
+                  "text": "DOWN"
                 },
                 "1": {
-                  "text": "UP",
-                  "color": "green"
+                  "color": "green",
+                  "text": "UP"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -207,10 +208,10 @@
         }
       },
       "gridPos": {
-        "x": 0,
-        "y": 0,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 0,
+        "y": 0
       },
       "id": 1,
       "options": {
@@ -244,7 +245,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail \u2014 this is a belt+suspenders sanity check.",
+      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail — this is a belt+suspenders sanity check.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -252,17 +253,17 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
-                  "text": "DOWN",
-                  "color": "red"
+                  "color": "red",
+                  "text": "DOWN"
                 },
                 "1": {
-                  "text": "UP",
-                  "color": "green"
+                  "color": "green",
+                  "text": "UP"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -281,10 +282,10 @@
         }
       },
       "gridPos": {
-        "x": 4,
-        "y": 0,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 4,
+        "y": 0
       },
       "id": 2,
       "options": {
@@ -327,17 +328,17 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
-                  "text": "DOWN",
-                  "color": "red"
+                  "color": "red",
+                  "text": "DOWN"
                 },
                 "1": {
-                  "text": "UP",
-                  "color": "green"
+                  "color": "green",
+                  "text": "UP"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -356,10 +357,10 @@
         }
       },
       "gridPos": {
-        "x": 8,
-        "y": 0,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 8,
+        "y": 0
       },
       "id": 3,
       "options": {
@@ -400,17 +401,17 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
-                  "text": "DOWN",
-                  "color": "yellow"
+                  "color": "yellow",
+                  "text": "DOWN"
                 },
                 "1": {
-                  "text": "UP",
-                  "color": "green"
+                  "color": "green",
+                  "text": "UP"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -429,10 +430,10 @@
         }
       },
       "gridPos": {
-        "x": 12,
-        "y": 0,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 12,
+        "y": 0
       },
       "id": 4,
       "options": {
@@ -473,17 +474,17 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
-                  "text": "DOWN",
-                  "color": "yellow"
+                  "color": "yellow",
+                  "text": "DOWN"
                 },
                 "1": {
-                  "text": "UP",
-                  "color": "green"
+                  "color": "green",
+                  "text": "UP"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -502,10 +503,10 @@
         }
       },
       "gridPos": {
-        "x": 16,
-        "y": 0,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 16,
+        "y": 0
       },
       "id": 5,
       "options": {
@@ -546,17 +547,17 @@
           },
           "mappings": [
             {
-              "type": "value",
               "options": {
                 "0": {
-                  "text": "DOWN",
-                  "color": "yellow"
+                  "color": "yellow",
+                  "text": "DOWN"
                 },
                 "1": {
-                  "text": "UP",
-                  "color": "green"
+                  "color": "green",
+                  "text": "UP"
                 }
-              }
+              },
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -575,10 +576,10 @@
         }
       },
       "gridPos": {
-        "x": 20,
-        "y": 0,
+        "h": 5,
         "w": 4,
-        "h": 5
+        "x": 20,
+        "y": 0
       },
       "id": 6,
       "options": {
@@ -611,51 +612,55 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Content tasks created in the last 24h. Zero for extended periods means autonomous topic generation has stalled.",
+      "description": "content_tasks created in the last 24h, bucketed by hour. Flat for >2h means autonomous topic discovery has stalled.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
+            "mode": "palette-classic"
           },
-          "mappings": [],
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
                 "color": "green",
-                "value": 10
+                "value": null
               }
             ]
           },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
       "gridPos": {
         "x": 0,
         "y": 5,
-        "w": 4,
+        "w": 8,
         "h": 5
       },
       "id": 7,
       "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["sum"],
-          "fields": "",
-          "values": false
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
         },
-        "textMode": "value_and_name"
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "targets": [
         {
@@ -669,8 +674,8 @@
           "refId": "A"
         }
       ],
-      "title": "Tasks in 24h",
-      "type": "stat"
+      "title": "Tasks generated (last 24h)",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -707,7 +712,7 @@
         }
       },
       "gridPos": {
-        "x": 4,
+        "x": 8,
         "y": 5,
         "w": 4,
         "h": 5
@@ -774,7 +779,7 @@
         }
       },
       "gridPos": {
-        "x": 8,
+        "x": 12,
         "y": 5,
         "w": 4,
         "h": 5
@@ -840,7 +845,7 @@
         }
       },
       "gridPos": {
-        "x": 12,
+        "x": 16,
         "y": 5,
         "w": 4,
         "h": 5
@@ -878,7 +883,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 \u2014 any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
+      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 — any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -902,7 +907,7 @@
         }
       },
       "gridPos": {
-        "x": 16,
+        "x": 20,
         "y": 5,
         "w": 4,
         "h": 5
@@ -940,7 +945,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline \u2014 expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
+      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline — expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -968,8 +973,8 @@
         }
       },
       "gridPos": {
-        "x": 20,
-        "y": 5,
+        "x": 0,
+        "y": 10,
         "w": 4,
         "h": 5
       },
@@ -1002,19 +1007,182 @@
       "type": "stat"
     },
     {
-      "type": "text",
-      "title": "Drill into",
-      "id": 13,
+      "id": 14,
+      "title": "Recently published",
+      "type": "table",
+      "description": "Last 5 posts on the public site, newest first.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 10,
+        "w": 12,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT title AS \"Title\",        COALESCE(c.name, 'uncategorized') AS \"Category\",        p.published_at AS \"Published\",        p.view_count AS \"Views\" FROM posts p LEFT JOIN categories c ON c.id = p.category_id WHERE p.status='published' ORDER BY p.published_at DESC LIMIT 5",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Published mix by category",
+      "type": "piechart",
+      "description": "Donut of published posts by category.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 10,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "unit": "short"
+        }
+      },
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value"]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(c.name, 'uncategorized') AS metric,        COUNT(*)::int AS value FROM posts p LEFT JOIN categories c ON c.id = p.category_id WHERE p.status='published' GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "LLM spend (last 7 days)",
+      "type": "timeseries",
+      "description": "Daily LLM cost in USD from cost_logs.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 15,
         "w": 24,
         "h": 6
       },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
       "options": {
-        "mode": "markdown",
-        "content": "## Drill into\n\n[**\u25b6 Pipeline**](/d/pipeline-merged) &nbsp; \u00b7 &nbsp; [**\u25b6 System Health**](/d/system-health-merged) &nbsp; \u00b7 &nbsp; [**\u25b6 Observability**](/d/observability-merged) &nbsp; \u00b7 &nbsp; [**\u25b6 Cost & Analytics**](/d/cost-analytics) &nbsp; \u00b7 &nbsp; [**\u25b6 Integrations & Admin**](/d/integrations-admin)"
-      }
+        "legend": {
+          "calcs": ["sum"],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', created_at) AS time,        SUM(cost_usd)::float AS \"USD\" FROM cost_logs WHERE created_at > NOW() - INTERVAL '7 days' GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -1031,7 +1199,6 @@
   "timezone": "browser",
   "title": "Mission Control",
   "uid": "mission-control",
-  "version": 1,
-  "weekStart": "",
-  "description": "Single-screen operator landing. Status of every component plus current pipeline + alert stats. Drill-down links at the bottom."
+  "version": 7,
+  "weekStart": ""
 }

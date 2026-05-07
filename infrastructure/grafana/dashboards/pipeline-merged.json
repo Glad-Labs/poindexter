@@ -26,7 +26,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Langfuse UI",
-      "tooltip": "Open Langfuse 3 \u2014 LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
+      "tooltip": "Open Langfuse 3 — LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
       "type": "link",
       "url": "http://100.81.93.12:3010"
     }
@@ -34,7 +34,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Approval Queue \u2014 Human Oversight",
+      "title": "Approval Queue — Human Oversight",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1074,7 +1074,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Throughput \u2014 posts generated per hour",
+      "description": "Throughput — posts generated per hour",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1263,7 +1263,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Rejection rate over the selected time window. Lower is better \u2014 but a 0% rate with low throughput often means content isn't being generated.",
+      "description": "Rejection rate over the selected time window. Lower is better — but a 0% rate with low throughput often means content isn't being generated.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1830,7 +1830,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Per-writer-model approval rate \u2014 reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
+      "description": "Per-writer-model approval rate — reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1980,7 +1980,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval rate \u2014 % of generated content that passes quality bar",
+      "description": "Approval rate — % of generated content that passes quality bar",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2176,7 +2176,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Quality scores over time \u2014 are we improving?",
+      "description": "Quality scores over time — are we improving?",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2371,7 +2371,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval vs rejection rates over time \u2014 track human oversight effectiveness",
+      "description": "Approval vs rejection rates over time — track human oversight effectiveness",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2968,7 +2968,7 @@
     {
       "type": "row",
       "id": 43,
-      "title": "Topic Discovery \u2014 Niche Pivot",
+      "title": "Topic Discovery — Niche Pivot",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3142,7 +3142,7 @@
       "type": "stat",
       "id": 47,
       "title": "Active niches",
-      "description": "Niches with active=true \u2014 each has its own discovery sweep.",
+      "description": "Niches with active=true — each has its own discovery sweep.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -3223,7 +3223,7 @@
       "type": "table",
       "id": 49,
       "title": "Recent batch decisions (7 days)",
-      "description": "Closed batches with the picked candidate \u2014 retroactive review of what got shipped to research/draft.",
+      "description": "Closed batches with the picked candidate — retroactive review of what got shipped to research/draft.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -3238,7 +3238,7 @@
         {
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT n.slug AS \"Niche\", tb.status AS \"Status\", tb.resolved_at AT TIME ZONE 'UTC' AS \"Resolved\", tb.picked_candidate_kind AS \"Kind\", COALESCE(tc.title, ic.title, '(skipped)') AS \"Picked\" FROM topic_batches tb JOIN niches n ON n.id = tb.niche_id LEFT JOIN topic_candidates tc ON tc.id = tb.picked_candidate_id LEFT JOIN internal_topic_candidates ic ON ic.id = tb.picked_candidate_id WHERE tb.status != 'open' AND tb.resolved_at > NOW() - INTERVAL '7 days' ORDER BY tb.resolved_at DESC LIMIT 25",
+          "rawSql": "SELECT n.slug AS \"Niche\", tb.status AS \"Status\", tb.resolved_at AT TIME ZONE 'UTC' AS \"Resolved\", tb.picked_candidate_kind AS \"Kind\", COALESCE(tc.title, ic.distilled_topic, '(skipped)') AS \"Picked\" FROM topic_batches tb JOIN niches n ON n.id = tb.niche_id LEFT JOIN topic_candidates tc ON tc.id = tb.picked_candidate_id LEFT JOIN internal_topic_candidates ic ON ic.id = tb.picked_candidate_id WHERE tb.status != 'open' AND tb.resolved_at > NOW() - INTERVAL '7 days' ORDER BY tb.resolved_at DESC LIMIT 25",
           "refId": "A"
         }
       ],
