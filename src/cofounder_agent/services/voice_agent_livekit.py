@@ -71,15 +71,17 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from livekit import api
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport
 
 from services.voice_agent import build_voice_pipeline_task
+from services.voice_pipecat import (
+    mint_livekit_token as _shared_mint_livekit_token,
+    resolve_livekit_creds as _shared_resolve_livekit_creds,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("voice_agent_livekit")
@@ -749,54 +751,35 @@ def _mint_token(
     can_subscribe: bool = True,
     ttl_minutes: int = 360,
 ) -> str:
-    """Mint a LiveKit JWT for the given identity + room."""
-    grants = api.VideoGrants(
-        room_join=True,
+    """Mint a LiveKit JWT for the given identity + room.
+
+    Thin wrapper around :func:`services.voice_pipecat.mint_livekit_token`
+    so the always-on container's ``--print-client-token`` surface keeps
+    its existing call shape (minutes, not seconds) while the underlying
+    JWT plumbing lives in one place shared with the MCP-side bridge.
+    """
+    return _shared_mint_livekit_token(
         room=room,
+        identity=identity,
+        api_key=api_key,
+        api_secret=api_secret,
+        ttl_s=ttl_minutes * 60,
         can_publish=can_publish,
         can_subscribe=can_subscribe,
-        can_publish_data=True,
     )
-    token = (
-        api.AccessToken(api_key=api_key, api_secret=api_secret)
-        .with_identity(identity)
-        .with_name(identity)
-        .with_grants(grants)
-        .with_ttl(timedelta(minutes=ttl_minutes))
-        .to_jwt()
-    )
-    return token
 
 
 def _resolve_livekit_creds(site_config: Any | None = None) -> tuple[str, str, str]:
-    """Pull URL + API key + secret.
+    """Pull LiveKit URL + API key + secret via the shared resolver.
 
-    Resolution order:
-      1. ``site_config.get('voice_agent_livekit_url')`` if a SiteConfig is
-         provided (DB-first per the project's standard).
-      2. ``LIVEKIT_URL`` env var (used by ``scripts/start-livekit-voice-bot.sh``
-         and any local manual invocation).
-      3. Hardcoded ``ws://localhost:7880`` dev fallback.
-
-    API key + secret stay in env vars for now — they're the same string
-    the LiveKit SFU container reads from compose, so a single place to
-    edit (compose env) keeps the two halves in lockstep. When the
-    LiveKit creds eventually move into bootstrap.toml or app_settings
-    (#383 follow-up), update both ends together.
+    Delegates to :func:`services.voice_pipecat.resolve_livekit_creds` so
+    the always-on container and the MCP-side bridge read the same
+    resolution chain (site_config -> LIVEKIT_URL env -> dev fallback;
+    LIVEKIT_API_KEY / LIVEKIT_API_SECRET from env). Kept as a module-level
+    name so existing tests that patch ``services.voice_agent_livekit.
+    _resolve_livekit_creds`` continue to work.
     """
-    url = ""
-    if site_config is not None:
-        try:
-            url = str(site_config.get("voice_agent_livekit_url", "") or "").strip()
-        except Exception:  # noqa: BLE001 — site_config absence is OK; fall through
-            url = ""
-    url = url or os.environ.get("LIVEKIT_URL", "") or "ws://localhost:7880"
-    key = os.environ.get("LIVEKIT_API_KEY", "devkey")
-    secret = os.environ.get(
-        "LIVEKIT_API_SECRET",
-        "devsecret_change_me_change_me_change_me",
-    )
-    return url, key, secret
+    return _shared_resolve_livekit_creds(site_config)
 
 
 # ---------------------------------------------------------------------------

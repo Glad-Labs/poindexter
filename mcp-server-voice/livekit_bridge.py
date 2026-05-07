@@ -300,6 +300,11 @@ class BridgeConfig:
     # The audio plane is responsible for telling us "the room is empty"; for
     # the no-op plane this is effectively unused.
     empty_room_grace_seconds: int = 60
+    # Audio-plane knobs piped through to PipecatAudioMediaPlane (PR #2).
+    # Defaults match the migration seed in
+    # services/migrations/20260507_022644_seed_voice_bridge_app_settings.py.
+    stt_model: str = "base.en"
+    tts_voice: str = "af_bella"
 
 
 @dataclass
@@ -511,6 +516,49 @@ async def _bridge_main(state: BridgeState) -> None:
         )
 
 
+def _resolve_default_audio_plane(config: BridgeConfig) -> AudioMediaPlane:
+    """Pick the default audio plane for a new bridge session.
+
+    Tries the Pipecat plane in ``audio_plane_pipecat`` (PR #2) first; if
+    that import fails (the heavy audio deps aren't installed in this
+    environment, e.g. a public-Poindexter slim install or CI) we fall
+    back to the no-op plane so the control-plane code paths still work.
+
+    Setting ``VOICE_BRIDGE_AUDIO_PLANE=noop`` short-circuits straight to
+    the no-op plane -- escape hatch for tests, CI, and operators
+    debugging audio-driver problems. Surfaced in the operator doc.
+    """
+    if (os.environ.get("VOICE_BRIDGE_AUDIO_PLANE", "") or "").strip().lower() == "noop":
+        logger.info(
+            "[VOICE_BRIDGE] VOICE_BRIDGE_AUDIO_PLANE=noop -- using "
+            "NoopAudioMediaPlane (silent stub)."
+        )
+        return NoopAudioMediaPlane()
+    # Probe the heavy audio deps before instantiating the Pipecat plane:
+    # they're imported lazily inside ``connect()``, but checking availability
+    # here means a control-plane-only environment (the PR #1 unit tests, CI,
+    # operators on a CPU-only laptop without onnxruntime-gpu) silently falls
+    # back to the no-op plane instead of choking at first ``voice_join_room``.
+    # Production deployments install all of these via the audio extras in
+    # mcp-server-voice/pyproject.toml.
+    try:
+        import pipecat  # noqa: F401 -- availability probe only
+        import livekit  # noqa: F401 -- availability probe only
+        from audio_plane_pipecat import resolve_audio_plane  # type: ignore[import-not-found]
+    except ImportError as exc:
+        logger.warning(
+            "[VOICE_BRIDGE] PipecatAudioMediaPlane unavailable (%s) -- "
+            "falling back to NoopAudioMediaPlane. Install the audio "
+            "deps from mcp-server-voice/pyproject.toml to enable real "
+            "audio.",
+            exc,
+        )
+        return NoopAudioMediaPlane()
+    stt_model = getattr(config, "stt_model", "base.en") or "base.en"
+    tts_voice = getattr(config, "tts_voice", "af_bella") or "af_bella"
+    return resolve_audio_plane(stt_model=stt_model, tts_voice=tts_voice)
+
+
 async def start_bridge(
     *,
     session_id: str | None = None,
@@ -551,7 +599,8 @@ async def start_bridge(
             f"call stop_bridge first or pick a fresh id",
         )
 
-    media = media or NoopAudioMediaPlane()
+    if media is None:
+        media = _resolve_default_audio_plane(config)
     state = BridgeState(session_id=sid, config=config, media=media)
     _registry.add(state)
 

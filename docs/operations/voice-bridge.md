@@ -191,23 +191,97 @@ one Kokoro request. If chunks land too close together, set
 emit fewer separate TTS requests. The trade-off is interruptibility —
 the user can only interrupt at chunk boundaries.
 
-## Deferred to PR #2
+## Audio plane
 
-The first cut ships the **control plane** (session lifecycle, pipe
-plumbing, chunking, watchdog, MCP tool surface, slash commands, tests,
-docs). The audio media plane is wrapped behind an interface
-(`AudioMediaPlane`) with a `NoopAudioMediaPlane` default — every part
-the slash commands and tests touch works against the no-op plane.
+PR #1 shipped the **control plane** (session lifecycle, pipe plumbing,
+chunking, watchdog, MCP tool surface, slash commands, tests, docs)
+behind an `AudioMediaPlane` interface defaulting to `NoopAudioMediaPlane`
+— silent stub for fast tests and CI.
 
-PR #2 will land `services/voice_pipecat.py` — a shared module that
-factors the Pipecat pipeline (Whisper + Silero + Kokoro + LiveKit
-transport) out of `voice_agent_livekit.py` so the bridge can mount one
-without duplicating dependency state in the MCP server process. At
-that point the bridge swaps `NoopAudioMediaPlane` for
-`PipecatAudioMediaPlane` in `start_bridge` and the audio round-trip
-goes live.
+PR #2 (this section) lands the real audio: `PipecatAudioMediaPlane` in
+`mcp-server-voice/audio_plane_pipecat.py`. When the bridge worker spins
+up it now picks the Pipecat plane by default, joins the LiveKit room as
+`claude-bridge-<sid>`, runs faster-whisper STT on inbound audio (firing
+the bridge's pipe-write closure on every Silero VAD utterance-end), and
+TTS-publishes Kokoro audio for every line written to `.out`. The
+shared Pipecat plumbing lives in
+`src/cofounder_agent/services/voice_pipecat.py`, used by both the
+always-on `voice-agent-livekit` container and this bridge so the two
+surfaces can never drift on Pipecat / Whisper / Kokoro version state.
 
-The split keeps PR #1 under the LOC ceiling and lets the audio plane
-get its own focused review — the surface area is non-trivial (RTX 5090
-GPU sharing, Pipecat lifecycle, voice cred rotation) and shouldn't be
-buried in a 3000-line PR.
+### What's now real vs. what was no-op
+
+| Path                                     | PR #1 (no-op)            | PR #2 (Pipecat plane)                                           |
+| ---------------------------------------- | ------------------------ | --------------------------------------------------------------- |
+| `voice_join_room` → bridge worker        | Logs "would join room X" | Joins LiveKit room with a JWT, subscribes to participants       |
+| Inbound audio → `<sid>.in` pipe          | Only via test hook       | Real Whisper STT + Silero VAD, transcripts append on speech-end |
+| `voice_speak` → outbound audio in room   | Logs "would TTS-speak"   | Real Kokoro TTS published to the room's audio track             |
+| `voice_leave_room` → graceful disconnect | Registry cleanup only    | Cancels Pipecat runner + TTS pump, closes LiveKit transport     |
+
+### Latency expectations
+
+Measured on Matt's 5090 box with `voice_bridge_stt_model=base.en` and
+`voice_bridge_tts_voice=af_bella`:
+
+| Phase                             | Warm path   | Cold first call                    |
+| --------------------------------- | ----------- | ---------------------------------- |
+| STT (end-of-speech → `.in`)       | ~600ms-1.2s | ~2-3s (Whisper model load)         |
+| TTS (`.out` line → audio in room) | ~400-800ms  | ~1.5-2.5s (Kokoro voice pack load) |
+
+CPU-only deployments (public Poindexter on a laptop) trend ~5x slower
+on STT and ~3x slower on TTS — manageable for a quick check-in but
+noticeably laggy for back-and-forth dev pairing. Bump
+`voice_bridge_stt_model` to `tiny.en` if a CPU-only operator wants
+speed over accuracy.
+
+### Fallback to the no-op plane
+
+Every audio plane is configurable via env var, so an operator with a
+broken audio driver / CUDA mismatch / missing model can keep the
+control plane working without uninstalling deps:
+
+```bash
+VOICE_BRIDGE_AUDIO_PLANE=noop uv run --directory mcp-server-voice python -m server
+```
+
+In this mode `voice_join_room` still spins up a worker, the `.in` /
+`.out` pipes still work, but the bridge logs `[noop-media]` instead of
+moving audio bytes. Useful for unit-testing slash commands when the
+GPU is busy or in CI where Pipecat / livekit aren't installed.
+
+Per `feedback_no_silent_defaults`, an unknown value (anything other
+than `pipecat`, blank, or `noop`) raises a `RuntimeError` at start-up
+rather than silently falling back. The env var is the only switch —
+the bridge does not consult `app_settings` for plane selection (audio
+hardware availability is a deploy-time fact, not a runtime
+configuration).
+
+### Local smoke
+
+The control-plane smoke (no GPU, no LiveKit) still ships:
+
+```bash
+python mcp-server-voice/scripts/test_voice_bridge_smoke.py
+```
+
+For the full audio round-trip against a running LiveKit + Whisper +
+Kokoro stack:
+
+```bash
+# Bring the LiveKit container up
+docker compose -f docker-compose.local.yml up -d livekit
+
+# Set the LiveKit creds (same values as docker-compose.local.yml)
+export LIVEKIT_URL=ws://localhost:7880
+export LIVEKIT_API_KEY=devkey
+export LIVEKIT_API_SECRET=devsecret_change_me_change_me_change_me
+
+# Run the round-trip — joins the room as a second participant, publishes
+# a Whisper-decodable Kokoro clip, asserts STT lands on .in, writes a
+# reply to .out, asserts TTS leaves the bridge worker.
+poetry run python mcp-server-voice/scripts/test_voice_bridge_round_trip.py
+```
+
+The script prints latency readings for STT and TTS at the bottom —
+useful when tuning `voice_bridge_stt_model` / `voice_bridge_tts_voice`
+or evaluating a new Pipecat upgrade.

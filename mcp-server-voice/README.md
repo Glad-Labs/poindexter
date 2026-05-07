@@ -115,10 +115,25 @@ cd mcp-server-voice && python -m pytest tests/ -q
 python mcp-server-voice/scripts/test_voice_bridge_smoke.py
 ```
 
-The audio media plane is wrapped behind an `AudioMediaPlane` interface
-with a `NoopAudioMediaPlane` default; everything the slash commands and
-tests touch works against the no-op plane. The real Pipecat plane will
-land in PR #2 once `services/voice_pipecat.py` is factored out.
+The audio media plane is wrapped behind an `AudioMediaPlane` interface.
+PR #1 shipped a `NoopAudioMediaPlane` default for fast tests; PR #2
+landed `PipecatAudioMediaPlane` (real Whisper STT + Kokoro TTS over
+LiveKit) and made it the default. The shared Pipecat plumbing lives in
+`src/cofounder_agent/services/voice_pipecat.py` so the bridge and the
+always-on `voice-agent-livekit` container share one closure.
+
+Set `VOICE_BRIDGE_AUDIO_PLANE=noop` to fall back to the silent stub —
+useful for control-plane debugging or environments without the audio
+deps. Unknown values raise loudly per `feedback_no_silent_defaults`.
+
+Real-audio round-trip:
+
+```bash
+docker compose -f docker-compose.local.yml up -d livekit
+export LIVEKIT_URL=ws://localhost:7880
+export LIVEKIT_API_KEY=devkey LIVEKIT_API_SECRET=devsecret_change_me_change_me_change_me
+poetry run python mcp-server-voice/scripts/test_voice_bridge_round_trip.py
+```
 
 ## Slash commands
 
