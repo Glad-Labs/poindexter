@@ -52,9 +52,17 @@ logger = logging.getLogger("voice-bridge-mcp")
 
 # Local DB DSN — voice_bridge_* settings live in app_settings, same DB
 # the rest of the Poindexter stack reads from.
-LOCAL_DB_DSN = os.getenv(
-    "LOCAL_DATABASE_URL",
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
+#
+# Accept DATABASE_URL (canonical, per feedback_db_first_config / CLAUDE.md
+# "Only DATABASE_URL as env var") OR LOCAL_DATABASE_URL (legacy alias the
+# rest of the brain still uses). Default port is 15432 — the canonical
+# poindexter-postgres-local container port (host port 5433 was retired in
+# the container-rename pass; that mismatch silently routed every
+# voice_join_room call into a ConnectionRefusedError).
+LOCAL_DB_DSN = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("LOCAL_DATABASE_URL")
+    or "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
 )
 
 # Lazy-initialized connection pool.
