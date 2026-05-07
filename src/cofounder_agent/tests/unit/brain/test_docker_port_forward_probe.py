@@ -596,9 +596,13 @@ class TestWatchListParsing:
         out = pf._parse_watch_list(json.dumps([
             {"container": "poindexter-pyroscope", "port": 4040, "path": "/"},
         ]))
+        # ``host_port`` defaults to ``port`` for 1:1 compose mappings; an
+        # explicit ``host_port`` override only appears when the entry
+        # opts in (see test_explicit_host_port_override below).
         assert out == [{
             "container": "poindexter-pyroscope",
             "port": 4040,
+            "host_port": 4040,
             "path": "/",
             "internal_hostname": "pyroscope",
         }]
@@ -613,6 +617,18 @@ class TestWatchListParsing:
             },
         ]))
         assert out[0]["internal_hostname"] == "actual-dns-name"
+
+    def test_explicit_host_port_override(self):
+        out = pf._parse_watch_list(json.dumps([
+            {
+                "container": "poindexter-prometheus",
+                "port": 9090,
+                "host_port": 9091,
+                "path": "/-/healthy",
+            },
+        ]))
+        assert out[0]["host_port"] == 9091
+        assert out[0]["port"] == 9090
 
     def test_invalid_json_returns_empty_list(self):
         assert pf._parse_watch_list("{not json") == []
