@@ -742,6 +742,19 @@ async def list_tasks(
                 elif task.get("id"):
                     task["id"] = str(task["id"])
 
+                # Pydantic v2 strict-mode rejects asyncpg's UUID instances
+                # against ``str | None`` field declarations. Cast every UUID
+                # column we know about up front so ``UnifiedTaskResponse``
+                # validates cleanly. Without this, listing tasks 500s the
+                # moment any one row has post_id/site_id/agent_id set --
+                # which is most rows once the pipeline writes a published
+                # post back. See traceback: ``UnifiedTaskResponse.post_id
+                # Input should be a valid string ... input_type=UUID``.
+                for _uuid_key in ("post_id", "site_id", "agent_id"):
+                    val = task.get(_uuid_key)
+                    if val is not None and not isinstance(val, str):
+                        task[_uuid_key] = str(val)
+
                 # CRITICAL: Parse cost_breakdown from JSON string to dict
                 if "cost_breakdown" in task and isinstance(task["cost_breakdown"], str):
                     try:
