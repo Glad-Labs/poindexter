@@ -128,7 +128,7 @@ The control plane (sessions, pipes, chunking, watchdog) is verified by
 the unit suite:
 
 ```bash
-cd mcp-server && python -m pytest tests/test_livekit_bridge.py -v
+cd mcp-server-voice && python -m pytest tests/test_livekit_bridge.py -v
 ```
 
 23 tests, runs in <1s, no network or audio. Plus a quick smoke test
@@ -136,7 +136,7 @@ that exercises the full control plane end-to-end against the no-op
 audio plane:
 
 ```bash
-python scripts/test_voice_bridge_smoke.py
+python mcp-server-voice/scripts/test_voice_bridge_smoke.py
 ```
 
 The actual LiveKit + Whisper + Kokoro audio round-trip needs the

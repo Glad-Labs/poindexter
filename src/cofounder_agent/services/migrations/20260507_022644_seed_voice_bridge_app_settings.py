@@ -8,7 +8,7 @@ pipe; voice_speak output → TTS into the room.
 
 The always-on ``voice-agent-livekit`` container is unaffected — these
 settings configure the *additive* MCP-driven bridge spawned by
-``voice_join_room``. See ``mcp-server/livekit_bridge.py`` and
+``voice_join_room``. See ``mcp-server-voice/livekit_bridge.py`` and
 ``docs/operations/voice-bridge.md``.
 
 Settings seeded:

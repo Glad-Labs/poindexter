@@ -9,7 +9,7 @@ SESSION_ID="${1:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../" && pwd)"
-MCP_SERVER_DIR="${REPO_ROOT}/mcp-server"
+MCP_SERVER_DIR="${REPO_ROOT}/mcp-server-voice"
 
 python - <<PYEOF
 import asyncio

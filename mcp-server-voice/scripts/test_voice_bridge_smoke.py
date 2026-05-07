@@ -30,10 +30,11 @@ import time
 from pathlib import Path
 
 # Resolve sibling imports — works whether you run this from the repo
-# root or from inside scripts/.
+# root or from inside scripts/. ``HERE`` is mcp-server-voice/scripts/,
+# so ``HERE.parent`` is mcp-server-voice/, where livekit_bridge.py lives.
 HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parent
-MCP_SERVER_DIR = REPO_ROOT / "mcp-server"
+MCP_SERVER_DIR = HERE.parent
+REPO_ROOT = MCP_SERVER_DIR.parent
 if str(MCP_SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(MCP_SERVER_DIR))
 

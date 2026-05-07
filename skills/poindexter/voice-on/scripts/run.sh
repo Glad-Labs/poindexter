@@ -12,10 +12,10 @@ ROOM="${1:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../" && pwd)"
-MCP_SERVER_DIR="${REPO_ROOT}/mcp-server"
+MCP_SERVER_DIR="${REPO_ROOT}/mcp-server-voice"
 
 if [ ! -d "${MCP_SERVER_DIR}" ]; then
-  echo "Error: mcp-server/ not found at ${MCP_SERVER_DIR}"
+  echo "Error: mcp-server-voice/ not found at ${MCP_SERVER_DIR}"
   exit 1
 fi
 

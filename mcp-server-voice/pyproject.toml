@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "poindexter-voice-bridge"
+version = "0.1.0"
+description = "LiveKit voice bridge — voice as a session-agnostic UI surface for any Claude Code session."
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.14"
+mcp = ">=1.4"
+asyncpg = "^0.31"
+httpx = "^0.28"
+# Heavy audio plane deps land in PR #2 (services/voice_pipecat.py
+# refactor + Pipecat audio plane swap-in). PR #1 is control-plane only;
+# the no-op AudioMediaPlane has zero audio deps.
+
+[build-system]
+requires = ["poetry-core>=1.8"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
