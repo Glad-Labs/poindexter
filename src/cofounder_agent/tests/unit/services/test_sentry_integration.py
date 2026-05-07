@@ -8,6 +8,23 @@ import pytest
 _has_sentry = find_spec("sentry_sdk") is not None
 
 
+def _stub_site_config(values: dict | None = None) -> MagicMock:
+    """Build a SiteConfig stub that responds to ``.get(key, default)``.
+
+    Mirrors the DI seam introduced in Phase H — sentry_integration no
+    longer reaches for the deprecated module-level singleton, so tests
+    inject a per-test stub instead of patching env vars.
+    """
+    cfg = MagicMock()
+    data = values or {}
+
+    def _get(key, default=""):
+        return data.get(key, default)
+
+    cfg.get = _get
+    return cfg
+
+
 @pytest.mark.skipif(not _has_sentry, reason="sentry-sdk not installed")
 class TestSentryIntegration:
     """Tests for the SentryIntegration class."""
@@ -19,29 +36,38 @@ class TestSentryIntegration:
         SentryIntegration._initialized = False
         SentryIntegration._sentry_enabled = False
 
+    def test_initialize_no_site_config_returns_false(self):
+        """Without a DI'd SiteConfig the integration must skip cleanly."""
+        from services.sentry_integration import SentryIntegration
+
+        app = MagicMock()
+        result = SentryIntegration.initialize(app)
+        assert result is False
+        assert SentryIntegration._initialized is False
+        assert SentryIntegration._sentry_enabled is False
+
     def test_initialize_no_dsn_returns_false(self):
         from services.sentry_integration import SentryIntegration
 
         app = MagicMock()
-        with patch.dict("os.environ", {"SENTRY_DSN": ""}, clear=False):
-            result = SentryIntegration.initialize(app)
+        cfg = _stub_site_config({"sentry_dsn": ""})
+        result = SentryIntegration.initialize(app, cfg)
         assert result is False
         # _initialized intentionally stays False on the no-DSN path so the
         # lifespan re-init (after site_config loads) can retry once the DSN
-        # is actually configured. See sentry_integration.py:102-104.
+        # is actually configured.
         assert SentryIntegration._initialized is False
         assert SentryIntegration._sentry_enabled is False
 
-    def test_initialize_disabled_via_env(self):
+    def test_initialize_disabled_via_setting(self):
         from services.sentry_integration import SentryIntegration
 
         app = MagicMock()
-        with patch.dict(
-            "os.environ",
-            {"SENTRY_DSN": "https://key@sentry.io/123", "SENTRY_ENABLED": "false"},
-            clear=False,
-        ):
-            result = SentryIntegration.initialize(app)
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "false",
+        })
+        result = SentryIntegration.initialize(app, cfg)
         assert result is False
         assert SentryIntegration._sentry_enabled is False
 
@@ -51,16 +77,12 @@ class TestSentryIntegration:
         from services.sentry_integration import SentryIntegration
 
         app = MagicMock()
-        with patch.dict(
-            "os.environ",
-            {
-                "SENTRY_DSN": "https://key@sentry.io/123",
-                "SENTRY_ENABLED": "true",
-                "ENVIRONMENT": "production",
-            },
-            clear=False,
-        ):
-            result = SentryIntegration.initialize(app)
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+            "environment": "production",
+        })
+        result = SentryIntegration.initialize(app, cfg)
         assert result is True
         assert SentryIntegration._sentry_enabled is True
         mock_sentry.init.assert_called_once()
@@ -72,7 +94,8 @@ class TestSentryIntegration:
         SentryIntegration._initialized = True
         SentryIntegration._sentry_enabled = True
         app = MagicMock()
-        result = SentryIntegration.initialize(app)
+        cfg = _stub_site_config({"sentry_dsn": "https://key@sentry.io/123"})
+        result = SentryIntegration.initialize(app, cfg)
         assert result is True
         mock_sentry.init.assert_not_called()
 
@@ -82,12 +105,11 @@ class TestSentryIntegration:
 
         mock_sentry.init.side_effect = RuntimeError("init failed")
         app = MagicMock()
-        with patch.dict(
-            "os.environ",
-            {"SENTRY_DSN": "https://key@sentry.io/123", "SENTRY_ENABLED": "true"},
-            clear=False,
-        ):
-            result = SentryIntegration.initialize(app)
+        cfg = _stub_site_config({
+            "sentry_dsn": "https://key@sentry.io/123",
+            "sentry_enabled": "true",
+        })
+        result = SentryIntegration.initialize(app, cfg)
         assert result is False
         assert SentryIntegration._sentry_enabled is False
 
@@ -246,18 +268,20 @@ class TestSetupSentryConvenience:
         from services.sentry_integration import SentryIntegration, setup_sentry
 
         app = MagicMock()
+        cfg = _stub_site_config({"sentry_dsn": "https://k@s.io/1"})
         with patch.object(SentryIntegration, "initialize", return_value=True) as mock_init:
-            result = setup_sentry(app, "test-service")
-        mock_init.assert_called_once_with(app, "test-service")
+            result = setup_sentry(app, cfg, service_name="test-service")
+        mock_init.assert_called_once_with(app, cfg, "test-service")
         assert result is True
 
     def test_setup_sentry_default_service_name(self):
         from services.sentry_integration import SentryIntegration, setup_sentry
 
         app = MagicMock()
+        cfg = _stub_site_config({})
         with patch.object(SentryIntegration, "initialize", return_value=False) as mock_init:
-            setup_sentry(app)
-        mock_init.assert_called_once_with(app, "cofounder-agent")
+            setup_sentry(app, cfg)
+        mock_init.assert_called_once_with(app, cfg, "cofounder-agent")
 
 
 class TestCaptureExceptionEdgeCases:
@@ -528,7 +552,8 @@ class TestInitializeSdkUnavailable:
         from services.sentry_integration import SentryIntegration
 
         app = MagicMock()
-        result = SentryIntegration.initialize(app)
+        cfg = _stub_site_config({"sentry_dsn": "https://key@sentry.io/1"})
+        result = SentryIntegration.initialize(app, cfg)
         assert result is False
         # Should not have set _initialized=True (returns early)
         assert SentryIntegration._initialized is False

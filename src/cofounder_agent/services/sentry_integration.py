@@ -21,11 +21,11 @@ For local development, set SENTRY_ENABLED=false to disable reporting.
 """
 
 import logging
+from typing import Any
 
 from fastapi import FastAPI
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 try:
     import sentry_sdk
@@ -72,6 +72,7 @@ class SentryIntegration:
     def initialize(
         cls,
         app: FastAPI,  # noqa: ARG003 — main.py passes the app; FastApiIntegration hooks globally, doesn't need the instance
+        site_config: Any | None = None,
         service_name: str = "cofounder-agent",
     ):
         """
@@ -79,6 +80,11 @@ class SentryIntegration:
 
         Args:
             app: FastAPI application instance
+            site_config: SiteConfig DI seam. Required at runtime — passing
+                ``None`` skips init with a loud warning rather than reaching
+                for the deprecated module-level singleton (Phase H, GH#95).
+                Optional in the signature only so existing callers that
+                pass it positionally don't get a keyword-only TypeError.
             service_name: Name of the service for tracking
 
         Returns:
@@ -92,9 +98,21 @@ class SentryIntegration:
             logger.debug("Sentry already initialized")
             return cls._sentry_enabled
 
-        # Get configuration from site_config (falls back to env vars).
-        sentry_dsn = site_config.get("sentry_dsn", "").strip()
-        sentry_enabled = site_config.get("sentry_enabled", "true").lower() in ("true", "1", "yes")
+        if site_config is None:
+            logger.warning(
+                "[SENTRY] setup_sentry called without site_config — "
+                "Phase H requires DI; skipping init. Caller: %s",
+                service_name,
+            )
+            cls._sentry_enabled = False
+            return False
+
+        # Get configuration from the injected site_config instance.
+        sentry_dsn = (site_config.get("sentry_dsn", "") or "").strip()
+        sentry_enabled = (
+            (site_config.get("sentry_enabled", "true") or "true").lower()
+            in ("true", "1", "yes")
+        )
         environment = site_config.get("environment", "development") or "development"
         release = site_config.get("app_version", "3.0.1")
 
@@ -103,7 +121,7 @@ class SentryIntegration:
         # loads, and if we latched to "already initialized" on the empty read
         # from a module-level call, the real DSN would never take effect.
         if not sentry_dsn:
-            logger.info("[WARNING] Sentry DSN not configured (site_config.sentry_dsn)")
+            logger.info("[SENTRY] DSN not configured (site_config.sentry_dsn) — SDK init skipped")
             cls._sentry_enabled = False
             return False
 
@@ -154,11 +172,23 @@ class SentryIntegration:
             sentry_sdk.set_tag("service", service_name)
             sentry_sdk.set_tag("version", release)
 
-            logger.info("[OK] Sentry initialized successfully")
+            # The DSN host is the part operators will check against
+            # GlitchTip's URL, but the public key is a credential that
+            # shouldn't go in logs. Log only host+path.
+            try:
+                from urllib.parse import urlparse
+                _parsed = urlparse(sentry_dsn)
+                _safe_endpoint = f"{_parsed.scheme}://{_parsed.hostname or '?'}"
+                if _parsed.port:
+                    _safe_endpoint += f":{_parsed.port}"
+                _safe_endpoint += _parsed.path or ""
+            except Exception:  # noqa: BLE001
+                _safe_endpoint = "(redacted)"
+
+            logger.info("[SENTRY] SDK initialized — endpoint=%s", _safe_endpoint)
             logger.info("   Environment: %s", environment)
             logger.info("   Release: %s", release)
             logger.info("   Traces Sample Rate: %s", 0.1 if environment == 'production' else 1.0)
-            logger.info("   Dashboard: https://sentry.io")
 
             cls._initialized = True
             cls._sentry_enabled = True
@@ -348,19 +378,26 @@ class SentryIntegration:
         return cls._sentry_enabled
 
 
-def setup_sentry(app: FastAPI, service_name: str = "cofounder-agent") -> bool:
+def setup_sentry(
+    app: FastAPI,
+    site_config: Any | None = None,
+    service_name: str = "cofounder-agent",
+) -> bool:
     """
     Convenience function to initialize Sentry.
 
     Usage in main.py:
         from services.sentry_integration import setup_sentry
-        setup_sentry(app)
+        setup_sentry(app, site_config, service_name="poindexter-worker")
 
     Args:
         app: FastAPI application instance
+        site_config: The DI'd SiteConfig instance (Phase H). Required at
+            runtime — passing ``None`` skips init with a warning rather
+            than reaching for the deprecated module-level singleton.
         service_name: Name of the service
 
     Returns:
         bool: True if successfully initialized
     """
-    return SentryIntegration.initialize(app, service_name)
+    return SentryIntegration.initialize(app, site_config, service_name)
