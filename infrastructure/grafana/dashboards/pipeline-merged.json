@@ -2807,7 +2807,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT ROUND(AVG(quality_score), 1)::float AS value FROM pipeline_tasks WHERE status = 'dry_run' AND quality_score IS NOT NULL",
+          "rawSql": "SELECT ROUND(AVG(quality_score)::numeric, 1)::float AS value FROM pipeline_tasks_view WHERE status = 'dry_run' AND quality_score IS NOT NULL",
           "format": "table",
           "refId": "A"
         }
