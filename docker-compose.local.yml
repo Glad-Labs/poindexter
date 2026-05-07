@@ -288,8 +288,11 @@ services:
       # to authenticate against the local langfuse-web container.
       # Headless-init creates this org/project/key pair on first boot.
       LANGFUSE_HOST: "http://langfuse-web:3000"
-      LANGFUSE_PUBLIC_KEY: "pk-lf-KCi8EdrTVh6kg4_YNmB63UD6N7E"
-      LANGFUSE_SECRET_KEY: "sk-lf-gXIcHW6U_krse_PC5rP4BZT8fl6aYF9X7H9ki-aJQXE"
+      # Worker authenticates against the local Langfuse using the same
+      # init pair that seeded langfuse-web's first boot. Both come from
+      # ~/.poindexter/bootstrap.toml (poindexter#413).
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_PUBLIC_KEY is generated in bootstrap.toml}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_SECRET_KEY is generated in bootstrap.toml}
       # LiveKit credentials — voice_routes.py mints a 7-day JWT for the
       # phone-tap-to-join HTML page (poindexter#389). Same key/secret as
       # the livekit + voice-agent-livekit containers; LIVEKIT_PUBLIC_WSS_URL
@@ -587,11 +590,10 @@ services:
     environment: &langfuse-env
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/langfuse"
       # SALT + ENCRYPTION_KEY persist across restarts. If you rotate
-      # them, existing encrypted rows become unreadable. Generated
-      # with python -c "import secrets; print(secrets.token_urlsafe(16))"
-      # / token_hex(32). Move to bootstrap.toml later (#198 secrets pattern).
-      SALT: "l7H7UXNRb28w4zO1TwYQmw"
-      ENCRYPTION_KEY: "2b83ac6518cde3b06b9f146462a8a65ae50920fa05cbb753f41f7b02db2e5394"
+      # them, existing encrypted rows become unreadable. Sourced from
+      # ~/.poindexter/bootstrap.toml via `start-stack.sh` (poindexter#413).
+      SALT: ${LANGFUSE_SALT:?Run 'poindexter setup' — LANGFUSE_SALT is generated in bootstrap.toml}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?Run 'poindexter setup' — LANGFUSE_ENCRYPTION_KEY is generated in bootstrap.toml}
       TELEMETRY_ENABLED: "false"
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
       CLICKHOUSE_MIGRATION_URL: "clickhouse://langfuse-clickhouse:9000"
@@ -632,20 +634,21 @@ services:
     environment:
       <<: *langfuse-env
       NEXTAUTH_URL: "http://localhost:3010"
-      NEXTAUTH_SECRET: "-3GzsWxnEMJwRzAtNygOyxLmOsrS4EQ-0th-RJhdzug"
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?Run 'poindexter setup' — LANGFUSE_NEXTAUTH_SECRET is generated in bootstrap.toml}
       # Headless initialization (Langfuse 2024-09-04). The first boot
       # creates the org, project, owner user, and API key pair from
       # these vars. After they exist, the env vars become inert
-      # (Langfuse skips already-initialized resources).
+      # (Langfuse skips already-initialized resources). All secrets
+      # sourced from ~/.poindexter/bootstrap.toml (poindexter#413).
       LANGFUSE_INIT_ORG_ID: glad-labs
       LANGFUSE_INIT_ORG_NAME: "Glad Labs"
       LANGFUSE_INIT_PROJECT_ID: poindexter
       LANGFUSE_INIT_PROJECT_NAME: "Poindexter Pipeline"
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "pk-lf-KCi8EdrTVh6kg4_YNmB63UD6N7E"
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: "sk-lf-gXIcHW6U_krse_PC5rP4BZT8fl6aYF9X7H9ki-aJQXE"
-      LANGFUSE_INIT_USER_EMAIL: "mattg@gladlabs.io"
-      LANGFUSE_INIT_USER_NAME: "Matt Gladding"
-      LANGFUSE_INIT_USER_PASSWORD: "x4vYr3CB3edQ1PToKQunRw"
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_PUBLIC_KEY is generated in bootstrap.toml}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_SECRET_KEY is generated in bootstrap.toml}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:?Run 'poindexter setup' — LANGFUSE_INIT_USER_EMAIL is generated in bootstrap.toml}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:?Run 'poindexter setup' — LANGFUSE_INIT_USER_NAME is generated in bootstrap.toml}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:?Run 'poindexter setup' — LANGFUSE_INIT_USER_PASSWORD is generated in bootstrap.toml}
 
   # ===========================================
   # SDXL Image Server — GPU-accelerated image generation

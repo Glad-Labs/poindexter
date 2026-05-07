@@ -540,6 +540,19 @@ def _generate_secrets() -> dict[str, str]:
     Worker authentication uses OAuth 2.1 client credentials only; the
     setup wizard provisions an initial OAuth client via
     ``_provision_initial_oauth_client`` after migrations have run.
+
+    Langfuse seeds (poindexter#413) — used by docker-compose.local.yml
+    via env-var interpolation. SALT/ENCRYPTION_KEY persist across boots
+    (rotating them renders existing encrypted rows unreadable). The
+    INIT_* keys only matter on Langfuse's first boot — they seed the
+    org/project/owner user/API key pair, after which Langfuse ignores
+    them. The public/secret key pair is the one the worker uses to
+    talk to Langfuse, so we generate them here in the documented
+    ``pk-lf-`` / ``sk-lf-`` shape so an operator can copy/paste them
+    into ``app_settings.langfuse_public_key`` / ``langfuse_secret_key``
+    after first boot. ``langfuse_init_user_email`` defaults to
+    ``admin@localhost`` — the operator can change it in bootstrap.toml
+    before first boot if they want a real address.
     """
     import secrets
 
@@ -551,6 +564,15 @@ def _generate_secrets() -> dict[str, str]:
         # LGTM+ observability stack
         "glitchtip_db_password": secrets.token_hex(32),
         "glitchtip_secret_key": secrets.token_hex(32),
+        # Langfuse stack (poindexter#413)
+        "langfuse_salt": secrets.token_urlsafe(16),
+        "langfuse_encryption_key": secrets.token_hex(32),
+        "langfuse_nextauth_secret": secrets.token_urlsafe(32),
+        "langfuse_init_project_public_key": f"pk-lf-{secrets.token_urlsafe(22)}",
+        "langfuse_init_project_secret_key": f"sk-lf-{secrets.token_urlsafe(32)}",
+        "langfuse_init_user_email": "admin@localhost",
+        "langfuse_init_user_name": "Poindexter Admin",
+        "langfuse_init_user_password": secrets.token_urlsafe(16),
     }
 
 
@@ -578,6 +600,7 @@ def _prompt_defaults() -> dict[str, str]:
     click.echo(f"  Grafana:    {secrets['grafana_password'][:12]}...")
     click.echo(f"  pgAdmin:    {secrets['pgadmin_password'][:12]}...")
     click.echo(f"  GlitchTip:  {secrets['glitchtip_secret_key'][:12]}...")
+    click.echo(f"  Langfuse:   {secrets['langfuse_init_project_public_key'][:18]}...")
     click.echo()
     click.echo(
         "Worker auth uses OAuth 2.1 — an initial client is provisioned\n"
