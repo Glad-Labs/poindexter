@@ -15,33 +15,47 @@
 ## The flow
 
 ```
-Glad-Labs/glad-labs-stack (private GitHub — source of truth)
+Glad-Labs/glad-labs-stack (private GitHub, source of truth)
     │
-    ├─→ GitHub Actions (.github/workflows/*)
-    │       backend pytest + frontend tests + lint + migrations smoke
-    │       gitleaks, Trivy, syft+grype on every push
+    ├─→ GitHub Actions (.github/workflows/ci.yml)
+    │       runs backend pytest + frontend tests + lint
+    │       + migrations smoke + link-rot CI
+    │       on every push to main
     │
     ├─→ Vercel (auto-deploy on push to main)
-    │       │
     │       └─→ www.gladlabs.io
     │
-    └─→ sync-to-public-poindexter.yml (auto, on every push to main)
+    └─→ sync-to-public-poindexter.yml (auto, filtered)
             │
-            └─→ GitHub public (Glad-Labs/poindexter)
-                    filtered subset (no operator overlay, no CLAUDE.md,
-                    no premium dashboards). Force-pushed each sync — the
-                    mirror is rebuilt from scratch, ~30s end-to-end.
-                    Public-side CI (test-backend, migrations-smoke,
-                    Mintlify Deployment, link-rot) runs on the result.
-                    Release Please cuts versions from this repo.
+            └─→ Glad-Labs/poindexter (public GitHub mirror)
+                    │
+                    ├─→ public-side CI checks
+                    │       (test-backend, migrations-smoke,
+                    │        Mintlify Deployment, link-rot)
+                    │
+                    └─→ Release Please runs for versioning only
+                        (no deploy)
 ```
 
-Vercel watches `Glad-Labs/glad-labs-stack` (the private repo),
-NOT the public `poindexter` mirror. Backend + brain run locally on
-Matt's PC; Vercel only handles the static/SSR frontend slice.
+Vercel watches `Glad-Labs/glad-labs-stack` (the private origin),
+NOT the public `poindexter` repo. The public repo has no deploy
+workflow — Release Please is the only thing producing artifacts.
 
-Gitea was the previous source of truth and was decommissioned
-2026-04-30; the dual-Gitea/GitHub workflow is now history.
+The cross-repo sync is automatic: GitHub Actions workflow
+`.github/workflows/sync-to-public-poindexter.yml` runs on every push
+to `origin/main` and mirrors the filtered subset to the public repo
+in ~30s, using a write-enabled deploy key (private key stored as
+`POINDEXTER_DEPLOY_KEY` secret on glad-labs-stack). Just
+`git push origin main` and the public mirror updates itself.
+
+`scripts/sync-to-github.sh` strips private files (web/public-site,
+web/storefront, mcp-server-gladlabs, marketing, premium dashboards,
+writing_samples, gladlabs-config, .shared-context, CLAUDE.md, docs/,
+etc.) before pushing.
+
+**Bypass:** include `[skip-public-sync]` in the commit message to
+keep a particular commit private (in-progress branches, sensitive
+WIP).
 
 ## Debugging "Vercel is failing"
 
@@ -70,33 +84,34 @@ decorators in `test_database_service.py` and
 
 ## Key files
 
-- `.github/workflows/` — GitHub Actions pipelines on the private
-  source-of-truth repo (`glad-labs-stack`): backend pytest, frontend
-  Jest, migrations smoke, gitleaks, Trivy, syft+grype on every push.
-- `.github/workflows/sync-to-public-poindexter.yml` — auto-mirrors
-  the filtered subset to `Glad-Labs/poindexter` after every push to
-  main (~30s). Strips operator overlay, CLAUDE.md, premium
-  dashboards, and other private files.
-- `scripts/sync-to-github.sh` — local fallback for the same filter
-  pipeline; useful when CI is broken or iterating on the filter.
-  Reachable as `git pushe` after running
-  `bash scripts/install-git-hooks.sh`.
+- `.github/workflows/ci.yml` — GitHub Actions pipeline, runs backend
+  pytest + frontend Jest on every push. No deploy step.
+- `.github/workflows/sync-to-public-poindexter.yml` — auto-mirror
+  from glad-labs-stack to poindexter on every push to main.
+- `scripts/sync-to-github.sh` — filter that runs inside the sync
+  workflow. Strips operator-only files before pushing the public
+  subset.
 - `.github/workflows/release-please.yml` — Release Please on the
   public poindexter repo. Versioning only.
 - `src/cofounder_agent/tests/` — Python unit tests (pytest), 7,900+
-  cases.
+  cases across 329 test files.
 - `web/public-site/next.config.js` — has a `validateEnv` check that
   rejects localhost URLs in production. `SKIP_ENV_VALIDATION=true`
   bypasses for local dev.
 
 ## The public release repo is separate
 
-`github.com/Glad-Labs/poindexter` is the open-source release mirror.
-It is auto-rebuilt from `glad-labs-stack/main` by GitHub Actions on
-every push (filter → force-push). It does NOT auto-deploy anywhere
-— Vercel watches the private source-of-truth repo. Public-side CI
-still gates the resulting commit (test-backend, migrations-smoke,
-Mintlify Deployment, link-rot).
+`github.com/Glad-Labs/poindexter` is the open-source release repo.
+It gets a filtered snapshot via the auto-sync workflow above. It
+does NOT auto-deploy anywhere. Vercel watches the private origin
+(`Glad-Labs/glad-labs-stack`), not the public mirror.
+
+The public mirror has `allow_force_pushes: true` in its branch
+protection — the mirror is rebuilt from scratch on every sync, so
+force-push protection on a derived branch would just keep the mirror
+permanently stale. Public-side CI (test-backend, migrations-smoke,
+Mintlify Deployment, link-rot) still has to pass on the resulting
+commit.
 
 ## If you're self-hosting Poindexter
 

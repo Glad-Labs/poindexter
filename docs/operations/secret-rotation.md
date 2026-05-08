@@ -1,6 +1,6 @@
 # Secret Rotation Runbook
 
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-05-08
 **Audience:** solo operator (Matt) at 2am during an incident, or doing scheduled rotation
 **Prereqs:** Local PC online, Docker running, gh CLI authed, poindexter CLI installed, `~/.poindexter/bootstrap.toml` accessible, `POINDEXTER_SECRET_KEY` set
 
@@ -34,8 +34,9 @@ What kind of rotation is this?
        the integration is already broken.
 
   Suspected compromise (logs show unexpected access, key leaked)
-    -> Rotate ALL of: api_token, api_auth_token, jwt_secret_key,
-       revalidate_secret, every webhook secret. Run "Re-seed all" below.
+    -> Rotate ALL of: every OAuth client secret (via
+       `poindexter auth migrate-*`), jwt_secret_key, revalidate_secret,
+       every webhook secret. Run "Re-seed all" below.
 
   Lost POINDEXTER_SECRET_KEY (encrypted blobs unreadable)
     -> See disaster-recovery.md CONFIG-2, then come back here and
@@ -60,14 +61,13 @@ The `poindexter set` CLI (or direct DB UPDATE, or the `set_secret` Python helper
 
 ## Inventory — every known secret
 
-Pulled `2026-04-30` from `app_settings WHERE is_secret = TRUE`, plus the two bootstrap secrets and a few that are still being migrated to encrypted-at-rest.
+Pulled from `app_settings WHERE is_secret = TRUE` plus the two bootstrap secrets. Refreshed 2026-05-08.
 
 | Key                                            | Where it lives                                      | Used for                              | Rotate via                                                      |
 | ---------------------------------------------- | --------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------- |
 | `database_url`                                 | `bootstrap.toml`                                    | DB connection                         | [§ database_url](#database_url)                                 |
 | `POINDEXTER_SECRET_KEY`                        | `bootstrap.toml` (env)                              | Encrypts every other secret           | [§ POINDEXTER_SECRET_KEY](#poindexter_secret_key)               |
-| `api_token`                                    | `app_settings` (encrypted)                          | Worker Bearer auth (API)              | [§ api_token](#api_token)                                       |
-| `api_auth_token`                               | `app_settings` (encrypted)                          | Legacy alias for `api_token`          | [§ api_auth_token](#api_auth_token)                             |
+| `<consumer>_oauth_client_secret`               | `app_settings` (encrypted)                          | OAuth 2.1 worker auth (per consumer)  | [§ OAuth client secrets](#oauth-client-secrets)                 |
 | `revalidate_secret`                            | `app_settings` (encrypted)                          | Vercel ISR revalidation header        | [§ revalidate_secret](#revalidate_secret)                       |
 | `jwt_secret_key`                               | `app_settings` (encrypted)                          | JWT signing                           | [§ jwt_secret_key](#jwt_secret_key)                             |
 | `secret_key`                                   | `app_settings` (encrypted)                          | App-wide signing                      | [§ secret_key](#secret_key)                                     |
@@ -89,7 +89,6 @@ Pulled `2026-04-30` from `app_settings WHERE is_secret = TRUE`, plus the two boo
 | `cloudinary_api_key` + `cloudinary_api_secret` | `app_settings` (encrypted)                          | Image CDN                             | [§ cloudinary keys](#cloudinary-keys)                           |
 | `storage_secret_key` + `storage_token`         | `app_settings` (encrypted)                          | S3-compatible object storage (R2)     | [§ storage keys](#storage-keys)                                 |
 | `redis_url`                                    | `app_settings` (encrypted)                          | Redis connection (with AUTH password) | [§ redis_url](#redis_url)                                       |
-| `gitea_password`                               | `app_settings` (encrypted)                          | Gitea (decommissioning 2026-04-30)    | [§ gitea_password](#gitea_password)                             |
 | `bluesky_app_password` + `bluesky_identifier`  | `app_settings` (encrypted)                          | Bluesky cross-post                    | [§ bluesky keys](#bluesky-keys)                                 |
 | `mastodon_access_token`                        | `app_settings` (encrypted)                          | Mastodon cross-post                   | [§ mastodon_access_token](#mastodon_access_token)               |
 | `devto_api_key`                                | `app_settings` (encrypted)                          | Dev.to cross-post                     | [§ devto_api_key](#devto_api_key)                               |
@@ -228,64 +227,57 @@ docker logs poindexter-worker 2>&1 | grep -i "SecretsError"
 
 ---
 
-### `api_token`
+### OAuth client secrets
 
-**Lives in.** `app_settings.api_token` (encrypted, `is_secret=true`).
+**Lives in.** `app_settings.<consumer>_oauth_client_id` /
+`app_settings.<consumer>_oauth_client_secret` (encrypted, `is_secret=true`).
+One pair per consumer (`cli`, `mcp`, `mcp_gladlabs`, `brain`, `scripts`,
+`openclaw`).
 
-**Used for.** Bearer auth on the worker REST API. Every MCP / OpenClaw call uses this.
+**Used for.** OAuth 2.1 Client Credentials Grant — every consumer mints
+short-lived JWTs by hitting `POST /token` with its client_id +
+client_secret. The legacy static-Bearer plumbing
+(`POINDEXTER_KEY` / `GLADLABS_KEY` / `app_settings.api_token` /
+`app_settings.api_auth_token`) was removed in
+Glad-Labs/poindexter#249 (2026-05-05).
 
-**Procedure.** Use the rotation script that already exists.
+**Procedure.** The migrate commands rotate the client_secret atomically and
+push the new value into the consumer's config file (`~/.claude.json`,
+`~/.openclaw/openclaw.json`, `~/.poindexter/bootstrap.toml`, etc.).
 
 ```bash
-# 1. Generate
-NEWTOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
-TOKENFILE=$(mktemp); chmod 600 "$TOKENFILE"
-echo -n "$NEWTOKEN" > "$TOKENFILE"
+# Rotate one consumer
+poindexter auth migrate-cli            # CLI
+poindexter auth migrate-mcp            # public MCP server
+poindexter auth migrate-mcp-gladlabs   # operator MCP server
+poindexter auth migrate-brain          # brain daemon
+poindexter auth migrate-scripts        # ad-hoc scripts client
+poindexter auth migrate-openclaw       # OpenClaw bridge
 
-# 2. Set in DB (encrypted) AND flip development_mode off
-POINDEXTER_SECRET_KEY="$POINDEXTER_SECRET_KEY" \
-DATABASE_URL="$(grep ^database_url ~/.poindexter/bootstrap.toml | cut -d'"' -f2)" \
-  python scripts/_rotate_api_token.py "$TOKENFILE"
+# Or rotate the Grafana token (different shape — used for the brain's
+# Grafana alert sync loop)
+poindexter auth mint-grafana-token
 
-# 3. Push the new token to every consumer (~/.claude.json, openclaw.json, bootstrap.toml)
-python scripts/_rotate_consumer_configs.py "$TOKENFILE"
-
-# 4. Cleanup
-shred -u "$TOKENFILE" 2>/dev/null || rm -f "$TOKENFILE"
-
-# 5. Restart consumers
-docker restart poindexter-worker
-# Restart Claude Desktop and OpenClaw gateway so they re-read their JSON configs.
+# Restart consumers so they re-read their configs
+docker restart poindexter-worker poindexter-brain-daemon
+# Restart Claude Desktop / OpenClaw gateway so they re-read their JSON configs.
 ```
 
 **Verify.**
 
 ```bash
-# Old token should now 401
-curl -sH "Authorization: Bearer <OLD_TOKEN>" http://localhost:8002/api/health -o /dev/null -w "%{http_code}\n"
-# Expected: 401
-
-# New token works
-curl -sH "Authorization: Bearer $NEWTOKEN" http://localhost:8002/api/health -o /dev/null -w "%{http_code}\n"
+# Mint a fresh JWT and hit the worker
+JWT=$(poindexter auth mint-token --client cli)
+curl -sH "Authorization: Bearer $JWT" http://localhost:8002/api/health \
+  -o /dev/null -w "%{http_code}\n"
 # Expected: 200
+
+# An old (pre-rotation) JWT or an unprovisioned client should 401
 ```
 
-**Reference.** See `scripts/_rotate_api_token.py` and `scripts/_rotate_consumer_configs.py` for the underlying mechanics.
-
----
-
-### `api_auth_token`
-
-**Lives in.** `app_settings.api_auth_token` (encrypted). **Legacy alias** for `api_token` — `0106_drop_duplicate_api_auth_token.py` migration is collapsing this to a single key. If both exist, they MUST hold the same value.
-
-**Procedure.** Same as `api_token` above. After rotating `api_token`, also:
-
-```bash
-poindexter set api_auth_token "$NEWTOKEN"
-# Or via set_secret in a Python one-liner if encrypted.
-```
-
-Verify both rows hold matching encrypted ciphertext. Long-term: this row gets dropped — see `0106_drop_duplicate_api_auth_token.py`.
+**Reference.** Consumer wiring lives in `services/oauth_client_service.py`
+and `cli/auth_commands.py`. The umbrella OAuth migration is umbrella issue
+Glad-Labs/poindexter#241.
 
 ---
 
@@ -321,7 +313,7 @@ docker restart poindexter-worker
 ```bash
 # Trigger a revalidation against a real post slug
 curl -s -X POST http://localhost:8002/api/revalidate \
-  -H "Authorization: Bearer $(grep ^api_token ~/.poindexter/bootstrap.toml | cut -d'"' -f2)" \
+  -H "Authorization: Bearer $(poindexter auth mint-token --client cli)" \
   -d '{"path": "/posts/<some-slug>"}'
 # Expected: {"revalidated": true}
 
@@ -420,7 +412,7 @@ docker restart poindexter-worker poindexter-brain-daemon
 ```bash
 # Trigger a test alert to your chat
 curl -s -X POST http://localhost:8002/api/test/notify-operator \
-  -H "Authorization: Bearer $(grep ^api_token ~/.poindexter/bootstrap.toml | cut -d'"' -f2)"
+  -H "Authorization: Bearer $(poindexter auth mint-token --client cli)"
 # Expected: a Telegram message arrives within seconds.
 ```
 
@@ -685,14 +677,6 @@ docker exec poindexter-prefect-redis redis-cli CONFIG SET requirepass "<new-pass
 
 ---
 
-### `gitea_password`
-
-**Lives in.** `app_settings.gitea_password` (encrypted).
-
-**Note.** Gitea is being decommissioned 2026-04-30 per the two-remote model in `CLAUDE.md`. This row may already be stale. Verify whether anything still references it before rotating.
-
----
-
 ### Bluesky keys
 
 Keys: `bluesky_app_password` + `bluesky_identifier` (both encrypted).
@@ -766,7 +750,7 @@ Keys: `grafana_api_key` + `grafana_api_token` (both encrypted; some duplication 
 After a CONFIG-2 disaster recovery (lost encryption key), you have an empty `app_settings` for every secret. Walk through this checklist:
 
 ```text
-[ ] api_token                       (#critical — worker auth)
+[ ] OAuth client secrets            (#critical — re-run `poindexter auth migrate-*` for every consumer)
 [ ] revalidate_secret               (#critical — Vercel ISR)
 [ ] telegram_bot_token              (#critical — alerts)
 [ ] discord_bot_token               (if used)
@@ -812,7 +796,7 @@ docker logs poindexter-worker --since=2m 2>&1 | grep -i "SecretsError\|<KEY>"
 **TBD — needs operator to confirm cadence preferences:**
 
 - `POINDEXTER_SECRET_KEY` — annually (low risk if undisturbed; high blast radius if leaked)
-- `api_token`, `revalidate_secret`, `openclaw_webhook_token` — every 90 days
+- OAuth client secrets, `revalidate_secret`, `openclaw_webhook_token` — every 90 days
 - Bot tokens (Telegram, Discord) — only on suspected compromise (rotation invalidates active sessions)
 - Paid API keys (OpenAI, Anthropic, Gemini, Resend, Cloudinary) — every 90 days, or on bill anomaly
 - Webhook secrets (Lemon Squeezy, Resend) — only when the provider rotates them or on suspected compromise
@@ -827,6 +811,5 @@ A scheduled agent should be set up to remind on this cadence (see `/schedule` sk
 - [`disaster-recovery.md`](./disaster-recovery) — recovery from lost key (CONFIG-2)
 - [`incident-response.md`](./incident-response) — alert routing
 - `src/cofounder_agent/plugins/secrets.py` — encryption module reference
-- `scripts/_rotate_api_token.py` — `api_token` rotation helper
-- `scripts/_rotate_consumer_configs.py` — pushes new `api_token` to consumer JSONs
-- `docs/architecture/gh-107-secret-keys-audit-2026-04-24.md` — full audit of every secret callsite
+- `src/cofounder_agent/cli/auth_commands.py` — implementation of `poindexter auth migrate-*`
+- `docs/architecture/gh-107-secret-keys-audit-2026-04-24.md` — full audit of every secret callsite (historical, predates the OAuth migration)

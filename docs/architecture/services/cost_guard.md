@@ -118,7 +118,7 @@ Known cloud providers: `gemini`, `openai`, `anthropic`, `openrouter`.
   - `audit_log` (event_type `cost_log_write_failed`, severity
     `error`) — best-effort, fired only when the cost_logs INSERT
     itself fails so the alert pipeline catches a budget tracker
-    going dark (gitea#322 finding 3).
+    going dark (Glad-Labs/poindexter#322 finding 3).
 - **External APIs:** none directly. Provider plugins call out; the
   guard only watches their wallets.
 
