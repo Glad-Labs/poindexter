@@ -15,11 +15,3 @@ src/cofounder_agent/services/publish_service.py
 src/cofounder_agent/services/task_executor.py
 src/cofounder_agent/services/topic_batch_service.py
 src/cofounder_agent/tests/unit/conftest.py
-src/cofounder_agent/tests/unit/routes/test_podcast_routes.py
-src/cofounder_agent/tests/unit/services/test_code_block_density.py
-src/cofounder_agent/tests/unit/services/test_content_router_service.py
-src/cofounder_agent/tests/unit/services/test_newsletter_service.py
-src/cofounder_agent/tests/unit/services/test_quality_scorers_dev_diary_bypass.py
-src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py
-src/cofounder_agent/tests/unit/services/test_template_runner_state_partition.py
-src/cofounder_agent/tests/unit/services/test_validator_config.py

@@ -15,7 +15,8 @@ from __future__ import annotations
 import pytest
 
 from services.quality_scorers import score_accuracy
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 
 _FIRST_PERSON_CONTENT = (

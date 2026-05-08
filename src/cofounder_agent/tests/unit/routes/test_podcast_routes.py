@@ -17,7 +17,8 @@ from routes.podcast_routes import (
     _rfc2822,
     router,
 )
-from services.site_config import site_config as _test_site_config
+import services.site_config as _site_config_mod
+_test_site_config = _site_config_mod.site_config
 
 # ---------------------------------------------------------------------------
 # Test app

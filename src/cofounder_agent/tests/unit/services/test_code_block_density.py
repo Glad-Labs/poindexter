@@ -24,7 +24,8 @@ from services.content_validator import (
     _is_tech_post,
     validate_content,
 )
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 
 # ---------------------------------------------------------------------------

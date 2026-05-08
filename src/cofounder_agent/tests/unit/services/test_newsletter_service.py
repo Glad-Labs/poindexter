@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 # Ensure site_config has test values before importing newsletter_service
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 site_config._config["site_url"] = "https://test.example.com"
 site_config._config["company_name"] = "Test Company"
