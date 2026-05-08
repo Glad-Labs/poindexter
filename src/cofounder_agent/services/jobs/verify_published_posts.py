@@ -30,7 +30,6 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
-from services.site_config import site_config
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -47,7 +46,9 @@ class VerifyPublishedPostsJob:
         batch_size = int(config.get("batch_size", 20))
         file_issue = bool(config.get("file_gitea_issue", True))
 
-        site_url = site_config.get("site_url", "").rstrip("/")
+        # DI seam (glad-labs-stack#330)
+        sc = config.get("_site_config")
+        site_url = (sc.get("site_url", "") if sc is not None else "").rstrip("/")
         if not site_url:
             return JobResult(
                 ok=False,
