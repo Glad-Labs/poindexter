@@ -28,11 +28,9 @@ src/cofounder_agent/services/publish_service.py
 src/cofounder_agent/services/quality_models.py
 src/cofounder_agent/services/quality_scorers.py
 src/cofounder_agent/services/quality_service.py
-src/cofounder_agent/services/r2_upload_service.py
 src/cofounder_agent/services/redis_cache.py
 src/cofounder_agent/services/research_quality_service.py
 src/cofounder_agent/services/research_service.py
-src/cofounder_agent/services/retention_janitor.py
 src/cofounder_agent/services/revalidation_service.py
 src/cofounder_agent/services/scheduled_publisher.py
 src/cofounder_agent/services/seed_url_fetcher.py

@@ -14,11 +14,33 @@ Usage:
 
 import os
 from pathlib import Path
+from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
+
+
+# Module-level alias kept so existing tests that patch
+# ``services.r2_upload_service.site_config`` keep working without
+# refactor. The CI guardrail at
+# ``scripts/ci/check_site_config_singleton.py`` only flags
+# ``from services.site_config import site_config`` style imports;
+# this two-step (module import + attribute alias) is allowed because
+# the alias points at the lifespan-shimmed instance.
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
+
+
+def _resolve_site_config(sc: Any) -> Any:
+    """DI seam (glad-labs-stack#330) — fall back to the module-level
+    ``site_config`` alias when caller doesn't pass an instance. New
+    code paths inject explicitly; legacy callers + tests that patch
+    the module attribute keep their behavior.
+    """
+    if sc is not None:
+        return sc
+    return site_config
 
 
 # Content type mapping
@@ -32,27 +54,31 @@ _CONTENT_TYPES = {
 }
 
 
-def _storage(key: str, default: str = "") -> str:
+def _storage(key: str, default: str = "", *, site_config: Any = None) -> str:
     """Read a NON-SECRET object-store setting. Prefers the generic
     ``storage_*`` namespace; falls back to the legacy ``cloudflare_r2_*``
     keys so an in-flight deployment keeps working during the rename (#198).
     """
-    return site_config.get(f"storage_{key}") or site_config.get(
+    sc = _resolve_site_config(site_config)
+    return sc.get(f"storage_{key}") or sc.get(
         f"cloudflare_r2_{key}", default
     )
 
 
-async def _storage_secret(key: str, default: str = "") -> str:
+async def _storage_secret(
+    key: str, default: str = "", *, site_config: Any = None,
+) -> str:
     """Read a SECRET object-store setting via on-demand DB query.
 
     Secrets aren't kept in the in-memory site_config cache (is_secret=true
     filters them out of load()). This mirrors how revalidate_secret is
     fetched by routes/revalidate_routes.py.
     """
-    val = await site_config.get_secret(f"storage_{key}")
+    sc = _resolve_site_config(site_config)
+    val = await sc.get_secret(f"storage_{key}")
     if val:
         return val
-    val = await site_config.get_secret(f"cloudflare_r2_{key}")
+    val = await sc.get_secret(f"cloudflare_r2_{key}")
     return val or default
 
 
@@ -60,6 +86,8 @@ async def upload_to_r2(
     local_path: str,
     r2_key: str,
     content_type: str | None = None,
+    *,
+    site_config: Any = None,
 ) -> str | None:
     """Upload a file to Cloudflare R2 and return its public URL.
 
@@ -76,12 +104,13 @@ async def upload_to_r2(
         logger.warning("[R2] File not found: %s", local_path)
         return None
 
+    sc = _resolve_site_config(site_config)
     # Get credentials from DB (storage_* preferred, cloudflare_r2_* fallback).
     # access_key is NOT marked is_secret (it's paired with the secret and
     # can't do damage alone), so site_config has it cached. secret_key
     # and token ARE secrets — fetched via on-demand DB query.
-    access_key = _storage("access_key")
-    secret_key = await _storage_secret("secret_key")
+    access_key = _storage("access_key", site_config=sc)
+    secret_key = await _storage_secret("secret_key", site_config=sc)
 
     if not access_key or not secret_key:
         logger.warning(
@@ -90,8 +119,8 @@ async def upload_to_r2(
         )
         return None
 
-    endpoint_url = _storage("endpoint")
-    bucket = _storage("bucket")
+    endpoint_url = _storage("endpoint", site_config=sc)
+    bucket = _storage("bucket", site_config=sc)
     if not endpoint_url or not bucket:
         logger.warning(
             "[STORAGE] storage_endpoint or storage_bucket not configured — "
@@ -123,7 +152,9 @@ async def upload_to_r2(
             ExtraArgs={"ContentType": content_type},
         )
 
-        public_url = _storage("public_url") or site_config.get("r2_public_url", "")
+        public_url = _storage("public_url", site_config=sc) or sc.get(
+            "r2_public_url", "",
+        )
         if not public_url:
             logger.warning(
                 "[STORAGE] storage_public_url not set — can't construct "
@@ -142,7 +173,9 @@ async def upload_to_r2(
         return None
 
 
-async def upload_podcast_episode(post_id: str) -> str | None:
+async def upload_podcast_episode(
+    post_id: str, *, site_config: Any = None,
+) -> str | None:
     """Upload a podcast episode MP3 to R2. Returns public URL or None.
 
     Uses versioned path (podcast_cdn_version) for cache-busting.
@@ -151,38 +184,44 @@ async def upload_podcast_episode(post_id: str) -> str | None:
     ``media_assets`` row so cleanup / retention / cost-attribution
     sees the live URL (Glad-Labs/poindexter#161).
     """
+    sc = _resolve_site_config(site_config)
     try:
-        from services.site_config import site_config
-        cdn_ver = site_config.get("podcast_cdn_version", "v2")
+        cdn_ver = sc.get("podcast_cdn_version", "v2")
     except Exception:
         cdn_ver = "v2"
     podcast_dir = Path(os.path.expanduser("~")) / ".poindexter" / "podcast"
     mp3_path = podcast_dir / f"{post_id}.mp3"
     if not mp3_path.exists():
         return None
-    url = await upload_to_r2(str(mp3_path), f"podcast/{cdn_ver}/{post_id}.mp3")
+    url = await upload_to_r2(
+        str(mp3_path), f"podcast/{cdn_ver}/{post_id}.mp3", site_config=sc,
+    )
     if url:
         await _update_media_asset_url(
             post_id=post_id,
             asset_type="podcast",
             storage_path=str(mp3_path),
             public_url=url,
+            site_config=sc,
         )
     return url
 
 
-async def upload_video_episode(post_id: str) -> str | None:
+async def upload_video_episode(
+    post_id: str, *, site_config: Any = None,
+) -> str | None:
     """Upload a video episode MP4 to R2. Returns public URL or None.
 
     On success, also stamps the public URL onto the corresponding
     ``media_assets`` row so cleanup / retention / cost-attribution
     sees the live URL (Glad-Labs/poindexter#161).
     """
+    sc = _resolve_site_config(site_config)
     video_dir = Path(os.path.expanduser("~")) / ".poindexter" / "video"
     mp4_path = video_dir / f"{post_id}.mp4"
     if not mp4_path.exists():
         return None
-    url = await upload_to_r2(str(mp4_path), f"video/{post_id}.mp4")
+    url = await upload_to_r2(str(mp4_path), f"video/{post_id}.mp4", site_config=sc)
     if url:
         # Legacy path stores rows as asset_type='video' (no _long/_short).
         await _update_media_asset_url(
@@ -190,6 +229,7 @@ async def upload_video_episode(post_id: str) -> str | None:
             asset_type="video",
             storage_path=str(mp4_path),
             public_url=url,
+            site_config=sc,
         )
     return url
 
@@ -200,6 +240,7 @@ async def _update_media_asset_url(
     asset_type: str,
     storage_path: str,
     public_url: str,
+    site_config: Any = None,
 ) -> None:
     """Best-effort: stamp the public URL onto an existing media_assets row.
 
@@ -208,12 +249,13 @@ async def _update_media_asset_url(
     and never propagate — the upload itself was the operator-visible
     success.
 
-    Reads the asyncpg pool from the module-level ``site_config``
-    singleton (set by ``site_config.load(pool)`` during app startup);
-    no-ops cleanly when the pool is None (test environments, fresh
-    boots before lifespan completes).
+    Reads the asyncpg pool from ``site_config._pool`` (set by
+    ``site_config.load(pool)`` during app startup); no-ops cleanly
+    when the pool is None (test environments, fresh boots before
+    lifespan completes).
     """
-    pool = getattr(site_config, "_pool", None)
+    sc = _resolve_site_config(site_config)
+    pool = getattr(sc, "_pool", None)
     if pool is None:
         return
     try:

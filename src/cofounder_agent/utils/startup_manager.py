@@ -134,7 +134,10 @@ class StartupManager:
                 from services.retention_janitor import run_forever as _retention_loop
                 if self.database_service and self.database_service.pool:
                     asyncio.create_task(
-                        _retention_loop(self.database_service.pool),
+                        _retention_loop(
+                            self.database_service.pool,
+                            site_config=self._site_config,
+                        ),
                         name="retention_janitor",
                     )
                     logger.info("[retention_janitor] Started background loop")
