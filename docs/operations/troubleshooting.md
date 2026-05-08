@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Runbook for issues that have bitten us in production. Each entry has a symptom, a root cause, a fix, and a link to the Gitea issue or commit where it was addressed. When you hit something new, add it here instead of just fixing it — the next person (or next-you) will thank you. Link to GitHub issues for product bugs, Gitea for operator-specific items.
+Runbook for issues that have bitten us in production. Each entry has a symptom, a root cause, a fix, and a link to the GitHub issue or commit where it was addressed. When you hit something new, add it here instead of just fixing it — the next person (or next-you) will thank you. Use the public `Glad-Labs/poindexter` tracker for product bugs and the private `Glad-Labs/glad-labs-stack` tracker for operator-specific items.
 
 Entries are ordered by frequency of occurrence, not severity.
 
@@ -526,7 +526,7 @@ Write an `audit_log` row so the flip is traceable next time.
 
 ## Gitleaks CI starts reporting hundreds of "new" leaks right after a pre-commit scrub of `.gitleaks-baseline.json`
 
-**Symptom.** Gitea Actions Security job starts emitting `WRN leaks found: 286` (or similar — roughly the size of the baseline). Every finding IS already in `.gitleaks-baseline.json` — fingerprints match. Both the private and public gitleaks scans start failing loudly.
+**Symptom.** GitHub Actions Security job starts emitting `WRN leaks found: 286` (or similar — roughly the size of the baseline). Every finding IS already in `.gitleaks-baseline.json` — fingerprints match. Both the private and public gitleaks scans start failing loudly.
 
 **Root cause.** Gitleaks 8.x's baseline check does `findingsEqual()` which compares `Commit + File + Line + Author + Email + Secret + Match` — **any** field mismatch and the baseline entry is treated as absent. If you scrub the `Email` field in the baseline (say for a privacy sweep: "replace mattg@x with hello@x"), every commit in the actual git history still has the old email as author, so equality fails for all 285+ entries at once and they re-fire as new findings.
 

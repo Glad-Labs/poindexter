@@ -87,24 +87,22 @@ This reads `~/.poindexter/bootstrap.toml`, exports the values as env
 vars, and runs `docker compose -f docker-compose.local.yml up -d`.
 No `.env` file needed.
 
-This starts 9 containers:
+This starts the core containers:
 
 | Container                   | Purpose                            | Port  |
 | --------------------------- | ---------------------------------- | ----- |
 | `poindexter-worker`         | FastAPI backend, content pipeline  | 8002  |
 | `poindexter-brain-daemon`   | Health probes + self-healing loop  | —     |
 | `poindexter-postgres-local` | PostgreSQL 16 + pgvector           | 15432 |
-| `poindexter-grafana`        | Monitoring dashboards (6 included) | 3000  |
+| `poindexter-grafana`        | Monitoring dashboards (7 included) | 3000  |
 | `poindexter-prometheus`     | Metric scraper                     | 9091  |
 | `poindexter-sdxl-server`    | SDXL image generation (GPU)        | 9836  |
 | `poindexter-pgadmin`        | Database GUI                       | 5480  |
-| `gladlabs-gitea`            | Self-hosted git (optional)         | 3001  |
-| `gladlabs-gitea-runner`     | Gitea Actions CI runner (optional) | —     |
 
 Stop optional containers if you don't need them:
 
 ```bash
-docker compose -f docker-compose.local.yml stop gladlabs-gitea gladlabs-gitea-runner poindexter-pgadmin
+docker compose -f docker-compose.local.yml stop poindexter-pgadmin
 ```
 
 ## 5. Verify
@@ -155,9 +153,9 @@ poetry install
 poetry run pytest tests/unit/ -q
 ```
 
-Expected: ~5,097 passing. Some tests that depend on the `brain`
-module or `sentry-sdk` are skipped when running inside Docker
-(these pass on the host where all modules are available).
+Expected: 7,900+ passing across 329 test files. Some tests that depend
+on the `brain` module or `sentry-sdk` are skipped when running inside
+Docker (these pass on the host where all modules are available).
 
 ## 8. What to do when something breaks
 

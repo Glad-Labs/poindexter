@@ -131,7 +131,7 @@ Plugins declare themselves in their `pyproject.toml`:
 
 ```toml
 [project.entry-points."poindexter.taps"]
-gitea = "poindexter_tap_gitea:GiteaTap"
+github = "poindexter_tap_github:GithubTap"
 memory = "poindexter_tap_memory:MemoryFilesTap"
 
 [project.entry-points."poindexter.llm_providers"]
@@ -165,8 +165,8 @@ Plugin config shape in `app_settings`:
 
 ```json
 {
-  "key": "plugin.tap.gitea",
-  "value": "{\"enabled\": true, \"interval_seconds\": 3600, \"config\": {\"repo\": \"gladlabs/glad-labs-codebase\"}}",
+  "key": "plugin.tap.github",
+  "value": "{\"enabled\": true, \"interval_seconds\": 3600, \"config\": {\"repo\": \"Glad-Labs/glad-labs-stack\"}}",
   "category": "plugins"
 }
 ```
@@ -190,7 +190,7 @@ Refer to GitHub issues for the actionable scope. Suggested execution order:
 | ----- | -------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A0    | [#21](https://github.com/Glad-Labs/poindexter/issues/21) | —          | ✅ **SHIPPED 2026-04-19.** Integration test harness with real Postgres + real Ollama. 6 smoke tests pass.                                                                                                                           |
 | A     | [#65](https://github.com/Glad-Labs/poindexter/issues/65) | A0         | Plugin foundation: Protocols, entry_points discovery, PluginConfig reader, apscheduler wrapper, **pgcrypto secrets encryption**, sample migration per type.                                                                         |
-| B     | [#66](https://github.com/Glad-Labs/poindexter/issues/66) | A          | Taps: split `auto-embed.py`. Internal Python Taps + SingerTap wrapper shipping a working `tap-gitea` demo.                                                                                                                          |
+| B     | [#66](https://github.com/Glad-Labs/poindexter/issues/66) | A          | Taps: split `auto-embed.py`. Internal Python Taps + SingerTap wrapper shipping a working `tap-github` demo.                                                                                                                         |
 | C     | [#67](https://github.com/Glad-Labs/poindexter/issues/67) | A          | Jobs: port `idle_worker.py` onto apscheduler. DIY scheduler deleted.                                                                                                                                                                |
 | D     | [#68](https://github.com/Glad-Labs/poindexter/issues/68) | A          | Probes: Prometheus metrics + Alertmanager rules, brain daemon becomes Alertmanager webhook consumer. **Additive-first** — 1-2 weeks parallel-run before deleting legacy.                                                            |
 | E     | [#69](https://github.com/Glad-Labs/poindexter/issues/69) | A          | Pipeline: #20 split of `content_router`. Stage / Reviewer / Adapter / Provider specializations.                                                                                                                                     |

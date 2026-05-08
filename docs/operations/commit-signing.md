@@ -1,16 +1,16 @@
 # Commit Signing
 
 Poindexter expects every commit on `main` (and every tag) to be GPG-signed.
-Signed commits show as **Verified** on both Gitea and GitHub and prove the
-commit actually came from the author's key, not a compromised account or a
-typosquatted identity.
+Signed commits show as **Verified** on GitHub and prove the commit actually
+came from the author's key, not a compromised account or a typosquatted
+identity.
 
 This page covers:
 
 1. Generating a GPG key (if you don't already have one)
 2. Telling git about the key
 3. Configuring this clone to sign by default (`scripts/setup-git-signing.sh`)
-4. Registering the public key with Gitea / GitHub so the Verified badge appears
+4. Registering the public key with GitHub so the Verified badge appears
 5. Troubleshooting
 
 ## 1. Generate a GPG key (skip if you already have one)
@@ -68,7 +68,7 @@ GPG_PROGRAM="C:/Program Files (x86)/GnuPG/bin/gpg.exe" \
   bash scripts/setup-git-signing.sh
 ```
 
-## 4. Register the public key with Gitea and GitHub
+## 4. Register the public key with GitHub
 
 Export your public key:
 
@@ -77,15 +77,11 @@ gpg --armor --export <YOUR_KEY_ID>
 ```
 
 Paste the full block (including the `-----BEGIN PGP PUBLIC KEY BLOCK-----`
-and `-----END…-----` lines) into:
-
-- **Gitea** — User Settings → SSH / GPG Keys → _Add GPG Key_
-  (`http://localhost:3001/user/settings/keys`)
-- **GitHub** — Settings → SSH and GPG keys → _New GPG key_
-  (`https://github.com/settings/keys`)
+and `-----END…-----` lines) into **GitHub** — Settings → SSH and GPG keys
+→ _New GPG key_ (`https://github.com/settings/keys`).
 
 Once registered, commits signed with that key show a green **Verified**
-badge in both UIs.
+badge in the UI.
 
 ## 5. What about CI commits?
 
@@ -100,10 +96,10 @@ Two workflows create commits automatically:
   whatever `commit.gpgsign` is set to in the clone. Running
   `scripts/setup-git-signing.sh` once is enough.
 
-There is currently no Gitea Actions workflow that commits back to
-the repo, so nothing to configure on that side. If one is added later, it
-must either use the Gitea API (server-signed) or import a bot key and set
-`GPG_KEY` + `commit.gpgsign=true` in the job.
+There is currently no GitHub Actions workflow that commits back to
+the repo apart from `release-please` (covered above). If one is added
+later, it must either use the GitHub API (server-signed) or import a bot
+key and set `GPG_KEY` + `commit.gpgsign=true` in the job.
 
 ## 6. Troubleshooting
 
@@ -119,9 +115,9 @@ export GPG_TTY=$(tty)
 Your `gpg-agent` probably isn't running or can't reach its socket. Restart
 it: `gpgconf --kill gpg-agent && gpgconf --launch gpg-agent`.
 
-**Commits show Unverified on Gitea even though signing worked locally**
+**Commits show Unverified on GitHub even though signing worked locally**
 The email on your GPG key (`gpg --list-keys`) must exactly match the email
-on the commit. If they differ, Gitea marks the commit _signed but
+on the commit. If they differ, GitHub marks the commit _signed but
 unverified_. Either re-key with the correct email or edit your local
 `user.email`.
 
@@ -132,7 +128,7 @@ you don't have. Import it: `gpg --recv-keys <KEY_ID>`.
 ## 7. Enforcement
 
 Signing is currently **expected but not hard-blocked** — the pre-commit
-hook emits a warning on unsigned commits but doesn't reject them. Gitea
+hook emits a warning on unsigned commits but doesn't reject them. GitHub
 branch protection for `main` should eventually require signed commits (see
 GH-29 follow-up). Until then, please check your own PRs show Verified
 before requesting review.
