@@ -16,7 +16,6 @@ from .posts import post_group, posts_group
 from .premium import premium_group
 from .settings import settings_group
 from .setup import setup_command
-from .sprint import sprint_group
 from .tasks import tasks_group
 from .topics import topics_group
 from .validators import validators_group
@@ -52,7 +51,6 @@ main.add_command(posts_group, name="posts")
 main.add_command(post_group, name="post")
 main.add_command(settings_group, name="settings")
 main.add_command(costs_group, name="costs")
-main.add_command(sprint_group, name="sprint")
 main.add_command(vercel_group, name="vercel")
 main.add_command(premium_group, name="premium")
 main.add_command(topics_group, name="topics")

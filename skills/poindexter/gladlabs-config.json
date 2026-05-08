@@ -12,8 +12,7 @@
       "site_manage": { "enabled": true },
       "model_status": { "enabled": true },
       "vercel_status": { "enabled": true },
-      "site_settings": { "enabled": true },
-      "sprint_status": { "enabled": true }
+      "site_settings": { "enabled": true }
     }
   }
 }
