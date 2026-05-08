@@ -378,11 +378,16 @@ class TestResolveCompositor:
         assert out is None or getattr(out, "name", None) == "ffmpeg_local"
 
     def test_returns_none_when_import_fails(self):
-        # Force the last-ditch import path to raise.
-        # Patch the underlying compositor module so the import inside
-        # resolve_compositor raises.
+        # Force the last-ditch import path to raise. We must also bypass
+        # any entry-point-registered ``ffmpeg_local`` instance returned
+        # by ``plugins.registry._cached`` (the package IS installed with
+        # this entry point in dev checkouts), otherwise the helper short-
+        # circuits at the registry-lookup step and never reaches the
+        # last-ditch direct import path this test exercises.
         import services.media_compositors.ffmpeg_local as _mod
-        with patch.object(_mod, "FFmpegLocalCompositor", side_effect=ImportError("boom")):
+        with patch("plugins.registry._cached", return_value=()), patch.object(
+            _mod, "FFmpegLocalCompositor", side_effect=ImportError("boom"),
+        ):
             cfg = SimpleNamespace(get=lambda _k, _d="": _d)
             out = resolve_compositor(cfg)
             assert out is None

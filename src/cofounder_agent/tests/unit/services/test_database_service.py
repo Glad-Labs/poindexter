@@ -199,10 +199,15 @@ class TestDatabaseServiceLifecycle:
         Set an app_settings value and prove asyncpg.create_pool receives it."""
         svc = make_service()
         mock_pool = AsyncMock()
-        created_kwargs: dict = {}
+        # Capture every asyncpg.create_pool call. ``initialize()`` may
+        # provision a second (local) pool when ``LOCAL_DATABASE_URL`` is
+        # set in the developer environment, which uses different size
+        # settings — recording all calls and asserting against the first
+        # (the primary pool) keeps the test stable across environments.
+        all_calls: list[dict] = []
 
         async def _capture_create_pool(*args, **kwargs):
-            created_kwargs.update(kwargs)
+            all_calls.append(kwargs)
             return mock_pool
 
         # Build a SiteConfig-like stub that returns app_settings values.
@@ -223,8 +228,10 @@ class TestDatabaseServiceLifecycle:
         ), patch("services.database_service.WritingStyleDatabase"):
             await svc.initialize()
 
-        assert created_kwargs["min_size"] == 3
-        assert created_kwargs["max_size"] == 42
+        assert all_calls, "asyncpg.create_pool was never called"
+        primary_kwargs = all_calls[0]
+        assert primary_kwargs["min_size"] == 3
+        assert primary_kwargs["max_size"] == 42
         # Confirm both keys were consulted.
         consulted = {call.args[0] for call in fake_site_config.get.call_args_list}
         assert "database_pool_min_size" in consulted
