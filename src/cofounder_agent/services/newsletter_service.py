@@ -19,7 +19,8 @@ All configuration is DB-first via app_settings keys:
 import asyncio
 
 from services.logger_config import get_logger
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 logger = get_logger(__name__)
 
@@ -40,8 +41,6 @@ async def _cfg() -> dict:
     so they MUST be fetched via the async ``get_secret`` path. See
     Glad-Labs/poindexter#221 for the schema flip.
     """
-    from services.site_config import site_config
-
     return {
         "enabled": site_config.get_bool("newsletter_enabled", False),
         "provider": site_config.get("newsletter_provider", "resend"),

@@ -54,7 +54,8 @@ class ResearchQualityService:
     @staticmethod
     def _weight(key: str, default: float) -> float:
         try:
-            from services.site_config import site_config as _sc
+            import services.site_config as _scm
+            _sc = _scm.site_config
             return _sc.get_float(f"research_{key}_weight", default)
         except Exception:
             return default
@@ -111,7 +112,8 @@ class ResearchQualityService:
         self.recency_weight = self._weight("recency", self.RECENCY_WEIGHT)
         self.uniqueness_weight = self._weight("uniqueness", self.UNIQUENESS_WEIGHT)
         try:
-            from services.site_config import site_config as _sc
+            import services.site_config as _scm
+            _sc = _scm.site_config
             self.min_snippet_length = _sc.get_int(
                 "research_min_snippet_length", self.MIN_SNIPPET_LENGTH
             )

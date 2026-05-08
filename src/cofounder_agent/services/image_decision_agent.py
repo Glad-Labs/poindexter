@@ -22,7 +22,8 @@ import re
 from dataclasses import dataclass, field
 
 from services.logger_config import get_logger
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 logger = get_logger(__name__)
 

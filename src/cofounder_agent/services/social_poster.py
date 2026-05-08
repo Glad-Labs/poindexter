@@ -27,7 +27,8 @@ import httpx
 
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.logger_config import get_logger
-from services.site_config import site_config as _sc
+import services.site_config as _site_config_mod
+_sc = _site_config_mod.site_config
 from services.telegram_config import get_telegram_bot_token, get_telegram_chat_id
 
 from .ollama_client import OllamaClient

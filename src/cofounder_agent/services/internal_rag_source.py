@@ -49,9 +49,9 @@ class InternalRagSource:
         # 0119). The prior hardcoded default was 5; falls back to that
         # when site_config isn't loaded so unit-test fixtures still work.
         if per_kind_limit is None:
-            from services.site_config import site_config
+            import services.site_config as _scm
 
-            per_kind_limit = site_config.get_int(
+            per_kind_limit = _scm.site_config.get_int(
                 "niche_internal_rag_per_kind_limit", 5,
             )
         bad = [s for s in source_kinds if s not in VALID_SOURCE_KINDS]
@@ -125,9 +125,10 @@ class InternalRagSource:
         wide writer-model lookup; matches the pattern in
         ``ai_content_generator.py``).
         """
-        from services.site_config import site_config
+        import services.site_config as _scm
         from services.topic_ranking import _ollama_chat_json
 
+        site_config = _scm.site_config
         snippet_max = site_config.get_int(
             "niche_internal_rag_snippet_max_chars", 600,
         )

@@ -33,8 +33,8 @@ def _web_research_int(key: str, default: int) -> int:
     being frozen at import time (#198).
     """
     try:
-        from services.site_config import site_config as _sc
-        return _sc.get_int(f"web_research_{key}", default)
+        import services.site_config as _scm
+        return _scm.site_config.get_int(f"web_research_{key}", default)
     except Exception:
         return default
 
