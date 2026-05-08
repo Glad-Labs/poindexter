@@ -429,6 +429,28 @@ curl -s http://localhost:9840/health | jq '.idle_timeout_s'
 
 ---
 
+## Voice agent (or any non-interactive Claude session) reports "Permission denied" for an MCP tool the allowlist seems to cover
+
+**Symptom.** The voice-agent-livekit container, a `/schedule` cron Claude Code session, or anything running with `dontAsk` permissions denies a tool call like `mcp__claude_ai_Poindexter__check_health` even though `~/.claude/settings.json` has `"mcp__*"` or `"mcp__claude_ai_*"` in `permissions.allow`. Surfaces to the user as "Sorry, I had trouble talking to Claude Code" or a flat "Permission denied".
+
+**Root cause.** The `*` glob in `permissions.allow` does **NOT** cross `__` boundaries. `__` is the structural separator in `mcp__<server>__<tool>`, and the permission engine treats it as opaque punctuation that wildcards can't span. So `mcp__*` and `mcp__claude_ai_*` silently match nothing.
+
+**Fix.** Replace any cross-`__` wildcard with one entry per MCP server (and use exact tool names if you want even narrower scope):
+
+```json
+"allow": [
+  "mcp__poindexter__*",
+  "mcp__gladlabs__*",
+  "mcp__claude_ai_Poindexter__*",
+  "mcp__claude_ai_Notion__*",
+  "mcp__claude_ai_Sentry__*"
+]
+```
+
+Full working configuration and discussion in [`docs/operations/claude-code-permissions.md`](claude-code-permissions.md). Closes [Glad-Labs/poindexter#443](https://github.com/Glad-Labs/poindexter/issues/443).
+
+---
+
 ## OpenClaw MCP tools fail — "tool execution failed" from Discord
 
 **Symptom.** Using `#reject_post` or other MCP tools from Discord via OpenClaw reports success in the chat message but the action didn't actually happen (e.g., tasks still show `awaiting_approval` in the DB). The LLM fabricates a success response.
