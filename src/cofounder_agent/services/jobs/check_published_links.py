@@ -23,7 +23,6 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
-from services.site_config import site_config
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -61,7 +60,11 @@ class CheckPublishedLinksJob:
         if not rows:
             return JobResult(ok=True, detail="no published posts to check", changes_made=0)
 
-        site_domain = site_config.get("site_domain", "localhost")
+        # DI seam (glad-labs-stack#330): scheduler seeds `_site_config`
+        # into the config dict at fire time. Tests/standalone callers
+        # without a SiteConfig fall back to "localhost".
+        sc = config.get("_site_config")
+        site_domain = sc.get("site_domain", "localhost") if sc is not None else "localhost"
 
         broken: list[dict[str, Any]] = []
         checked = 0

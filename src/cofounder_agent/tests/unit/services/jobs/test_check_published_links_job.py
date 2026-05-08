@@ -140,15 +140,18 @@ class TestRun:
         ])
         client = _patched_httpx_client({"https://ok.example": 200})
 
+        # DI seam (glad-labs-stack#330) — pass site_config via the
+        # config dict; scheduler does this for production runs.
+        sc_stub = MagicMock()
+        sc_stub.get.side_effect = lambda k, d=None: "gladlabs.io" if k == "site_domain" else d
         with patch(
             "services.jobs.check_published_links.httpx.AsyncClient",
             return_value=client,
-        ), patch(
-            "services.jobs.check_published_links.site_config.get",
-            side_effect=lambda k, d=None: "gladlabs.io" if k == "site_domain" else d,
         ):
             job = CheckPublishedLinksJob()
-            result = await job.run(pool, {"file_gitea_issue": False})
+            result = await job.run(
+                pool, {"file_gitea_issue": False, "_site_config": sc_stub},
+            )
 
         # Only the external one is checked.
         assert result.metrics["urls_checked"] == 1

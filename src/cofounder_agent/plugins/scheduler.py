@@ -123,6 +123,13 @@ class PluginScheduler:
                 return
             self._jobs_run += 1
             self._last_tick_epoch = _time.time()
+            # Seed the dispatcher-injected `_site_config` reserved key so jobs
+            # can read it via `config.get("_site_config")` instead of reaching
+            # for the legacy singleton import (glad-labs-stack#330). Mirrors
+            # the seam image_provider / tts_provider / audio_gen_provider
+            # plugins already use.
+            if self._site_config is not None and "_site_config" not in live_cfg.config:
+                live_cfg.config["_site_config"] = self._site_config
             try:
                 result = await job.run(self._pool, live_cfg.config)
                 logger.info(
