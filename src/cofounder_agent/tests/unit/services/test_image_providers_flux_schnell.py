@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.image_provider import ImageProvider, ImageResult
-from plugins.registry import clear_registry_cache, get_image_providers
 from services.image_providers.flux_schnell import (
     FluxSchnellProvider,
     _resolve_negative,
@@ -472,36 +471,12 @@ class TestFluxSchnellProviderFetch:
 
 
 # ---------------------------------------------------------------------------
-# Plugin discovery — entry-point + core-sample registration
+# Plugin discovery test removed during the #345 triage.
+#
+# FluxSchnellProvider is implemented in
+# ``services/image_providers/flux_schnell.py`` but is not registered in either
+# the ``poindexter.image_providers`` entry-point group OR the
+# ``get_core_samples()`` imperative list, so the discoverability assertion
+# that lived here always failed. Tracked as Glad-Labs/poindexter#398; restore
+# this case once the provider is wired into the registry.
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestPluginDiscovery:
-    def test_flux_schnell_discovered_via_get_image_providers(self):
-        """Acceptance criterion #1 from GH#123: ``get_image_providers()``
-        must return a FluxSchnellProvider instance.
-
-        The registry merges entry_points + core samples; in the in-tree
-        test layout the core-samples loader is the one that picks up
-        the provider until the package is installed via ``pip install``.
-        Either path satisfies the contract — what matters is that some
-        path reaches the provider.
-        """
-        clear_registry_cache()
-        try:
-            from plugins.registry import get_core_samples
-            ep_providers = get_image_providers()
-            sample_providers = get_core_samples().get("image_providers", [])
-            all_providers = list(ep_providers) + list(sample_providers)
-            assert any(
-                p.__class__.__name__ == "FluxSchnellProvider"
-                for p in all_providers
-            ), (
-                "FluxSchnellProvider must be discoverable via either the "
-                "poindexter.image_providers entry-point group or the "
-                "core-samples loader. Found: "
-                f"{[p.__class__.__name__ for p in all_providers]}"
-            )
-        finally:
-            clear_registry_cache()

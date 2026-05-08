@@ -1,16 +1,26 @@
 """Tests for services/ragas_eval.py — Ragas-based RAG evaluation (#205).
 
-These tests stub out the underlying Ragas + Ollama calls so the suite
-stays fast (no judge-LLM round-trips, no model downloads).
+The guard tests stub out the underlying Ragas + Ollama calls so the
+suite stays fast (no judge-LLM round-trips, no model downloads). The
+stubbed-happy-path case below relies on the ``ragas`` SDK being
+importable (so ``patch('ragas.evaluate', ...)`` can resolve the target);
+it is skipped when Ragas is not installed (CI default — Ragas is
+opt-in via ``app_settings.ragas_enabled`` and not pinned in pyproject).
 """
 
 from __future__ import annotations
 
+from importlib.util import find_spec
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from services.ragas_eval import evaluate_sample, is_enabled
+
+requires_ragas = pytest.mark.skipif(
+    find_spec("ragas") is None,
+    reason="Ragas is an opt-in dep; install via `pip install ragas` to run.",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +93,7 @@ class TestEvaluateSampleGuards:
 
 
 @pytest.mark.unit
+@requires_ragas
 class TestEvaluateSampleStubbed:
     @pytest.mark.asyncio
     async def test_returns_three_metric_scores(self):

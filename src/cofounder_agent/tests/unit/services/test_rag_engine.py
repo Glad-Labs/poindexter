@@ -1,5 +1,13 @@
 """Tests for services/rag_engine.py — LlamaIndex retrieval layer over
-the existing pgvector embeddings table (#210)."""
+the existing pgvector embeddings table (#210).
+
+The ``rag_engine`` module lazy-imports LlamaIndex inside its factory
+helpers so the module is importable without the SDK present, but the
+helpers themselves (which every test below exercises) require
+``llama_index``. The whole file is skipped when LlamaIndex isn't
+installed (CI default — LlamaIndex is opt-in via the rerank/RAG
+settings and not pinned in pyproject).
+"""
 
 from __future__ import annotations
 
@@ -8,7 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.rag_engine import get_rag_retriever
+pytest.importorskip(
+    "llama_index",
+    reason="LlamaIndex is an opt-in dep; install via "
+    "`pip install llama-index llama-index-embeddings-ollama` to run.",
+)
+
+from services.rag_engine import get_rag_retriever  # noqa: E402
 
 
 def _site_config(values: dict | None = None) -> MagicMock:
