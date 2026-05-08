@@ -202,9 +202,15 @@ class ConnectionPoolHealth:
         return False
 
 
-async def diagnose_connection_issues() -> dict[str, Any]:
+async def diagnose_connection_issues(site_config: Any = None) -> dict[str, Any]:
     """
     Run diagnostic checks for common connection issues.
+
+    Args:
+        site_config: Optional SiteConfig instance for reading pool size
+            settings. ``None`` falls back to the same defaults the
+            singleton would have returned for unset rows
+            (glad-labs-stack#330).
 
     Returns:
         Dictionary with diagnostic information
@@ -228,12 +234,17 @@ async def diagnose_connection_issues() -> dict[str, Any]:
 
     _config = get_config()
     _is_dev = _config.environment.lower() in ("development", "dev", "local")
-    from services.site_config import site_config
     # GH-92: keep ``min_size`` small in every environment (pools that
     # pre-warm 20 idle connections eat max_connections). Defaults must
     # stay in sync with services/database_service.py.
-    pool_min = site_config.get("database_pool_min_size", "2" if _is_dev else "5")
-    pool_max = site_config.get("database_pool_max_size", "20" if _is_dev else "50")
+    _default_min = "2" if _is_dev else "5"
+    _default_max = "20" if _is_dev else "50"
+    if site_config is not None:
+        pool_min = site_config.get("database_pool_min_size", _default_min)
+        pool_max = site_config.get("database_pool_max_size", _default_max)
+    else:
+        pool_min = _default_min
+        pool_max = _default_max
 
     try:
         pool_min_val = int(pool_min)

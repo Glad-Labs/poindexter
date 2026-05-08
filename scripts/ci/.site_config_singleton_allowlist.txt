@@ -99,6 +99,4 @@ src/cofounder_agent/tests/unit/services/test_quality_scorers_dev_diary_bypass.py
 src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py
 src/cofounder_agent/tests/unit/services/test_template_runner_state_partition.py
 src/cofounder_agent/tests/unit/services/test_validator_config.py
-src/cofounder_agent/utils/connection_health.py
 src/cofounder_agent/utils/route_utils.py
-src/cofounder_agent/utils/startup_manager.py

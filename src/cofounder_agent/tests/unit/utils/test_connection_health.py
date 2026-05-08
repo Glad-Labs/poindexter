@@ -294,13 +294,17 @@ class TestDiagnoseConnectionIssues:
 
     @pytest.mark.asyncio
     async def test_invalid_pool_config_reported(self):
-        env_patch = {
-            "DATABASE_URL": "postgresql://localhost/db",
-            "DATABASE_POOL_MIN_SIZE": "50",
-            "DATABASE_POOL_MAX_SIZE": "10",  # min > max — invalid
-        }
+        # site_config arg replaces the env-var → singleton-fallback chain
+        # used pre-glad-labs-stack#330. Tests pass a mock SiteConfig now.
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": (
+            "50" if k == "database_pool_min_size"
+            else "10" if k == "database_pool_max_size"
+            else d
+        )
+        env_patch = {"DATABASE_URL": "postgresql://localhost/db"}
         with patch.dict("os.environ", env_patch):
-            result = await diagnose_connection_issues()
+            result = await diagnose_connection_issues(site_config=sc)
         issues_text = " ".join(result["issues"])
         assert "pool" in issues_text.lower() or "min" in issues_text.lower()
 

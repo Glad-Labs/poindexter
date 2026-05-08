@@ -480,9 +480,11 @@ class StartupManager:
         """
         import os
 
-        # Skip warmup unless explicitly enabled (lazy loading is the default)
-        from services.site_config import site_config
-        if site_config.get("enable_sdxl_warmup", "").lower() not in ("true", "1", "yes"):
+        # Skip warmup unless explicitly enabled (lazy loading is the default).
+        # Uses the DI-seam'd SiteConfig from the constructor (glad-labs-stack#330).
+        sc = self._site_config
+        warmup_flag = sc.get("enable_sdxl_warmup", "") if sc is not None else ""
+        if warmup_flag.lower() not in ("true", "1", "yes"):
             logger.info(
                 "  SDXL warmup: Skipped (lazy loading on first request). Set ENABLE_SDXL_WARMUP=true to pre-load."
             )
