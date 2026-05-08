@@ -6,9 +6,10 @@ so the router (and future capability_router) can learn which
 (atom, capability_tier, model) combinations produce good results in
 production.
 
-This module is the writer half. The reader half lives in
-``services.model_router`` (and will move to ``capability_router`` in
-the planned rename).
+This module is the writer half. (The reader half originally lived in
+``services.model_router``, deleted 2026-05-08; capability-tier routing
+is now driven by the LiteLLM provider plugin in
+``services/llm_providers/litellm_provider.py`` + the dispatcher.)
 
 Public surface:
 

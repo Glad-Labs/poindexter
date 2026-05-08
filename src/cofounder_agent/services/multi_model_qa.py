@@ -25,7 +25,6 @@ from datetime import datetime, timezone
 
 from services.content_validator import ValidationResult, validate_content
 from services.logger_config import get_logger
-from services.model_router import get_model_router
 from services.qa_gates_db import load_qa_gate_chain
 from services.site_config import site_config
 
@@ -287,7 +286,6 @@ class MultiModelQA:
     def __init__(self, pool=None, settings_service=None):
         self.pool = pool
         self.settings = settings_service
-        self.router = get_model_router()
 
     async def _load_gate_states(self) -> dict[str, tuple[bool, bool]]:
         """Return ``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates``.

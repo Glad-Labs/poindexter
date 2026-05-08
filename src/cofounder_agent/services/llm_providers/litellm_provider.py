@@ -9,9 +9,11 @@ LiteLLM-backed option so operators can:
   OpenAI, Anthropic, Gemini, vLLM, llama.cpp, OpenRouter, Bedrock,
   Vertex — anything LiteLLM speaks) with one app_settings flip.
 - Get authoritative cost tracking from LiteLLM's MODEL_COSTS table
-  instead of the drift-prone hand-rolled services/model_constants.py.
+  instead of the drift-prone hand-rolled tables (model_constants.py
+  + usage_tracker.py — both deleted 2026-05-08 in favor of cost_lookup).
 - Keep retries + fallbacks declarative via LiteLLM's Router config
-  rather than the per-provider failure counter in services/model_router.py.
+  rather than the per-provider failure counter in the now-deleted
+  services/model_router.py.
 
 Per ``feedback_no_paid_apis``: LiteLLM speaks Ollama natively; the
 default install routes to local models. Cloud providers stay opt-in
