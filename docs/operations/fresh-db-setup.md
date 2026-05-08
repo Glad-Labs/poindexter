@@ -143,7 +143,7 @@ SELECT
 ```
 
 Note: `app_settings_seeded = 149` is the **migration-seeded baseline**.
-The full ~450-key set documented in `CLAUDE.md` materialises after
+The full ~700-key set documented in `CLAUDE.md` materialises after
 the first worker boot — settings the worker queries at runtime that
 weren't pre-seeded by a migration get inserted lazily by the
 `SettingsService` with their code-side defaults. **This is a known
