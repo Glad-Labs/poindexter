@@ -163,8 +163,11 @@ class _DefaultModelRouter:
         del model_class, max_tokens  # tier→model resolution is the writer-model setting
         from services.llm_text import ollama_chat_text, resolve_local_model
 
-        model_name = resolve_local_model(None)
-        text = await ollama_chat_text(prompt=user, system=system, model=model_name)
+        model_name = resolve_local_model(None, site_config=self._site_config)
+        text = await ollama_chat_text(
+            prompt=user, system=system, model=model_name,
+            site_config=self._site_config,
+        )
         return {"text": text, "model": f"ollama/{model_name}", "tokens": 0}
 
 

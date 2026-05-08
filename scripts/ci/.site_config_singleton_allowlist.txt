@@ -20,7 +20,6 @@ src/cofounder_agent/services/image_service.py
 src/cofounder_agent/services/internal_link_coherence.py
 src/cofounder_agent/services/internal_rag_source.py
 src/cofounder_agent/services/jobs/reload_site_config.py
-src/cofounder_agent/services/llm_text.py
 src/cofounder_agent/services/multi_model_qa.py
 src/cofounder_agent/services/newsletter_service.py
 src/cofounder_agent/services/ollama_client.py

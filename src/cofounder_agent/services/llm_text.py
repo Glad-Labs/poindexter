@@ -35,14 +35,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def resolve_local_model(model: str | None = None) -> str:
+def resolve_local_model(model: str | None = None, *, site_config: Any = None) -> str:
     """Pick the local model to call. Removes ``ollama/`` prefix and
     falls back through ``pipeline_writer_model`` → hard default.
-    """
-    from services.site_config import site_config
 
+    Accepts the SiteConfig instance via the DI seam (glad-labs-stack#330).
+    Falls through to the hard default when ``site_config`` is None.
+    """
     if model:
         return model.removeprefix("ollama/")
+    if site_config is None:
+        return "glm-4.7-5090:latest"
     return (
         site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
         or "glm-4.7-5090:latest"
@@ -56,6 +59,7 @@ async def ollama_chat_text(
     timeout_setting: str = "atom_chat_timeout_seconds",
     timeout_default: float = 120.0,
     system: str | None = None,
+    site_config: Any = None,
 ) -> str:
     """Plain-text Ollama chat call.
 
@@ -69,19 +73,26 @@ async def ollama_chat_text(
         timeout_default: Fallback timeout when the setting is unset.
         system: Optional system prompt prepended as a system role
             message.
+        site_config: SiteConfig DI seam (glad-labs-stack#330). When
+            ``None``, falls through to ``localhost:11434`` and the
+            default timeout — matches the behavior the singleton's
+            empty-default-config produced before the lifespan shim.
 
     Returns:
         The raw assistant content (post-unwrap, see
         :func:`maybe_unwrap_json`). Empty string on missing content.
     """
     import httpx
-    from services.site_config import site_config
 
-    resolved_model = resolve_local_model(model)
+    resolved_model = resolve_local_model(model, site_config=site_config)
     base_url = (
-        site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
+        (site_config.get("local_llm_api_url", "http://localhost:11434")
+            if site_config is not None else "http://localhost:11434").rstrip("/")
     )
-    timeout = site_config.get_float(timeout_setting, timeout_default)
+    timeout = (
+        site_config.get_float(timeout_setting, timeout_default)
+        if site_config is not None else timeout_default
+    )
     messages: list[dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system})

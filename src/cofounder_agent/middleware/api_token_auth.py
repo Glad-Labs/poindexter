@@ -147,12 +147,21 @@ async def verify_api_token(
 
 # Fixed operator identity for solo-operator mode.
 # In a single-operator system, all authenticated requests come from the owner.
+#
+# Kept as a module-level constant for test back-compat (conftest fixtures
+# monkeypatch this to TEST_USER's id). Production callers should use
+# ``_operator_id(sc)`` to get the LIVE value from the request-scoped
+# SiteConfig — the constant defaults to "operator" because the singleton
+# was empty at import time, which is the bug the migration fixes.
+OPERATOR_ID = "operator"
+
+
 def _operator_id(sc: Any) -> str:
     """Operator identity, deferred to request time (was a module-level constant
     that read the singleton before lifespan startup populated it)."""
     if sc is None:
-        return "operator"
-    return sc.get("operator_id", "operator")
+        return OPERATOR_ID
+    return sc.get("operator_id", OPERATOR_ID)
 
 
 def get_operator_identity(request: Request | None = None) -> dict:

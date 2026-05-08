@@ -207,6 +207,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             timeout_setting="pipeline_critic_timeout_seconds",
             timeout_default=90.0,
             system=_resolve_system_prompt(),
+            site_config=site_config,
         )
     except Exception as exc:
         logger.exception("[atoms.review_with_critic] ollama call failed: %s", exc)
