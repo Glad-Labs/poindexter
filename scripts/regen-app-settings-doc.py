@@ -16,9 +16,12 @@ import sys
 from collections import OrderedDict
 from pathlib import Path
 
-# Point at the cofounder_agent src tree — bootstrap DSN resolution lives there.
+# brain/ lives at the repo root (not under src/cofounder_agent). Prepend the
+# repo root so `from brain.bootstrap import ...` resolves regardless of the
+# caller's CWD — lets `python scripts/regen-app-settings-doc.py` run cleanly
+# from anywhere, including a CI workflow that checks for doc drift.
 _REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_REPO / "src" / "cofounder_agent"))
+sys.path.insert(0, str(_REPO))
 
 from brain.bootstrap import resolve_database_url  # noqa: E402
 
