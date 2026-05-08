@@ -152,14 +152,14 @@ const FREE_INCLUDED = [
 
 const PREMIUM_INCLUDED = [
   'Everything in Free',
-  'Production-tuned config (235+ app_settings)',
+  'Production-tuned config (live operator-tuned app_settings)',
   'Anti-hallucination fact-overrides database',
   'Curated writing style samples',
-  '5 premium Grafana dashboards',
+  'Premium Grafana dashboards',
   'Continuous prompt updates as the live system is tuned',
   'Private repo with prompt iterations',
   'VIP Discord — direct access to Matt',
-  'The Poindexter book (18 chapters + appendices)',
+  'AI Content Pipeline book (chapters as they ship)',
 ];
 
 function PricingList({ items }) {
