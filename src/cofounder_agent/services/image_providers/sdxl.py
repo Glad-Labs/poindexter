@@ -52,11 +52,12 @@ class SdxlProvider:
         # Negative prompt: per-call override wins, then app_settings fallback.
         negative = str(config.get("negative_prompt", "") or "")
         if not negative:
-            try:
-                from services.site_config import site_config
-                negative = site_config.get("image_negative_prompt", "") or ""
-            except Exception:
-                negative = ""
+            # DI seam (glad-labs-stack#330) — image_provider plugins receive
+            # `_site_config` from the dispatcher per CLAUDE.md.
+            sc = config.get("_site_config")
+            negative = (
+                sc.get("image_negative_prompt", "") if sc is not None else ""
+            ) or ""
 
         # Delegate to the in-process ImageService — it owns the torch/
         # diffusers pipeline and GPU cache. We just hand it a path.
@@ -93,7 +94,9 @@ class SdxlProvider:
 
         if upload_target == "cloudinary":
             try:
-                url = await _upload_to_cloudinary(output_path, prompt)
+                url = await _upload_to_cloudinary(
+                    output_path, prompt, site_config=config.get("_site_config"),
+                )
             except Exception as e:
                 logger.warning(
                     "[SdxlProvider] Cloudinary upload failed (serving file:// URL): %s", e,
@@ -124,15 +127,20 @@ class SdxlProvider:
         ]
 
 
-async def _upload_to_cloudinary(path: str, prompt: str) -> str:
+async def _upload_to_cloudinary(
+    path: str, prompt: str, *, site_config: Any = None,
+) -> str:
     """Upload a generated PNG to Cloudinary and return the secure URL."""
     import asyncio
 
     import cloudinary
     import cloudinary.uploader
 
-    from services.site_config import site_config
-
+    if site_config is None:
+        raise RuntimeError(
+            "Cloudinary upload requires site_config for the encrypted "
+            "credentials — pass it via the image_provider config dict.",
+        )
     # cloudinary_api_key + cloudinary_api_secret are is_secret=true in
     # app_settings (encrypted with enc:v1: prefix). Sync .get() returns
     # the ciphertext for is_secret rows — only get_secret() decrypts.

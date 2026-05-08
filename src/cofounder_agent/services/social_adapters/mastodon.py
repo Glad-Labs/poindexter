@@ -24,7 +24,6 @@ from __future__ import annotations
 from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -51,6 +50,12 @@ async def post_to_mastodon(text: str, url: str, **kwargs: Any) -> dict:
     "not configured" message — callers (social_poster) treat this as a
     soft skip, not a crash.
     """
+    # DI seam (glad-labs-stack#330) — passed by social_poster.
+    site_config = kwargs.get("site_config")
+    if site_config is None:
+        msg = "site_config not provided to mastodon adapter"
+        logger.info("[MASTODON] Skipped — %s", msg)
+        return {"success": False, "post_id": None, "error": msg}
     instance_url = site_config.get("mastodon_instance_url", "").rstrip("/")
     access_token = await site_config.get_secret("mastodon_access_token", "")
 

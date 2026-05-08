@@ -23,7 +23,6 @@ from __future__ import annotations
 from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -49,6 +48,14 @@ async def post_to_bluesky(text: str, url: str, **kwargs: Any) -> dict:
     "not configured" message — callers (social_poster) treat this as a
     soft skip, not a crash.
     """
+    # DI seam (glad-labs-stack#330) — site_config is passed by the
+    # social_poster orchestrator. ``site_config=None`` is treated as
+    # "credentials unconfigured" and falls through to the soft-skip path.
+    site_config = kwargs.get("site_config")
+    if site_config is None:
+        msg = "site_config not provided to bluesky adapter"
+        logger.info("[BLUESKY] Skipped — %s", msg)
+        return {"success": False, "post_id": None, "error": msg}
     identifier = await site_config.get_secret("bluesky_identifier", "")
     password = await site_config.get_secret("bluesky_app_password", "")
 

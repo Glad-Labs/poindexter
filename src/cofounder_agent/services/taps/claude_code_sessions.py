@@ -257,17 +257,21 @@ def _resolve_projects_dir(config: dict[str, Any]) -> Path:
     Priority: ``config.claude_projects_dir`` > ``site_config.claude_projects_dir``
     > ``~/.claude/projects``. Same ordering as MemoryFilesTap so the two
     taps agree on which scopes exist.
+
+    Reads site_config from the DI seam (config["_site_config"], seeded
+    by the tap dispatcher per CLAUDE.md / glad-labs-stack#330).
     """
     override = config.get("claude_projects_dir")
     if override:
         return Path(override)
-    try:
-        from services.site_config import site_config as _sc
-        sc_val = _sc.get("claude_projects_dir", "")
-        if sc_val:
-            return Path(sc_val)
-    except Exception:
-        pass
+    sc = config.get("_site_config")
+    if sc is not None:
+        try:
+            sc_val = sc.get("claude_projects_dir", "")
+            if sc_val:
+                return Path(sc_val)
+        except Exception:
+            pass
     return Path.home() / ".claude" / "projects"
 
 

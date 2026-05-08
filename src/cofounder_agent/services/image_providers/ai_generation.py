@@ -48,7 +48,11 @@ class AIGenerationProvider:
         prompt_model = str(config.get("prompt_model", "llama3:latest"))
         generator_name = str(config.get("generator", "sdxl") or "sdxl")
 
-        sdxl_prompt = await _build_sdxl_prompt(topic, prompt_model)
+        # DI seam (glad-labs-stack#330) — image_provider plugins receive
+        # `_site_config` from the dispatcher per CLAUDE.md.
+        sdxl_prompt = await _build_sdxl_prompt(
+            topic, prompt_model, site_config=config.get("_site_config"),
+        )
 
         # Resolve the downstream provider. Stay inside the plugin registry
         # so swapping to flux/dalle/etc. later is a config change.
@@ -86,22 +90,26 @@ class AIGenerationProvider:
         return relabelled
 
 
-async def _build_sdxl_prompt(topic: str, model: str) -> str:
+async def _build_sdxl_prompt(
+    topic: str, model: str, *, site_config: Any = None,
+) -> str:
     """Ask Ollama to write a tailored SDXL prompt. Fall back to a
     generic photorealistic template when Ollama is unreachable.
 
     Shared shape with services/jobs/regenerate_stock_images.py — kept in
     sync so both the Job and the Provider produce similar output.
     """
-    from services.site_config import site_config
-
     fallback = (
         f"photorealistic scene related to {topic[:50]}, cinematic lighting, "
         f"4k, detailed, no people, no text"
     )
     try:
         import httpx
-        ollama = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+        ollama = (
+            site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+            if site_config is not None
+            else "http://host.docker.internal:11434"
+        )
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{ollama}/api/generate",

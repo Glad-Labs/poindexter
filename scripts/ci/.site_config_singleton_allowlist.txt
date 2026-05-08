@@ -21,8 +21,6 @@ src/cofounder_agent/services/devto_service.py
 src/cofounder_agent/services/gpu_scheduler.py
 src/cofounder_agent/services/idle_worker.py
 src/cofounder_agent/services/image_decision_agent.py
-src/cofounder_agent/services/image_providers/ai_generation.py
-src/cofounder_agent/services/image_providers/sdxl.py
 src/cofounder_agent/services/image_service.py
 src/cofounder_agent/services/integrations/operator_notify.py
 src/cofounder_agent/services/internal_link_coherence.py
@@ -51,12 +49,8 @@ src/cofounder_agent/services/revalidation_service.py
 src/cofounder_agent/services/scheduled_publisher.py
 src/cofounder_agent/services/seed_url_fetcher.py
 src/cofounder_agent/services/self_review.py
-src/cofounder_agent/services/social_adapters/bluesky.py
-src/cofounder_agent/services/social_adapters/mastodon.py
 src/cofounder_agent/services/social_poster.py
 src/cofounder_agent/services/static_export_service.py
-src/cofounder_agent/services/taps/claude_code_sessions.py
-src/cofounder_agent/services/taps/memory.py
 src/cofounder_agent/services/task_executor.py
 src/cofounder_agent/services/telegram_config.py
 src/cofounder_agent/services/telemetry.py
