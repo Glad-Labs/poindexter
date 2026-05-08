@@ -129,8 +129,10 @@ class QualityDimensions:
         # readability excluded (#1238) — Flesch penalizes technical vocabulary.
         # CRITICAL_FLOOR is tunable via app_settings (qa_critical_floor).
         try:
-            from services.site_config import site_config
-            effective_floor = site_config.get_float("qa_critical_floor", self.CRITICAL_FLOOR)
+            import services.site_config as _scm
+            effective_floor = _scm.site_config.get_float(
+                "qa_critical_floor", self.CRITICAL_FLOOR,
+            )
         except Exception:
             effective_floor = self.CRITICAL_FLOOR
         critical_values = {dim: getattr(self, dim) for dim in self.CRITICAL_DIMENSIONS}

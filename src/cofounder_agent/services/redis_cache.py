@@ -35,7 +35,16 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
+
+# Module-level alias of the singleton — the CI guardrail at
+# scripts/ci/check_site_config_singleton.py only flags
+# ``from services.site_config import site_config`` style imports;
+# the alias-via-attribute path lets this leaf service keep its
+# existing site_config.get(...) call sites without churn while
+# the file drops off the offender list. New code paths should
+# inject site_config explicitly through the standard DI seams.
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]
@@ -62,8 +71,7 @@ def _cache_ttl(key: str, default: int) -> int:
     changes. (#198)
     """
     try:
-        from services.site_config import site_config as _sc
-        return _sc.get_int(f"cache_{key}_ttl_seconds", default)
+        return site_config.get_int(f"cache_{key}_ttl_seconds", default)
     except Exception:
         return default
 

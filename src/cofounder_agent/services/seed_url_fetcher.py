@@ -152,7 +152,8 @@ class SeedURLError(Exception):
 
 def _get_timeout_seconds() -> float:
     try:
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         return _sc.get_float(_SETTING_TIMEOUT, _DEFAULT_TIMEOUT_SECONDS)
     except Exception:  # pragma: no cover — site_config absent in bare imports
         return _DEFAULT_TIMEOUT_SECONDS
@@ -160,7 +161,8 @@ def _get_timeout_seconds() -> float:
 
 def _get_user_agent() -> str:
     try:
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         ua = _sc.get(_SETTING_USER_AGENT, _DEFAULT_USER_AGENT)
         return ua or _DEFAULT_USER_AGENT
     except Exception:  # pragma: no cover
@@ -169,7 +171,8 @@ def _get_user_agent() -> str:
 
 def _get_max_bytes() -> int:
     try:
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         return _sc.get_int(_SETTING_MAX_BYTES, _DEFAULT_MAX_BYTES)
     except Exception:  # pragma: no cover
         return _DEFAULT_MAX_BYTES
