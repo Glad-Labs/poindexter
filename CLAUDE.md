@@ -214,14 +214,42 @@ Then call methods on the instance:
 Do NOT write `from services.site_config import site_config` in NEW
 code. The module-level `site_config = SiteConfig()` singleton at
 `services/site_config.py:226` was supposed to be removed in Phase H
-step 5 but the deletion never landed — 187 callers still import it
-today (most read from a _blank_ default-loaded instance and silently
-fall back to `os.getenv`, which is the bug `feedback_module_singleton_gotcha`
-warns about). The audit at
-`.shared-context/audits/2026-05-08-services-folder-audit.md` documents
-the discrepancy; Phase 1c of the cleanup sweeps the import sites onto
-the DI seam and then deletes the singleton + adds a CI lint that fails
-on the import.
+step 5 but the deletion never landed — 114 callers still import it
+today.
+
+**Production behavior is correct** because of a shim at
+`main.py:185-186` that re-points the module attribute at the
+DB-loaded instance during lifespan startup:
+
+```python
+import services.site_config as _site_config_mod
+_site_config_mod.site_config = _site_cfg
+```
+
+This shim is what makes `from services.site_config import site_config`
+returns the same DB-loaded instance as the DI-seam'd
+`Depends(get_site_config_dependency)`. A scheduled
+`reload_site_config` job refreshes it every minute (verified live —
+worker logs show `site_config refreshed (620 keys)`).
+
+So the singleton works, but it's still the wrong shape:
+
+- **Tests** that import the module before `main.py` runs the shim
+  see the empty default-loaded instance — fixture gymnastics required.
+- **Future Claude sessions** read CLAUDE.md and see "use DI seam";
+  if the singleton stays available, force of habit reaches for it.
+- **The shim itself is a band-aid** — one assignment between a
+  working pipeline and one that reads env defaults for everything.
+
+Retirement is tracked under [glad-labs-stack#330](https://github.com/Glad-Labs/glad-labs-stack/issues/330)
+as an incremental epic (8 PRs over 2-3 weeks, one per caller category).
+Until the singleton is gone:
+
+- **NEW code**: use the DI seam (route handlers via `Depends()`,
+  services via constructor injection, stages via `context.get()`).
+- **OLD code**: leave singleton imports alone unless you're touching
+  the file for an unrelated reason. Don't churn the diff just for
+  the migration unless the issue calls you in.
 
 Tests should construct their own instance with
 `SiteConfig(initial_config={...})` or use the `test_site_config`
