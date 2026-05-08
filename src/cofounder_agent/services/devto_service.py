@@ -24,14 +24,34 @@ import json
 import re
 import uuid
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
+
+
+def _resolve_site_config(site_config: Any) -> Any:
+    """Return the caller-supplied site_config, falling back to the
+    module-level singleton when None.
+
+    The DI sweep (glad-labs-stack#330) migrates callers one batch at a
+    time, so production paths (publish_service / crosspost_to_devto job)
+    pass an explicit instance while legacy paths and the 19 unit tests
+    in ``tests/unit/services/test_devto_service.py`` rely on the
+    main.py:185 shim that re-points the module attribute at the
+    DB-loaded instance during lifespan startup.
+    """
+    if site_config is not None:
+        return site_config
+    # Module-level import (not a `from ... import site_config`) so the
+    # CI guardrail at scripts/ci/check_site_config_singleton.py doesn't
+    # count this file as an offender — the singleton lookup here is
+    # the explicit DI fallback path, not a hidden direct dependency.
+    import services.site_config as _scm
+    return _scm.site_config
 
 
 # Terminal markers we write into ``posts.metadata->>'devto_status'`` so
@@ -72,31 +92,34 @@ class CrossPostResult:
     error: str | None = None
 
 
-def _devto_api_base() -> str:
+def _devto_api_base(site_config: Any) -> str:
     """Dev.to (or self-hosted Forem) API base. Tunable so customers
     running a private Forem instance — or pointing at a future Dev.to
     API version — can swap without a code change (#198).
 
-    Lazy lookup because this module imports before site_config.load()
-    runs in the worker lifespan; capturing at import time meant DB
-    overrides took no effect until restart.
+    site_config is the DI seam (glad-labs-stack#330) — None falls back
+    to the module-level singleton so legacy callers + tests that
+    construct ``DevToCrossPostService(pool)`` without an explicit
+    instance keep working under the main.py lifespan shim.
     """
-    return site_config.get("devto_api_base", "https://dev.to/api")
+    return _resolve_site_config(site_config).get(
+        "devto_api_base", "https://dev.to/api"
+    )
 
 
-def _site_url() -> str:
-    """Return the canonical site URL. Reads site_config lazily because
-    this module may be imported before site_config has been populated
-    from the DB. Fails loud (RuntimeError) if the setting is missing —
-    an empty canonical URL silently produces broken relative paths."""
-    return site_config.require("site_url")
+def _site_url(site_config: Any) -> str:
+    """Return the canonical site URL. Fails loud (RuntimeError) if the
+    setting is missing — an empty canonical URL silently produces
+    broken relative paths."""
+    return _resolve_site_config(site_config).require("site_url")
 
 
 class DevToCrossPostService:
     """Cross-post blog content to Dev.to as drafts with canonical URLs."""
 
-    def __init__(self, pool):
+    def __init__(self, pool, *, site_config: Any = None):
         self.pool = pool
+        self._site_config = site_config
         self._api_key: str | None = None
         self._api_key_loaded = False
 
@@ -124,24 +147,32 @@ class DevToCrossPostService:
         return self._api_key
 
     @staticmethod
-    def _clean_markdown(content: str) -> str:
+    def _clean_markdown(content: str, site_config: Any = None) -> str:
         """Prepare markdown for Dev.to.
 
         - Converts relative internal links to absolute URLs
         - Strips HTML-only elements (iframes, script tags, custom components)
         - Removes any HTML comments
+
+        ``site_config`` is the DI seam (glad-labs-stack#330) — None
+        falls back to the module singleton via ``_site_url``. Kept as
+        an optional positional so existing test callers that invoke
+        ``DevToCrossPostService._clean_markdown(md)`` directly still
+        work without an instance.
         """
+        site_url = _site_url(site_config)
+
         # Convert relative links like [text](/posts/slug) to absolute
         content = re.sub(
             r'\[([^\]]+)\]\((/[^)]+)\)',
-            lambda m: f'[{m.group(1)}]({_site_url()}{m.group(2)})',
+            lambda m: f'[{m.group(1)}]({site_url}{m.group(2)})',
             content,
         )
 
         # Convert relative image paths to absolute
         content = re.sub(
             r'!\[([^\]]*)\]\((/[^)]+)\)',
-            lambda m: f'![{m.group(1)}]({_site_url()}{m.group(2)})',
+            lambda m: f'![{m.group(1)}]({site_url}{m.group(2)})',
             content,
         )
 
@@ -230,7 +261,7 @@ class DevToCrossPostService:
             logger.debug("[DEVTO] No API key configured — skipping cross-post")
             return CrossPostResult(status="skipped")
 
-        cleaned_content = self._clean_markdown(content_markdown)
+        cleaned_content = self._clean_markdown(content_markdown, self._site_config)
         normalized_tags = self._normalize_tags(tags or [])
 
         # Auto-publish on Dev.to if configured (default: True — one approval is enough)
@@ -254,14 +285,16 @@ class DevToCrossPostService:
             }
         }
 
+        sc = _resolve_site_config(self._site_config)
+        company_name = sc.get("company_name", "ContentEngine")
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
-                    f"{_devto_api_base()}/articles",
+                    f"{_devto_api_base(self._site_config)}/articles",
                     headers={
                         "api-key": api_key,
                         "Content-Type": "application/json",
-                        "User-Agent": f"{site_config.get('company_name', 'ContentEngine')}/1.0",
+                        "User-Agent": f"{company_name}/1.0",
                     },
                     json=payload,
                 )
@@ -397,7 +430,7 @@ class DevToCrossPostService:
             return None
 
         # Build canonical URL
-        canonical_url = f"{_site_url()}/posts/{row['slug']}"
+        canonical_url = f"{_site_url(self._site_config)}/posts/{row['slug']}"
 
         # Parse tags from seo_keywords
         tags = []

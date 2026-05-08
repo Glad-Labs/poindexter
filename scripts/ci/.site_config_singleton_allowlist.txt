@@ -12,7 +12,6 @@ src/cofounder_agent/services/content_router_service.py
 src/cofounder_agent/services/content_validator.py
 src/cofounder_agent/services/database_service.py
 src/cofounder_agent/services/decorators.py
-src/cofounder_agent/services/devto_service.py
 src/cofounder_agent/services/gpu_scheduler.py
 src/cofounder_agent/services/image_decision_agent.py
 src/cofounder_agent/services/image_service.py
@@ -62,7 +61,6 @@ src/cofounder_agent/tests/unit/conftest.py
 src/cofounder_agent/tests/unit/routes/test_podcast_routes.py
 src/cofounder_agent/tests/unit/services/test_code_block_density.py
 src/cofounder_agent/tests/unit/services/test_content_router_service.py
-src/cofounder_agent/tests/unit/services/test_devto_service.py
 src/cofounder_agent/tests/unit/services/test_newsletter_service.py
 src/cofounder_agent/tests/unit/services/test_quality_scorers_dev_diary_bypass.py
 src/cofounder_agent/tests/unit/services/test_template_runner_postgres_checkpointer.py

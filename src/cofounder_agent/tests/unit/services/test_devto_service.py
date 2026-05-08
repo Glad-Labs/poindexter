@@ -10,25 +10,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Ensure site_config returns a test URL for SITE_URL
-from services.site_config import site_config
-
-site_config._config["site_url"] = "https://test.example.com"
-
-# _site_url() is now a lazy function (2026-04-11 fix for module-import-time
-# silent swallow). Call it once to get the value for test assertions.
-# E402 suppressed because site_config._config must be seeded before
-# devto_service's module-level lookups run.
-from services.devto_service import (  # noqa: E402
+from services.devto_service import (
     DEVTO_STATUS_ALREADY_EXISTS,
     DEVTO_STATUS_GAVE_UP,
     DEVTO_STATUS_POSTED,
     CrossPostResult,
     DevToCrossPostService,
-    _site_url,
 )
+from services.site_config import SiteConfig
 
-SITE_URL = _site_url()
+# Per glad-labs-stack#330: tests construct an explicit SiteConfig
+# instead of mutating the module singleton. _TEST_SC is threaded into
+# every DevToCrossPostService(pool, site_config=...) construction
+# below so the tests don't depend on lifespan startup ordering.
+_TEST_SC = SiteConfig(initial_config={"site_url": "https://test.example.com"})
+SITE_URL = "https://test.example.com"
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -75,44 +71,44 @@ class TestCleanMarkdown:
 
     def test_relative_links_converted_to_absolute(self):
         md = "Read [this post](/posts/my-slug) for details."
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert f"{SITE_URL}/posts/my-slug" in result
         assert "(/posts/my-slug)" not in result
 
     def test_relative_image_paths_converted_to_absolute(self):
         md = "![screenshot](/images/demo.png)"
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert f"{SITE_URL}/images/demo.png" in result
 
     def test_absolute_links_unchanged(self):
         md = "[example](https://example.com/page)"
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert "https://example.com/page" in result
         assert SITE_URL not in result
 
     def test_script_tags_stripped(self):
         md = "Before<script>alert('xss')</script>After"
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert "<script" not in result
         assert "alert" not in result
         assert "BeforeAfter" in result
 
     def test_iframe_tags_stripped(self):
         md = 'Text<iframe src="https://evil.com"></iframe>More'
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert "<iframe" not in result
         assert "TextMore" in result
 
     def test_html_comments_stripped(self):
         md = "Visible<!-- hidden comment -->Also visible"
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert "<!--" not in result
         assert "hidden comment" not in result
         assert "VisibleAlso visible" in result
 
     def test_custom_react_components_stripped(self):
         md = "Before\n<ViewTracker />\n<AdSense slot=\"123\" />\nAfter"
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert "<ViewTracker" not in result
         assert "<AdSense" not in result
         assert "Before" in result
@@ -120,15 +116,15 @@ class TestCleanMarkdown:
 
     def test_plain_markdown_unchanged(self):
         md = "## Hello World\n\nThis is a paragraph."
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert result == md
 
     def test_empty_input(self):
-        assert DevToCrossPostService._clean_markdown("") == ""
+        assert DevToCrossPostService._clean_markdown("", _TEST_SC) == ""
 
     def test_multiple_relative_links(self):
         md = "[A](/posts/a) and [B](/posts/b)"
-        result = DevToCrossPostService._clean_markdown(md)
+        result = DevToCrossPostService._clean_markdown(md, _TEST_SC)
         assert f"{SITE_URL}/posts/a" in result
         assert f"{SITE_URL}/posts/b" in result
 
@@ -185,7 +181,7 @@ class TestCrossPostNoApiKey:
     @pytest.mark.asyncio
     async def test_skipped_when_no_api_key_in_settings(self):
         pool = make_mock_pool(api_key_row=None)
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
         result = await svc.cross_post(
             title="Test",
             content_markdown="Content",
@@ -198,7 +194,7 @@ class TestCrossPostNoApiKey:
     @pytest.mark.asyncio
     async def test_skipped_when_api_key_empty(self):
         pool = make_mock_pool(api_key_row={"value": ""})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
         result = await svc.cross_post(
             title="Test",
             content_markdown="Content",
@@ -218,7 +214,7 @@ class TestCrossPostNoApiKey:
         failing_ctx.__aexit__ = AsyncMock(return_value=False)
         pool.acquire = MagicMock(return_value=failing_ctx)
 
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
         with pytest.raises(RuntimeError, match="connection refused"):
             await svc.cross_post(
                 title="Test",
@@ -233,7 +229,7 @@ class TestCrossPostNoApiKey:
         # is verified by checking the conn inside the acquired context
         # is only queried once.
         pool = make_mock_pool(api_key_row=None)
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
         await svc.cross_post("T", "C", "https://www.gladlabs.io/posts/t")
         await svc.cross_post("T2", "C2", "https://www.gladlabs.io/posts/t2")
         # pool.acquire was called once (first cross_post); the second
@@ -252,7 +248,7 @@ class TestCrossPostSuccess:
     @pytest.mark.asyncio
     async def test_successful_cross_post_returns_posted_result(self):
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 201
@@ -300,7 +296,7 @@ class TestCrossPostSuccess:
         success-at-destination. Also verifies the log line is demoted
         from WARNING to INFO so the every-4-hour message stops paging."""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 422
@@ -354,7 +350,7 @@ class TestCrossPostSuccess:
         the retry loop. (#404 — match the JSON ``error`` field via
         ``.lower()`` substring check.)"""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 422
@@ -385,7 +381,7 @@ class TestCrossPostSuccess:
         message must STILL hit the gave_up branch and log at WARNING.
         Only the exact canonical-URL message is special-cased (#404)."""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 422
@@ -420,7 +416,7 @@ class TestCrossPostSuccess:
         (rare, but defensive), don't crash — fall through to gave_up
         so we still stop hammering the endpoint."""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 422
@@ -446,7 +442,7 @@ class TestCrossPostSuccess:
         """Other 4xx (415, 401, etc.) must still error loudly — only
         the canonical-URL 422 is the success-at-destination case."""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 415
@@ -472,7 +468,7 @@ class TestCrossPostSuccess:
         """5xx responses should NOT be terminal — the cron retries on
         the next tick. (#397 distinguishes these from 422.)"""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 503
@@ -499,7 +495,7 @@ class TestCrossPostSuccess:
     async def test_429_rate_limit_returns_transient(self):
         """429 is rate-limit, not a permanent reject — keep retrying."""
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 429
@@ -525,7 +521,7 @@ class TestCrossPostSuccess:
     @pytest.mark.asyncio
     async def test_network_error_returns_transient(self):
         pool = make_mock_pool(api_key_row={"value": "fake-api-key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         with patch("services.devto_service.httpx.AsyncClient") as MockClient:
             mock_client_instance = AsyncMock()
@@ -549,7 +545,7 @@ class TestCrossPostSuccess:
     @pytest.mark.asyncio
     async def test_tags_normalized_in_payload(self):
         pool = make_mock_pool(api_key_row={"value": "key"})
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 201
@@ -637,7 +633,7 @@ class TestCrossPostByPostIdDedup:
             "metadata": {},
         }
         pool, executions = self._make_post_pool(post_row=post_row)
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 201
@@ -683,7 +679,7 @@ class TestCrossPostByPostIdDedup:
             "metadata": {},
         }
         pool, executions = self._make_post_pool(post_row=post_row)
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 422
@@ -748,7 +744,7 @@ class TestCrossPostByPostIdDedup:
             "metadata": {},
         }
         pool, executions = self._make_post_pool(post_row=post_row)
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 422
@@ -792,7 +788,7 @@ class TestCrossPostByPostIdDedup:
             "metadata": {},
         }
         pool, executions = self._make_post_pool(post_row=post_row)
-        svc = DevToCrossPostService(pool)
+        svc = DevToCrossPostService(pool, site_config=_TEST_SC)
 
         mock_response = MagicMock()
         mock_response.status_code = 503

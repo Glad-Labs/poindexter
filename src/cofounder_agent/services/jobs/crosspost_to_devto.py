@@ -55,7 +55,9 @@ class CrosspostToDevtoJob:
         batch_size = int(config.get("batch_size", 3))
         file_issue = bool(config.get("file_gitea_issue", False))
 
-        svc = DevToCrossPostService(pool)
+        # glad-labs-stack#330: thread site_config through the DI seam.
+        # Job dispatcher seeds ``_site_config`` on every config dict.
+        svc = DevToCrossPostService(pool, site_config=config.get("_site_config"))
 
         # Early-out before we touch the DB: if there's no API key there's
         # nothing we can do.
