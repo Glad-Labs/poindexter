@@ -27,8 +27,8 @@ async def _notify_discord(message: str) -> None:
     _logger = get_logger(__name__)
     try:
         # Load webhook URL from app_settings (DB-first config)
-        from services.site_config import site_config
-        webhook_url = site_config.get("discord_ops_webhook_url", "")
+        import services.site_config as _scm
+        webhook_url = _scm.site_config.get("discord_ops_webhook_url", "")
         if not webhook_url:
             _logger.debug("[NOTIFY:discord] No discord_ops_webhook_url configured — skipping")
             return
@@ -101,8 +101,8 @@ class TaskExecutor:
         # How long (seconds) the queue may have pending tasks without any being
         # picked up before we fire a CRITICAL alert. Tunable via
         # app_settings.task_executor_idle_alert_threshold_seconds (#198).
-        from services.site_config import site_config as _sc_idle
-        self._IDLE_ALERT_THRESHOLD_S: int = _sc_idle.get_int(
+        import services.site_config as _scm_idle
+        self._IDLE_ALERT_THRESHOLD_S: int = _scm_idle.site_config.get_int(
             "task_executor_idle_alert_threshold_seconds", 300
         )
         # Timestamp tracker for stale task sweeping (FIX: was dead code)
@@ -715,9 +715,11 @@ class TaskExecutor:
                                WHERE task_id = $2""",
                             preview_token, task_id,
                         )
-                        from services.site_config import site_config as _sc
+                        import services.site_config as _scm_pv
                         # Use worker's own URL for HTML preview (accessible via Tailscale)
-                        _preview_base = _sc.get("preview_base_url", "http://100.81.93.12:8002")
+                        _preview_base = _scm_pv.site_config.get(
+                            "preview_base_url", "http://100.81.93.12:8002",
+                        )
                         preview_url = f"{_preview_base}/preview/{preview_token}"
                     except Exception:
                         logger.debug("[PREVIEW] Failed to create preview token", exc_info=True)

@@ -616,7 +616,8 @@ class ImageService:
             return None
 
         # Tuning constants via app_settings (#198).
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
         _model = _sc.get("image_search_query_model", "gemma3:27b")
         _max_tokens = _sc.get_int("image_search_query_max_tokens", 30)
@@ -940,7 +941,8 @@ class ImageService:
             True if successful, False otherwise
         """
         # Strategy 1: Try host SDXL server (runs on GPU outside Docker)
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
         try:
             import httpx
