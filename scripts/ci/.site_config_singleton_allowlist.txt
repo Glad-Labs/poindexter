@@ -58,7 +58,6 @@ src/cofounder_agent/services/social_adapters/bluesky.py
 src/cofounder_agent/services/social_adapters/mastodon.py
 src/cofounder_agent/services/social_poster.py
 src/cofounder_agent/services/stages/cross_model_qa.py
-src/cofounder_agent/services/stages/finalize_task.py
 src/cofounder_agent/services/stages/generate_content.py
 src/cofounder_agent/services/stages/generate_media_scripts.py
 src/cofounder_agent/services/stages/replace_inline_images.py

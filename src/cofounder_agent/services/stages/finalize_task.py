@@ -92,9 +92,17 @@ class FinalizeTaskStage:
                 append_sources_section,
                 extract_urls,
             )
-            from services.site_config import site_config as _sc_sources
-            if (_sc_sources.get("auto_append_sources_section", "true") or "true").lower() not in ("false", "0", "no"):
-                _site_url = _sc_sources.get("site_url") or None
+            # DI seam (glad-labs-stack#330) — stages read site_config from
+            # context per content_router_service.process_content_generation_task.
+            _sc_sources = context.get("site_config")
+            _flag = (
+                _sc_sources.get("auto_append_sources_section", "true")
+                if _sc_sources is not None else "true"
+            )
+            if (_flag or "true").lower() not in ("false", "0", "no"):
+                _site_url = (
+                    _sc_sources.get("site_url") if _sc_sources is not None else None
+                ) or None
                 _urls = extract_urls(content_text, site_url=_site_url)
                 if _urls:
                     content_text = append_sources_section(content_text, _urls)
