@@ -210,7 +210,8 @@ async def _emit_progress(
         return
     try:
         from services.integrations.operator_notify import notify_operator
-        from services.site_config import site_config
+        import services.site_config as _scm
+        site_config = _scm.site_config
         stream_on = bool(
             site_config.get_bool(
                 "template_runner_progress_streaming", True,
@@ -934,9 +935,9 @@ class TemplateRunner:
         """Read the gating flag from app_settings. Lazy import to avoid
         the SiteConfig DI cycle at module import time."""
         try:
-            from services.site_config import site_config
+            import services.site_config as _scm
             return bool(
-                site_config.get_bool(
+                _scm.site_config.get_bool(
                     "template_runner_use_postgres_checkpointer", False,
                 )
             )

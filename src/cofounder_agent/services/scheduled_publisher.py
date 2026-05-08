@@ -38,8 +38,10 @@ async def run_scheduled_publisher(get_pool, *, site_config=None):
                 site_config.get("scheduled_publisher_poll_seconds", 60)
             )
         else:
-            from services.site_config import site_config as _sc
-            _poll_interval = _sc.get_int("scheduled_publisher_poll_seconds", 60)
+            import services.site_config as _scm
+            _poll_interval = _scm.site_config.get_int(
+                "scheduled_publisher_poll_seconds", 60,
+            )
     except Exception:
         _poll_interval = 60
     logger.info(
