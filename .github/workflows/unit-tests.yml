@@ -17,6 +17,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes
+# when multiple commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test-backend:
     runs-on: ubuntu-latest
