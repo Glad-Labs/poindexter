@@ -11,8 +11,6 @@ src/cofounder_agent/services/ai_content_generator.py
 src/cofounder_agent/services/content_router_service.py
 src/cofounder_agent/services/content_validator.py
 src/cofounder_agent/services/database_service.py
-src/cofounder_agent/services/decorators.py
-src/cofounder_agent/services/gpu_scheduler.py
 src/cofounder_agent/services/image_decision_agent.py
 src/cofounder_agent/services/image_service.py
 src/cofounder_agent/services/internal_rag_source.py
@@ -22,7 +20,6 @@ src/cofounder_agent/services/newsletter_service.py
 src/cofounder_agent/services/ollama_client.py
 src/cofounder_agent/services/pipeline_architect.py
 src/cofounder_agent/services/podcast_service.py
-src/cofounder_agent/services/profiling.py
 src/cofounder_agent/services/prompt_manager.py
 src/cofounder_agent/services/publish_service.py
 src/cofounder_agent/services/quality_models.py

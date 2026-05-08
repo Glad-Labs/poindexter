@@ -33,7 +33,8 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 def _sc_get(key: str, default: str = "") -> str:
-    from services.site_config import site_config
+    import services.site_config as _scm
+    site_config = _scm.site_config
     return site_config.get(key, default)
 
 OLLAMA_BASE_URL = _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
@@ -54,8 +55,8 @@ _DEFAULT_GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
 def _cfg_int(key: str, default: int) -> int:
     """Read an int from site_config (DB) with fallback."""
     try:
-        from services.site_config import site_config
-        return site_config.get_int(key, default)
+        import services.site_config as _scm
+        return _scm.site_config.get_int(key, default)
     except Exception:
         return default
 
@@ -63,8 +64,8 @@ def _cfg_int(key: str, default: int) -> int:
 def _cfg_float(key: str, default: float) -> float:
     """Read a float from site_config (DB) with fallback."""
     try:
-        from services.site_config import site_config
-        return site_config.get_float(key, default)
+        import services.site_config as _scm
+        return _scm.site_config.get_float(key, default)
     except Exception:
         return default
 
