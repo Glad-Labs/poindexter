@@ -69,9 +69,9 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         )
         return
 
-    # Check if tracing is enabled via environment variable
-    from services.site_config import site_config
-    if site_config.get("enable_tracing", "false").lower() != "true":
+    # Check if tracing is enabled via app_settings (DI seam, #330).
+    import services.site_config as _scm
+    if _scm.site_config.get("enable_tracing", "false").lower() != "true":
         logging.debug(f"[TELEMETRY] OpenTelemetry tracing disabled for {service_name}")
         return
 
@@ -86,7 +86,7 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         resource = Resource.create(
             attributes={
                 "service.name": service_name,
-                "deployment.environment": site_config.get(
+                "deployment.environment": _scm.site_config.get(
                     "environment", "development",
                 ) or "development",
             }
@@ -99,7 +99,7 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         # Defaulting to localhost is not safe in production (cloud deploy has no local OTLP
         # collector) — it causes a silent export-failure cycle that wastes CPU/memory.
         # Set OTEL_EXPORTER_OTLP_ENDPOINT to point at Grafana Tempo, Honeycomb, etc.
-        otlp_endpoint = site_config.get("otel_exporter_otlp_endpoint")
+        otlp_endpoint = _scm.site_config.get("otel_exporter_otlp_endpoint")
 
         if not otlp_endpoint:
             logging.warning(

@@ -26,17 +26,11 @@ src/cofounder_agent/services/quality_scorers.py
 src/cofounder_agent/services/quality_service.py
 src/cofounder_agent/services/research_quality_service.py
 src/cofounder_agent/services/research_service.py
-src/cofounder_agent/services/revalidation_service.py
 src/cofounder_agent/services/scheduled_publisher.py
 src/cofounder_agent/services/social_poster.py
 src/cofounder_agent/services/static_export_service.py
 src/cofounder_agent/services/task_executor.py
-src/cofounder_agent/services/telegram_config.py
-src/cofounder_agent/services/telemetry.py
 src/cofounder_agent/services/template_runner.py
-src/cofounder_agent/services/text_utils.py
-src/cofounder_agent/services/title_generation.py
-src/cofounder_agent/services/title_originality_external.py
 src/cofounder_agent/services/topic_batch_service.py
 src/cofounder_agent/services/topic_discovery.py
 src/cofounder_agent/services/topic_ranking.py

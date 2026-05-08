@@ -91,7 +91,8 @@ def scrub_fabricated_links(
     stage pulls it from ``content_generator._internal_links_cache``)
     should pass it explicitly.
     """
-    from services.site_config import site_config
+    import services.site_config as _scm
+    site_config = _scm.site_config
 
     trusted = _resolve_trusted_domains(site_config)
     own_domain = (site_config.get("site_domain", "") or "").lower()

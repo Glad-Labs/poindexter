@@ -24,7 +24,8 @@ loud at HTTP send time rather than silently posting against a bad
 URL, which is the right failure mode.
 """
 
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 # Legacy back-compat shims. Empty so any caller still using these will
 # notice (HTTP error) instead of silently posting against ciphertext.

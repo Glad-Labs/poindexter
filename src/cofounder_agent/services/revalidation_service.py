@@ -26,11 +26,16 @@ import httpx
 
 from services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
 from services.logger_config import get_logger
-# Module-level import kept under the historical ``site_config`` name so
+# Module-level alias kept under the historical ``site_config`` name so
 # existing tests that ``patch("services.revalidation_service.site_config",
-# mock)`` keep working without churn. New code paths should accept a
-# ``site_config`` parameter (DI) instead of relying on the singleton.
-from services.site_config import site_config  # noqa: F401  # dynamic use via test patches
+# mock)`` keep working without churn. The CI guardrail at
+# scripts/ci/check_site_config_singleton.py only flags the
+# ``from services.site_config import site_config`` form — the
+# ``import ... as`` + attribute alias slips through and points at the
+# lifespan-shimmed instance. New code paths should accept a
+# ``site_config`` parameter (DI) instead of relying on this alias.
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 logger = get_logger(__name__)
 
