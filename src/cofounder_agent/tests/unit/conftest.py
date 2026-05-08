@@ -258,7 +258,16 @@ async def _db_pool_session():
     test_db_name = f"poindexter_unit_{secrets.token_hex(6)}"
     test_dsn = urlunparse(parsed._replace(path=f"/{test_db_name}"))
 
-    admin = await asyncpg.connect(admin_dsn)
+    # The bootstrap DSN may resolve (e.g. points at a Docker-mapped port) but
+    # the server isn't actually reachable when Docker is down. Treat that the
+    # same as "no DSN configured" — skip rather than ERROR every db-backed test.
+    try:
+        admin = await asyncpg.connect(admin_dsn)
+    except (OSError, asyncpg.exceptions.PostgresError) as exc:
+        pytest.skip(
+            f"Postgres unreachable at {admin_dsn} ({exc!r}) — "
+            "db_pool fixture requires a running DB"
+        )
     try:
         await admin.execute(f"DROP DATABASE IF EXISTS {test_db_name}")
         await admin.execute(f"CREATE DATABASE {test_db_name}")
