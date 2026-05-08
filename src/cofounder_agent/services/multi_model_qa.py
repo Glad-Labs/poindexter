@@ -26,7 +26,8 @@ from datetime import datetime, timezone
 from services.content_validator import ValidationResult, validate_content
 from services.logger_config import get_logger
 from services.qa_gates_db import load_qa_gate_chain
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 logger = get_logger(__name__)
 
@@ -568,8 +569,8 @@ class MultiModelQA:
                     from urllib.parse import urlparse as _urlparse
                     _internal_domains: set[str] = {"localhost"}
                     try:
-                        from services.site_config import site_config as _sc_int
-                        _site_domain = (_sc_int.get("site_domain", "") or "").lower().strip()
+                        import services.site_config as _scm_int
+                        _site_domain = (_scm_int.site_config.get("site_domain", "") or "").lower().strip()
                         if _site_domain:
                             _internal_domains.add(_site_domain)
                             _internal_domains.add(f"www.{_site_domain}")
@@ -1027,9 +1028,9 @@ class MultiModelQA:
                 )
             ollama_model = default_model.removeprefix("ollama/")
 
-            from services.site_config import site_config as _sc_qa_gate
-            _gate_max = _sc_qa_gate.get_int("qa_gate_max_tokens", 600)
-            _gate_timeout = _sc_qa_gate.get_int("qa_gate_timeout_seconds", 60)
+            import services.site_config as _scm_qa_gate
+            _gate_max = _scm_qa_gate.site_config.get_int("qa_gate_max_tokens", 600)
+            _gate_timeout = _scm_qa_gate.site_config.get_int("qa_gate_timeout_seconds", 60)
             try:
                 result = await asyncio.wait_for(
                     client.generate(
@@ -1123,8 +1124,8 @@ class MultiModelQA:
         # the migration seeds app_settings.deepeval_enabled='true' so
         # this is on out-of-the-box. If the operator turns it off, skip.
         try:
-            from services.site_config import site_config as _sc
-            if not deepeval_rails.is_enabled(_sc):
+            import services.site_config as _scm
+            if not deepeval_rails.is_enabled(_scm.site_config):
                 return None
         except Exception:
             # site_config missing is fine — the rail's is_enabled

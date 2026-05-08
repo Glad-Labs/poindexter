@@ -6,11 +6,8 @@
 src/cofounder_agent/routes/settings_routes.py
 src/cofounder_agent/services/ai_content_generator.py
 src/cofounder_agent/services/content_router_service.py
-src/cofounder_agent/services/content_validator.py
-src/cofounder_agent/services/database_service.py
 src/cofounder_agent/services/image_service.py
 src/cofounder_agent/services/jobs/reload_site_config.py
-src/cofounder_agent/services/multi_model_qa.py
 src/cofounder_agent/services/publish_service.py
 src/cofounder_agent/services/task_executor.py
 src/cofounder_agent/services/topic_batch_service.py

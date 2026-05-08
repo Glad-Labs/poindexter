@@ -154,8 +154,8 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
 
 def get_default_image_model() -> ImageModel:
     """Get the default image model from config or fallback."""
-    from services.site_config import site_config
-    model_name = site_config.get("image_model", "sdxl_lightning")
+    import services.site_config as _scm
+    model_name = _scm.site_config.get("image_model", "sdxl_lightning")
     try:
         return ImageModel(model_name)
     except ValueError:
@@ -258,8 +258,8 @@ class ImageService:
         # paths and is overridden by the explicit ctor arg in the
         # regression tests.
         if site_config is None:
-            from services.site_config import site_config as _module_site_config
-            site_config = _module_site_config
+            import services.site_config as _scm
+            site_config = _scm.site_config
         self._site_config = site_config
 
         self.pexels_api_key: str | None = None

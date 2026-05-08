@@ -20,7 +20,8 @@ import time as _time
 from dataclasses import dataclass, field
 
 from services.logger_config import get_logger
-from services.site_config import site_config as _sc
+import services.site_config as _site_config_mod
+_sc = _site_config_mod.site_config
 
 logger = get_logger(__name__)
 

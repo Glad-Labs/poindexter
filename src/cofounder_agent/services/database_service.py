@@ -158,7 +158,8 @@ class DatabaseService:
                 "dev",
                 "local",
             )
-            from services.site_config import site_config
+            import services.site_config as _scm
+            site_config = _scm.site_config
             # GH-92: keep ``min_size`` small in every environment. Pools that
             # pre-warm 20 connections reserve them against ``max_connections``
             # even when the worker is idle — a direct contributor to the
