@@ -81,15 +81,18 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
+        # emit_finding is sync (writes via audit_log_bg fire-and-forget).
+        # Patch as MagicMock + assert_called_once. Was AsyncMock +
+        # assert_awaited_once which never fired despite the call going
+        # through — see poindexter#446.
         with patch("utils.findings.emit_finding",
-                   new=AsyncMock(return_value=True)) as gitea_mock:
+                   new=MagicMock()) as gitea_mock:
             result = await DetectAnomaliesJob().run(pool, {})
         assert result.ok is True
         assert result.changes_made == 2
-        gitea_mock.assert_awaited_once()
-        # Title includes the count.
-        title_arg = gitea_mock.await_args.args[0]
-        assert "2 metrics" in title_arg
+        gitea_mock.assert_called_once()
+        # Title comes through as the keyword arg `title`.
+        assert "2 metrics" in gitea_mock.call_args.kwargs["title"]
 
     async def test_zero_stddev_skips_metric(self):
         """If a metric has zero variance in the baseline window, it can't
@@ -134,7 +137,7 @@ class TestDetectAnomaliesJobRun:
             ],
         )
         with patch("utils.findings.emit_finding",
-                   new=AsyncMock(return_value=True)) as gitea_mock:
+                   new=MagicMock()) as gitea_mock:
             result = await DetectAnomaliesJob().run(pool, {"issue_threshold": 1})
         assert result.changes_made == 1
-        gitea_mock.assert_awaited_once()
+        gitea_mock.assert_called_once()
