@@ -302,15 +302,16 @@ class FinalizeTaskStage:
         # actually approves while dry_run=true (default).
         gate_decision = None
         try:
-            from services.auto_publish_gate import evaluate as _gate_eval
+            from services.auto_publish_gate import evaluate as _gate_check
             from services.audit_log import audit_log_bg
             db_pool = getattr(database_service, "pool", None)
-            gate_decision = await _gate_eval(
+            gate_decision = await _gate_check(
                 db_pool,
                 task_id=str(task_id),
                 niche_slug=context.get("niche_slug") or context.get("niche"),
                 category=category,
                 quality_score=float(final_quality_score or 0),
+                site_config=context.get("site_config"),
             )
             audit_log_bg(
                 "auto_publish_gate",

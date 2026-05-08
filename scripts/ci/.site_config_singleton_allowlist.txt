@@ -8,7 +8,6 @@ src/cofounder_agent/agents/content_agent/config.py
 src/cofounder_agent/routes/settings_routes.py
 src/cofounder_agent/scripts/smoke_371_postgres_checkpointer.py
 src/cofounder_agent/services/ai_content_generator.py
-src/cofounder_agent/services/auto_publish_gate.py
 src/cofounder_agent/services/content_router_service.py
 src/cofounder_agent/services/content_validator.py
 src/cofounder_agent/services/database_service.py

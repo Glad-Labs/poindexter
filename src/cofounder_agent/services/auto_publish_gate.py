@@ -86,18 +86,22 @@ async def evaluate(
     niche_slug: str | None,
     category: str | None,
     quality_score: float,
+    site_config: Any = None,
 ) -> AutoPublishDecision:
     """Evaluate the auto-publish gate for a task. Best-effort —
     exceptions return a 'disabled' decision rather than blocking
     the caller's main flow.
+
+    site_config is the DI seam (glad-labs-stack#330) — passed by the
+    caller (typically from a stage's context). When None, returns the
+    'disabled' decision because every threshold defaults to "off"
+    without operator-tuned settings.
     """
-    try:
-        from services.site_config import site_config
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("[auto_publish_gate] site_config unavailable: %s", exc)
+    if site_config is None:
+        logger.debug("[auto_publish_gate] no site_config provided — gate disabled")
         return AutoPublishDecision(
             would_fire=False, dry_run=True, gate_state="disabled",
-            reason=f"site_config unavailable: {exc}",
+            reason="site_config not provided",
             quality_score=quality_score,
         )
 
