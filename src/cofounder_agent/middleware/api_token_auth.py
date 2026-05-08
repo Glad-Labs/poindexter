@@ -17,13 +17,13 @@ credentials; production deployments must mint JWTs through ``/token``.
 """
 
 import os
+from typing import Any
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from services.auth.oauth_issuer import InvalidToken, verify_token
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -73,20 +73,42 @@ def _verify_oauth_jwt(token: str) -> str:
 
 security = HTTPBearer(auto_error=False)
 
-# Startup safety check: refuse dev-token bypass in production
-_dev_mode = site_config.get("development_mode", "").lower() == "true"
-_environment = os.getenv("ENVIRONMENT", "").lower()
-_dev_token_blocked = False
 
-if _dev_mode and _environment == "production":
-    logger.critical(
-        "DEVELOPMENT_MODE is enabled in a PRODUCTION environment! "
-        "Dev-token bypass will be REFUSED. Unset DEVELOPMENT_MODE or fix ENVIRONMENT."
-    )
-    _dev_token_blocked = True
+def _request_site_config(request: Request) -> Any:
+    """Pull the SiteConfig from app.state (DI seam, glad-labs-stack#330).
+
+    Returns None when the lifespan hasn't populated it yet — callers
+    coalesce to fail-safe defaults so middleware never crashes a request
+    on a missing config (we'd rather refuse the request via the
+    downstream auth path than 500).
+    """
+    return getattr(request.app.state, "site_config", None)
+
+
+def _is_dev_token_blocked(sc: Any) -> bool:
+    """Refuse dev-token bypass when DEVELOPMENT_MODE is on in a production env.
+
+    Previously a module-level constant — but that read the singleton at
+    import time (before main.py's lifespan shim), so it was always False
+    and the safety check never fired. Now evaluated per-request against
+    the live config.
+    """
+    if sc is None:
+        return False
+    dev_mode = sc.get("development_mode", "").lower() == "true"
+    environment = os.getenv("ENVIRONMENT", "").lower()
+    if dev_mode and environment == "production":
+        # Log once per request that hits the bypass — operator visibility.
+        logger.critical(
+            "DEVELOPMENT_MODE is enabled in a PRODUCTION environment! "
+            "Dev-token bypass REFUSED. Unset DEVELOPMENT_MODE or fix ENVIRONMENT.",
+        )
+        return True
+    return False
 
 
 async def verify_api_token(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str:
     """Verify the Bearer token as an OAuth JWT.
@@ -97,7 +119,8 @@ async def verify_api_token(
     Returns:
         The verified token string.
     """
-    dev_mode = site_config.get("development_mode", "").lower() == "true"
+    sc = _request_site_config(request)
+    dev_mode = sc.get("development_mode", "").lower() == "true" if sc is not None else False
 
     if not credentials:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -106,7 +129,7 @@ async def verify_api_token(
 
     # Dev mode bypass: only accept the explicit dev-token
     if dev_mode and token == "dev-token":
-        if _dev_token_blocked:
+        if _is_dev_token_blocked(sc):
             raise HTTPException(
                 status_code=401,
                 detail="Dev-token rejected: DEVELOPMENT_MODE is not allowed in production",
@@ -122,16 +145,21 @@ async def verify_api_token(
     return _verify_oauth_jwt(token)
 
 
-
 # Fixed operator identity for solo-operator mode.
 # In a single-operator system, all authenticated requests come from the owner.
-OPERATOR_ID = site_config.get("operator_id", "operator")
+def _operator_id(sc: Any) -> str:
+    """Operator identity, deferred to request time (was a module-level constant
+    that read the singleton before lifespan startup populated it)."""
+    if sc is None:
+        return "operator"
+    return sc.get("operator_id", "operator")
 
 
-def get_operator_identity() -> dict:
+def get_operator_identity(request: Request | None = None) -> dict:
     """Return a fixed operator identity dict for solo-operator mode."""
+    sc = _request_site_config(request) if request is not None else None
     return {
-        "id": OPERATOR_ID,
+        "id": _operator_id(sc),
         "email": "operator@glad-labs.ai",
         "username": "operator",
         "auth_provider": "oauth",
@@ -140,6 +168,7 @@ def get_operator_identity() -> dict:
 
 
 async def verify_api_token_optional(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str | None:
     """Like verify_api_token but returns None instead of raising 401.
@@ -147,7 +176,8 @@ async def verify_api_token_optional(
     Used for public endpoints that optionally accept auth (e.g. list_posts
     shows drafts only when authenticated).
     """
-    dev_mode = site_config.get("development_mode", "").lower() == "true"
+    sc = _request_site_config(request)
+    dev_mode = sc.get("development_mode", "").lower() == "true" if sc is not None else False
 
     if not credentials:
         return None
@@ -155,7 +185,7 @@ async def verify_api_token_optional(
     token = credentials.credentials
 
     if dev_mode and token == "dev-token":
-        if _dev_token_blocked:
+        if _is_dev_token_blocked(sc):
             return None
         logger.warning(
             "REQUEST AUTHENTICATED VIA DEV-TOKEN BYPASS (optional auth). "

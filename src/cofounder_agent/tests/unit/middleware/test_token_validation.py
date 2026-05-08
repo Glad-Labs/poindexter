@@ -18,7 +18,17 @@ def _make_request(
     method="GET",
     auth_header=None,
     upgrade_header=None,
+    *,
+    disable_auth_for_dev: bool = False,
+    development_mode: bool = False,
 ):
+    """Build a fake FastAPI Request.
+
+    ``disable_auth_for_dev`` + ``development_mode`` populate
+    ``request.app.state.site_config`` (DI seam, glad-labs-stack#330) —
+    replaces the legacy os.environ pattern from before middleware
+    migrated off the singleton import.
+    """
     req = MagicMock()
     req.url.path = path
     req.method = method
@@ -28,6 +38,13 @@ def _make_request(
     if upgrade_header is not None:
         headers["upgrade"] = upgrade_header
     req.headers = headers
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": (
+        "true" if (k == "disable_auth_for_dev" and disable_auth_for_dev)
+        else "true" if (k == "development_mode" and development_mode)
+        else d
+    )
+    req.app.state.site_config = sc
     return req
 
 
@@ -55,8 +72,14 @@ class TestDevBypass:
             resp.status_code = 200
             return resp
 
-        with patch.dict("os.environ", {"DISABLE_AUTH_FOR_DEV": "true", "DEVELOPMENT_MODE": "true"}):
-            await mw.dispatch(req, call_next)
+        # DI seam (glad-labs-stack#330) — middleware reads from
+        # request.app.state.site_config, not os.environ.
+        req = _make_request(
+            path="/api/tasks",
+            disable_auth_for_dev=True,
+            development_mode=True,
+        )
+        await mw.dispatch(req, call_next)
 
         assert called
 
@@ -324,7 +347,12 @@ class TestProductionModeBypass:
     async def test_disable_auth_honoured_in_development_env(self):
         """DISABLE_AUTH_FOR_DEV=true is allowed only when DEVELOPMENT_MODE=true."""
         mw = _make_mw()
-        req = _make_request(path="/api/tasks")  # no auth header
+        # DI seam — both flags ride on request.app.state.site_config now.
+        req = _make_request(
+            path="/api/tasks",
+            disable_auth_for_dev=True,
+            development_mode=True,
+        )
 
         called = []
 
@@ -334,11 +362,7 @@ class TestProductionModeBypass:
             resp.status_code = 200
             return resp
 
-        with patch.dict(
-            "os.environ",
-            {"DISABLE_AUTH_FOR_DEV": "true", "DEVELOPMENT_MODE": "true"},
-        ):
-            await mw.dispatch(req, call_next)
+        await mw.dispatch(req, call_next)
 
         assert called
 

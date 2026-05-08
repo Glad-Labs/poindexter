@@ -15,6 +15,26 @@ from fastapi import HTTPException
 from middleware.api_token_auth import verify_api_token, verify_api_token_optional
 
 
+def _request(dev_mode: bool = False) -> MagicMock:
+    """Build a fake FastAPI Request with site_config on app.state.
+
+    Replaces the legacy ``patch("middleware.api_token_auth.site_config")``
+    pattern after the middleware migrated to the DI seam
+    (glad-labs-stack#330).
+    """
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": (
+        "true" if (k == "development_mode" and dev_mode)
+        else "true" if (k == "disable_auth_for_dev" and dev_mode)
+        else d
+    )
+    app = MagicMock()
+    app.state.site_config = sc
+    request = MagicMock()
+    request.app = app
+    return request
+
+
 # ---------------------------------------------------------------------------
 # Test fixtures: real OAuth JWTs minted with a deterministic signing key
 # ---------------------------------------------------------------------------
@@ -61,7 +81,7 @@ class TestVerifyApiToken:
     @pytest.mark.asyncio
     async def test_missing_header_returns_401(self):
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(credentials=None)
+            await verify_api_token(request=_request(), credentials=None)
         assert exc_info.value.status_code == 401
         assert "Missing authorization header" in exc_info.value.detail
 
@@ -69,7 +89,7 @@ class TestVerifyApiToken:
     async def test_valid_jwt_returns_token(self):
         token = _mint_jwt()
         cred = _make_credentials(token)
-        result = await verify_api_token(credentials=cred)
+        result = await verify_api_token(request=_request(), credentials=cred)
         assert result == token
 
     @pytest.mark.asyncio
@@ -77,7 +97,7 @@ class TestVerifyApiToken:
         token = _mint_jwt(ttl_seconds=-60)
         cred = _make_credentials(token)
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(credentials=cred)
+            await verify_api_token(request=_request(), credentials=cred)
         assert exc_info.value.status_code == 401
         assert "expired" in exc_info.value.detail.lower()
 
@@ -85,7 +105,7 @@ class TestVerifyApiToken:
     async def test_malformed_jwt_returns_401(self):
         cred = _make_credentials("not.a.jwt")
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(credentials=cred)
+            await verify_api_token(request=_request(), credentials=cred)
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
@@ -101,7 +121,7 @@ class TestVerifyApiToken:
         legacy_token = "poindexter-deadbeefcafebabefeedfacebadc0ffee0123456789abcdef"
         cred = _make_credentials(legacy_token)
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(credentials=cred)
+            await verify_api_token(request=_request(), credentials=cred)
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
@@ -124,23 +144,20 @@ class TestVerifyApiToken:
         )
         cred = _make_credentials(bad)
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(credentials=cred)
+            await verify_api_token(request=_request(), credentials=cred)
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    @patch("middleware.api_token_auth._dev_token_blocked", False)
-    @patch("middleware.api_token_auth.site_config")
-    async def test_dev_mode_accepts_dev_token(self, mock_site_config):
-        # middleware._dev_token_blocked is evaluated at MODULE IMPORT time
-        # based on ENVIRONMENT + DEVELOPMENT_MODE. Patching os.environ in
-        # the test doesn't retroactively reset it. Patch the module-level
-        # flag directly so this test exercises the dev-mode path even
-        # when the worker imported the module with ENVIRONMENT=production.
-        mock_site_config.get.side_effect = lambda k, default="": {
-            "development_mode": "true",
-        }.get(k, default)
+    async def test_dev_mode_accepts_dev_token(self):
+        # Post glad-labs-stack#330: dev_mode is read per-request from
+        # request.app.state.site_config. The _request(dev_mode=True)
+        # helper sets development_mode=true on the site_config mock.
+        # ENVIRONMENT defaults to non-production, so _is_dev_token_blocked
+        # returns False and the dev-token is accepted.
         cred = _make_credentials("dev-token")
-        result = await verify_api_token(credentials=cred)
+        result = await verify_api_token(
+            request=_request(dev_mode=True), credentials=cred,
+        )
         assert result == "dev-token"
 
     @pytest.mark.asyncio
@@ -148,7 +165,7 @@ class TestVerifyApiToken:
     async def test_dev_mode_no_header_returns_401(self):
         """After the fix, dev mode no longer auto-authenticates missing headers."""
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(credentials=None)
+            await verify_api_token(request=_request(), credentials=None)
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
@@ -162,7 +179,7 @@ class TestVerifyApiToken:
         """
         cred = _make_credentials("wrong-token")
         with pytest.raises(HTTPException) as exc_info:
-            await verify_api_token(credentials=cred)
+            await verify_api_token(request=_request(), credentials=cred)
         # Not a JWT shape, not a JWT signature → invalid_token 401.
         assert exc_info.value.status_code == 401
 
@@ -177,20 +194,20 @@ class TestVerifyApiTokenOptional:
 
     @pytest.mark.asyncio
     async def test_missing_header_returns_none(self):
-        result = await verify_api_token_optional(credentials=None)
+        result = await verify_api_token_optional(request=_request(), credentials=None)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_valid_jwt_returns_token(self):
         token = _mint_jwt()
         cred = _make_credentials(token)
-        result = await verify_api_token_optional(credentials=cred)
+        result = await verify_api_token_optional(request=_request(), credentials=cred)
         assert result == token
 
     @pytest.mark.asyncio
     async def test_invalid_token_returns_none(self):
         cred = _make_credentials("bad-token")
-        result = await verify_api_token_optional(credentials=cred)
+        result = await verify_api_token_optional(request=_request(), credentials=cred)
         assert result is None
 
     @pytest.mark.asyncio
@@ -198,32 +215,28 @@ class TestVerifyApiTokenOptional:
         """Phase 3 regression: legacy-shaped tokens silently fail (no auth)."""
         legacy_token = "poindexter-deadbeefcafebabefeedfacebadc0ffee0123456789abcdef"
         cred = _make_credentials(legacy_token)
-        result = await verify_api_token_optional(credentials=cred)
+        result = await verify_api_token_optional(request=_request(), credentials=cred)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_expired_jwt_returns_none(self):
         token = _mint_jwt(ttl_seconds=-60)
         cred = _make_credentials(token)
-        result = await verify_api_token_optional(credentials=cred)
+        result = await verify_api_token_optional(request=_request(), credentials=cred)
         assert result is None
 
     @pytest.mark.asyncio
-    @patch("middleware.api_token_auth._dev_token_blocked", False)
-    @patch("middleware.api_token_auth.site_config")
-    async def test_dev_mode_accepts_dev_token(self, mock_site_config):
-        # Same patching rationale as the non-optional variant above —
-        # _dev_token_blocked is set at module import time.
-        mock_site_config.get.side_effect = lambda k, default="": {
-            "development_mode": "true",
-        }.get(k, default)
+    async def test_dev_mode_accepts_dev_token(self):
+        # Same DI-seam pattern as the non-optional variant above.
         cred = _make_credentials("dev-token")
-        result = await verify_api_token_optional(credentials=cred)
+        result = await verify_api_token_optional(
+            request=_request(dev_mode=True), credentials=cred,
+        )
         assert result == "dev-token"
 
     @pytest.mark.asyncio
     @patch.dict("os.environ", {"DEVELOPMENT_MODE": "true"})
     async def test_dev_mode_no_header_returns_none(self):
         """After the fix, dev mode no longer auto-authenticates missing headers."""
-        result = await verify_api_token_optional(credentials=None)
+        result = await verify_api_token_optional(request=_request(), credentials=None)
         assert result is None

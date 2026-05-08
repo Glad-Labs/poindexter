@@ -16,7 +16,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -74,12 +73,16 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
         """Process incoming request with token validation"""
 
         try:
+            # DI seam (glad-labs-stack#330) — read site_config from
+            # app.state, populated by main.py's lifespan.
+            sc = getattr(request.app.state, "site_config", None)
             # Development mode: Allow bypassing authentication for testing.
             # Guard: DISABLE_AUTH_FOR_DEV only honoured when DEVELOPMENT_MODE=true,
             # ensuring it never works on staging or production (#1219).
             if (
-                site_config.get("disable_auth_for_dev", "false").lower() == "true"
-                and site_config.get("development_mode", "false").lower() == "true"
+                sc is not None
+                and sc.get("disable_auth_for_dev", "false").lower() == "true"
+                and sc.get("development_mode", "false").lower() == "true"
             ):
                 path = request.url.path
                 if path.startswith(self._NOISY_PATH_PREFIXES):
