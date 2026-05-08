@@ -1,22 +1,23 @@
 """Per-token cost lookup, sourced from LiteLLM (#199 Phase 1).
 
-Previously the codebase hand-maintained two parallel pricing tables:
-- ``services/model_constants.py:MODEL_COSTS`` (10 entries, all Ollama at $0)
-- ``services/usage_tracker.py:UsageTracker.MODEL_PRICING`` (3 entries)
+Previously the codebase hand-maintained two parallel pricing tables —
+``services/model_constants.py:MODEL_COSTS`` (10 Ollama-only entries
+at $0) and ``services/usage_tracker.py:UsageTracker.MODEL_PRICING``
+(3 entries). Both required manual edits whenever a model was added,
+and neither covered cloud providers (Anthropic, OpenAI, Gemini,
+Bedrock) — so any cost calculation for a cloud call fell back to a
+hand-tuned default that was usually wrong by an order of magnitude.
+Both files were deleted 2026-05-08.
 
-Both required manual edits whenever a model was added, and neither
-covered cloud providers (Anthropic, OpenAI, Gemini, Bedrock) — so any
-cost calculation for a cloud call fell back to a hand-tuned default
-that was usually wrong by an order of magnitude.
+LiteLLM ships ``litellm.model_cost``, a community-maintained dict
+with 2,600+ model/provider entries pulled from the provider's
+official pricing pages. This module wraps it with our existing units
+(USD per 1K tokens) and adds the Ollama-prefix fallback so local
+models reliably resolve to $0 even if LiteLLM doesn't have the
+specific tag.
 
-LiteLLM ships ``litellm.model_cost``, a community-maintained dict with
-2,600+ model/provider entries pulled from the provider's official
-pricing pages. This module wraps it with our existing units (USD per 1K
-tokens) and adds the Ollama-prefix fallback so local models reliably
-resolve to $0 even if LiteLLM doesn't have the specific tag.
-
-Phase 2/3 of #199 will delete the hand-rolled tables entirely. This
-module is the seam.
+The remaining hand-rolled price table — ``cost_guard.py:74-94`` (14
+entries) — should also delegate here; tracked as a follow-up.
 """
 
 from __future__ import annotations
