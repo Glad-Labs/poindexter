@@ -16,6 +16,18 @@ import pytest
 from services.jobs.sync_newsletter_subscribers import SyncNewsletterSubscribersJob
 
 
+def _sc(database_url: str = "") -> MagicMock:
+    """Mock SiteConfig — replaces the legacy os.environ DATABASE_URL pattern.
+
+    Job migrated to DI seam in glad-labs-stack#330; tests now pass
+    site_config via the config dict instead of relying on the singleton's
+    env-var fallback chain.
+    """
+    sc = MagicMock()
+    sc.get.side_effect = lambda k, d="": database_url if k == "database_url" else d
+    return sc
+
+
 def _make_pool(
     watermark: Any = None,
     ddl_raises: BaseException | None = None,
@@ -113,8 +125,7 @@ class TestRun:
     async def test_no_database_url_skips_cleanly(self):
         pool, _ = _make_pool()
         job = SyncNewsletterSubscribersJob()
-        with patch.dict("os.environ", {}, clear=True):
-            result = await job.run(pool, {})
+        result = await job.run(pool, {})  # no _site_config → cloud_url empty
         assert result.ok is True
         assert result.changes_made == 0
         assert "no database_url" in result.detail
@@ -123,10 +134,9 @@ class TestRun:
     async def test_no_new_rows_returns_ok_zero(self):
         pool, _ = _make_pool(watermark=None)
         fake_asyncpg, _ = _patched_asyncpg_connect(rows=[])
-        with patch.dict("os.environ", {"DATABASE_URL": "postgres://cloud"}), \
-             patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
+        with patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
             job = SyncNewsletterSubscribersJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {"_site_config": _sc("postgres://cloud")})
         assert result.ok is True
         assert result.changes_made == 0
 
@@ -137,10 +147,9 @@ class TestRun:
             _sample_row(1, "a@b.com"),
             _sample_row(2, "c@d.com"),
         ])
-        with patch.dict("os.environ", {"DATABASE_URL": "postgres://cloud"}), \
-             patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
+        with patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
             job = SyncNewsletterSubscribersJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {"_site_config": _sc("postgres://cloud")})
 
         assert result.ok is True
         assert result.changes_made == 2
@@ -157,10 +166,11 @@ class TestRun:
         watermark = datetime(2026, 4, 15, 0, 0, tzinfo=timezone.utc)
         pool, _ = _make_pool(watermark=watermark)
         fake_asyncpg, cloud_conn = _patched_asyncpg_connect(rows=[])
-        with patch.dict("os.environ", {"DATABASE_URL": "postgres://cloud"}), \
-             patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
+        with patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
             job = SyncNewsletterSubscribersJob()
-            await job.run(pool, {"batch_size": 123})
+            await job.run(
+                pool, {"batch_size": 123, "_site_config": _sc("postgres://cloud")},
+            )
         # fetch should have been called with (query, watermark, batch_size)
         call = cloud_conn.fetch.await_args
         assert call.args[1] == watermark
@@ -171,19 +181,17 @@ class TestRun:
     async def test_no_watermark_queries_without_where(self):
         pool, _ = _make_pool(watermark=None)
         fake_asyncpg, cloud_conn = _patched_asyncpg_connect(rows=[])
-        with patch.dict("os.environ", {"DATABASE_URL": "postgres://cloud"}), \
-             patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
+        with patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
             job = SyncNewsletterSubscribersJob()
-            await job.run(pool, {})
+            await job.run(pool, {"_site_config": _sc("postgres://cloud")})
         call = cloud_conn.fetch.await_args
         assert "WHERE" not in call.args[0]
 
     @pytest.mark.asyncio
     async def test_local_ddl_failure_returns_not_ok(self):
         pool, _ = _make_pool(ddl_raises=RuntimeError("permission denied"))
-        with patch.dict("os.environ", {"DATABASE_URL": "postgres://cloud"}):
-            job = SyncNewsletterSubscribersJob()
-            result = await job.run(pool, {})
+        job = SyncNewsletterSubscribersJob()
+        result = await job.run(pool, {"_site_config": _sc("postgres://cloud")})
         assert result.ok is False
         assert "local setup failed" in result.detail
 
@@ -193,10 +201,9 @@ class TestRun:
         fake_asyncpg, _ = _patched_asyncpg_connect(
             connect_raises=RuntimeError("dns fail"),
         )
-        with patch.dict("os.environ", {"DATABASE_URL": "postgres://cloud"}), \
-             patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
+        with patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
             job = SyncNewsletterSubscribersJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {"_site_config": _sc("postgres://cloud")})
         assert result.ok is False
         assert "cloud pull failed" in result.detail
 
@@ -204,10 +211,9 @@ class TestRun:
     async def test_upsert_failure_returns_not_ok(self):
         pool, _ = _make_pool(upsert_raises=RuntimeError("disk full"))
         fake_asyncpg, _ = _patched_asyncpg_connect(rows=[_sample_row(1)])
-        with patch.dict("os.environ", {"DATABASE_URL": "postgres://cloud"}), \
-             patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
+        with patch("builtins.__import__", side_effect=_patch_import("asyncpg", fake_asyncpg)):
             job = SyncNewsletterSubscribersJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, {"_site_config": _sc("postgres://cloud")})
         assert result.ok is False
         assert "upsert failed" in result.detail
 

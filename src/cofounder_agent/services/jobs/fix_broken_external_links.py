@@ -30,7 +30,6 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
-from services.site_config import site_config
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -110,7 +109,9 @@ class FixBrokenExternalLinksJob:
                 changes_made=0,
             )
 
-        site_domain = site_config.get("site_domain", "localhost")
+        # DI seam (glad-labs-stack#330)
+        sc = config.get("_site_config")
+        site_domain = sc.get("site_domain", "localhost") if sc is not None else "localhost"
         broken_total = 0
         posts_fixed = 0
         urls_checked = 0
