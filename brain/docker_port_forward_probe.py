@@ -481,9 +481,10 @@ async def _emit_cap_alert(
             f"forward — investigate the container manually."
         ),
     }
-    fingerprint = (
-        f"docker-port-forward-cap-{container}-{int(time.time())}"
-    )
+    # Stable per (alertname, container). int(time.time()) used to be
+    # appended here, which made every cycle write a unique fingerprint
+    # and defeated downstream dedup (Glad-Labs/poindexter#428).
+    fingerprint = f"docker-port-forward-cap-{container}"
     try:
         await pool.execute(
             """
@@ -532,9 +533,9 @@ async def _emit_recovery_failed_alert(
         ),
         "description": detail,
     }
-    fingerprint = (
-        f"docker-port-forward-recovery-failed-{container}-{int(time.time())}"
-    )
+    # Stable per (alertname, container) — see _emit_cap_alert above
+    # (Glad-Labs/poindexter#428).
+    fingerprint = f"docker-port-forward-recovery-failed-{container}"
     try:
         await pool.execute(
             """
