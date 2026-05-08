@@ -39,8 +39,8 @@ logger = get_logger(__name__)
 
 def _sc_get(key: str, default: str = "") -> str:
     """Get from site_config (falls back to env automatically)."""
-    from services.site_config import site_config
-    return site_config.get(key, default)
+    import services.site_config as _scm
+    return _scm.site_config.get(key, default)
 
 # All config below is resolved lazily via _default_*() helpers because
 # site_config is empty at module-import time (loaded later in the lifespan).

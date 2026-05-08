@@ -340,8 +340,8 @@ class UnifiedPromptManager:
         site_config = self._site_config
         if site_config is None:
             try:
-                from services.site_config import site_config as _module_singleton
-                site_config = _module_singleton
+                import services.site_config as _scm
+                site_config = _scm.site_config
             except Exception as exc:  # noqa: BLE001
                 logger.debug("[prompt_manager] site_config unavailable: %s", exc)
                 return None

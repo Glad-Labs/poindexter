@@ -585,7 +585,8 @@ class UnifiedQualityService:
 
         All thresholds are tunable via app_settings (key prefix: qa_llm_).
         """
-        from services.site_config import site_config
+        import services.site_config as _scm
+        site_config = _scm.site_config
 
         # Load tunable thresholds from DB (with sensible defaults)
         _t = {

@@ -122,8 +122,8 @@ def get_known_references() -> dict[str, list[dict[str, str]]]:
     """
     import json as _json
     try:
-        from services.site_config import site_config as _sc
-        raw = _sc.get("known_references_json", "")
+        import services.site_config as _scm
+        raw = _scm.site_config.get("known_references_json", "")
         if not raw:
             return _DEFAULT_KNOWN_REFERENCES
         parsed = _json.loads(raw)
@@ -318,9 +318,9 @@ async def research_topic(query: str, max_sources: int | None = None) -> str:
     """
     if max_sources is None:
         try:
-            from services.site_config import site_config
+            import services.site_config as _scm
 
-            max_sources = site_config.get_int(
+            max_sources = _scm.site_config.get_int(
                 "writer_rag_research_topic_max_sources", 2,
             )
         except Exception:
