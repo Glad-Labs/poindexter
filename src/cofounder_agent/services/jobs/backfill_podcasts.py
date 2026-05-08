@@ -37,9 +37,9 @@ class BackfillPodcastsJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        from services.site_config import site_config
-
-        cloud_url = site_config.get("database_url", "")
+        # DI seam (glad-labs-stack#330)
+        sc = config.get("_site_config")
+        cloud_url = sc.get("database_url", "") if sc is not None else ""
         if not cloud_url:
             return JobResult(ok=True, detail="no database_url — skipping", changes_made=0)
 
@@ -132,7 +132,10 @@ class BackfillPodcastsJob:
 
                 from services.r2_upload_service import upload_to_r2
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                api_base = (
+                    sc.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                    if sc is not None else DEFAULT_WORKER_API_URL
+                )
                 async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
                     feed = await client.get(f"{api_base}/api/podcast/feed.xml", timeout=30)
                     feed_path = os.path.join(

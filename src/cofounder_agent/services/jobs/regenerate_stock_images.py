@@ -43,9 +43,9 @@ class RegenerateStockImagesJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        from services.site_config import site_config
-
-        cloud_url = site_config.get("database_url", "")
+        # DI seam (glad-labs-stack#330)
+        sc = config.get("_site_config")
+        cloud_url = sc.get("database_url", "") if sc is not None else ""
         if not cloud_url:
             return JobResult(ok=True, detail="no database_url — skipping", changes_made=0)
 
@@ -92,12 +92,16 @@ class RegenerateStockImagesJob:
             # cloudinary_api_key + cloudinary_api_secret are is_secret=true
             # rows — sync .get() returns ciphertext, only get_secret()
             # decrypts. Fixes Glad-Labs/poindexter#334.
-            api_key = await site_config.get_secret("cloudinary_api_key", "")
-            api_secret = await site_config.get_secret(
-                "cloudinary_api_secret", "",
-            )
+            if sc is None:
+                return JobResult(
+                    ok=False,
+                    detail="no SiteConfig in run config — cloudinary creds unreachable",
+                    changes_made=0,
+                )
+            api_key = await sc.get_secret("cloudinary_api_key", "")
+            api_secret = await sc.get_secret("cloudinary_api_secret", "")
             cloudinary.config(
-                cloud_name=site_config.get("cloudinary_cloud_name"),
+                cloud_name=sc.get("cloudinary_cloud_name"),
                 api_key=api_key,
                 api_secret=api_secret,
             )
@@ -105,7 +109,7 @@ class RegenerateStockImagesJob:
             regenerated = 0
             for post in posts:
                 cat = (post["category"] or "technology").lower()
-                prompt = await _build_sdxl_prompt(post["title"], prompt_model, site_config)
+                prompt = await _build_sdxl_prompt(post["title"], prompt_model, sc)
 
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                     output_path = tmp.name

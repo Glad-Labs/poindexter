@@ -29,8 +29,6 @@ src/cofounder_agent/services/image_service.py
 src/cofounder_agent/services/integrations/operator_notify.py
 src/cofounder_agent/services/internal_link_coherence.py
 src/cofounder_agent/services/internal_rag_source.py
-src/cofounder_agent/services/jobs/backfill_podcasts.py
-src/cofounder_agent/services/jobs/regenerate_stock_images.py
 src/cofounder_agent/services/jobs/reload_site_config.py
 src/cofounder_agent/services/jobs/update_utility_rates.py
 src/cofounder_agent/services/llm_text.py
