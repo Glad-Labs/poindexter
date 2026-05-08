@@ -311,7 +311,9 @@ def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
     return text[:12000]
 
 
-async def _ollama_chat_text(prompt: str, model: str) -> str:
+async def _ollama_chat_text(
+    prompt: str, model: str, *, site_config: Any = None,
+) -> str:
     """Plain-text Ollama chat call (no JSON envelope).
 
     The codebase's ``services.topic_ranking._ollama_chat_json`` helper
@@ -320,12 +322,15 @@ async def _ollama_chat_text(prompt: str, model: str) -> str:
     raw assistant content.
     """
     import httpx
-    from services.site_config import site_config
 
     base_url = (
-        site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
+        (site_config.get("local_llm_api_url", "http://localhost:11434")
+            if site_config is not None else "http://localhost:11434").rstrip("/")
     )
-    timeout = site_config.get_float("niche_ollama_chat_timeout_seconds", 120.0)
+    timeout = (
+        site_config.get_float("niche_ollama_chat_timeout_seconds", 120.0)
+        if site_config is not None else 120.0
+    )
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -432,10 +437,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         )
         return {"content": body, "model_used": "none"}
 
-    from services.site_config import site_config
-
+    # DI seam (glad-labs-stack#330) — atoms read site_config from state.
+    site_config = state.get("site_config")
     model = (
-        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        (site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+            if site_config is not None else "glm-4.7-5090:latest")
         or "glm-4.7-5090:latest"
     ).removeprefix("ollama/")
 
@@ -467,7 +473,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        raw = await _ollama_chat_text(full_prompt, model=model)
+        raw = await _ollama_chat_text(full_prompt, model=model, site_config=site_config)
     except Exception as exc:
         logger.warning(
             "[atoms.narrate_bundle] LLM call failed: %s — falling back "

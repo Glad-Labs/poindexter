@@ -91,24 +91,27 @@ def _current_total_seconds(now: float) -> float:
     return total
 
 
-async def is_queue_full(pool: Any) -> tuple[bool, int, int]:
+async def is_queue_full(
+    pool: Any, *, site_config: Any = None,
+) -> tuple[bool, int, int]:
     """Check whether the approval queue is at/above ``max_approval_queue``.
 
     Returns ``(is_full, queue_size, queue_limit)``.
 
-    Reads ``max_approval_queue`` from ``app_settings`` via
-    ``site_config.get_int`` (DB-first). On any DB error returns
+    Reads ``max_approval_queue`` from the DI-injected ``site_config``
+    (glad-labs-stack#330). Falls back to the documented default of 3
+    when ``site_config`` is None. On any DB error returns
     ``(False, 0, 0)`` — we never want a dead DB to mask the queue
     check and pile up nothing-is-happening.
 
     Updates module state as a side effect so ``get_state()`` stays
     current even for callers that just want to observe.
     """
-    # Defer imports so the module is importable in isolation (tests)
-    from services.site_config import site_config
-
     now = _now()
-    max_queue = site_config.get_int("max_approval_queue", 3)
+    max_queue = (
+        site_config.get_int("max_approval_queue", 3)
+        if site_config is not None else 3
+    )
     if not pool:
         _mark_inactive(now, 0, max_queue)
         return False, 0, max_queue

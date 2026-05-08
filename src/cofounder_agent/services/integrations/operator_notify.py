@@ -42,7 +42,12 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-async def notify_operator(message: str, *, critical: bool = False) -> None:
+async def notify_operator(
+    message: str,
+    *,
+    critical: bool = False,
+    site_config: Any = None,
+) -> None:
     """Send an operator notification via the outbound dispatcher.
 
     Args:
@@ -52,6 +57,12 @@ async def notify_operator(message: str, *, critical: bool = False) -> None:
             the message hits the operator's phone with a push
             notification. When ``False``, route via ``discord_ops``
             (durable record, no push).
+        site_config: SiteConfig DI seam (glad-labs-stack#330) — passed
+            through to outbound_dispatcher.deliver. Optional because
+            many notify_operator callers don't have one in scope (e.g.
+            module-level startup checks). The dispatcher's secret
+            decryption silently no-ops on a missing config; the
+            notification still attempts the delivery.
 
     Never raises — operator notifications are best-effort.
     """
@@ -62,8 +73,6 @@ async def notify_operator(message: str, *, critical: bool = False) -> None:
 
         db_service = get_database_service()
         if db_service is not None and getattr(db_service, "pool", None) is not None:
-            from services.site_config import site_config
-
             row_name = "telegram_ops" if critical else "discord_ops"
             payload: dict[str, Any] = (
                 {"text": message} if critical else {"content": message}

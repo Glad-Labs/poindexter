@@ -182,15 +182,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     critic_role = (state.get("critic_role") or "").strip()
 
     # Model resolution: explicit > role-based setting > default critic > writer fallback
-    from services.site_config import site_config
+    # DI seam (glad-labs-stack#330) — atoms read site_config from state.
+    site_config = state.get("site_config")
+
+    def _sc_get(key: str, default: str = "") -> str:
+        return site_config.get(key, default) if site_config is not None else default
+
     model = (
         state.get("critic_model_override")
-        or (
-            site_config.get(f"pipeline_critic_model_{critic_role}")
-            if critic_role else None
-        )
-        or site_config.get("pipeline_critic_model")
-        or site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        or (_sc_get(f"pipeline_critic_model_{critic_role}") if critic_role else None)
+        or _sc_get("pipeline_critic_model")
+        or _sc_get("pipeline_writer_model", "glm-4.7-5090:latest")
         or "glm-4.7-5090:latest"
     )
 

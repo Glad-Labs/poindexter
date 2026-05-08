@@ -148,13 +148,15 @@ class TestRunPromptConstruction:
         bundle = _bundle_repro_pr_221()
         captured: list[str] = []
 
-        async def _capture_chat(prompt, model):
+        async def _capture_chat(prompt, model, *, site_config=None):
             captured.append(prompt)
             return "Stub LLM output."
 
         with (
             patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
-            patch("services.site_config.site_config", _CaptureSiteConfig()),
+            # site_config now flows via state (glad-labs-stack#330 DI seam);
+            # patching the deleted singleton import is a no-op but kept
+            # to avoid editing every test method's with-block.
         ):
             # Pass the bundle directly via state — no DB read needed.
             # The topic string deliberately differs from the PR title to
@@ -188,13 +190,15 @@ class TestRunPromptConstruction:
         bundle = _bundle_repro_pr_221()
         captured: list[str] = []
 
-        async def _capture_chat(prompt, model):
+        async def _capture_chat(prompt, model, *, site_config=None):
             captured.append(prompt)
             return "Stub LLM output."
 
         with (
             patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
-            patch("services.site_config.site_config", _CaptureSiteConfig()),
+            # site_config now flows via state (glad-labs-stack#330 DI seam);
+            # patching the deleted singleton import is a no-op but kept
+            # to avoid editing every test method's with-block.
         ):
             await run({
                 "task_id": "354-repro",
@@ -226,14 +230,16 @@ class TestRunPromptConstruction:
         bundle = _bundle_repro_pr_221()
         captured: list[str] = []
 
-        async def _capture_chat(prompt, model):
+        async def _capture_chat(prompt, model, *, site_config=None):
             captured.append(prompt)
             return "Stub LLM output."
 
         misleading_topic = "totally unrelated string about widgets"
         with (
             patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
-            patch("services.site_config.site_config", _CaptureSiteConfig()),
+            # site_config now flows via state (glad-labs-stack#330 DI seam);
+            # patching the deleted singleton import is a no-op but kept
+            # to avoid editing every test method's with-block.
         ):
             await run({
                 "task_id": "354-repro",
@@ -259,7 +265,9 @@ class TestRunPromptConstruction:
 
         with (
             patch("services.atoms.narrate_bundle._ollama_chat_text", _capture_chat),
-            patch("services.site_config.site_config", _CaptureSiteConfig()),
+            # site_config now flows via state (glad-labs-stack#330 DI seam);
+            # patching the deleted singleton import is a no-op but kept
+            # to avoid editing every test method's with-block.
         ):
             result = await run({
                 "task_id": "quiet",
