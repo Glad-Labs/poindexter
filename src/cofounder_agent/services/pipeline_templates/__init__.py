@@ -150,12 +150,19 @@ def dev_diary(
        awaiting_approval with full task metadata.
 
     Skipped vs canonical_blog: writer_self_review, quality_evaluation,
-    url_validation, replace_inline_images, source_featured_image,
-    cross_model_qa, generate_seo_metadata, generate_media_scripts,
-    capture_training_data. None of these fit a status-report artifact —
-    either they're irrelevant (SEO for build-in-public) or they
-    actively harm the output (cross_model_qa rewriting clean prose
-    into hallucinated tutorials, see 2026-05-04 saga).
+    url_validation, replace_inline_images, cross_model_qa,
+    generate_seo_metadata, generate_media_scripts, capture_training_data.
+    None of these fit a status-report artifact — either they're
+    irrelevant (SEO for build-in-public) or they actively harm the
+    output (cross_model_qa rewriting clean prose into hallucinated
+    tutorials, see 2026-05-04 saga).
+
+    source_featured_image runs between narrate_bundle and finalize_task
+    (re-added 2026-05-07): it's purely additive, sets featured_image_url
+    + featured_image_data, and doesn't touch the prose. dev_diary posts
+    on 2026-05-05/06 had no hero image because of the original skip;
+    operator confirmed images are wanted on the daily build-in-public
+    posts (Telegram, 2026-05-07).
     """
     from services.atoms import narrate_bundle as _narrate_atom
 
@@ -235,7 +242,22 @@ def dev_diary(
     g.add_node("narrate_bundle", narrate_node)
     nodes_added.append("narrate_bundle")
 
-    # 3. finalize_task
+    # 3. source_featured_image — additive only (writes featured_image_url
+    #    + featured_image_data, never modifies prose). Reads
+    #    generate_featured_image flag from context (default True).
+    featured_stage = stages_by_name.get("source_featured_image")
+    if featured_stage is None:
+        logger.warning(
+            "[dev_diary] source_featured_image not registered — posts "
+            "will publish without a hero image"
+        )
+    else:
+        g.add_node("source_featured_image", make_stage_node(
+            featured_stage, pool, record_sink=record_sink,
+        ))
+        nodes_added.append("source_featured_image")
+
+    # 4. finalize_task
     finalize_stage = stages_by_name.get("finalize_task")
     if finalize_stage is None:
         logger.warning(
