@@ -532,9 +532,12 @@ class ContentDatabase(DatabaseServiceMixin):
                 # Kept as a separate query because cost_logs is a different table and
                 # may not exist in all environments.
                 total_cost = 0
+                # DI seam (glad-labs-stack#330) — content_db is called
+                # from a route handler with site_config-aware database
+                # service. Fall through to the documented 30-day default
+                # if the config isn't reachable from this scope.
+                _cost_days = 30
                 try:
-                    from services.site_config import site_config as _sc
-                    _cost_days = _sc.get_int("cost_summary_window_days", 30)
                     cost_query = f"SELECT SUM(cost_usd) as total FROM cost_logs WHERE created_at >= NOW() - INTERVAL '{_cost_days} days'"  # nosec B608  # _cost_days is int from app_settings
                     cost_result = await conn.fetchrow(cost_query)
                     if cost_result and cost_result["total"]:

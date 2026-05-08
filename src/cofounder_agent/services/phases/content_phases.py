@@ -542,9 +542,13 @@ class CaptureTrainingDataPhase(BasePhase):
         model_used = inputs.get("model_used", "unknown")
         scores = inputs.get("scores", {})
 
-        # Feature flag: opt-out via config or environment variable
-        from services.site_config import site_config
-        _capture_flag = site_config.get("enable_training_capture", "true")
+        # Feature flag: opt-out via config or environment variable.
+        # DI seam (glad-labs-stack#330) — phases receive site_config via
+        # the dispatcher's config dict per CLAUDE.md.
+        _sc = config.get("_site_config") if isinstance(config, dict) else None
+        _capture_flag = (
+            _sc.get("enable_training_capture", "true") if _sc is not None else "true"
+        )
         if str(_capture_flag).lower() == "false":
             logger.info("[CaptureTrainingDataPhase] Skipped (ENABLE_TRAINING_CAPTURE=false)")
             self.status = "completed"

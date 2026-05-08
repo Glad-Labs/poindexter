@@ -4,7 +4,6 @@ import time
 from contextlib import suppress
 
 from services.logger_config import get_logger
-from services.site_config import site_config
 
 logger = get_logger(__name__)
 
@@ -12,8 +11,10 @@ logger = get_logger(__name__)
 class IdleWorker:
     """Background maintenance tasks for when the pipeline is idle."""
 
-    def __init__(self, pool):
+    def __init__(self, pool, site_config=None):
         self.pool = pool
+        # DI seam (glad-labs-stack#330) — accept SiteConfig as ctor arg.
+        self._site_config = site_config
         self._last_run: dict[str, float] = {}
         self._schedules_loaded = False
 
@@ -426,7 +427,10 @@ class IdleWorker:
             streak_threshold = 3
 
         try:
-            _streak_h = site_config.get_int("topic_discovery_streak_window_hours", 6)
+            _streak_h = (
+                self._site_config.get_int("topic_discovery_streak_window_hours", 6)
+                if self._site_config is not None else 6
+            )
             recent = await self.pool.fetch(
                 "SELECT status FROM content_tasks "
                 f"WHERE updated_at > NOW() - INTERVAL '{_streak_h} hours' "  # nosec B608  # _streak_h is int from app_settings

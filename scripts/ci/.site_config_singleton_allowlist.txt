@@ -5,21 +5,18 @@
 # migrate to the DI seam. New entries fail CI.
 src/cofounder_agent/admin.py
 src/cofounder_agent/agents/content_agent/config.py
-src/cofounder_agent/agents/content_agent/services/pexels_client.py
 src/cofounder_agent/routes/settings_routes.py
 src/cofounder_agent/scripts/smoke_371_postgres_checkpointer.py
 src/cofounder_agent/services/ai_content_generator.py
 src/cofounder_agent/services/atoms/narrate_bundle.py
 src/cofounder_agent/services/atoms/review_with_critic.py
 src/cofounder_agent/services/auto_publish_gate.py
-src/cofounder_agent/services/content_db.py
 src/cofounder_agent/services/content_router_service.py
 src/cofounder_agent/services/content_validator.py
 src/cofounder_agent/services/database_service.py
 src/cofounder_agent/services/decorators.py
 src/cofounder_agent/services/devto_service.py
 src/cofounder_agent/services/gpu_scheduler.py
-src/cofounder_agent/services/idle_worker.py
 src/cofounder_agent/services/image_decision_agent.py
 src/cofounder_agent/services/image_service.py
 src/cofounder_agent/services/integrations/operator_notify.py
@@ -30,7 +27,6 @@ src/cofounder_agent/services/llm_text.py
 src/cofounder_agent/services/multi_model_qa.py
 src/cofounder_agent/services/newsletter_service.py
 src/cofounder_agent/services/ollama_client.py
-src/cofounder_agent/services/phases/content_phases.py
 src/cofounder_agent/services/pipeline_architect.py
 src/cofounder_agent/services/pipeline_throttle.py
 src/cofounder_agent/services/podcast_service.py
