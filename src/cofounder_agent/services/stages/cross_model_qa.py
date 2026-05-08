@@ -297,6 +297,7 @@ class CrossModelQAStage:
                 settings_service=settings_service,
                 task_id=task_id,
                 attempt=rewrite_attempts + 1,
+                site_config=context.get("site_config"),
             )
             if revised is None:
                 break
@@ -307,7 +308,11 @@ class CrossModelQAStage:
             # the model actually addressed between revisions (gitea#271 Phase 3.A2).
             try:
                 from services.content_revisions_logger import log_revision
-                from services.site_config import site_config as _sc_rev
+                # DI seam (glad-labs-stack#330)
+                _sc_rev = context.get("site_config")
+                _writer_model = (
+                    _sc_rev.get("qa_writer_model") if _sc_rev is not None else None
+                ) or "writer"
                 await log_revision(
                     database_service.pool,
                     task_id=task_id,
@@ -318,7 +323,7 @@ class CrossModelQAStage:
                         f"Rewrite attempt {rewrite_attempts + 1} addressing "
                         f"{len(issues_to_fix)} QA issues"
                     ),
-                    model_used=_sc_rev.get("qa_writer_model") or "writer",
+                    model_used=_writer_model,
                     quality_score=None,
                 )
             except Exception as rev_err:
@@ -530,6 +535,8 @@ async def _rewrite_draft(
     settings_service: Any,
     task_id: str,
     attempt: int,
+    *,
+    site_config: Any = None,
 ) -> str | None:
     """Call the writer to fix flagged issues. Returns the new draft or None.
 
@@ -540,7 +547,6 @@ async def _rewrite_draft(
     """
     from plugins.registry import get_all_llm_providers
     from services.audit_log import audit_log_bg
-    from services.site_config import site_config
 
     prompt = QA_AGGREGATE_REWRITE_PROMPT.format(
         title=title, issues_to_fix=issues_to_fix, content=content_text,
@@ -548,8 +554,9 @@ async def _rewrite_draft(
 
     # v2.3: Provider Protocol instead of concrete OllamaClient. Per-call
     # timeout rides on the timeout_s kwarg added in v2.1.
-    timeout_s = site_config.get_int(
-        "content_router_qa_rewrite_timeout_seconds", 240,
+    timeout_s = (
+        site_config.get_int("content_router_qa_rewrite_timeout_seconds", 240)
+        if site_config is not None else 240
     )
     providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
@@ -566,7 +573,10 @@ async def _rewrite_draft(
             or "gemma3:27b"
         )
         primary = primary.removeprefix("ollama/")
-        max_tokens = site_config.get_int("content_router_qa_rewrite_max_tokens", 8000)
+        max_tokens = (
+            site_config.get_int("content_router_qa_rewrite_max_tokens", 8000)
+            if site_config is not None else 8000
+        )
 
         result = await provider.complete(
             messages=[{"role": "user", "content": prompt}],
@@ -597,8 +607,9 @@ async def _rewrite_draft(
                 },
                 task_id=task_id, severity="warning",
             )
-            fallback_model = site_config.get(
-                "qa_fallback_writer_model", "gemma3:27b",
+            fallback_model = (
+                site_config.get("qa_fallback_writer_model", "gemma3:27b")
+                if site_config is not None else "gemma3:27b"
             )
             fb_result = await provider.complete(
                 messages=[{"role": "user", "content": prompt}],

@@ -96,11 +96,10 @@ class TestSelfReviewEnabled:
         ("false", False), ("no", False), ("0", False), ("", False),
     ])
     def test_parses_flag(self, raw: str, expected: bool):
-        with patch(
-            "services.site_config.site_config",
-            SimpleNamespace(get=lambda _k, _d: raw),
-        ):
-            assert _self_review_enabled() is expected
+        # _self_review_enabled now takes site_config as a parameter
+        # (glad-labs-stack#330) instead of importing the singleton.
+        sc = SimpleNamespace(get=lambda _k, _d: raw)
+        assert _self_review_enabled(sc) is expected
 
 
 # ---------------------------------------------------------------------------

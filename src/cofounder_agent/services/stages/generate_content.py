@@ -251,7 +251,7 @@ class GenerateContentStage:
         content_text = _strip_leaked_image_prompts(content_text)
 
         # Writer self-review pass (opt-in via enable_writer_self_review).
-        if _self_review_enabled():
+        if _self_review_enabled(context.get("site_config")):
             try:
                 revised, sr_meta = await _self_review_and_revise(
                     content_text, title, topic,
@@ -762,10 +762,17 @@ def _extract_caller_research(task_row: dict[str, Any]) -> str:
     )
 
 
-def _self_review_enabled() -> bool:
-    """Read the ``enable_writer_self_review`` feature flag from site_config."""
+def _self_review_enabled(site_config: Any = None) -> bool:
+    """Read the ``enable_writer_self_review`` feature flag from site_config.
+
+    Accepts the SiteConfig instance as a parameter (DI seam from
+    glad-labs-stack#330). Falls back to True when ``site_config`` is None
+    so direct/test invocations of the stage don't accidentally disable
+    self-review via a missing config.
+    """
+    if site_config is None:
+        return True
     try:
-        from services.site_config import site_config
         raw = site_config.get("enable_writer_self_review", "true")
         return str(raw).lower() in ("true", "1", "yes")
     except Exception:

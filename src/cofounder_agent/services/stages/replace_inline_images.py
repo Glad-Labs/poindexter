@@ -98,7 +98,6 @@ class ReplaceInlineImagesStage:
         config: dict[str, Any],
     ) -> StageResult:
         from services.image_service import get_image_service
-        from services.site_config import site_config as _module_sc
 
         task_id = context.get("task_id")
         post_id = context.get("post_id")
@@ -107,7 +106,9 @@ class ReplaceInlineImagesStage:
         database_service = context.get("database_service")
         image_service = context.get("image_service") or get_image_service()
         category = context.get("category", "technology")
-        site_config = context.get("site_config") or _module_sc
+        # DI seam (glad-labs-stack#330) — content_router_service seeds
+        # site_config into the stage context. Tests pass a mock SiteConfig.
+        site_config = context.get("site_config")
 
         if not content_text:
             return StageResult(
@@ -309,7 +310,10 @@ async def _resolve_one_placeholder(
     # DB-configurable budget with word-boundary truncation (no mid-word chop).
     alt_text = sanitize_alt_text(
         alt_text,
-        budget=site_config.get_int("alt_text_budget", 120),
+        budget=(
+            site_config.get_int("alt_text_budget", 120)
+            if site_config is not None else 120
+        ),
     )
 
     # Strategy 1: SDXL.
@@ -494,7 +498,7 @@ async def _try_sdxl(
             logger.warning("  [IMAGE-%s] SDXL returned %s", num, img_resp.status_code)
             return None
 
-        tmp_path = _resolve_sdxl_response(img_resp)
+        tmp_path = _resolve_sdxl_response(img_resp, site_config=site_config)
         logger.info("  [IMAGE-%s] SDXL generated: %s", num, os.path.basename(tmp_path))
 
         # Step 3: R2 upload, with local-path fallback.
@@ -504,7 +508,9 @@ async def _try_sdxl(
         return None
 
 
-def _resolve_sdxl_response(img_resp: httpx.Response) -> str:
+def _resolve_sdxl_response(
+    img_resp: httpx.Response, *, site_config: Any = None,
+) -> str:
     """Decode the SDXL server's response to a local image path.
 
     The server either:
@@ -515,15 +521,16 @@ def _resolve_sdxl_response(img_resp: httpx.Response) -> str:
 
     Raises RuntimeError on any other response shape or if the returned
     path escapes the allowed directories (path traversal guard).
-    """
-    from services.site_config import site_config
 
+    site_config is the DI seam (glad-labs-stack#330) — passed by the
+    stage's execute() rather than imported as a module-level singleton.
+    """
     ct = img_resp.headers.get("content-type", "")
     if ct.startswith("application/json"):
         data = img_resp.json()
         tmp_path = data.get("image_path", "")
         # Host → container path translation.
-        host_home = site_config.get("host_home", "")
+        host_home = site_config.get("host_home", "") if site_config is not None else ""
         if host_home and tmp_path.startswith(host_home):
             tmp_path = tmp_path.replace(host_home, os.path.expanduser("~"), 1)
         # Normalize Windows backslashes.

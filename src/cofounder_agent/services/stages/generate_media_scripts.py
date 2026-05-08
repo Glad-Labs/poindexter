@@ -50,7 +50,6 @@ class GenerateMediaScriptsStage:
             _normalize_for_speech,
             _strip_markdown,
         )
-        from services.site_config import site_config
 
         title = context.get("title", "")
         content_text = context.get("content", "")
@@ -64,10 +63,16 @@ class GenerateMediaScriptsStage:
 
         logger.info("STAGE 4B: Generating media scripts (podcast + video scenes)...")
 
-        ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+        # DI seam (glad-labs-stack#330) — stages read site_config from
+        # context per content_router_service.process_content_generation_task.
+        sc = context.get("site_config")
+        ollama_url = (
+            sc.get("ollama_base_url", "http://host.docker.internal:11434")
+            if sc is not None else "http://host.docker.internal:11434"
+        )
         model = (
-            site_config.get("video_scene_model")
-            or site_config.get("default_ollama_model")
+            (sc.get("video_scene_model") if sc is not None else None)
+            or (sc.get("default_ollama_model") if sc is not None else None)
             or "llama3:latest"
         )
         if model == "auto":
@@ -95,7 +100,8 @@ class GenerateMediaScriptsStage:
 
             # Call 2: Video scenes + short summary (single LLM call).
             scene_prompt = _build_scene_prompt(
-                title, clean_content, site_config.get("site_name", "our site"),
+                title, clean_content,
+                sc.get("site_name", "our site") if sc is not None else "our site",
             )
 
             async with gpu.lock("ollama", model=model, task_id=context.get("task_id"), phase="media_scripts"):
