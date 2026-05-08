@@ -38,7 +38,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +130,14 @@ class CrosspostToDevtoJob:
                 "## Dev.to cross-post errors\n\n"
                 + "\n".join(f"- {e}" for e in errors[:10])
             )
-            await create_gitea_issue(
-                f"devto: {len(errors)} cross-post errors of {len(rows)} attempts",
-                body,
+            emit_finding(
+                source="crosspost_to_devto",
+                kind="crosspost_failure",
+                severity="warn",
+                title=f"devto: {len(errors)} cross-post errors of {len(rows)} attempts",
+                body=body,
+                dedup_key="devto_crosspost",
+                extra={"error_count": len(errors), "attempt_count": len(rows)},
             )
 
         detail = (

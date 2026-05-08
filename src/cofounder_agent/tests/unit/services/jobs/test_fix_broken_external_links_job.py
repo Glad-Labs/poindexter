@@ -177,8 +177,8 @@ class TestRun:
             "services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.fix_broken_external_links.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.fix_broken_external_links.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             job = FixBrokenExternalLinksJob()
             result = await job.run(pool, {})
@@ -192,7 +192,7 @@ class TestRun:
         assert "dead" in update_args[1]
         assert "https://other.com/404" not in update_args[1]
         assert "https://other.com/live" in update_args[1]
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_unreachable_counts_as_broken(self):
@@ -207,8 +207,8 @@ class TestRun:
             "services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.fix_broken_external_links.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.fix_broken_external_links.emit_finding",
+            new=MagicMock(),
         ):
             job = FixBrokenExternalLinksJob()
             result = await job.run(pool, {})
@@ -256,17 +256,17 @@ class TestRun:
             {"id": "p1", "title": "t", "content": "[dead](https://other.com/404)"},
         ])
         client = _patched_client({"https://other.com/404": 404})
-        mock_gitea = AsyncMock(return_value=False)
+        mock_gitea = MagicMock()
         with patch(
             "services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.fix_broken_external_links.create_gitea_issue",
+            "services.jobs.fix_broken_external_links.emit_finding",
             new=mock_gitea,
         ):
             job = FixBrokenExternalLinksJob()
             await job.run(pool, {"file_gitea_issue": False})
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):
@@ -294,8 +294,8 @@ class TestRun:
             "services.jobs.fix_broken_external_links.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.fix_broken_external_links.create_gitea_issue",
-            new=AsyncMock(return_value=False),
+            "services.jobs.fix_broken_external_links.emit_finding",
+            new=MagicMock(),
         ):
             job = FixBrokenExternalLinksJob()
             result = await job.run(pool, {"file_gitea_issue": False})

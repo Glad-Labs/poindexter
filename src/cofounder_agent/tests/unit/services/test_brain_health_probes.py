@@ -172,7 +172,7 @@ class TestRestartContainer:
 
 
 # TestCreateGiteaIssue removed 2026-05-03 alongside the underlying
-# `_create_gitea_issue` helper and `_created_issues` dedupe set —
+# `_emit_finding` helper and `_created_issues` dedupe set —
 # Gitea was decommissioned 2026-04-30, the auto-create paper trail
 # went with it. Probe-failure escalation now goes only through
 # `notify_operator` (Telegram + Discord) + `alert_events`.

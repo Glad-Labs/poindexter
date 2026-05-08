@@ -31,7 +31,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +95,16 @@ class FixUncategorizedPostsJob:
             return JobResult(ok=False, detail=f"query failed: {e}", changes_made=0)
 
         if fixed and file_issue:
-            await create_gitea_issue(
-                f"content: assigned {default_slug} category to {fixed} uncategorized posts",
-                f"Posts defaulted to `{default_slug}` category. "
-                "Review and reassign if a different category fits better.",
+            emit_finding(
+                source="fix_uncategorized_posts",
+                kind="uncategorized_post_autofixed",
+                title=f"content: assigned {default_slug} category to {fixed} uncategorized posts",
+                body=(
+                    f"Posts defaulted to `{default_slug}` category. "
+                    "Review and reassign if a different category fits better."
+                ),
+                dedup_key="uncategorized_posts_autofix",
+                extra={"posts_fixed": fixed, "default_slug": default_slug},
             )
 
         detail = f"assigned {default_slug!r} to {fixed} of {len(posts)} post(s)"

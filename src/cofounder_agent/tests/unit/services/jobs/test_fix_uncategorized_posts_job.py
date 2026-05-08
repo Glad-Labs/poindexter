@@ -67,15 +67,15 @@ class TestRun:
         ])
         job = FixUncategorizedPostsJob()
         with patch(
-            "services.jobs.fix_uncategorized_posts.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.fix_uncategorized_posts.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {})
 
         assert result.ok is True
         assert result.changes_made == 3
         assert conn.execute.await_count == 3
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_batch_size_and_slug_pass_through(self):
@@ -83,8 +83,8 @@ class TestRun:
         pool, conn = _make_pool([{"id": "p1", "title": "T"}])
         job = FixUncategorizedPostsJob()
         with patch(
-            "services.jobs.fix_uncategorized_posts.create_gitea_issue",
-            new=AsyncMock(return_value=False),
+            "services.jobs.fix_uncategorized_posts.emit_finding",
+            new=MagicMock(),
         ):
             await job.run(pool, {
                 "batch_size": 25,
@@ -130,8 +130,8 @@ class TestRun:
 
         job = FixUncategorizedPostsJob()
         with patch(
-            "services.jobs.fix_uncategorized_posts.create_gitea_issue",
-            new=AsyncMock(return_value=False),
+            "services.jobs.fix_uncategorized_posts.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {"file_gitea_issue": False})
 
@@ -143,13 +143,13 @@ class TestRun:
     async def test_gitea_opt_out(self):
         pool, _ = _make_pool([{"id": "p1", "title": "T"}])
         job = FixUncategorizedPostsJob()
-        mock_gitea = AsyncMock(return_value=False)
+        mock_gitea = MagicMock()
         with patch(
-            "services.jobs.fix_uncategorized_posts.create_gitea_issue",
+            "services.jobs.fix_uncategorized_posts.emit_finding",
             new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):

@@ -26,7 +26,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +106,13 @@ class AuditPublishedQualityJob:
 
         if issues and file_issue:
             body = "## Quality Audit Findings\n\n" + "\n".join(f"- {i}" for i in issues)
-            await create_gitea_issue(
-                f"quality: {len(issues)} issues in {len(rows)} audited posts",
-                body,
+            emit_finding(
+                source="audit_published_quality",
+                kind="quality_regression",
+                severity="warn",
+                title=f"quality: {len(issues)} issues in {len(rows)} audited posts",
+                body=body,
+                dedup_key="quality_audit",
             )
 
         detail = f"audited {len(rows)} post(s), found {len(issues)} issue(s)"

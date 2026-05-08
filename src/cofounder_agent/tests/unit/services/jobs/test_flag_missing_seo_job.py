@@ -57,15 +57,15 @@ class TestRun:
         job = FlagMissingSeoJob()
 
         with patch(
-            "services.jobs.flag_missing_seo.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.flag_missing_seo.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {"limit": 10})
 
         assert result.ok is True
         assert result.changes_made == 3
         assert result.metrics["posts_missing_seo"] == 3
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
         call_args = mock_gitea.call_args.args
         assert "3 posts" in call_args[0]
 
@@ -83,12 +83,12 @@ class TestRun:
         rows = [{"id": "p1", "title": "Post 1"}]
         pool, _ = _make_pool(rows)
         job = FlagMissingSeoJob()
-        mock_gitea = AsyncMock(return_value=False)
+        mock_gitea = MagicMock()
         with patch(
-            "services.jobs.flag_missing_seo.create_gitea_issue", new=mock_gitea,
+            "services.jobs.flag_missing_seo.emit_finding", new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_none_title_handled_gracefully(self):
@@ -97,8 +97,8 @@ class TestRun:
         pool, _ = _make_pool(rows)
         job = FlagMissingSeoJob()
         with patch(
-            "services.jobs.flag_missing_seo.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.flag_missing_seo.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {})
         assert result.ok is True

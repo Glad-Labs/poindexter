@@ -161,20 +161,23 @@ class DetectAnomaliesJob:
         except Exception as e:
             logger.warning("[ANOMALY] audit_log insert failed: %s", e)
 
-        # File Gitea issue when enough anomalies are present (avoid noise).
+        # Emit a finding when enough anomalies are present (avoid noise).
         if len(anomalies) >= issue_threshold:
-            try:
-                from utils.gitea_issues import create_gitea_issue
-                body = "## Anomalies Detected\n\n" + "\n".join(
-                    f"- **{a['metric']}**: {a['value']} ({a['direction']}, "
-                    f"z={a['z_score']}, mean={a['mean']}±{a['stddev']})"
-                    for a in anomalies
-                )
-                await create_gitea_issue(
-                    f"anomaly: {len(anomalies)} metrics outside normal range", body,
-                )
-            except Exception as e:
-                logger.warning("[ANOMALY] gitea issue creation failed: %s", e)
+            from utils.findings import emit_finding
+            body = "## Anomalies Detected\n\n" + "\n".join(
+                f"- **{a['metric']}**: {a['value']} ({a['direction']}, "
+                f"z={a['z_score']}, mean={a['mean']}±{a['stddev']})"
+                for a in anomalies
+            )
+            emit_finding(
+                source="detect_anomalies",
+                kind="anomaly",
+                severity="critical",
+                title=f"anomaly: {len(anomalies)} metrics outside normal range",
+                body=body,
+                dedup_key="anomaly",
+                extra={"anomaly_count": len(anomalies)},
+            )
 
         logger.warning(
             "[ANOMALY] detected: %s",

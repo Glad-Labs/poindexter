@@ -62,7 +62,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        with patch("utils.gitea_issues.create_gitea_issue",
+        with patch("utils.findings.emit_finding",
                    new=AsyncMock(return_value=True)) as gitea_mock:
             result = await DetectAnomaliesJob().run(pool, {})
         assert result.ok is True
@@ -81,7 +81,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        with patch("utils.gitea_issues.create_gitea_issue",
+        with patch("utils.findings.emit_finding",
                    new=AsyncMock(return_value=True)) as gitea_mock:
             result = await DetectAnomaliesJob().run(pool, {})
         assert result.ok is True
@@ -133,7 +133,7 @@ class TestDetectAnomaliesJobRun:
                 {"mean": 3, "stddev": 1.0},
             ],
         )
-        with patch("utils.gitea_issues.create_gitea_issue",
+        with patch("utils.findings.emit_finding",
                    new=AsyncMock(return_value=True)) as gitea_mock:
             result = await DetectAnomaliesJob().run(pool, {"issue_threshold": 1})
         assert result.changes_made == 1

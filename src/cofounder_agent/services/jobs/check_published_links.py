@@ -24,7 +24,7 @@ import httpx
 
 from plugins.job import JobResult
 from services.site_config import site_config
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +97,14 @@ class CheckPublishedLinksJob:
             body = "## Broken Links Found\n\n" + "\n".join(
                 f"- [{b['post']}] {b['url']} → {b['status']}" for b in broken[:10]
             )
-            await create_gitea_issue(
-                f"links: {len(broken)} broken URLs in published posts",
-                body,
+            emit_finding(
+                source="check_published_links",
+                kind="broken_link",
+                severity="warn",
+                title=f"links: {len(broken)} broken URLs in published posts",
+                body=body,
+                dedup_key="broken_links",
+                extra={"broken_count": len(broken), "checked_count": checked},
             )
 
         detail = f"checked {checked} URL(s) across {len(rows)} post(s), {len(broken)} broken"

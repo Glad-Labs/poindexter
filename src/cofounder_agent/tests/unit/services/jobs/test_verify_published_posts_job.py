@@ -128,8 +128,8 @@ class TestRun:
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.verify_published_posts.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             job = VerifyPublishedPostsJob()
             result = await job.run(pool, {})
@@ -137,7 +137,7 @@ class TestRun:
         assert result.metrics["posts_failed"] == 1
         # audit_log insert should have fired.
         conn.execute.assert_awaited_once()
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_connection_error_counts_as_failure(self):
@@ -154,8 +154,8 @@ class TestRun:
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.verify_published_posts.emit_finding",
+            new=MagicMock(),
         ):
             job = VerifyPublishedPostsJob()
             result = await job.run(pool, {})
@@ -192,8 +192,8 @@ class TestRun:
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.verify_published_posts.emit_finding",
+            new=MagicMock(),
         ):
             job = VerifyPublishedPostsJob()
             result = await job.run(pool, {})
@@ -204,7 +204,7 @@ class TestRun:
     async def test_gitea_opt_out(self):
         pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "bad"}])
         client = _patched_client({"https://gladlabs.io/posts/bad": 503})
-        mock_gitea = AsyncMock(return_value=False)
+        mock_gitea = MagicMock()
         with patch(
             "services.jobs.verify_published_posts.site_config.get",
             side_effect=lambda k, d=None: "https://gladlabs.io" if k == "site_url" else d,
@@ -212,12 +212,12 @@ class TestRun:
             "services.jobs.verify_published_posts.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "services.jobs.verify_published_posts.create_gitea_issue",
+            "services.jobs.verify_published_posts.emit_finding",
             new=mock_gitea,
         ):
             job = VerifyPublishedPostsJob()
             await job.run(pool, {"file_gitea_issue": False})
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):

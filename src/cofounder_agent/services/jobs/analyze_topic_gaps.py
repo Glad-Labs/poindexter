@@ -30,7 +30,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +95,15 @@ class AnalyzeTopicGapsJob:
 
         if suggestions and file_issue:
             body = "## Topic Gap Analysis\n\n" + "\n".join(f"- {s}" for s in suggestions)
-            await create_gitea_issue(
-                f"content: topic gaps — {len(empty)} empty, "
-                f"{len(low)} low, {len(stale_names)} stale",
-                body,
+            emit_finding(
+                source="analyze_topic_gaps",
+                kind="topic_gap",
+                title=(
+                    f"content: topic gaps — {len(empty)} empty, "
+                    f"{len(low)} low, {len(stale_names)} stale"
+                ),
+                body=body,
+                dedup_key="topic_gaps",
             )
 
         detail = (

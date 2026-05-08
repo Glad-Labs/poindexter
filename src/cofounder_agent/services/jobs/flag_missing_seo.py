@@ -18,7 +18,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +59,14 @@ class FlagMissingSeoJob:
         titles = [(r["title"] or "")[:40] for r in rows]
         if file_issue:
             body = "## Posts Missing SEO\n\n" + "\n".join(f"- {t}" for t in titles)
-            await create_gitea_issue(
-                f"seo: {len(rows)} posts missing SEO title or description",
-                body,
+            emit_finding(
+                source="flag_missing_seo",
+                kind="missing_seo",
+                severity="warn",
+                title=f"seo: {len(rows)} posts missing SEO title or description",
+                body=body,
+                dedup_key="missing_seo",
+                extra={"missing_count": len(rows)},
             )
 
         detail = f"found {len(rows)} post(s) with missing SEO metadata"

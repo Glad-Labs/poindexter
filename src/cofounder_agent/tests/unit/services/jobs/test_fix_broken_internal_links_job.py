@@ -133,8 +133,8 @@ class TestRun:
         )
         job = FixBrokenInternalLinksJob()
         with patch(
-            "services.jobs.fix_broken_internal_links.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.fix_broken_internal_links.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {})
 
@@ -145,7 +145,7 @@ class TestRun:
         update_args = conn.execute.call_args.args
         assert "gone" in update_args[1]  # anchor text preserved
         assert "/posts/deleted" not in update_args[1]  # broken link gone
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_gitea_opt_out(self):
@@ -156,13 +156,13 @@ class TestRun:
             ],
         )
         job = FixBrokenInternalLinksJob()
-        mock_gitea = AsyncMock(return_value=False)
+        mock_gitea = MagicMock()
         with patch(
-            "services.jobs.fix_broken_internal_links.create_gitea_issue",
+            "services.jobs.fix_broken_internal_links.emit_finding",
             new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_update_failure_logs_but_does_not_abort(self):
@@ -177,8 +177,8 @@ class TestRun:
         )
         job = FixBrokenInternalLinksJob()
         with patch(
-            "services.jobs.fix_broken_internal_links.create_gitea_issue",
-            new=AsyncMock(return_value=False),
+            "services.jobs.fix_broken_internal_links.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {"file_gitea_issue": False})
         # Both updates failed, so 0 fixed, but the job still completes

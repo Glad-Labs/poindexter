@@ -31,7 +31,7 @@ import httpx
 
 from plugins.job import JobResult
 from services.site_config import site_config
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -124,9 +124,14 @@ class VerifyPublishedPostsJob:
                 f"- `/posts/{f['slug']}` ({f['title']}) → {f['status']}"
                 for f in failures[:10]
             ]
-            await create_gitea_issue(
-                f"publish-verify: {len(failures)}/{len(rows)} recent posts not reachable",
-                "## Failed to verify\n\n" + "\n".join(body_lines),
+            emit_finding(
+                source="verify_published_posts",
+                kind="post_verification_failure",
+                severity="critical",
+                title=f"publish-verify: {len(failures)}/{len(rows)} recent posts not reachable",
+                body="## Failed to verify\n\n" + "\n".join(body_lines),
+                dedup_key="post_verification_failures",
+                extra={"failure_count": len(failures), "checked_count": len(rows)},
             )
 
         detail = (

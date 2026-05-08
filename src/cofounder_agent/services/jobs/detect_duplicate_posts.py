@@ -27,7 +27,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -95,9 +95,13 @@ class DetectDuplicatePostsJob:
             body = "## Potential Duplicate Posts\n\n" + "\n".join(
                 f'- "{a}" vs "{b}"' for a, b in duplicates[:max_pairs]
             )
-            await create_gitea_issue(
-                f"content: {len(duplicates)} potential duplicate post pairs",
-                body,
+            emit_finding(
+                source="detect_duplicate_posts",
+                kind="duplicate_post",
+                title=f"content: {len(duplicates)} potential duplicate post pairs",
+                body=body,
+                dedup_key="duplicate_posts",
+                extra={"pair_count": len(duplicates)},
             )
 
         detail = (

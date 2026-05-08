@@ -49,15 +49,6 @@ class IdleWorker:
         except Exception as e:
             logger.debug("[IDLE] Failed to persist schedule for %s: %s", task_name, e)
 
-    async def _create_gitea_issue(self, title: str, body: str) -> bool:
-        """Delegate to the shared dedup-aware utility.
-
-        Historically this was inline here; extracted to utils.gitea_issues
-        so services/jobs/* can share the same dedup logic.
-        """
-        from utils.gitea_issues import create_gitea_issue
-        return await create_gitea_issue(title, body)
-
     def _is_due(self, task_name: str, interval_minutes: int) -> bool:
         """Check if a task is due. Uses 4x cooldown if task previously completed all work."""
         last = self._last_run.get(task_name, 0)

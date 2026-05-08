@@ -84,13 +84,13 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.analyze_topic_gaps.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {})
         assert result.metrics["empty_categories"] == 1
         assert result.changes_made == 1
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
         # Issue title should include the empty count.
         call_args = mock_gitea.call_args.args
         assert "1 empty" in call_args[0]
@@ -106,8 +106,8 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.analyze_topic_gaps.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {"low_threshold": 5})
         assert result.metrics["low_coverage_categories"] == 1
@@ -123,8 +123,8 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.analyze_topic_gaps.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {})
         assert result.metrics["stale_categories"] == 1
@@ -142,8 +142,8 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.analyze_topic_gaps.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {"low_threshold": 3})
         # Only A (posts=2) is below threshold 3.
@@ -165,12 +165,12 @@ class TestRun:
             stale=[],
         )
         job = AnalyzeTopicGapsJob()
-        mock_gitea = AsyncMock(return_value=False)
+        mock_gitea = MagicMock()
         with patch(
-            "services.jobs.analyze_topic_gaps.create_gitea_issue", new=mock_gitea,
+            "services.jobs.analyze_topic_gaps.emit_finding", new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):
@@ -194,8 +194,8 @@ class TestRun:
         )
         job = AnalyzeTopicGapsJob()
         with patch(
-            "services.jobs.analyze_topic_gaps.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.analyze_topic_gaps.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {})
         assert result.metrics == {

@@ -183,12 +183,12 @@ class TestRun:
             "services.devto_service.DevToCrossPostService",
             return_value=svc,
         ), patch(
-            "services.jobs.crosspost_to_devto.create_gitea_issue",
+            "services.jobs.crosspost_to_devto.emit_finding",
             new=mock_gitea,
         ):
             job = CrosspostToDevtoJob()
             await job.run(pool, {"file_gitea_issue": True})
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_gitea_default_is_opt_out(self):
@@ -202,12 +202,12 @@ class TestRun:
             "services.devto_service.DevToCrossPostService",
             return_value=svc,
         ), patch(
-            "services.jobs.crosspost_to_devto.create_gitea_issue",
+            "services.jobs.crosspost_to_devto.emit_finding",
             new=mock_gitea,
         ):
             job = CrosspostToDevtoJob()
             await job.run(pool, {})  # omit file_gitea_issue
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):

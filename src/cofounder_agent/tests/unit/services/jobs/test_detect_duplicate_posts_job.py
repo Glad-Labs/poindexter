@@ -82,15 +82,15 @@ class TestRun:
         job = DetectDuplicatePostsJob()
 
         with patch(
-            "services.jobs.detect_duplicate_posts.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.detect_duplicate_posts.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {"overlap_threshold": 0.7})
 
         assert result.ok is True
         assert result.changes_made == 1
         assert result.metrics["duplicate_pairs"] == 1
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_short_titles_skipped(self):
@@ -135,7 +135,7 @@ class TestRun:
         job = DetectDuplicatePostsJob()
         mock_gitea = AsyncMock(return_value=True)
         with patch(
-            "services.jobs.detect_duplicate_posts.create_gitea_issue",
+            "services.jobs.detect_duplicate_posts.emit_finding",
             new=mock_gitea,
         ):
             result = await job.run(
@@ -154,13 +154,13 @@ class TestRun:
             {"id": "p2", "title": "kubernetes operator development walkthrough"},
         ])
         job = DetectDuplicatePostsJob()
-        mock_gitea = AsyncMock(return_value=False)
+        mock_gitea = MagicMock()
         with patch(
-            "services.jobs.detect_duplicate_posts.create_gitea_issue",
+            "services.jobs.detect_duplicate_posts.emit_finding",
             new=mock_gitea,
         ):
             await job.run(pool, {"file_gitea_issue": False})
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fetch_failure_returns_not_ok(self):

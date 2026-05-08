@@ -31,7 +31,7 @@ import httpx
 
 from plugins.job import JobResult
 from services.site_config import site_config
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -159,10 +159,16 @@ class FixBrokenExternalLinksJob:
                         )
 
         if posts_fixed and file_issue:
-            await create_gitea_issue(
-                f"links: removed {broken_total} broken external URLs from {posts_fixed} posts",
-                "Auto-cleaned 404 / unreachable external links. "
-                "Link text preserved; anchors stripped.",
+            emit_finding(
+                source="fix_broken_external_links",
+                kind="broken_external_link_autofixed",
+                title=f"links: removed {broken_total} broken external URLs from {posts_fixed} posts",
+                body=(
+                    "Auto-cleaned 404 / unreachable external links. "
+                    "Link text preserved; anchors stripped."
+                ),
+                dedup_key="broken_external_links_autofix",
+                extra={"posts_fixed": posts_fixed, "broken_total": broken_total},
             )
 
         detail = (

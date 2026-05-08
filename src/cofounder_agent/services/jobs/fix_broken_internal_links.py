@@ -28,7 +28,7 @@ import re
 from typing import Any
 
 from plugins.job import JobResult
-from utils.gitea_issues import create_gitea_issue
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -124,10 +124,16 @@ class FixBrokenInternalLinksJob:
                     )
 
         if fixed and file_issue:
-            await create_gitea_issue(
-                f"links: removed broken internal links from {fixed} posts",
-                "Auto-cleaned links to unpublished/deleted posts. "
-                "Anchor text preserved; sidebar list items removed wholesale.",
+            emit_finding(
+                source="fix_broken_internal_links",
+                kind="broken_internal_link_autofixed",
+                title=f"links: removed broken internal links from {fixed} posts",
+                body=(
+                    "Auto-cleaned links to unpublished/deleted posts. "
+                    "Anchor text preserved; sidebar list items removed wholesale."
+                ),
+                dedup_key="broken_internal_links_autofix",
+                extra={"posts_fixed": fixed},
             )
 
         detail = f"scanned {len(candidates)} post(s), rewrote {fixed}"

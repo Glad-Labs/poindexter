@@ -145,14 +145,15 @@ class RegenerateStockImagesJob:
             await cloud.close()
 
         if regenerated:
-            try:
-                from utils.gitea_issues import create_gitea_issue
-                await create_gitea_issue(
-                    f"images: regenerated {regenerated} stock photos with SDXL",
-                    f"Replaced Pexels stock photos with AI-generated art for {regenerated} posts.",
-                )
-            except Exception as e:
-                logger.debug("[REGEN_IMG] gitea issue failed: %s", e)
+            from utils.findings import emit_finding
+            emit_finding(
+                source="regenerate_stock_images",
+                kind="stock_image_regenerated",
+                title=f"images: regenerated {regenerated} stock photos with SDXL",
+                body=f"Replaced Pexels stock photos with AI-generated art for {regenerated} posts.",
+                dedup_key="stock_image_regen",
+                extra={"regenerated_count": regenerated},
+            )
 
         return JobResult(
             ok=True,

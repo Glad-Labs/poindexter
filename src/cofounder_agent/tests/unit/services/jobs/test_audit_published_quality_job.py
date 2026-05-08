@@ -67,15 +67,15 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.create_gitea_issue",
-            new=AsyncMock(return_value=False),
+            "services.jobs.audit_published_quality.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {"file_gitea_issue": True})
 
         assert result.ok is True
         assert result.changes_made == 0
         assert result.metrics == {"posts_audited": 1, "issues_found": 0}
-        mock_gitea.assert_not_awaited()
+        mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_low_word_count_flagged(self):
@@ -85,15 +85,15 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.audit_published_quality.emit_finding",
+            new=MagicMock(),
         ) as mock_gitea:
             result = await job.run(pool, {})
 
         assert result.ok is True
         # Low word count + no heading → 2 findings for one post.
         assert result.metrics["issues_found"] == 2
-        mock_gitea.assert_awaited_once()
+        mock_gitea.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_no_headings_flagged(self):
@@ -103,8 +103,8 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.audit_published_quality.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {})
 
@@ -119,8 +119,8 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.create_gitea_issue",
-            new=AsyncMock(return_value=False),
+            "services.jobs.audit_published_quality.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {"file_gitea_issue": False})
 
@@ -145,8 +145,8 @@ class TestRun:
         job = AuditPublishedQualityJob()
         # min_words=200 → shouldn't flag word-count. But no headings → 1 issue.
         with patch(
-            "services.jobs.audit_published_quality.create_gitea_issue",
-            new=AsyncMock(return_value=False),
+            "services.jobs.audit_published_quality.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(
                 pool,
@@ -164,8 +164,8 @@ class TestRun:
         )
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.audit_published_quality.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {})
 
@@ -187,8 +187,8 @@ class TestRun:
         ])
         job = AuditPublishedQualityJob()
         with patch(
-            "services.jobs.audit_published_quality.create_gitea_issue",
-            new=AsyncMock(return_value=True),
+            "services.jobs.audit_published_quality.emit_finding",
+            new=MagicMock(),
         ):
             result = await job.run(pool, {})
         # 0 words + no headings → 2 findings, no crash.
