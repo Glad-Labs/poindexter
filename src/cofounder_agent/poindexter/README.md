@@ -53,7 +53,6 @@ Every command respects `-v / --verbose` for client-side info logs and `-h /
 | `posts`    | Query and manage published / draft blog posts.                                             |
 | `settings` | Read and write `app_settings` (DB-first config, no `.env` needed).                         |
 | `costs`    | Pipeline spending and operational metrics.                                                 |
-| `sprint`   | Gitea issues dashboard for the primary repo.                                               |
 | `vercel`   | Vercel deployment status via the REST API (no Vercel CLI needed).                          |
 | `premium`  | Manage a Poindexter Premium subscription (license activation / revalidation).              |
 

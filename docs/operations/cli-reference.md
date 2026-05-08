@@ -22,7 +22,6 @@ consolidated reference.
 | `posts`       | Query and manage published/draft blog posts                      |
 | `settings`    | Read and write `app_settings` (DB-first config)                  |
 | `costs`       | Pipeline spending and operational metrics                        |
-| `sprint`      | (deprecated — Gitea issues dashboard, retired 2026-04-30)        |
 | `vercel`      | Vercel deployment status via the REST API                        |
 | `premium`     | Manage Poindexter Pro subscription license                       |
 | `schedule`    | Queue scheduled publishes (batch, list, shift, clear)            |
@@ -283,24 +282,6 @@ Task counts, worker state, websocket connections.
 ```bash
 poindexter costs operational
 poindexter costs operational --json-output
-```
-
----
-
-## `sprint`
-
-> **Deprecated as of 2026-04-30.** This command targets the
-> self-hosted Gitea instance, which was decommissioned when issue
-> tracking moved to GitHub (Glad-Labs/poindexter for public,
-> Glad-Labs/glad-labs-stack for operator). Use the `gh` CLI for
-> issue queries; this subcommand will be removed in a future
-> release. Tracked in Glad-Labs/poindexter#443.
-
-Gitea issues dashboard for the primary repo (legacy).
-
-```bash
-# Use this instead:
-gh issue list --repo Glad-Labs/poindexter --state open --label tech-debt --limit 20
 ```
 
 ---
