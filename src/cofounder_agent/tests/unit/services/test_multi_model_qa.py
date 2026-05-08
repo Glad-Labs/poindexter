@@ -92,7 +92,7 @@ def qa():
     async def _skip_gate(*_args, **_kwargs):
         return None
 
-    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+    with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
         instance = MultiModelQA(pool=None, settings_service=None)
     # Stub the new gates so existing tests that don't care about them
     # see the pre-gate reviewer count (validator + main critic = 2).
@@ -334,7 +334,7 @@ def _mock_gate_client(json_payload: dict):
 @pytest.fixture
 def raw_qa():
     """MultiModelQA WITHOUT the gate stubs — exercises the real gate methods."""
-    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+    with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
         return MultiModelQA(pool=None, settings_service=None)
 
 
@@ -527,7 +527,7 @@ class TestSettingsOverrides:
             qa_gate_weight=0.0,
             qa_final_score_threshold=70,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
             qa = MultiModelQA(pool=None, settings_service=settings)
 
         # Stub gates so they don't actually call Ollama
@@ -551,7 +551,7 @@ class TestSettingsOverrides:
             qa_gate_weight=0.3,
             qa_final_score_threshold=95,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
             qa = MultiModelQA(pool=None, settings_service=settings)
 
         async def _skip_gate(*args, **kwargs):
@@ -574,7 +574,7 @@ class TestSettingsOverrides:
             qa_gate_weight=0.3,
             qa_final_score_threshold=50,  # very lenient
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
             qa = MultiModelQA(pool=None, settings_service=settings)
 
         async def _skip_gate(*args, **kwargs):
@@ -592,7 +592,7 @@ class TestSettingsOverrides:
         """settings.get('pipeline_critic_model') is passed as model_override."""
         settings = _settings_service(pipeline_critic_model="ollama/qwen3:30b")
 
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
             qa = MultiModelQA(pool=None, settings_service=settings)
 
         async def _skip_gate(*args, **kwargs):
@@ -863,7 +863,7 @@ class TestWarningQAPenalty:
             qa_final_score_threshold=70,
             content_validator_warning_qa_penalty=3,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
             qa = MultiModelQA(pool=None, settings_service=settings)
 
         async def _skip_gate(*_a, **_k):
@@ -895,7 +895,7 @@ class TestWarningQAPenalty:
             qa_final_score_threshold=70,
             content_validator_warning_qa_penalty=3,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
             qa = MultiModelQA(pool=None, settings_service=settings)
 
         async def _skip_gate(*_a, **_k):
@@ -924,7 +924,7 @@ class TestWarningQAPenalty:
             qa_final_score_threshold=70,
             content_validator_warning_qa_penalty=5,
         )
-        with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+        with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
             qa = MultiModelQA(pool=None, settings_service=settings)
 
         async def _skip_gate(*_a, **_k):
@@ -1008,7 +1008,7 @@ def _qa_with_gate_chain(rows):
     pool = _StubGatesPool(_StubGatesConn(
         sorted(rows, key=lambda r: r["execution_order"]),
     ))
-    with patch("services.multi_model_qa.get_model_router", return_value=MagicMock()):
+    with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
         return MultiModelQA(pool=pool, settings_service=None)
 
 
@@ -1207,3 +1207,78 @@ class TestQAGatesAdvisoryDoesNotVeto:
             r for r in low.reviews if r.reviewer == "ollama_critic"
         )
         assert "advisory" in critic_low.feedback.lower()
+
+
+@pytest.mark.unit
+class TestDeepEvalBrandFabricationGate:
+    """``_check_deepeval_brand`` wraps the deepeval rail as a ReviewerResult.
+
+    First production wire-in of DeepEval (sub-issue 1 of glad-labs-stack#329).
+    The rail itself is exercised in test_deepeval_rails.py — these cases
+    cover the wrapper logic (enable gate, score rescaling, ReviewerResult
+    shape).
+    """
+
+    def test_clean_content_returns_score_100_approved(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        # Patch the rail's evaluate fn so the test doesn't need deepeval
+        # actually loaded. Same shape: (passed, score_unit, reason).
+        with patch(
+            "services.deepeval_rails.evaluate_brand_fabrication",
+            return_value=(True, 1.0, "No fabrication patterns matched"),
+        ), patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            result = qa._check_deepeval_brand(GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result is not None
+        assert result.reviewer == "deepeval_brand_fabrication"
+        assert result.provider == "deepeval"
+        assert result.approved is True
+        assert result.score == 100.0
+        assert "No fabrication" in result.feedback
+
+    def test_fabrication_detected_returns_score_0_rejected(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.evaluate_brand_fabrication",
+            return_value=(False, 0.0, "1 fabrication(s) detected: fake_quote: 'foo'"),
+        ), patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            result = qa._check_deepeval_brand(BAD_CONTENT, BAD_TITLE)
+
+        assert result is not None
+        assert result.approved is False
+        assert result.score == 0.0
+        assert "fabrication" in result.feedback.lower()
+
+    def test_returns_none_when_rail_disabled(self):
+        """Operator turning off ``deepeval_enabled`` must short-circuit
+        before the metric runs (avoids loading deepeval / spending CPU)."""
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.is_enabled", return_value=False,
+        ), patch(
+            "services.deepeval_rails.evaluate_brand_fabrication",
+        ) as eval_mock:
+            result = qa._check_deepeval_brand(GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result is None
+        eval_mock.assert_not_called()
+
+    def test_partial_score_rescales_to_0_100(self):
+        """Brand metric is binary today, but the rescaler must work
+        for graded scores — future G-Eval and Faithfulness reviewers
+        will return values like 0.73 that should land at 73.0."""
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.evaluate_brand_fabrication",
+            return_value=(True, 0.73, "graded score"),
+        ), patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            result = qa._check_deepeval_brand("body text", "topic")
+
+        assert result is not None
+        assert result.score == 73.0

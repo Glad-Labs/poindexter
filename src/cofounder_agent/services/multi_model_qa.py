@@ -597,7 +597,28 @@ class MultiModelQA:
             except Exception as e:
                 logger.debug("[MULTI_QA] URL verification skipped: %s", e)
 
-        # 2g. Rendered-preview gate — the final "yup looks good"
+        # 2g. DeepEval brand-fabrication rail — first production wire-in
+        # of DeepEval (sub-issue 1 of glad-labs-stack#329). Runs a
+        # DeepEval BaseMetric that wraps content_validator's fabrication
+        # pattern sets. Advisory by default — score feeds the weighted
+        # average but never vetoes publish. The metric is duplicative
+        # with programmatic_validator at this stage; the goal is to
+        # exercise the deepeval call-path so the heavier follow-ups
+        # (G-Eval, FaithfulnessMetric) reuse the same plumbing.
+        # #399: gate name "deepeval_brand_fabrication".
+        if not self._gate_enabled(gate_states, "deepeval_brand_fabrication"):
+            logger.info(
+                "[MULTI_QA] Skipped gate 'deepeval_brand_fabrication' (qa_gates.enabled=False)",
+            )
+        else:
+            deepeval_review = self._check_deepeval_brand(content, topic)
+            if deepeval_review is not None:
+                self._mark_advisory_if_configured(
+                    deepeval_review, gate_states, "deepeval_brand_fabrication",
+                )
+                reviews.append(deepeval_review)
+
+        # 2h. Rendered-preview gate — the final "yup looks good"
         # sanity check. Screenshots the post's /preview/{hash} URL
         # via Playwright-chromium and feeds the PNG to the vision
         # model to catch layout breaks, missing CSS, overflowing
@@ -1076,6 +1097,54 @@ class MultiModelQA:
         except Exception as e:
             logger.warning("[MULTI_QA] %s gate failed (non-critical): %s", reviewer_name, e)
             return None
+
+    def _check_deepeval_brand(
+        self, content: str, topic: str,
+    ) -> ReviewerResult | None:
+        """Run the DeepEval BrandFabricationMetric and return a ReviewerResult.
+
+        Sync because the underlying metric is pure-CPU regex matching —
+        no async I/O. Wraps ``deepeval_rails.evaluate_brand_fabrication``
+        which is already error-swallowing (returns ``(True, 1.0, reason)``
+        on import or runtime failure). Returns ``None`` only if the
+        deepeval rail is globally disabled via ``deepeval_enabled=false``.
+
+        Score mapping: deepeval returns 0.0–1.0 where 1.0 is clean.
+        We rescale to 0–100 to match the rest of the QA reviewers.
+        """
+        try:
+            from services import deepeval_rails
+        except ImportError:
+            # Module itself missing — should never happen since
+            # services/deepeval_rails.py ships with the worker.
+            return None
+
+        # Operator gate. Default false in deepeval_rails.is_enabled, but
+        # the migration seeds app_settings.deepeval_enabled='true' so
+        # this is on out-of-the-box. If the operator turns it off, skip.
+        try:
+            from services.site_config import site_config as _sc
+            if not deepeval_rails.is_enabled(_sc):
+                return None
+        except Exception:
+            # site_config missing is fine — the rail's is_enabled
+            # already returns False in that case, but we double-check.
+            return None
+
+        passed, score_unit, reason = deepeval_rails.evaluate_brand_fabrication(
+            content, topic,
+        )
+        # Convert 0.0–1.0 to 0–100. Brand metric is binary today (0 or 1),
+        # but we rescale generally so future metrics (G-Eval, Faithfulness)
+        # that return graded 0.0–1.0 scores fit the same shape.
+        score_100 = round(float(score_unit) * 100.0, 1)
+        return ReviewerResult(
+            reviewer="deepeval_brand_fabrication",
+            approved=bool(passed),
+            score=score_100,
+            feedback=reason or "",
+            provider="deepeval",
+        )
 
     async def _check_citations(self, content: str) -> ReviewerResult | None:
         """Verify every external URL cited in ``content`` resolves + enforce
