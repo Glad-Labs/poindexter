@@ -37,7 +37,6 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
-from services.site_config import site_config
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +58,15 @@ DEFAULT_GPU_TDP_MAP: dict[str, int] = {
 }
 
 
-def _load_gpu_tdp_map() -> dict[str, int]:
-    """Load GPU TDP map from site_config if set, otherwise use defaults."""
+def _load_gpu_tdp_map(site_config: Any = None) -> dict[str, int]:
+    """Load GPU TDP map from site_config if set, otherwise use defaults.
+
+    Accepts the SiteConfig instance as a parameter (DI seam from
+    glad-labs-stack#330) instead of importing the module-level singleton.
+    Passing ``None`` falls through to ``DEFAULT_GPU_TDP_MAP``.
+    """
+    if site_config is None:
+        return DEFAULT_GPU_TDP_MAP
     raw = site_config.get("gpu_tdp_map", "")
     if not raw:
         return DEFAULT_GPU_TDP_MAP
@@ -202,9 +208,11 @@ class UpdateUtilityRatesJob:
         drift_threshold = float(config.get("drift_threshold", 0.10))
         skip_electricity = bool(config.get("skip_electricity", False))
         skip_gpu = bool(config.get("skip_gpu", False))
+        # DI seam (glad-labs-stack#330)
+        sc = config.get("_site_config")
         api_key = (
             config.get("eia_api_key")
-            or site_config.get("eia_api_key", "")
+            or (sc.get("eia_api_key", "") if sc is not None else "")
             or "DEMO_KEY"
         )
 
@@ -224,7 +232,7 @@ class UpdateUtilityRatesJob:
 
         if not skip_gpu:
             try:
-                tdp_map = _load_gpu_tdp_map()
+                tdp_map = _load_gpu_tdp_map(sc)
                 change = await _refresh_gpu_tdp(pool, tdp_map)
                 if change:
                     changes["gpu_power_watts"] = change

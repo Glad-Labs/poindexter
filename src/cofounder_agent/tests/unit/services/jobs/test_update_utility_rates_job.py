@@ -79,34 +79,30 @@ def _patched_httpx(json_body: dict | None = None, raise_for_status=False, raises
 
 
 class TestLoadGpuTdpMap:
+    """``_load_gpu_tdp_map`` now takes site_config as a parameter
+    (glad-labs-stack#330). Tests pass a MagicMock SiteConfig directly
+    instead of patching the module-level singleton."""
+
+    def _sc(self, raw: str) -> MagicMock:
+        sc = MagicMock()
+        sc.get.return_value = raw
+        return sc
+
     def test_empty_config_returns_defaults(self):
-        with patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value="",
-        ):
-            assert _load_gpu_tdp_map() is DEFAULT_GPU_TDP_MAP
+        assert _load_gpu_tdp_map(self._sc("")) is DEFAULT_GPU_TDP_MAP
+
+    def test_none_config_returns_defaults(self):
+        assert _load_gpu_tdp_map(None) is DEFAULT_GPU_TDP_MAP
 
     def test_valid_json_override_parsed(self):
-        with patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value='{"RTX 9999": 999}',
-        ):
-            result = _load_gpu_tdp_map()
+        result = _load_gpu_tdp_map(self._sc('{"RTX 9999": 999}'))
         assert result == {"RTX 9999": 999}
 
     def test_invalid_json_falls_back_to_defaults(self):
-        with patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value="{not-json",
-        ):
-            assert _load_gpu_tdp_map() is DEFAULT_GPU_TDP_MAP
+        assert _load_gpu_tdp_map(self._sc("{not-json")) is DEFAULT_GPU_TDP_MAP
 
     def test_non_dict_override_ignored(self):
-        with patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value='["not", "a", "dict"]',
-        ):
-            assert _load_gpu_tdp_map() is DEFAULT_GPU_TDP_MAP
+        assert _load_gpu_tdp_map(self._sc('["not", "a", "dict"]')) is DEFAULT_GPU_TDP_MAP
 
 
 # ---------------------------------------------------------------------------
@@ -317,21 +313,23 @@ class TestRun:
 
     @pytest.mark.asyncio
     async def test_config_api_key_wins_over_site_config(self):
-        """``config.eia_api_key`` overrides site_config."""
+        """``config.eia_api_key`` overrides site_config (post-glad-labs-stack#330
+        DI seam: site_config injected via the ``_site_config`` config key)."""
         pool, _ = _make_pool()
         client = _patched_httpx(json_body={"response": {"data": []}})
+        sc = MagicMock()
+        sc.get.return_value = "SITE_KEY"
         with patch(
             "services.jobs.update_utility_rates.httpx.AsyncClient",
             return_value=client,
         ) as mock_cls, patch(
-            "services.jobs.update_utility_rates.site_config.get",
-            return_value="SITE_KEY",
-        ), patch(
             "services.jobs.update_utility_rates.asyncio.create_subprocess_exec",
             new=AsyncMock(side_effect=FileNotFoundError),
         ):
             job = UpdateUtilityRatesJob()
-            await job.run(pool, {"eia_api_key": "OVERRIDE"})
+            await job.run(
+                pool, {"eia_api_key": "OVERRIDE", "_site_config": sc},
+            )
         # Verify the URL built with OVERRIDE.
         mock_cls.assert_called_once()
         # The URL is the first positional arg to client.get
