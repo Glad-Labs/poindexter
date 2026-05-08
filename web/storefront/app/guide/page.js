@@ -87,7 +87,7 @@ export default function GuidePage() {
             </li>
             <li>
               <span>
-                <strong>200+ TUNED APP_SETTINGS</strong> — every knob Matt
+                <strong>235+ TUNED APP_SETTINGS</strong> — every knob Matt
                 touched to get production output. No guessing at threshold
                 values or weight balances; import the known-good configuration
                 and run.

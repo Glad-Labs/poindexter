@@ -106,7 +106,7 @@ const FEATURES = [
 
 const STATS = [
   { value: '$0', label: '/mo infra cost' },
-  { value: '5,000+', label: 'tests passing' },
+  { value: '7,900+', label: 'tests passing' },
   { value: '6', label: 'QA reviewers' },
   { value: '50%', label: 'drafts rejected' },
 ];
@@ -152,14 +152,14 @@ const FREE_INCLUDED = [
 
 const PREMIUM_INCLUDED = [
   'Everything in Free',
-  'Production-tuned config (200+ settings)',
-  'Anti-hallucination rules database',
+  'Production-tuned config (235+ app_settings)',
+  'Anti-hallucination fact-overrides database',
   'Curated writing style samples',
-  '2 premium Grafana dashboards',
-  'Monthly updated seeds from live production',
+  '5 premium Grafana dashboards',
+  'Continuous prompt updates as the live system is tuned',
   'Private repo with prompt iterations',
-  'Premium Discord — direct access to Matt',
-  'AI Content Pipeline book (chapters as they ship)',
+  'VIP Discord — direct access to Matt',
+  'The Poindexter book (18 chapters + appendices)',
 ];
 
 function PricingList({ items }) {
@@ -425,27 +425,27 @@ export default function ProductPage() {
               </div>
             </Card>
 
-            {/* Premium — amber accent tick */}
+            {/* Pro — amber accent tick */}
             <Card accent="amber" className="flex flex-col">
-              <Card.Meta>PREMIUM</Card.Meta>
+              <Card.Meta>PRO</Card.Meta>
               <p className="gl-display mt-3 text-4xl">
-                $9.99
+                $9
                 <span className="gl-body gl-body--lg opacity-70 ml-1">
                   /mo
                 </span>
               </p>
               <p className="gl-mono gl-mono--upper opacity-50 text-xs">
-                cancel anytime
+                or $89/year · 7-day free trial · cancel anytime
               </p>
               <PricingList items={PREMIUM_INCLUDED} />
               <div className="mt-auto">
                 <Button
                   as="a"
-                  href="https://gladlabs.lemonsqueezy.com/checkout/buy/a47cbc0a-e129-45c3-a99f-7e67e7c7de23?embed=1"
+                  href="https://gladlabs.lemonsqueezy.com/buy/a5713f22-3c57-47ae-b1ee-5fee3a0b43b9"
                   variant="primary"
                   className="w-full lemonsqueezy-button"
                 >
-                  Subscribe — $9.99/mo
+                  Start 7-day free trial — $9/mo
                 </Button>
               </div>
             </Card>
