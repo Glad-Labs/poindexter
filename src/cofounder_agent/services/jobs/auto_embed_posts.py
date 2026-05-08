@@ -24,7 +24,6 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
-from services.site_config import site_config
 
 from ._subprocess_runner import resolve_scripts_dir, run_python_script
 
@@ -45,7 +44,9 @@ class AutoEmbedPostsJob:
         script_path = str(config.get("script_path") or _default_script_path())
         timeout_s = int(config.get("timeout_seconds", 120))
         phase = str(config.get("phase", "posts"))
-        cwd = site_config.get("repo_root", "/app")
+        # DI seam (glad-labs-stack#330)
+        sc = config.get("_site_config")
+        cwd = sc.get("repo_root", "/app") if sc is not None else "/app"
 
         result = await run_python_script(
             script_path,

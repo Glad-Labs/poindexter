@@ -30,8 +30,9 @@ class SyncPageViewsJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        from services.site_config import site_config
-        cloud_url = site_config.get("database_url", "") or ""
+        # DI seam (glad-labs-stack#330)
+        sc = config.get("_site_config")
+        cloud_url = (sc.get("database_url", "") if sc is not None else "") or ""
         if not cloud_url:
             return JobResult(
                 ok=True,

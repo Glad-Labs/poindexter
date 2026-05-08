@@ -106,15 +106,17 @@ class DetectAnomaliesJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        from services.site_config import site_config
+        # DI seam (glad-labs-stack#330): scheduler seeds `_site_config`
+        # into the config dict at fire time.
+        sc = config.get("_site_config")
 
         current_h = int(
             config.get("current_window_hours")
-            or site_config.get_int("brain_anomaly_current_window_hours", 24)
+            or (sc.get_int("brain_anomaly_current_window_hours", 24) if sc is not None else 24)
         )
         baseline_d = int(
             config.get("baseline_window_days")
-            or site_config.get_int("brain_anomaly_baseline_window_days", 30)
+            or (sc.get_int("brain_anomaly_baseline_window_days", 30) if sc is not None else 30)
         )
         z_threshold = float(config.get("z_score_threshold", 2.0))
         issue_threshold = int(config.get("issue_threshold", 2))

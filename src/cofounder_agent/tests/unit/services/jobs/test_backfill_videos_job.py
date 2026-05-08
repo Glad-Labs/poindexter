@@ -15,6 +15,17 @@ import pytest
 from services.jobs.backfill_videos import BackfillVideosJob
 
 
+def _sc(value: Any = "") -> MagicMock:
+    """Build a mock SiteConfig that returns ``value`` from any ``.get()`` call.
+
+    Replaces the legacy ``patch("services.site_config.site_config.get", ...)``
+    pattern after the job migrated to the DI seam (glad-labs-stack#330).
+    """
+    sc = MagicMock()
+    sc.get.return_value = value
+    return sc
+
+
 def _fake_asyncpg(rows: list[dict] | None = None):
     cloud_conn = AsyncMock()
     cloud_conn.fetch = AsyncMock(return_value=rows or [])
@@ -49,17 +60,15 @@ class TestBackfillVideosJobMetadata:
 class TestBackfillVideosJobRun:
     async def test_skips_when_no_database_url(self):
         job = BackfillVideosJob()
-        with patch("services.site_config.site_config.get", return_value=""):
-            result = await job.run(MagicMock(), {})
+        result = await job.run(MagicMock(), {"_site_config": _sc("")})
         assert result.ok is True
         assert result.changes_made == 0
         assert "no database_url" in result.detail
 
     async def test_skips_when_asyncpg_unavailable(self):
         job = BackfillVideosJob()
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": None}):
-            result = await job.run(MagicMock(), {})
+        with patch.dict("sys.modules", {"asyncpg": None}):
+            result = await job.run(MagicMock(), {"_site_config": _sc("postgres://cloud")})
         assert result.ok is False
         assert "asyncpg" in result.detail
 
@@ -68,15 +77,14 @@ class TestBackfillVideosJobRun:
         job = BackfillVideosJob()
         fake_asyncpg, _ = _fake_asyncpg(rows=[_row("p1")])
 
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.video_service.generate_video_for_post",
                    new=AsyncMock()) as gen_mock, \
              patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
              patch("services.video_service.VIDEO_DIR", tmp_path / "videos"):
             (tmp_path / "podcasts").mkdir(parents=True)
             (tmp_path / "videos").mkdir(parents=True)
-            result = await job.run(MagicMock(), {})
+            result = await job.run(MagicMock(), {"_site_config": _sc("postgres://cloud")})
 
         assert result.ok is True
         assert result.changes_made == 0
@@ -92,13 +100,12 @@ class TestBackfillVideosJobRun:
         (tmp_path / "podcasts" / "p1.mp3").write_bytes(b"fake")
         (tmp_path / "videos" / "p1.mp4").write_bytes(b"fake")
 
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.video_service.generate_video_for_post",
                    new=AsyncMock()) as gen_mock, \
              patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
              patch("services.video_service.VIDEO_DIR", tmp_path / "videos"):
-            result = await job.run(MagicMock(), {})
+            result = await job.run(MagicMock(), {"_site_config": _sc("postgres://cloud")})
 
         assert result.ok is True
         assert result.changes_made == 0
@@ -113,13 +120,12 @@ class TestBackfillVideosJobRun:
         (tmp_path / "podcasts" / "p1.mp3").write_bytes(b"fake podcast")
 
         gen_result = MagicMock(success=True)
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.video_service.generate_video_for_post",
                    new=AsyncMock(return_value=gen_result)) as gen_mock, \
              patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
              patch("services.video_service.VIDEO_DIR", tmp_path / "videos"):
-            result = await job.run(MagicMock(), {})
+            result = await job.run(MagicMock(), {"_site_config": _sc("postgres://cloud")})
 
         assert result.ok is True
         assert result.changes_made == 1
@@ -137,14 +143,13 @@ class TestBackfillVideosJobRun:
             (tmp_path / "podcasts" / f"p{i}.mp3").write_bytes(b"fake")
 
         gen_result = MagicMock(success=True)
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.video_service.generate_video_for_post",
                    new=AsyncMock(return_value=gen_result)) as gen_mock, \
              patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
              patch("services.video_service.VIDEO_DIR", tmp_path / "videos"):
             # Default max_per_cycle=1 → only 1 should generate.
-            result = await job.run(MagicMock(), {})
+            result = await job.run(MagicMock(), {"_site_config": _sc("postgres://cloud")})
 
         assert result.ok is True
         assert result.changes_made == 1
@@ -170,13 +175,15 @@ class TestBackfillVideosJobRun:
                 raise RuntimeError("GPU OOM")
             return MagicMock(success=True)
 
-        with patch("services.site_config.site_config.get", return_value="postgres://cloud"), \
-             patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
+        with patch.dict("sys.modules", {"asyncpg": fake_asyncpg}), \
              patch("services.video_service.generate_video_for_post", new=_flaky), \
              patch("services.podcast_service.PODCAST_DIR", tmp_path / "podcasts"), \
              patch("services.video_service.VIDEO_DIR", tmp_path / "videos"):
             # max_per_cycle=2 so both candidates are attempted.
-            result = await job.run(MagicMock(), {"max_per_cycle": 2})
+            result = await job.run(
+                MagicMock(),
+                {"max_per_cycle": 2, "_site_config": _sc("postgres://cloud")},
+            )
 
         assert result.ok is True
         # First failed, second succeeded.
