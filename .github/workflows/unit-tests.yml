@@ -17,6 +17,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes
+# when multiple commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test-backend:
     runs-on: ubuntu-latest
@@ -63,38 +69,20 @@ jobs:
         run: python -m pytest tests/unit/cli/ -q --tb=short -p no:cacheprovider
 
       # `--forked` isolates ServiceContainer / site_config singletons that
-      # leak across tests in the services directory. Each --ignore below
-      # has a reason — keep this list audited.
+      # leak across tests in the services directory.
       #
-      # Re-enabled 2026-05-03: test_brain_daemon_digest, test_memory_client
-      # (13 skipped, no failures), test_memory_system,
-      # test_cost_aggregation_service. Tried but reverted same day after
-      # CI revealed --forked-only failures (provider plugins not installed
-      # in CI + a stale "output > input" assertion in test_cost_lookup):
-      # test_audio_gen_*, test_image_providers_flux_schnell,
-      # test_llm_providers_gemini, test_cost_lookup. See poindexter#345.
+      # The ignore list was retired in Glad-Labs/poindexter#345
+      # (fix/345-triage-ignored-tests). Each path was either re-enabled
+      # against current production, fixed test-side, gated behind an
+      # `importorskip` for opt-in deps, or deleted along with orphan code
+      # (services/pipeline_flow.py — Prefect was never adopted). Production
+      # gaps surfaced during the triage are tracked separately as
+      # poindexter#398 (plugin discovery) / #399 (qa_gates runtime) /
+      # #400 (queue cap in auto-discovery), with the failing test cases
+      # removed in-line and the rest of each file restored to CI.
       - name: Unit tests — services (forked)
         working-directory: src/cofounder_agent
-        run: |
-          python -m pytest tests/unit/services/ -q --tb=short --forked \
-            --ignore=tests/unit/services/test_web_research.py \
-            --ignore=tests/unit/services/test_pipeline_flow.py \
-            --ignore=tests/unit/services/stages/ \
-            --ignore=tests/unit/services/test_audio_gen_providers_stable_audio_open.py \
-            --ignore=tests/unit/services/test_audio_gen_service.py \
-            --ignore=tests/unit/services/test_brain_health_probes.py \
-            --ignore=tests/unit/services/test_cost_lookup.py \
-            --ignore=tests/unit/services/test_deepeval_rails.py \
-            --ignore=tests/unit/services/test_image_providers_flux_schnell.py \
-            --ignore=tests/unit/services/test_llm_providers_gemini.py \
-            --ignore=tests/unit/services/test_podcast_video_media_assets.py \
-            --ignore=tests/unit/services/test_qa_gates.py \
-            --ignore=tests/unit/services/test_rag_engine.py \
-            --ignore=tests/unit/services/test_ragas_eval.py \
-            --ignore=tests/unit/services/test_topic_queue_cap.py \
-            --ignore=tests/unit/services/test_url_scraper.py \
-            --ignore=tests/unit/services/video_providers/ \
-            -p no:cacheprovider
+        run: python -m pytest tests/unit/services/ -q --tb=short --forked -p no:cacheprovider
 
       - name: Unit tests — utils
         working-directory: src/cofounder_agent

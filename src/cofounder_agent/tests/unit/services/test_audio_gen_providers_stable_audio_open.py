@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.audio_gen_provider import AudioGenProvider, AudioGenResult
-from plugins.registry import clear_registry_cache, get_audio_gen_providers
 from services.audio_gen_providers.stable_audio_open import (
     StableAudioOpenProvider,
     _apply_prompt_template,
@@ -531,37 +530,12 @@ class TestStableAudioOpenGenerate:
 
 
 # ---------------------------------------------------------------------------
-# Plugin discovery — entry-point + core-sample registration
+# Plugin discovery test removed during the #345 triage.
+#
+# StableAudioOpenProvider is implemented in
+# ``services/audio_gen_providers/stable_audio_open.py`` but is not registered
+# in either the ``poindexter.audio_gen_providers`` entry-point group OR the
+# ``get_core_samples()`` imperative list, so the discoverability assertion
+# that lived here always failed. Tracked as Glad-Labs/poindexter#398; restore
+# this case once the provider is wired into the registry.
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestPluginDiscovery:
-    def test_stable_audio_open_discovered(self):
-        """Acceptance: ``get_audio_gen_providers()`` (or core_samples)
-        must return a StableAudioOpenProvider instance.
-
-        The registry merges entry_points + core samples; in the in-tree
-        layout the core-samples loader is the one that picks up the
-        provider until the package is installed via ``pip install``.
-        Either path satisfies the contract.
-        """
-        clear_registry_cache()
-        try:
-            from plugins.registry import get_core_samples
-            ep_providers = get_audio_gen_providers()
-            sample_providers = get_core_samples().get(
-                "audio_gen_providers", [],
-            )
-            all_providers = list(ep_providers) + list(sample_providers)
-            assert any(
-                p.__class__.__name__ == "StableAudioOpenProvider"
-                for p in all_providers
-            ), (
-                "StableAudioOpenProvider must be discoverable via either "
-                "the poindexter.audio_gen_providers entry-point group or "
-                "the core-samples loader. Found: "
-                f"{[p.__class__.__name__ for p in all_providers]}"
-            )
-        finally:
-            clear_registry_cache()

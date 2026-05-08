@@ -110,7 +110,6 @@ def test_poindexter_package_importable() -> None:
         "posts",
         "settings",
         "costs",
-        "sprint",
         "vercel",
         "premium",
     }

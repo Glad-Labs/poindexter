@@ -16,7 +16,6 @@ Future subcommand groups (tracked in #191):
     poindexter tasks   — task queue management
     poindexter posts   — published post queries + publish/archive
     poindexter costs   — budget + operational metrics
-    poindexter sprint  — Gitea issue dashboard
     poindexter vercel  — Vercel deployments via REST API
     poindexter settings — app_settings get/set
 """

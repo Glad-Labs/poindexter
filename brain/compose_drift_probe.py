@@ -142,6 +142,15 @@ COMPOSE_PATH_DEFAULT = "/app/docker-compose.local.yml"
 # place during a migration). Empty by default.
 SKIP_SERVICES_SETTING_KEY = "compose_drift_skip_services"
 
+# Comma-separated list of services that legitimately run on-demand
+# (spun up only when needed, then shut down to free GPU/CPU resources).
+# When such a service is missing, we suppress the `container_missing`
+# alert path — the probe still inspects+diffs env/mounts/ports if the
+# container *does* happen to be running, so genuine spec drift on these
+# services is still caught. See Glad-Labs/poindexter#425.
+ON_DEMAND_SERVICES_SETTING_KEY = "compose_drift_on_demand_services"
+ON_DEMAND_SERVICES_DEFAULT = "wan-server,sdxl-server"
+
 # How long to wait after ``docker compose up -d`` before re-probing.
 RECOVER_WAIT_SECONDS = 30
 
@@ -596,6 +605,15 @@ async def _read_skip_services(pool) -> set[str]:
     return {s.strip() for s in val.split(",") if s.strip()}
 
 
+async def _read_on_demand_services(pool) -> set[str]:
+    val = await _read_setting(
+        pool,
+        ON_DEMAND_SERVICES_SETTING_KEY,
+        default=ON_DEMAND_SERVICES_DEFAULT,
+    )
+    return {s.strip() for s in val.split(",") if s.strip()}
+
+
 async def _emit_audit_event(
     pool,
     event: str,
@@ -712,6 +730,7 @@ async def run_compose_drift_probe(
 
     compose_path = await _read_compose_path(pool)
     skip_services = await _read_skip_services(pool)
+    on_demand_services = await _read_on_demand_services(pool)
     auto_recover_enabled = await _read_auto_recover_enabled(pool)
 
     # ---- 0) Pre-flight: docker daemon reachable? ----------------------------
@@ -806,6 +825,18 @@ async def run_compose_drift_probe(
         inspect = inspect_fn(container_name)
         inspected_count += 1
         diff = _diff_service(svc_block, inspect)
+        # On-demand services (e.g. wan-server, sdxl-server) spin up only
+        # when needed — `container_missing` is the expected steady state,
+        # not drift. Suppress that specific signal but keep diffing if the
+        # container does happen to be running, so genuine env/mount/port
+        # drift still surfaces. See Glad-Labs/poindexter#425.
+        if diff["container_missing"] and svc_name in on_demand_services:
+            logger.debug(
+                "[COMPOSE_DRIFT] %s missing but flagged on-demand "
+                "(%s) — suppressing container_missing alert",
+                svc_name, ON_DEMAND_SERVICES_SETTING_KEY,
+            )
+            continue
         if diff["drifted"]:
             drifted[svc_name] = {
                 "container": container_name,

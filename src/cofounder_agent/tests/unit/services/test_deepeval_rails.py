@@ -1,8 +1,16 @@
 """Tests for services/deepeval_rails.py — DeepEval integration as a
-parallel content reviewer (#197)."""
+parallel content reviewer (#197).
+
+The ``is_enabled`` cases run unconditionally. Cases that load real
+DeepEval metrics import the SDK lazily inside the production module;
+they are guarded by a skip marker that fires when ``deepeval`` is not
+installed (CI default — DeepEval is opt-in via
+``app_settings.deepeval_enabled`` and not pinned in pyproject).
+"""
 
 from __future__ import annotations
 
+from importlib.util import find_spec
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +19,11 @@ from services.deepeval_rails import (
     evaluate_brand_fabrication,
     is_enabled,
     make_test_case,
+)
+
+requires_deepeval = pytest.mark.skipif(
+    find_spec("deepeval") is None,
+    reason="DeepEval is an opt-in dep; install via `pip install deepeval` to run.",
 )
 
 
@@ -41,6 +54,7 @@ class TestIsEnabled:
 
 
 @pytest.mark.unit
+@requires_deepeval
 class TestMakeTestCase:
     def test_builds_llm_test_case(self):
         case = make_test_case(content="Generated body", topic="My Topic")
@@ -101,6 +115,7 @@ class TestEvaluateBrandFabrication:
 
 
 @pytest.mark.unit
+@requires_deepeval
 class TestBrandFabricationMetric:
     """Verifies the BaseMetric subclass conforms to DeepEval's
     contract (measure returns float in [0,1], is_successful returns

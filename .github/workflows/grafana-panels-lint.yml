@@ -18,9 +18,25 @@ name: grafana-panels-lint
 on:
   push:
     branches: [main]
+    paths:
+      - 'infrastructure/grafana/**'
+      - 'scripts/ci/grafana_panels_lint.py'
+      - 'src/cofounder_agent/services/migrations/**'
+      - '.github/workflows/grafana-panels-lint.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'infrastructure/grafana/**'
+      - 'scripts/ci/grafana_panels_lint.py'
+      - 'src/cofounder_agent/services/migrations/**'
+      - '.github/workflows/grafana-panels-lint.yml'
   workflow_dispatch:
+
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes
+# when multiple commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   grafana-panels-lint:
