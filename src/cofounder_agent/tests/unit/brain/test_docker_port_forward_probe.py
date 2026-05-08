@@ -98,6 +98,20 @@ def _executed_alertnames(pool) -> list[str]:
     return out
 
 
+def _executed_alert_fingerprints(pool) -> list[str]:
+    """Pull the fingerprint positional arg from every alert_events INSERT.
+
+    Probe inserts use $1..$4 for (alertname, labels, annotations,
+    fingerprint) — fingerprint is therefore call.args[4].
+    """
+    out: list[str] = []
+    for call in pool.execute.call_args_list:
+        sql = call.args[0]
+        if "INSERT INTO alert_events" in sql:
+            out.append(call.args[4])
+    return out
+
+
 def _executed_audit_events(pool) -> list[str]:
     """Pull every event_type written to audit_log by the probe."""
     out: list[str] = []
@@ -697,3 +711,90 @@ class TestProbeWrapper:
         assert result.detail == "fake"
         assert result.metrics["status"] == "ok"
         assert result.metrics["services"]["poindexter-pyroscope"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Regression — fingerprint stability (Glad-Labs/poindexter#428)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAlertFingerprintsAreStable:
+    """The probe's alert_events fingerprints must be stable across cycles
+    so downstream dedup (alert_dedup_state, dispatcher) collapses repeats
+    into one logical event instead of N separate rows.
+
+    Pre-fix the fingerprint was suffixed with ``int(time.time())`` and
+    every cycle produced a unique value — see issue #428.
+    """
+
+    @pytest.mark.asyncio
+    async def test_cap_alert_fingerprint_stable_across_cycles(self):
+        pool = _make_pool()
+        await pf._emit_cap_alert(
+            pool,
+            container="poindexter-prometheus",
+            cap=3,
+            window_minutes=60,
+        )
+        await pf._emit_cap_alert(
+            pool,
+            container="poindexter-prometheus",
+            cap=3,
+            window_minutes=60,
+        )
+        fingerprints = _executed_alert_fingerprints(pool)
+        assert len(fingerprints) == 2
+        assert fingerprints[0] == fingerprints[1], (
+            "cap-alert fingerprint must be stable per (alertname, "
+            "container) — got distinct values across two cycles"
+        )
+        assert fingerprints[0] == (
+            "docker-port-forward-cap-poindexter-prometheus"
+        )
+
+    @pytest.mark.asyncio
+    async def test_recovery_failed_fingerprint_stable_across_cycles(self):
+        pool = _make_pool()
+        await pf._emit_recovery_failed_alert(
+            pool,
+            container="poindexter-prometheus",
+            detail="probe still failing after restart",
+        )
+        await pf._emit_recovery_failed_alert(
+            pool,
+            container="poindexter-prometheus",
+            detail="probe still failing after restart",
+        )
+        fingerprints = _executed_alert_fingerprints(pool)
+        assert len(fingerprints) == 2
+        assert fingerprints[0] == fingerprints[1], (
+            "recovery_failed fingerprint must be stable per "
+            "(alertname, container) — got distinct values across two "
+            "cycles"
+        )
+        assert fingerprints[0] == (
+            "docker-port-forward-recovery-failed-poindexter-prometheus"
+        )
+
+    @pytest.mark.asyncio
+    async def test_cap_fingerprints_distinguish_containers(self):
+        pool = _make_pool()
+        await pf._emit_cap_alert(
+            pool,
+            container="poindexter-prometheus",
+            cap=3,
+            window_minutes=60,
+        )
+        await pf._emit_cap_alert(
+            pool,
+            container="poindexter-grafana",
+            cap=3,
+            window_minutes=60,
+        )
+        fingerprints = _executed_alert_fingerprints(pool)
+        assert len(fingerprints) == 2
+        assert fingerprints[0] != fingerprints[1], (
+            "cap-alert fingerprints for different containers must "
+            "remain distinct"
+        )

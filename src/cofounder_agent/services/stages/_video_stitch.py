@@ -304,7 +304,16 @@ def _video_output_root() -> Path:
         root = Path(override) / "video"
     else:
         docker_root = Path("/root/.poindexter")
-        if docker_root.is_dir():
+        # ``is_dir()`` raises PermissionError on filesystems where
+        # ``/root`` exists but is not stat-able by the current user
+        # (GitHub Actions runners — `/root` is owned by root, mode 700).
+        # Treat any OSError as "not the docker root" and fall through
+        # to the home-dir branch.
+        try:
+            is_docker_root = docker_root.is_dir()
+        except OSError:
+            is_docker_root = False
+        if is_docker_root:
             root = docker_root / "video"
         else:
             root = Path(os.path.expanduser("~")) / ".poindexter" / "video"
