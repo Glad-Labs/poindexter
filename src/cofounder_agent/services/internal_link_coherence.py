@@ -59,11 +59,17 @@ _DEFAULT_SINGLE_TARGET_CAP = 3
 _DEFAULT_CAP_ENABLED = True
 
 
-def _get_bool_setting(key: str, default: bool) -> bool:
-    """Read a bool-ish setting from site_config, never raising."""
-    try:
-        from services.site_config import site_config
+def _get_bool_setting(
+    key: str, default: bool, *, site_config: Any = None,
+) -> bool:
+    """Read a bool-ish setting from the DI-injected site_config, never raising.
 
+    glad-labs-stack#330 — site_config is passed by the caller (typically
+    a stage's context). Falls back to ``default`` when None.
+    """
+    if site_config is None:
+        return default
+    try:
         raw = site_config.get(key, "")
         if raw == "" or raw is None:
             return default
@@ -72,11 +78,13 @@ def _get_bool_setting(key: str, default: bool) -> bool:
         return default
 
 
-def _get_int_setting(key: str, default: int) -> int:
-    """Read an int-ish setting from site_config, never raising."""
+def _get_int_setting(
+    key: str, default: int, *, site_config: Any = None,
+) -> int:
+    """Read an int-ish setting from the DI-injected site_config, never raising."""
+    if site_config is None:
+        return default
     try:
-        from services.site_config import site_config
-
         raw = site_config.get(key, "")
         if raw == "" or raw is None:
             return default
@@ -255,22 +263,35 @@ class InternalLinkCoherenceFilter:
         tag_coherence_required: bool | None = None,
         single_target_cap: int | None = None,
         cap_enabled: bool | None = None,
+        site_config: Any = None,
     ) -> None:
         self.pool = pool
+        # DI seam (glad-labs-stack#330) — caller passes the SiteConfig
+        # so settings reads don't go through the deleted singleton.
         self.tag_coherence_required = (
             _get_bool_setting(
-                _SETTING_TAG_COHERENCE_REQUIRED, _DEFAULT_TAG_COHERENCE_REQUIRED
+                _SETTING_TAG_COHERENCE_REQUIRED,
+                _DEFAULT_TAG_COHERENCE_REQUIRED,
+                site_config=site_config,
             )
             if tag_coherence_required is None
             else tag_coherence_required
         )
         self.single_target_cap = (
-            _get_int_setting(_SETTING_SINGLE_TARGET_CAP, _DEFAULT_SINGLE_TARGET_CAP)
+            _get_int_setting(
+                _SETTING_SINGLE_TARGET_CAP,
+                _DEFAULT_SINGLE_TARGET_CAP,
+                site_config=site_config,
+            )
             if single_target_cap is None
             else single_target_cap
         )
         self.cap_enabled = (
-            _get_bool_setting(_SETTING_CAP_ENABLED, _DEFAULT_CAP_ENABLED)
+            _get_bool_setting(
+                _SETTING_CAP_ENABLED,
+                _DEFAULT_CAP_ENABLED,
+                site_config=site_config,
+            )
             if cap_enabled is None
             else cap_enabled
         )
