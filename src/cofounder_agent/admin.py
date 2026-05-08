@@ -29,7 +29,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase
 
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy base + engine (read-only reflection of asyncpg-managed tables)

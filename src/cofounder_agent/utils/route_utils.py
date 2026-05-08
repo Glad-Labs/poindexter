@@ -224,8 +224,8 @@ def get_site_config_dependency(request: Request) -> Any:
         # Fallback during transition — the module singleton is still
         # loaded and usable. Once every caller uses Depends(), lifespan
         # is the sole construction site and this branch goes away.
-        from services.site_config import site_config as _legacy_sc
-        return _legacy_sc
+        import services.site_config as _scm
+        return _scm.site_config
     return sc
 
 

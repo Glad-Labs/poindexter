@@ -59,7 +59,8 @@ async def _smoke() -> None:
     import asyncpg
     from langgraph.graph import END, StateGraph
 
-    from services.site_config import site_config
+    import services.site_config as _scm
+    site_config = _scm.site_config
     from services.template_runner import PipelineState, TemplateRunner
     import services.pipeline_templates as pt
 

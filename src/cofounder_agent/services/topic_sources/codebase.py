@@ -145,7 +145,8 @@ class CodebaseSource:
             return []
 
         # Resolve config with site_config fallbacks.
-        from services.site_config import site_config
+        import services.site_config as _scm
+        site_config = _scm.site_config
         seed_queries_cfg = config.get("seed_queries")
         seed_queries = (
             list(seed_queries_cfg) if isinstance(seed_queries_cfg, list) and seed_queries_cfg
