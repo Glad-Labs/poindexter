@@ -216,6 +216,14 @@ services:
       # whatever brain wrote on its last cycle. Rotating a secret is just
       # `poindexter set <key> <new>`; brain syncs within 5 min.
       - ./infrastructure/prometheus/secrets:/host-prometheus/secrets:rw
+      # Read-only mount of the host's pg_dump backup directory so
+      # backup_watcher.py can age-check actual files. Without this the
+      # watcher is blind: app_settings.backup_watcher_backup_dir points
+      # at a host path that doesn't exist inside the brain container,
+      # so the "backups stopped writing" alert never fires. Audit
+      # 2026-05-08 (.shared-context/audits/2026-05-08-self-healing-...).
+      # Pair with: setting backup_watcher_backup_dir to /host-backups/auto.
+      - ${USERPROFILE:-${HOME}}/.poindexter/backups:/host-backups:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -765,68 +773,16 @@ services:
         condition: service_healthy
 
   # ===========================================
-  # Discord Voice Bot — hands-free voice meetings with Claude
+  # Discord Voice Bot — RETIRED 2026-05-08
   # ===========================================
-  voice-bot:
-    build:
-      context: .
-      dockerfile: scripts/Dockerfile.voice-bot
-    container_name: poindexter-voice-bot
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
-      # Symmetric key for pgcrypto-encrypted app_settings rows
-      # (discord_bot_token + discord_voice_bot_token both use is_secret=true).
-      # Without this, the bot reads the raw `enc:v1:<base64>` ciphertext as
-      # the Discord token and discord.py rejects it for containing
-      # newlines/control bytes — a crash-loop that hid behind unhelpful
-      # "Newline in headers" tracebacks.
-      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
-      # Unbuffered stdout/stderr so docker logs see [INIT] / [SKILLS] /
-      # [BOT] lines as they happen (otherwise Python block-buffers under
-      # a piped FD and the only visible line for minutes is the HF Hub
-      # warning — confusing during a real boot diagnosis).
-      PYTHONUNBUFFERED: "1"
-    volumes:
-      - ./scripts/discord-voice-bot.py:/app/discord-voice-bot.py:ro
-      # _oauth_helper.py is the operator-side OAuth client mirror that
-      # discord-voice-bot.py imports as a sibling module (PR #170 OAuth
-      # migration). Mount it alongside the bot script — without this,
-      # the bot crash-loops with `ModuleNotFoundError: No module named
-      # '_oauth_helper'`.
-      - ./scripts/_oauth_helper.py:/app/_oauth_helper.py:ro
-      - ./brain:/brain:ro
-      # Skill catalog (poindexter#385 sibling). Bot scans
-      # /skills/poindexter/*/SKILL.md at boot and exposes them to the
-      # local LLM as JSON-action dispatch targets. Each skill's
-      # scripts/run.sh hits the worker via OAuth (the helper at
-      # _lib/get_token.sh handles JWT mint+cache).
-      - ./skills:/skills:ro
-      # Kokoro TTS model weights cache. Same volume the voice-agent
-      # containers use — first-boot download happens once, all three
-      # services share the cached weights.
-      - voice-agent-cache:/root/.cache
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import os,signal; os.kill(1, 0)' 2>/dev/null || exit 1"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-    # Voice bot reads discord_voice_bot_token + LLM config from app_settings.
-    # Wait for brain to seed before booting.
-    depends_on:
-      postgres-local:
-        condition: service_healthy
-      brain-daemon:
-        condition: service_healthy
+  # Superseded by the voice-agent-livekit + voice-agent-webrtc pair
+  # (PRs #313, #315, #316). The legacy bot used discord.py voice channels
+  # directly; the new pair uses LiveKit + Pipecat for a session-agnostic
+  # surface that any client (browser, mobile, MCP) can join.
+  # Container had been zombie (exit 137) since 2026-05-05 — restart-policy
+  # didn't auto-recover because the kill came from a Docker shutdown
+  # (interpreted as "user stopped it"). Removed from compose during the
+  # 2026-05-08 self-healing audit.
 
   # ===========================================
   # Auto-Embed — hourly pgvector embedding sync
@@ -1183,6 +1139,21 @@ services:
       # Persist Whisper / Silero / Kokoro model weights across rebuilds.
       # First boot downloads ~470 MB total; cached after that.
       - voice-agent-cache:/root/.cache
+      # Bind-mount the host's ~/.claude READ-WRITE so the in-container
+      # `claude` subprocess (spawned by voice_agent_claude_code.py)
+      # picks up the host operator's OAuth tokens, skills, plugins,
+      # MCP servers, and memory files — AND can write its session
+      # JSONL files. Read-only blocks --session-id writes on first turn,
+      # which then breaks --resume on subsequent turns (the bridge
+      # design uses fresh-uuid-per-call so each voice session creates
+      # its own JSONL).
+      #
+      # Race risk: voice agent and host's terminal Claude both write
+      # to MEMORY.md (auto-memory). Writes are rare (only on memory
+      # save events) and atomic-style replacement, so the practical
+      # collision window is small. Session JSONLs are per-uuid so
+      # don't conflict.
+      - ${USERPROFILE:-${HOME}}/.claude:/root/.claude
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:
