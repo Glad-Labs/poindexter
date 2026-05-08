@@ -149,6 +149,7 @@ class GenerateContentStage:
                 tags=tags,
                 database_service=database_service,
                 task_id=task_id,
+                site_config=context.get("site_config"),
             )
         else:
             # Generate content (GPU-locked to ollama mode).
@@ -603,6 +604,7 @@ class GenerateContentStage:
         tags: list[str],
         database_service: Any,
         task_id: str,
+        site_config: Any = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """Run dispatch_writer_mode and shape the result into the
         (content_text, model_used, metrics) tuple the rest of this stage
@@ -668,6 +670,10 @@ class GenerateContentStage:
                 pool=pool,
                 writer_prompt_override=writer_prompt_override,
                 context_bundle=context_bundle,
+                # DI seam (glad-labs-stack#330) — threaded so each writer
+                # mode handler reads from the injected SiteConfig instead
+                # of importing the legacy module-level singleton.
+                site_config=site_config,
             )
 
         draft = result.get("draft") or ""

@@ -199,7 +199,9 @@ def _fallback_narrative(bundle: dict[str, Any]) -> str:
     return f"The team shipped {' and '.join(parts)} today. See the full list below."
 
 
-async def _ollama_chat_text(prompt: str, model: str) -> str:
+async def _ollama_chat_text(
+    prompt: str, model: str, *, site_config: Any = None,
+) -> str:
     """Plain-text Ollama chat call — the codebase's standard helper
     (`services.topic_ranking._ollama_chat_json`) forces ``format=json``
     which wraps prose responses in a ``{"thought": "..."}`` envelope.
@@ -207,12 +209,15 @@ async def _ollama_chat_text(prompt: str, model: str) -> str:
     the shared helper.
     """
     import httpx
-    from services.site_config import site_config
 
     base_url = (
-        site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
+        (site_config.get("local_llm_api_url", "http://localhost:11434")
+            if site_config is not None else "http://localhost:11434").rstrip("/")
     )
-    timeout = site_config.get_float("niche_ollama_chat_timeout_seconds", 120.0)
+    timeout = (
+        site_config.get_float("niche_ollama_chat_timeout_seconds", 120.0)
+        if site_config is not None else 120.0
+    )
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -226,16 +231,17 @@ async def _ollama_chat_text(prompt: str, model: str) -> str:
     return (data.get("message") or {}).get("content", "")
 
 
-async def _generate_narrative(bundle: dict[str, Any]) -> str:
+async def _generate_narrative(
+    bundle: dict[str, Any], *, site_config: Any = None,
+) -> str:
     """Call the writer LLM with a tight bundle-only prompt to produce
     the 2-3 paragraph narrative. Returns "" on failure — caller falls
     back to the deterministic one-liner.
     """
     try:
-        from services.site_config import site_config
-
         model = (
-            site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+            (site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+                if site_config is not None else "glm-4.7-5090:latest")
             or "glm-4.7-5090:latest"
         ).removeprefix("ollama/")
 
@@ -256,7 +262,7 @@ async def _generate_narrative(bundle: dict[str, Any]) -> str:
             f"closing paragraph."
         )
 
-        result = await _ollama_chat_text(full_prompt, model=model)
+        result = await _ollama_chat_text(full_prompt, model=model, site_config=site_config)
         prose = (result or "").strip()
 
         # Defensive: some models still wrap output in JSON when asked
@@ -286,7 +292,9 @@ async def _generate_narrative(bundle: dict[str, Any]) -> str:
         return ""
 
 
-async def compose_post(bundle: dict[str, Any]) -> str:
+async def compose_post(
+    bundle: dict[str, Any], *, site_config: Any = None,
+) -> str:
     """Render the dev_diary bundle as a Markdown post.
 
     Hybrid: deterministic header + LLM narrative + deterministic links
@@ -303,7 +311,7 @@ async def compose_post(bundle: dict[str, Any]) -> str:
             f"{_FOOTER}\n"
         )
 
-    narrative = await _generate_narrative(bundle)
+    narrative = await _generate_narrative(bundle, site_config=site_config)
     if not narrative:
         narrative = _fallback_narrative(bundle)
 
@@ -347,7 +355,7 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
         )
         bundle = {"date": "today", "merged_prs": [], "notable_commits": []}
 
-    draft = await compose_post(bundle)
+    draft = await compose_post(bundle, site_config=kw.get("site_config"))
     return {
         "draft": draft,
         "mode": "DETERMINISTIC_COMPOSITOR",

@@ -33,15 +33,20 @@ async def run(
     min_citations: int | None = None,
     **kw: Any,
 ) -> dict[str, Any]:
-    from services.site_config import site_config
     from services.topic_ranking import embed_text
 
+    # DI seam (glad-labs-stack#330)
+    site_config = kw.get("site_config")
     if min_citations is None:
-        min_citations = site_config.get_int(
-            "writer_rag_citation_budget_min_citations", DEFAULT_MIN_CITATIONS,
+        min_citations = (
+            site_config.get_int(
+                "writer_rag_citation_budget_min_citations", DEFAULT_MIN_CITATIONS,
+            )
+            if site_config is not None else DEFAULT_MIN_CITATIONS
         )
-    snippet_limit = site_config.get_int(
-        "writer_rag_citation_budget_snippet_limit", 12,
+    snippet_limit = (
+        site_config.get_int("writer_rag_citation_budget_snippet_limit", 12)
+        if site_config is not None else 12
     )
     qvec = await embed_text(f"{topic} — {angle}")
     async with pool.acquire() as conn:

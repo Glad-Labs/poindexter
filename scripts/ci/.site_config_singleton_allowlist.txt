@@ -77,11 +77,6 @@ src/cofounder_agent/services/video_service.py
 src/cofounder_agent/services/web_research.py
 src/cofounder_agent/services/webhook_delivery_service.py
 src/cofounder_agent/services/worker_service.py
-src/cofounder_agent/services/writer_rag_modes/citation_budget.py
-src/cofounder_agent/services/writer_rag_modes/deterministic_compositor.py
-src/cofounder_agent/services/writer_rag_modes/story_spine.py
-src/cofounder_agent/services/writer_rag_modes/topic_only.py
-src/cofounder_agent/services/writer_rag_modes/two_pass.py
 src/cofounder_agent/tests/unit/conftest.py
 src/cofounder_agent/tests/unit/routes/test_podcast_routes.py
 src/cofounder_agent/tests/unit/services/test_code_block_density.py

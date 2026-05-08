@@ -54,6 +54,11 @@ from services.logger_config import get_logger
 # forever during attribute introspection). Holding the pool out-of-band lets
 # checkpointing serialize only the data it needs (snippets, drafts, needs).
 _POOL_REGISTRY: dict[str, Any] = {}
+# DI seam (glad-labs-stack#330) — same pattern as _POOL_REGISTRY: the
+# dispatcher seeds the SiteConfig keyed by thread_id, nodes look it up
+# from state["pool_thread"]. Site_config can't ride in the LangGraph
+# state because it's not msgpack-serializable for the checkpointer.
+_SITE_CONFIG_REGISTRY: dict[str, Any] = {}
 
 logger = get_logger(__name__)
 
@@ -70,10 +75,10 @@ _NEED_PATTERN = re.compile(r"\[EXTERNAL_NEEDED:\s*([^\]]+)\]")
 _MAX_REVISION_LOOPS = 3
 
 
-def _resolve_max_revision_loops() -> int:
+def _resolve_max_revision_loops(site_config: Any = None) -> int:
+    if site_config is None:
+        return _MAX_REVISION_LOOPS
     try:
-        from services.site_config import site_config
-
         return site_config.get_int(
             "writer_rag_two_pass_max_revision_loops", _MAX_REVISION_LOOPS,
         )
@@ -114,11 +119,12 @@ class _State(TypedDict, total=False):
 # -- nodes --
 
 async def _embed_and_fetch_snippets(state: _State) -> _State:
-    from services.site_config import site_config
     from services.topic_ranking import embed_text
 
-    snippet_limit = site_config.get_int(
-        "writer_rag_two_pass_snippet_limit", 20,
+    site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
+    snippet_limit = (
+        site_config.get_int("writer_rag_two_pass_snippet_limit", 20)
+        if site_config is not None else 20
     )
     qvec = await embed_text(f"{state['topic']} — {state['angle']}")
     # Convert to pgvector text format. asyncpg has no built-in codec for
@@ -272,10 +278,11 @@ def _detect_needs(state: _State) -> _State:
 
 async def _research_each(state: _State) -> _State:
     from services.research_service import research_topic
-    from services.site_config import site_config
 
-    max_sources = site_config.get_int(
-        "writer_rag_two_pass_research_max_sources", 2,
+    site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
+    max_sources = (
+        site_config.get_int("writer_rag_two_pass_research_max_sources", 2)
+        if site_config is not None else 2
     )
     results = []
     for need in state["needs"]:
@@ -286,11 +293,12 @@ async def _research_each(state: _State) -> _State:
 
 
 async def _revise_node(state: _State) -> _State:
-    from services.site_config import site_config
     from services.topic_ranking import _ollama_chat_json
 
+    site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     model = (
-        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        (site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+            if site_config is not None else "glm-4.7-5090:latest")
         or "glm-4.7-5090:latest"
     ).removeprefix("ollama/")
     aug_block = "\n\n".join(
@@ -323,7 +331,8 @@ def _needs_or_done(state: _State) -> str:
     hit the loop cap, else END (or _done_capped if we're capping)."""
     if not state.get("needs"):
         return END
-    if state.get("revision_loops", 0) >= _resolve_max_revision_loops():
+    site_config = _SITE_CONFIG_REGISTRY.get(state.get("pool_thread", ""))
+    if state.get("revision_loops", 0) >= _resolve_max_revision_loops(site_config):
         return "_done_capped"
     return "research_each"
 
@@ -362,6 +371,7 @@ _GRAPH = _build_graph()
 async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
     thread_id = f"two_pass-{niche_id}-{topic[:32]}"
     _POOL_REGISTRY[thread_id] = pool
+    _SITE_CONFIG_REGISTRY[thread_id] = kw.get("site_config")
     try:
         cb_kw = kw.get("context_bundle") or {}
         initial: _State = {
@@ -383,3 +393,4 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
         }
     finally:
         _POOL_REGISTRY.pop(thread_id, None)
+        _SITE_CONFIG_REGISTRY.pop(thread_id, None)

@@ -18,14 +18,17 @@ logger = get_logger(__name__)
 
 
 async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
-    from services.site_config import site_config
     from services.topic_ranking import embed_text
 
+    # DI seam (glad-labs-stack#330) — site_config is threaded by the
+    # dispatcher; falls through to the default when absent.
+    site_config = kw.get("site_config")
     # Top-N internal snippets by cosine similarity (pgvector). N is
     # operator-tunable via writer_rag_topic_only_snippet_limit
     # (migration 0119); default 8 matches the prior hardcoded LIMIT.
-    snippet_limit = site_config.get_int(
-        "writer_rag_topic_only_snippet_limit", 8,
+    snippet_limit = (
+        site_config.get_int("writer_rag_topic_only_snippet_limit", 8)
+        if site_config is not None else 8
     )
     qvec = await embed_text(f"{topic} — {angle}")
     async with pool.acquire() as conn:

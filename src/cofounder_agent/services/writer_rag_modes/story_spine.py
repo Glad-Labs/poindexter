@@ -19,17 +19,21 @@ logger = get_logger(__name__)
 
 
 async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
-    from services.site_config import site_config
     from services.topic_ranking import _ollama_chat_json, embed_text
 
-    snippet_limit = site_config.get_int(
-        "writer_rag_story_spine_snippet_limit", 15,
+    # DI seam (glad-labs-stack#330)
+    site_config = kw.get("site_config")
+    snippet_limit = (
+        site_config.get_int("writer_rag_story_spine_snippet_limit", 15)
+        if site_config is not None else 15
     )
-    snippet_max_chars = site_config.get_int(
-        "writer_rag_story_spine_snippet_max_chars", 600,
+    snippet_max_chars = (
+        site_config.get_int("writer_rag_story_spine_snippet_max_chars", 600)
+        if site_config is not None else 600
     )
     model = (
-        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+        (site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
+            if site_config is not None else "glm-4.7-5090:latest")
         or "glm-4.7-5090:latest"
     ).removeprefix("ollama/")
 
