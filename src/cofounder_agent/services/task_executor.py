@@ -15,7 +15,6 @@ from services.logger_config import get_logger
 from .ai_content_generator import AIContentGenerator
 from .error_handler import ServiceError
 from .quality_service import UnifiedQualityService
-from .usage_tracker import get_usage_tracker
 from .webhook_delivery_service import emit_webhook_event
 
 # Operator notifications now route through services.integrations.outbound_dispatcher
@@ -91,7 +90,6 @@ class TaskExecutor:
         self.error_count = 0
         self.published_count = 0
         self._processor_task = None
-        self.usage_tracker = get_usage_tracker()  # Initialize usage tracking
         self.critique_loop: Any | None = (
             None  # Optional critique loop (not wired in current version)
         )

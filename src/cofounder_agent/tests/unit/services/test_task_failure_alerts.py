@@ -229,7 +229,6 @@ def _make_executor_for_retry_test(get_setting_overrides: dict[str, str]):
     with (
         patch("services.task_executor.UnifiedQualityService"),
         patch("services.task_executor.AIContentGenerator"),
-        patch("services.task_executor.get_usage_tracker"),
     ):
         from services.task_executor import TaskExecutor
         executor = TaskExecutor(database_service=db, poll_interval=1)
