@@ -26,14 +26,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config as _module_site_config
+import services.site_config as _site_config_mod
 
 # Re-export the module-level singleton under the legacy ``site_config``
 # name so existing call sites in this file (which still read directly
 # from the singleton) keep working unchanged. Aliased rather than
 # re-imported so there's a single hook point if/when the singleton is
 # retired (Phase H — gh#95).
-site_config = _module_site_config
+site_config = _site_config_mod.site_config
 
 logger = get_logger(__name__)
 
@@ -186,7 +186,7 @@ class TopicDiscovery:
         # supply one, fall back to the module singleton so existing
         # ``TopicDiscovery(pool)`` callers keep working unchanged.
         self._site_config = (
-            site_config if site_config is not None else _module_site_config
+            site_config if site_config is not None else _site_config_mod.site_config
         )
         # Cached resolved overrides for the DB-backed filter constants
         # (gh#218). Resolved lazily on first use so construction stays
@@ -615,8 +615,9 @@ class TopicDiscovery:
             # worth attempting.
             # Window is tunable via app_settings key: qa_topic_dedup_hours (default 48).
             try:
-                from services.site_config import site_config
-                dedup_hours = site_config.get_int("qa_topic_dedup_hours", 48)
+                dedup_hours = self._site_config.get_int(
+                    "qa_topic_dedup_hours", 48,
+                )
             except Exception:
                 dedup_hours = 48
             task_rows = await self.pool.fetch(

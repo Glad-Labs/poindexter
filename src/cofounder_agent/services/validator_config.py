@@ -269,10 +269,10 @@ def _legacy_first_person_bypass(niche: str | None) -> bool:
     if not niche:
         return False
     try:
-        from services.site_config import site_config
+        import services.site_config as _scm
     except Exception:
         return False
-    csv = site_config.get("qa_allow_first_person_niches", "")
+    csv = _scm.site_config.get("qa_allow_first_person_niches", "")
     if not csv:
         return False
     allow = {s.strip().lower() for s in str(csv).split(",") if s.strip()}

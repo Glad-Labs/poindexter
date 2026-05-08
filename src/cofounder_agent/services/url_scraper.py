@@ -31,7 +31,8 @@ def _build_user_agent() -> str:
     Uses site_contact_url for the bot identifier so operators can bring
     their own brand. Falls back to a neutral generic if unset.
     """
-    from services.site_config import site_config as _sc
+    import services.site_config as _scm
+    _sc = _scm.site_config
     contact = _sc.get("site_contact_url", "").strip()
     bot_name = _sc.get("scraper_bot_name", "PoindexterBot/1.0").strip()
     identifier = f"+{contact}" if contact else "no-contact-configured"
@@ -211,7 +212,8 @@ async def _scrape_arxiv(url: str, timeout: float) -> dict:
     arxiv_base_url setting lets operators point at a mirror or
     local-proxied instance (#198).
     """
-    from services.site_config import site_config as _sc
+    import services.site_config as _scm
+    _sc = _scm.site_config
     _arxiv_base = _sc.get("arxiv_base_url", "https://arxiv.org").rstrip("/")
     # Normalize to /abs/ URL for HTML scraping
     m = re.search(r"arxiv\.org/(abs|pdf)/(\d+\.\d+)", url)

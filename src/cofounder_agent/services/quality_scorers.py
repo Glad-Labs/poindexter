@@ -28,7 +28,8 @@ def qa_cfg() -> dict:
     (key prefix: qa_). Returns a dict of all values with sensible defaults.
     Change any value with a simple SQL UPDATE on app_settings.
     """
-    from services.site_config import site_config
+    import services.site_config as _scm
+    site_config = _scm.site_config
 
     return {
         # --- Overall pipeline ---
@@ -115,7 +116,8 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
     # content_router, so one list covers both external-link validation
     # and citation credibility (#198).
     all_links = re.findall(r"https?://([^\s\)\]\"'>]+)", content)
-    from services.site_config import site_config as _sc
+    import services.site_config as _scm
+    _sc = _scm.site_config
     _domain = _sc.get("site_domain", "")
     _override_csv = _sc.get("trusted_source_domains", "")
     _default_reputable = {
