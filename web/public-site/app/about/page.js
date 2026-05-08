@@ -205,10 +205,10 @@ export default function AboutPage() {
                 <Card.Meta>THE STACK</Card.Meta>
                 <ul className="gl-body gl-body--sm mt-3 space-y-2 list-none">
                   <li>Local AI on RTX 5090 via Ollama</li>
-                  <li>Self-hosted: PostgreSQL, Grafana, Gitea, Prometheus</li>
+                  <li>Self-hosted: PostgreSQL, Grafana, Prometheus, Loki</li>
                   <li>Content pipeline with quality gate + human approval</li>
-                  <li>Podcast (Edge TTS) + Video (SDXL slideshow + ffmpeg)</li>
-                  <li>FastAPI backend, 5,000+ tests</li>
+                  <li>Podcast (Kokoro TTS) + Video (SDXL slideshow + ffmpeg)</li>
+                  <li>FastAPI backend, 7,900+ tests</li>
                   <li>Next.js 15 on Vercel + Cloudflare R2 CDN</li>
                 </ul>
               </Card>
