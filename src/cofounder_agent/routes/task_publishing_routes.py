@@ -200,7 +200,7 @@ async def approve_task(
     reviewer_id: str | None = None,
     featured_image_url: str | None = None,
     image_source: str | None = None,
-    auto_publish: bool = True,
+    auto_publish: bool = False,
     publish_at: str | None = None,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
@@ -208,34 +208,43 @@ async def approve_task(
     """
     Approve or reject a task for publishing.
 
-    Changes task status from 'awaiting_approval' to 'approved' or 'rejected'.
-    Can include human feedback, image URL, and reviewer information.
-    Publishing is now a SEPARATE step - call /publish endpoint to publish.
+    Changes task status from ``awaiting_approval`` to ``approved`` or
+    ``rejected``. Can include human feedback, image URL, and reviewer
+    information.
+
+    **Approve != Publish.** ``approve`` stages the task; ``/publish`` is a
+    separate explicit step. This matches the operator memory rule
+    ``feedback_approve_does_not_mean_publish`` — picking the best N from
+    ``awaiting_approval`` is staging, NOT publishing. Pass
+    ``auto_publish=true`` explicitly only when you intend a single-step
+    approve-and-ship; default is ``false`` (stage only).
 
     **Parameters:**
     - task_id: Task ID (UUID or numeric ID for backwards compatibility)
-    - approved: Boolean - true to approve, false to reject
+    - approved: Boolean — true to approve, false to reject
     - human_feedback: Optional feedback from reviewer
     - reviewer_id: Optional ID of reviewer
     - featured_image_url: Optional featured image URL for the task
     - image_source: Optional source of image (pexels, sdxl)
-    - auto_publish: Automatically publish after approval (default: true - approve = publish)
+    - auto_publish: Stage-and-ship in one call (default: ``false``).
+      The Telegram/Discord/MCP approval surfaces should leave this off
+      and call ``/publish`` separately.
 
     **Returns:**
-    - Updated task with status 'approved' or 'rejected' (and 'published' if auto_publish=true)
+    - Updated task with status ``approved`` or ``rejected`` (and
+      ``published`` only when ``auto_publish=true`` was passed
+      explicitly).
 
     **Example cURL:**
     ```bash
-    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/approve \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/approve \\
+      -H "Content-Type: application/json" \\
+      -H "Authorization: Bearer YOUR_JWT_TOKEN" \\
       -d '{
         "approved": true,
         "human_feedback": "Great content!",
         "reviewer_id": "user123",
-        "featured_image_url": "https://...",
-        "image_source": "pexels",
-        "auto_publish": true
+        "featured_image_url": "https://..."
       }'
     ```
     """

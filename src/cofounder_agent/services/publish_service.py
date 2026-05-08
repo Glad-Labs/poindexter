@@ -89,15 +89,23 @@ class PublishResult:
 
 
 def _should_run_post_publish_hooks() -> bool:
-    """Return True when running on local workstation (LOCAL_DATABASE_URL set).
+    """Return True when running on the local-workstation worker.
 
-    This is one of the ~8 legitimate bootstrap env vars per GH#93 — the
-    literal presence of LOCAL_DATABASE_URL (vs cloud-only DATABASE_URL)
-    is the signal that distinguishes local-workstation mode from cloud
-    coordinator mode, before site_config exists. Cannot be migrated to
-    DB-first without a circular bootstrap problem.
+    Post-publish hooks (podcast / video / R2 / RSS / YouTube / newsletter)
+    only make sense on the worker that owns the local content pipeline
+    + GPU + filesystem. The coordinator mode never runs these.
+
+    Reads ``DEPLOYMENT_MODE`` directly from the environment because this
+    helper fires from within the publish path long after bootstrap has
+    completed — site_config is available, but using DEPLOYMENT_MODE keeps
+    this consistent with how ``main.py`` decides which mode to start in.
+
+    Until 2026-05-08 this read ``LOCAL_DATABASE_URL`` instead of
+    ``DEPLOYMENT_MODE`` — a stale signal that no container actually sets,
+    which silently disabled all six post-publish hooks. The 8-day dark
+    distribution-paths regression fixed in commit ``<this commit>``.
     """
-    return bool(os.getenv("LOCAL_DATABASE_URL"))
+    return os.getenv("DEPLOYMENT_MODE", "coordinator").lower() == "worker"
 
 
 async def _post_has_pending_gates(pool, post_id: str) -> bool:
@@ -179,7 +187,7 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
                 )
                 logger.info("[SEO] IndexNow ping sent for %s", post_url)
             except Exception as e:
-                logger.debug("[SEO] IndexNow ping failed (non-fatal): %s", e)
+                logger.warning("[SEO] IndexNow ping failed (non-fatal): %s", e)
 
         # Search-engine sitemap ping (Google's /ping endpoint by default;
         # set google_sitemap_ping_url='' to skip).
@@ -195,7 +203,7 @@ async def _ping_search_engines(site_url: str, post_url: str) -> None:
                 )
                 logger.info("[SEO] Sitemap ping sent to %s", _sitemap_ping)
             except Exception as e:
-                logger.debug("[SEO] Sitemap ping failed (non-fatal): %s", e)
+                logger.warning("[SEO] Sitemap ping failed (non-fatal): %s", e)
 
 
 async def _embed_published_post(db_service, post_dict: dict) -> None:
@@ -718,7 +726,7 @@ async def publish_post_from_task(
                     )
                 logger.info("[SOCIAL] Queued social post generation for %s", slug)
         except Exception as e:
-            logger.debug("[SOCIAL] Social posting failed (non-fatal): %s", e)
+            logger.warning("[SOCIAL] Social posting failed (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 9b. Queue Dev.to cross-posting (fire-and-forget)
@@ -739,7 +747,7 @@ async def publish_post_from_task(
                 )
             logger.info("[DEVTO] Queued cross-post for post %s", post_id)
         except Exception as e:
-            logger.debug("[DEVTO] Cross-posting setup failed (non-fatal): %s", e)
+            logger.warning("[DEVTO] Cross-posting setup failed (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 10. ISR revalidation
@@ -784,7 +792,7 @@ async def publish_post_from_task(
                 )
             logger.info("[STATIC_EXPORT] Queued export for %s", slug)
         except Exception as e:
-            logger.debug("[STATIC_EXPORT] Failed to queue export (non-fatal): %s", e)
+            logger.warning("[STATIC_EXPORT] Failed to queue export (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 11. Ping search engines (fire-and-forget)
@@ -820,7 +828,7 @@ async def publish_post_from_task(
                 )
             logger.info("[PODCAST] Queued episode generation for post %s", post_id)
         except Exception as e:
-            logger.debug("[PODCAST] Failed to queue episode (non-fatal): %s", e)
+            logger.warning("[PODCAST] Failed to queue episode (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 11c. Generate video episode (fire-and-forget, local worker only)
@@ -842,7 +850,7 @@ async def publish_post_from_task(
                 )
             logger.info("[VIDEO] Queued video generation for post %s", post_id)
         except Exception as e:
-            logger.debug("[VIDEO] Failed to queue video (non-fatal): %s", e)
+            logger.warning("[VIDEO] Failed to queue video (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 11d. Generate short-form video (fire-and-forget, local worker only)
@@ -875,7 +883,7 @@ async def publish_post_from_task(
             )
             logger.info("[SHORT] Queued short video generation for post %s", post_id)
         except Exception as e:
-            logger.debug("[SHORT] Failed to queue short video (non-fatal): %s", e)
+            logger.warning("[SHORT] Failed to queue short video (non-fatal): %s", e)
 
     # ---------------------------------------------------------------
     # 11e. Upload media to R2 CDN (fire-and-forget, after generation)
@@ -1012,7 +1020,7 @@ async def publish_post_from_task(
                 result = await send_post_newsletter(_pool, ptitle, pexcerpt, pslug)
                 logger.info("[NEWSLETTER] Result: %s", result)
             except Exception as e:
-                logger.debug("[NEWSLETTER] Failed (non-fatal): %s", e)
+                logger.warning("[NEWSLETTER] Failed (non-fatal): %s", e)
 
         _spawn_background(
             _send_newsletter(post_id, post_title, seo_description, slug),
@@ -1031,7 +1039,7 @@ async def publish_post_from_task(
             critical=True,
         )
     except Exception:
-        logger.debug("[publish_service] Notification failed (non-fatal)", exc_info=True)
+        logger.warning("[publish_service] Notification failed (non-fatal)", exc_info=True)
 
     # ---------------------------------------------------------------
     # 13. Edit-distance metrics — auto_publish_gate training signal.
@@ -1213,7 +1221,7 @@ async def fire_post_distribution_hooks(
         )
         fired["hooks"].append("social")
     except Exception as e:
-        logger.debug("[SOCIAL] Failed in re-trigger (non-fatal): %s", e)
+        logger.warning("[SOCIAL] Failed in re-trigger (non-fatal): %s", e)
 
     # 2. Dev.to
     try:
@@ -1225,7 +1233,7 @@ async def fire_post_distribution_hooks(
         )
         fired["hooks"].append("devto")
     except Exception as e:
-        logger.debug("[DEVTO] Failed in re-trigger (non-fatal): %s", e)
+        logger.warning("[DEVTO] Failed in re-trigger (non-fatal): %s", e)
 
     # 3. Search engine pings
     try:
@@ -1236,7 +1244,7 @@ async def fire_post_distribution_hooks(
         )
         fired["hooks"].append("search_engines")
     except Exception as e:
-        logger.debug("[SEO] Failed in re-trigger (non-fatal): %s", e)
+        logger.warning("[SEO] Failed in re-trigger (non-fatal): %s", e)
 
     # 4. Per-medium generation — only fire for media in media_to_generate.
     if _should_run_post_publish_hooks():
@@ -1249,7 +1257,7 @@ async def fire_post_distribution_hooks(
                 )
                 fired["hooks"].append("podcast")
             except Exception as e:
-                logger.debug("[PODCAST] Failed in re-trigger (non-fatal): %s", e)
+                logger.warning("[PODCAST] Failed in re-trigger (non-fatal): %s", e)
         if "video" in media:
             try:
                 from services.video_service import generate_video_episode
@@ -1259,7 +1267,7 @@ async def fire_post_distribution_hooks(
                 )
                 fired["hooks"].append("video")
             except Exception as e:
-                logger.debug("[VIDEO] Failed in re-trigger (non-fatal): %s", e)
+                logger.warning("[VIDEO] Failed in re-trigger (non-fatal): %s", e)
         if "short" in media:
             try:
                 from services.video_service import generate_short_video_for_post
@@ -1269,7 +1277,7 @@ async def fire_post_distribution_hooks(
                 )
                 fired["hooks"].append("short")
             except Exception as e:
-                logger.debug("[SHORT] Failed in re-trigger (non-fatal): %s", e)
+                logger.warning("[SHORT] Failed in re-trigger (non-fatal): %s", e)
 
     logger.info(
         "[publish_service] Re-fired %d distribution hook(s) for post %s: %s",

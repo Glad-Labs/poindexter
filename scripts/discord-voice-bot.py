@@ -1056,12 +1056,40 @@ async def tasks(ctx):
     await ctx.respond(f"**Awaiting Approval ({len(task_list)}):**\n" + "\n".join(lines))
 
 
-@bot.slash_command(name="approve", description="Approve a post for publishing")
-async def approve(ctx, task_id: str, schedule: str = None):
-    json_data = {"approved": True, "auto_publish": True}
+@bot.slash_command(name="approve", description="Stage a post (does not publish)")
+async def approve(ctx, task_id: str):
+    """Stage only — does NOT publish.
+
+    Per ``feedback_approve_does_not_mean_publish``: picking the best N from
+    ``awaiting_approval`` is staging, not shipping. Follow up with
+    ``/publish <task_id>`` to ship, or use ``/approve-publish`` for the
+    explicit one-step path.
+    """
+    json_data = {"approved": True}
+    data = await _api_call("POST", f"/api/tasks/{task_id}/approve", json_data)
+    status = data.get("status", data.get("error", "?"))
+    if status == "approved":
+        await ctx.respond(f"**#{task_id}:** staged — `/publish {task_id}` to ship")
+    else:
+        await ctx.respond(f"**#{task_id}:** {status}")
+
+
+@bot.slash_command(name="approve-publish", description="Stage and ship a post in one step")
+async def approve_publish(ctx, task_id: str, schedule: str | None = None):
+    """One-step approve + publish. Explicit opt-in to publishing — only use
+    when you've already reviewed the post and want to skip the staging gate.
+    """
+    json_data: dict[str, object] = {"approved": True, "auto_publish": True}
     if schedule:
         json_data["publish_at"] = schedule
     data = await _api_call("POST", f"/api/tasks/{task_id}/approve", json_data)
+    status = data.get("status", data.get("error", "?"))
+    await ctx.respond(f"**#{task_id}:** {status}")
+
+
+@bot.slash_command(name="publish", description="Publish an approved post")
+async def publish(ctx, task_id: str):
+    data = await _api_call("POST", f"/api/tasks/{task_id}/publish")
     status = data.get("status", data.get("error", "?"))
     await ctx.respond(f"**#{task_id}:** {status}")
 

@@ -333,8 +333,32 @@ async def handle_command(text: str, chat_id: str):
         await send_message(f"*Awaiting ({len(task_list)}):*\n" + "\n".join(lines), chat_id)
 
     elif cmd == "/approve" and args:
+        # Stage only — does NOT publish. Per feedback_approve_does_not_mean_publish:
+        # picking the best N from awaiting_approval is staging, not shipping.
+        # Use /publish <id> to actually push live, or /approve-publish for one-step.
         task_id = args[0]
         data = await api_call("POST", f"/api/tasks/{task_id}/approve", {"approved": True})
+        status = data.get("status", data.get("error", "?"))
+        if status == "approved":
+            await send_message(f"#{task_id}: *staged*\nReply `/publish {task_id}` to ship.", chat_id)
+        else:
+            await send_message(f"#{task_id}: *{status}*", chat_id)
+
+    elif cmd == "/approve-publish" and args:
+        # One-step approve + ship. Explicit opt-in to publishing — only use when you've
+        # already reviewed the post and want to skip the staging gate.
+        task_id = args[0]
+        data = await api_call(
+            "POST",
+            f"/api/tasks/{task_id}/approve",
+            {"approved": True, "auto_publish": True},
+        )
+        status = data.get("status", data.get("error", "?"))
+        await send_message(f"#{task_id}: *{status}*", chat_id)
+
+    elif cmd == "/publish" and args:
+        task_id = args[0]
+        data = await api_call("POST", f"/api/tasks/{task_id}/publish")
         status = data.get("status", data.get("error", "?"))
         await send_message(f"#{task_id}: *{status}*", chat_id)
 

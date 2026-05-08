@@ -362,9 +362,35 @@ async def _resolve_task_id(task_id: str) -> str:
 
 @mcp.tool()
 async def approve_post(task_id: str) -> str:
-    """Approve a content task for publishing."""
+    """Stage a content task for publishing — does NOT publish.
+
+    Per the operator memory rule ``feedback_approve_does_not_mean_publish``:
+    picking the best N from ``awaiting_approval`` is staging, not shipping.
+    Status moves to ``approved`` after this call; the post stays off
+    gladlabs.io until ``publish_post`` ships it. Use this when curating
+    a batch of drafts. Use ``approve_and_publish_post`` when you've
+    already reviewed and want to ship in a single call.
+    """
     full_id = await _resolve_task_id(task_id)
-    result = await _api("POST", f"/api/tasks/{full_id}/approve")
+    result = await _api("POST", f"/api/tasks/{full_id}/approve", {"approved": True})
+    return f"Status: {result.get('status', result.get('error', '?'))}"
+
+
+@mcp.tool()
+async def approve_and_publish_post(task_id: str) -> str:
+    """Approve and publish a content task in one step.
+
+    Explicit opt-in to one-step publish. Use only when the task has
+    already been reviewed and you want to skip the staging gate. The
+    safer default is ``approve_post`` (stage) followed by
+    ``publish_post`` (ship).
+    """
+    full_id = await _resolve_task_id(task_id)
+    result = await _api(
+        "POST",
+        f"/api/tasks/{full_id}/approve",
+        {"approved": True, "auto_publish": True},
+    )
     return f"Status: {result.get('status', result.get('error', '?'))}"
 
 
