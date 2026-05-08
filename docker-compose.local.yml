@@ -1179,52 +1179,13 @@ services:
       livekit:
         condition: service_healthy
 
-  voice-agent-webrtc:
-    build:
-      context: .
-      dockerfile: scripts/Dockerfile.voice-agent
-    image: poindexter-voice-agent:latest
-    container_name: poindexter-voice-agent-webrtc
-    restart: unless-stopped
-    command: ["python", "-m", "services.voice_agent_webrtc"]
-    ports:
-      # voice_agent_webrtc_port default = 8003 (migration 0108). Host
-      # port matches container port for a copy-pasteable URL.
-      - "8003:8003"
-    environment:
-      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
-      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
-      POINDEXTER_BRAIN_PARENT: "/opt/poindexter"
-    volumes:
-      - ./src/cofounder_agent:/app:ro
-      # Mount brain alongside /app (which is :ro and can't host a child
-      # mount) and tell voice_agent_*.py where to find it via
-      # POINDEXTER_BRAIN_PARENT below.
-      - ./brain:/opt/poindexter/brain:ro
-      - voice-agent-cache:/root/.cache
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    healthcheck:
-      # FastAPI exposes /healthz — same shape as the worker. Probe it
-      # rather than the prebuilt UI's /client/ route so a UI-asset load
-      # error doesn't flag the whole pipeline as unhealthy.
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:8003/healthz | grep -q ok"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    depends_on:
-      postgres-local:
-        condition: service_healthy
-      brain-daemon:
-        condition: service_healthy
+  # voice-agent-webrtc retired 2026-05-08 — voice_agent_livekit is the
+  # canonical voice surface. The WebRTC alternative transport carried
+  # the same Whisper → Ollama → Kokoro pipeline as livekit but via
+  # Pipecat's SmallWebRTC prebuilt UI, which never settled into Matt's
+  # daily flow and duplicated maintenance surface area. The shared
+  # voice utilities (services/voice_agent.py, voice_pipecat.py,
+  # voice_agent_claude_code.py) stay as livekit's dependency tree.
 
   # ===========================================
   # In-stack Postgres backup (Glad-Labs/poindexter#385)

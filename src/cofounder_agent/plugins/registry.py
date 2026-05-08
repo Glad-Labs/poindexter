@@ -291,7 +291,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("taps", "services.taps.audit", "AuditTap"),
         ("taps", "services.taps.brain_knowledge", "BrainKnowledgeTap"),
         ("taps", "services.taps.brain_decisions", "BrainDecisionsTap"),
-        ("taps", "services.taps.gitea_issues", "GiteaIssuesTap"),
+        # GiteaIssuesTap retired 2026-05-08 — Gitea was decommissioned
+        # 2026-04-30; the corresponding settings.taps.gitea_issues row
+        # is harmless and is left in app_settings for historical reference.
         ("taps", "services.taps.claude_code_sessions", "ClaudeCodeSessionsTap"),
         # Core Jobs — apscheduler-driven housekeeping. Ship as imperative
         # loads until the poetry packaging issue is resolved.

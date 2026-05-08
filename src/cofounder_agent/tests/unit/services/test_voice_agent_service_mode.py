@@ -1,9 +1,9 @@
-"""Unit tests for the always-on voice agent daemon entrypoints (#383).
+"""Unit tests for the always-on voice agent daemon entrypoint (#383).
 
 Covers the enabled-flag handling, brain validation, and Pipecat-import
-isolation that wraps the existing
-``services.voice_agent_livekit.run_bot`` and
-``services.voice_agent_webrtc._serve`` functions.
+isolation that wraps the existing ``services.voice_agent_livekit.run_bot``
+function. (The sibling WebRTC entrypoint was retired 2026-05-08 — livekit
+is now the canonical voice surface.)
 
 The Pipecat dependencies (pipecat, livekit, kokoro_onnx, sounddevice)
 aren't installed in the unit-test environment — they live in the
@@ -140,35 +140,6 @@ def _ensure_pipecat_stubs() -> None:
             },
         ),
     )
-    _stub_module("pipecat.transports.smallwebrtc")
-    _stub_module(
-        "pipecat.transports.smallwebrtc.connection",
-        SmallWebRTCConnection=type("SmallWebRTCConnection", (), {}),
-    )
-    _stub_module(
-        "pipecat.transports.smallwebrtc.request_handler",
-        IceCandidate=type("IceCandidate", (), {"__init__": lambda self, **kw: None}),
-        SmallWebRTCPatchRequest=type("SmallWebRTCPatchRequest", (), {"__init__": lambda self, **kw: None}),
-        SmallWebRTCRequest=type("SmallWebRTCRequest", (), {"__init__": lambda self, **kw: None}),
-        SmallWebRTCRequestHandler=type("SmallWebRTCRequestHandler", (), {"__init__": lambda self, **kw: None}),
-    )
-    _stub_module(
-        "pipecat.transports.smallwebrtc.transport",
-        SmallWebRTCTransport=type(
-            "SmallWebRTCTransport",
-            (),
-            {
-                "__init__": lambda self, **kw: None,
-                "event_handler": lambda self, name: (lambda fn: fn),
-            },
-        ),
-    )
-    _stub_module("pipecat_ai_small_webrtc_prebuilt")
-    _stub_module(
-        "pipecat_ai_small_webrtc_prebuilt.frontend",
-        SmallWebRTCPrebuiltUI=type("SmallWebRTCPrebuiltUI", (), {}),
-    )
-
     # livekit (stub the api submodule with the symbols voice_agent_livekit
     # imports at module load).
     _stub_module("livekit")

@@ -1071,58 +1071,8 @@ class TestPublishPostPhase:
         assert cfg.configurable_params["base_url"] == "https://example.com"
 
 
-# ===========================================================================
-# example_workflows.py — sanity checks on workflow definitions
-# ===========================================================================
-
-
-class TestExampleWorkflows:
-    def test_blog_generation_only_structure(self):
-        from services.phases.example_workflows import BLOG_GENERATION_ONLY
-
-        assert BLOG_GENERATION_ONLY["name"] == "Generate & Evaluate Blog"
-        phases = BLOG_GENERATION_ONLY["phases"]
-        assert len(phases) == 2
-        assert phases[0]["type"] == "generate_content"
-        assert phases[1]["type"] == "quality_evaluation"
-
-    def test_blog_complete_workflow_structure(self):
-        from services.phases.example_workflows import BLOG_COMPLETE_WORKFLOW
-
-        phases = BLOG_COMPLETE_WORKFLOW["phases"]
-        phase_types = [p["type"] for p in phases]
-        assert "generate_content" in phase_types
-        assert "quality_evaluation" in phase_types
-        assert "search_image" in phase_types
-        assert "generate_seo" in phase_types
-        assert "create_post" in phase_types
-
-    def test_research_and_content_workflow_threshold(self):
-        from services.phases.example_workflows import RESEARCH_AND_CONTENT_WORKFLOW
-
-        phases = RESEARCH_AND_CONTENT_WORKFLOW["phases"]
-        qual_phase = next(p for p in phases if p["type"] == "quality_evaluation")
-        assert qual_phase["config"]["threshold"] == 80
-
-    def test_blog_to_social_workflow_requires_existing_content(self):
-        from services.phases.example_workflows import BLOG_TO_SOCIAL_WORKFLOW
-
-        assert BLOG_TO_SOCIAL_WORKFLOW["requires_existing_content"] is True
-
-    def test_all_workflows_have_required_keys(self):
-        from services.phases.example_workflows import (
-            BLOG_COMPLETE_WORKFLOW,
-            BLOG_GENERATION_ONLY,
-            BLOG_TO_SOCIAL_WORKFLOW,
-            RESEARCH_AND_CONTENT_WORKFLOW,
-        )
-
-        for wf in [
-            BLOG_GENERATION_ONLY,
-            BLOG_COMPLETE_WORKFLOW,
-            BLOG_TO_SOCIAL_WORKFLOW,
-            RESEARCH_AND_CONTENT_WORKFLOW,
-        ]:
-            assert "name" in wf
-            assert "description" in wf
-            assert "phases" in wf
+# example_workflows.py was deleted 2026-05-08 along with its tests —
+# it was demo-shaped pre-configured workflow definitions for the
+# (also-being-retired) workflow_executor / Oversight Hub UI path.
+# When the LangGraph migration (#356) replaces workflow_executor, the
+# canonical templates live in services/pipeline_templates/ instead.

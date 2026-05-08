@@ -265,9 +265,9 @@ DEFAULTS: dict[str, str] = {
     'voice_agent_tts_speed': '1.0',
     'voice_agent_tts_voice': 'bf_emma',
     'voice_agent_vad_stop_secs': '0.2',
-    'voice_agent_webrtc_enabled': 'true',
-    'voice_agent_webrtc_host': '0.0.0.0',  # nosec B104  # tailnet-by-design DEFAULT for voice_agent_webrtc_host; operator can override to 127.0.0.1 for local-only mode
-    'voice_agent_webrtc_port': '8003',
+    # voice_agent_webrtc_* defaults retired 2026-05-08 — livekit is the
+    # canonical voice surface. Existing app_settings rows from migrations
+    # 0108 + 20260505 stay (orphan but harmless); no new installs seed them.
     'voice_agent_whisper_model': 'base',
 
     # ----- Devto / external publishing -----
