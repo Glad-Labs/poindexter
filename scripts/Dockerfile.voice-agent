@@ -65,6 +65,28 @@ RUN python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyrosc
 # Whisper base ~140 MB, Kokoro ~325 MB) survive container rebuilds.
 RUN mkdir -p /root/.cache/huggingface /root/.cache/pipecat
 
+# Claude Code CLI — the voice agent bridges to Claude Code by spawning
+# `claude -p --output-format json --permission-mode dontAsk ...` as a
+# subprocess (services/voice_agent_claude_code.py). Without `claude` on
+# PATH the bridge dies with ENOENT and TTS reads the error to the user.
+#
+# Install via npm because it's the most stable distribution channel and
+# survives release-channel changes that an install-script URL can't.
+# Pin a Node major to avoid surprise breakage on rebuilds.
+#
+# Auth: container runs as root, so `claude` reads ~/.claude == /root/.claude,
+# which is bind-mounted READ-WRITE from the host in docker-compose.local.yml.
+# RW is required so per-call session JSONL files (--session-id <uuid>)
+# can be written; --resume on subsequent turns needs them on disk.
+# Trade-off: voice agent shares the host's MEMORY.md, so memory updates
+# can race with the host Claude session. See Glad-Labs/poindexter#432
+# for a future per-component split (creds RO, projects/ container-only).
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @anthropic-ai/claude-code \
+    && claude --version
+
 # /opt/poindexter holds the brain package (sibling import path used by
 # require_database_url + SiteConfig); /app is the cofounder_agent root
 # so `from services.voice_agent import ...` resolves cleanly. Both
