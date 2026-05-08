@@ -112,13 +112,13 @@ The exact count moves with every PR — verify against
 
 **Common failure modes:**
 
-| Symptom                                            | Likely cause                                       | Fix                                                                                       |
-| -------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `MISSING INTERFACE: <file>` from the lint step     | Migration lacks `up()` AND `run_migration()`       | Add one — see [`migrations.md`](migrations.md#1-generate-the-file).                       |
-| `INVALID TIMESTAMP: <file>`                        | Timestamp prefix isn't a real datetime             | Regenerate with `python scripts/new-migration.py "<slug>"`.                               |
-| Migration N raises, N+1 succeeds                   | Runner does NOT halt on per-migration failure      | Inspect the logged exception. The runner returned `False`; the smoke test exits non-zero. |
-| `applied N — already up-to-date 0 — failed M`      | Same as above; M migrations failed.                | Read the logs above the summary. Each failure has an `exc_info=True` trace.               |
-| `extension "vector" does not exist`                | Wrong Postgres image (vanilla `postgres:16`)       | Use `pgvector/pgvector:pg16` or `pg17`. Migration `0000_base_schema.py` requires it.      |
+| Symptom                                        | Likely cause                                  | Fix                                                                                       |
+| ---------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `MISSING INTERFACE: <file>` from the lint step | Migration lacks `up()` AND `run_migration()`  | Add one — see [`migrations.md`](migrations.md#1-generate-the-file).                       |
+| `INVALID TIMESTAMP: <file>`                    | Timestamp prefix isn't a real datetime        | Regenerate with `python scripts/new-migration.py "<slug>"`.                               |
+| Migration N raises, N+1 succeeds               | Runner does NOT halt on per-migration failure | Inspect the logged exception. The runner returned `False`; the smoke test exits non-zero. |
+| `applied N — already up-to-date 0 — failed M`  | Same as above; M migrations failed.           | Read the logs above the summary. Each failure has an `exc_info=True` trace.               |
+| `extension "vector" does not exist`            | Wrong Postgres image (vanilla `postgres:16`)  | Use `pgvector/pgvector:pg16` or `pg17`. Migration `0000_base_schema.py` requires it.      |
 
 After step 2 the database should look like:
 
@@ -213,11 +213,11 @@ docker exec poindexter-fresh psql -U postgres -d poindexter_brain -c \
 
 **Common failure modes:**
 
-| Symptom                                            | Cause / fix                                                                                                                                                                                                              |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bootstrap.toml already exists`                    | Existing install — back it up and re-run with `--force`, or run `--check` to verify the existing one.                                                                                                                    |
+| Symptom                                                              | Cause / fix                                                                                                                                                                                           |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bootstrap.toml already exists`                                      | Existing install — back it up and re-run with `--force`, or run `--check` to verify the existing one.                                                                                                 |
 | OAuth provisioning step prints `Could not provision OAuth client: …` | `mcp.shared.auth` import failed. Ensure `pip install mcp` has run (it's a dep of `pyproject.toml`). bootstrap.toml is still saved — you can run `poindexter auth migrate-cli` after the worker boots. |
-| `Connection failed: …`                             | DB URL wrong, or container not yet ready. Re-check step 1.                                                                                                                                                                |
+| `Connection failed: …`                                               | DB URL wrong, or container not yet ready. Re-check step 1.                                                                                                                                            |
 
 ---
 
@@ -317,18 +317,18 @@ For a real install you obviously keep the bootstrap.toml + container.
 
 ## Summary — what gets verified
 
-| Component                        | Step | Verification                                         |
-| -------------------------------- | ---- | ---------------------------------------------------- |
-| pgvector extension available     | 1    | Container image                                      |
-| Database accepts connections     | 1    | `pg_isready`                                         |
-| Migration runner applies cleanly | 2    | `schema_migrations` row count matches file count     |
-| No orphan / missing rows         | 2    | `migrations_smoke.py` row-set diff                   |
-| Filename convention              | 2    | `migrations_lint.py` (CI)                            |
-| Bootstrap file write             | 3    | `~/.poindexter/bootstrap.toml` exists, mode 600      |
-| Initial OAuth client provisioned | 3    | `oauth_clients` has 1 row, `cli_oauth_*` settings    |
-| `--check` passes                 | 4    | Per-component status                                 |
-| Worker lifespan succeeds         | 5    | `Application started successfully!` in logs          |
-| Health endpoint responds         | 5    | `GET /health` returns 200                            |
+| Component                        | Step | Verification                                      |
+| -------------------------------- | ---- | ------------------------------------------------- |
+| pgvector extension available     | 1    | Container image                                   |
+| Database accepts connections     | 1    | `pg_isready`                                      |
+| Migration runner applies cleanly | 2    | `schema_migrations` row count matches file count  |
+| No orphan / missing rows         | 2    | `migrations_smoke.py` row-set diff                |
+| Filename convention              | 2    | `migrations_lint.py` (CI)                         |
+| Bootstrap file write             | 3    | `~/.poindexter/bootstrap.toml` exists, mode 600   |
+| Initial OAuth client provisioned | 3    | `oauth_clients` has 1 row, `cli_oauth_*` settings |
+| `--check` passes                 | 4    | Per-component status                              |
+| Worker lifespan succeeds         | 5    | `Application started successfully!` in logs       |
+| Health endpoint responds         | 5    | `GET /health` returns 200                         |
 
 If all pass on a clean Docker host, the system is shippable.
 
@@ -341,12 +341,11 @@ filed as separate issues — they don't block this PR but improve the
 fresh-DB experience.
 
 - **Lazy `app_settings` seeding.** Migrations seed 149 keys; CLAUDE.md
-  documents 453 active keys. The remaining ~300 are inserted lazily
-  by the worker via `SettingsService` defaults the first time they're
-  queried. This means a fresh DB looks under-seeded right after step
+  documents 698 active keys (regenerated 2026-05-08). The remaining
+  500+ are inserted lazily by the worker via `SettingsService`
+  defaults the first time they're queried. This means a fresh DB looks under-seeded right after step
   2 — operators reading the DB before booting the worker will see
   surprising holes. Two viable fixes:
-
   - Add a `seed_all_defaults()` helper invoked by the StartupManager
     after migrations (would also catch the `feedback_no_silent_defaults`
     class of bug at install time, not query time).

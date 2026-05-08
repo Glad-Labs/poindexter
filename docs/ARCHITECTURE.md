@@ -195,7 +195,7 @@ execution and multi-agent orchestration.
 | **Storage**    | File system / Cloud Storage                        | Media files and assets       | ✅ Active |
 | **Task Queue** | REST API + async workers (dev/prod)                | Async task processing        | ✅ Active |
 | **Deployment** | Local docker-compose (backend) / Vercel (frontend) | Self-hosted on your machine  | ✅ Active |
-| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 6 dashboards, ~90 panels     | ✅ Active |
+| **Monitoring** | Grafana + Prometheus (self-hosted)                 | 7 dashboards, ~90 panels     | ✅ Active |
 
 ### AI Model Providers (Ollama-only pipeline)
 
