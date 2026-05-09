@@ -104,27 +104,27 @@ npm run type:check            # Python mypy
 
 **Key services (18 load-bearing):**
 
-| Service                                   | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `content_router_service.py`               | 6-stage content pipeline with cross-model QA                                                                                                                                                                                                                                                                                                                                                                                        |
-| `content_validator.py`                    | Anti-hallucination rules (programmatic, no LLM)                                                                                                                                                                                                                                                                                                                                                                                     |
-| `multi_model_qa.py`                       | Adversarial review (different LLMs check each other) + DeepEval brand-fabrication rail (advisory; first OSS wire-in for #329, seeded by migration `20260508_215727_seed_qa_gate_deepeval_brand_fabrication`).                                                                                                                                                                                                                       |
-| `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                                                                                                                                                                                                                                                                                                                                                                                         |
-| `task_executor.py`                        | Currently 99% of blog production traffic flows through this. Reads `pipeline_tasks` rows where `template_slug IS NULL` and executes the legacy stage chain. Being phased out alongside `workflow_executor.py` as the LangGraph migration (#356) absorbs templates one at a time. Don't add new logic here.                                                                                                                          |
-| `workflow_executor.py`                    | Legacy phase-based orchestration. **0% production traffic** as of 2026-05-08 (no route handlers reference it) but still imported by `content_agent` + `custom_workflows_service` + `template_execution_service`. Deletable as part of #356 once those import chains unwind.                                                                                                                                                         |
-| `template_runner.py`                      | LangGraph-backed dynamic-pipeline orchestrator (TemplateRunner). **1% production traffic** (only `dev_diary` template). Drives that template + future architect-composed pipelines. Postgres checkpointer enabled via `template_runner_use_postgres_checkpointer=true`.                                                                                                                                                             |
-| `prompt_manager.py`                       | UnifiedPromptManager — Langfuse-first, then DB overrides, then YAML defaults (poindexter#47). Edits land in the Langfuse UI. **Note:** ~12 prompt constants in `multi_model_qa.py`, `stages/cross_model_qa.py`, `writer_rag_modes/deterministic_compositor.py`, etc. still inline; migration to Langfuse is pending.                                                                                                                |
-| `settings_service.py`                     | DB-backed config (app_settings, 700+ active keys)                                                                                                                                                                                                                                                                                                                                                                                   |
-| `site_config.py`                          | DI seam over settings — `class SiteConfig` constructed by `main.py` and DI'd via `Depends(get_site_config_dependency)`. **CAUTION:** the module-level `site_config = SiteConfig()` singleton at line 226 is NOT deleted yet — 110 callers still import it (verified by `scripts/ci/check_site_config_singleton.py`). Sweep filed as `glad-labs-stack#330`; CI guardrail in place blocks new offenders. Use the DI seam in NEW code. |
-| `cost_guard.py`                           | Daily/monthly spend limits + energy estimates (watt-hours per 1K tokens) for the cost dashboard's "is Ollama actually greener than this cloud SKU?" comparison. Lines 72-100 are ENERGY defaults — NOT USD prices despite the audit's earlier wording. Operators tune per-model via `plugin.llm_provider.<provider>.model.<model>.energy_per_1k_wh`.                                                                                |
-| `cost_lookup.py`                          | LiteLLM-backed cost lookup (wraps `litellm.model_cost`). The `model_router.py` / `usage_tracker.py` / `model_constants.py` trio is **deleted** (Phase 2 cleanup, 2026-05-08). Vestigial `model_router=None` ctor params remain in `quality_service.py:104` + `firefighter_service.py:268` — they accept any duck-typed router-like object now, not the deleted module.                                                              |
-| `llm_providers/litellm_provider.py`       | LiteLLM-backed `LLMProvider` plugin (provider routing + cost tracking + retries via mature OSS). Distinct from #199; activated by setting `plugin.llm_provider.primary.standard='litellm'`. Production cutover gate.                                                                                                                                                                                                                |
-| `research_service.py` / `web_research.py` | Topic research + web fact-check                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `publish_service.py`                      | Final publish + scheduled_publisher integration                                                                                                                                                                                                                                                                                                                                                                                     |
-| `quality_service.py`                      | Quality scoring orchestration                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `internal_link_coherence.py`              | Auto-adds related post links                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama                                                                                                                                                                                                                                                                                                                                                                                               |
-| `newsletter_service.py`                   | Weekly digest generator                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Service                                   | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `content_router_service.py`               | 6-stage content pipeline with cross-model QA                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `content_validator.py`                    | Anti-hallucination rules (programmatic, no LLM)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `multi_model_qa.py`                       | Adversarial review (different LLMs check each other) + DeepEval brand-fabrication rail (advisory; first OSS wire-in for #329, seeded by migration `20260508_215727_seed_qa_gate_deepeval_brand_fabrication`).                                                                                                                                                                                                                                                                                     |
+| `qa_gates_db.py`                          | Declarative QA gate definitions (DB-driven)                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `task_executor.py`                        | Currently 99% of blog production traffic flows through this. Reads `pipeline_tasks` rows where `template_slug IS NULL` and executes the legacy stage chain. Being phased out alongside `workflow_executor.py` as the LangGraph migration (#356) absorbs templates one at a time. Don't add new logic here.                                                                                                                                                                                        |
+| `workflow_executor.py`                    | Legacy phase-based orchestration. **0% production traffic** as of 2026-05-08 (no route handlers reference it) but still imported by `content_agent` + `custom_workflows_service` + `template_execution_service`. Deletable as part of #356 once those import chains unwind.                                                                                                                                                                                                                       |
+| `template_runner.py`                      | LangGraph-backed dynamic-pipeline orchestrator (TemplateRunner). **1% production traffic** (only `dev_diary` template). Drives that template + future architect-composed pipelines. Postgres checkpointer enabled via `template_runner_use_postgres_checkpointer=true`.                                                                                                                                                                                                                           |
+| `prompt_manager.py`                       | UnifiedPromptManager — Langfuse-first, then DB overrides, then YAML defaults (poindexter#47). Edits land in the Langfuse UI. **Note:** ~12 prompt constants in `multi_model_qa.py`, `stages/cross_model_qa.py`, `writer_rag_modes/deterministic_compositor.py`, etc. still inline; migration to Langfuse is pending.                                                                                                                                                                              |
+| `settings_service.py`                     | DB-backed config (app_settings, 700+ active keys)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `site_config.py`                          | DI seam over settings — `class SiteConfig` constructed by `main.py` and DI'd via `Depends(get_site_config_dependency)`. The `glad-labs-stack#330` sweep landed 2026-05-08: only 3 legitimate callers still import the module-level singleton (the settings-reload endpoint, the reload job, and the test fixture). New code uses the DI seam; the final singleton deletion is tracked as `glad-labs-stack#333`. CI guardrail at `scripts/ci/check_site_config_singleton.py` blocks new offenders. |
+| `cost_guard.py`                           | Daily/monthly spend limits + energy estimates (watt-hours per 1K tokens) for the cost dashboard's "is Ollama actually greener than this cloud SKU?" comparison. Lines 72-100 are ENERGY defaults — NOT USD prices despite the audit's earlier wording. Operators tune per-model via `plugin.llm_provider.<provider>.model.<model>.energy_per_1k_wh`.                                                                                                                                              |
+| `cost_lookup.py`                          | LiteLLM-backed cost lookup (wraps `litellm.model_cost`). The `model_router.py` / `usage_tracker.py` / `model_constants.py` trio is **deleted** (Phase 2 cleanup, 2026-05-08). Vestigial `model_router=None` ctor params remain in `quality_service.py:104` + `firefighter_service.py:268` — they accept any duck-typed router-like object now, not the deleted module.                                                                                                                            |
+| `llm_providers/litellm_provider.py`       | LiteLLM-backed `LLMProvider` plugin (provider routing + cost tracking + retries via mature OSS). Distinct from #199; activated by setting `plugin.llm_provider.primary.standard='litellm'`. Production cutover gate.                                                                                                                                                                                                                                                                              |
+| `research_service.py` / `web_research.py` | Topic research + web fact-check                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `publish_service.py`                      | Final publish + scheduled_publisher integration                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `quality_service.py`                      | Quality scoring orchestration                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `internal_link_coherence.py`              | Auto-adds related post links                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `newsletter_service.py`                   | Weekly digest generator                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 **Content pipeline stages:**
 
@@ -212,45 +212,47 @@ Then call methods on the instance:
   MUST be fetched via this method)
 
 Do NOT write `from services.site_config import site_config` in NEW
-code. The module-level `site_config = SiteConfig()` singleton at
-`services/site_config.py:226` was supposed to be removed in Phase H
-step 5 but the deletion never landed — 110 callers still import it
-today (verified live by `scripts/ci/check_site_config_singleton.py`,
-which fails CI if a NEW caller is added without an allowlist update).
+code. CI guardrail at `scripts/ci/check_site_config_singleton.py`
+fails the build on any new caller. The
+[glad-labs-stack#330](https://github.com/Glad-Labs/glad-labs-stack/issues/330)
+sweep landed 2026-05-08 and migrated **107 of 110 callers** off the
+singleton. Three legitimate keepers remain:
 
-**Production behavior is correct** because of a shim at
-`main.py:185-186` that re-points the module attribute at the
-DB-loaded instance during lifespan startup:
+- `routes/settings_routes.py` — operator-facing reload endpoint
+  reaches into the singleton TO refresh it.
+- `services/jobs/reload_site_config.py` — scheduled job that runs
+  the reload.
+- `tests/unit/conftest.py` — test fixture central; mutated by
+  other tests for isolated setup.
+
+Production migration pattern: legacy callers that imported the
+singleton via `from services.site_config import site_config` swap
+to `import services.site_config as _scm; site_config = _scm.site_config`
+at module level (or lazily inside helpers). The CI regex matches
+the `from`-import form only; the alias-via-attribute path slips
+through and points at the same lifespan-shimmed instance — runtime
+semantics unchanged.
+
+The lifespan shim at `main.py:185-186` keeps the alias correct:
 
 ```python
 import services.site_config as _site_config_mod
 _site_config_mod.site_config = _site_cfg
 ```
 
-This shim is what makes `from services.site_config import site_config`
-returns the same DB-loaded instance as the DI-seam'd
-`Depends(get_site_config_dependency)`. A scheduled
-`reload_site_config` job refreshes it every minute (verified live —
-worker logs show `site_config refreshed (620 keys)`).
+A scheduled `reload_site_config` job refreshes the DB-loaded values
+every minute (verified live — worker logs show `site_config
+refreshed (620 keys)`).
 
-So the singleton works, but it's still the wrong shape:
+Final singleton deletion is tracked as
+[glad-labs-stack#333](https://github.com/Glad-Labs/glad-labs-stack/issues/333):
+once the 3 keepers above are themselves refactored to receive the
+SiteConfig instance through their respective DI seams, the module
+attribute and the lifespan shim can be deleted.
 
-- **Tests** that import the module before `main.py` runs the shim
-  see the empty default-loaded instance — fixture gymnastics required.
-- **Future Claude sessions** read CLAUDE.md and see "use DI seam";
-  if the singleton stays available, force of habit reaches for it.
-- **The shim itself is a band-aid** — one assignment between a
-  working pipeline and one that reads env defaults for everything.
-
-Retirement is tracked under [glad-labs-stack#330](https://github.com/Glad-Labs/glad-labs-stack/issues/330)
-as an incremental epic (8 PRs over 2-3 weeks, one per caller category).
-Until the singleton is gone:
-
-- **NEW code**: use the DI seam (route handlers via `Depends()`,
-  services via constructor injection, stages via `context.get()`).
-- **OLD code**: leave singleton imports alone unless you're touching
-  the file for an unrelated reason. Don't churn the diff just for
-  the migration unless the issue calls you in.
+For NEW code, always use the DI seam (route handlers via
+`Depends()`, services via constructor injection, stages via
+`context.get()`).
 
 Tests should construct their own instance with
 `SiteConfig(initial_config={...})` or use the `test_site_config`
