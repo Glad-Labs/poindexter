@@ -54,9 +54,60 @@ import logging
 from typing import Any
 
 from plugins.stage import StageResult
+from services.integrations.operator_notify import notify_operator
+from services.llm_providers.dispatcher import resolve_tier_model
 from services.prompt_manager import get_prompt_manager
 
 logger = logging.getLogger(__name__)
+
+
+async def _resolve_writer_model(
+    *,
+    pool: Any,
+    settings_service: Any,
+    setting_key: str,
+    site: str,
+) -> str | None:
+    """Resolve a writer model via cost-tier API + per-call-site fallback.
+
+    Lane B sweep migration. Order:
+    1. ``resolve_tier_model(pool, "standard")`` — operator-tuned tier mapping.
+    2. ``app_settings[setting_key]`` (e.g. ``pipeline_writer_model``,
+       ``qa_fallback_writer_model``) — per-call-site backstop.
+    3. Returns ``None`` after notify_operator — caller decides whether to
+       give up. Per feedback_no_silent_defaults.md, missing config does
+       not silently fall back to a hardcoded literal.
+    """
+    if pool is not None:
+        try:
+            return await resolve_tier_model(pool, "standard")
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            tier_exc: Exception | None = exc
+        else:
+            tier_exc = None
+    else:
+        tier_exc = RuntimeError("no asyncpg pool available")
+
+    fallback: str | None = None
+    if settings_service is not None:
+        try:
+            fallback = await settings_service.get(setting_key)
+        except Exception:
+            fallback = None
+    if fallback:
+        await notify_operator(
+            f"qa rewrite ({site}): cost_tier='standard' resolution failed "
+            f"({tier_exc}); falling back to {setting_key}={fallback!r}",
+            critical=False,
+        )
+        return str(fallback)
+
+    await notify_operator(
+        f"qa rewrite ({site}): cost_tier='standard' has no model AND "
+        f"{setting_key} is empty — rewrite skipped: {tier_exc}",
+        critical=True,
+    )
+    return None
 
 
 # ---------------------------------------------------------------------------

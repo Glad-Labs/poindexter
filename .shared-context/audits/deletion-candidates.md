@@ -132,20 +132,16 @@ verification step has been done.)
   re-registration, not deletion. Wired into `cli/app.py` 2026-05-09;
   `python -m poindexter --help` now shows 33 commands across all surfaces.
 
-### `routes/webhooks.py` + `services/integrations/webhook_dispatcher.py`
+### Resolved 2026-05-09: legacy `routes/webhooks.py` + `webhook_dispatcher.py` — DELETED
 
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 40 LOC route + 227 LOC dispatcher = 267 LOC
-- **Why removable:** `routes/webhooks.py` has zero importers in
-  `src/` and is NOT registered in `utils/route_registration.py`
-  (only `routes.external_webhooks` is). Its only caller of
-  `webhook_dispatcher` is itself. The live webhook stack is:
-  `routes/external_webhooks.py` (Lemon Squeezy + Resend sinks) →
-  `services/webhook_delivery_service.py` (7 callers). This pair is
-  vestigial.
-- **Blocker:** none identified.
-- **Confidence:** high
-- **Decision:**
+- **Note (recording the resolution):** Verified no production importers
+  (only the orphan dispatcher imported the orphan route's helper, plus
+  one test file). The live webhook stack is
+  `routes/external_webhooks.py` → `services/webhook_delivery_service.py`.
+  Deleted: 40 LOC route + 227 LOC dispatcher + the test file. No
+  CLI surface affected (the `poindexter webhooks` CLI is a separate
+  module, `poindexter/cli/webhooks.py`, that operates on the
+  `webhook_endpoints` table directly).
 
 ---
 

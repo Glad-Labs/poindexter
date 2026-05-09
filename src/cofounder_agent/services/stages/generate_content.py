@@ -254,8 +254,10 @@ class GenerateContentStage:
         # Writer self-review pass (opt-in via enable_writer_self_review).
         if _self_review_enabled(context.get("site_config")):
             try:
+                # Lane B sweep: thread pool for cost-tier model resolution.
+                _sr_pool = getattr(database_service, "pool", None)
                 revised, sr_meta = await _self_review_and_revise(
-                    content_text, title, topic,
+                    content_text, title, topic, pool=_sr_pool,
                 )
                 if sr_meta.get("revised"):
                     logger.info(

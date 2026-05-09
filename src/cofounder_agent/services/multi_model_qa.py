@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from services.content_validator import ValidationResult, validate_content
+from services.integrations.operator_notify import notify_operator
+from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.qa_gates_db import load_qa_gate_chain
@@ -226,6 +228,45 @@ class MultiModelQA:
             )
         return review
 
+    async def _resolve_critic_model(
+        self,
+        *,
+        setting_key: str,
+        site: str,
+    ) -> str:
+        """Resolve the critic model via the cost-tier API + fallback chain.
+
+        Lane B sweep migration. Order:
+        1. ``resolve_tier_model(pool, "standard")`` — operator-tuned tier mapping.
+        2. ``app_settings[setting_key]`` — per-call-site fallback (e.g.
+           ``qa_fallback_critic_model``). Only used if the tier mapping
+           is missing AND we successfully notify the operator.
+        3. Raise — per feedback_no_silent_defaults.md, missing config is a
+           configuration bug, not a quiet fallback.
+        """
+        try:
+            return await resolve_tier_model(self.pool, "standard")
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            fallback: str | None = None
+            if self.settings is not None:
+                try:
+                    fallback = await self.settings.get(setting_key)
+                except Exception:
+                    fallback = None
+            if not fallback:
+                await notify_operator(
+                    f"qa critic ({site}): cost_tier='standard' has no model "
+                    f"AND {setting_key} is empty — review failed: {exc}",
+                    critical=True,
+                )
+                raise
+            await notify_operator(
+                f"qa critic ({site}): cost_tier='standard' resolution failed "
+                f"({exc}); falling back to {setting_key}={fallback!r}",
+                critical=False,
+            )
+            return fallback
+
     async def review(
         self,
         title: str,
@@ -321,13 +362,12 @@ class MultiModelQA:
         if citation_review is not None:
             reviews.append(citation_review)
 
-        # 2. Cross-model review using a DIFFERENT provider than the writer
-        # Model is configurable via app_settings (pipeline_critic_model).
+        # 2. Cross-model review using a DIFFERENT provider than the writer.
+        # Model is resolved from app_settings.cost_tier.standard.model
+        # (Lane B sweep) inside _review_with_ollama. No model_override
+        # threaded here; _review_with_ollama owns the resolution.
         # #399: skip the LLM call entirely when qa_gates row "llm_critic"
         # is enabled=False — log INFO so the operator can see what ran.
-        critic_model = None
-        if self.settings:
-            critic_model = await self.settings.get("pipeline_critic_model")
         qa_cost_log = None
         critic_skipped = False
         if not self._gate_enabled(gate_states, "llm_critic"):
@@ -336,7 +376,6 @@ class MultiModelQA:
         else:
             cross_result = await self._review_with_cloud_model(
                 title, content, topic,
-                model_override=critic_model,
                 research_sources=research_sources,
             )
             if cross_result:
@@ -650,15 +689,16 @@ class MultiModelQA:
             return ollama_result
 
         # Try a fallback model if the primary returned empty/failed.
-        # DB-configured via qa_fallback_critic_model.
-        fallback_model = "gemma3:27b"
-        if self.settings:
-            try:
-                _fb = await self.settings.get("qa_fallback_critic_model")
-                if _fb:
-                    fallback_model = _fb.removeprefix("ollama/")
-            except Exception:
-                pass
+        # Cost-tier API (Lane B sweep) — operator-tuned. The
+        # qa_fallback_critic_model setting remains the per-call-site
+        # backstop; if both are missing, _resolve_critic_model raises
+        # via notify_operator per feedback_no_silent_defaults.md.
+        fallback_model = (
+            await self._resolve_critic_model(
+                setting_key="qa_fallback_critic_model",
+                site="critic_fallback",
+            )
+        ).removeprefix("ollama/")
         if model_override != fallback_model:
             logger.warning(
                 "[MULTI_QA] Primary critic %s failed (empty response or error), falling back to %s",
@@ -703,7 +743,9 @@ class MultiModelQA:
     ) -> tuple[ReviewerResult, dict] | None:
         """Review content using local Ollama (zero cost).
 
-        Uses gemma3:27b by default — strong at structured JSON output.
+        Model resolved via ``cost_tier="standard"`` (Lane B sweep) —
+        operators tune ``app_settings.cost_tier.standard.model`` to
+        switch the critic without code edits.
 
         Returns a ``(review, cost_log)`` tuple on success, or ``None`` if
         the model was unreachable / returned unparseable output. The
@@ -767,22 +809,27 @@ class MultiModelQA:
                 sources_block=sources_block,
             )
 
-            # Model and token limits configurable via app_settings.
-            # Default is gemma3:27b — glm-4.7 was the prior default but
-            # Matt's 2026-04-11 direction: "ditch glm-4.7 for now and
-            # use a better writing model. It's more tuned for coding
-            # and it keeps giving us trouble" (empty responses on long
-            # prompts, thinking-model token budget issues).
-            default_model = "gemma3:27b"
+            # Cost-tier API (Lane B sweep). Operators tune the standard
+            # tier via app_settings.cost_tier.standard.model — no code edit
+            # per niche. The qa_fallback_critic_model setting remains as
+            # last-ditch backstop per feedback_no_silent_defaults.md: a
+            # missing tier mapping fails loudly via notify_operator before
+            # falling back.
             thinking_max = 8000  # Thinking models need budget for reasoning + actual review output
             standard_max = 1500
             temperature = 0.3
             if self.settings:
-                default_model = await self.settings.get("pipeline_critic_model") or default_model
                 thinking_max = int(await self.settings.get("qa_thinking_model_max_tokens") or thinking_max)
                 standard_max = int(await self.settings.get("qa_standard_max_tokens") or standard_max)
                 temperature = float(await self.settings.get("qa_temperature") or temperature)
-            ollama_model = (model_override or default_model).removeprefix("ollama/")
+            if model_override:
+                resolved_model = model_override
+            else:
+                resolved_model = await self._resolve_critic_model(
+                    setting_key="qa_fallback_critic_model",
+                    site="critic",
+                )
+            ollama_model = resolved_model.removeprefix("ollama/")
             is_thinking_model = any(t in ollama_model.lower() for t in ("qwen3.5", "glm-4.7", "qwen3:30b"))
             max_tok = thinking_max if is_thinking_model else standard_max
             try:
@@ -901,21 +948,22 @@ class MultiModelQA:
                 await client.close()
                 return None
 
-            # DB-configured: qa_fallback_critic_model (used as the primary
-            # model for gates since they should be fast/cheap). Falls back
-            # to pipeline_critic_model then gemma3:27b.
-            default_model = "gemma3:27b"
+            # Cost-tier API (Lane B sweep). Gates use the standard tier
+            # since they're fast/cheap critic prompts. The
+            # qa_fallback_critic_model setting remains the operator's
+            # explicit per-call-site override; if both the tier mapping
+            # AND the fallback are unset, notify_operator + raise per
+            # feedback_no_silent_defaults.md.
             temperature = 0.2
             if self.settings:
-                default_model = (
-                    await self.settings.get("qa_fallback_critic_model")
-                    or await self.settings.get("pipeline_critic_model")
-                    or default_model
-                )
                 temperature = float(
                     await self.settings.get("qa_temperature") or temperature
                 )
-            ollama_model = default_model.removeprefix("ollama/")
+            resolved_model = await self._resolve_critic_model(
+                setting_key="qa_fallback_critic_model",
+                site=f"gate:{reviewer_name}",
+            )
+            ollama_model = resolved_model.removeprefix("ollama/")
 
             _gate_max = site_config.get_int("qa_gate_max_tokens", 600)
             _gate_timeout = site_config.get_int("qa_gate_timeout_seconds", 60)

@@ -16,6 +16,10 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
+
+from services.integrations.operator_notify import notify_operator
+from services.llm_providers.dispatcher import resolve_tier_model
 from services.site_config import SiteConfig
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
@@ -34,8 +38,50 @@ def set_site_config(sc: SiteConfig) -> None:
 logger = logging.getLogger(__name__)
 
 
+async def _resolve_self_review_model(pool: Any) -> str:
+    """Resolve writer-self-review model via cost-tier API + fallback chain.
+
+    Lane B sweep migration. Order:
+    1. ``resolve_tier_model(pool, "standard")`` — operator-tuned tier mapping.
+    2. ``app_settings[writer_self_review_model]`` — per-call-site backstop.
+    3. Raise — per feedback_no_silent_defaults.md.
+
+    ``pool`` may be ``None`` when the caller does not have access to the
+    asyncpg pool (e.g. legacy paths); in that case we skip the tier
+    resolution and try the per-call-site setting directly.
+    """
+    if pool is not None:
+        try:
+            return await resolve_tier_model(pool, "standard")
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            tier_exc: Exception | None = exc
+        else:
+            tier_exc = None
+    else:
+        tier_exc = RuntimeError("no asyncpg pool available")
+
+    fallback = site_config.get("writer_self_review_model")
+    if fallback:
+        await notify_operator(
+            f"writer_self_review: cost_tier='standard' resolution failed "
+            f"({tier_exc}); falling back to writer_self_review_model={fallback!r}",
+            critical=False,
+        )
+        return str(fallback)
+
+    await notify_operator(
+        f"writer_self_review: cost_tier='standard' has no model AND "
+        f"writer_self_review_model is empty — review failed: {tier_exc}",
+        critical=True,
+    )
+    raise RuntimeError(
+        "writer_self_review: no critic model resolvable via tier or "
+        "writer_self_review_model setting"
+    ) from tier_exc
+
+
 async def self_review_and_revise(
-    draft: str, title: str, topic: str,
+    draft: str, title: str, topic: str, *, pool: Any = None,
 ) -> tuple[str, dict]:
     """Ask the writer model to catch + fix cross-section contradictions.
 
@@ -58,11 +104,17 @@ async def self_review_and_revise(
     if not draft or len(draft) < 500:
         return draft, stats  # too short for meaningful cross-section review
 
-    # Non-thinking default. Thinking models burn tokens on <think> wrappers
-    # and frequently return short/empty outputs on long review prompts.
-    review_model = str(
-        site_config.get("writer_self_review_model") or "gemma3:27b"
-    ).removeprefix("ollama/")
+    # Cost-tier API (Lane B sweep). Operators tune the standard tier via
+    # app_settings.cost_tier.standard.model — no code edit per niche. The
+    # writer_self_review_model setting remains the per-call-site backstop;
+    # _resolve_self_review_model fails loud via notify_operator if both
+    # are missing, per feedback_no_silent_defaults.md.
+    try:
+        resolved_model = await _resolve_self_review_model(pool)
+    except RuntimeError as exc:
+        logger.warning("[SELF_REVIEW] could not resolve model: %s", exc)
+        return draft, stats
+    review_model = str(resolved_model).removeprefix("ollama/")
 
     review_prompt = (
         "You are reviewing your own draft for internal contradictions.\n\n"

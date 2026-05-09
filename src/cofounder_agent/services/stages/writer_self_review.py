@@ -75,9 +75,13 @@ class WriterSelfReviewStage:
                 metrics={"skipped": True},
             )
 
+        # Lane B sweep: thread pool to self_review for cost-tier resolution.
+        database_service = context.get("database_service")
+        pool = getattr(database_service, "pool", None) if database_service else None
+
         try:
             revised_text, stats = await _self_review_and_revise(
-                content_text, title, topic,
+                content_text, title, topic, pool=pool,
             )
         except Exception as e:
             logger.warning("[SELF_REVIEW] Stage failed (non-fatal): %s", e)
