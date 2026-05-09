@@ -80,6 +80,23 @@ def _mock_ollama_client_down():
     return client
 
 
+@pytest.fixture(autouse=True)
+def _stub_resolve_tier_model():
+    """Auto-stub the cost-tier resolver across this whole test module.
+
+    Lane B sweep migration: ``MultiModelQA._resolve_critic_model`` calls
+    ``resolve_tier_model(self.pool, "standard")`` which fails on the
+    no-pool fixture. Tests at this level care about review aggregation,
+    not which concrete model the critic uses, so the resolver returns a
+    fixed string for every test.
+    """
+    with patch(
+        "services.multi_model_qa.resolve_tier_model",
+        AsyncMock(return_value="ollama/gemma3:27b"),
+    ):
+        yield
+
+
 @pytest.fixture
 def qa():
     """MultiModelQA with no pool and mocked model router.
@@ -588,8 +605,13 @@ class TestSettingsOverrides:
 
         assert result.approved is True
 
-    async def test_custom_critic_model_passed_through(self):
-        """settings.get('pipeline_critic_model') is passed as model_override."""
+    async def test_critic_model_resolved_via_cost_tier(self):
+        """Lane B sweep: the critic model is resolved via
+        ``cost_tier="standard"`` inside ``_review_with_ollama``, not
+        threaded through ``review()`` as ``model_override``. This test
+        pins the new contract: ``review()`` no longer reads
+        ``pipeline_critic_model``; the cost-tier API handles selection.
+        """
         settings = _settings_service(pipeline_critic_model="ollama/qwen3:30b")
 
         with MagicMock():  # was: patch model_router (deleted Phase 2 / 6817f391)
@@ -611,7 +633,9 @@ class TestSettingsOverrides:
         with patch("services.multi_model_qa.validate_content", return_value=_passing_validation()):
             await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
-        assert captured["model_override"] == "ollama/qwen3:30b"
+        # Lane B contract: review() no longer threads pipeline_critic_model
+        # as model_override; the resolver handles it inside the critic call.
+        assert captured["model_override"] is None
 
 
 # ---------------------------------------------------------------------------
