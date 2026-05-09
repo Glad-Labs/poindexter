@@ -15,8 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from services.logger_config import get_logger
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -25,14 +24,14 @@ WORKER_TIMEOUT = 120  # seconds — worker considered offline after this
 
 
 class WorkerService:
-    def __init__(self, pool, worker_type: str = "local", *, site_config=None):
+    def __init__(self, pool, worker_type: str = "local", *, site_config: SiteConfig | None = None):
         self.pool = pool
         self.worker_type = worker_type
         self.worker_id = f"{worker_type}-{socket.gethostname()}-{os.getpid()}"
         self._running = False
         self._capabilities = {}
         self._current_task_id = None
-        self._site_config = site_config  # Phase H DI seam (GH#95)
+        self._site_config: SiteConfig = site_config if site_config is not None else SiteConfig()
         # Strong ref to the heartbeat task so asyncio doesn't GC it.
         self._heartbeat_task: asyncio.Task | None = None
 
@@ -46,13 +45,13 @@ class WorkerService:
                 "python": platform.python_version(),
             }
             # Check for Ollama
-            ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+            ollama_url = self._site_config.get("ollama_base_url", "http://host.docker.internal:11434")
             caps["ollama_url"] = ollama_url
             # Check for SDXL
-            caps["sdxl"] = bool(site_config.get("sdxl_api_url"))
+            caps["sdxl"] = bool(self._site_config.get("sdxl_api_url"))
             # GPU info (basic — enhance later with nvidia-smi)
-            caps["gpu"] = site_config.get("gpu_name", "unknown")
-            caps["vram_gb"] = int(site_config.get("gpu_vram_gb", "0"))
+            caps["gpu"] = self._site_config.get("gpu_name", "unknown")
+            caps["vram_gb"] = int(self._site_config.get("gpu_vram_gb", "0"))
             self._capabilities = caps
         return self._capabilities
 

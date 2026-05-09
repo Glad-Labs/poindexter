@@ -32,24 +32,24 @@ logger = get_logger(__name__)
 # Tests can call set_site_config() directly for isolation; falls back
 # to a fresh env-fallback instance when unset (e.g. during import or
 # in legacy test rigs).
-_site_config: SiteConfig | None = None
+site_config: SiteConfig = SiteConfig()
 
 
 def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
-    global _site_config
-    _site_config = sc
+    global site_config
+    site_config = sc
 
 
 def _sc() -> SiteConfig:
-    """Return the wired SiteConfig, or a fresh env-fallback instance.
+    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly).
 
     decorators is a leaf utility used by every async DB call, so threading
     SiteConfig through every callsite would be churn for no win. The
     setter-bound instance keeps reads pointing at the live, DB-loaded
     config without re-importing the deleted module-level singleton.
     """
-    return _site_config if _site_config is not None else SiteConfig()
+    return site_config
 
 
 def _slow_query_threshold_ms() -> int:

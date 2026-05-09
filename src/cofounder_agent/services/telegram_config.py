@@ -24,12 +24,27 @@ loud at HTTP send time rather than silently posting against a bad
 URL, which is the right failure mode.
 """
 
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# set_site_config() for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 # Legacy back-compat shims. Empty so any caller still using these will
 # notice (HTTP error) instead of silently posting against ciphertext.
-TELEGRAM_CHAT_ID: str = site_config.get("telegram_chat_id", "")
+# TELEGRAM_CHAT_ID is intentionally not pre-populated at import time —
+# the singleton was empty during the old import path anyway, so keeping
+# it empty preserves prior behaviour.
+TELEGRAM_CHAT_ID: str = ""
 TELEGRAM_BOT_TOKEN: str = ""  # encrypted; use get_telegram_bot_token() instead
 
 

@@ -26,16 +26,20 @@ import httpx
 
 from services.bootstrap_defaults import DEFAULT_PUBLIC_SITE_URL
 from services.logger_config import get_logger
-# Module-level alias kept under the historical ``site_config`` name so
-# existing tests that ``patch("services.revalidation_service.site_config",
-# mock)`` keep working without churn. The CI guardrail at
-# scripts/ci/check_site_config_singleton.py only flags the
-# ``from services.site_config import site_config`` form — the
-# ``import ... as`` + attribute alias slips through and points at the
-# lifespan-shimmed instance. New code paths should accept a
-# ``site_config`` parameter (DI) instead of relying on this alias.
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# set_site_config() for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -127,10 +131,10 @@ async def trigger_nextjs_revalidation(
     if tags is None:
         tags = ["posts", "post-index"]
 
-    # The parameter `site_config` shadows the module-level singleton
-    # imported above. globals() always returns the module dict, so we
-    # can fall back to the singleton when no DI instance was passed.
-    site_cfg = site_config if site_config is not None else globals().get("site_config")
+    # Fall back to the lifespan-bound SiteConfig when no DI instance
+    # was passed. (The function-local ``site_config`` parameter
+    # shadows the module-level attr; ``globals()`` reads the latter.)
+    site_cfg = site_config if site_config is not None else globals()["site_config"]
 
     revalidate_url = _resolve_revalidate_url(site_cfg)
     revalidate_secret = await _resolve_revalidate_secret(site_cfg)

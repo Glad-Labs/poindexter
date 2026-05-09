@@ -40,18 +40,18 @@ logger = get_logger(__name__)
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
 # Falls back to a fresh env-fallback instance when unset.
-_site_config: SiteConfig | None = None
+site_config: SiteConfig = SiteConfig()
 
 
 def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
-    global _site_config
-    _site_config = sc
+    global site_config
+    site_config = sc
 
 
 def _sc() -> SiteConfig:
-    """Return the wired SiteConfig, or a fresh env-fallback instance."""
-    return _site_config if _site_config is not None else SiteConfig()
+    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
+    return site_config
 
 
 def _sc_get(key: str, default: str = "") -> str:

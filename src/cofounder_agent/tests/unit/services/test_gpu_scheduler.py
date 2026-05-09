@@ -463,12 +463,11 @@ class TestPropertiesAndConfig:
     def test_cfg_int_uses_site_config_when_available(self):
         from unittest.mock import MagicMock, patch
 
-        from services.gpu_scheduler import _cfg_int
+        from services import gpu_scheduler
 
-        fake_sc_module = MagicMock()
-        fake_sc_module.site_config = MagicMock()
-        fake_sc_module.site_config.get_int = MagicMock(return_value=99)
+        fake_sc = MagicMock()
+        fake_sc.get_int = MagicMock(return_value=99)
 
-        with patch.dict("sys.modules", {"services.site_config": fake_sc_module}):
-            result = _cfg_int("threshold", 30)
+        with patch.object(gpu_scheduler, "site_config", fake_sc):
+            result = gpu_scheduler._cfg_int("threshold", 30)
         assert result == 99

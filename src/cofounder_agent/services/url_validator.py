@@ -27,18 +27,18 @@ logger = get_logger(__name__)
 # Tests can call set_site_config() directly for isolation; falls back
 # to a fresh env-fallback instance when unset (e.g. during import or
 # in legacy test rigs).
-_site_config: SiteConfig | None = None
+site_config: SiteConfig = SiteConfig()
 
 
 def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
-    global _site_config
-    _site_config = sc
+    global site_config
+    site_config = sc
 
 
 def _sc() -> SiteConfig:
-    """Return the wired SiteConfig, or a fresh env-fallback instance."""
-    return _site_config if _site_config is not None else SiteConfig()
+    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
+    return site_config
 
 
 # Cache entry: (is_valid: bool, status_code: int | None, checked_at: float)
