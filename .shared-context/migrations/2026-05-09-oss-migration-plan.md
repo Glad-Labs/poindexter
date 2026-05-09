@@ -103,11 +103,11 @@ Datasources: infrastructure/grafana/provisioning/datasources/*.yml
 Alerting (Grafana side): infrastructure/grafana/provisioning/alerting/*.yml
 ```
 
-**Why JSON-as-code, not app_settings-driven:** dashboards are read-mostly artifacts. Operators don't tune them at runtime — they edit JSON, commit, and Grafana picks up on next provision pass. Moving them to app_settings would let the system _generate_ dashboards from settings (e.g., "every new tap row gets a per-tap latency panel") — which IS a thing worth doing eventually, but it's a Lane E concern (see below), not a Lane A/B/C blocker.
+**Why JSON-as-code, not app_settings-driven:** dashboards are read-mostly artifacts. Operators don't tune them at runtime — they edit JSON, commit, and Grafana picks up on next provision pass. Moving them to app*settings would let the system \_generate* dashboards from settings (e.g., "every new tap row gets a per-tap latency panel") — which IS a thing worth doing eventually, but it's a Lane E concern (see below), not a Lane A/B/C blocker.
 
 **What's already runtime-tunable in Grafana:** dashboard variables (datasource pickers, time ranges, label filters). Standard Grafana feature; no work needed.
 
-## Lane A — Prompts → Langfuse
+## Lane A — Prompts → Langfuse (✅ DONE 2026-05-09)
 
 (unchanged from iteration 1 — keeping it inline so the doc is self-contained)
 
@@ -143,7 +143,7 @@ Alerting (Grafana side): infrastructure/grafana/provisioning/alerting/*.yml
 - Langfuse dashboard shows each prompt firing post-migration
 - No regression in qa_gate pass/fail rate over 24h
 
-## Lane B — Model routing → LiteLLM cost-tier
+## Lane B — Model routing → LiteLLM cost-tier (🔶 batch 1 of 2 done 2026-05-09)
 
 **Why parallel to A:** Independent surface — model literal `gemma3:27b` doesn't care if its prompt is YAML or inline.
 
@@ -290,14 +290,27 @@ Alerting (Grafana side): infrastructure/grafana/provisioning/alerting/*.yml
 
 ## What stays bespoke (and why)
 
-Not everything should migrate to OSS. Per `feedback_design_for_llm_consumers.md` + the operator-OS thesis, Poindexter's _edge_ is in the operator UX: the CLI surface, the Telegram/Discord ops loop, the auto-curator + auto_publish_gate decisioning, the niche-discovery + topic_ranking flow. Those are bespoke on purpose. The OSS sweep targets the commodity infra that sits _under_ the operator system, not the operator system itself.
+Not everything should migrate to OSS. Per `feedback_design_for_llm_consumers.md` + the operator-OS thesis, Poindexter's _edge_ is in the operator UX: the CLI surface, the Telegram/Discord ops loop, the auto-curator + auto*publish_gate decisioning, the niche-discovery + topic_ranking flow. Those are bespoke on purpose. The OSS sweep targets the commodity infra that sits \_under* the operator system, not the operator system itself.
 
 ## Pick up here next session
 
-**Status as of 2026-05-09 19:45 UTC:** plan iterated, no lane started.
+**Status as of 2026-05-09 21:15 UTC:**
 
-**Next concrete action:** Dispatch Lane A batch 1 — migrate `multi_model_qa.py`'s three inline prompts (`TOPIC_DELIVERY_PROMPT`, `CONSISTENCY_PROMPT`, `QA_PROMPT`) to YAML + UnifiedPromptManager. Single worktree-isolated agent. Spec includes the existing `prompts/` structure + a snapshot test for each prompt body.
+| Lane                                          | Status               | Notes                                                                                                                                                                                                                                      |
+| --------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A — Prompts → Langfuse YAML                   | ✅ DONE              | 5 batches, 7 inline prompts migrated, 9 snapshot tests green. Tracked under `Glad-Labs/poindexter#450`.                                                                                                                                    |
+| B — Model routing → LiteLLM cost-tier         | 🔶 batch 1 of 2 done | `resolve_tier_model` helper + 4 cost_tier seeds live; 8 of 22 bucket-A occurrences cleared (QA + Writer surfaces). Batch 2 (retention/housekeeping + misc/leaf) queued. End-of-Lane-B: delete 5 vestigial `model_router=None` ctor params. |
+| C — Orchestration → LangGraph template_runner | ⏳ NOT STARTED       | Waits for B. Build canonical_blog template + 7-day dual-write window. Tracked under `poindexter#355`.                                                                                                                                      |
+| D — Eval rails (DeepEval/Ragas/Guardrails)    | ⏳ NOT STARTED       | Waits for C. Each rail wired as a `qa_gates` row in advisory mode.                                                                                                                                                                         |
+| E — Dashboards-as-data                        | ⏳ DEFERRED          | Optional; revisit post-Lane C.                                                                                                                                                                                                             |
 
-When that lands, dispatch Lane A batch 2 (`cross_model_qa`) + Lane B inventory pass (read-only categorization of 36 model-name files) in parallel.
+Cross-cutting cleanup: 7/10 done (see table above). Remaining 3 wait on lane completions or Matt's call.
 
-Cross-cutting #1 (GlitchTip 403) is small enough to slot in alongside Lane A — worker logs are noisy until it's fixed.
+**Next concrete actions:**
+
+1. Dispatch Lane B batch 2 — retention/housekeeping sweep (`collapse_old_embeddings`, `retention_summarize_to_table`) + misc/leaf utilities sweep (`social_poster`, `video_service`, `task_executor`, `ai_content_generator`, `ragas_eval`). Two parallel worktree-isolated agents per `feedback_max_3_agents.md`.
+2. End-of-Lane-B cleanup commit: delete the 5 vestigial `model_router=None` ctor params at `quality_service.py:117/887/897`, `firefighter_service.py:268`, `agents/blog_quality_agent.py:31/138`.
+3. Start Lane C — file the canonical_blog template build issue under `poindexter#355` umbrella.
+4. Decide `webhook_events` + `gitea-runner` fates (Matt's call still pending).
+
+The full session that delivered Lanes A + B-batch-1 is documented at `.shared-context/migrations/2026-05-09-session-summary.md`.
