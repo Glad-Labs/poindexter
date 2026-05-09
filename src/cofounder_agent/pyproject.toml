@@ -195,7 +195,6 @@ posts = "cofounder_agent.services.taps.published_posts:PostsTap"
 audit = "cofounder_agent.services.taps.audit:AuditTap"
 brain_knowledge = "cofounder_agent.services.taps.brain_knowledge:BrainKnowledgeTap"
 brain_decisions = "cofounder_agent.services.taps.brain_decisions:BrainDecisionsTap"
-gitea_issues = "cofounder_agent.services.taps.gitea_issues:GiteaIssuesTap"
 claude_code_sessions = "cofounder_agent.services.taps.claude_code_sessions:ClaudeCodeSessionsTap"
 openclaw_sqlite = "cofounder_agent.services.taps.openclaw_sqlite:OpenClawSQLiteTap"
 
@@ -233,6 +232,8 @@ check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:C
 regenerate_stock_images = "cofounder_agent.services.jobs.regenerate_stock_images:RegenerateStockImagesJob"
 collapse_old_embeddings = "cofounder_agent.services.jobs.collapse_old_embeddings:CollapseOldEmbeddingsJob"
 morning_brief = "cofounder_agent.services.jobs.morning_brief:MorningBriefJob"
+run_taps = "cofounder_agent.services.jobs.run_taps:RunTapsJob"
+run_retention = "cofounder_agent.services.jobs.run_retention:RunRetentionJob"
 
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
