@@ -82,8 +82,40 @@ async def plan_images(
     """
     import httpx
 
+    from services.llm_providers.dispatcher import resolve_tier_model
+
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-    model = site_config.get("model_role_image_decision", "qwen3:8b").removeprefix("ollama/")
+
+    # Cost-tier API (Lane B sweep). Image decision is a small JSON-shaped
+    # task — budget tier (qwen3:8b-class) is the right home, not standard.
+    # Operators tune via app_settings.cost_tier.budget.model. Per-call-site
+    # key (model_role_image_decision) preserved as last-ditch fallback;
+    # if both miss we page the operator and return an empty plan.
+    pool = getattr(site_config, "_pool", None)
+    model: str | None = None
+    if pool is not None:
+        try:
+            model = (
+                await resolve_tier_model(pool, "budget")
+            ).removeprefix("ollama/")
+        except (RuntimeError, ValueError) as tier_err:
+            logger.debug(
+                "[IMAGE_AGENT] cost_tier.budget.model unresolved (%s); "
+                "trying model_role_image_decision fallback",
+                tier_err,
+            )
+    if not model:
+        fallback = site_config.get("model_role_image_decision") or ""
+        if not fallback:
+            from services.integrations.operator_notify import notify_operator
+            await notify_operator(
+                "image_decision_agent: cost_tier='budget' has no model AND "
+                "model_role_image_decision is empty — image planning skipped",
+                critical=False,
+                site_config=site_config,
+            )
+            return ImagePlanResult()
+        model = fallback.removeprefix("ollama/")
 
     # Extract section headings for context
     headings = re.findall(r'^(#{2,3})\s+(.+)$', content, re.MULTILINE)
