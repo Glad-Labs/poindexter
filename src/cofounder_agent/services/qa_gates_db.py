@@ -7,10 +7,12 @@ records that ``MultiModelQA`` walks.
 Design notes
 ------------
 
-- **Read-only here.** Mutations live in the ``poindexter qa-gates ...``
-  CLI (see ``poindexter/cli/qa_gates.py``). The runtime never writes
-  back to the table — the counter columns get updated through the
-  audit pipeline instead.
+- **Read-only here.** Configuration mutations (enable/disable,
+  reorder) live in the ``poindexter qa-gates ...`` CLI (see
+  ``poindexter/cli/qa_gates.py``). Telemetry mutations (last_run_at,
+  total_runs, total_rejections) live in the sibling
+  ``services.qa_gates_db_writer`` module, which ``MultiModelQA`` calls
+  once per chain after every gate has produced its review.
 
 - **Stage scoping.** v1 only ships the ``qa`` stage; the column exists
   so ``post_publish`` / ``pre_research`` chains can reuse the same

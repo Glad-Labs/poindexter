@@ -753,6 +753,15 @@ class MultiModelQA:
             cost_log=qa_cost_log,
         )
 
+        # Bump qa_gates run counters so the operator dashboard stops
+        # showing every gate as last_run_at=NEVER. Best-effort — never
+        # fail the chain because telemetry write hiccupped.
+        try:
+            from services.qa_gates_db_writer import record_chain_run
+            await record_chain_run(self.pool, reviews)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[MULTI_QA] qa_gates counter update skipped: %s", exc)
+
         logger.info("[MULTI_QA] %s — %s", title[:50], result.summary.split("\n")[0])
         return result
 
