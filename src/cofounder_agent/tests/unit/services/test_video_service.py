@@ -19,6 +19,26 @@ from services.video_service import (
     generate_video_for_post,
 )
 
+
+@pytest.fixture(autouse=True)
+def _autopatch_resolve_slideshow_prompt_model():
+    """Lane B sweep — short-circuit ``_resolve_slideshow_prompt_model``.
+
+    The production resolver hits the cost-tier dispatcher and the
+    ``video_slideshow_prompt_model`` setting; in unit tests neither
+    exists, so the resolver would raise + notify_operator and the
+    Ollama-mocked tests would fall straight through to the
+    deterministic fallback prompts. Patching the helper keeps the
+    Ollama-mocked tests honest about the prompt-gen path. The
+    dedicated ``test_lane_b_misc_migration.py`` suite pins the
+    resolver branches.
+    """
+    with patch(
+        "services.video_service._resolve_slideshow_prompt_model",
+        AsyncMock(return_value="ollama/gemma3:27b"),
+    ):
+        yield
+
 # ---------------------------------------------------------------------------
 # VideoResult dataclass
 # ---------------------------------------------------------------------------

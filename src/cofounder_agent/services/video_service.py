@@ -21,6 +21,8 @@ from pathlib import Path
 
 import httpx
 
+from services.integrations.operator_notify import notify_operator
+from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
@@ -69,6 +71,60 @@ def _sdxl_server_url() -> str:
     return site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
 
 
+async def _resolve_slideshow_prompt_model() -> str:
+    """Bridge ``cost_tier='standard'`` -> concrete model id for SDXL prompt-gen.
+
+    Lane B batch 2 sweep migration. Order:
+
+    1. ``resolve_tier_model(pool, 'standard')`` — operator-tuned tier mapping
+       (``app_settings.cost_tier.standard.model``).
+    2. ``app_settings[video_slideshow_prompt_model]`` — per-call-site backstop
+       (seeded with ``ollama/llama3:latest`` by migration
+       ``20260509_220000_seed_lane_b_misc_keys``).
+    3. Operator-notify + raise — per ``feedback_no_silent_defaults.md``.
+
+    The standard tier maps to a non-thinking model (``gemma3:27b``);
+    that's deliberate. Some thinking-model variants (qwen3, glm-4) return
+    empty completions on the structured-list prompt this helper feeds,
+    so the cost-tier bridge MUST stay on a non-thinking writer. Operators
+    pinning ``cost_tier.standard.model`` to a thinking model should also
+    set ``video_slideshow_prompt_model`` to override per-call.
+    """
+    pool = getattr(site_config, "_pool", None)
+    if pool is not None:
+        try:
+            return await resolve_tier_model(pool, "standard")
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            tier_exc: Exception | None = exc
+        else:
+            tier_exc = None
+    else:
+        tier_exc = RuntimeError("no asyncpg pool available")
+
+    fallback = site_config.get("video_slideshow_prompt_model")
+    if fallback:
+        await notify_operator(
+            f"video_service: cost_tier='standard' resolution failed "
+            f"({tier_exc}); falling back to "
+            f"video_slideshow_prompt_model={fallback!r}",
+            critical=False,
+            site_config=site_config,
+        )
+        return str(fallback)
+
+    await notify_operator(
+        f"video_service: cost_tier='standard' has no model AND "
+        f"video_slideshow_prompt_model is empty — slideshow prompt generation "
+        f"will use deterministic fallback prompts: {tier_exc}",
+        critical=True,
+        site_config=site_config,
+    )
+    raise RuntimeError(
+        "video_service: no model resolvable via tier or "
+        "video_slideshow_prompt_model setting"
+    ) from tier_exc
+
+
 @dataclass
 class VideoResult:
     """Result of generating a video."""
@@ -89,8 +145,17 @@ async def _generate_images_for_video(
     Returns list of local file paths to generated images.
     """
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-    # Use llama3 for prompt generation — some models (glm, qwen thinking mode) return empty
-    model = "llama3:latest"
+    # Cost-tier API (Lane B sweep). The standard tier resolves to a
+    # non-thinking model (gemma3:27b by default) — deliberate, since
+    # qwen3/glm-4 thinking variants return empty completions on the
+    # structured-list prompt below. video_slideshow_prompt_model is the
+    # per-call-site override; both miss -> notify_operator + we fall
+    # through to the deterministic fallback prompts further down.
+    try:
+        resolved = await _resolve_slideshow_prompt_model()
+        model = resolved.removeprefix("ollama/")
+    except RuntimeError:
+        model = ""
 
     # Ask Ollama to generate multiple distinct image prompts
     prompt_request = (
@@ -105,32 +170,37 @@ async def _generate_images_for_video(
     image_paths = []
     prompts = []
 
-    try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            logger.info("[VIDEO] Requesting %d image prompts from Ollama (%s)", num_images, model)
-            resp = await client.post(f"{ollama_url}/api/generate", json={
-                "model": model, "prompt": prompt_request, "stream": False,
-                "options": {"num_predict": 500, "temperature": 0.8},
-            })
-            resp.raise_for_status()
-            raw = resp.json().get("response", "")
-            logger.info("[VIDEO] Ollama returned %d chars of prompts", len(raw))
+    if model:
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                logger.info("[VIDEO] Requesting %d image prompts from Ollama (%s)", num_images, model)
+                resp = await client.post(f"{ollama_url}/api/generate", json={
+                    "model": model, "prompt": prompt_request, "stream": False,
+                    "options": {"num_predict": 500, "temperature": 0.8},
+                })
+                resp.raise_for_status()
+                raw = resp.json().get("response", "")
+                logger.info("[VIDEO] Ollama returned %d chars of prompts", len(raw))
 
-            # Parse numbered prompts
-            for line in raw.strip().split("\n"):
-                line = line.strip()
-                if not line:
-                    continue
-                # Strip numbering like "1.", "1)", "1:"
-                import re
-                cleaned = re.sub(r"^\d+[.):\-]\s*", "", line).strip().strip('"')
-                if len(cleaned) > 20:
-                    prompts.append(cleaned)
-                if len(prompts) >= num_images:
-                    break
-    except Exception as e:
-        logger.warning("[VIDEO] Failed to generate image prompts via Ollama: %s", e)
-        # Fallback prompts
+                # Parse numbered prompts
+                for line in raw.strip().split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # Strip numbering like "1.", "1)", "1:"
+                    import re
+                    cleaned = re.sub(r"^\d+[.):\-]\s*", "", line).strip().strip('"')
+                    if len(cleaned) > 20:
+                        prompts.append(cleaned)
+                    if len(prompts) >= num_images:
+                        break
+        except Exception as e:
+            logger.warning("[VIDEO] Failed to generate image prompts via Ollama: %s", e)
+
+    if not prompts:
+        # Fallback prompts — fires when the LLM call fails OR the cost-tier
+        # resolver couldn't find a model (notify_operator has already paged
+        # the operator in the latter case).
         prompts = [
             f"photorealistic {title} concept, cinematic lighting, 4k, detailed",
             f"futuristic technology scene related to {title}, blue lighting, photorealistic",
@@ -451,7 +521,17 @@ async def _generate_short_summary_audio(
     then Edge TTS to convert to speech.
     """
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-    model = "llama3:latest"
+    # Cost-tier API (Lane B sweep). Same non-thinking-model rationale as
+    # _generate_images_for_video — the structured-narration prompt below
+    # returns empty on qwen3/glm-4 thinking variants, so the standard
+    # tier (gemma3:27b default) or the per-call-site override is the
+    # right surface to swap. Operator-notify on miss; bail to None which
+    # the caller treats as "no short audio available".
+    try:
+        resolved = await _resolve_slideshow_prompt_model()
+        model = resolved.removeprefix("ollama/")
+    except RuntimeError:
+        return None
 
     # Strip markdown for cleaner input
     from services.podcast_service import _normalize_for_speech, _strip_markdown
