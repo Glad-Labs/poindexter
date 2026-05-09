@@ -26,9 +26,22 @@ from datetime import datetime, timezone
 import httpx
 
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
+from services.integrations import registry
 from services.logger_config import get_logger
-import services.site_config as _site_config_mod
-_sc = _site_config_mod.site_config
+from services.publishing_adapters_db import load_enabled_publishers
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 from services.telegram_config import get_telegram_bot_token, get_telegram_chat_id
 
 from .ollama_client import OllamaClient
@@ -52,11 +65,11 @@ logger = get_logger(__name__)
 
 
 def _site_base_url() -> str:
-    return _sc.get("site_url", "https://localhost:3000")
+    return site_config.get("site_url", "https://localhost:3000")
 
 
 def _openclaw_url() -> str:
-    return _sc.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
+    return site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
 
 
 async def _openclaw_token() -> str:
@@ -68,7 +81,7 @@ async def _openclaw_token() -> str:
     # Sync .get() would return enc:v1:<ciphertext> for is_secret rows
     # (#325 bug class), and the bearer-token comparison upstream would
     # silently 401 every webhook fire.
-    return await _sc.get_secret("openclaw_webhook_token", "hooks-gladlabs")
+    return await site_config.get_secret("openclaw_webhook_token", "hooks-gladlabs")
 
 
 def _get_discord_ops_channel() -> str:
@@ -78,23 +91,23 @@ def _get_discord_ops_channel() -> str:
     worker boots and connects to the DB. Calling it at import time breaks
     pytest collection in any environment without a DB.
     """
-    return _sc.require("discord_ops_channel_id")
+    return site_config.require("discord_ops_channel_id")
 
 
 def _social_model() -> str:
     # Default is a fast small model — social copy is a simple task.
-    return _sc.get("social_poster_model", "ollama/llama3:latest")
+    return site_config.get("social_poster_model", "ollama/llama3:latest")
 
 
 def _twitter_char_limit() -> int:
     # Defaults match current public platform limits; tune via app_settings
     # social_twitter_char_limit / social_linkedin_char_limit when platforms
     # change. (#198)
-    return _sc.get_int("social_twitter_char_limit", 280)
+    return site_config.get_int("social_twitter_char_limit", 280)
 
 
 def _linkedin_char_limit() -> int:
-    return _sc.get_int("social_linkedin_char_limit", 700)
+    return site_config.get_int("social_linkedin_char_limit", 700)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +135,7 @@ def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: list[st
     post_url = f"{_site_base_url()}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
-        f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
+        f"You are a social media copywriter for a tech company called {site_config.get('company_name', '')}.\n"
         "Write a single tweet to promote the following blog post.\n\n"
         "Rules:\n"
         f"- The tweet MUST be under {_twitter_char_limit()} characters including the URL and hashtags.\n"
@@ -141,7 +154,7 @@ def _build_linkedin_prompt(title: str, slug: str, excerpt: str, keywords: list[s
     post_url = f"{_site_base_url()}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
-        f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
+        f"You are a social media copywriter for a tech company called {site_config.get('company_name', '')}.\n"
         "Write a LinkedIn post to promote the following blog article.\n\n"
         "Rules:\n"
         f"- The post MUST be under {_linkedin_char_limit()} characters including the URL and hashtags.\n"
@@ -175,7 +188,7 @@ async def _generate_social_text(
             prompt=prompt,
             model=model,
             temperature=0.8,
-            max_tokens=_sc.get_int("social_poster_max_tokens", 300),
+            max_tokens=site_config.get_int("social_poster_max_tokens", 300),
         )
         text = result.get("text", "").strip()
 
@@ -302,6 +315,8 @@ async def generate_and_distribute_social_posts(
     excerpt: str,
     keywords: list[str] | None = None,
     ollama: OllamaClient | None = None,
+    *,
+    pool=None,
 ) -> list[SocialPost]:
     """
     End-to-end: generate social posts and distribute them via notifications.
@@ -314,6 +329,9 @@ async def generate_and_distribute_social_posts(
         excerpt: Short description / excerpt of the post
         keywords: List of relevant keywords for hashtags
         ollama: Optional OllamaClient instance (for testing / reuse)
+        pool: Optional asyncpg pool. When provided, the publishing
+            dispatcher loads enabled rows from ``publishing_adapters``
+            and updates per-row counters after each call.
 
     Returns:
         List of generated SocialPost objects
@@ -324,7 +342,7 @@ async def generate_and_distribute_social_posts(
 
     # Determine which adapters are enabled
     enabled = set(
-        _sc.get("social_distribution_platforms", "").split(",")
+        site_config.get("social_distribution_platforms", "").split(",")
     ) - {""}
 
     for post in posts:
@@ -340,7 +358,7 @@ async def generate_and_distribute_social_posts(
         )
 
     # Post to enabled social platforms via adapters
-    adapter_results = await _distribute_to_adapters(posts, enabled)
+    adapter_results = await _distribute_to_adapters(posts, enabled, pool=pool)
     for platform, result in adapter_results.items():
         if result.get("success"):
             logger.info("[social_poster] Posted to %s: %s", platform, result.get("post_id", ""))
@@ -357,17 +375,20 @@ async def _safe_call_adapter(platform: str, coro_factory) -> dict:
     """Run one adapter call and never let it crash the distribution loop.
 
     Adapters promise a ``{"success", "post_id", "error"}`` dict on the
-    happy path AND on graceful-skip paths. But a bug, a missing
-    dependency, or a stubbed adapter (LinkedIn/Reddit/YouTube — see
-    GH-40) can raise instead. This wrapper turns any exception —
-    including ``NotImplementedError`` from the stubs — into a
-    well-formed failure dict so the rest of the social posting
+    happy path AND on graceful-skip paths. A bug or a missing
+    dependency can raise instead — this wrapper turns any exception
+    into a well-formed failure dict so the rest of the social posting
     continues.
+
+    ``NotImplementedError`` is treated as a "skipped" outcome rather
+    than an "error" so future stub adapters (or operators flipping a
+    flag on a platform we haven't shipped yet) don't trip the error
+    counter.
 
     Metric: increments ``social_adapter_errors_total{platform=...}``
     when the adapter raises. ``social_adapter_posts_total`` is bumped
-    with ``outcome={success,failure,error}`` so dashboards can tell
-    "platform refused us" from "we crashed".
+    with ``outcome={success,failure,error,skipped}`` so dashboards can
+    tell "platform refused us" from "we crashed".
 
     GH-36.
     """
@@ -384,11 +405,12 @@ async def _safe_call_adapter(platform: str, coro_factory) -> dict:
         _bump_metric("social_adapter_posts_total", platform=platform, outcome=outcome)
         return result
     except NotImplementedError as e:
-        # Known-stub path (GH-40). Log INFO and keep going — the other
-        # platforms shouldn't pay for LinkedIn/Reddit/YouTube being off.
-        logger.info("[social_poster] %s adapter is a stub: %s", platform, e)
+        # Defensive — adapters we ship today don't raise this, but a
+        # future stub flipped on by mistake shouldn't take down the
+        # rest of the distribution loop.
+        logger.info("[social_poster] %s adapter is unavailable: %s", platform, e)
         _bump_metric("social_adapter_posts_total", platform=platform, outcome="skipped")
-        return {"success": False, "post_id": None, "error": f"stub: {e}"}
+        return {"success": False, "post_id": None, "error": f"unavailable: {e}"}
     except Exception as e:  # noqa: BLE001 — adapter boundary, never crash the loop
         logger.exception("[social_poster] %s adapter crashed: %s", platform, e)
         _bump_metric("social_adapter_errors_total", platform=platform)
@@ -446,23 +468,34 @@ def _bump_metric(name: str, **labels: str) -> None:
 _COUNTERS: dict[str, object] = {}
 
 
-async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
-    """Post to each enabled social platform adapter.
+async def _distribute_to_adapters(
+    posts: list,
+    enabled: set,
+    *,
+    pool=None,
+) -> dict:
+    """Post to each enabled publisher row from the ``publishing_adapters`` table.
 
-    Order of operations (GH-36):
+    Row-driven dispatch (poindexter#112) — replaces the hardcoded
+    ``if "bluesky" in enabled`` / ``if "mastodon" in enabled`` branches
+    with a single loop over enabled rows from the declarative table.
+    Adding a new platform = insert a row + register a handler under the
+    ``publishing`` surface; no edit here.
 
-    1. Pick the best text for the generic adapters (Twitter copy by
-       default — it's the shortest, so fits everywhere).
-    2. For each enabled platform, call the adapter through
-       :func:`_safe_call_adapter` — that wrapper guarantees a single
-       failing adapter never takes down the distribution job.
-    3. Stub adapters (LinkedIn/Reddit/YouTube) raise
-       ``NotImplementedError``; the wrapper logs INFO + "skipped"
-       metric and moves on.
+    The ``enabled`` set is treated as **advisory** — when callers still
+    pass ``enabled = {"bluesky"}``, it intersects with the DB-loaded
+    rows so an operator who disabled the row in the DB sees no posts
+    even if legacy code still lists the platform name in
+    ``social_distribution_platforms``. When ``enabled`` is empty the
+    advisory filter is skipped (DB rows are the single source of truth).
+
+    site_config is passed through every dispatched call — that's the
+    contract :mod:`services.social_adapters.bluesky` short-circuits on
+    when missing (the 30-day distribution-dark bug fix from 2026-05-09).
     """
     results: dict[str, dict] = {}
 
-    if not posts or not enabled:
+    if not posts:
         return results
 
     twitter_post = next((p for p in posts if p.platform == "twitter"), None)
@@ -474,32 +507,83 @@ async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
     text = generic_post.text
     url = generic_post.post_url
 
-    if "bluesky" in enabled:
-        from services.social_adapters.bluesky import post_to_bluesky
-        results["bluesky"] = await _safe_call_adapter(
-            "bluesky", lambda: post_to_bluesky(text, url)
-        )
+    db_rows = await load_enabled_publishers(pool)
+    if not db_rows:
+        logger.info("[social_poster] publishing dispatch: no enabled adapters")
+        # No silent default — still warn about advisory platforms that
+        # don't have a wired DB row, so a stale config doesn't hide.
+        for name in sorted(enabled):
+            logger.warning(
+                "[social_poster] platform %r listed in social_distribution_platforms "
+                "but no enabled publishing_adapters row exists — skipping", name,
+            )
+        return results
 
-    if "mastodon" in enabled:
-        from services.social_adapters.mastodon import post_to_mastodon
-        results["mastodon"] = await _safe_call_adapter(
-            "mastodon", lambda: post_to_mastodon(text, url)
-        )
+    rows_by_platform = {r.platform: r for r in db_rows}
 
-    if "linkedin" in enabled:
-        # Stub per GH-40 — kept so operators can still flip the flag on
-        # once they wire up OAuth; wrapper catches NotImplementedError.
-        from services.social_adapters.linkedin import post_to_linkedin
-        ln_text = linkedin_post.text if linkedin_post else text
-        results["linkedin"] = await _safe_call_adapter(
-            "linkedin", lambda: post_to_linkedin(ln_text, url)
-        )
+    # Advisory filter: when the legacy ``enabled`` set is non-empty,
+    # require a DB row's platform to also appear in it. When empty,
+    # trust the DB rows alone.
+    if enabled:
+        for legacy_name in sorted(enabled):
+            if legacy_name not in rows_by_platform:
+                logger.warning(
+                    "[social_poster] platform %r listed in "
+                    "social_distribution_platforms but no enabled "
+                    "publishing_adapters row exists — skipping",
+                    legacy_name,
+                )
+        active = [r for r in db_rows if r.platform in enabled]
+    else:
+        active = list(db_rows)
 
-    if "reddit" in enabled:
-        from services.social_adapters.reddit import post_to_reddit
-        title = generic_post.text.split("\n")[0][:300] if generic_post else ""
-        results["reddit"] = await _safe_call_adapter(
-            "reddit", lambda: post_to_reddit(title, url)
+    payload = {"text": text, "url": url}
+    for row in active:
+        result = await _safe_call_adapter(
+            row.platform,
+            lambda r=row: registry.dispatch(
+                "publishing", r.handler_name, payload,
+                site_config=site_config, row=r.as_dict(), pool=pool,
+            ),
         )
+        results[row.platform] = result
+        await _record_publisher_outcome(pool, row, result)
 
     return results
+
+
+async def _record_publisher_outcome(pool, row, result: dict) -> None:
+    """Update per-row counters after a dispatch attempt.
+
+    Mirrors what :func:`services.integrations.tap_runner._record_success`
+    / ``_record_failure`` do for taps — counter writes live inline in
+    the runner rather than a separate writer module so the dispatch
+    site stays the single owner of state transitions.
+
+    No-ops when ``pool`` is ``None`` (test harness, callers without a
+    DB) — the caller has already logged the result by then.
+    """
+    if pool is None:
+        return
+    success = bool(result.get("success"))
+    error = None if success else (result.get("error") or "unknown")
+    status = "success" if success else "failed"
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE publishing_adapters
+                   SET last_run_at = now(),
+                       last_run_status = $2,
+                       last_error = $3,
+                       total_runs = total_runs + 1,
+                       total_failures = total_failures + CASE WHEN $4 THEN 0 ELSE 1 END
+                 WHERE id = $1
+                """,
+                row.id, status, error, success,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[social_poster] failed to record publisher outcome for %s: %s",
+            row.name, exc,
+        )

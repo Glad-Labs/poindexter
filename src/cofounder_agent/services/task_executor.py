@@ -16,6 +16,20 @@ from .ai_content_generator import AIContentGenerator
 from .error_handler import ServiceError
 from .quality_service import UnifiedQualityService
 from .webhook_delivery_service import emit_webhook_event
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 # Operator notifications now route through services.integrations.outbound_dispatcher
 # (rows: discord_ops, telegram_ops). The OpenClaw gateway dependency was retired —
@@ -27,8 +41,7 @@ async def _notify_discord(message: str) -> None:
     _logger = get_logger(__name__)
     try:
         # Load webhook URL from app_settings (DB-first config)
-        import services.site_config as _scm
-        webhook_url = _scm.site_config.get("discord_ops_webhook_url", "")
+        webhook_url = site_config.get("discord_ops_webhook_url", "")
         if not webhook_url:
             _logger.debug("[NOTIFY:discord] No discord_ops_webhook_url configured — skipping")
             return
@@ -101,8 +114,7 @@ class TaskExecutor:
         # How long (seconds) the queue may have pending tasks without any being
         # picked up before we fire a CRITICAL alert. Tunable via
         # app_settings.task_executor_idle_alert_threshold_seconds (#198).
-        import services.site_config as _scm_idle
-        self._IDLE_ALERT_THRESHOLD_S: int = _scm_idle.site_config.get_int(
+        self._IDLE_ALERT_THRESHOLD_S: int = site_config.get_int(
             "task_executor_idle_alert_threshold_seconds", 300
         )
         # Timestamp tracker for stale task sweeping (FIX: was dead code)
@@ -449,17 +461,25 @@ class TaskExecutor:
                             "result": '{"reason": "Semantic duplicate: matches an existing published post"}',
                         },
                     )
-                    # Write pipeline_reviews row so content_tasks view
-                    # resolves approval_status='rejected' for semantic-
-                    # dedup kills, and flip the model_performance outcome
-                    # for any LLM calls already logged for this task.
+                    # Write pipeline_gate_history row so content_tasks
+                    # view resolves approval_status='rejected' for
+                    # semantic-dedup kills, and flip the model_performance
+                    # outcome for any LLM calls already logged for this task.
                     with suppress(Exception):
-                        from services.pipeline_db import PipelineDB
-                        await PipelineDB(self.database_service.pool).add_review(
-                            task_id=task_id,
-                            decision="rejected",
-                            reviewer="semantic_dedup",
-                            feedback=_reason[:2000],
+                        await self.database_service.pool.execute(
+                            """
+                            INSERT INTO pipeline_gate_history
+                                (task_id, gate_name, event_kind, feedback, metadata)
+                            VALUES ($1, $2, $3, $4, $5::jsonb)
+                            """,
+                            task_id,
+                            "semantic_dedup",
+                            "rejected",
+                            _reason[:2000],
+                            json.dumps(
+                                {"reviewer": "semantic_dedup", "decision": "rejected"},
+                                default=str,
+                            ),
                         )
                     with suppress(Exception):
                         await self.database_service.mark_model_performance_outcome(
@@ -645,16 +665,29 @@ class TaskExecutor:
                         topic[:40], quality_score, min_curation_score,
                     )
                     await self.database_service.update_task(task_id, {"status": "rejected"})
-                    # Record the rejection on pipeline_reviews so the
-                    # `content_tasks` view's approval_status column stops
-                    # resolving NULL for auto-rejected rows.
+                    # Record the rejection on pipeline_gate_history so
+                    # the `content_tasks` view's approval_status column
+                    # stops resolving NULL for auto-rejected rows.
                     with suppress(Exception):
-                        from services.pipeline_db import PipelineDB
-                        await PipelineDB(self.database_service.pool).add_review(
-                            task_id=task_id,
-                            decision="rejected",
-                            reviewer="auto_curator",
-                            feedback=f"Quality score {quality_score:.1f} below threshold {min_curation_score:.1f}",
+                        await self.database_service.pool.execute(
+                            """
+                            INSERT INTO pipeline_gate_history
+                                (task_id, gate_name, event_kind, feedback, metadata)
+                            VALUES ($1, $2, $3, $4, $5::jsonb)
+                            """,
+                            task_id,
+                            "auto_curator",
+                            "rejected",
+                            f"Quality score {quality_score:.1f} below threshold {min_curation_score:.1f}",
+                            json.dumps(
+                                {
+                                    "reviewer": "auto_curator",
+                                    "decision": "rejected",
+                                    "quality_score": quality_score,
+                                    "threshold": min_curation_score,
+                                },
+                                default=str,
+                            ),
                         )
                     # Flip model_performance.human_approved=False for the
                     # learning signal (gitea#271 Phase 3.A1).
@@ -715,9 +748,8 @@ class TaskExecutor:
                                WHERE task_id = $2""",
                             preview_token, task_id,
                         )
-                        import services.site_config as _scm_pv
                         # Use worker's own URL for HTML preview (accessible via Tailscale)
-                        _preview_base = _scm_pv.site_config.get(
+                        _preview_base = site_config.get(
                             "preview_base_url", "http://100.81.93.12:8002",
                         )
                         preview_url = f"{_preview_base}/preview/{preview_token}"
@@ -1473,15 +1505,27 @@ class TaskExecutor:
             # resolves approval_status / post_id / post_slug non-NULL for
             # auto-published rows (same contract as the operator path).
             with suppress(Exception):
-                from services.pipeline_db import PipelineDB
-                pdb = PipelineDB(self.database_service.pool)
-                await pdb.add_review(
-                    task_id=task_id,
-                    decision="approved",
-                    reviewer="auto_publish",
-                    feedback=f"Auto-approved at quality score {quality_score:.1f}",
+                await self.database_service.pool.execute(
+                    """
+                    INSERT INTO pipeline_gate_history
+                        (task_id, gate_name, event_kind, feedback, metadata)
+                    VALUES ($1, $2, $3, $4, $5::jsonb)
+                    """,
+                    task_id,
+                    "auto_publish",
+                    "approved",
+                    f"Auto-approved at quality score {quality_score:.1f}",
+                    json.dumps(
+                        {
+                            "reviewer": "auto_publish",
+                            "decision": "approved",
+                            "quality_score": quality_score,
+                        },
+                        default=str,
+                    ),
                 )
-                await pdb.add_distribution(
+                from services.pipeline_db import PipelineDB
+                await PipelineDB(self.database_service.pool).add_distribution(
                     task_id=task_id,
                     target="gladlabs.io",
                     post_id=result.post_id,

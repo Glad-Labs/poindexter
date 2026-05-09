@@ -34,24 +34,17 @@ logger = get_logger(__name__)
 
 
 def _resolve_site_config(site_config: Any) -> Any:
-    """Return the caller-supplied site_config, falling back to the
-    module-level singleton when None.
+    """Return the caller-supplied site_config, falling back to a fresh
+    env-fallback SiteConfig when None.
 
-    The DI sweep (glad-labs-stack#330) migrates callers one batch at a
-    time, so production paths (publish_service / crosspost_to_devto job)
-    pass an explicit instance while legacy paths and the 19 unit tests
-    in ``tests/unit/services/test_devto_service.py`` rely on the
-    main.py:185 shim that re-points the module attribute at the
-    DB-loaded instance during lifespan startup.
+    Production paths (publish_service / crosspost_to_devto job) pass an
+    explicit instance threaded from the lifespan-bound SiteConfig in
+    main.py.
     """
     if site_config is not None:
         return site_config
-    # Module-level import (not a `from ... import site_config`) so the
-    # CI guardrail at scripts/ci/check_site_config_singleton.py doesn't
-    # count this file as an offender — the singleton lookup here is
-    # the explicit DI fallback path, not a hidden direct dependency.
-    import services.site_config as _scm
-    return _scm.site_config
+    from services.site_config import SiteConfig
+    return SiteConfig()
 
 
 # Terminal markers we write into ``posts.metadata->>'devto_status'`` so

@@ -30,7 +30,28 @@ from services.sync_service import SyncService
 
 
 def _make_record(data: dict):
-    """Create a mock asyncpg.Record that supports dict-style access and .get()."""
+    """Create a mock asyncpg.Record that supports dict-style access and .get().
+
+    Strict ``__getitem__`` (KeyError on missing key) so production code
+    that reads a column the test didn't seed fails loudly instead of
+    silently getting ``None`` and passing — see GH#337.
+
+    Use this helper ONLY when production code reads ``rec[<key>]`` — the
+    strict mapping is what gives the test signal value. When a test
+    just hands the row to a patched ``ModelConverter`` and asserts on
+    the converter's return value, prefer ``object()`` directly: a
+    literal sentinel makes it obvious the row contents are not under
+    test, and prevents the row-faker from quietly accumulating stale
+    columns over time (the original symptom in GH#30 — e.g. the
+    long-removed ``tag_ids`` column previously seeded in the
+    push_post test below).
+
+    Note: ``services.sync_service`` reads every column it touches off
+    the asyncpg ``Record`` directly (via ``rec[<key>]`` / ``rec.get``)
+    in its ``_upsert_*`` static helpers and pull paths, so every
+    ``_make_record`` call in this file is data-flow, not orchestration —
+    no ``object()`` sentinels apply here.
+    """
     rec = MagicMock()
     rec.__getitem__ = lambda self, key: data[key]
     rec.get = lambda key, default=None: data.get(key, default)

@@ -10,15 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Ensure site_config has test values before importing newsletter_service
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+# Seed the newsletter_service module's per-module ``site_config`` attr
+# (post-#330 sweep — each module owns its DI seam, no shared singleton).
+import services.newsletter_service as _newsletter_service_mod  # noqa: E402
 
-site_config._config["site_url"] = "https://test.example.com"
-site_config._config["company_name"] = "Test Company"
+_newsletter_service_mod.site_config._config["site_url"] = "https://test.example.com"
+_newsletter_service_mod.site_config._config["company_name"] = "Test Company"
 
-# E402 — newsletter_service reads site_config at import time, so the
-# seeding above must happen before this import.
 from services.newsletter_service import (  # noqa: E402
     _build_html,
     _get_active_subscribers,
@@ -84,7 +82,7 @@ class TestSendNewsletterDisabled:
     @pytest.mark.asyncio
     async def test_returns_skipped_when_disabled(self):
         pool = AsyncMock()
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.newsletter_service.site_config") as mock_cfg:
             mock_cfg.get_bool.return_value = False
             mock_cfg.get.return_value = ""
             mock_cfg.get_int.return_value = 50
@@ -95,7 +93,7 @@ class TestSendNewsletterDisabled:
     @pytest.mark.asyncio
     async def test_returns_skipped_when_no_resend_key(self):
         pool = AsyncMock()
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.newsletter_service.site_config") as mock_cfg:
             mock_cfg.get_bool.return_value = True
             mock_cfg.get.side_effect = lambda k, d="": {
                 "newsletter_provider": "resend",
@@ -127,7 +125,7 @@ class TestSendNewsletterSuccess:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.newsletter_service.site_config") as mock_cfg:
             mock_cfg.get_bool.side_effect = lambda k, d=False: {
                 "newsletter_enabled": True,
                 "smtp_use_tls": True,
@@ -174,7 +172,7 @@ class TestSendNewsletterSuccess:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.newsletter_service.site_config") as mock_cfg:
             mock_cfg.get_bool.side_effect = lambda k, d=False: {
                 "newsletter_enabled": True,
                 "smtp_use_tls": True,
@@ -205,7 +203,7 @@ class TestSendNewsletterSuccess:
         pool = AsyncMock()
         pool.fetch = AsyncMock(return_value=[])
 
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.newsletter_service.site_config") as mock_cfg:
             mock_cfg.get_bool.side_effect = lambda k, d=False: {
                 "newsletter_enabled": True,
             }.get(k, d)
@@ -430,7 +428,7 @@ class TestSendNewsletterSmtpProvider:
 
         pool = AsyncMock()
 
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.newsletter_service.site_config") as mock_cfg:
             mock_cfg.get_bool.side_effect = lambda k, d=False: {
                 "newsletter_enabled": True,
             }.get(k, d)
@@ -456,7 +454,7 @@ class TestSendNewsletterSmtpProvider:
         ])
         pool.execute = AsyncMock()
 
-        with patch("services.site_config.site_config") as mock_cfg, \
+        with patch("services.newsletter_service.site_config") as mock_cfg, \
              patch("services.newsletter_service._send_via_smtp", new_callable=AsyncMock) as mock_smtp, \
              patch("services.newsletter_service._send_via_resend", new_callable=AsyncMock) as mock_resend:
             mock_cfg.get_bool.side_effect = lambda k, d=False: {

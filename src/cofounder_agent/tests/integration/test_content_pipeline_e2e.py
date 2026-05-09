@@ -275,15 +275,18 @@ class TestQAReview:
     )
     async def test_qa_with_gemma3_27b(self):
         """QA review specifically with gemma3:27b model produces valid JSON output."""
-        from services.multi_model_qa import QA_PROMPT
         from services.ollama_client import OllamaClient
+        from services.prompt_manager import get_prompt_manager
 
         client = OllamaClient()
         try:
-            prompt = QA_PROMPT.format(
+            prompt = get_prompt_manager().get_prompt(
+                "qa.review",
                 title="Benefits of Unit Testing",
                 topic="unit testing",
                 content=SAMPLE_BLOG_CONTENT[:4000],
+                current_date="2026-05-09",
+                sources_block="",
             )
             result = await client.generate(
                 prompt=prompt,
@@ -503,8 +506,8 @@ class TestThinkingModels:
         chain-of-thought reasoning consumes tokens before visible output starts.
         With complex prompts, qwen3.5 may use 4000+ tokens on reasoning alone.
         """
-        from services.multi_model_qa import QA_PROMPT
         from services.ollama_client import OllamaClient
+        from services.prompt_manager import get_prompt_manager
 
         qwen_model = _find_ollama_model("qwen3.5")
         if not qwen_model:
@@ -517,10 +520,13 @@ class TestThinkingModels:
                 "Unit testing catches bugs early and enables safe refactoring. "
                 "Teams that test ship fewer bugs."
             )
-            prompt = QA_PROMPT.format(
+            prompt = get_prompt_manager().get_prompt(
+                "qa.review",
                 title="Benefits of Unit Testing",
                 topic="unit testing",
                 content=short_content,
+                current_date="2026-05-09",
+                sources_block="",
             )
             result = await client.generate(
                 prompt=prompt + "\n/no_think",

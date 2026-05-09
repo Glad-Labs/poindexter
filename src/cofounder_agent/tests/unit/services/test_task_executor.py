@@ -342,7 +342,7 @@ class TestThrottleMetricToggle:
         )
 
         with (
-            patch("services.site_config.site_config", mock_cfg),
+            patch("services.task_executor.site_config", mock_cfg),
             patch.object(executor, "_process_single_task", new_callable=AsyncMock) as mock_single,
             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),
@@ -379,7 +379,7 @@ class TestThrottleMetricToggle:
         )
 
         with (
-            patch("services.site_config.site_config", mock_cfg),
+            patch("services.task_executor.site_config", mock_cfg),
             patch.object(executor, "_process_single_task", new_callable=AsyncMock) as mock_single,
             patch.object(executor, "_sweep_stale_tasks", new_callable=AsyncMock),
             patch("services.task_executor.asyncio.sleep", new_callable=AsyncMock),

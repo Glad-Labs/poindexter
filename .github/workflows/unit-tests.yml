@@ -36,15 +36,8 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
-
-      # Fast stdlib-only lint that catches new callers of the legacy
-      # site_config singleton (Glad-Labs/glad-labs-stack#330). Runs
-      # before the heavy poetry install so a violating PR fails in
-      # ~2 seconds instead of 4 minutes.
-      - name: Lint — site_config singleton guardrail
-        run: python scripts/ci/check_site_config_singleton.py
 
       - name: Install Poetry
         run: pip install "poetry==2.2.1"

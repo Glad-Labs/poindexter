@@ -36,10 +36,17 @@ class ReloadSiteConfigJob:
     idempotent = True
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
-        del config  # Nothing tunable at the job level — site_config.reload
-        #            always reads every active non-secret row.
-
-        from services.site_config import site_config
+        # The plugin scheduler seeds the lifespan-bound SiteConfig instance
+        # at ``config["_site_config"]`` (per CLAUDE.md "DI seam" pattern).
+        # That's the SAME instance every wired module reads from, so
+        # calling .reload() on it refreshes the cache for every consumer.
+        site_config = config.get("_site_config")
+        if site_config is None:
+            return JobResult(
+                ok=False,
+                detail="no site_config in config (job dispatcher seeding broken?)",
+                changes_made=0,
+            )
 
         if pool is None:
             return JobResult(ok=False, detail="no pool available", changes_made=0)

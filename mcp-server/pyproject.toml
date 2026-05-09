@@ -1,6 +1,6 @@
 [project]
 name = "poindexter-mcp"
-version = "1.0.0"
+version = "0.5.0"
 description = "Poindexter MCP Server — AI content pipeline control. Built by Glad Labs LLC."
 requires-python = ">=3.12"
 dependencies = [

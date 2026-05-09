@@ -52,6 +52,20 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +224,6 @@ async def _emit_progress(
         return
     try:
         from services.integrations.operator_notify import notify_operator
-        import services.site_config as _scm
-        site_config = _scm.site_config
         stream_on = bool(
             site_config.get_bool(
                 "template_runner_progress_streaming", True,
@@ -935,9 +947,8 @@ class TemplateRunner:
         """Read the gating flag from app_settings. Lazy import to avoid
         the SiteConfig DI cycle at module import time."""
         try:
-            import services.site_config as _scm
             return bool(
-                _scm.site_config.get_bool(
+                site_config.get_bool(
                     "template_runner_use_postgres_checkpointer", False,
                 )
             )

@@ -24,22 +24,32 @@ from collections.abc import Callable
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
-def _site_config():
-    """Lazy site_config lookup — avoids import-cycle headaches and
-    ensures we always see the loaded values, not a stale import-time
-    snapshot. See ``_slow_query_threshold_ms`` for the rationale.
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Tests can call set_site_config() directly for isolation; falls back
+# to a fresh env-fallback instance when unset (e.g. during import or
+# in legacy test rigs).
+site_config: SiteConfig = SiteConfig()
 
-    Module-level import (not ``from ... import site_config``) keeps
-    this file off the CI guardrail's offender list — decorators is a
-    leaf utility used by every async DB call, so threading SiteConfig
-    through every callsite would be churn for no win. The singleton
-    fallback here is the documented DI seam path.
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
+
+def _sc() -> SiteConfig:
+    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly).
+
+    decorators is a leaf utility used by every async DB call, so threading
+    SiteConfig through every callsite would be churn for no win. The
+    setter-bound instance keeps reads pointing at the live, DB-loaded
+    config without re-importing the deleted module-level singleton.
     """
-    import services.site_config as _scm
-    return _scm.site_config
+    return site_config
 
 
 def _slow_query_threshold_ms() -> int:
@@ -54,15 +64,15 @@ def _slow_query_threshold_ms() -> int:
     Uses site_config.get_int which already validates and falls back
     to the default on bad data — no try/except needed here.
     """
-    return _site_config().get_int("slow_query_threshold_ms", 100)
+    return _sc().get_int("slow_query_threshold_ms", 100)
 
 
 def _log_all_queries() -> bool:
-    return _site_config().get_bool("log_all_queries", False)
+    return _sc().get_bool("log_all_queries", False)
 
 
 def _enable_query_monitoring() -> bool:
-    return _site_config().get_bool("enable_query_monitoring", True)
+    return _sc().get_bool("enable_query_monitoring", True)
 
 
 def log_query_performance(

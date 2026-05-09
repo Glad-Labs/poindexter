@@ -35,16 +35,19 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 
-# Module-level alias of the singleton — the CI guardrail at
-# scripts/ci/check_site_config_singleton.py only flags
-# ``from services.site_config import site_config`` style imports;
-# the alias-via-attribute path lets this leaf service keep its
-# existing site_config.get(...) call sites without churn while
-# the file drops off the offender list. New code paths should
-# inject site_config explicitly through the standard DI seams.
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# set_site_config() for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 
 try:
     import redis.asyncio as aioredis  # type: ignore[import-untyped]

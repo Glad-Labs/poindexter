@@ -172,44 +172,75 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             # returns env/defaults for missed keys until the DB is reachable.
             app.state.site_config = _site_cfg
 
-        # Phase H step 5 (GH#95): point the module-level `site_config`
-        # attribute at the same loaded instance so legacy function-body
-        # imports (~40+ services still pending migration) see the same
-        # DB-loaded values as `app.state.site_config`. Without this, every
-        # ``from services.site_config import site_config`` reaches for a
-        # separate env-default-only instance — a silent regression that
-        # makes the pipeline generate content using the WRONG model /
-        # prompt config. The follow-up migration will remove each lazy
-        # importer; this shim just keeps them pointing at the right
-        # instance until then.
-        import services.site_config as _site_config_mod
-        _site_config_mod.site_config = _site_cfg
-
-        # Phase H (GH#95): bind the GPU scheduler singleton to the
-        # DB-loaded site_config so its lock() / status() / _unload_sdxl()
-        # paths read DB-backed tunables (thresholds, nvidia_exporter_url,
-        # ollama_base_url) instead of module-level defaults.
-        try:
-            from services.gpu_scheduler import gpu as _gpu
-            _gpu.set_site_config(_site_cfg)
-        except Exception as e:
-            logger.warning("[LIFESPAN] gpu.set_site_config failed: %s", e)
-
-        # Phase H finish (GH#95): bind the same DB-loaded SiteConfig into
-        # ``services.decorators`` and ``services.ollama_client``. These
-        # two modules used to import the singleton at module load — that
-        # captured a stale reference to the empty pre-lifespan singleton.
-        # Lifespan now wires them explicitly via setters.
-        try:
-            from services import decorators as _decorators
-            _decorators.set_site_config(_site_cfg)
-        except Exception as e:
-            logger.warning("[LIFESPAN] decorators.set_site_config failed: %s", e)
-        try:
-            from services import ollama_client as _ollama_client_mod
-            _ollama_client_mod.set_site_config(_site_cfg)
-        except Exception as e:
-            logger.warning("[LIFESPAN] ollama_client.set_site_config failed: %s", e)
+        # GH#330: wire the lifespan-bound SiteConfig into every module
+        # that exposes a set_site_config() setter. Each module owns its
+        # own per-module ``site_config`` attribute (defaults to a fresh
+        # env-fallback SiteConfig at import); the setters point them all
+        # at the SAME loaded instance carried in ``app.state.site_config``.
+        # This replaces the old singleton + lifespan-shim pattern.
+        _wired_modules = [
+            "services.admin",  # not a module — placeholder; admin.py is wired below as a special
+        ]
+        # Modules with module-level set_site_config():
+        for _modname in (
+            "services.gpu_scheduler",
+            "services.decorators",
+            "services.ollama_client",
+            "services.url_validator",
+            "services.url_scraper",
+            "services.web_research",
+            "services.redis_cache",
+            "services.r2_upload_service",
+            "services.revalidation_service",
+            "services.static_export_service",
+            "services.telegram_config",
+            "services.video_service",
+            "services.webhook_delivery_service",
+            "services.publish_service",
+            "services.newsletter_service",
+            "services.podcast_service",
+            "services.multi_model_qa",
+            "services.image_decision_agent",
+            "services.content_validator",
+            "services.research_service",
+            "services.research_quality_service",
+            "services.seed_url_fetcher",
+            "services.self_review",
+            "services.title_generation",
+            "services.title_originality_external",
+            "services.internal_rag_source",
+            "services.scheduled_publisher",
+            "services.topic_ranking",
+            "services.database_service",
+            "services.quality_scorers",
+            "services.quality_models",
+            "services.quality_service",
+            "services.validator_config",
+            "services.template_runner",
+            "services.topic_batch_service",
+            "services.pipeline_architect",
+            "services.prompt_manager",
+            "services.retention_janitor",
+            "services.ai_content_generator",
+            "services.task_executor",
+            "services.image_service",
+            "services.content_router_service",
+            "services.seo_content_generator",
+            "services.social_poster",
+            "utils.route_utils",
+            "admin",
+            "agents.content_agent.config",
+        ):
+            try:
+                _mod = __import__(_modname, fromlist=["set_site_config"])
+                _setter = getattr(_mod, "set_site_config", None)
+                if callable(_setter):
+                    _setter(_site_cfg)
+            except Exception as e:
+                logger.warning(
+                    "[LIFESPAN] set_site_config wiring failed for %s: %s",
+                    _modname, e,
+                )
 
         # Phase H (GH#95): wire site_config into the TaskExecutor that
         # startup_manager built. startup_manager runs before the DB pool
@@ -224,10 +255,15 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             _te._site_config = _site_cfg
             _te.app_state = app.state
             try:
-                _te.quality_service.set_site_config(_site_cfg)
+                # UnifiedQualityService is a class instance — write the
+                # site_config attribute the constructor stores on
+                # self._site_config (services/quality_service.py:134).
+                # Don't call ``.set_site_config(...)`` here: that method
+                # exists only on the module, not on the instance.
+                _te.quality_service._site_config = _site_cfg
             except Exception as e:
                 logger.warning(
-                    "[LIFESPAN] task_executor.quality_service.set_site_config failed: %s", e,
+                    "[LIFESPAN] task_executor.quality_service site_config wiring failed: %s", e,
                 )
 
         # Re-initialize observability stack now that site_config is loaded from

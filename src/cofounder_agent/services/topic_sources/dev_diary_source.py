@@ -120,62 +120,44 @@ class DevDiaryContext:
         )
 
     def headline(self) -> str:
-        """Pick a short headline from the most prominent activity.
+        """Build a generic, count-based topic for the day.
 
-        Used as the topic title when the structured bundle is handed to
-        the writer. Falls back to a generic dated title if nothing
-        notable is found.
+        The topic is intentionally NOT derived from any individual PR or
+        commit subject — embedding a single title invites two failure
+        modes the writer has hit in production
+        (Glad-Labs/poindexter#352, #353):
 
-        Truncation is at WORD BOUNDARIES — a previous bug
-        (Glad-Labs/poindexter#352) sliced at character 60 mid-string,
-        which turned ``...auto-load POINDEXTER_SECRET_KEY`` into
-        ``...auto-load POINDEXTER_SE``. The writer then hallucinated an
-        explanation of ``POINDEXTER_SE`` as if it were a real env var.
-        ``textwrap.shorten`` breaks at whitespace and adds an ellipsis,
-        so the writer sees an obviously-truncated title and the
-        identifier never appears partial.
+        1. Mid-identifier truncation. A long title like
+           ``fix(cli): rank-batch sys#N markers + auto-load
+           POINDEXTER_SECRET_KEY`` got sliced to
+           ``...auto-load POINDEXTER_SE`` somewhere in the
+           ``topic`` → ``pipeline_tasks`` → writer chain, and the
+           writer hallucinated an explanation of ``POINDEXTER_SE`` as if
+           it were a real env var.
+        2. Topic-anchored fabrication. Even with a clean truncation, the
+           writer tends to riff on the topic string semantically rather
+           than reading the structured ``task_metadata.context_bundle``
+           that has the actual PR titles, URLs, and authors. Removing
+           the PR title from the topic forces the writer onto the bundle.
+
+        The full PR / commit data is preserved in
+        ``task_metadata.context_bundle`` (via :meth:`to_dict`); only the
+        topic *summary* line changes.
         """
+        date = self.date
+        parts: list[str] = []
         if self.merged_prs:
-            top = self.merged_prs[0].get("title", "").strip()
-            if top:
-                return f"Daily dev diary — {self.date}: {_short(top, 80)}"
+            n = len(self.merged_prs)
+            parts.append(f"{n} PR{'s' if n != 1 else ''}")
         if self.notable_commits:
-            top = self.notable_commits[0].get("subject", "").strip()
-            if top:
-                return f"Daily dev diary — {self.date}: {_short(top, 80)}"
-        return f"Daily dev diary — {self.date}"
-
-
-def _short(text: str, width: int) -> str:
-    """Word-boundary-aware truncation with ellipsis.
-
-    Wraps ``textwrap.shorten`` for the normal case (multi-word strings
-    that cleanly truncate at whitespace). Two edge cases need handling
-    because ``shorten``'s behaviour isn't ideal for our context:
-
-    - Single word longer than ``width`` → ``shorten`` returns the bare
-      placeholder. That would produce a title of just "…" which is
-      useless. We fall back to a hard-cut at ``width-1`` plus the
-      placeholder so the writer at least sees the start of the
-      identifier and an explicit truncation marker.
-    - Already-fits text → return as-is rather than running it through
-      ``shorten``'s whitespace-collapse pass.
-
-    The point isn't perfect cosmetics — it's preventing the
-    Glad-Labs/poindexter#352 failure mode where ``POINDEXTER_SECRET_KEY``
-    became ``POINDEXTER_SE`` and the writer hallucinated an explanation
-    of the truncated identifier.
-    """
-    import textwrap
-    text = " ".join(text.split())  # collapse internal whitespace
-    if len(text) <= width:
-        return text
-    short = textwrap.shorten(text, width=width, placeholder="…")
-    if short == "…":
-        # Single-word-longer-than-width pathological case — surface a
-        # prefix + the placeholder rather than just the placeholder.
-        return text[: max(width - 1, 1)] + "…"
-    return short
+            n = len(self.notable_commits)
+            parts.append(f"{n} commit{'s' if n != 1 else ''}")
+        if not parts and self.recent_posts:
+            n = len(self.recent_posts)
+            parts.append(f"{n} post{'s' if n != 1 else ''}")
+        if parts:
+            return f"Daily dev diary — {date} ({', '.join(parts)})"
+        return f"Daily dev diary — {date}"
 
 
 # ---------------------------------------------------------------------------

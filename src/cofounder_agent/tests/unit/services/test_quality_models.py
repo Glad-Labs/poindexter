@@ -196,7 +196,7 @@ class TestCriticalFloorTunable:
             relevance=55,  # Above default 50, but below custom 60
             seo_quality=90, readability=90, engagement=90,
         )
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.quality_models.site_config") as mock_cfg:
             mock_cfg.get_float.return_value = 60.0
             result = dims.average()
         # relevance (55) < custom floor (60) → cap at 55
@@ -209,7 +209,7 @@ class TestCriticalFloorTunable:
             relevance=30,  # Below default floor 50
             seo_quality=90, readability=90, engagement=90,
         )
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.quality_models.site_config") as mock_cfg:
             mock_cfg.get_float.side_effect = RuntimeError("config down")
             result = dims.average()
         # Falls back to CRITICAL_FLOOR=50 → 30 < 50 → cap at 30

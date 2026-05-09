@@ -39,7 +39,15 @@ from urllib.parse import urlparse, urlunparse
 import pytest
 import pytest_asyncio
 
-from services.site_config import site_config
+from services.site_config import SiteConfig
+
+# Single shared SiteConfig instance for the unit-test process. This
+# replaces the deleted module-level singleton at
+# ``services.site_config.site_config``. Every per-module ``site_config``
+# attr (post-#330 sweep) is repointed at this instance below so tests
+# that seed brand-config values via ``_TEST_BRAND_CONFIG`` see them
+# everywhere.
+site_config = SiteConfig()
 
 # ---------------------------------------------------------------------------
 # Layer 1 — brand-identity seed (legacy)
@@ -66,6 +74,91 @@ _TEST_BRAND_CONFIG = {
 
 for _key, _value in _TEST_BRAND_CONFIG.items():
     site_config._config.setdefault(_key, _value)
+
+
+# Post-#330 sweep: every module that previously read the global
+# ``services.site_config.site_config`` singleton now owns its own
+# ``site_config: SiteConfig`` attribute (default fresh empty instance,
+# wired by main.py at lifespan startup). Tests that drive those
+# modules directly need the SAME brand seed values present on each
+# module-level instance — otherwise ``site_config.require("site_url")``
+# raises in code paths that were previously satisfied by the test
+# fixture's seed of the global singleton.
+#
+# Walking every module is too expensive (and triggers heavy imports);
+# instead we point each known module's ``site_config`` attribute at the
+# SAME instance the conftest seeds. This preserves the previous
+# semantic (one shared seed surfaces everywhere) while keeping the new
+# DI seam in place. ``set_site_config()`` is the canonical wiring path
+# main.py uses; we use it here for parity.
+_SHARED_TEST_MODULES = (
+    "services.publish_service",
+    "services.image_service",
+    "services.content_router_service",
+    "services.seo_content_generator",
+    "services.image_decision_agent",
+    "services.podcast_service",
+    "services.video_service",
+    "services.newsletter_service",
+    "services.content_validator",
+    "services.multi_model_qa",
+    "services.research_service",
+    "services.research_quality_service",
+    "services.seed_url_fetcher",
+    "services.self_review",
+    "services.title_generation",
+    "services.title_originality_external",
+    "services.internal_rag_source",
+    "services.scheduled_publisher",
+    "services.topic_ranking",
+    "services.topic_batch_service",
+    "services.database_service",
+    "services.quality_scorers",
+    "services.quality_models",
+    "services.quality_service",
+    "services.validator_config",
+    "services.template_runner",
+    "services.pipeline_architect",
+    "services.prompt_manager",
+    "services.retention_janitor",
+    "services.ai_content_generator",
+    "services.task_executor",
+    "services.social_poster",
+    "services.gpu_scheduler",
+    "services.decorators",
+    "services.ollama_client",
+    "services.url_validator",
+    "services.url_scraper",
+    "services.web_research",
+    "services.redis_cache",
+    "services.r2_upload_service",
+    "services.revalidation_service",
+    "services.static_export_service",
+    "services.telegram_config",
+    "services.webhook_delivery_service",
+    "services.devto_service",
+    "utils.route_utils",
+)
+
+
+def _share_test_site_config() -> None:
+    """Point every migrated module's ``site_config`` attribute at the
+    same instance the conftest seeded with _TEST_BRAND_CONFIG."""
+    import importlib
+    for _modname in _SHARED_TEST_MODULES:
+        try:
+            _mod = importlib.import_module(_modname)
+        except Exception:
+            continue
+        _setter = getattr(_mod, "set_site_config", None)
+        if callable(_setter):
+            try:
+                _setter(site_config)
+            except Exception:
+                pass
+
+
+_share_test_site_config()
 
 
 # ---------------------------------------------------------------------------
@@ -175,12 +268,15 @@ def _reset_singletons_between_tests():
 
     # site_config has a module-level dict; preserve the brand keys we
     # seeded at conftest import time + drop anything set during the test.
+    # Post-#330 sweep there's no global singleton — reset the conftest's
+    # shared instance instead.
     try:
-        from services.site_config import site_config as _sc
-        _sc._config = {k: v for k, v in _sc._config.items() if k in _TEST_BRAND_CONFIG}
+        site_config._config = {
+            k: v for k, v in site_config._config.items() if k in _TEST_BRAND_CONFIG
+        }
         # Re-seed in case a test wiped the brand keys.
         for k, v in _TEST_BRAND_CONFIG.items():
-            _sc._config.setdefault(k, v)
+            site_config._config.setdefault(k, v)
     except Exception:
         pass
 
@@ -274,19 +370,19 @@ async def _db_pool_session():
     finally:
         await admin.close()
 
-    # Replay infra init.sql (extensions + base schema) before migrations.
+    # Install extensions before the baseline migration runs. CREATE
+    # EXTENSION needs ownership of the database, which a worker-level
+    # connection in this DSN already has. We deliberately do NOT replay
+    # ``infrastructure/local-db/init.sql`` here anymore — that file
+    # carried a legacy ``embeddings`` schema (no ``text_search`` column)
+    # that conflicted with the baseline's ``CREATE INDEX ... USING gin
+    # (text_search)``. The 0000_baseline migration now owns bootstrap.
     fresh = await asyncpg.connect(test_dsn)
     try:
         await fresh.execute("CREATE EXTENSION IF NOT EXISTS vector")
         await fresh.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
-        for p in Path(__file__).resolve().parents:
-            init_sql = p / "infrastructure" / "local-db" / "init.sql"
-            if init_sql.is_file():
-                try:
-                    await fresh.execute(init_sql.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-                break
+        await fresh.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        await fresh.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
     finally:
         await fresh.close()
 
@@ -331,9 +427,17 @@ async def db_pool(_db_pool_session):
         yield _db_pool_session
     finally:
         async with _db_pool_session.acquire() as conn:
-            # CASCADE drops dependent rows in niche_goals + niche_sources +
-            # topic_batches + candidates + discovery_runs.
+            # Cascade-delete every test-created niche while leaving the
+            # baseline-seeded ``dev_diary`` row in place — tests that
+            # validate the seed (test_dev_diary_niche.py) need it
+            # present every time, not freshly truncated. Pre-squash this
+            # was ``TRUNCATE niches CASCADE`` because the fixture
+            # re-imported migration 0134 to recreate the seed; that
+            # migration file is now part of 0000_baseline and only runs
+            # at session setup, so we keep the row instead of replaying.
             try:
-                await conn.execute("TRUNCATE niches CASCADE")
+                await conn.execute(
+                    "DELETE FROM niches WHERE slug NOT IN ('dev_diary')"
+                )
             except Exception:
                 pass

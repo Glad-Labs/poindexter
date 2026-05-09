@@ -19,13 +19,27 @@ import time
 import httpx
 
 from services.logger_config import get_logger
-import services.site_config as _scm
-# Module-level alias kept under the historical ``_sc`` name. The CI
-# guardrail at scripts/ci/check_site_config_singleton.py only flags the
-# ``from services.site_config import site_config`` form.
-_sc = _scm.site_config
+from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Tests can call set_site_config() directly for isolation; falls back
+# to a fresh env-fallback instance when unset (e.g. during import or
+# in legacy test rigs).
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
+
+def _sc() -> SiteConfig:
+    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
+    return site_config
+
 
 # Cache entry: (is_valid: bool, status_code: int | None, checked_at: float)
 _CacheEntry = tuple[bool, int | None, float]
@@ -33,9 +47,12 @@ _CacheEntry = tuple[bool, int | None, float]
 # 7 days in seconds
 _CACHE_TTL = 7 * 24 * 60 * 60
 
-# Internal domains to skip (no point validating our own URLs during generation)
-_site_domain = _sc.get("site_domain", "localhost:3000").split(":")[0]
-_SKIP_DOMAINS = {_site_domain, f"www.{_site_domain}", "localhost", "127.0.0.1"}
+
+def _skip_domains() -> set[str]:
+    """Internal domains to skip during validation (resolved per call so
+    the post-lifespan site_domain change actually takes effect)."""
+    site_domain = _sc().get("site_domain", "localhost:3000").split(":")[0]
+    return {site_domain, f"www.{site_domain}", "localhost", "127.0.0.1"}
 
 # Regex for extracting URLs from markdown / HTML content
 # Matches http(s):// URLs in markdown links, raw URLs, and href attributes
@@ -115,7 +132,7 @@ class URLValidator:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
                 follow_redirects=True,
-                headers={"User-Agent": f"{_sc.get('site_name', 'ContentPipeline')}-LinkChecker/1.0"},
+                headers={"User-Agent": f"{_sc().get('site_name', 'ContentPipeline')}-LinkChecker/1.0"},
             ) as client:
                 resp = await client.head(url)
                 status_code = resp.status_code
@@ -196,7 +213,7 @@ class URLValidator:
         try:
             from urllib.parse import urlparse
             host = urlparse(url).hostname or ""
-            return host in _SKIP_DOMAINS
+            return host in _skip_domains()
         except Exception:
             return False
 

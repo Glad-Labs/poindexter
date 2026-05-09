@@ -49,50 +49,14 @@ never return that.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from plugins.stage import StageResult
+from services.prompt_manager import get_prompt_manager
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Rewrite prompt template (moved out of content_router_service.py)
-# ---------------------------------------------------------------------------
-
-
-QA_AGGREGATE_REWRITE_PROMPT = """You are revising your own draft to fix
-EVERY issue a team of editors identified. Do NOT rewrite the entire
-article. Do NOT add new sections. Only fix the specific problems
-listed below, making the minimum changes needed to resolve each one.
-
-Keep the same structure, same headings, same code examples where they
-aren't affected by the issues, same length (within 10%).
-
-TITLE: {title}
-
-ISSUES TO FIX (from programmatic validator + LLM critics + consistency checker):
-{issues_to_fix}
-
-How to interpret:
-- "[critical]" means the issue will block publishing if not fixed. Top priority.
-- "[warning]" means it will drag the score down but won't veto. Fix these too.
-- "Contradictions:" lines mean sections disagree with each other — rewrite the
-  weaker or later one to align with the stronger or earlier one.
-- "Fabricated" or "Impossible" lines mean the draft made up a person, statistic,
-  quote, or company claim. Remove the fabrication entirely; do NOT replace it
-  with another made-up fact — either soften to a general statement or cut.
-- "Generic section title" means replace the heading with a creative, benefit-
-  focused alternative (never "Introduction", "Conclusion", "Summary", etc.).
-- "Filler intro" means rewrite the first paragraph with a concrete hook, not
-  "In this post..." or "In today's fast-paced world...".
-
-ORIGINAL DRAFT:
-{content}
-
-Return ONLY the revised article text. Do not include meta-commentary,
-notes about what you changed, or markdown code fences around the output."""
 
 
 # ---------------------------------------------------------------------------
@@ -460,21 +424,30 @@ class CrossModelQAStage:
                     "[cross_model_qa] mark_model_performance_outcome failed: %s",
                     mp_err,
                 )
-            # Write the rejection to pipeline_reviews so the content_tasks
-            # view's approval_status resolves correctly. Otherwise QA-rejected
-            # tasks show NULL in Grafana approval-status charts, because the
-            # view's scalar subquery on pipeline_reviews returns nothing.
+            # Write the rejection to pipeline_gate_history so the
+            # content_tasks view's approval_status resolves correctly.
+            # Otherwise QA-rejected tasks show NULL in Grafana approval-
+            # status charts, because the view's scalar subquery returns
+            # nothing.
             try:
-                from services.pipeline_db import PipelineDB
-                await PipelineDB(database_service.pool).add_review(
-                    task_id=task_id,
-                    decision="rejected",
-                    reviewer="multi_model_qa",
-                    feedback=reason[:2000],
+                await database_service.pool.execute(
+                    """
+                    INSERT INTO pipeline_gate_history
+                        (task_id, gate_name, event_kind, feedback, metadata)
+                    VALUES ($1, $2, $3, $4, $5::jsonb)
+                    """,
+                    task_id,
+                    "multi_model_qa",
+                    "rejected",
+                    reason[:2000],
+                    json.dumps(
+                        {"reviewer": "multi_model_qa", "decision": "rejected"},
+                        default=str,
+                    ),
                 )
             except Exception as pr_err:
                 logger.warning(
-                    "[cross_model_qa] pipeline_reviews write failed for %s: %s",
+                    "[cross_model_qa] pipeline_gate_history write failed for %s: %s",
                     task_id[:8], pr_err,
                 )
 
@@ -548,8 +521,11 @@ async def _rewrite_draft(
     from plugins.registry import get_all_llm_providers
     from services.audit_log import audit_log_bg
 
-    prompt = QA_AGGREGATE_REWRITE_PROMPT.format(
-        title=title, issues_to_fix=issues_to_fix, content=content_text,
+    prompt = get_prompt_manager().get_prompt(
+        "qa.aggregate_rewrite",
+        title=title,
+        issues_to_fix=issues_to_fix,
+        content=content_text,
     )
 
     # v2.3: Provider Protocol instead of concrete OllamaClient. Per-call

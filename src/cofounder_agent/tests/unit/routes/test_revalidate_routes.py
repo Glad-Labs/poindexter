@@ -192,7 +192,7 @@ class TestTriggerNextjsRevalidation:
     @pytest.fixture(autouse=True)
     def _patch_site_config(self):
         mock_cfg = _mock_site_config()
-        with patch("services.site_config.site_config", mock_cfg), \
+        with patch("services.revalidation_service.site_config", mock_cfg), \
              patch("services.revalidation_service.site_config", mock_cfg):
             yield
 
@@ -264,7 +264,7 @@ class TestTriggerNextjsRevalidation:
             "public_site_url": "http://my-site.example.com",
         }.get(key, default)
         mock_cfg.get_secret = AsyncMock(return_value="test-secret")
-        with patch("services.site_config.site_config", mock_cfg), \
+        with patch("services.revalidation_service.site_config", mock_cfg), \
              patch("services.revalidation_service.site_config", mock_cfg), \
              patch("services.revalidation_service.httpx.AsyncClient", return_value=mock_client):
             result = self._run(trigger_nextjs_revalidation(["/blog"]))

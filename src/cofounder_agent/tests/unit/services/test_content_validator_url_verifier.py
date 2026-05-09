@@ -75,7 +75,7 @@ class TestVerifyContentUrls:
             "https://example.com/doc": _make_response(200),
         })
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "See [the docs](https://example.com/doc) for details."
             issues = await verify_content_urls(content)
@@ -90,7 +90,7 @@ class TestVerifyContentUrls:
             "https://example.com/missing": _make_response(404),
         })
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Broken: [link](https://example.com/missing)"
             issues = await verify_content_urls(content)
@@ -105,7 +105,7 @@ class TestVerifyContentUrls:
             "https://example.com/server-down": _make_response(500),
         })
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Server error: https://example.com/server-down"
             issues = await verify_content_urls(content)
@@ -118,7 +118,7 @@ class TestVerifyContentUrls:
             head_exception=httpx.TimeoutException("slow server"),
         )
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Slow link: [docs](https://slow.example.com/x)"
             issues = await verify_content_urls(content)
@@ -132,7 +132,7 @@ class TestVerifyContentUrls:
             head_exception=ConnectionError("DNS failure"),
         )
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Bad: [link](https://no-such-host.invalid/)"
             issues = await verify_content_urls(content)
@@ -146,7 +146,7 @@ class TestVerifyContentUrls:
         """Configured site_domains are skipped — no HEAD attempted."""
         ctx, client = _make_httpx_client({})
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="example.com")
             content = "Internal: [home](https://example.com/about)"
             issues = await verify_content_urls(content)
@@ -162,7 +162,7 @@ class TestVerifyContentUrls:
             "https://other.com/x": _make_response(200),
         })
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="example.com")
             content = "External: [ref](https://other.com/x)"
             issues = await verify_content_urls(content)
@@ -174,7 +174,7 @@ class TestVerifyContentUrls:
         """Hostnames ending in '.localhost' (per the source's check) are skipped."""
         ctx, client = _make_httpx_client({})
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Internal: [api](http://service.localhost/api)"
             issues = await verify_content_urls(content)
@@ -187,7 +187,7 @@ class TestVerifyContentUrls:
             "https://bare.example.com/path": _make_response(200),
         })
         with patch("httpx.AsyncClient", return_value=ctx), \
-             patch.object(cv, "_sc") as sc:
+             patch.object(cv, "site_config") as sc:
             sc.get = MagicMock(return_value="")
             content = "Visit https://bare.example.com/path for more."
             issues = await verify_content_urls(content)

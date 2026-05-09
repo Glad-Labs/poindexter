@@ -1,6 +1,12 @@
 # SDXL Image Generation Server — GPU-accelerated container
 # Requires NVIDIA runtime (deploy.resources.reservations.devices in compose)
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+#
+# 2026-05-08: bumped 2.5.1-cu124 → 2.9.1-cu128 to add Blackwell (sm_120)
+# kernel images. The 5090 was reporting compute capability (12, 0) but
+# torch 2.5.1's bundled arch list stopped at sm_90, so every GPU op
+# failed with "no kernel image is available for execution on the
+# device" — see Glad-Labs/glad-labs-stack#334.
+FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
 
 WORKDIR /app
 

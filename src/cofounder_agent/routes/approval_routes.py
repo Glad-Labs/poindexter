@@ -12,6 +12,7 @@ Endpoints:
 - GET /api/tasks/pending-approval - List all tasks awaiting approval
 """
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,6 +24,13 @@ from services.database_service import DatabaseService
 from services.error_handler import AppError
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
+
+# Stable gate name for the legacy `awaiting_approval` HITL flow.
+# All route-level approval/rejection writes funnel through this gate so
+# the unified `pipeline_gate_history` audit trail can distinguish them
+# from the gate-aware HITL flows seeded by `services/approval_service.py`
+# (which use per-stage names like `topic_decision`, `final_media`, etc.).
+LEGACY_APPROVAL_GATE = "final_approval"
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["approval"])
@@ -78,10 +86,18 @@ async def reject_task(
     try:
         operator = get_operator_identity()
 
-        # Fetch task
+        # Fetch task. db_service.get_task accepts a UUID prefix (LIKE match)
+        # so the operator-friendly `0bc9badd` form resolves a row here.
         task = await db_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Canonicalize the id BEFORE any downstream write. update_task and
+        # the pipeline_gate_history INSERT require the full UUID — they
+        # use exact-match WHERE clauses, so handing them the URL-path
+        # prefix silently rolls the transaction back and leaves the task
+        # in awaiting_approval. Preserved from b87dc38d.
+        full_task_id = str(task.get("task_id") or task.get("id") or task_id)
 
         # Verify task is awaiting approval
         current_status = task.get("status")
@@ -106,7 +122,7 @@ async def reject_task(
         }
 
         await db_service.update_task(
-            task_id,
+            full_task_id,
             {
                 "status": final_status,
                 "approval_status": "rejected",
@@ -116,36 +132,54 @@ async def reject_task(
             },
         )
 
-        # Record the rejection on pipeline_reviews so `content_tasks` view's
-        # approval_status / approved_by columns resolve non-NULL.
+        # Record the rejection on pipeline_gate_history so `content_tasks`
+        # view's approval_status / approved_by / human_feedback columns
+        # resolve non-NULL. The view's scalar subqueries pull the latest
+        # row per task. event_kind reflects the revision policy so the
+        # learning signal can distinguish `rejected_retry` (regen) from
+        # `rejected_final` (closed out).
+        event_kind = "rejected_retry" if request.allow_revisions else "rejected_final"
         try:
-            from services.pipeline_db import PipelineDB
-            await PipelineDB(db_service.pool).add_review(
-                task_id=task_id,
-                decision="rejected",
-                reviewer=operator["id"],
-                feedback=request.feedback,
+            await db_service.pool.execute(
+                """
+                INSERT INTO pipeline_gate_history
+                    (task_id, gate_name, event_kind, feedback, metadata)
+                VALUES ($1, $2, $3, $4, $5::jsonb)
+                """,
+                full_task_id,
+                LEGACY_APPROVAL_GATE,
+                event_kind,
+                request.feedback,
+                json.dumps(
+                    {
+                        "reviewer": operator["id"],
+                        "reason": request.reason,
+                        "allow_revisions": request.allow_revisions,
+                        "decision": "rejected",
+                    },
+                    default=str,
+                ),
             )
         except Exception as review_err:
             logger.warning(
-                "[reject_task] pipeline_reviews write failed for %s: %s",
-                task_id, review_err,
+                "[reject_task] pipeline_gate_history write failed for %s: %s",
+                full_task_id, review_err,
             )
         try:
             await db_service.mark_model_performance_outcome(
-                task_id, human_approved=False,
+                full_task_id, human_approved=False,
             )
         except Exception as mp_err:
             logger.debug(
                 "[reject_task] mark_model_performance_outcome failed: %s", mp_err,
             )
 
-        logger.info("Task %s rejected by %s: %s", task_id, operator['id'], request.reason)
+        logger.info("Task %s rejected by %s: %s", full_task_id, operator['id'], request.reason)
 
         # Broadcast rejection status to connected WebSocket clients
         try:
             await broadcast_approval_status(
-                task_id,
+                full_task_id,
                 "rejected",
                 {
                     "rejected_by": operator["id"],
@@ -159,7 +193,7 @@ async def reject_task(
             logger.warning("Failed to broadcast rejection status: %s", e, exc_info=True)
 
         return {
-            "task_id": task_id,
+            "task_id": full_task_id,
             "status": final_status,
             "approval_status": "rejected",
             "rejection_date": rejection_date.isoformat(),

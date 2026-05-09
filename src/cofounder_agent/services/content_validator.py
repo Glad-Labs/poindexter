@@ -20,8 +20,20 @@ import time as _time
 from dataclasses import dataclass, field
 
 from services.logger_config import get_logger
-import services.site_config as _site_config_mod
-_sc = _site_config_mod.site_config
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -79,14 +91,14 @@ _NAMED_SOURCE_KEYWORDS = (
 def _get_company_facts() -> dict:
     """Load company facts from DB (site_config) with env fallback."""
     return {
-        "company_name": _sc.get("company_name", "My Company"),
-        "founded_date": _sc.get("company_founded_date", "2025-01-01"),
-        "founded_year": _sc.get_int("company_founded_year", 2025),
-        "age_months": _sc.get_int("company_age_months", 12),
-        "team_size": _sc.get_int("company_team_size", 1),
-        "founder_name": _sc.get("company_founder_name", "Founder"),
+        "company_name": site_config.get("company_name", "My Company"),
+        "founded_date": site_config.get("company_founded_date", "2025-01-01"),
+        "founded_year": site_config.get_int("company_founded_year", 2025),
+        "age_months": site_config.get_int("company_age_months", 12),
+        "team_size": site_config.get_int("company_team_size", 1),
+        "founder_name": site_config.get("company_founder_name", "Founder"),
         "known_employees": set(),
-        "real_products": set(_sc.get("company_products", "").split(",")) if _sc.get("company_products") else set(),
+        "real_products": set(site_config.get("company_products", "").split(",")) if site_config.get("company_products") else set(),
         "real_tech": {"fastapi", "next.js", "postgresql", "ollama", "vercel", "grafana"},
     }
 
@@ -833,11 +845,11 @@ def _check_code_block_density(
     ``site_config`` so operators can tune per niche without redeploys.
     Returns warnings only — never critical.
     """
-    if not _sc.get_bool("code_density_check_enabled", True):
+    if not site_config.get_bool("code_density_check_enabled", True):
         return []
     tech_tags = {
         t.strip().lower()
-        for t in _sc.get_list(
+        for t in site_config.get_list(
             "code_density_tag_filter",
             "technical,ai,programming,ml,python,javascript,rust,go",
         )
@@ -846,9 +858,9 @@ def _check_code_block_density(
     if not _is_tech_post(tags, topic, tech_tags):
         return []
 
-    min_blocks_per_700w = _sc.get_int("code_density_min_blocks_per_700w", 1)
-    min_line_ratio_pct = _sc.get_int("code_density_min_line_ratio_pct", 20)
-    long_post_floor_words = _sc.get_int("code_density_long_post_floor_words", 300)
+    min_blocks_per_700w = site_config.get_int("code_density_min_blocks_per_700w", 1)
+    min_line_ratio_pct = site_config.get_int("code_density_min_line_ratio_pct", 20)
+    long_post_floor_words = site_config.get_int("code_density_long_post_floor_words", 300)
 
     block_count, code_lines, total_non_empty = _count_code_blocks_and_lines(content)
     prose_text = _strip_code_blocks_for_word_count(content)
@@ -1265,7 +1277,7 @@ def validate_content(
     # instance being a hard veto. Flip the setting back to ``true``
     # if a future writer regression starts emitting fabricated
     # attributions and the threshold path doesn't catch it.
-    _named_source_promote_enabled = _sc.get_bool(
+    _named_source_promote_enabled = site_config.get_bool(
         "content_validator_named_source_promote_enabled", False,
     )
     if _named_source_promote_enabled:
@@ -1297,7 +1309,7 @@ def validate_content(
     # (a) Per-rule threshold promotion. Read the threshold from
     # site_config (DB-first) with a hardcoded floor of 3 so the guard
     # still fires on a cold-boot environment with no settings loaded.
-    _warning_threshold = _sc.get_int(
+    _warning_threshold = site_config.get_int(
         "content_validator_warning_reject_threshold", 3,
     )
     # Per-category override: ``unlinked_citation`` is more tolerant than the
@@ -1308,7 +1320,7 @@ def validate_content(
     # other categories still use the global threshold. Tunable via
     # ``content_validator_unlinked_citation_warning_threshold``.
     _per_category_overrides = {
-        "unlinked_citation": _sc.get_int(
+        "unlinked_citation": site_config.get_int(
             "content_validator_unlinked_citation_warning_threshold", 6,
         ),
     }
@@ -1386,7 +1398,7 @@ async def verify_content_urls(content: str) -> list[ValidationIssue]:
     # Skip internal links (our own site) and known-good domains.
     # Domain list comes from site_config (site_domains = comma-separated),
     # not hardcoded — lets operators bring their own brand (#198).
-    _raw = _sc.get("site_domains", "")
+    _raw = site_config.get("site_domains", "")
     skip_domains = {d.strip().lower() for d in _raw.split(",") if d.strip()}
     skip_domains.add("localhost")
 

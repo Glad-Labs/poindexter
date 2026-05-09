@@ -28,6 +28,14 @@ from services.logger_config import get_logger
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
+# Stable gate name for the legacy `awaiting_approval` HITL flow.
+# Mirrors `routes.approval_routes.LEGACY_APPROVAL_GATE` — kept duplicated
+# rather than imported across route modules so neither route grows a new
+# inter-module dependency. Both must stay in sync; the
+# `content_tasks` view's approval_status / approved_by / human_feedback
+# columns key off this gate value.
+LEGACY_APPROVAL_GATE = "final_approval"
+
 logger = get_logger(__name__)
 
 publishing_router = APIRouter(tags=["Task Publishing"])
@@ -359,20 +367,33 @@ async def approve_task(
             logger.error("Failed to update task status to %s: %s", new_status, e, exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to update task status") from e
 
-        # Record the decision on pipeline_reviews so `content_tasks` view's
-        # approval_status / approved_by columns resolve non-NULL. The view's
-        # scalar subquery reads the latest pipeline_reviews row per task.
+        # Record the decision on pipeline_gate_history so `content_tasks`
+        # view's approval_status / approved_by / human_feedback columns
+        # resolve non-NULL. event_kind matches the public column semantic
+        # (`approved` / `rejected`) so the view can read it directly.
+        event_kind = "approved" if approved else "rejected"
         try:
-            from services.pipeline_db import PipelineDB
-            await PipelineDB(db_service.pool).add_review(
-                task_id=task_id,
-                decision=new_status,
-                reviewer=reviewer_id or "operator",
-                feedback=human_feedback,
+            await db_service.pool.execute(
+                """
+                INSERT INTO pipeline_gate_history
+                    (task_id, gate_name, event_kind, feedback, metadata)
+                VALUES ($1, $2, $3, $4, $5::jsonb)
+                """,
+                task_id,
+                LEGACY_APPROVAL_GATE,
+                event_kind,
+                human_feedback,
+                json.dumps(
+                    {
+                        "reviewer": reviewer_id or "operator",
+                        "decision": event_kind,
+                    },
+                    default=str,
+                ),
             )
         except Exception as review_err:
             logger.warning(
-                "[approve_task] pipeline_reviews write failed for %s: %s",
+                "[approve_task] pipeline_gate_history write failed for %s: %s",
                 task_id, review_err,
             )
 
@@ -791,6 +812,27 @@ async def reject_task(
         await db_service.update_task_status(
             task_id, "rejected", result=json.dumps({"metadata": reject_metadata})
         )
+
+        # Record the rejection on pipeline_gate_history so `content_tasks`
+        # view's approval_status / approved_by columns resolve non-NULL.
+        try:
+            await db_service.pool.execute(
+                """
+                INSERT INTO pipeline_gate_history
+                    (task_id, gate_name, event_kind, feedback, metadata)
+                VALUES ($1, $2, $3, $4, $5::jsonb)
+                """,
+                task_id,
+                LEGACY_APPROVAL_GATE,
+                "rejected",
+                None,
+                json.dumps({"reviewer": "operator", "decision": "rejected"}, default=str),
+            )
+        except Exception as review_err:
+            logger.warning(
+                "[reject_task] pipeline_gate_history write failed for %s: %s",
+                task_id, review_err,
+            )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)

@@ -10,6 +10,20 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -54,8 +68,7 @@ class ResearchQualityService:
     @staticmethod
     def _weight(key: str, default: float) -> float:
         try:
-            import services.site_config as _scm
-            _sc = _scm.site_config
+            _sc = site_config
             return _sc.get_float(f"research_{key}_weight", default)
         except Exception:
             return default
@@ -112,8 +125,7 @@ class ResearchQualityService:
         self.recency_weight = self._weight("recency", self.RECENCY_WEIGHT)
         self.uniqueness_weight = self._weight("uniqueness", self.UNIQUENESS_WEIGHT)
         try:
-            import services.site_config as _scm
-            _sc = _scm.site_config
+            _sc = site_config
             self.min_snippet_length = _sc.get_int(
                 "research_min_snippet_length", self.MIN_SNIPPET_LENGTH
             )

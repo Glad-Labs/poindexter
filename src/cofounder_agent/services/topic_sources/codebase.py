@@ -144,9 +144,12 @@ class CodebaseSource:
             logger.warning("CodebaseSource: no pool, returning empty")
             return []
 
-        # Resolve config with site_config fallbacks.
-        import services.site_config as _scm
-        site_config = _scm.site_config
+        # Resolve config with site_config fallbacks. Topic-source dispatcher
+        # seeds the SiteConfig instance into ``config["_site_config"]``; bare
+        # SiteConfig fallback keeps unit tests that build a vanilla config dict
+        # working without DI plumbing.
+        from services.site_config import SiteConfig
+        site_config = config.get("_site_config") or SiteConfig()
         seed_queries_cfg = config.get("seed_queries")
         seed_queries = (
             list(seed_queries_cfg) if isinstance(seed_queries_cfg, list) and seed_queries_cfg

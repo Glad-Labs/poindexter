@@ -29,6 +29,7 @@ from tenacity import (
 )
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -37,10 +38,25 @@ logger = get_logger(__name__)
 # CONSTANTS
 # ============================================================================
 
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Falls back to a fresh env-fallback instance when unset.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
+
+def _sc() -> SiteConfig:
+    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
+    return site_config
+
+
 def _sc_get(key: str, default: str = "") -> str:
     """Get from site_config (falls back to env automatically)."""
-    import services.site_config as _scm
-    return _scm.site_config.get(key, default)
+    return _sc().get(key, default)
 
 # All config below is resolved lazily via _default_*() helpers because
 # site_config is empty at module-import time (loaded later in the lifespan).

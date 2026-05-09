@@ -21,22 +21,25 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
-# Module-level alias kept so existing tests that patch
-# ``services.r2_upload_service.site_config`` keep working without
-# refactor. The CI guardrail at
-# ``scripts/ci/check_site_config_singleton.py`` only flags
-# ``from services.site_config import site_config`` style imports;
-# this two-step (module import + attribute alias) is allowed because
-# the alias points at the lifespan-shimmed instance.
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly
+# (``patch("services.r2_upload_service.site_config", mock)``) or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 
 
 def _resolve_site_config(sc: Any) -> Any:
-    """DI seam (glad-labs-stack#330) — fall back to the module-level
-    ``site_config`` alias when caller doesn't pass an instance. New
-    code paths inject explicitly; legacy callers + tests that patch
-    the module attribute keep their behavior.
+    """DI seam (glad-labs-stack#330) — fall back to the lifespan-bound
+    SiteConfig when caller doesn't pass an instance.
     """
     if sc is not None:
         return sc

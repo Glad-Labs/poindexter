@@ -53,6 +53,20 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -269,10 +283,9 @@ def _legacy_first_person_bypass(niche: str | None) -> bool:
     if not niche:
         return False
     try:
-        import services.site_config as _scm
+        csv = site_config.get("qa_allow_first_person_niches", "")
     except Exception:
         return False
-    csv = _scm.site_config.get("qa_allow_first_person_niches", "")
     if not csv:
         return False
     allow = {s.strip().lower() for s in str(csv).split(",") if s.strip()}

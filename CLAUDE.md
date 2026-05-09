@@ -39,15 +39,15 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 | Public repo     | https://github.com/Glad-Labs/poindexter (auto-mirror)                           |
 | Project board   | https://github.com/orgs/Glad-Labs/projects/2                                    |
 
-### Key Numbers (as of May 6, 2026)
+### Key Numbers (as of May 9, 2026)
 
-- 52 live posts on gladlabs.io (218 posts total: 143 drafts, 23 archived; 1,515 pipeline_tasks across all generation runs)
-- ~455 Python files under `src/cofounder_agent/services/` (18 highlighted in the table below are the load-bearing ones — added template_runner, prompt_manager, and the LiteLLM provider plugin during the 2026-05-04 OSS-migration push). **2026-05-08 services audit** at `.shared-context/audits/2026-05-08-services-folder-audit.md` flagged ~5,000 LOC as deletable + 3 supposedly-completed migrations as still in-flight; Phase 1 of the cleanup is in progress.
-- 161 migration files in `services/migrations/` (UTC-timestamp prefix post-#378; old `0xxx_*.py` stay as-is)
+- 56 live posts on gladlabs.io (222 posts total; 1,519 pipeline_tasks across all generation runs)
+- ~295 Python files under `src/cofounder_agent/services/` (down from ~455 after the 2026-05-08 cleanup pass — agents/content_agent/ tree, pipeline_flow.py, taps/gitea_issues.py, voice_agent_webrtc.py, phases/example_workflows.py, and the model_router/usage_tracker/model_constants trio all removed). 18 services are load-bearing (table below). The **2026-05-08 services audit** at `.shared-context/audits/2026-05-08-services-folder-audit.md` flagged the original ~5,000 LOC deletable; about 1,800 LOC of that landed; Phase 3 (workflow_executor chain → template_runner) is the largest remaining chunk and waits on a canonical_blog template.
+- **1 migration file** (`0000_baseline.py` + sibling `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`). The 169 historical migrations were squashed 2026-05-08 — see `services/migrations/0000_baseline.py` for the rationale. New schema changes still go in fresh `YYYYMMDD_HHMMSS_<slug>.py` files; the runner sorts `0000_baseline.py` first because `0` < `2` lexically.
 - 7 Grafana dashboards (post-merge consolidation), 4 alert rules; Pyroscope app-profiles ship from worker/brain/voice agents under `service_name` tags (poindexter#406)
-- 7,900+ Python unit tests passing (329 test files)
-- 674 app_settings keys (up from 453 on May 3 — the in-code DI layer accepts hundreds more; see PR sweeps #198, #221, and the 2026-05-06 audit)
-- 25,000+ embeddings across posts / issues / audit / memory / brain / claude_sessions
+- 7,900+ Python unit tests passing across 386 test files
+- 715 app_settings keys (660 non-secret + 55 secret) — the baseline seeds the 660 non-secret defaults; secrets get configured per-operator via `poindexter setup` + bootstrap.toml
+- 30,547 embeddings across posts / issues / audit / memory / brain / claude_sessions
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
@@ -123,7 +123,7 @@ npm run type:check            # Python mypy
 | `publish_service.py`                      | Final publish + scheduled_publisher integration                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `quality_service.py`                      | Quality scoring orchestration                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `internal_link_coherence.py`              | Auto-adds related post links                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `social_poster.py`                        | Generates X/LinkedIn posts via Ollama; distribution is row-driven through `publishing_adapters` (poindexter#112) — adding a new platform = insert a row + register a `publishing.<name>` handler.                                                                                                                                                                                                                                                                                                 |
 | `newsletter_service.py`                   | Weekly digest generator                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 **Content pipeline stages:**
@@ -211,52 +211,28 @@ Then call methods on the instance:
   (secrets are filtered out of the cache, so `is_secret=true` keys
   MUST be fetched via this method)
 
-Do NOT write `from services.site_config import site_config` in NEW
-code. CI guardrail at `scripts/ci/check_site_config_singleton.py`
-fails the build on any new caller. The
+**Singleton deleted 2026-05-09 (glad-labs-stack#330).** All production
+code uses the DI seam in all new code; there is no longer a module-level
+`site_config` instance to import. The
 [glad-labs-stack#330](https://github.com/Glad-Labs/glad-labs-stack/issues/330)
-sweep landed 2026-05-08 and migrated **107 of 110 callers** off the
-singleton. Three legitimate keepers remain:
-
-- `routes/settings_routes.py` — operator-facing reload endpoint
-  reaches into the singleton TO refresh it.
-- `services/jobs/reload_site_config.py` — scheduled job that runs
-  the reload.
-- `tests/unit/conftest.py` — test fixture central; mutated by
-  other tests for isolated setup.
-
-Production migration pattern: legacy callers that imported the
-singleton via `from services.site_config import site_config` swap
-to `import services.site_config as _scm; site_config = _scm.site_config`
-at module level (or lazily inside helpers). The CI regex matches
-the `from`-import form only; the alias-via-attribute path slips
-through and points at the same lifespan-shimmed instance — runtime
-semantics unchanged.
-
-The lifespan shim at `main.py:185-186` keeps the alias correct:
-
-```python
-import services.site_config as _site_config_mod
-_site_config_mod.site_config = _site_cfg
-```
+sweep retired the singleton + lifespan-rebind shim entirely; per-module
+utilities now own their own `site_config: SiteConfig` attribute that
+`main.py`'s lifespan wires via `set_site_config(loaded_instance)`.
 
 A scheduled `reload_site_config` job refreshes the DB-loaded values
-every minute (verified live — worker logs show `site_config
-refreshed (620 keys)`).
-
-Final singleton deletion is tracked as
-[glad-labs-stack#333](https://github.com/Glad-Labs/glad-labs-stack/issues/333):
-once the 3 keepers above are themselves refactored to receive the
-SiteConfig instance through their respective DI seams, the module
-attribute and the lifespan shim can be deleted.
+every minute (verified live — worker logs show `site_config refreshed
+(620 keys)`). The job receives the lifespan-bound SiteConfig via
+`config["_site_config"]`, so calling `.reload(pool)` on it propagates
+fresh values to every wired module that points at the same instance.
 
 For NEW code, always use the DI seam (route handlers via
-`Depends()`, services via constructor injection, stages via
-`context.get()`).
+`Depends(get_site_config_dependency)`, services via constructor
+injection, stages via `context.get("site_config")`, leaf utilities
+via the per-module `site_config` attr seeded by `set_site_config`).
 
-Tests should construct their own instance with
-`SiteConfig(initial_config={...})` or use the `test_site_config`
-fixture in `tests/unit/conftest.py`.
+Tests construct their own `SiteConfig(initial_config={...})` instance
+or use the shared instance in `tests/unit/conftest.py` (which fans out
+to every module via `set_site_config` at collection time).
 
 For SaaS / A/B-testing readiness, every tunable should be a
 DB-backed setting. Background algorithm windows (anomaly detection,
@@ -314,24 +290,33 @@ Code quality agent: every 4h at :37 — security/dead code/error handling scans
 
 ## Database migrations
 
-Migrations live in `src/cofounder_agent/services/migrations/`. As of
-Glad-Labs/poindexter#378 (2026-05-05) **new migrations use a UTC
-timestamp prefix** (`YYYYMMDD_HHMMSS_<slug>.py`) — old `0xxx_*.py`
-files stay as-is. The runner sorts lexically; `0xxx` (starts with
-`0`) always sorts before `2xxx_xxxxxx_*` (starts with `2`).
+Migrations live in `src/cofounder_agent/services/migrations/`. The
+169 historical files were squashed into a single `0000_baseline.py`
+(plus `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`) on
+2026-05-08 — the file's docstring explains why and what it captured.
+The runner still sorts lexically; `0000_baseline.py` runs first
+because `0` < `2`.
 
-Generate one with:
+**New migrations use a UTC timestamp prefix** (`YYYYMMDD_HHMMSS_<slug>.py`)
+per Glad-Labs/poindexter#378 (2026-05-05). Generate one with:
 
 ```bash
 python scripts/new-migration.py "describe what the migration does"
 ```
 
+The runner records each filename in `schema_migrations(name)` and
+skips already-applied entries. The baseline self-records on first
+run; on Matt's prod (where the schema is already in place) every
+`CREATE TABLE IF NOT EXISTS` no-ops, every seed `INSERT ... ON
+CONFLICT DO NOTHING` no-ops, and the only mutation is the row
+recording the baseline as applied.
+
 Read [`docs/operations/migrations.md`](docs/operations/migrations.md)
-for the full convention. Verify against a fresh DB with
+for the convention. Verify against a fresh DB with
 [`docs/operations/fresh-db-setup.md`](docs/operations/fresh-db-setup.md)
 or the CI smoke test (`python scripts/ci/migrations_smoke.py`). Lint
-with `python scripts/ci/migrations_lint.py` — it catches collisions,
-missing runner interface, and post-cutoff legacy prefixes.
+with `python scripts/ci/migrations_lint.py` — it catches collisions
+and missing runner interface.
 
 ## Reference Documentation
 

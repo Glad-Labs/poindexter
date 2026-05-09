@@ -34,6 +34,14 @@ def _make_row(**kwargs):
     Strict ``__getitem__`` (KeyError on missing key) so production code
     that reads a column the test didn't set fails loudly instead of
     silently getting ``None`` and passing — see GH#337.
+
+    Use this helper ONLY when production code reads ``row[<key>]`` — the
+    strict mapping is what gives the test signal value. When a test
+    just hands the row to a patched ``ModelConverter`` and asserts on
+    the converter's return value, prefer ``object()`` directly: a
+    literal sentinel makes it obvious the row contents are not under
+    test, and prevents the row-faker from quietly accumulating stale
+    columns over time (the original symptom in GH#30).
     """
     row = MagicMock()
     _data = {**kwargs}
@@ -93,8 +101,10 @@ _CONVERTER = "services.users_db.ModelConverter"
 class TestGetUserById:
     @pytest.mark.asyncio
     async def test_found_returns_user_response(self):
-        row = _make_row(id="user-uuid", email="alice@example.com")
-        pool = _make_pool(fetchrow_results=[row])
+        # Opaque row — get_user_by_id passes whatever fetchrow returns
+        # straight to ModelConverter.to_user_response, which is patched
+        # below. The row's column shape is not under test here.
+        pool = _make_pool(fetchrow_results=[object()])
         db = _make_db(pool)
 
         sentinel = object()
@@ -123,8 +133,8 @@ class TestGetUserById:
 class TestGetUserByEmail:
     @pytest.mark.asyncio
     async def test_found_returns_user_response(self):
-        row = _make_row(id="user-1", email="alice@example.com")
-        pool = _make_pool(fetchrow_results=[row])
+        # Opaque row — column shape not under test (see GH#337).
+        pool = _make_pool(fetchrow_results=[object()])
         db = _make_db(pool)
 
         sentinel = object()
@@ -153,8 +163,8 @@ class TestGetUserByEmail:
 class TestGetUserByUsername:
     @pytest.mark.asyncio
     async def test_found_returns_user_response(self):
-        row = _make_row(id="user-1", username="alice")
-        pool = _make_pool(fetchrow_results=[row])
+        # Opaque row — column shape not under test (see GH#337).
+        pool = _make_pool(fetchrow_results=[object()])
         db = _make_db(pool)
 
         sentinel = object()
@@ -183,8 +193,9 @@ class TestGetUserByUsername:
 class TestCreateUser:
     @pytest.mark.asyncio
     async def test_success_returns_user_response(self):
-        row = _make_row(id="new-user", email="bob@example.com")
-        pool = _make_pool(fetchrow_results=[row])
+        # Opaque row — production hands fetchrow's result straight to
+        # the patched converter without reading any column.
+        pool = _make_pool(fetchrow_results=[object()])
         db = _make_db(pool)
 
         sentinel = object()
@@ -195,11 +206,11 @@ class TestCreateUser:
 
     @pytest.mark.asyncio
     async def test_custom_id_used(self):
-        row = _make_row(id="custom-id")
-        pool = _make_pool(fetchrow_results=[row])
+        opaque = object()
+        pool = _make_pool(fetchrow_results=[opaque])
         db = _make_db(pool)
 
-        with patch(f"{_CONVERTER}.to_user_response", return_value=row):
+        with patch(f"{_CONVERTER}.to_user_response", return_value=opaque):
             await db.create_user({"id": "custom-id", "email": "bob@example.com"})
 
         # Verify that fetchrow was called (insert ran)
@@ -217,9 +228,11 @@ class TestGetOrCreateOAuthUser:
     @pytest.mark.asyncio
     async def test_path1_existing_oauth_returns_user(self):
         """Path 1: oauth_accounts row exists → fetch and return the linked user."""
+        # oauth_row[user_id] IS read by production (users_db.py:170),
+        # so it needs the strict row-faker. user_row only flows to the
+        # patched converter — opaque sentinel is enough.
         oauth_row = _make_row(user_id="existing-user-uuid")
-        user_row = _make_row(id="existing-user-uuid", email="alice@example.com", username="alice")
-        pool = _make_pool(fetchrow_results=[oauth_row, user_row])
+        pool = _make_pool(fetchrow_results=[oauth_row, object()])
         db = _make_db(pool)
 
         sentinel = object()
@@ -235,10 +248,11 @@ class TestGetOrCreateOAuthUser:
     @pytest.mark.asyncio
     async def test_path2_email_exists_links_oauth(self):
         """Path 2: no oauth row, but email matches existing user → link OAuth."""
+        # existing_user[id] IS read by production (users_db.py:191) before
+        # being handed to the patched converter, so it needs the
+        # strict row-faker.
         no_oauth = None
-        existing_user = _make_row(
-            id="existing-user-uuid", email="alice@example.com", username="alice"
-        )
+        existing_user = _make_row(id="existing-user-uuid")
         pool = _make_pool(fetchrow_results=[no_oauth, existing_user])
         db = _make_db(pool)
 
@@ -260,13 +274,14 @@ class TestGetOrCreateOAuthUser:
         """Path 3: no oauth row, no email match → create new user and OAuth account."""
         no_oauth = None
         no_existing_user = None
-        # Patch uuid4 so we know the generated user_id in advance
+        # Patch uuid4 so we know the generated user_id in advance.
+        # winner_recheck[user_id] IS read by production (users_db.py:261)
+        # for the concurrent-create check; new_user_row only flows to
+        # the patched converter and stays opaque.
         _fixed_uuid = "brand-new-uuid"
-        new_user_row = _make_row(id=_fixed_uuid, email="newuser@example.com")
-        # 4th fetchrow: winner re-fetch (issue #767) returns same user_id → no-race path
         winner_recheck = _make_row(user_id=_fixed_uuid)
         pool = _make_pool(
-            fetchrow_results=[no_oauth, no_existing_user, new_user_row, winner_recheck]
+            fetchrow_results=[no_oauth, no_existing_user, object(), winner_recheck]
         )
         db = _make_db(pool)
 
@@ -297,11 +312,11 @@ class TestGetOrCreateOAuthUser:
         """
         no_oauth = None
         _fixed_uuid = "new-uuid"
-        new_user_row = _make_row(id=_fixed_uuid)
-        # 3rd fetchrow: winner re-fetch returns same user_id (no race)
+        # winner_recheck[user_id] is read by production; new_user_row
+        # only flows to the patched converter.
         winner_recheck = _make_row(user_id=_fixed_uuid)
         pool = _make_pool(
-            fetchrow_results=[no_oauth, new_user_row, winner_recheck]
+            fetchrow_results=[no_oauth, object(), winner_recheck]
         )
         db = _make_db(pool)
 
@@ -332,10 +347,11 @@ class TestGetOrCreateOAuthUserRace:
         _fixed_uuid = "race-uuid"
         no_oauth = None
         no_existing_user = None
-        new_user_row = _make_row(id=_fixed_uuid)
+        # winner_recheck[user_id] is read by production; new_user_row
+        # only flows to the patched converter.
         winner_recheck = _make_row(user_id=_fixed_uuid)
         pool = _make_pool(
-            fetchrow_results=[no_oauth, no_existing_user, new_user_row, winner_recheck]
+            fetchrow_results=[no_oauth, no_existing_user, object(), winner_recheck]
         )
 
         # Spy on the transaction context manager
@@ -377,17 +393,17 @@ class TestGetOrCreateOAuthUserRace:
         _winner_uuid = "winner-uuid"
         no_oauth = None
         no_existing_user = None
-        my_new_user_row = _make_row(id=_my_uuid)
-        # Winner re-fetch returns a different user_id (the concurrent winner)
+        # Only winner_recheck[user_id] is read by production. The other
+        # two fetchrow returns flow into the patched converter (or get
+        # discarded entirely) and stay opaque.
         winner_recheck = _make_row(user_id=_winner_uuid)
-        winner_user_row = _make_row(id=_winner_uuid, email="winner@example.com")
         pool = _make_pool(
             fetchrow_results=[
                 no_oauth,
                 no_existing_user,
-                my_new_user_row,
+                object(),
                 winner_recheck,
-                winner_user_row,
+                object(),
             ]
         )
         db = _make_db(pool)
@@ -415,11 +431,9 @@ class TestGetOrCreateOAuthUserRace:
 class TestGetOAuthAccounts:
     @pytest.mark.asyncio
     async def test_returns_oauth_account_responses(self):
-        rows = [
-            _make_row(id="oa-1", provider="github"),
-            _make_row(id="oa-2", provider="google"),
-        ]
-        pool = _make_pool(fetch_result=rows)
+        # Opaque rows — the test asserts only the count and that each
+        # element passed through the patched converter.
+        pool = _make_pool(fetch_result=[object(), object()])
         db = _make_db(pool)
 
         sentinel = object()

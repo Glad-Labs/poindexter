@@ -82,7 +82,20 @@ def make_memory_row(
     metadata=None,
     embedding=None,
 ):
-    """Build a fake asyncpg Record-like dict."""
+    """Build a fake asyncpg Record-like dict for ``_row_to_memory`` tests.
+
+    Seeds exactly the 12 columns ``memory_system._row_to_memory`` reads.
+    The dict-literal indexing makes missing-key reads raise ``KeyError``
+    automatically (no silent ``None`` default — see GH#337). If
+    production grows a new column read, every test using this helper
+    will fail loudly until the helper is updated to match.
+
+    Unlike the ``ModelConverter``-style services audited under GH#337,
+    ``memory_system`` does not patch a converter — the row genuinely
+    flows through ``_row_to_memory`` and the tests assert on the parsed
+    output. There is no orchestration-only path in this file, so no
+    ``object()`` sentinel substitutions apply.
+    """
     row = MagicMock()
     row.__getitem__ = lambda self, key: {
         "id": memory_id or str(uuid4()),
@@ -109,7 +122,12 @@ def make_cluster_row(
     confidence=0.9,
     topics=None,
 ):
-    """Build a fake asyncpg cluster row."""
+    """Build a fake asyncpg cluster row for ``_row_to_cluster`` tests.
+
+    Same strict-mapping rationale as ``make_memory_row``: seeds exactly
+    the 8 columns ``_row_to_cluster`` reads; missing-key reads raise
+    ``KeyError`` instead of silently returning ``None`` (GH#337).
+    """
     row = MagicMock()
     row.__getitem__ = lambda self, key: {
         "id": cluster_id or str(uuid4()),

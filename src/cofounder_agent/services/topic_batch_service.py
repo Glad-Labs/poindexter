@@ -40,6 +40,19 @@ from services.topic_ranking import (
     goal_vector_for,
     weighted_cosine_score,
 )
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 
 logger = get_logger(__name__)
 
@@ -134,8 +147,6 @@ class TopicBatchService:
             # slice — pre-rank + LLM-final-score then sees up to 2*N
             # candidates. Same key gates the slice inside
             # _embed_and_pre_rank so both ends of the funnel stay consistent.
-            import services.site_config as _scm
-            site_config = _scm.site_config
             top_n = site_config.get_int("niche_top_n_per_pool", 5)
             top10 = pool_external[:top_n] + pool_internal[:top_n]
 
@@ -222,9 +233,6 @@ class TopicBatchService:
         # matches the rest of this file's style.
         from plugins.config import PluginConfig
         from plugins.registry import get_topic_sources
-        import services.site_config as _scm
-        site_config = _scm.site_config
-
         # Index registry by name so we can match niche-source rows to
         # plugin instances. A niche may legitimately reference a source
         # name that's not registered (legacy config, plugin uninstalled,
@@ -317,9 +325,6 @@ class TopicBatchService:
         ):
             return []
         from services.internal_rag_source import InternalRagSource
-        import services.site_config as _scm
-        site_config = _scm.site_config
-
         rag = InternalRagSource(self._pool)
         # Per spec: per-kind limit defaults to 4, all 6 valid kinds
         # except git_commit (which still needs git-log plumbing).
@@ -354,9 +359,6 @@ class TopicBatchService:
         the default). Tunable via
         ``niche_carry_forward_decay_factor`` (migration 0119).
         """
-        import services.site_config as _scm
-        site_config = _scm.site_config
-
         decay = site_config.get_float(
             "niche_carry_forward_decay_factor", 0.7,
         )
@@ -491,8 +493,6 @@ class TopicBatchService:
         int_scored.sort(key=lambda c: -c.embedding_score)
         # Same niche_top_n_per_pool key the run_sweep funnel uses so the
         # two ends of the pre-rank/final-score pipeline stay in lockstep.
-        import services.site_config as _scm
-        site_config = _scm.site_config
         top_n = site_config.get_int("niche_top_n_per_pool", 5)
         return ext_scored[:top_n], int_scored[:top_n]
 
@@ -519,8 +519,6 @@ class TopicBatchService:
 
         # Batch lifetime — operator-tunable via niche_batch_expires_days
         # (migration 0119). Default 7 matches the prior hardcoded value.
-        import services.site_config as _scm
-        site_config = _scm.site_config
         expires_days = site_config.get_int("niche_batch_expires_days", 7)
         expires = datetime.now(timezone.utc) + timedelta(days=expires_days)
         rank_in_batch = 0

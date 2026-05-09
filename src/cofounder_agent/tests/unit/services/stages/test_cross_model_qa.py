@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.stage import Stage
+from services.prompt_manager import get_prompt_manager
 from services.stages.cross_model_qa import (
-    QA_AGGREGATE_REWRITE_PROMPT,
     CrossModelQAStage,
     _build_rejection_reason,
     _resolve_max_rewrites,
@@ -374,9 +374,15 @@ class TestExecuteMissingContext:
 
 
 class TestPromptTemplate:
-    def test_template_has_required_placeholders(self):
-        assert "{title}" in QA_AGGREGATE_REWRITE_PROMPT
-        assert "{issues_to_fix}" in QA_AGGREGATE_REWRITE_PROMPT
-        assert "{content}" in QA_AGGREGATE_REWRITE_PROMPT
+    def test_template_renders_with_required_placeholders(self):
+        rendered = get_prompt_manager().get_prompt(
+            "qa.aggregate_rewrite",
+            title="TITLE_MARKER",
+            issues_to_fix="ISSUES_MARKER",
+            content="CONTENT_MARKER",
+        )
+        assert "TITLE_MARKER" in rendered
+        assert "ISSUES_MARKER" in rendered
+        assert "CONTENT_MARKER" in rendered
         # Sanity check against template drift
-        assert "Return ONLY the revised article text" in QA_AGGREGATE_REWRITE_PROMPT
+        assert "Return ONLY the revised article text" in rendered

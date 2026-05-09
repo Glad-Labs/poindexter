@@ -8,8 +8,15 @@ these functions after each content_tasks write so both schemas stay in sync.
 Tables:
     pipeline_tasks         — task queue and lifecycle
     pipeline_versions      — generated content with version history
-    pipeline_reviews       — multi-reviewer approval workflow
     pipeline_distributions — per-target publish tracking
+
+Note: approval/rejection writes have moved to ``pipeline_gate_history``
+(see Glad-Labs/poindexter#366). The legacy ``add_review`` helper that
+wrote to ``pipeline_reviews`` was retired 2026-05-09 once the unification
+backfill landed and the ``content_tasks`` view started reading from
+``pipeline_gate_history``. Callers now write directly to
+``pipeline_gate_history`` (the SQL is a single ``INSERT`` and the table
+shape doesn't warrant another helper).
 """
 
 import json
@@ -157,26 +164,6 @@ class PipelineDB:
             )
         except Exception as e:
             logger.warning("[pipeline_db] upsert_version failed for %s: %s", task_id, e)
-
-    # ------------------------------------------------------------------
-    # pipeline_reviews
-    # ------------------------------------------------------------------
-
-    async def add_review(
-        self, task_id: str, decision: str, reviewer: str = "operator",
-        feedback: str | None = None, version: int = 1
-    ) -> None:
-        """Record an approval/rejection decision."""
-        try:
-            await self.pool.execute(
-                """
-                INSERT INTO pipeline_reviews (task_id, version, reviewer, decision, feedback)
-                VALUES ($1, $2, $3, $4, $5)
-                """,
-                task_id, version, reviewer, decision, feedback,
-            )
-        except Exception as e:
-            logger.warning("[pipeline_db] add_review failed for %s: %s", task_id, e)
 
     # ------------------------------------------------------------------
     # pipeline_distributions

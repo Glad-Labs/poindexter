@@ -116,22 +116,76 @@ class TestDevDiaryContext:
         ctx.cost_summary = {"total_usd": 5.0, "total_inferences": 1000, "by_model": []}
         assert ctx.is_empty() is True
 
-    def test_headline_uses_top_pr(self):
+    def test_headline_summarizes_pr_count(self):
         ctx = self._empty()
-        ctx.merged_prs = [{"title": "feat: per-medium approval gate engine"}]
+        ctx.merged_prs = [
+            {"title": "feat: per-medium approval gate engine"},
+            {"title": "fix: stuck retry"},
+        ]
         h = ctx.headline()
-        assert "2026-05-02" in h
-        assert "per-medium approval gate engine" in h
+        assert h == "Daily dev diary — 2026-05-02 (2 PRs)"
 
-    def test_headline_falls_back_to_commit(self):
+    def test_headline_summarizes_pr_and_commit_counts(self):
+        ctx = self._empty()
+        ctx.merged_prs = [{"title": "feat: thing"}]
+        ctx.notable_commits = [
+            {"subject": "fix: a"},
+            {"subject": "fix: b"},
+            {"subject": "fix: c"},
+        ]
+        h = ctx.headline()
+        assert h == "Daily dev diary — 2026-05-02 (1 PR, 3 commits)"
+
+    def test_headline_falls_back_to_commit_count(self):
         ctx = self._empty()
         ctx.notable_commits = [{"subject": "fix: stuck pipeline retry loop"}]
         h = ctx.headline()
-        assert "stuck pipeline retry loop" in h
+        assert h == "Daily dev diary — 2026-05-02 (1 commit)"
+
+    def test_headline_falls_back_to_post_count_when_no_git_signal(self):
+        ctx = self._empty()
+        ctx.recent_posts = [{"id": "p1", "title": "Today"}, {"id": "p2", "title": "Yesterday"}]
+        h = ctx.headline()
+        assert h == "Daily dev diary — 2026-05-02 (2 posts)"
 
     def test_headline_generic_when_empty(self):
         h = self._empty().headline()
         assert h == "Daily dev diary — 2026-05-02"
+
+    def test_headline_does_not_embed_pr_titles(self):
+        # Regression: Glad-Labs/poindexter#353 — PR titles in the topic
+        # were truncated mid-identifier (POINDEXTER_SECRET_KEY →
+        # POINDEXTER_SE), and the writer hallucinated an explanation of
+        # the partial identifier. The fix is to keep PR/commit titles
+        # OUT of the topic entirely; the writer reads them from
+        # task_metadata.context_bundle instead.
+        long_title = (
+            "fix(cli): rank-batch sys#N markers + auto-load "
+            "POINDEXTER_SECRET_KEY"
+        )
+        ctx = self._empty()
+        ctx.merged_prs = [{"title": long_title}]
+        h = ctx.headline()
+        assert "POINDEXTER" not in h
+        assert "rank-batch" not in h
+        assert "auto-load" not in h
+        # And the bundle still carries the full title for the writer:
+        assert ctx.to_dict()["merged_prs"][0]["title"] == long_title
+
+    def test_headline_handles_arbitrary_long_titles_without_truncation(self):
+        # Any title — short, long, or pathologically all-one-word —
+        # produces the same well-formed topic, because the topic is
+        # built from counts only.
+        ctx = self._empty()
+        ctx.merged_prs = [
+            {"title": "X" * 500},
+            {"title": "feat: " + "AAAAAAAAAAAAAAAAAAAA" * 20},
+        ]
+        h = ctx.headline()
+        # No ellipsis; no mid-string truncation; deterministic output.
+        assert "…" not in h
+        assert "..." not in h
+        assert h == "Daily dev diary — 2026-05-02 (2 PRs)"
 
 
 # ---------------------------------------------------------------------------

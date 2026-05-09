@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "poindexter-backend"
-version = "1.3.0"
+version = "0.5.0"
 description = "Poindexter backend — FastAPI + specialized AI agents. Built by Glad Labs LLC."
 authors = ["Matthew M. Gladding <hello@gladlabs.io>"]
 readme = "README.md"
@@ -10,7 +10,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.14"
+python = ">=3.13,<3.15"
 
 # Use headless opencv (doesn't require X11/GUI libraries in production)
 
@@ -195,7 +195,6 @@ posts = "cofounder_agent.services.taps.published_posts:PostsTap"
 audit = "cofounder_agent.services.taps.audit:AuditTap"
 brain_knowledge = "cofounder_agent.services.taps.brain_knowledge:BrainKnowledgeTap"
 brain_decisions = "cofounder_agent.services.taps.brain_decisions:BrainDecisionsTap"
-gitea_issues = "cofounder_agent.services.taps.gitea_issues:GiteaIssuesTap"
 claude_code_sessions = "cofounder_agent.services.taps.claude_code_sessions:ClaudeCodeSessionsTap"
 openclaw_sqlite = "cofounder_agent.services.taps.openclaw_sqlite:OpenClawSQLiteTap"
 
@@ -233,6 +232,8 @@ check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:C
 regenerate_stock_images = "cofounder_agent.services.jobs.regenerate_stock_images:RegenerateStockImagesJob"
 collapse_old_embeddings = "cofounder_agent.services.jobs.collapse_old_embeddings:CollapseOldEmbeddingsJob"
 morning_brief = "cofounder_agent.services.jobs.morning_brief:MorningBriefJob"
+run_taps = "cofounder_agent.services.jobs.run_taps:RunTapsJob"
+run_retention = "cofounder_agent.services.jobs.run_retention:RunRetentionJob"
 
 [tool.poetry.plugins."poindexter.topic_sources"]
 hackernews = "cofounder_agent.services.topic_sources.hackernews:HackerNewsSource"
@@ -327,7 +328,7 @@ max-locals = 15
 max-args = 8
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = true

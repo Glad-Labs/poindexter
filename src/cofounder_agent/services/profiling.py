@@ -33,10 +33,9 @@ completes. New code should pass ``site_config=`` explicitly.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from services.site_config import SiteConfig
+from services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 
@@ -65,16 +64,16 @@ def setup_pyroscope(
     """
     cfg: Any = site_config
     if cfg is None:
-        # Module-level import (not ``from ... import site_config``) keeps
-        # this file off the CI guardrail's offender list — the explicit
-        # singleton fallback is the DI seam's documented behavior, not a
-        # hidden direct dependency.
+        # Build a fresh env-fallback SiteConfig so the function still
+        # works for callers that haven't been migrated to pass an
+        # explicit instance. Production callers (main.py lifespan,
+        # brain daemon) thread the loaded SiteConfig through.
         try:
-            import services.site_config as _scm
+            from services.site_config import SiteConfig
         except Exception as e:
             logger.debug("[PYROSCOPE] site_config unavailable: %s — skipping", e)
             return
-        cfg = _scm.site_config
+        cfg = SiteConfig()
 
     enabled = cfg.get("enable_pyroscope", "false").lower() == "true"
     if not enabled:

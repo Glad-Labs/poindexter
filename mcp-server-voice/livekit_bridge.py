@@ -516,44 +516,63 @@ async def _bridge_main(state: BridgeState) -> None:
         )
 
 
+_AUDIO_DEP_MODULES: tuple[str, ...] = (
+    "pipecat",
+    "livekit",
+    "faster_whisper",
+    "kokoro",
+)
+
+
 def _resolve_default_audio_plane(config: BridgeConfig) -> AudioMediaPlane:
     """Pick the default audio plane for a new bridge session.
 
-    Tries the Pipecat plane in ``audio_plane_pipecat`` (PR #2) first; if
-    that import fails (the heavy audio deps aren't installed in this
-    environment, e.g. a public-Poindexter slim install or CI) we fall
-    back to the no-op plane so the control-plane code paths still work.
+    With ``VOICE_BRIDGE_AUDIO_PLANE=noop`` the no-op stub is returned --
+    explicit opt-in for tests, CI, and operators debugging audio-driver
+    problems on a control-plane-only box.
 
-    Setting ``VOICE_BRIDGE_AUDIO_PLANE=noop`` short-circuits straight to
-    the no-op plane -- escape hatch for tests, CI, and operators
-    debugging audio-driver problems. Surfaced in the operator doc.
+    With ``VOICE_BRIDGE_AUDIO_PLANE`` unset or set to ``pipecat`` the
+    Pipecat plane in ``audio_plane_pipecat`` is used. Required imports
+    (``pipecat`` / ``livekit`` / ``faster_whisper`` / ``kokoro``) are
+    probed up front: missing any of them raises ``RuntimeError`` with
+    the install command so a fresh ``uv run server.py`` does not silently
+    fall back to ``NoopAudioMediaPlane`` (which logs "would have done X"
+    while every MCP tool reports success and the operator hears nothing).
+    Honors ``feedback_no_silent_defaults``.
     """
-    if (os.environ.get("VOICE_BRIDGE_AUDIO_PLANE", "") or "").strip().lower() == "noop":
+    plane = (os.environ.get("VOICE_BRIDGE_AUDIO_PLANE", "") or "").strip().lower()
+    if plane == "noop":
         logger.info(
             "[VOICE_BRIDGE] VOICE_BRIDGE_AUDIO_PLANE=noop -- using "
             "NoopAudioMediaPlane (silent stub)."
         )
         return NoopAudioMediaPlane()
-    # Probe the heavy audio deps before instantiating the Pipecat plane:
-    # they're imported lazily inside ``connect()``, but checking availability
-    # here means a control-plane-only environment (the PR #1 unit tests, CI,
-    # operators on a CPU-only laptop without onnxruntime-gpu) silently falls
-    # back to the no-op plane instead of choking at first ``voice_join_room``.
-    # Production deployments install all of these via the audio extras in
-    # mcp-server-voice/pyproject.toml.
+
+    missing: list[str] = []
+    for mod in _AUDIO_DEP_MODULES:
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod)
+    if missing:
+        raise RuntimeError(
+            f"[VOICE_BRIDGE] PipecatAudioMediaPlane unavailable -- "
+            f"missing audio dep(s): {', '.join(missing)}. Install the "
+            f"optional audio extras with `uv --directory mcp-server-voice "
+            f"sync --extra audio` (and `--extra gpu` on CUDA boxes) to "
+            f"enable real audio. Set VOICE_BRIDGE_AUDIO_PLANE=noop to "
+            f"explicitly opt in to the silent stub for CI / control-plane "
+            f"testing."
+        )
     try:
-        import pipecat  # noqa: F401 -- availability probe only
-        import livekit  # noqa: F401 -- availability probe only
         from audio_plane_pipecat import resolve_audio_plane  # type: ignore[import-not-found]
     except ImportError as exc:
-        logger.warning(
-            "[VOICE_BRIDGE] PipecatAudioMediaPlane unavailable (%s) -- "
-            "falling back to NoopAudioMediaPlane. Install the audio "
-            "deps from mcp-server-voice/pyproject.toml to enable real "
-            "audio.",
-            exc,
-        )
-        return NoopAudioMediaPlane()
+        raise RuntimeError(
+            f"[VOICE_BRIDGE] audio_plane_pipecat import failed even "
+            f"though every probed audio dep imported cleanly: {exc}. "
+            f"This is a packaging bug -- file an issue with the full "
+            f"traceback."
+        ) from exc
     stt_model = getattr(config, "stt_model", "base.en") or "base.en"
     tts_voice = getattr(config, "tts_voice", "af_bella") or "af_bella"
     return resolve_audio_plane(stt_model=stt_model, tts_voice=tts_voice)

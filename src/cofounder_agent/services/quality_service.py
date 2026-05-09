@@ -42,6 +42,19 @@ from services.quality_models import (
     QualityScore,
     RefinementType,
 )
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 from services.quality_scorers import (
     check_keywords as _check_keywords_fn,
 )
@@ -585,9 +598,6 @@ class UnifiedQualityService:
 
         All thresholds are tunable via app_settings (key prefix: qa_llm_).
         """
-        import services.site_config as _scm
-        site_config = _scm.site_config
-
         # Load tunable thresholds from DB (with sensible defaults)
         _t = {
             "buzzword_warn": site_config.get_int("qa_llm_buzzword_warn_threshold", 3),

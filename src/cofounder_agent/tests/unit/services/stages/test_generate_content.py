@@ -194,8 +194,12 @@ def _patch_everything():
         patch("services.research_service.ResearchService",
               return_value=SimpleNamespace(build_context=AsyncMock(return_value="auto research"))),
         patch("services.audit_log.audit_log_bg", MagicMock()),
-        patch("services.site_config.site_config",
-              SimpleNamespace(get=lambda _k, _d: "true")),
+        patch("services.title_generation.site_config",
+              SimpleNamespace(
+                  get=lambda _k, _d="": "true",
+                  get_float=lambda _k, _d=0.0: 0.6,
+                  get_bool=lambda _k, _d=False: False,
+              )),
     ]
 
 

@@ -349,6 +349,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Telegram when overnight criticals appear, so the operator wakes
         # up to one summary instead of 50+ individual Captain Hook pings.
         ("jobs", "services.jobs.morning_brief", "MorningBriefJob"),
+        # Integrations runners — wrap tap_runner / retention_runner as
+        # scheduled Jobs. Pre-2026-05-09 these only ran via the
+        # poindexter CLI, so external_taps + retention_policies had been
+        # dark since 2026-05-01. RunTapsJob fires hourly (matches the
+        # hackernews tap's "every 1 hour" floor); RunRetentionJob fires
+        # every 6 hours (retention is a sweep-everything operation).
+        ("jobs", "services.jobs.run_taps", "RunTapsJob"),
+        ("jobs", "services.jobs.run_retention", "RunRetentionJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),

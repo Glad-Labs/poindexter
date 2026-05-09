@@ -96,15 +96,13 @@ def _site_config(values: dict | None = None) -> MagicMock:
 
 
 def _patch_site_config(monkeypatch, values: dict | None = None):
-    """Replace the site_config singleton with a mock that returns *values*.
-
-    `_build_user_agent` and `_scrape_arxiv` import the singleton at call
-    time via `from services.site_config import site_config as _sc`, so
-    patching the module-level binding is enough — no need to thread
-    site_config through as a function argument anymore.
+    """Replace the url_scraper module's site_config attr with a mock that
+    returns *values*. Post #330 sweep, each module owns its own
+    ``site_config`` attr wired by main.py at lifespan startup; tests
+    patch the per-module attr directly.
     """
     monkeypatch.setattr(
-        "services.site_config.site_config",
+        "services.url_scraper.site_config",
         _site_config(values),
     )
 
@@ -282,10 +280,10 @@ class TestScrapeGeneric:
             async def get(self, url, **kwargs):
                 return _FakeResponse(text=_HTML_FULL)
 
-        monkeypatch.setattr(
-            url_scraper, "USER_AGENT",
-            "Mozilla/5.0 (compatible; PoindexterBot/1.0; +https://acme.test/c) AI content pipeline topic scraper",
-        )
+        # USER_AGENT was a module-level constant captured at import time
+        # (broken — singleton hadn't loaded yet). Now resolved per-call
+        # via _build_user_agent(); patch the module's site_config attr.
+        _patch_site_config(monkeypatch, {"site_contact_url": "https://acme.test/c"})
         with patch.object(url_scraper.httpx, "AsyncClient", _Recorder):
             await scrape_url("https://example.com/x")
         assert "+https://acme.test/c" in captured["headers"]["User-Agent"]

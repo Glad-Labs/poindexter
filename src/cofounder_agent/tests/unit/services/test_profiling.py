@@ -17,7 +17,7 @@ class TestSetupPyroscope:
         from services.profiling import setup_pyroscope
 
         with patch(
-            "services.site_config.site_config.get",
+            "services.profiling.SiteConfig.get",
             return_value="false",
         ):
             # Should exit cleanly without importing pyroscope.
@@ -29,7 +29,7 @@ class TestSetupPyroscope:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": None}):
             with caplog.at_level("WARNING"):
                 setup_pyroscope()
@@ -50,7 +50,7 @@ class TestSetupPyroscope:
                 "environment": "production",
             }.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope("test-service")
 
@@ -69,7 +69,7 @@ class TestSetupPyroscope:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             # Must not raise — profiling failure should never kill startup.
             setup_pyroscope()
@@ -94,7 +94,7 @@ class TestEnablePyroscopeParsing:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": value}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -112,7 +112,7 @@ class TestEnablePyroscopeParsing:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": value}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -156,7 +156,7 @@ class TestDefaultsAndFallbacks:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -181,7 +181,7 @@ class TestDefaultsAndFallbacks:
             # pyroscope_server_url and environment).
             return default
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -204,7 +204,7 @@ class TestDefaultsAndFallbacks:
                 "environment": env_value,
             }.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -227,7 +227,7 @@ class TestDefaultsAndFallbacks:
             }.get(key, default)
 
         with caplog.at_level("INFO"):
-            with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+            with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
                  patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
                 setup_pyroscope("brain-daemon")
 
@@ -271,7 +271,7 @@ class TestSetupPyroscopeEdgeCases:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -292,7 +292,7 @@ class TestSetupPyroscopeEdgeCases:
             # Only enable_pyroscope is set; server URL falls through to default.
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -315,7 +315,7 @@ class TestSetupPyroscopeEdgeCases:
                 "environment": "",  # explicitly blank — bug-class trap
             }.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -333,7 +333,7 @@ class TestSetupPyroscopeEdgeCases:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": "true"}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -352,7 +352,7 @@ class TestSetupPyroscopeEdgeCases:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": flag_value}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -372,7 +372,7 @@ class TestSetupPyroscopeEdgeCases:
         def _fake_get(key: str, default: str = "") -> str:
             return {"enable_pyroscope": flag_value}.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope()
 
@@ -416,7 +416,7 @@ class TestSetupPyroscopeEdgeCases:
                 "environment": "staging",
             }.get(key, default)
 
-        with patch("services.site_config.site_config.get", side_effect=_fake_get), \
+        with patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope("brain-daemon")
 
@@ -443,7 +443,7 @@ class TestSetupPyroscopeEdgeCases:
             }.get(key, default)
 
         with caplog.at_level("INFO", logger="services.profiling"), \
-             patch("services.site_config.site_config.get", side_effect=_fake_get), \
+             patch("services.profiling.SiteConfig.get", side_effect=_fake_get), \
              patch.dict("sys.modules", {"pyroscope": fake_pyroscope}):
             setup_pyroscope("worker-x")
 

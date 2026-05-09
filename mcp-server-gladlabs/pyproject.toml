@@ -1,6 +1,6 @@
 [project]
 name = "gladlabs-mcp"
-version = "0.1.0"
+version = "0.5.0"
 description = "Glad Labs operator MCP Server — private business tools layered on Poindexter. Not shipped publicly."
 requires-python = ">=3.12"
 dependencies = [

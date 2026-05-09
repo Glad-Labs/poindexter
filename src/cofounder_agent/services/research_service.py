@@ -20,6 +20,20 @@ Usage:
 import re
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -122,8 +136,7 @@ def get_known_references() -> dict[str, list[dict[str, str]]]:
     """
     import json as _json
     try:
-        import services.site_config as _scm
-        raw = _scm.site_config.get("known_references_json", "")
+        raw = site_config.get("known_references_json", "")
         if not raw:
             return _DEFAULT_KNOWN_REFERENCES
         parsed = _json.loads(raw)
@@ -318,9 +331,7 @@ async def research_topic(query: str, max_sources: int | None = None) -> str:
     """
     if max_sources is None:
         try:
-            import services.site_config as _scm
-
-            max_sources = _scm.site_config.get_int(
+            max_sources = site_config.get_int(
                 "writer_rag_research_topic_max_sources", 2,
             )
         except Exception:

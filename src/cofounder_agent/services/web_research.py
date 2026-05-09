@@ -22,8 +22,25 @@ import httpx
 from bs4 import BeautifulSoup
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Falls back to a fresh env-fallback instance when unset.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
+
+def _sc() -> SiteConfig:
+    """Return the wired SiteConfig (kept for back-compat; new code reads the module attr directly)."""
+    return site_config
+
 
 def _web_research_int(key: str, default: int) -> int:
     """Read a web_research_* tunable from app_settings with a safe default.
@@ -33,8 +50,7 @@ def _web_research_int(key: str, default: int) -> int:
     being frozen at import time (#198).
     """
     try:
-        import services.site_config as _scm
-        return _scm.site_config.get_int(f"web_research_{key}", default)
+        return _sc().get_int(f"web_research_{key}", default)
     except Exception:
         return default
 

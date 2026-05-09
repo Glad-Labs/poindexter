@@ -32,6 +32,20 @@ from .embeddings_db import EmbeddingsDatabase
 from .tasks_db import TasksDatabase
 from .users_db import UsersDatabase
 from .writing_style_db import WritingStyleDatabase
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -158,8 +172,6 @@ class DatabaseService:
                 "dev",
                 "local",
             )
-            import services.site_config as _scm
-            site_config = _scm.site_config
             # GH-92: keep ``min_size`` small in every environment. Pools that
             # pre-warm 20 connections reserve them against ``max_connections``
             # even when the worker is idle — a direct contributor to the

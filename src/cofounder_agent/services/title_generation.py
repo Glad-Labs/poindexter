@@ -20,6 +20,20 @@ from __future__ import annotations
 import logging
 import re
 from difflib import SequenceMatcher
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +119,6 @@ async def generate_canonical_title(
     try:
         from plugins.registry import get_all_llm_providers
         from services.prompt_manager import get_prompt_manager
-        import services.site_config as _scm
-        site_config = _scm.site_config
-
         pm = get_prompt_manager()
         providers = {p.name: p for p in get_all_llm_providers()}
         provider = providers.get("ollama_native")
@@ -198,8 +209,6 @@ async def check_title_originality(title: str) -> dict:
     }
 
     try:
-        import services.site_config as _scm
-        site_config = _scm.site_config
         threshold = site_config.get_float("qa_title_similarity_threshold", 0.6)
         enabled = site_config.get_bool("qa_title_originality_enabled", True)
         if not enabled:

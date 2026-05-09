@@ -57,18 +57,28 @@ _FALLBACK_RATE_PER_1K = {"input": 0.0005, "output": 0.0015}
 _KNOWN_CLOUD_PROVIDERS = frozenset({"gemini", "openai", "anthropic", "openrouter"})
 
 
-# Data-center inference energy per 1K tokens, in watt-hours. These are
-# rough estimates synthesized from public research (Patterson et al.,
-# Hugging Face efficiency benchmarks, vendor sustainability reports)
-# plus parameter-count scaling — vendors don't publish per-call energy.
-# Operators can override per-model via app_settings:
+# Data-center inference energy per 1K tokens, in WATT-HOURS (Wh) — NOT
+# USD prices. The numeric magnitudes (0.1-4.0) only make sense as Wh;
+# real USD-per-1K rates are 1-3 orders of magnitude smaller (gpt-4o
+# input is ~$0.0025/1K). The 2026-05-08 services audit (Overlap 3) once
+# flagged this as a hardcoded price dict that drifts from cost_lookup —
+# that finding was a misread and has been corrected. USD pricing lives
+# in a separate path: ``_get_rate()`` reads
+# ``plugin.llm_provider.<provider>.[model.<model>.]cost_per_1k_<dir>_usd``
+# and falls back to ``_FALLBACK_RATE_PER_1K``. The dict below is read
+# only by ``_get_energy_per_1k_wh()`` → ``estimate_cloud_kwh()``.
+#
+# These are rough estimates synthesized from public research (Patterson
+# et al., Hugging Face efficiency benchmarks, vendor sustainability
+# reports) plus parameter-count scaling — vendors don't publish per-call
+# energy. Operators can override per-model via app_settings:
 #   plugin.llm_provider.<provider>.model.<model>.energy_per_1k_wh
 # or per-provider:
 #   plugin.llm_provider.<provider>.energy_per_1k_wh
 #
 # Used to power the "is Ollama actually cheaper *and* greener than this
 # cloud SKU?" comparison Matt watches on the cost dashboard.
-_FALLBACK_ENERGY_WH_PER_1K = 1.0  # generic small/medium model
+_FALLBACK_ENERGY_WH_PER_1K = 1.0  # generic small/medium model, in Wh/1K-tokens
 _DEFAULT_CLOUD_ENERGY_WH_PER_1K: dict[str, dict[str, float]] = {
     "gemini": {
         "gemini-2.5-flash": 0.3,

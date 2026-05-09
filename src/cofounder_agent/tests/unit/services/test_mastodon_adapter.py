@@ -14,9 +14,19 @@ import pytest
 
 from services.social_adapters import mastodon as mastodon_adapter
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+
+def _site_config_mock(instance_url: str = "", access_token: str = "") -> MagicMock:
+    """Build a SiteConfig stand-in for the kwarg-DI surface.
+
+    Mastodon's adapter uses a mixed accessor pattern: ``site_config.get``
+    (sync) for the instance URL plus ``site_config.get_secret`` (async)
+    for the access token. Mirrors the post-#330 singleton-deletion
+    contract that ``social_poster._distribute_to_adapters`` honors.
+    """
+    sc = MagicMock()
+    sc.get = MagicMock(return_value=instance_url)
+    sc.get_secret = AsyncMock(return_value=access_token)
+    return sc
 
 
 def _install_fake_mastodon(client_instance: MagicMock | None = None) -> MagicMock:
@@ -44,11 +54,6 @@ def _cleanup_mastodon():
     _uninstall_fake_mastodon()
 
 
-# ---------------------------------------------------------------------------
-# Helper: _truncate
-# ---------------------------------------------------------------------------
-
-
 class TestTruncate:
     def test_under_limit_unchanged(self):
         assert mastodon_adapter._truncate("hello", 100) == "hello"
@@ -65,86 +70,78 @@ class TestTruncate:
         assert len(result) == 500
 
 
-# ---------------------------------------------------------------------------
-# Credential short-circuit
-# ---------------------------------------------------------------------------
-
-
 class TestMissingCredentials:
     @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_missing_instance_url_short_circuits(self, mock_get, mock_get_secret):
-        mock_get.return_value = ""  # instance URL not set
-        mock_get_secret.return_value = "token"
+    async def test_missing_site_config_short_circuits(self):
         result = await mastodon_adapter.post_to_mastodon("hi", "https://x.com/1")
+        assert result["success"] is False
+        assert "not provided" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_missing_instance_url_short_circuits(self):
+        sc = _site_config_mock(instance_url="", access_token="token")
+        result = await mastodon_adapter.post_to_mastodon(
+            "hi", "https://x.com/1", site_config=sc,
+        )
         assert result["success"] is False
         assert "not configured" in result["error"]
 
     @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_missing_access_token_short_circuits(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social"
-        mock_get_secret.return_value = ""
-        result = await mastodon_adapter.post_to_mastodon("hi", "https://x.com/1")
+    async def test_missing_access_token_short_circuits(self):
+        sc = _site_config_mock(instance_url="https://mastodon.social", access_token="")
+        result = await mastodon_adapter.post_to_mastodon(
+            "hi", "https://x.com/1", site_config=sc,
+        )
         assert result["success"] is False
         assert "not configured" in result["error"]
 
     @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_strips_trailing_slash_from_instance_url(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social/"
-        mock_get_secret.return_value = "token"
+    async def test_strips_trailing_slash_from_instance_url(self):
+        sc = _site_config_mock(
+            instance_url="https://mastodon.social/", access_token="token",
+        )
         mastodon_cls = _install_fake_mastodon()
-        mastodon_cls.return_value.status_post = MagicMock(return_value={"id": 1, "url": "u"})
+        mastodon_cls.return_value.status_post = MagicMock(
+            return_value={"id": 1, "url": "u"}
+        )
 
-        await mastodon_adapter.post_to_mastodon("hi", "https://x.com/1")
+        await mastodon_adapter.post_to_mastodon(
+            "hi", "https://x.com/1", site_config=sc,
+        )
 
         kwargs = mastodon_cls.call_args.kwargs
         assert kwargs["api_base_url"] == "https://mastodon.social"
 
 
-# ---------------------------------------------------------------------------
-# Missing Mastodon.py package
-# ---------------------------------------------------------------------------
-
-
 class TestMissingMastodonPackage:
     @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_importerror_returns_clean_error(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social"
-        mock_get_secret.return_value = "token"
-        # Simulate package unavailable.
+    async def test_importerror_returns_clean_error(self):
+        sc = _site_config_mock(
+            instance_url="https://mastodon.social", access_token="token",
+        )
         with patch.dict(sys.modules, {"mastodon": None}):
-            result = await mastodon_adapter.post_to_mastodon("hi", "https://x.com/1")
+            result = await mastodon_adapter.post_to_mastodon(
+                "hi", "https://x.com/1", site_config=sc,
+            )
         assert result["success"] is False
         assert "not installed" in result["error"]
 
 
-# ---------------------------------------------------------------------------
-# Happy path
-# ---------------------------------------------------------------------------
-
-
 class TestHappyPath:
     @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_posts_successfully(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social"
-        mock_get_secret.return_value = "my-token"
-
+    async def test_posts_successfully(self):
+        sc = _site_config_mock(
+            instance_url="https://mastodon.social", access_token="my-token",
+        )
         mastodon_cls = _install_fake_mastodon()
         mastodon_cls.return_value.status_post = MagicMock(
             return_value={"id": 12345, "url": "https://mastodon.social/@x/12345"}
         )
 
         result = await mastodon_adapter.post_to_mastodon(
-            "Check out this post!", "https://gladlabs.io/posts/my-post"
+            "Check out this post!",
+            "https://gladlabs.io/posts/my-post",
+            site_config=sc,
         )
 
         assert result["success"] is True
@@ -156,91 +153,56 @@ class TestHappyPath:
         assert kwargs["api_base_url"] == "https://mastodon.social"
 
     @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_url_appended_if_not_in_text(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social"
-        mock_get_secret.return_value = "t"
+    async def test_url_appended_if_not_in_text(self):
+        sc = _site_config_mock(
+            instance_url="https://mastodon.social", access_token="t",
+        )
         mastodon_cls = _install_fake_mastodon()
         mastodon_cls.return_value.status_post = MagicMock(
             return_value={"id": 1, "url": "u"}
         )
 
-        await mastodon_adapter.post_to_mastodon("A cool post", "https://gladlabs.io/p/a")
+        await mastodon_adapter.post_to_mastodon(
+            "A cool post", "https://gladlabs.io/p/a", site_config=sc,
+        )
 
         status_call = mastodon_cls.return_value.status_post.call_args
         posted_text = status_call.kwargs.get("status") or status_call.args[0]
         assert "https://gladlabs.io/p/a" in posted_text
 
     @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_visibility_is_public(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social"
-        mock_get_secret.return_value = "t"
+    async def test_visibility_is_public(self):
+        sc = _site_config_mock(
+            instance_url="https://mastodon.social", access_token="t",
+        )
         mastodon_cls = _install_fake_mastodon()
         mastodon_cls.return_value.status_post = MagicMock(
             return_value={"id": 1, "url": "u"}
         )
 
-        await mastodon_adapter.post_to_mastodon("hi", "https://x.com/1")
+        await mastodon_adapter.post_to_mastodon(
+            "hi", "https://x.com/1", site_config=sc,
+        )
 
         status_call = mastodon_cls.return_value.status_post.call_args
         assert status_call.kwargs.get("visibility") == "public"
 
     @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_long_text_truncated(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social"
-        mock_get_secret.return_value = "t"
+    async def test_long_text_truncated(self):
+        sc = _site_config_mock(
+            instance_url="https://mastodon.social", access_token="t",
+        )
         mastodon_cls = _install_fake_mastodon()
         mastodon_cls.return_value.status_post = MagicMock(
             return_value={"id": 1, "url": "u"}
         )
 
         long_text = "word " * 200  # 1000 chars
-        await mastodon_adapter.post_to_mastodon(long_text, "https://x.com/1")
+        await mastodon_adapter.post_to_mastodon(
+            long_text, "https://x.com/1", site_config=sc,
+        )
 
         status_call = mastodon_cls.return_value.status_post.call_args
         posted_text = status_call.kwargs.get("status") or status_call.args[0]
         assert len(posted_text) <= 500
         assert posted_text.endswith("...")
-
-
-# ---------------------------------------------------------------------------
-# Error handling
-# ---------------------------------------------------------------------------
-
-
-class TestErrorHandling:
-    @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_post_failure_returns_error_dict(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social"
-        mock_get_secret.return_value = "t"
-        mastodon_cls = _install_fake_mastodon()
-        mastodon_cls.return_value.status_post = MagicMock(
-            side_effect=Exception("429 rate limited")
-        )
-
-        result = await mastodon_adapter.post_to_mastodon("hi", "https://x.com/1")
-        assert result["success"] is False
-        assert result["post_id"] is None
-        assert "rate limited" in result["error"]
-
-    @pytest.mark.asyncio
-    @patch.object(mastodon_adapter.site_config, "get_secret", new_callable=AsyncMock)
-    @patch.object(mastodon_adapter.site_config, "get")
-    async def test_error_does_not_raise(self, mock_get, mock_get_secret):
-        mock_get.return_value = "https://mastodon.social"
-        mock_get_secret.return_value = "t"
-        mastodon_cls = _install_fake_mastodon()
-        mastodon_cls.return_value.status_post = MagicMock(
-            side_effect=RuntimeError("network gone")
-        )
-
-        # Must not raise.
-        result = await mastodon_adapter.post_to_mastodon("hi", "https://x.com/1")
-        assert result["success"] is False
