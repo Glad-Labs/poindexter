@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_VALUE = '["qwen3","qwen3.5","glm-4","glm-4.7","deepseek-r1"]'
 
 
-async def run(conn) -> None:
+async def run_migration(conn) -> None:
     await conn.execute(
         """
         INSERT INTO app_settings (key, value, category, description, is_secret, is_active)

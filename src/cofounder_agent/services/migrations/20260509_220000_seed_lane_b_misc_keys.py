@@ -50,7 +50,7 @@ _SEEDS = (
 )
 
 
-async def run(conn) -> None:
+async def run_migration(conn) -> None:
     for key, value, description in _SEEDS:
         await conn.execute(
             """
