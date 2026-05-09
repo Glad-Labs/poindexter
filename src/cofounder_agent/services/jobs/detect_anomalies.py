@@ -2,7 +2,8 @@
 
 Replaces ``IdleWorker._detect_anomalies``. Runs every 4 hours by default.
 Flags any metric that sits more than 2 stddev from its 30-day daily mean,
-logs a row in ``audit_log``, and files a Gitea issue if 2+ metrics are
+logs a row in ``audit_log``, and emits a finding via ``utils.findings``
+(routed to Discord/Telegram by ``notify_operator``) if 2+ metrics are
 anomalous in the same cycle.
 
 Metrics monitored:

@@ -36,33 +36,17 @@ verification step has been done.)
 
 ## Probably dead — pending verification
 
-### `services/jobs/backfill_podcasts.py` (+ test)
+### Resolved 2026-05-09: `backfill_podcasts` + `backfill_videos` — keep dormant, not deletion
 
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 158 LOC + 176 LOC test
-- **Why removable:** Registered in `pyproject.toml` as a `poindexter.jobs`
-  entry_point but NOT in the worker's boot list (PluginScheduler loads
-  26 jobs; this is one of 7 that fail to register). Only caller is
-  the test file. No CLI invocation. Last commit 2026-05-08 was a doc
-  touch, not a feature.
-- **Blocker:** verify it's failing to register because of a real
-  schedule-string error (the scheduler skips silently on bad
-  schedules) — if so, it may be a one-line fix, not a deletion.
-- **Confidence:** medium
-- **Decision:**
-
-### `services/jobs/backfill_videos.py` (+ test)
-
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 95 LOC + 191 LOC test
-- **Why removable:** Same pattern as backfill_podcasts. Registered
-  but unscheduled, only test caller. Video pipeline is dormant per
-  the 2026-05-08 services audit (BUSINESS-OS-MODULE-SLOT, future).
-- **Blocker:** Matt may want video backfill alive for when the
-  module wakes up. Decide: keep dormant (tests stay green) or delete
-  and re-add when needed.
-- **Confidence:** medium
-- **Decision:**
+- **Note (not a deletion candidate, recording the resolution):** Both
+  jobs target the podcast / video pipelines which are tagged as
+  `BUSINESS-OS-MODULE-SLOT, future` in the 2026-05-08 services audit.
+  Per `feedback_learning_is_primary_goal.md` ("Adopt mature OSS even
+  when 'overkill' at current scale. Tool adoption IS the deliverable"),
+  these are deliberate scaffolds for the next module wake-up. The right
+  posture is "stay unscheduled until the module wakes up, then enable
+  via app_settings without a code change." Tests stay green; jobs
+  stay dormant; no deletion needed.
 
 ### Resolved 2026-05-09: `check_memory_staleness` — scheduled, not deletion
 
@@ -74,16 +58,15 @@ verification step has been done.)
   (prune_orphan_embeddings, prune_stale_embeddings, regenerate_stock_images).
   PluginScheduler now boots 32 jobs (up from 28).
 
-### `services/jobs/detect_anomalies.py` (+ test)
+### Resolved 2026-05-09: `detect_anomalies` — scheduled, doc fixed
 
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 193 LOC + 143 LOC test
-- **Why removable:** Registered, unscheduled, only test caller.
-- **Blocker:** anomaly detection might be planned to fire on a brain
-  cycle — verify the brain doesn't call this directly via a different
-  import path before deleting.
-- **Confidence:** low
-- **Decision:**
+- **Note (not a deletion candidate, recording the resolution):** The
+  job's docstring claimed it "files a Gitea issue" — that was stale
+  text from before the 2026-04-30 Gitea retirement. The actual code
+  uses `utils.findings.emit_finding` which routes through
+  `notify_operator` (Discord + Telegram). Wired into
+  `plugins/registry.py:_SAMPLES` on 2026-05-09 alongside the doc
+  fix. PluginScheduler now boots 33 jobs.
 
 ### Resolved 2026-05-09: `regenerate_stock_images` + `prune_orphan_embeddings` + `prune_stale_embeddings` — all 3 scheduled, not deletion
 

@@ -369,6 +369,14 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.prune_orphan_embeddings", "PruneOrphanEmbeddingsJob"),
         ("jobs", "services.jobs.prune_stale_embeddings", "PruneStaleEmbeddingsJob"),
         ("jobs", "services.jobs.regenerate_stock_images", "RegenerateStockImagesJob"),
+        # Anomaly detection — z-score outlier detection across failure
+        # rate, quality, cost, and error-log rate (every 4h). Emits a
+        # finding via utils.findings (routes through notify_operator
+        # to Discord + Telegram) when 2+ metrics breach 2-sigma. The
+        # docstring's "files a Gitea issue" was stale — actual code
+        # uses emit_finding (post-Gitea-retirement path). Doc updated
+        # 2026-05-09.
+        ("jobs", "services.jobs.detect_anomalies", "DetectAnomaliesJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
