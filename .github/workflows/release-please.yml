@@ -13,14 +13,25 @@ jobs:
     release-please:
         runs-on: ubuntu-latest
 
-        # Only run on the public Glad-Labs/poindexter repo. The private
-        # glad-labs-stack mirrors this workflow file (sync filter doesn't
-        # strip workflows by default), but we don't want versioning on the
-        # private operator repo — there's nothing to release there, just a
-        # main branch that deploys on every push. The conditional below is
-        # the single source of "release-please runs only on public".
+        # Only run on Glad-Labs/glad-labs-stack (the source repo).
+        #
+        # The original guard ran release-please ONLY on the public
+        # Glad-Labs/poindexter mirror, which broke versioning entirely:
+        # the mirror is force-rebuilt on every sync, so the commit SHAs
+        # that earlier tags pointed at are gone. release-please's "find
+        # latest release" lookup logged "SHA not found in recent commits
+        # to branch main, skipping" for every tag from v1.0.0 → v1.3.0,
+        # then fell back to "no prior release" and proposed 1.0.0 (a
+        # downgrade from 1.3.0). Every release-please PR for the past
+        # week was a regression and got closed instead of merged.
+        #
+        # Running on glad-labs-stack — the source repo, never
+        # force-pushed — fixes that. Tag SHAs stay valid, version bumps
+        # land here first, the sync workflow propagates the bumped
+        # version files to the public mirror as part of the next push.
+        # See Glad-Labs/glad-labs-stack#TBD for the full diagnosis.
         if: |
-          github.repository == 'Glad-Labs/poindexter' &&
+          github.repository == 'Glad-Labs/glad-labs-stack' &&
           !contains(github.event.head_commit.message, '[skip ci]')
 
         steps:
