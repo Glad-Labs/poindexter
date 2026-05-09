@@ -830,8 +830,14 @@ class MultiModelQA:
                     site="critic",
                 )
             ollama_model = resolved_model.removeprefix("ollama/")
-            is_thinking_model = any(t in ollama_model.lower() for t in ("qwen3.5", "glm-4.7", "qwen3:30b"))
-            max_tok = thinking_max if is_thinking_model else standard_max
+            from services.llm_providers.thinking_models import (
+                is_thinking_model as _is_thinking_model,
+                resolve_thinking_substrings,
+            )
+            _is_thinking = _is_thinking_model(
+                ollama_model, substrings=resolve_thinking_substrings(site_config)
+            )
+            max_tok = thinking_max if _is_thinking else standard_max
             try:
                 result = await asyncio.wait_for(
                     client.generate(

@@ -603,8 +603,14 @@ class AIContentGenerator:
         # Try to refine with same model
         # Calculate max tokens for refinement pass — extra headroom for thinking models.
         # Token multipliers are tunable via app_settings (#198).
+        from services.llm_providers.thinking_models import (
+            is_thinking_model,
+            resolve_thinking_substrings,
+        )
         _sc = site_config
-        _is_thinking_refine = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))
+        _is_thinking_refine = is_thinking_model(
+            model_name, substrings=resolve_thinking_substrings(_sc)
+        )
         _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 7.0)
         _standard_mult = _sc.get_float("content_gen_token_mult_standard", 4.5)
         max_tokens_refinement = int(target_length * (_thinking_mult if _is_thinking_refine else _standard_mult))
@@ -773,7 +779,14 @@ class AIContentGenerator:
                     # Using 4x multiplier to prevent truncation mid-sentence.
                     # Thinking models (qwen3, qwen3.5, glm-4.7) use part of the budget for
                     # internal reasoning, so we give them extra headroom.
-                    _is_thinking = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))
+                    from services.llm_providers.thinking_models import (
+                        is_thinking_model as _is_thinking_model,
+                        resolve_thinking_substrings as _resolve_thinking_substrings,
+                    )
+                    _is_thinking = _is_thinking_model(
+                        model_name,
+                        substrings=_resolve_thinking_substrings(site_config),
+                    )
                     _multiplier = 6.0 if _is_thinking else 4.0
                     max_tokens = int(target_length * _multiplier)
                     logger.debug("      Max tokens: %d (target_length: %d, thinking=%s)", max_tokens, target_length, _is_thinking)

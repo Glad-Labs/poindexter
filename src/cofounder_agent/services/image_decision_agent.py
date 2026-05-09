@@ -166,13 +166,19 @@ async def plan_images(
             # Ollama may need to load the model into VRAM on first call.
             # Retry with backoff on 404 (model not loaded yet).
             # Use /nothink prefix for qwen3 thinking models to get direct JSON output.
-            is_thinking_model = any(t in model.lower() for t in ("qwen3", "glm-4.7"))
-            actual_prompt = f"/nothink\n{prompt}" if is_thinking_model else prompt
+            from services.llm_providers.thinking_models import (
+                is_thinking_model as _is_thinking_model,
+                resolve_thinking_substrings,
+            )
+            _is_thinking = _is_thinking_model(
+                model, substrings=resolve_thinking_substrings(site_config)
+            )
+            actual_prompt = f"/nothink\n{prompt}" if _is_thinking else prompt
 
             raw = ""
             for _attempt in range(3):
                 # Use /api/chat for thinking models (better thinking token handling)
-                if is_thinking_model:
+                if _is_thinking:
                     resp = await client.post(f"{ollama_url}/api/chat", json={
                         "model": model,
                         "messages": [{"role": "user", "content": actual_prompt}],
@@ -195,7 +201,7 @@ async def plan_images(
                 resp.raise_for_status()
                 resp_data = resp.json()
                 # /api/chat returns content in message.content; /api/generate in response
-                if is_thinking_model:
+                if _is_thinking:
                     msg = resp_data.get("message", {})
                     raw = msg.get("content", "").strip()
                     if not raw:
