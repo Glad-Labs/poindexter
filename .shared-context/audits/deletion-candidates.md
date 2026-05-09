@@ -64,17 +64,15 @@ verification step has been done.)
 - **Confidence:** medium
 - **Decision:**
 
-### `services/jobs/check_memory_staleness.py` (+ test)
+### Resolved 2026-05-09: `check_memory_staleness` — scheduled, not deletion
 
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 198 LOC + 175 LOC test
-- **Why removable:** Registered, unscheduled, only test caller. Last
-  commit 2026-05-01.
-- **Blocker:** is "memory staleness" a deferred-but-real concern?
-  brain memory is at 30k+ rows; if staleness audit is needed, this
-  job is the only implementation.
-- **Confidence:** low
-- **Decision:**
+- **Note (not a deletion candidate, recording the resolution):** Job
+  has a valid `schedule = "every 30 minutes"` attribute and useful
+  monitoring purpose. Per `feedback_deletion_criteria.md`, the right
+  action was registration. Wired into `plugins/registry.py:_SAMPLES`
+  on 2026-05-09 along with the other 3 unscheduled-but-wanted jobs
+  (prune_orphan_embeddings, prune_stale_embeddings, regenerate_stock_images).
+  PluginScheduler now boots 32 jobs (up from 28).
 
 ### `services/jobs/detect_anomalies.py` (+ test)
 
@@ -87,42 +85,18 @@ verification step has been done.)
 - **Confidence:** low
 - **Decision:**
 
-### `services/jobs/regenerate_stock_images.py` (+ test)
+### Resolved 2026-05-09: `regenerate_stock_images` + `prune_orphan_embeddings` + `prune_stale_embeddings` — all 3 scheduled, not deletion
 
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 199 LOC + 192 LOC test
-- **Why removable:** Registered, unscheduled, only test caller.
-- **Blocker:** the SDXL image-regeneration story changed during the
-  2026-05-04 OSS-migration push; this job may be a stale companion
-  to the new pipeline.
-- **Confidence:** medium
-- **Decision:**
-
-### `services/jobs/prune_orphan_embeddings.py` (+ test)
-
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 337 LOC + 259 LOC test
-- **Why removable:** NOT registered in pyproject entry_points. NOT
-  scheduled. Only test caller. The embedding stack already has
-  `collapse_old_embeddings.py` (739 LOC, alive via retention handler)
-  and `auto_embed_posts.py` (62 LOC, scheduled). Three prune/collapse
-  jobs is overlap; this is the unwired one.
-- **Blocker:** verify embedding orphan accumulation isn't a real risk
-  the system needs handled (probably collapse_old_embeddings already
-  covers it).
-- **Confidence:** medium-high
-- **Decision:**
-
-### `services/jobs/prune_stale_embeddings.py` (+ test)
-
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 260 LOC + 270 LOC test
-- **Why removable:** Same as prune_orphan_embeddings — unregistered,
-  unscheduled, only test caller. Likely an early-iteration job
-  superseded by the retention-policy mechanism.
-- **Blocker:** see prune_orphan_embeddings — same story.
-- **Confidence:** medium-high
-- **Decision:**
+- **Note (not a deletion candidate, recording the resolution):** All
+  3 jobs had valid `schedule` attrs and clear purposes (SDXL stock
+  replacement, embedding orphan cleanup, embedding TTL pruning). Per
+  the deletion-criteria principle ("broken-but-wanted gets fixed"),
+  the right action was registration. Wired into
+  `plugins/registry.py:_SAMPLES` on 2026-05-09. PluginScheduler now
+  boots 32 jobs covering the full memory + embedding hygiene surface.
+  The earlier "overlap with collapse_old_embeddings" concern was
+  spurious — `collapse_old_embeddings` summarizes; the prune jobs
+  delete. They're complementary, not redundant.
 
 ### `webhook_events` table + `WebhookDeliveryService` + `emit_webhook_event` helper
 

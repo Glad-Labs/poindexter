@@ -357,6 +357,18 @@ def get_core_samples() -> dict[str, list[Any]]:
         # every 6 hours (retention is a sweep-everything operation).
         ("jobs", "services.jobs.run_taps", "RunTapsJob"),
         ("jobs", "services.jobs.run_retention", "RunRetentionJob"),
+        # Memory + embedding hygiene — registered 2026-05-09 after the
+        # deletion-candidates audit found these had pyproject.toml
+        # entry_points but were missing from this in-process discovery
+        # path. All 4 are idempotent sweeps with valid schedule attrs.
+        # CheckMemoryStaleness alerts when a pgvector writer goes silent
+        # (every 30m). PruneOrphan/PruneStale handle embedding cleanup
+        # (cron 03:23 / 03:17). RegenerateStockImages replaces Pexels
+        # stock with SDXL on already-published posts (every 6h, GPU-cap).
+        ("jobs", "services.jobs.check_memory_staleness", "CheckMemoryStalenessJob"),
+        ("jobs", "services.jobs.prune_orphan_embeddings", "PruneOrphanEmbeddingsJob"),
+        ("jobs", "services.jobs.prune_stale_embeddings", "PruneStaleEmbeddingsJob"),
+        ("jobs", "services.jobs.regenerate_stock_images", "RegenerateStockImagesJob"),
         # Core TopicSources — Phase F migration. HackerNews + Dev.to first;
         # pgvector-knowledge / codebase-scan / web-search migrate later.
         ("topic_sources", "services.topic_sources.hackernews", "HackerNewsSource"),
