@@ -49,6 +49,7 @@ never return that.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -460,21 +461,30 @@ class CrossModelQAStage:
                     "[cross_model_qa] mark_model_performance_outcome failed: %s",
                     mp_err,
                 )
-            # Write the rejection to pipeline_reviews so the content_tasks
-            # view's approval_status resolves correctly. Otherwise QA-rejected
-            # tasks show NULL in Grafana approval-status charts, because the
-            # view's scalar subquery on pipeline_reviews returns nothing.
+            # Write the rejection to pipeline_gate_history so the
+            # content_tasks view's approval_status resolves correctly.
+            # Otherwise QA-rejected tasks show NULL in Grafana approval-
+            # status charts, because the view's scalar subquery returns
+            # nothing.
             try:
-                from services.pipeline_db import PipelineDB
-                await PipelineDB(database_service.pool).add_review(
-                    task_id=task_id,
-                    decision="rejected",
-                    reviewer="multi_model_qa",
-                    feedback=reason[:2000],
+                await database_service.pool.execute(
+                    """
+                    INSERT INTO pipeline_gate_history
+                        (task_id, gate_name, event_kind, feedback, metadata)
+                    VALUES ($1, $2, $3, $4, $5::jsonb)
+                    """,
+                    task_id,
+                    "multi_model_qa",
+                    "rejected",
+                    reason[:2000],
+                    json.dumps(
+                        {"reviewer": "multi_model_qa", "decision": "rejected"},
+                        default=str,
+                    ),
                 )
             except Exception as pr_err:
                 logger.warning(
-                    "[cross_model_qa] pipeline_reviews write failed for %s: %s",
+                    "[cross_model_qa] pipeline_gate_history write failed for %s: %s",
                     task_id[:8], pr_err,
                 )
 

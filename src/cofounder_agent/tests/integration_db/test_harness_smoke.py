@@ -35,7 +35,7 @@ async def test_schema_was_applied(test_pool) -> None:
     must_have = {
         "pipeline_tasks",
         "pipeline_versions",
-        "pipeline_reviews",
+        "pipeline_gate_history",
         "pipeline_distributions",
         "posts",
         "post_tags",

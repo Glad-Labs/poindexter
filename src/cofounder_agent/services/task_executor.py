@@ -449,17 +449,25 @@ class TaskExecutor:
                             "result": '{"reason": "Semantic duplicate: matches an existing published post"}',
                         },
                     )
-                    # Write pipeline_reviews row so content_tasks view
-                    # resolves approval_status='rejected' for semantic-
-                    # dedup kills, and flip the model_performance outcome
-                    # for any LLM calls already logged for this task.
+                    # Write pipeline_gate_history row so content_tasks
+                    # view resolves approval_status='rejected' for
+                    # semantic-dedup kills, and flip the model_performance
+                    # outcome for any LLM calls already logged for this task.
                     with suppress(Exception):
-                        from services.pipeline_db import PipelineDB
-                        await PipelineDB(self.database_service.pool).add_review(
-                            task_id=task_id,
-                            decision="rejected",
-                            reviewer="semantic_dedup",
-                            feedback=_reason[:2000],
+                        await self.database_service.pool.execute(
+                            """
+                            INSERT INTO pipeline_gate_history
+                                (task_id, gate_name, event_kind, feedback, metadata)
+                            VALUES ($1, $2, $3, $4, $5::jsonb)
+                            """,
+                            task_id,
+                            "semantic_dedup",
+                            "rejected",
+                            _reason[:2000],
+                            json.dumps(
+                                {"reviewer": "semantic_dedup", "decision": "rejected"},
+                                default=str,
+                            ),
                         )
                     with suppress(Exception):
                         await self.database_service.mark_model_performance_outcome(
@@ -645,16 +653,29 @@ class TaskExecutor:
                         topic[:40], quality_score, min_curation_score,
                     )
                     await self.database_service.update_task(task_id, {"status": "rejected"})
-                    # Record the rejection on pipeline_reviews so the
-                    # `content_tasks` view's approval_status column stops
-                    # resolving NULL for auto-rejected rows.
+                    # Record the rejection on pipeline_gate_history so
+                    # the `content_tasks` view's approval_status column
+                    # stops resolving NULL for auto-rejected rows.
                     with suppress(Exception):
-                        from services.pipeline_db import PipelineDB
-                        await PipelineDB(self.database_service.pool).add_review(
-                            task_id=task_id,
-                            decision="rejected",
-                            reviewer="auto_curator",
-                            feedback=f"Quality score {quality_score:.1f} below threshold {min_curation_score:.1f}",
+                        await self.database_service.pool.execute(
+                            """
+                            INSERT INTO pipeline_gate_history
+                                (task_id, gate_name, event_kind, feedback, metadata)
+                            VALUES ($1, $2, $3, $4, $5::jsonb)
+                            """,
+                            task_id,
+                            "auto_curator",
+                            "rejected",
+                            f"Quality score {quality_score:.1f} below threshold {min_curation_score:.1f}",
+                            json.dumps(
+                                {
+                                    "reviewer": "auto_curator",
+                                    "decision": "rejected",
+                                    "quality_score": quality_score,
+                                    "threshold": min_curation_score,
+                                },
+                                default=str,
+                            ),
                         )
                     # Flip model_performance.human_approved=False for the
                     # learning signal (gitea#271 Phase 3.A1).
@@ -1473,15 +1494,27 @@ class TaskExecutor:
             # resolves approval_status / post_id / post_slug non-NULL for
             # auto-published rows (same contract as the operator path).
             with suppress(Exception):
-                from services.pipeline_db import PipelineDB
-                pdb = PipelineDB(self.database_service.pool)
-                await pdb.add_review(
-                    task_id=task_id,
-                    decision="approved",
-                    reviewer="auto_publish",
-                    feedback=f"Auto-approved at quality score {quality_score:.1f}",
+                await self.database_service.pool.execute(
+                    """
+                    INSERT INTO pipeline_gate_history
+                        (task_id, gate_name, event_kind, feedback, metadata)
+                    VALUES ($1, $2, $3, $4, $5::jsonb)
+                    """,
+                    task_id,
+                    "auto_publish",
+                    "approved",
+                    f"Auto-approved at quality score {quality_score:.1f}",
+                    json.dumps(
+                        {
+                            "reviewer": "auto_publish",
+                            "decision": "approved",
+                            "quality_score": quality_score,
+                        },
+                        default=str,
+                    ),
                 )
-                await pdb.add_distribution(
+                from services.pipeline_db import PipelineDB
+                await PipelineDB(self.database_service.pool).add_distribution(
                     task_id=task_id,
                     target="gladlabs.io",
                     post_id=result.post_id,

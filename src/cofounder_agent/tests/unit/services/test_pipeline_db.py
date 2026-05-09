@@ -63,16 +63,11 @@ class TestUpsertVersion:
         await pdb.upsert_version("test-123", {"title": "Test"})
 
 
-class TestAddReview:
-    @pytest.mark.asyncio
-    async def test_add_review(self, pdb, mock_pool):
-        await pdb.add_review("test-123", "approved", reviewer="operator", feedback="LGTM")
-        mock_pool.execute.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_add_review_handles_error(self, pdb, mock_pool):
-        mock_pool.execute = AsyncMock(side_effect=Exception("DB down"))
-        await pdb.add_review("test-123", "rejected")
+# NOTE: TestAddReview removed 2026-05-09 — the pipeline_reviews writes
+# unified onto pipeline_gate_history per Glad-Labs/poindexter#366. The
+# route handlers and stage callers now write directly to
+# pipeline_gate_history; the corresponding tests live alongside the
+# call sites (tests/unit/routes/test_approval_routes.py, etc.).
 
 
 class TestAddDistribution:

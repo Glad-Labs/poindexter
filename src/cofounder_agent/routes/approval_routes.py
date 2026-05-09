@@ -92,11 +92,11 @@ async def reject_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-        # Canonicalize the id BEFORE any downstream write. update_task /
-        # PipelineDB.add_review require the full UUID — they use exact-match
-        # WHERE clauses (and pipeline_reviews has a FK to pipeline_tasks),
-        # so handing them the URL-path prefix silently rolls the
-        # transaction back and leaves the task in awaiting_approval.
+        # Canonicalize the id BEFORE any downstream write. update_task and
+        # the pipeline_gate_history INSERT require the full UUID — they
+        # use exact-match WHERE clauses, so handing them the URL-path
+        # prefix silently rolls the transaction back and leaves the task
+        # in awaiting_approval. Preserved from b87dc38d.
         full_task_id = str(task.get("task_id") or task.get("id") or task_id)
 
         # Verify task is awaiting approval
