@@ -41,6 +41,14 @@ def _make_row(**kwargs):
     Strict ``__getitem__`` (KeyError on missing key) so production code
     that reads a column the test didn't set fails loudly instead of
     silently getting ``None`` and passing — see GH#337.
+
+    Use this helper ONLY when production code reads ``row[<key>]`` — the
+    strict mapping is what gives the test signal value. When a test
+    just hands the row to a patched ``ModelConverter`` and asserts on
+    the converter's return value, prefer ``object()`` directly: a
+    literal sentinel makes it obvious the row contents are not under
+    test, and prevents the row-faker from quietly accumulating stale
+    columns over time (the original symptom in GH#30).
     """
     row = MagicMock()
     _data = {**kwargs}
@@ -173,8 +181,10 @@ class TestGetPendingTasks:
 
     @pytest.mark.asyncio
     async def test_success_returns_list_of_dicts(self):
-        row = _make_row(task_id="t-1", status="pending")
-        pool = _make_pool(fetch_result=[row])
+        # Opaque row — get_pending_tasks iterates fetch results and hands
+        # each row straight to the patched ModelConverter without reading
+        # any column. The row's column shape is not under test (GH#337).
+        pool = _make_pool(fetch_result=[object()])
         db = _make_db(pool)
 
         sentinel = {"task_id": "t-1"}
@@ -204,8 +214,10 @@ class TestGetPendingTasks:
 class TestGetAllTasks:
     @pytest.mark.asyncio
     async def test_success_returns_task_responses(self):
-        rows = [_make_row(task_id="t-1"), _make_row(task_id="t-2")]
-        pool = _make_pool(fetch_result=rows)
+        # Opaque rows — get_all_tasks hands each row straight to the
+        # patched ModelConverter.to_task_response without reading any
+        # column. Test asserts only on row count (GH#337).
+        pool = _make_pool(fetch_result=[object(), object()])
         db = _make_db(pool)
 
         sentinel = MagicMock()
@@ -342,8 +354,10 @@ class TestAddTask:
 class TestGetTask:
     @pytest.mark.asyncio
     async def test_uuid_lookup_returns_dict(self):
-        row = _make_row(task_id="uuid-abc", status="completed")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — get_task hands fetchrow's result straight to the
+        # patched converter without reading any column. The truthiness
+        # check at tasks_db.py:495 is satisfied by ``object()`` (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = {"task_id": "uuid-abc"}
@@ -376,8 +390,9 @@ class TestGetTask:
         """Numeric-looking strings are looked up via task_id (the actual PK).
         The legacy numeric path was removed: content_tasks.id is UUID, not INTEGER,
         so int(task_id) always raised a DataError. (See issue #301)"""
-        row = _make_row(task_id="42")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — column shape not under test (GH#337). ``object()``
+        # is truthy so the ``if row`` check at tasks_db.py:495 passes.
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = {"task_id": "42"}
@@ -399,8 +414,12 @@ class TestGetTask:
 class TestUpdateTaskStatus:
     @pytest.mark.asyncio
     async def test_uuid_update_returns_dict(self):
-        row = _make_row(task_id="t-1", status="completed")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — update_task_status hands the row to the patched
+        # ``self._convert_row_to_dict``. The only direct read is
+        # ``row.get("task_type", "unknown") if hasattr(row, "get") ...``
+        # at tasks_db.py:587 — a plain ``object()`` has no ``.get`` so
+        # the fallback branch is taken (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         with patch.object(db, "_convert_row_to_dict", return_value={"status": "completed"}):
@@ -410,8 +429,10 @@ class TestUpdateTaskStatus:
 
     @pytest.mark.asyncio
     async def test_with_result_includes_result_field(self):
-        row = _make_row(task_id="t-1", status="completed", result="some result")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — column shape not under test (GH#337). See
+        # ``test_uuid_update_returns_dict`` above for the row.get/
+        # _convert_row_to_dict reasoning.
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         with patch.object(db, "_convert_row_to_dict", return_value={"status": "completed"}):
@@ -452,12 +473,16 @@ class TestUpdateTask:
     async def test_task_name_mapped_to_title(self):
         """task_name in updates should be remapped to title.
 
-        The resolved-row SELECT at ``tasks_db.py:623`` reads ``status`` to
-        guard against overwriting cancelled/rejected tasks; the row mock
-        must therefore include ``status``. Strict ``__getitem__`` exposed
-        the missing column — see GH#337.
+        Data-flow test: the resolve-step SELECT at ``tasks_db.py:728-740``
+        reads ``resolved["task_id"]`` and ``resolved["status"]`` directly
+        to guard against overwriting cancelled/rejected tasks. Seeding
+        ONLY those keys on the strict row-faker means a future refactor
+        that adds another column-read will KeyError loudly instead of
+        coasting on the outer try/except — the GH#337 signal. The final
+        ``to_task_response`` / ``to_dict`` calls are patched so the row
+        is opaque to that branch.
         """
-        row = _make_row(task_id="t-1", title="My Task", status="pending")
+        row = _make_row(task_id="t-1", status="pending")
         pool = _make_pool(fetchrow_result=row)
         db = _make_db(pool)
 
@@ -488,10 +513,12 @@ class TestUpdateTask:
     async def test_metadata_fields_extracted_to_columns(self):
         """Fields in task_metadata should be extracted to dedicated columns.
 
-        ``status`` required by the resolved-row guard at
-        ``tasks_db.py:631`` — see GH#337.
+        Data-flow test: production reads ``resolved["task_id"]`` and
+        ``resolved["status"]`` for the cancelled/rejected guard at
+        ``tasks_db.py:728-740``. Seed ONLY those keys on the strict
+        row-faker — see GH#337.
         """
-        row = _make_row(task_id="t-1", content="extracted content", status="pending")
+        row = _make_row(task_id="t-1", status="pending")
         pool = _make_pool(fetchrow_result=row)
         db = _make_db(pool)
 
@@ -516,7 +543,12 @@ class TestUpdateTask:
 class TestGetTasksPaginated:
     @pytest.mark.asyncio
     async def test_returns_tasks_and_total(self):
-        row = _make_row(task_id="t-1", total_count=5)
+        # Data-flow test: production reads ``rows[0]["total_count"]``
+        # directly at tasks_db.py:973 to surface the COUNT(*) OVER ()
+        # window total. The per-row dict conversion goes through
+        # ``self._convert_row_to_dict``, which is patched — so seed
+        # ONLY ``total_count`` (GH#337).
+        row = _make_row(total_count=5)
         pool = _make_pool(fetch_result=[row])
         db = _make_db(pool)
 
@@ -561,6 +593,11 @@ class TestGetTasksPaginated:
 class TestGetTaskCounts:
     @pytest.mark.asyncio
     async def test_success_returns_counts(self):
+        # Data-flow test: production reads ``row["status"]`` and
+        # ``row["count"]`` directly at tasks_db.py:997. No converter
+        # patch in this path. Seed ONLY those two keys so the strict
+        # ``__getitem__`` KeyErrors loudly if a future refactor adds
+        # another column-read (GH#337).
         rows = [
             _make_row(status="pending", count=3),
             _make_row(status="completed", count=10),
@@ -592,8 +629,10 @@ class TestGetTaskCounts:
 class TestGetQueuedTasks:
     @pytest.mark.asyncio
     async def test_success_returns_task_responses(self):
-        rows = [_make_row(task_id="t-1")]
-        pool = _make_pool(fetch_result=rows)
+        # Opaque row — get_queued_tasks hands each fetch result straight
+        # to the patched ModelConverter.to_task_response without reading
+        # any column (GH#337).
+        pool = _make_pool(fetch_result=[object()])
         db = _make_db(pool)
 
         with patch(f"{_CONVERTER}.to_task_response", return_value=MagicMock()):
@@ -633,7 +672,16 @@ class TestGetTasksByDateRange:
 
     @pytest.mark.asyncio
     async def test_success_returns_dicts(self):
-        row = _make_row(task_id="t-1", status="completed")
+        # Data-flow test: production at tasks_db.py:1123 calls
+        # ``dict(row)`` — iterates ``keys()`` + ``__getitem__`` for every
+        # column. Whatever we seed flows verbatim into the result list,
+        # but the test asserts only on the row count, so an empty
+        # row-faker is enough to satisfy the iteration without
+        # accumulating stale columns (GH#337). The
+        # ``_convert_row_to_dict`` patch is unreachable here (production
+        # uses ``dict(row)`` not the mixin helper) and stays only to
+        # match the historical signature.
+        row = _make_row()
         pool = _make_pool(fetch_result=[row])
         db = _make_db(pool)
 
@@ -693,7 +741,12 @@ class TestDeleteTask:
 class TestGetDrafts:
     @pytest.mark.asyncio
     async def test_success_returns_tuple(self):
-        row = _make_row(task_id="t-1", status="draft", total_count=1)
+        # Data-flow test: production reads ``rows[0]["total_count"]``
+        # directly at tasks_db.py:1254 for the COUNT(*) OVER () window
+        # total. The per-row dict conversion goes through the patched
+        # ``self._convert_row_to_dict``, so ``task_id`` / ``status`` are
+        # never read from the row. Seed ONLY ``total_count`` (GH#337).
+        row = _make_row(total_count=1)
         pool = _make_pool(fetch_result=[row])
         db = _make_db(pool)
 
@@ -720,14 +773,43 @@ class TestGetDrafts:
 class TestGetStatusHistory:
     @pytest.mark.asyncio
     async def test_success_returns_list(self):
+        # Data-flow test: production at tasks_db.py:1346-1359 reads
+        # ``row["id"]``, ``row["task_id"]``, ``row["old_status"]``,
+        # ``row["new_status"]``, ``row["reason"]``, ``row["metadata"]``,
+        # ``row["created_at"]`` directly. Seed exactly those keys — the
+        # strict ``__getitem__`` will KeyError if a future refactor reads
+        # an unseeded column (GH#337).
         rows = [
-            _make_row(task_id="t-1", status="pending", created_at=None),
-            _make_row(task_id="t-1", status="completed", created_at=None),
+            _make_row(
+                id=1,
+                task_id="t-1",
+                old_status=None,
+                new_status="pending",
+                reason=None,
+                metadata=None,
+                created_at=None,
+            ),
+            _make_row(
+                id=2,
+                task_id="t-1",
+                old_status="pending",
+                new_status="completed",
+                reason=None,
+                metadata=None,
+                created_at=None,
+            ),
         ]
         pool = _make_pool(fetch_result=rows)
         db = _make_db(pool)
         result = await db.get_status_history("t-1")
-        assert isinstance(result, list)
+        # Assert on the actual success-path output rather than
+        # ``isinstance(result, list)``, which the outer except path also
+        # satisfies (returning ``[]``) — that's what let the original
+        # row-faker silently pass with most columns missing.
+        assert len(result) == 2
+        assert result[0]["task_id"] == "t-1"
+        assert result[0]["new_status"] == "pending"
+        assert result[1]["new_status"] == "completed"
 
     @pytest.mark.asyncio
     async def test_db_error_returns_empty(self):
@@ -751,9 +833,13 @@ class TestGetTasksByIds:
 
     @pytest.mark.asyncio
     async def test_returns_dict_keyed_by_task_id(self):
+        # Data-flow test: ``to_task_response`` is patched to identity
+        # and ``to_dict`` reads ``r["task_id"]`` + ``r["topic"]`` from
+        # the row. Seed ONLY those two keys so the strict mapping
+        # KeyErrors loudly if the test ever drifts (GH#337).
         rows = [
-            _make_row(task_id="t-1", topic="A", content="aa"),
-            _make_row(task_id="t-2", topic="B", content="bb"),
+            _make_row(task_id="t-1", topic="A"),
+            _make_row(task_id="t-2", topic="B"),
         ]
         pool = _make_pool(fetch_result=rows)
         db = _make_db(pool)
