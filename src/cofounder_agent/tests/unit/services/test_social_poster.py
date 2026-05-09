@@ -31,6 +31,26 @@ from services.social_poster import (
 TWITTER_CHAR_LIMIT = _twitter_char_limit()
 LINKEDIN_CHAR_LIMIT = _linkedin_char_limit()
 
+
+@pytest.fixture(autouse=True)
+def _autopatch_resolve_social_model():
+    """Lane B sweep — short-circuit ``_resolve_social_model`` in this suite.
+
+    The production resolver hits the cost-tier dispatcher and the
+    ``social_poster_fallback_model`` setting; in unit tests neither
+    exists, so the resolver would raise + notify_operator and every
+    LLM-mocked test would receive an empty string. Patching the helper
+    here keeps the LLM-mocked tests focused on prompt/post behavior.
+    The dedicated ``test_lane_b_misc_migration.py`` suite pins the
+    resolver branches.
+    """
+    with patch(
+        "services.social_poster._resolve_social_model",
+        AsyncMock(return_value="ollama/gemma3:27b"),
+    ):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
