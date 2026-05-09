@@ -19,30 +19,45 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from services.site_config import SiteConfig
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 15.0
 MAX_CONTENT_CHARS = 50000  # safety cap on extracted text
 
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Falls back to a fresh env-fallback instance when unset.
+_site_config: SiteConfig | None = None
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global _site_config
+    _site_config = sc
+
+
+def _sc() -> SiteConfig:
+    """Return the wired SiteConfig, or a fresh env-fallback instance."""
+    return _site_config if _site_config is not None else SiteConfig()
+
 
 def _build_user_agent() -> str:
     """Build the URL-scraper User-Agent string from site_config (#198).
 
-    Uses site_contact_url for the bot identifier so operators can bring
-    their own brand. Falls back to a neutral generic if unset.
+    Lazy — read per-call so post-lifespan edits to ``site_contact_url`` /
+    ``scraper_bot_name`` take effect without a worker restart. Uses
+    site_contact_url for the bot identifier so operators can bring their
+    own brand. Falls back to a neutral generic if unset.
     """
-    import services.site_config as _scm
-    _sc = _scm.site_config
-    contact = _sc.get("site_contact_url", "").strip()
-    bot_name = _sc.get("scraper_bot_name", "PoindexterBot/1.0").strip()
+    sc = _sc()
+    contact = sc.get("site_contact_url", "").strip()
+    bot_name = sc.get("scraper_bot_name", "PoindexterBot/1.0").strip()
     identifier = f"+{contact}" if contact else "no-contact-configured"
     return (
         f"Mozilla/5.0 (compatible; {bot_name}; {identifier}) "
         "AI content pipeline topic scraper"
     )
-
-
-USER_AGENT = _build_user_agent()
 
 
 class URLScrapeError(Exception):
@@ -88,7 +103,7 @@ async def _fetch(url: str, timeout: float) -> str:
     """Fetch HTML with a reasonable user agent."""
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout, connect=5.0),
-        headers={"User-Agent": USER_AGENT},
+        headers={"User-Agent": _build_user_agent()},
         follow_redirects=True,
     ) as client:
         resp = await client.get(url)
@@ -176,7 +191,7 @@ async def _scrape_github(url: str, timeout: float) -> dict:
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(timeout, connect=5.0),
-            headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
+            headers={"User-Agent": _build_user_agent(), "Accept": "application/vnd.github+json"},
         ) as client:
             repo_resp = await client.get(api_url)
             repo_data = repo_resp.json() if repo_resp.is_success else {}
@@ -212,9 +227,7 @@ async def _scrape_arxiv(url: str, timeout: float) -> dict:
     arxiv_base_url setting lets operators point at a mirror or
     local-proxied instance (#198).
     """
-    import services.site_config as _scm
-    _sc = _scm.site_config
-    _arxiv_base = _sc.get("arxiv_base_url", "https://arxiv.org").rstrip("/")
+    _arxiv_base = _sc().get("arxiv_base_url", "https://arxiv.org").rstrip("/")
     # Normalize to /abs/ URL for HTML scraping
     m = re.search(r"arxiv\.org/(abs|pdf)/(\d+\.\d+)", url)
     if m:

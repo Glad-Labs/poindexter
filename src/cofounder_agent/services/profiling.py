@@ -65,16 +65,22 @@ def setup_pyroscope(
     """
     cfg: Any = site_config
     if cfg is None:
-        # Module-level import (not ``from ... import site_config``) keeps
-        # this file off the CI guardrail's offender list — the explicit
-        # singleton fallback is the DI seam's documented behavior, not a
-        # hidden direct dependency.
+        # Build a fresh env-fallback SiteConfig so the function still
+        # works for callers that haven't been migrated to pass an
+        # explicit instance. Production callers (main.py lifespan,
+        # brain daemon) thread the loaded SiteConfig through.
         try:
             import services.site_config as _scm
         except Exception as e:
             logger.debug("[PYROSCOPE] site_config unavailable: %s — skipping", e)
             return
-        cfg = _scm.site_config
+        # Test-compat: the existing test rig patches
+        # ``services.site_config.site_config.get`` so we read the module
+        # attribute (NOT the alias-form import that falls dangling
+        # after the lifespan rebind). Once ``services.site_config:226``
+        # is deleted in commit 5, this attribute access will KeyError;
+        # at that point the fallback should be ``_scm.SiteConfig()``.
+        cfg = getattr(_scm, "site_config", None) or _scm.SiteConfig()
 
     enabled = cfg.get("enable_pyroscope", "false").lower() == "true"
     if not enabled:

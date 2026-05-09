@@ -26,14 +26,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.logger_config import get_logger
-import services.site_config as _site_config_mod
-
-# Re-export the module-level singleton under the legacy ``site_config``
-# name so existing call sites in this file (which still read directly
-# from the singleton) keep working unchanged. Aliased rather than
-# re-imported so there's a single hook point if/when the singleton is
-# retired (Phase H — gh#95).
-site_config = _site_config_mod.site_config
+from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
@@ -176,18 +169,14 @@ class TopicDiscovery:
         Args:
             pool: asyncpg pool for reading published posts / app_settings.
             site_config: Optional SiteConfig instance (keyword-only).
-                When ``None``, falls back to the module-level singleton
-                imported at the top of this file. Tests can pass an
-                explicit instance built via
-                ``SiteConfig(initial_config={...})`` for isolation.
+                When ``None``, falls back to a fresh empty SiteConfig
+                (env-fallback only). Tests can pass an explicit instance
+                built via ``SiteConfig(initial_config={...})`` for
+                isolation; production callers thread the lifespan-bound
+                instance through.
         """
         self.pool = pool
-        # Phase H groundwork: prefer a DI'd SiteConfig when callers
-        # supply one, fall back to the module singleton so existing
-        # ``TopicDiscovery(pool)`` callers keep working unchanged.
-        self._site_config = (
-            site_config if site_config is not None else _site_config_mod.site_config
-        )
+        self._site_config = site_config if site_config is not None else SiteConfig()
         # Cached resolved overrides for the DB-backed filter constants
         # (gh#218). Resolved lazily on first use so construction stays
         # cheap and tests don't have to seed these settings to spin up
@@ -358,7 +347,7 @@ class TopicDiscovery:
             (1500, 2000, 0.3),   # Medium reads (6-8 min)
             (2500, 3500, 0.1),   # Deep dives (10-15 min)
         ]
-        _raw_lengths = site_config.get("topic_discovery_length_distribution", "")
+        _raw_lengths = self._site_config.get("topic_discovery_length_distribution", "")
         if _raw_lengths:
             try:
                 _parsed = _json.loads(_raw_lengths)
@@ -382,7 +371,7 @@ class TopicDiscovery:
             ("educational", "professional"),  # How-to / explainer
             ("narrative", "casual"),          # Conversational analysis
         ]
-        _raw_styles = site_config.get("topic_discovery_style_distribution", "")
+        _raw_styles = self._site_config.get("topic_discovery_style_distribution", "")
         if _raw_styles:
             try:
                 _parsed_styles = _json.loads(_raw_styles)
@@ -527,7 +516,7 @@ class TopicDiscovery:
         top_days = await self._get_int_setting("devto_top_days", 7)
         min_reactions = await self._get_int_setting("devto_min_reactions", 20)
         tag = (await self._get_str_setting("devto_tag", "")).strip()
-        api_base = site_config.get("devto_api_base", "https://dev.to/api")
+        api_base = self._site_config.get("devto_api_base", "https://dev.to/api")
         source = DevtoSource()
         try:
             topics = await source.extract(
@@ -578,11 +567,12 @@ class TopicDiscovery:
         from services.topic_sources.codebase import CodebaseSource
         if not self.pool:
             return []
-        lookback = site_config.get_int("topic_discovery_ideation_lookback_days", 30)
+        lookback = self._site_config.get_int("topic_discovery_ideation_lookback_days", 30)
         source = CodebaseSource()
         try:
             topics = await source.extract(
-                self.pool, {"lookback_days": lookback},
+                self.pool,
+                {"lookback_days": lookback, "_site_config": self._site_config},
             )
             logger.info("[TOPIC_DISCOVERY] Vector DB: %d topics", len(topics))
             return topics

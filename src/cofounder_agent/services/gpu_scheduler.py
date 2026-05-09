@@ -29,18 +29,39 @@ from datetime import datetime, timezone
 import httpx
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Falls back to a fresh env-fallback instance when unset.
+_site_config: SiteConfig | None = None
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global _site_config
+    _site_config = sc
+
+
+def _sc() -> SiteConfig:
+    """Return the wired SiteConfig, or a fresh env-fallback instance."""
+    return _site_config if _site_config is not None else SiteConfig()
+
+
 def _sc_get(key: str, default: str = "") -> str:
-    import services.site_config as _scm
-    site_config = _scm.site_config
-    return site_config.get(key, default)
+    return _sc().get(key, default)
 
-OLLAMA_BASE_URL = _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
 
-# nvidia-smi prometheus exporter on the host
-NVIDIA_EXPORTER_URL = _sc_get("nvidia_exporter_url", "http://host.docker.internal:9835/metrics")
+def _ollama_base_url() -> str:
+    """Lazy resolve so post-lifespan changes take effect."""
+    return _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
+
+
+def _nvidia_exporter_url() -> str:
+    """Lazy resolve so post-lifespan changes take effect."""
+    return _sc_get("nvidia_exporter_url", "http://host.docker.internal:9835/metrics")
+
 
 # Models under this VRAM threshold (in GB) skip the lock — they can coexist.
 SMALL_MODEL_THRESHOLD_GB = 2.0
@@ -55,8 +76,7 @@ _DEFAULT_GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
 def _cfg_int(key: str, default: int) -> int:
     """Read an int from site_config (DB) with fallback."""
     try:
-        import services.site_config as _scm
-        return _scm.site_config.get_int(key, default)
+        return _sc().get_int(key, default)
     except Exception:
         return default
 
@@ -64,8 +84,7 @@ def _cfg_int(key: str, default: int) -> int:
 def _cfg_float(key: str, default: float) -> float:
     """Read a float from site_config (DB) with fallback."""
     try:
-        import services.site_config as _scm
-        return _scm.site_config.get_float(key, default)
+        return _sc().get_float(key, default)
     except Exception:
         return default
 
@@ -225,7 +244,7 @@ class GPUScheduler:
         """Query nvidia-smi exporter for current GPU power draw (watts)."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
-                resp = await client.get(NVIDIA_EXPORTER_URL, timeout=5)
+                resp = await client.get(_nvidia_exporter_url(), timeout=5)
                 if resp.status_code != 200:
                     return None
                 for line in resp.text.splitlines():
@@ -239,7 +258,7 @@ class GPUScheduler:
         """Query nvidia-smi exporter for current GPU utilization %."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
-                resp = await client.get(NVIDIA_EXPORTER_URL, timeout=5)
+                resp = await client.get(_nvidia_exporter_url(), timeout=5)
                 if resp.status_code != 200:
                     return None
                 for line in resp.text.splitlines():
@@ -305,7 +324,7 @@ class GPUScheduler:
         """Unload all Ollama models to free VRAM for SDXL."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=3.0)) as client:
-                resp = await client.get(f"{OLLAMA_BASE_URL}/api/ps", timeout=10)
+                resp = await client.get(f"{_ollama_base_url()}/api/ps", timeout=10)
                 if resp.status_code != 200:
                     return
                 data = resp.json()
@@ -313,7 +332,7 @@ class GPUScheduler:
                     name = model["name"]
                     logger.info("Unloading Ollama model for SDXL", model=name)
                     await client.post(
-                        f"{OLLAMA_BASE_URL}/api/generate",
+                        f"{_ollama_base_url()}/api/generate",
                         json={"model": name, "keep_alive": 0},
                         timeout=30,
                     )

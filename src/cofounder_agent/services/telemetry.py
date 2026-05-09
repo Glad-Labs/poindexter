@@ -45,13 +45,15 @@ except ImportError:
         OpenAIInstrumentor = None  # type: ignore[assignment,misc]
 
 
-def setup_telemetry(app, service_name="cofounder-agent"):
+def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
     """
     Sets up OpenTelemetry tracing for the FastAPI application and OpenAI SDK.
     Simplified to handle trace exporting only (no logs/events to avoid dependency issues).
 
     Args:
         app: The FastAPI application instance.
+        site_config: SiteConfig instance for app_settings reads. When None,
+            falls back to a fresh env-fallback instance.
         service_name: The name of the service to appear in traces.
     """
     # Skip if OpenTelemetry is not available
@@ -69,9 +71,12 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         )
         return
 
+    if site_config is None:
+        from services.site_config import SiteConfig
+        site_config = SiteConfig()
+
     # Check if tracing is enabled via app_settings (DI seam, #330).
-    import services.site_config as _scm
-    if _scm.site_config.get("enable_tracing", "false").lower() != "true":
+    if site_config.get("enable_tracing", "false").lower() != "true":
         logging.debug(f"[TELEMETRY] OpenTelemetry tracing disabled for {service_name}")
         return
 
@@ -86,7 +91,7 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         resource = Resource.create(
             attributes={
                 "service.name": service_name,
-                "deployment.environment": _scm.site_config.get(
+                "deployment.environment": site_config.get(
                     "environment", "development",
                 ) or "development",
             }
@@ -99,7 +104,7 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         # Defaulting to localhost is not safe in production (cloud deploy has no local OTLP
         # collector) — it causes a silent export-failure cycle that wastes CPU/memory.
         # Set OTEL_EXPORTER_OTLP_ENDPOINT to point at Grafana Tempo, Honeycomb, etc.
-        otlp_endpoint = _scm.site_config.get("otel_exporter_otlp_endpoint")
+        otlp_endpoint = site_config.get("otel_exporter_otlp_endpoint")
 
         if not otlp_endpoint:
             logging.warning(
