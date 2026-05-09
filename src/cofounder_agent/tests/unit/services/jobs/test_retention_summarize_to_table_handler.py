@@ -479,7 +479,15 @@ class _RecordingLLM:
 class TestEndToEnd:
     @pytest.mark.asyncio
     async def test_two_buckets_one_summary_each(self):
-        pool = FakePool(raw_rows=_two_days_of_audit_rows())
+        # Lane B sweep: handler now resolves the summary model via
+        # ``cost_tier="budget"`` via ``resolve_tier_model``. The fake
+        # pool's ``_RecordingConn`` doesn't implement ``fetchval`` so
+        # the tier lookup raises AttributeError; the handler falls
+        # back to ``memory_compression_summary_model`` from app_settings.
+        pool = FakePool(
+            raw_rows=_two_days_of_audit_rows(),
+            settings={"memory_compression_summary_model": "test-model:7b"},
+        )
         llm = _RecordingLLM(returns="dense day summary")
         with patch.object(mod, "build_summary_text_via_llm", llm):
             result = await mod.summarize_to_table(
