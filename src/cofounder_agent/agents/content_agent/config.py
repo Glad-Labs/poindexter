@@ -46,7 +46,6 @@ del _fix_sys_path, _PathType
 import os
 
 from services.logger_config import get_logger
-site_config = site_config
 
 # --- Define Base Directory ---
 # Ensures that all file paths are relative to the project root, making the application more portable.

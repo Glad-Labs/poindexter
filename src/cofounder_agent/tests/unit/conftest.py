@@ -68,6 +68,89 @@ for _key, _value in _TEST_BRAND_CONFIG.items():
     site_config._config.setdefault(_key, _value)
 
 
+# Post-#330 sweep: every module that previously read the global
+# ``services.site_config.site_config`` singleton now owns its own
+# ``site_config: SiteConfig`` attribute (default fresh empty instance,
+# wired by main.py at lifespan startup). Tests that drive those
+# modules directly need the SAME brand seed values present on each
+# module-level instance — otherwise ``site_config.require("site_url")``
+# raises in code paths that were previously satisfied by the test
+# fixture's seed of the global singleton.
+#
+# Walking every module is too expensive (and triggers heavy imports);
+# instead we point each known module's ``site_config`` attribute at the
+# SAME instance the conftest seeds. This preserves the previous
+# semantic (one shared seed surfaces everywhere) while keeping the new
+# DI seam in place. ``set_site_config()`` is the canonical wiring path
+# main.py uses; we use it here for parity.
+_SHARED_TEST_MODULES = (
+    "services.publish_service",
+    "services.image_service",
+    "services.image_decision_agent",
+    "services.podcast_service",
+    "services.video_service",
+    "services.newsletter_service",
+    "services.content_validator",
+    "services.multi_model_qa",
+    "services.research_service",
+    "services.research_quality_service",
+    "services.seed_url_fetcher",
+    "services.self_review",
+    "services.title_generation",
+    "services.title_originality_external",
+    "services.internal_rag_source",
+    "services.scheduled_publisher",
+    "services.topic_ranking",
+    "services.topic_batch_service",
+    "services.database_service",
+    "services.quality_scorers",
+    "services.quality_models",
+    "services.quality_service",
+    "services.validator_config",
+    "services.template_runner",
+    "services.pipeline_architect",
+    "services.prompt_manager",
+    "services.retention_janitor",
+    "services.ai_content_generator",
+    "services.task_executor",
+    "services.social_poster",
+    "services.gpu_scheduler",
+    "services.decorators",
+    "services.ollama_client",
+    "services.url_validator",
+    "services.url_scraper",
+    "services.web_research",
+    "services.redis_cache",
+    "services.r2_upload_service",
+    "services.revalidation_service",
+    "services.static_export_service",
+    "services.telegram_config",
+    "services.webhook_delivery_service",
+    "services.devto_service",
+    "utils.route_utils",
+)
+
+
+def _share_test_site_config() -> None:
+    """Point every migrated module's ``site_config`` attribute at the
+    same instance the conftest seeded with _TEST_BRAND_CONFIG."""
+    import importlib
+    for _modname in _SHARED_TEST_MODULES:
+        try:
+            _mod = importlib.import_module(_modname)
+        except Exception:
+            continue
+        _setter = getattr(_mod, "set_site_config", None)
+        if callable(_setter):
+            try:
+                _setter(site_config)
+            except Exception:
+                pass
+
+
+_share_test_site_config()
+
+
 # ---------------------------------------------------------------------------
 # Layer 2 — environment isolation
 # ---------------------------------------------------------------------------

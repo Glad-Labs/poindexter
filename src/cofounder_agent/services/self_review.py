@@ -46,8 +46,6 @@ async def self_review_and_revise(
     - ``revised`` (bool) — True only when we accepted the revision.
     """
     from plugins.registry import get_all_llm_providers
-    site_config = site_config
-
     stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
 
     enabled = (

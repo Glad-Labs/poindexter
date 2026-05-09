@@ -354,7 +354,7 @@ class UnifiedPromptManager:
         site_config = self._site_config
         if site_config is None:
             try:
-                site_config = site_config
+                site_config = globals()["site_config"]
             except Exception as exc:  # noqa: BLE001
                 logger.debug("[prompt_manager] site_config unavailable: %s", exc)
                 return None

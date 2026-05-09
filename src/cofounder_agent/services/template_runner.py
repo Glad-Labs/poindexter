@@ -224,7 +224,6 @@ async def _emit_progress(
         return
     try:
         from services.integrations.operator_notify import notify_operator
-        site_config = site_config
         stream_on = bool(
             site_config.get_bool(
                 "template_runner_progress_streaming", True,

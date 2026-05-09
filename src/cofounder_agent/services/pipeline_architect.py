@@ -207,8 +207,6 @@ async def compose(
             errors=["FIX: atom registry is empty — call atom_registry.discover() before compose()"],
         )
 
-    site_config = site_config
-
     model = (
         site_config.get("pipeline_architect_model")
         or site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
@@ -671,8 +669,6 @@ async def _ollama_chat_text(prompt: str, model: str) -> str:
     ``capability_router`` resolver in Phase 2.
     """
     import httpx
-    site_config = site_config
-
     base_url = (
         site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
     )

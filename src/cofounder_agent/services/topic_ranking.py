@@ -55,8 +55,6 @@ def _resolve_goal_descriptions() -> dict[str, str]:
     installs working without the migration applied.
     """
     try:
-        site_config = site_config
-
         raw = site_config.get("niche_goal_descriptions", "")
         if not raw:
             return GOAL_DESCRIPTIONS
@@ -87,8 +85,6 @@ async def _embed_text_cached(text: str) -> list[float]:
     ``services.publish_service`` etc.).
     """
     from plugins.registry import get_all_llm_providers
-    site_config = site_config
-
     providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
     if provider is None:
@@ -176,8 +172,6 @@ async def _ollama_chat_json(prompt: str, *, model: str) -> str:
     keep working.
     """
     import httpx
-    site_config = site_config
-
     base_url = (
         site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
     )
@@ -216,8 +210,6 @@ async def llm_final_score(
     test fixtures that don't seed site_config keep working.
     """
     if model is None:
-        site_config = site_config
-
         model = (
             site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
             or "glm-4.7-5090:latest"

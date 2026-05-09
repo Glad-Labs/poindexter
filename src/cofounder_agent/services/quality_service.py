@@ -598,8 +598,6 @@ class UnifiedQualityService:
 
         All thresholds are tunable via app_settings (key prefix: qa_llm_).
         """
-        site_config = site_config
-
         # Load tunable thresholds from DB (with sensible defaults)
         _t = {
             "buzzword_warn": site_config.get_int("qa_llm_buzzword_warn_threshold", 3),

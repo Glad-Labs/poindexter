@@ -139,7 +139,6 @@ class InternalRagSource:
         """
         from services.topic_ranking import _ollama_chat_json
 
-        site_config = site_config
         snippet_max = site_config.get_int(
             "niche_internal_rag_snippet_max_chars", 600,
         )

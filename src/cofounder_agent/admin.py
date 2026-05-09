@@ -43,8 +43,6 @@ def set_site_config(sc: SiteConfig) -> None:
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase
 
-site_config = site_config
-
 # ---------------------------------------------------------------------------
 # SQLAlchemy base + engine (read-only reflection of asyncpg-managed tables)
 # ---------------------------------------------------------------------------

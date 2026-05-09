@@ -396,11 +396,11 @@ class TestScrubFabricatedLinks:
 
     def test_keeps_own_domain_links(self):
         import services.site_config as _scm
-        site_config = _scm.site_config
+        sc = _scm.site_config
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
-        domain = site_config.get("site_domain", "test-site.example.com")
+        domain = sc.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
-        assert domain in _scrub_fabricated_links(content)
+        assert domain in _scrub_fabricated_links(content, site_config=sc)
 
     def test_empty_content_returns_empty(self):
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
@@ -531,7 +531,7 @@ class TestCheckTitleOriginality:
         mock_researcher.search_simple = AsyncMock(return_value=[])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.text_utils.site_config") as mock_cfg:
+            with patch("services.title_generation.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(
@@ -551,7 +551,7 @@ class TestCheckTitleOriginality:
         ])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.text_utils.site_config") as mock_cfg:
+            with patch("services.title_generation.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(
@@ -565,7 +565,7 @@ class TestCheckTitleOriginality:
     @pytest.mark.asyncio
     async def test_disabled_returns_original(self):
         """When disabled via config, should always return original."""
-        with patch("services.text_utils.site_config") as mock_cfg:
+        with patch("services.title_generation.site_config") as mock_cfg:
             mock_cfg.get_float.return_value = 0.6
             mock_cfg.get_bool.return_value = False
             result = await _check_title_originality("Any Title")
@@ -579,7 +579,7 @@ class TestCheckTitleOriginality:
         mock_researcher.search_simple = AsyncMock(side_effect=Exception("Network error"))
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.text_utils.site_config") as mock_cfg:
+            with patch("services.title_generation.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality("Test Title")
@@ -595,7 +595,7 @@ class TestCheckTitleOriginality:
         ])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.text_utils.site_config") as mock_cfg:
+            with patch("services.title_generation.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(
@@ -627,12 +627,12 @@ class TestScrubFabricatedLinksEdgeCases:
     def test_internal_post_link_with_no_slug_cache_kept(self):
         """Without a populated slug cache, internal /posts/ links pass through."""
         import services.site_config as _scm
-        site_config = _scm.site_config
-        domain = site_config.get("site_domain", "")
+        sc = _scm.site_config
+        domain = sc.get("site_domain", "")
         if not domain:
             return  # skip if no domain configured
         content = f"[older post](https://{domain}/posts/some-old-post)"
-        result = _scrub_fabricated_links(content)
+        result = _scrub_fabricated_links(content, site_config=sc)
         assert "/posts/some-old-post" in result
 
 

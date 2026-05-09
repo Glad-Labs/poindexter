@@ -168,7 +168,6 @@ def _cache_key(title: str) -> str:
 def _cache_ttl_seconds() -> int:
     """Read the TTL from app_settings; default 24h. Failures → 24h."""
     try:
-        site_config = site_config
         hours = site_config.get_int("title_originality_cache_ttl_hours", 24)
     except Exception:
         hours = 24
@@ -325,7 +324,6 @@ def _parse_ddg_results(body: str, limit: int = 10) -> list[dict[str, str]]:
 def _read_settings() -> tuple[bool, int]:
     """Return ``(enabled, penalty)`` with safe defaults on config failure."""
     try:
-        site_config = site_config
         enabled = site_config.get_bool(
             "title_originality_external_check_enabled", True,
         )

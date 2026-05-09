@@ -119,8 +119,6 @@ async def generate_canonical_title(
     try:
         from plugins.registry import get_all_llm_providers
         from services.prompt_manager import get_prompt_manager
-        site_config = site_config
-
         pm = get_prompt_manager()
         providers = {p.name: p for p in get_all_llm_providers()}
         provider = providers.get("ollama_native")
@@ -211,7 +209,6 @@ async def check_title_originality(title: str) -> dict:
     }
 
     try:
-        site_config = site_config
         threshold = site_config.get_float("qa_title_similarity_threshold", 0.6)
         enabled = site_config.get_bool("qa_title_originality_enabled", True)
         if not enabled:

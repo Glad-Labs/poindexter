@@ -172,7 +172,6 @@ class DatabaseService:
                 "dev",
                 "local",
             )
-            site_config = site_config
             # GH-92: keep ``min_size`` small in every environment. Pools that
             # pre-warm 20 connections reserve them against ``max_connections``
             # even when the worker is idle — a direct contributor to the

@@ -42,8 +42,6 @@ def qa_cfg() -> dict:
     (key prefix: qa_). Returns a dict of all values with sensible defaults.
     Change any value with a simple SQL UPDATE on app_settings.
     """
-    site_config = site_config
-
     return {
         # --- Overall pipeline ---
         "pass_threshold": site_config.get_float("qa_pass_threshold", 70.0),

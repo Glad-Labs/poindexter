@@ -1157,7 +1157,6 @@ async def generate_with_context(
     """
     from services.topic_ranking import _ollama_chat_json
 
-    site_config = site_config
     snippet_max_chars = site_config.get_int(
         "writer_rag_context_snippet_max_chars", 500,
     )
@@ -1196,7 +1195,6 @@ async def generate_with_outline(
     """
     from services.topic_ranking import _ollama_chat_json
 
-    site_config = site_config
     snippet_max_chars = site_config.get_int(
         "writer_rag_context_snippet_max_chars", 500,
     )
