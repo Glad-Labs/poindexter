@@ -114,12 +114,11 @@ class UnifiedQualityService:
     - Complete audit trail
     """
 
-    def __init__(self, model_router=None, database_service=None, qa_agent=None, llm_client=None, site_config=None):
+    def __init__(self, database_service=None, qa_agent=None, llm_client=None, site_config=None):
         """
         Initialize quality service
 
         Args:
-            model_router: Optional ModelRouter for LLM access
             database_service: Optional DatabaseService for persistence
             qa_agent: Optional QA Agent for binary approval
             llm_client: Optional LLMClient for direct LLM evaluation calls
@@ -127,7 +126,6 @@ class UnifiedQualityService:
                 Stored on the instance for any sub-method that needs
                 DB-backed config without re-importing the singleton.
         """
-        self.model_router = model_router
         self.database_service = database_service
         self.qa_agent = qa_agent
         self.llm_client = llm_client
@@ -884,21 +882,21 @@ class UnifiedQualityService:
 
 
 def get_quality_service(
-    model_router=None, database_service=None, llm_client=None
+    database_service=None, llm_client=None
 ) -> UnifiedQualityService:
     """Factory function for UnifiedQualityService dependency injection"""
     return UnifiedQualityService(
-        model_router=model_router, database_service=database_service, llm_client=llm_client
+        database_service=database_service, llm_client=llm_client
     )
 
 
 # Backward compatibility alias
 def get_content_quality_service(
-    model_router=None, database_service=None, llm_client=None
+    database_service=None, llm_client=None
 ) -> UnifiedQualityService:
     """Backward compatibility alias for get_quality_service"""
     return UnifiedQualityService(
-        model_router=model_router, database_service=database_service, llm_client=llm_client
+        database_service=database_service, llm_client=llm_client
     )
 
 

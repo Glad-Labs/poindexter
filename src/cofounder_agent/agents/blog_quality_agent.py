@@ -28,18 +28,15 @@ class BlogQualityAgent:
     - store_result: bool (optional) - Whether to store in database (default: True)
     """
 
-    def __init__(self, model_router=None, database_service=None):
+    def __init__(self, database_service=None):
         """
         Initialize blog quality evaluation agent
 
         Args:
-            model_router: Optional ModelRouter for LLM-based evaluations
             database_service: Optional DatabaseService for persistence
         """
         logger.info("Initializing BlogQualityAgent")
-        self.quality_service = get_quality_service(
-            model_router=model_router, database_service=database_service
-        )
+        self.quality_service = get_quality_service(database_service=database_service)
 
     async def run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """
@@ -135,6 +132,6 @@ class BlogQualityAgent:
             }
 
 
-def get_blog_quality_agent(model_router=None, database_service=None) -> BlogQualityAgent:
+def get_blog_quality_agent(database_service=None) -> BlogQualityAgent:
     """Factory function for BlogQualityAgent"""
-    return BlogQualityAgent(model_router=model_router, database_service=database_service)
+    return BlogQualityAgent(database_service=database_service)

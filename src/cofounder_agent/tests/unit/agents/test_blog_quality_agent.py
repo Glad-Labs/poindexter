@@ -227,8 +227,7 @@ class TestFactory:
     def test_factory_accepts_optional_params(self):
         with patch("agents.blog_quality_agent.get_quality_service") as mock_factory:
             mock_factory.return_value = MagicMock()
-            model_router = MagicMock()
             db = MagicMock()
-            agent = get_blog_quality_agent(model_router=model_router, database_service=db)
-            mock_factory.assert_called_once_with(model_router=model_router, database_service=db)
+            agent = get_blog_quality_agent(database_service=db)
+            mock_factory.assert_called_once_with(database_service=db)
         assert isinstance(agent, BlogQualityAgent)
