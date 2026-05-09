@@ -43,10 +43,10 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 - 56 live posts on gladlabs.io (222 posts total; 1,519 pipeline_tasks across all generation runs)
 - ~295 Python files under `src/cofounder_agent/services/` (down from ~455 after the 2026-05-08 cleanup pass — agents/content_agent/ tree, pipeline_flow.py, taps/gitea_issues.py, voice_agent_webrtc.py, phases/example_workflows.py, and the model_router/usage_tracker/model_constants trio all removed). 18 services are load-bearing (table below). The **2026-05-08 services audit** at `.shared-context/audits/2026-05-08-services-folder-audit.md` flagged the original ~5,000 LOC deletable; about 1,800 LOC of that landed; Phase 3 (workflow_executor chain → template_runner) is the largest remaining chunk and waits on a canonical_blog template.
-- **1 migration file** (`0000_baseline.py` + sibling `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`). The 169 historical migrations were squashed 2026-05-08 — see `services/migrations/0000_baseline.py` for the rationale. New schema changes still go in fresh `YYYYMMDD_HHMMSS_<slug>.py` files; the runner sorts `0000_baseline.py` first because `0` < `2` lexically.
+- **5 migration files** total — `0000_baseline.py` (the squashed history) plus four post-baseline migrations (`20260508_215727_seed_qa_gate_deepeval_brand_fabrication`, `20260509_175447_add_publishing_adapters`, plus two more landing this week). The 169 historical migrations were squashed 2026-05-08 — see `services/migrations/0000_baseline.py` for the rationale. New schema changes still go in fresh `YYYYMMDD_HHMMSS_<slug>.py` files; the runner sorts `0000_baseline.py` first because `0` < `2` lexically.
 - 7 Grafana dashboards (post-merge consolidation), 4 alert rules; Pyroscope app-profiles ship from worker/brain/voice agents under `service_name` tags (poindexter#406)
-- 7,900+ Python unit tests passing across 386 test files
-- 715 app_settings keys (660 non-secret + 55 secret) — the baseline seeds the 660 non-secret defaults; secrets get configured per-operator via `poindexter setup` + bootstrap.toml
+- 8,200+ Python unit tests across 366 test files (8,248 unique `def test_*` matches as of 2026-05-09 evening; some skipped in container due to host/container path-depth quirks at `Path(__file__).parents[5]` — works on host)
+- 717 app_settings keys (62 secret) — the baseline seeds the non-secret defaults; secrets get configured per-operator via `poindexter setup` + bootstrap.toml
 - 30,547 embeddings across posts / issues / audit / memory / brain / claude_sessions
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
