@@ -486,16 +486,18 @@ class TestSafeCallAdapter:
 
     @pytest.mark.asyncio
     async def test_notimplementederror_becomes_skipped(self):
-        """Stub adapters (GH-40) raise NotImplementedError — must be skipped."""
+        """Defensive: a future stub adapter or one flipped on by mistake
+        raising NotImplementedError must be classified as 'unavailable'
+        (skipped outcome), not 'error' — so the error counter doesn't
+        spike for known-off platforms."""
         from services.social_poster import _safe_call_adapter
 
         async def _stub():
-            raise NotImplementedError("LinkedIn requires OAuth setup — see GH-40")
+            raise NotImplementedError("future-platform requires OAuth setup")
 
-        result = await _safe_call_adapter("linkedin", _stub)
+        result = await _safe_call_adapter("future-platform", _stub)
         assert result["success"] is False
-        assert "stub" in result["error"]
-        assert "GH-40" in result["error"]
+        assert "unavailable" in result["error"]
 
     @pytest.mark.asyncio
     async def test_non_dict_result_treated_as_failure(self):
@@ -565,26 +567,25 @@ class TestDistributeToAdapters:
         assert result["mastodon"]["success"] is True
 
     @pytest.mark.asyncio
-    @patch("services.social_adapters.linkedin.post_to_linkedin", new_callable=AsyncMock)
     @patch("services.social_adapters.bluesky.post_to_bluesky", new_callable=AsyncMock)
-    async def test_linkedin_stub_does_not_kill_bluesky(self, mock_bsky, mock_linkedin):
-        """Even with LinkedIn flagged enabled (by mistake), the stub
-        raising NotImplementedError must not break the other platforms."""
+    async def test_disabled_platform_is_silently_skipped(self, mock_bsky):
+        """Platforms not in the ``enabled`` set are no-ops — no result
+        row, no warning, no error. Bluesky still posts because it IS
+        enabled."""
         from services.social_poster import _distribute_to_adapters
 
         mock_bsky.return_value = {"success": True, "post_id": "b1", "error": None}
-        mock_linkedin.side_effect = NotImplementedError(
-            "LinkedIn adapter requires OAuth setup — see GH-40"
-        )
 
         posts = [SocialPost(platform="twitter", text="hi", post_url="https://x.com/1")]
+        # "linkedin" was a stub adapter (removed 2026-05-08 services audit).
+        # If a stale config still lists it, _distribute_to_adapters should
+        # silently skip — only known wired platforms get a result row.
         result = await _distribute_to_adapters(
             posts, {"bluesky", "linkedin"}
         )
 
         assert result["bluesky"]["success"] is True
-        assert result["linkedin"]["success"] is False
-        assert "stub" in result["linkedin"]["error"]
+        assert "linkedin" not in result
 
     @pytest.mark.asyncio
     @patch("services.social_adapters.bluesky.post_to_bluesky", new_callable=AsyncMock)

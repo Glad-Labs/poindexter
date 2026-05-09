@@ -357,17 +357,20 @@ async def _safe_call_adapter(platform: str, coro_factory) -> dict:
     """Run one adapter call and never let it crash the distribution loop.
 
     Adapters promise a ``{"success", "post_id", "error"}`` dict on the
-    happy path AND on graceful-skip paths. But a bug, a missing
-    dependency, or a stubbed adapter (LinkedIn/Reddit/YouTube — see
-    GH-40) can raise instead. This wrapper turns any exception —
-    including ``NotImplementedError`` from the stubs — into a
-    well-formed failure dict so the rest of the social posting
+    happy path AND on graceful-skip paths. A bug or a missing
+    dependency can raise instead — this wrapper turns any exception
+    into a well-formed failure dict so the rest of the social posting
     continues.
+
+    ``NotImplementedError`` is treated as a "skipped" outcome rather
+    than an "error" so future stub adapters (or operators flipping a
+    flag on a platform we haven't shipped yet) don't trip the error
+    counter.
 
     Metric: increments ``social_adapter_errors_total{platform=...}``
     when the adapter raises. ``social_adapter_posts_total`` is bumped
-    with ``outcome={success,failure,error}`` so dashboards can tell
-    "platform refused us" from "we crashed".
+    with ``outcome={success,failure,error,skipped}`` so dashboards can
+    tell "platform refused us" from "we crashed".
 
     GH-36.
     """
@@ -384,11 +387,12 @@ async def _safe_call_adapter(platform: str, coro_factory) -> dict:
         _bump_metric("social_adapter_posts_total", platform=platform, outcome=outcome)
         return result
     except NotImplementedError as e:
-        # Known-stub path (GH-40). Log INFO and keep going — the other
-        # platforms shouldn't pay for LinkedIn/Reddit/YouTube being off.
-        logger.info("[social_poster] %s adapter is a stub: %s", platform, e)
+        # Defensive — adapters we ship today don't raise this, but a
+        # future stub flipped on by mistake shouldn't take down the
+        # rest of the distribution loop.
+        logger.info("[social_poster] %s adapter is unavailable: %s", platform, e)
         _bump_metric("social_adapter_posts_total", platform=platform, outcome="skipped")
-        return {"success": False, "post_id": None, "error": f"stub: {e}"}
+        return {"success": False, "post_id": None, "error": f"unavailable: {e}"}
     except Exception as e:  # noqa: BLE001 — adapter boundary, never crash the loop
         logger.exception("[social_poster] %s adapter crashed: %s", platform, e)
         _bump_metric("social_adapter_errors_total", platform=platform)
@@ -456,9 +460,11 @@ async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
     2. For each enabled platform, call the adapter through
        :func:`_safe_call_adapter` — that wrapper guarantees a single
        failing adapter never takes down the distribution job.
-    3. Stub adapters (LinkedIn/Reddit/YouTube) raise
-       ``NotImplementedError``; the wrapper logs INFO + "skipped"
-       metric and moves on.
+
+    Currently wired adapters: ``bluesky``, ``mastodon``. The
+    LinkedIn / Reddit / YouTube stubs were removed in the 2026-05-08
+    services audit cleanup; their setup checklists live on GH-40
+    (LinkedIn), poindexter#448 (Reddit), and poindexter#449 (YouTube).
     """
     results: dict[str, dict] = {}
 
@@ -484,22 +490,6 @@ async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
         from services.social_adapters.mastodon import post_to_mastodon
         results["mastodon"] = await _safe_call_adapter(
             "mastodon", lambda: post_to_mastodon(text, url)
-        )
-
-    if "linkedin" in enabled:
-        # Stub per GH-40 — kept so operators can still flip the flag on
-        # once they wire up OAuth; wrapper catches NotImplementedError.
-        from services.social_adapters.linkedin import post_to_linkedin
-        ln_text = linkedin_post.text if linkedin_post else text
-        results["linkedin"] = await _safe_call_adapter(
-            "linkedin", lambda: post_to_linkedin(ln_text, url)
-        )
-
-    if "reddit" in enabled:
-        from services.social_adapters.reddit import post_to_reddit
-        title = generic_post.text.split("\n")[0][:300] if generic_post else ""
-        results["reddit"] = await _safe_call_adapter(
-            "reddit", lambda: post_to_reddit(title, url)
         )
 
     return results
