@@ -57,6 +57,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Don't persist the GITHUB_TOKEN credential helper — it sets an
+          # http.https://github.com/.extraheader that takes precedence over
+          # URL-embedded credentials, which would steamroll our PAT and try
+          # to push as github-actions[bot] (no write access on poindexter).
+          persist-credentials: false
 
       - name: Configure git identity for the temporary sync commit
         run: |
