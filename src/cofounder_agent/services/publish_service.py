@@ -21,7 +21,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services.logger_config import get_logger
-from services.site_config import site_config
+import services.site_config as _site_config_mod
+site_config = _site_config_mod.site_config
 from utils.text_utils import extract_title_from_content
 
 logger = get_logger(__name__)
@@ -863,7 +864,8 @@ async def publish_post_from_task(
                 """Wait for podcast, then generate short video."""
                 import asyncio as _aio
 
-                from services.site_config import site_config as _scfg
+                import services.site_config as _scm_scfg
+                _scfg = _scm_scfg.site_config
                 _delay = int(_scfg.get("short_video_post_publish_delay_seconds", "180"))
                 await _aio.sleep(_delay)
                 try:
@@ -899,7 +901,8 @@ async def publish_post_from_task(
                 upload_to_r2,
                 upload_video_episode,
             )
-            from services.site_config import site_config as _scfg
+            import services.site_config as _scm_delay
+            _scfg = _scm_delay.site_config
             # Give podcast/video/short generation time to complete
             _delay = int(_scfg.get("media_r2_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
@@ -914,7 +917,8 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                from services.site_config import site_config as _scfg
+                import services.site_config as _scm_scfg
+                _scfg = _scm_scfg.site_config
                 _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 # Per-call temp file via tempfile.mkstemp avoids hardcoded
                 # /tmp paths (Bandit B108) and prevents collisions when
@@ -944,7 +948,8 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                from services.site_config import site_config as _scfg
+                import services.site_config as _scm_scfg
+                _scfg = _scm_scfg.site_config
                 _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 # Per-call temp file via tempfile.mkstemp avoids hardcoded
                 # /tmp paths (Bandit B108).
@@ -968,7 +973,8 @@ async def publish_post_from_task(
 
             # Upload video to YouTube if enabled
             try:
-                from services.site_config import site_config as _scfg_yt
+                import services.site_config as _scm_yt
+                _scfg_yt = _scm_yt.site_config
                 _platforms = _scfg_yt.get("social_distribution_platforms", "")
                 if "youtube" in _platforms:
                     video_path = Path(os.path.expanduser("~")) / ".poindexter" / "video" / f"{pid}.mp4"

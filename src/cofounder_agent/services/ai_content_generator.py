@@ -73,7 +73,8 @@ class AIContentGenerator:
         self.generation_attempts = 0
         # #198: tunable via app_settings so operators can widen/tighten
         # refinement loops without a redeploy.
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         self.max_refinement_attempts = _sc.get_int("content_gen_max_refinement_attempts", 3)
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
@@ -84,7 +85,8 @@ class AIContentGenerator:
             logger.debug("Ollama already checked previously: %s", self.ollama_available)
             return
 
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         ollama_url = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("Checking if Ollama server is running at %s...", ollama_url)
         try:
@@ -107,7 +109,8 @@ class AIContentGenerator:
     async def _populate_internal_links_cache(self):
         """Fetch published post titles + slugs so the LLM can include real internal links."""
         try:
-            from services.site_config import site_config as _sc
+            import services.site_config as _scm
+            _sc = _scm.site_config
             site_url = _sc.get("site_url", "")
 
             import asyncpg
@@ -288,7 +291,8 @@ class AIContentGenerator:
         try:
             logger.info("Loading system prompt...")
             # Word-count window buffers — tunable via app_settings (#198).
-            from services.site_config import site_config as _sc
+            import services.site_config as _scm
+            _sc = _scm.site_config
             _min_ratio = _sc.get_float("content_gen_min_word_ratio", 0.9)
             _max_ratio = _sc.get_float("content_gen_max_word_ratio", 1.1)
             min_words = int(target_length * _min_ratio)
@@ -589,7 +593,8 @@ class AIContentGenerator:
         # Try to refine with same model
         # Calculate max tokens for refinement pass — extra headroom for thinking models.
         # Token multipliers are tunable via app_settings (#198).
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         _is_thinking_refine = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))
         _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 7.0)
         _standard_mult = _sc.get_float("content_gen_token_mult_standard", 4.5)
@@ -682,7 +687,8 @@ class AIContentGenerator:
             return None
 
         logger.info("[ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
-        from services.site_config import site_config as _sc
+        import services.site_config as _scm
+        _sc = _scm.site_config
         ollama_endpoint = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
         logger.info("   ├─ Endpoint: %s", ollama_endpoint)
         logger.info("   └─ Status: Connecting...\n")
@@ -704,8 +710,8 @@ class AIContentGenerator:
             else:
                 # Read pipeline_writer_model from DB first (DB-first config)
                 try:
-                    from services.site_config import site_config
-                    db_model = site_config.get("pipeline_writer_model", "")
+                    import services.site_config as _scm_pwm
+                    db_model = _scm_pwm.site_config.get("pipeline_writer_model", "")
                     if db_model:
                         # Strip "ollama/" prefix if present
                         db_model = db_model.removeprefix("ollama/")
@@ -722,7 +728,7 @@ class AIContentGenerator:
 
                 # Read fallback model from DB
                 try:
-                    db_fallback = site_config.get("pipeline_fallback_model", "")
+                    db_fallback = _scm_pwm.site_config.get("pipeline_fallback_model", "")
                     if db_fallback:
                         db_fallback = db_fallback.removeprefix("ollama/")
                         if db_fallback != resolved:
@@ -1141,9 +1147,10 @@ async def generate_with_context(
     ``writer_rag_context_snippet_max_chars`` and ``pipeline_writer_model``
     app_settings (the latter is the codebase-wide writer-model lookup).
     """
-    from services.site_config import site_config
+    import services.site_config as _scm
     from services.topic_ranking import _ollama_chat_json
 
+    site_config = _scm.site_config
     snippet_max_chars = site_config.get_int(
         "writer_rag_context_snippet_max_chars", 500,
     )
@@ -1180,9 +1187,10 @@ async def generate_with_outline(
     ``writer_rag_context_snippet_max_chars`` and ``pipeline_writer_model``
     app_settings.
     """
-    from services.site_config import site_config
+    import services.site_config as _scm
     from services.topic_ranking import _ollama_chat_json
 
+    site_config = _scm.site_config
     snippet_max_chars = site_config.get_int(
         "writer_rag_context_snippet_max_chars", 500,
     )
