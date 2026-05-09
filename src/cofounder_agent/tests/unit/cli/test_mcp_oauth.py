@@ -265,9 +265,23 @@ class TestMcpPoolConstructor:
 
 # ---------------------------------------------------------------------------
 # mcp-server-gladlabs (operator-only) helper
+#
+# These tests cover the private operator MCP mirror at
+# ``mcp-server-gladlabs/oauth_client.py`` — that directory is stripped
+# from the public Glad-Labs/poindexter sync (see
+# ``scripts/sync-to-github.sh``). The skipif keeps the public-repo CI
+# green while still running every gladlabs test in the private repo
+# (where the directory exists).
 # ---------------------------------------------------------------------------
 
+_GLADLABS_AVAILABLE = (_MCP_GLADLABS_DIR / "oauth_client.py").exists()
+pytestmark_gladlabs = pytest.mark.skipif(
+    not _GLADLABS_AVAILABLE,
+    reason="mcp-server-gladlabs/ is private — stripped from the public mirror.",
+)
 
+
+@pytestmark_gladlabs
 class TestGladlabsDecodeJWTExp:
     def test_decodes_exp(self):
         oac = _import_gladlabs_oauth()
@@ -276,6 +290,7 @@ class TestGladlabsDecodeJWTExp:
         assert exp is not None and exp > int(time.time())
 
 
+@pytestmark_gladlabs
 class TestGladlabsMcpOAuthClient:
     @pytest.mark.asyncio
     async def test_mint_then_cache(self):
@@ -344,6 +359,7 @@ class TestGladlabsMcpOAuthClient:
             await c.get_token()
 
 
+@pytestmark_gladlabs
 class TestGladlabsPoolConstructor:
     @pytest.mark.asyncio
     async def test_loads_credentials_from_distinct_keys(self):
