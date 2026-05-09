@@ -625,16 +625,20 @@ class TestCaptureTrainingDataPhase:
         assert phase.status == "completed"
 
     @pytest.mark.asyncio
-    async def test_execute_disabled_via_env_var(self, monkeypatch):
-        monkeypatch.setenv("ENABLE_TRAINING_CAPTURE", "false")
+    async def test_execute_disabled_via_site_config(self):
+        # Capture is gated by app_settings.enable_training_capture per the
+        # poindexter#330 DI seam — phases receive site_config via the
+        # dispatcher's config dict, NOT an env var.
         phase = _make_capture_phase()
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda key, default="": "false" if key == "enable_training_capture" else default)
         result = await phase.execute(
             inputs={
                 "content": "text",
                 "overall_score": 80.0,
                 "topic": "AI",
             },
-            config={},
+            config={"_site_config": sc},
         )
         assert result["stored"] is False
         assert result["reason"] == "disabled"

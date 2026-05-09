@@ -291,7 +291,10 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value="")
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=sc)}):
+        # Patch the per-module site_config attribute directly — research_service
+        # holds its own bound copy (DI seam, poindexter#330) so swapping
+        # services.site_config.site_config doesn't reach the consumer.
+        with patch("services.research_service.site_config", sc):
             refs = get_known_references()
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
@@ -300,7 +303,10 @@ class TestGetKnownReferences:
         custom = '{"woodworking": [{"title": "Wood Magazine", "url": "https://woodmagazine.com"}]}'
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=sc)}):
+        # Patch the per-module site_config attribute directly — research_service
+        # holds its own bound copy (DI seam, poindexter#330) so swapping
+        # services.site_config.site_config doesn't reach the consumer.
+        with patch("services.research_service.site_config", sc):
             refs = get_known_references()
         assert "woodworking" in refs
         assert refs["woodworking"][0]["url"] == "https://woodmagazine.com"
@@ -314,7 +320,10 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value="{not valid json")
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=sc)}):
+        # Patch the per-module site_config attribute directly — research_service
+        # holds its own bound copy (DI seam, poindexter#330) so swapping
+        # services.site_config.site_config doesn't reach the consumer.
+        with patch("services.research_service.site_config", sc):
             refs = get_known_references()
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
@@ -326,7 +335,10 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value='[1, 2, 3]')
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=sc)}):
+        # Patch the per-module site_config attribute directly — research_service
+        # holds its own bound copy (DI seam, poindexter#330) so swapping
+        # services.site_config.site_config doesn't reach the consumer.
+        with patch("services.research_service.site_config", sc):
             refs = get_known_references()
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
@@ -335,7 +347,10 @@ class TestGetKnownReferences:
         custom = '{"COOKING": [{"title": "Cookbook", "url": "https://cookbook.com"}]}'
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=sc)}):
+        # Patch the per-module site_config attribute directly — research_service
+        # holds its own bound copy (DI seam, poindexter#330) so swapping
+        # services.site_config.site_config doesn't reach the consumer.
+        with patch("services.research_service.site_config", sc):
             refs = get_known_references()
         # Keys are lowercased so keyword lookup is case-insensitive
         assert "cooking" in refs
@@ -352,7 +367,10 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=sc)}):
+        # Patch the per-module site_config attribute directly — research_service
+        # holds its own bound copy (DI seam, poindexter#330) so swapping
+        # services.site_config.site_config doesn't reach the consumer.
+        with patch("services.research_service.site_config", sc):
             refs = get_known_references()
         assert len(refs["x"]) == 1
         assert refs["x"][0]["url"] == "https://a.com"
@@ -366,7 +384,10 @@ class TestGetKnownReferences:
         )
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=sc)}):
+        # Patch the per-module site_config attribute directly — research_service
+        # holds its own bound copy (DI seam, poindexter#330) so swapping
+        # services.site_config.site_config doesn't reach the consumer.
+        with patch("services.research_service.site_config", sc):
             refs = get_known_references()
         assert "good" in refs
         assert "bad" not in refs
@@ -383,7 +404,10 @@ class TestGetKnownReferences:
         custom = '{"x": [{"title": "No URL"}]}'
         sc = MagicMock()
         sc.get = MagicMock(return_value=custom)
-        with patch.dict("sys.modules", {"services.site_config": MagicMock(site_config=sc)}):
+        # Patch the per-module site_config attribute directly — research_service
+        # holds its own bound copy (DI seam, poindexter#330) so swapping
+        # services.site_config.site_config doesn't reach the consumer.
+        with patch("services.research_service.site_config", sc):
             refs = get_known_references()
         assert refs is _DEFAULT_KNOWN_REFERENCES
 
