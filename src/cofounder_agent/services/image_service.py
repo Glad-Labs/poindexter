@@ -959,16 +959,46 @@ class ImageService:
                     },
                     timeout=60,
                 )
-                if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image/"):
-                    # Offload blocking file-write to a worker thread —
-                    # SDXL responses can be 1–5 MB, enough to stall the
-                    # event loop under concurrent load (ASYNC230).
+                # The sidecar at scripts/sdxl-server.py returns JSON
+                # (image_path + filename + generation_time_ms), NOT raw
+                # bytes. Fetch the actual image via the secondary endpoint
+                # ``GET /images/{filename}`` since the worker container
+                # doesn't share the sidecar's volume mount. Original code
+                # assumed Content-Type: image/* and broke against the JSON
+                # response — see Glad-Labs/glad-labs-stack#334.
+                ctype = resp.headers.get("content-type", "")
+                if resp.status_code == 200 and ctype.startswith("application/json"):
+                    body = resp.json()
+                    filename = body.get("filename")
+                    if not filename:
+                        logger.warning(
+                            "SDXL server response missing filename: %s", body,
+                        )
+                        return False
+                    img_resp = await client.get(f"{sdxl_server_url}/images/{filename}")
+                    if img_resp.status_code != 200:
+                        logger.warning(
+                            "SDXL /images/%s returned %s",
+                            filename, img_resp.status_code,
+                        )
+                        return False
+                    await asyncio.to_thread(
+                        _write_image_bytes, output_path, img_resp.content,
+                    )
+                    logger.info(
+                        "SDXL image generated via host server in %sms: %s",
+                        body.get("generation_time_ms", "?"), output_path,
+                    )
+                    return True
+                # Legacy path — sidecar streamed image bytes directly.
+                # Kept for back-compat in case a future sidecar version
+                # reverts to the pre-JSON response shape.
+                if resp.status_code == 200 and ctype.startswith("image/"):
                     await asyncio.to_thread(_write_image_bytes, output_path, resp.content)
                     elapsed = resp.headers.get("X-Elapsed-Seconds", "?")
                     logger.info("SDXL image generated via host server in %ss: %s", elapsed, output_path)
                     return True
-                else:
-                    logger.warning("SDXL server returned %s: %s", resp.status_code, resp.text[:200])
+                logger.warning("SDXL server returned %s: %s", resp.status_code, resp.text[:200])
         except Exception as e:
             logger.info("SDXL host server unavailable (%s), trying local diffusers...", e)
 
