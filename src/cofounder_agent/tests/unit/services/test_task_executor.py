@@ -75,7 +75,8 @@ def _make_executor(db=None, poll_interval=1):
     # Default _get_setting mock — returns the default arg so callers like
     # _semantic_dedup_enabled, min_curation_score etc. get sensible values
     # without hitting the DB.  Individual tests can override.
-    async def _fake_get_setting(_key: str, default: str = "") -> str:
+    async def _fake_get_setting(key: str, default: str = "") -> str:
+        del key  # parameter name pinned by TaskExecutor._get_setting protocol
         return default
 
     executor._get_setting = _fake_get_setting

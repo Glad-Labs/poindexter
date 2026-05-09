@@ -22,6 +22,7 @@ Usage from task_executor or any post-publish hook:
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 
@@ -527,7 +528,10 @@ def _bump_metric(name: str, **labels: str) -> None:
 
 
 # Counter singletons — prometheus_client refuses duplicate registration.
-_COUNTERS: dict[str, object] = {}
+# Typed Any so static checkers don't mistake the lazy lookup for `object`;
+# the only surface we use (.labels().inc() / .inc()) is part of the prometheus
+# Counter contract.
+_COUNTERS: dict[str, Any] = {}
 
 
 async def _distribute_to_adapters(

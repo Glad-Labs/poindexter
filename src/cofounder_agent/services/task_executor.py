@@ -789,8 +789,14 @@ class TaskExecutor:
                                     f"Visual QA: {int(_pqa_review.score)}/100 — "
                                     + _pqa_review.feedback[:200]
                                 )
+                                _qa_pool = (
+                                    getattr(self.database_service, "cloud_pool", None)
+                                    or getattr(self.database_service, "pool", None)
+                                )
+                                if _qa_pool is None:
+                                    raise RuntimeError("preview QA: no DB pool available")
                                 try:
-                                    await pool.execute(
+                                    await _qa_pool.execute(
                                         """UPDATE content_tasks
                                            SET metadata = COALESCE(metadata, '{}'::jsonb)
                                                || jsonb_build_object(
