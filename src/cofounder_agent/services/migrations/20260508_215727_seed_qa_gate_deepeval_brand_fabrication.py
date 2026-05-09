@@ -56,15 +56,17 @@ async def up(pool) -> None:
             _GATE_NAME, metadata,
         )
 
-        # 2. app_settings flag — empty string sentinel = "unset → use the
-        # rail's own default (false)". Insert "true" explicitly so the
-        # rail activates without a manual flip. NOT NULL on app_settings.value
+        # 2. app_settings flag — insert "true" explicitly so the rail
+        # activates without a manual flip. NOT NULL on app_settings.value
         # is a hard rule (per feedback_app_settings_value_not_null), so we
-        # never write NULL here.
+        # never write NULL here. The original draft of this migration also
+        # set value_type='bool', but app_settings has no value_type column
+        # — type coercion is the consumer's job (settings_service casts
+        # from string when callers ask for bool/int/json).
         await conn.execute(
             """
-            INSERT INTO app_settings (key, value, description, value_type)
-            VALUES ($1, 'true', $2, 'bool')
+            INSERT INTO app_settings (key, value, description)
+            VALUES ($1, 'true', $2)
             ON CONFLICT (key) DO NOTHING
             """,
             _FLAG_KEY,
