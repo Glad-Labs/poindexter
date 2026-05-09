@@ -626,13 +626,44 @@ class ImageService:
             import asyncio
 
             from plugins.registry import get_all_llm_providers
+            from services.llm_providers.dispatcher import resolve_tier_model
         except Exception:
             return None
 
         # Tuning constants via app_settings (#198).
         _sc = site_config
         _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
-        _model = _sc.get("image_search_query_model", "gemma3:27b")
+        # Cost-tier API (Lane B sweep). Operators tune the standard tier
+        # via app_settings.cost_tier.standard.model — no code edit per
+        # niche. Per-call-site key (image_search_query_model) preserved
+        # as last-ditch fallback; both missing pages the operator and
+        # returns None (caller falls back to raw topic).
+        _pool = getattr(_sc, "_pool", None)
+        _model: str | None = None
+        if _pool is not None:
+            try:
+                _model = (
+                    await resolve_tier_model(_pool, "standard")
+                ).removeprefix("ollama/")
+            except (RuntimeError, ValueError) as tier_err:
+                logger.debug(
+                    "image_search_query: cost_tier.standard.model unresolved "
+                    "(%s); trying image_search_query_model fallback",
+                    tier_err,
+                )
+        if not _model:
+            _fallback = _sc.get("image_search_query_model") or ""
+            if not _fallback:
+                from services.integrations.operator_notify import notify_operator
+                await notify_operator(
+                    "image_service: cost_tier='standard' has no model AND "
+                    "image_search_query_model is empty — semantic Pexels "
+                    "query skipped (falling back to raw topic)",
+                    critical=False,
+                    site_config=_sc,
+                )
+                return None
+            _model = _fallback.removeprefix("ollama/")
         _max_tokens = _sc.get_int("image_search_query_max_tokens", 30)
         _temp = _sc.get_float("image_search_query_temperature", 0.4)
         _generate_timeout = _sc.get_int("image_search_query_timeout_seconds", 20)
