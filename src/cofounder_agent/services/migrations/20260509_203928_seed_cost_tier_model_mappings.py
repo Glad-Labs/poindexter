@@ -1,7 +1,7 @@
 """Seed the four cost_tier.<tier>.model app_settings keys.
 
 These bridge the ``cost_tier="standard"`` API that Lane B sweep agents
-migrate call sites to (Glad-Labs/poindexter#XXX) and the concrete model
+migrate call sites to (Glad-Labs/poindexter#450) and the concrete model
 identifiers each provider consumes. Without these rows, the
 ``resolve_tier_model`` helper in
 ``services/llm_providers/dispatcher.py`` would raise on every call —
