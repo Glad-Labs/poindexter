@@ -16,8 +16,12 @@ official pricing pages. This module wraps it with our existing units
 models reliably resolve to $0 even if LiteLLM doesn't have the
 specific tag.
 
-The remaining hand-rolled price table — ``cost_guard.py:74-94`` (14
-entries) — should also delegate here; tracked as a follow-up.
+An earlier docstring claimed ``cost_guard.py:74-94`` was a remaining
+hand-rolled price table that should delegate here. That was a misread:
+those lines are watt-hour energy estimates (``_DEFAULT_CLOUD_ENERGY_WH_PER_1K``),
+not USD prices. cost_guard's USD path lives in ``_get_rate()`` and
+already reads from app_settings; LiteLLM-backed cost lookups for
+observability flow through this module. The two no longer overlap.
 """
 
 from __future__ import annotations
