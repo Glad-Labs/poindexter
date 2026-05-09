@@ -454,3 +454,53 @@ def test_new_session_id_collision_rate_is_acceptable() -> None:
     # (8 hex chars = 2**32 space, so collision probability is tiny.)
     ids = {livekit_bridge.new_session_id() for _ in range(1000)}
     assert len(ids) == 1000, "session id collision in a 1000-id sample"
+
+
+# ===========================================================================
+# _resolve_default_audio_plane — fail-loud when audio extras absent
+# ===========================================================================
+#
+# Regression guard for poindexter#426: a fresh `uv run server.py` installs
+# only the core deps, so probing pipecat / livekit / faster_whisper / kokoro
+# returns ImportError. The pre-fix code swallowed that and handed back a
+# NoopAudioMediaPlane, so voice_join_room reported "started" while the
+# operator heard nothing. The fixed resolver raises with the install hint;
+# the noop opt-in stays available for CI / control-plane testing.
+
+
+class TestResolveDefaultAudioPlane:
+
+    def test_explicit_noop_opt_in_returns_noop_stub(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("VOICE_BRIDGE_AUDIO_PLANE", "noop")
+        config = livekit_bridge.BridgeConfig(room="claude-bridge")
+        plane = livekit_bridge._resolve_default_audio_plane(config)
+        assert isinstance(plane, livekit_bridge.NoopAudioMediaPlane)
+
+    def test_missing_audio_extras_raises_with_install_hint(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Default test env has no audio extras installed -- the plane
+        # selector must fail loudly per feedback_no_silent_defaults
+        # rather than silently routing real audio to the no-op stub.
+        monkeypatch.delenv("VOICE_BRIDGE_AUDIO_PLANE", raising=False)
+        config = livekit_bridge.BridgeConfig(room="claude-bridge")
+        with pytest.raises(RuntimeError) as excinfo:
+            livekit_bridge._resolve_default_audio_plane(config)
+        msg = str(excinfo.value)
+        assert "[VOICE_BRIDGE]" in msg
+        assert "uv --directory mcp-server-voice sync --extra audio" in msg
+        # Names every missing module so the operator sees exactly which
+        # extras did not install (rather than first-failure-only).
+        assert "pipecat" in msg
+
+    def test_explicit_pipecat_value_also_raises_when_deps_missing(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # `pipecat` is the implicit default; setting it explicitly should
+        # behave identically (the only special-cased value is `noop`).
+        monkeypatch.setenv("VOICE_BRIDGE_AUDIO_PLANE", "pipecat")
+        config = livekit_bridge.BridgeConfig(room="claude-bridge")
+        with pytest.raises(RuntimeError):
+            livekit_bridge._resolve_default_audio_plane(config)
