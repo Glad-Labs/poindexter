@@ -35,12 +35,15 @@ def load_all() -> None:
 
     # webhook.* surface: webhook_alertmanager, webhook_revenue, webhook_subscriber
     # outbound.* surface: outbound_discord, outbound_telegram, outbound_vercel_isr
+    # publishing.* surface: publishing_bluesky, publishing_mastodon
     # retention.* surface: retention_downsample, retention_summarize_to_table, retention_ttl_prune
     # tap.* surface: tap_builtin_topic_source, tap_external_metrics_writer, tap_singer_subprocess
     from services.integrations.handlers import (  # noqa: F401
         outbound_discord,
         outbound_telegram,
         outbound_vercel_isr,
+        publishing_bluesky,
+        publishing_mastodon,
         retention_downsample,
         retention_summarize_to_table,
         retention_ttl_prune,
@@ -57,6 +60,7 @@ def load_all() -> None:
     _ = (
         webhook_alertmanager, webhook_revenue, webhook_subscriber,
         outbound_discord, outbound_telegram, outbound_vercel_isr,
+        publishing_bluesky, publishing_mastodon,
         retention_downsample, retention_summarize_to_table, retention_ttl_prune,
         tap_builtin_topic_source, tap_external_metrics_writer, tap_singer_subprocess,
     )
