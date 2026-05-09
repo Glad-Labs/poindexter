@@ -37,6 +37,14 @@ def _make_row(**kwargs):
     Strict ``__getitem__`` (KeyError on missing key) so production code
     that reads a column the test didn't set fails loudly instead of
     silently getting ``None`` and passing — see GH#337.
+
+    Use this helper ONLY when production code reads ``row[<key>]`` —
+    the strict mapping is what gives the test signal value. When a test
+    just hands the row to a patched ``ModelConverter`` and asserts on
+    the converter's return value, prefer ``object()`` directly: a
+    literal sentinel makes it obvious the row contents are not under
+    test, and prevents the row-faker from quietly accumulating stale
+    columns over time (the original symptom in GH#30).
     """
     row = MagicMock()
     _data = {**kwargs}
@@ -141,8 +149,9 @@ class TestAdminDatabaseInit:
 class TestLogCost:
     @pytest.mark.asyncio
     async def test_success_returns_cost_log_response(self):
-        row = _make_row(id="cl-1", task_id="task-1", phase="research")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — log_cost passes fetchrow's result straight to
+        # the patched ModelConverter without reading any column itself.
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = _make_cost_log_sentinel()
@@ -162,8 +171,8 @@ class TestLogCost:
     @pytest.mark.asyncio
     async def test_optional_fields_default_to_zero(self):
         """Missing optional fields (tokens, duration_ms) default to 0/None."""
-        row = _make_row(id="cl-2", task_id="task-1", phase="draft")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — defaults live on the input dict, not the row.
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = _make_cost_log_sentinel()
@@ -373,8 +382,9 @@ class TestHealthCheck:
 class TestGetSetting:
     @pytest.mark.asyncio
     async def test_success_returns_setting_response(self):
-        row = _make_row(key="my_key", value="my_value")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — get_setting passes fetchrow's result straight
+        # to the patched ModelConverter without reading any column.
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = _make_setting_sentinel()
@@ -411,8 +421,8 @@ class TestGetSetting:
     @pytest.mark.asyncio
     async def test_expired_cache_hits_db(self):
         """TTL = 60s; if timestamp is old, DB is re-queried."""
-        row = _make_row(key="k", value="v")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — orchestration only.
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
         sentinel = _make_setting_sentinel(key="k", value="v")
         # Set cache with very old timestamp
@@ -440,8 +450,9 @@ class TestGetSetting:
 class TestGetAllSettings:
     @pytest.mark.asyncio
     async def test_no_category_returns_all(self):
-        rows = [_make_row(key="k1", value="v1"), _make_row(key="k2", value="v2")]
-        pool = _make_pool(fetch_result=rows)
+        # Opaque rows — get_all_settings just maps the patched
+        # converter over fetch's result without reading any column.
+        pool = _make_pool(fetch_result=[object(), object()])
         db = _make_db(pool)
 
         sentinel = _make_setting_sentinel()
@@ -452,8 +463,9 @@ class TestGetAllSettings:
 
     @pytest.mark.asyncio
     async def test_category_filter_returns_subset(self):
-        rows = [_make_row(key="k1", value="v1", category="ui")]
-        pool = _make_pool(fetch_result=rows)
+        # Opaque row — the test asserts only the count; the filter
+        # work happens in SQL upstream of fetch.
+        pool = _make_pool(fetch_result=[object()])
         db = _make_db(pool)
 
         sentinel = _make_setting_sentinel()
