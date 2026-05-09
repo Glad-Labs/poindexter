@@ -34,6 +34,14 @@ def _make_row(**kwargs):
     Strict ``__getitem__`` (KeyError on missing key) so production code
     that reads a column the test didn't set fails loudly instead of
     silently getting ``None`` and passing — see GH#337.
+
+    Use this helper ONLY when production code reads ``row[<key>]`` — the
+    strict mapping is what gives the test signal value. When a test
+    just hands the row to a patched ``ModelConverter`` and asserts on
+    the converter's return value, prefer ``object()`` directly: a
+    literal sentinel makes it obvious the row contents are not under
+    test, and prevents the row-faker from quietly accumulating stale
+    columns over time (the original symptom in GH#30).
     """
     row = MagicMock()
     _data = {**kwargs}
