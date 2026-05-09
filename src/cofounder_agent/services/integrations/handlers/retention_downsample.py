@@ -71,9 +71,15 @@ def _validate_interval(value: str) -> str:
     return value
 
 
-def _build_aggregations(rule_aggs: list[dict[str, Any]]) -> str:
-    """Return a comma-joined SQL fragment of aggregate expressions."""
-    parts: list[str] = []
+def _build_aggregations(rule_aggs: list[dict[str, Any]]) -> tuple[str, str]:
+    """Return ``(select_exprs, insert_cols)`` SQL fragments.
+
+    ``select_exprs`` is the SELECT-list form (``fn(col) AS alias, ...``)
+    and ``insert_cols`` is the matching INSERT column-list form
+    (``alias, ...``). Built together so the two stay in sync.
+    """
+    select_parts: list[str] = []
+    insert_parts: list[str] = []
     for agg in rule_aggs:
         col = _validate_identifier(agg.get("col", ""), "aggregation.col")
         fn = (agg.get("fn") or "").lower()
@@ -84,10 +90,11 @@ def _build_aggregations(rule_aggs: list[dict[str, Any]]) -> str:
             )
         alias = agg.get("as") or f"{fn}_{col}"
         alias = _validate_identifier(alias, "aggregation.as")
-        parts.append(f"{fn}({col}) AS {alias}")
-    if not parts:
+        select_parts.append(f"{fn}({col}) AS {alias}")
+        insert_parts.append(alias)
+    if not select_parts:
         raise ValueError("retention.downsample: aggregations list is empty")
-    return ", ".join(parts)
+    return ", ".join(select_parts), ", ".join(insert_parts)
 
 
 @register_handler("retention", "downsample")
@@ -115,7 +122,7 @@ async def downsample(
     age_column = _validate_identifier(row.get("age_column") or "created_at", "age_column")
     rollup_table = _validate_identifier(rule.get("rollup_table") or "", "rollup_table")
     interval = _validate_interval(rule.get("rollup_interval") or "")
-    aggregations = _build_aggregations(rule.get("aggregations") or [])
+    select_exprs, insert_cols = _build_aggregations(rule.get("aggregations") or [])
 
     config = row.get("config") or {}
     if not isinstance(config, dict):
@@ -157,22 +164,15 @@ async def downsample(
         # double-inserting the same bucket if the job overlaps itself.
         insert_sql = f"""
             INSERT INTO {rollup_table}
-                (bucket_start, {aggregations.replace(' AS ', ', ')})
+                (bucket_start, {insert_cols})
             SELECT
                 date_trunc('hour', {age_column}) AS bucket_start,
-                {aggregations}
+                {select_exprs}
               FROM {table_name}
              WHERE {age_column} < now() - make_interval(days => $1)
              GROUP BY 1
              ON CONFLICT (bucket_start) DO NOTHING
-        """  # nosec B608  # rollup_table/age_column/table_name validated by _validate_identifier; aggregations built by _build_aggregations against _ALLOWED_FNS whitelist
-        # NOTE: the replace() above is a hack to render the aggregate
-        # column list twice (once in the INSERT cols, once in the SELECT
-        # list). It works because aggregations strings like
-        # "avg(x) AS avg_x, max(y) AS max_y" split cleanly on " AS ".
-        # A cleaner impl is to build the column list separately; this is
-        # tolerable for now since the aggregations validator already
-        # rejects anything exotic.
+        """  # nosec B608  # rollup_table/age_column/table_name/insert_cols validated by _validate_identifier; select_exprs built by _build_aggregations against _ALLOWED_FNS whitelist
         insert_result = await conn.execute(insert_sql, keep_raw_days)
         try:
             rolled_up = int(insert_result.rsplit(" ", 1)[-1])

@@ -15,6 +15,24 @@ import pytest
 
 from services.social_adapters import bluesky
 
+
+def _site_config_mock(identifier: str = "", password: str = "") -> MagicMock:
+    """Build a SiteConfig stand-in whose ``get_secret`` returns the configured creds.
+
+    Bluesky's adapter went DI-only (singleton deletion sweep, glad-labs-stack#330):
+    ``site_config`` is now a kwarg, not a module attribute. Tests build the
+    mock locally and pass it in.
+    """
+    sc = MagicMock()
+    async def _gs(key, _default=""):
+        if "identifier" in key:
+            return identifier
+        if "password" in key:
+            return password
+        return ""
+    sc.get_secret = AsyncMock(side_effect=_gs)
+    return sc
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -78,32 +96,42 @@ class TestMissingCredentials:
     """When identifier or app password is empty, adapter skips cleanly."""
 
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_missing_identifier_short_circuits(self, mock_get_secret):
-        # get_secret returns "" for identifier, "something" for password
-        mock_get_secret.side_effect = ["", "password123"]
-        result = await bluesky.post_to_bluesky("hello", "https://example.com/p/1")
+    async def test_missing_identifier_short_circuits(self):
+        sc = _site_config_mock(identifier="", password="password123")
+        result = await bluesky.post_to_bluesky(
+            "hello", "https://example.com/p/1", site_config=sc,
+        )
         assert result["success"] is False
         assert result["post_id"] is None
         assert "not configured" in result["error"]
 
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_missing_password_short_circuits(self, mock_get_secret):
-        mock_get_secret.side_effect = ["gladlabs.bsky.social", ""]
-        result = await bluesky.post_to_bluesky("hello", "https://example.com/p/1")
+    async def test_missing_password_short_circuits(self):
+        sc = _site_config_mock(identifier="gladlabs.bsky.social", password="")
+        result = await bluesky.post_to_bluesky(
+            "hello", "https://example.com/p/1", site_config=sc,
+        )
         assert result["success"] is False
         assert "not configured" in result["error"]
 
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_no_atproto_import_on_missing_creds(self, mock_get_secret):
+    async def test_no_atproto_import_on_missing_creds(self):
         """Short-circuit must happen BEFORE we try to import atproto."""
-        mock_get_secret.side_effect = ["", ""]
+        sc = _site_config_mock(identifier="", password="")
         # Don't install the shim — if we reach the import, this would
         # raise ImportError and surface as error="atproto not installed".
-        result = await bluesky.post_to_bluesky("hello", "https://x.com")
+        result = await bluesky.post_to_bluesky("hello", "https://x.com", site_config=sc)
         assert "not configured" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_missing_site_config_short_circuits(self):
+        """site_config=None is the DI-gate (glad-labs-stack#330) — must
+        return a clean skip dict, not raise."""
+        result = await bluesky.post_to_bluesky(
+            "hello", "https://x.com", site_config=None,
+        )
+        assert result["success"] is False
+        assert "site_config" in result["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -113,14 +141,15 @@ class TestMissingCredentials:
 
 class TestMissingAtprotoPackage:
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_importerror_returns_clean_error(self, mock_get_secret):
-        mock_get_secret.side_effect = ["handle", "pw"]
+    async def test_importerror_returns_clean_error(self):
+        sc = _site_config_mock(identifier="handle", password="pw")
         # Force ImportError: with `sys.modules["atproto"] = None`, the
         # import machinery raises ImportError, and the adapter wraps that
         # into a "not installed" result.
         with patch.dict(sys.modules, {"atproto": None}):
-            result = await bluesky.post_to_bluesky("hi", "https://x.com")
+            result = await bluesky.post_to_bluesky(
+                "hi", "https://x.com", site_config=sc,
+            )
         assert result["success"] is False
         assert "not installed" in result["error"]
 
@@ -132,9 +161,8 @@ class TestMissingAtprotoPackage:
 
 class TestHappyPath:
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_posts_successfully(self, mock_get_secret):
-        mock_get_secret.side_effect = ["gladlabs.bsky.social", "app-pw"]
+    async def test_posts_successfully(self):
+        sc = _site_config_mock(identifier="gladlabs.bsky.social", password="app-pw")
 
         fake_client = MagicMock()
         fake_client.login = MagicMock()
@@ -144,7 +172,8 @@ class TestHappyPath:
         _install_fake_atproto(fake_client)
 
         result = await bluesky.post_to_bluesky(
-            "Check out this post!", "https://gladlabs.io/posts/my-post"
+            "Check out this post!", "https://gladlabs.io/posts/my-post",
+            site_config=sc,
         )
 
         assert result["success"] is True
@@ -157,9 +186,8 @@ class TestHappyPath:
         assert "https://gladlabs.io/posts/my-post" in sent_text
 
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_url_already_in_text_not_duplicated(self, mock_get_secret):
-        mock_get_secret.side_effect = ["h", "p"]
+    async def test_url_already_in_text_not_duplicated(self):
+        sc = _site_config_mock(identifier="h", password="p")
         fake_client = MagicMock()
         resp = MagicMock()
         resp.uri = "at://x"
@@ -168,16 +196,15 @@ class TestHappyPath:
 
         url = "https://gladlabs.io/posts/x"
         text = f"Already has the url: {url}"
-        await bluesky.post_to_bluesky(text, url)
+        await bluesky.post_to_bluesky(text, url, site_config=sc)
 
         sent_text = fake_client.send_post.call_args.kwargs.get("text") or fake_client.send_post.call_args.args[0]
         # URL appears exactly once
         assert sent_text.count(url) == 1
 
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_long_text_truncated_to_300(self, mock_get_secret):
-        mock_get_secret.side_effect = ["h", "p"]
+    async def test_long_text_truncated_to_300(self):
+        sc = _site_config_mock(identifier="h", password="p")
         fake_client = MagicMock()
         resp = MagicMock()
         resp.uri = "at://x"
@@ -185,7 +212,7 @@ class TestHappyPath:
         _install_fake_atproto(fake_client)
 
         long_text = "word " * 100  # 500 chars
-        await bluesky.post_to_bluesky(long_text, "https://x.com/1")
+        await bluesky.post_to_bluesky(long_text, "https://x.com/1", site_config=sc)
 
         sent_text = fake_client.send_post.call_args.kwargs.get("text") or fake_client.send_post.call_args.args[0]
         assert len(sent_text) <= 300
@@ -199,39 +226,36 @@ class TestHappyPath:
 
 class TestErrorHandling:
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_login_failure_returns_error_dict(self, mock_get_secret):
-        mock_get_secret.side_effect = ["h", "p"]
+    async def test_login_failure_returns_error_dict(self):
+        sc = _site_config_mock(identifier="h", password="p")
         fake_client = MagicMock()
         fake_client.login.side_effect = Exception("invalid credentials")
         _install_fake_atproto(fake_client)
 
-        result = await bluesky.post_to_bluesky("hi", "https://x.com/1")
+        result = await bluesky.post_to_bluesky("hi", "https://x.com/1", site_config=sc)
         assert result["success"] is False
         assert result["post_id"] is None
         assert "invalid credentials" in result["error"]
 
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_send_post_failure_returns_error_dict(self, mock_get_secret):
-        mock_get_secret.side_effect = ["h", "p"]
+    async def test_send_post_failure_returns_error_dict(self):
+        sc = _site_config_mock(identifier="h", password="p")
         fake_client = MagicMock()
         fake_client.send_post.side_effect = Exception("rate limited")
         _install_fake_atproto(fake_client)
 
-        result = await bluesky.post_to_bluesky("hi", "https://x.com/1")
+        result = await bluesky.post_to_bluesky("hi", "https://x.com/1", site_config=sc)
         assert result["success"] is False
         assert "rate limited" in result["error"]
 
     @pytest.mark.asyncio
-    @patch.object(bluesky.site_config, "get_secret", new_callable=AsyncMock)
-    async def test_error_does_not_raise(self, mock_get_secret):
+    async def test_error_does_not_raise(self):
         """An adapter error MUST NOT propagate up to the caller."""
-        mock_get_secret.side_effect = ["h", "p"]
+        sc = _site_config_mock(identifier="h", password="p")
         fake_client = MagicMock()
         fake_client.send_post.side_effect = RuntimeError("network gone")
         _install_fake_atproto(fake_client)
 
         # If this raised, pytest would fail here.
-        result = await bluesky.post_to_bluesky("hi", "https://x.com/1")
+        result = await bluesky.post_to_bluesky("hi", "https://x.com/1", site_config=sc)
         assert result["success"] is False

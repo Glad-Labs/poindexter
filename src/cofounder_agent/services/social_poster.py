@@ -26,7 +26,9 @@ from datetime import datetime, timezone
 import httpx
 
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
+from services.integrations import registry
 from services.logger_config import get_logger
+from services.publishing_adapters_db import load_enabled_publishers
 from services.site_config import SiteConfig
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
@@ -313,6 +315,8 @@ async def generate_and_distribute_social_posts(
     excerpt: str,
     keywords: list[str] | None = None,
     ollama: OllamaClient | None = None,
+    *,
+    pool=None,
 ) -> list[SocialPost]:
     """
     End-to-end: generate social posts and distribute them via notifications.
@@ -325,6 +329,9 @@ async def generate_and_distribute_social_posts(
         excerpt: Short description / excerpt of the post
         keywords: List of relevant keywords for hashtags
         ollama: Optional OllamaClient instance (for testing / reuse)
+        pool: Optional asyncpg pool. When provided, the publishing
+            dispatcher loads enabled rows from ``publishing_adapters``
+            and updates per-row counters after each call.
 
     Returns:
         List of generated SocialPost objects
@@ -351,7 +358,7 @@ async def generate_and_distribute_social_posts(
         )
 
     # Post to enabled social platforms via adapters
-    adapter_results = await _distribute_to_adapters(posts, enabled)
+    adapter_results = await _distribute_to_adapters(posts, enabled, pool=pool)
     for platform, result in adapter_results.items():
         if result.get("success"):
             logger.info("[social_poster] Posted to %s: %s", platform, result.get("post_id", ""))
@@ -461,25 +468,34 @@ def _bump_metric(name: str, **labels: str) -> None:
 _COUNTERS: dict[str, object] = {}
 
 
-async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
-    """Post to each enabled social platform adapter.
+async def _distribute_to_adapters(
+    posts: list,
+    enabled: set,
+    *,
+    pool=None,
+) -> dict:
+    """Post to each enabled publisher row from the ``publishing_adapters`` table.
 
-    Order of operations (GH-36):
+    Row-driven dispatch (poindexter#112) — replaces the hardcoded
+    ``if "bluesky" in enabled`` / ``if "mastodon" in enabled`` branches
+    with a single loop over enabled rows from the declarative table.
+    Adding a new platform = insert a row + register a handler under the
+    ``publishing`` surface; no edit here.
 
-    1. Pick the best text for the generic adapters (Twitter copy by
-       default — it's the shortest, so fits everywhere).
-    2. For each enabled platform, call the adapter through
-       :func:`_safe_call_adapter` — that wrapper guarantees a single
-       failing adapter never takes down the distribution job.
+    The ``enabled`` set is treated as **advisory** — when callers still
+    pass ``enabled = {"bluesky"}``, it intersects with the DB-loaded
+    rows so an operator who disabled the row in the DB sees no posts
+    even if legacy code still lists the platform name in
+    ``social_distribution_platforms``. When ``enabled`` is empty the
+    advisory filter is skipped (DB rows are the single source of truth).
 
-    Currently wired adapters: ``bluesky``, ``mastodon``. The
-    LinkedIn / Reddit / YouTube stubs were removed in the 2026-05-08
-    services audit cleanup; their setup checklists live on GH-40
-    (LinkedIn), poindexter#448 (Reddit), and poindexter#449 (YouTube).
+    site_config is passed through every dispatched call — that's the
+    contract :mod:`services.social_adapters.bluesky` short-circuits on
+    when missing (the 30-day distribution-dark bug fix from 2026-05-09).
     """
     results: dict[str, dict] = {}
 
-    if not posts or not enabled:
+    if not posts:
         return results
 
     twitter_post = next((p for p in posts if p.platform == "twitter"), None)
@@ -491,16 +507,83 @@ async def _distribute_to_adapters(posts: list, enabled: set) -> dict:
     text = generic_post.text
     url = generic_post.post_url
 
-    if "bluesky" in enabled:
-        from services.social_adapters.bluesky import post_to_bluesky
-        results["bluesky"] = await _safe_call_adapter(
-            "bluesky", lambda: post_to_bluesky(text, url)
-        )
+    db_rows = await load_enabled_publishers(pool)
+    if not db_rows:
+        logger.info("[social_poster] publishing dispatch: no enabled adapters")
+        # No silent default — still warn about advisory platforms that
+        # don't have a wired DB row, so a stale config doesn't hide.
+        for name in sorted(enabled):
+            logger.warning(
+                "[social_poster] platform %r listed in social_distribution_platforms "
+                "but no enabled publishing_adapters row exists — skipping", name,
+            )
+        return results
 
-    if "mastodon" in enabled:
-        from services.social_adapters.mastodon import post_to_mastodon
-        results["mastodon"] = await _safe_call_adapter(
-            "mastodon", lambda: post_to_mastodon(text, url)
+    rows_by_platform = {r.platform: r for r in db_rows}
+
+    # Advisory filter: when the legacy ``enabled`` set is non-empty,
+    # require a DB row's platform to also appear in it. When empty,
+    # trust the DB rows alone.
+    if enabled:
+        for legacy_name in sorted(enabled):
+            if legacy_name not in rows_by_platform:
+                logger.warning(
+                    "[social_poster] platform %r listed in "
+                    "social_distribution_platforms but no enabled "
+                    "publishing_adapters row exists — skipping",
+                    legacy_name,
+                )
+        active = [r for r in db_rows if r.platform in enabled]
+    else:
+        active = list(db_rows)
+
+    payload = {"text": text, "url": url}
+    for row in active:
+        result = await _safe_call_adapter(
+            row.platform,
+            lambda r=row: registry.dispatch(
+                "publishing", r.handler_name, payload,
+                site_config=site_config, row=r.as_dict(), pool=pool,
+            ),
         )
+        results[row.platform] = result
+        await _record_publisher_outcome(pool, row, result)
 
     return results
+
+
+async def _record_publisher_outcome(pool, row, result: dict) -> None:
+    """Update per-row counters after a dispatch attempt.
+
+    Mirrors what :func:`services.integrations.tap_runner._record_success`
+    / ``_record_failure`` do for taps — counter writes live inline in
+    the runner rather than a separate writer module so the dispatch
+    site stays the single owner of state transitions.
+
+    No-ops when ``pool`` is ``None`` (test harness, callers without a
+    DB) — the caller has already logged the result by then.
+    """
+    if pool is None:
+        return
+    success = bool(result.get("success"))
+    error = None if success else (result.get("error") or "unknown")
+    status = "success" if success else "failed"
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE publishing_adapters
+                   SET last_run_at = now(),
+                       last_run_status = $2,
+                       last_error = $3,
+                       total_runs = total_runs + 1,
+                       total_failures = total_failures + CASE WHEN $4 THEN 0 ELSE 1 END
+                 WHERE id = $1
+                """,
+                row.id, status, error, success,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "[social_poster] failed to record publisher outcome for %s: %s",
+            row.name, exc,
+        )

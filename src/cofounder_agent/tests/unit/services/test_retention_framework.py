@@ -244,6 +244,41 @@ class TestDownsample:
         assert result["deleted"] == 720
 
     @pytest.mark.asyncio
+    async def test_insert_column_list_uses_aliases_only(self):
+        """Regression: the INSERT col list previously embedded the
+        aggregate expressions (e.g. ``avg(x)``) thanks to a
+        ``replace(' AS ', ', ')`` hack, which produced
+        ``INSERT INTO t (bucket_start, avg(x), avg_x, ...)`` and made
+        Postgres reject the statement with a syntax error at ``(``.
+        The fix builds the alias list separately. This test pins the
+        rendered INSERT SQL so the regression can't reappear.
+        """
+        pool = _FakePool()
+        pool.next_fetchval = 1
+        pool.next_insert_count = 0
+        pool.next_delete_count = 0
+        await retention_downsample.downsample(
+            None, site_config=None,
+            row=_policy(
+                handler_name="downsample",
+                table_name="gpu_metrics",
+                age_column="sampled_at",
+                ttl_days=None,
+                downsample_rule=self._RULE,
+            ),
+            pool=pool,
+        )
+        insert_sqls = [q for q, _ in pool.executes if q.strip().upper().startswith("INSERT")]
+        assert len(insert_sqls) == 1
+        rendered = insert_sqls[0]
+        # Aliases land in the column list; aggregate expressions live
+        # only in the SELECT projection.
+        assert "(bucket_start, avg_utilization, peak_power)" in rendered
+        assert "avg(utilization_pct)" in rendered
+        # The bug was that this exact substring appeared in the col list:
+        assert "(bucket_start, avg(utilization_pct)" not in rendered
+
+    @pytest.mark.asyncio
     async def test_invalid_fn_rejected(self):
         pool = _FakePool()
         pool.next_fetchval = 100

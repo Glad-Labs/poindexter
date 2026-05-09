@@ -14,6 +14,7 @@ from .experiments import experiments_group
 from .memory import memory_group
 from .posts import post_group, posts_group
 from .premium import premium_group
+from .publishers import publishers_group
 from .settings import settings_group
 from .setup import setup_command
 from .tasks import tasks_group
@@ -58,6 +59,7 @@ main.add_command(experiments_group, name="experiments")
 main.add_command(validators_group, name="validators")
 main.add_command(auto_publish_group, name="auto-publish")
 main.add_command(dev_diary_group, name="dev-diary")
+main.add_command(publishers_group, name="publishers")
 
 
 if __name__ == "__main__":
