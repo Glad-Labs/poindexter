@@ -54,46 +54,9 @@ import logging
 from typing import Any
 
 from plugins.stage import StageResult
+from services.prompt_manager import get_prompt_manager
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Rewrite prompt template (moved out of content_router_service.py)
-# ---------------------------------------------------------------------------
-
-
-QA_AGGREGATE_REWRITE_PROMPT = """You are revising your own draft to fix
-EVERY issue a team of editors identified. Do NOT rewrite the entire
-article. Do NOT add new sections. Only fix the specific problems
-listed below, making the minimum changes needed to resolve each one.
-
-Keep the same structure, same headings, same code examples where they
-aren't affected by the issues, same length (within 10%).
-
-TITLE: {title}
-
-ISSUES TO FIX (from programmatic validator + LLM critics + consistency checker):
-{issues_to_fix}
-
-How to interpret:
-- "[critical]" means the issue will block publishing if not fixed. Top priority.
-- "[warning]" means it will drag the score down but won't veto. Fix these too.
-- "Contradictions:" lines mean sections disagree with each other — rewrite the
-  weaker or later one to align with the stronger or earlier one.
-- "Fabricated" or "Impossible" lines mean the draft made up a person, statistic,
-  quote, or company claim. Remove the fabrication entirely; do NOT replace it
-  with another made-up fact — either soften to a general statement or cut.
-- "Generic section title" means replace the heading with a creative, benefit-
-  focused alternative (never "Introduction", "Conclusion", "Summary", etc.).
-- "Filler intro" means rewrite the first paragraph with a concrete hook, not
-  "In this post..." or "In today's fast-paced world...".
-
-ORIGINAL DRAFT:
-{content}
-
-Return ONLY the revised article text. Do not include meta-commentary,
-notes about what you changed, or markdown code fences around the output."""
 
 
 # ---------------------------------------------------------------------------
@@ -558,8 +521,11 @@ async def _rewrite_draft(
     from plugins.registry import get_all_llm_providers
     from services.audit_log import audit_log_bg
 
-    prompt = QA_AGGREGATE_REWRITE_PROMPT.format(
-        title=title, issues_to_fix=issues_to_fix, content=content_text,
+    prompt = get_prompt_manager().get_prompt(
+        "qa.aggregate_rewrite",
+        title=title,
+        issues_to_fix=issues_to_fix,
+        content=content_text,
     )
 
     # v2.3: Provider Protocol instead of concrete OllamaClient. Per-call
