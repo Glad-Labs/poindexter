@@ -469,7 +469,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Quality\", category AS \"Category\", AGE(NOW(), created_at)::text AS \"Age\", id AS \"Task ID\", (SELECT value FROM app_settings WHERE key = 'preview_base_url') || '/preview/' || (metadata->>'preview_token') AS \"Preview\" FROM pipeline_tasks_view WHERE status = 'awaiting_approval' ORDER BY quality_score DESC NULLS LAST, created_at DESC LIMIT 50;",
+          "rawSql": "SELECT title AS \"Title\", quality_score AS \"Quality\", category AS \"Category\", AGE(NOW(), created_at)::text AS \"Age\", LEFT(task_id::text, 8) AS \"Task ID\", (SELECT value FROM app_settings WHERE key = 'preview_base_url') || '/preview/' || (metadata->>'preview_token') AS \"Preview\" FROM pipeline_tasks_view WHERE status = 'awaiting_approval' ORDER BY quality_score DESC NULLS LAST, created_at DESC LIMIT 50;",
           "refId": "A"
         }
       ],
