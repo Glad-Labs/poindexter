@@ -130,14 +130,14 @@ verification step has been done.)
 - **Size:** ~190 LOC service + 1 table + ~5 emit call sites
 - **Why removable:** The whole pipeline is dark by config. The
   delivery service starts only if `openclaw_webhook_url` is set —
-  it's empty in app_settings, so the loop logs "No OPENCLAW_WEBHOOK_URL
+  it's empty in app*settings, so the loop logs "No OPENCLAW_WEBHOOK_URL
   configured, webhook delivery disabled" at every boot. Meanwhile
   `content_router_service` / `task_executor` / `publish_service`
   keep emitting events into `webhook_events` (3,795 rows pending,
   oldest 2026-03-29). The whole table is a write-only queue feeding
   nothing. Notification to Discord/Telegram already goes through
   `notify_operator()` (which in turn fans out to the
-  `webhook_endpoints` outbound rows — a _different_, working
+  `webhook_endpoints` outbound rows — a \_different*, working
   pipeline). The OpenClaw direction looked like Phase-1 plumbing that
   got superseded.
 - **Blocker:** is OpenClaw's webhook ingestion still planned? If
@@ -164,25 +164,16 @@ verification step has been done.)
   the panel or fold it into the broader `webhook_events` audit
   above.
 
-### Orphan CLI modules under `poindexter/cli/` not registered in `app.py`
+### Resolved 2026-05-09: orphan CLI modules — all 9 re-registered, none deleted
 
-- **Author / when:** Claude / 2026-05-09
-- **Size:** 9 modules — `approval.py`, `migrate.py`, `publish_approval.py`,
-  `qa_gates.py`, `retention.py`, `schedule.py`, `stores.py`, `taps.py`,
-  `webhooks.py`
-- **Why removable:** These files exist in `poindexter/cli/` but no
-  `add_command(...)` line in `cli/app.py` registers them. Running
-  `python -m poindexter <subcommand>` for any of these returns
-  "No such command". Either the wiring was lost in a refactor, or
-  these were superseded by the operator MCP tools / web routes and
-  nobody pruned the source files. Worth a one-by-one walk to decide
-  per module: re-register, or delete.
-- **Blocker:** none — pure source-tree cleanup once we know which
-  surfaces are still wanted as CLIs.
-- **Confidence:** medium (some are probably worth re-registering, especially
-  `taps`, `retention`, and `qa_gates` which are the operator's
-  manual-trigger seam)
-- **Decision:**
+- **Note (not a deletion candidate, recording the resolution):** The 9
+  modules (`approval`, `migrate`, `publish_approval`, `qa_gates`,
+  `retention`, `schedule`, `stores`, `taps`, `webhooks`) were all
+  legitimate operator surfaces — declarative-data-plane controls, HITL
+  approval CLIs, schema migration runner. Per `feedback_deletion_criteria.md`
+  ("broken-but-wanted gets fixed, not listed"), the right action was
+  re-registration, not deletion. Wired into `cli/app.py` 2026-05-09;
+  `python -m poindexter --help` now shows 33 commands across all surfaces.
 
 ### `routes/webhooks.py` + `services/integrations/webhook_dispatcher.py`
 
