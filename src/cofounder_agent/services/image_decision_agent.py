@@ -22,6 +22,7 @@ import re
 from dataclasses import dataclass, field
 
 from services.logger_config import get_logger
+from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
@@ -92,46 +93,15 @@ async def plan_images(
         logger.info("[IMAGE_AGENT] No sections found — skipping image planning")
         return ImagePlanResult()
 
-    # Build the reasoning prompt
     section_list = "\n".join(f"  {i+1}. {s['title']}" for i, s in enumerate(sections))
 
-    prompt = f"""You are an image director for a tech blog. Analyze this article and decide what images would make it more engaging.
-
-ARTICLE TOPIC: {topic}
-CATEGORY: {category}
-
-SECTIONS:
-{section_list}
-
-AVAILABLE IMAGE SOURCES:
-- "sdxl": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, futuristic scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
-- "pexels": Stock photography. Best for: real-world objects, hardware close-ups, workspaces, screens with code, servers, people working (if appropriate).
-
-RULES:
-1. Pick {max_images} sections that would benefit most from a visual (skip sections that are mostly code)
-2. For each, decide: sdxl or pexels? What style? What specific image?
-3. Also decide on 1 featured image (the hero/header image for the article)
-4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. NEVER include text, words, letters, or faces in SDXL images
-
-Output ONLY valid JSON (no markdown, no explanation):
-{{
-  "featured": {{
-    "source": "sdxl" or "pexels",
-    "style": "style_name",
-    "prompt": "detailed image prompt or search query",
-    "reasoning": "why this image works for the hero"
-  }},
-  "inline": [
-    {{
-      "section": "exact section title",
-      "source": "sdxl" or "pexels",
-      "style": "style_name",
-      "prompt": "detailed image prompt or search query",
-      "reasoning": "why this visual helps this section"
-    }}
-  ]
-}}"""
+    prompt = get_prompt_manager().get_prompt(
+        "image.decision",
+        topic=topic,
+        category=category,
+        section_list=section_list,
+        max_images=max_images,
+    )
 
     try:
         async with httpx.AsyncClient(
