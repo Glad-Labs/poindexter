@@ -37,6 +37,14 @@ def _make_row(**kwargs):
     Strict ``__getitem__`` (KeyError on missing key) so production code
     that reads a column the test didn't set fails loudly instead of
     silently getting ``None`` and passing — see GH#337.
+
+    Use this helper ONLY when production code reads ``row[<key>]`` — the
+    strict mapping is what gives the test signal value. When a test
+    just hands the row to a patched ``ModelConverter`` and asserts on
+    the converter's return value, prefer ``object()`` directly: a
+    literal sentinel makes it obvious the row contents are not under
+    test, and prevents the row-faker from quietly accumulating stale
+    columns over time (the original symptom in GH#30).
     """
     row = MagicMock()
     _data = {**kwargs}
@@ -101,8 +109,10 @@ _CONVERTER_PATCH_BASE = "services.content_db.ModelConverter"
 class TestCreatePost:
     @pytest.mark.asyncio
     async def test_success_returns_post_response(self):
-        row = _make_row(id="post-1", title="My Post", slug="my-post", status="draft")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — create_post hands fetchrow's result straight to
+        # the patched ModelConverter.to_post_response without reading
+        # any column. The row's column shape is not under test (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = object()
@@ -114,11 +124,12 @@ class TestCreatePost:
     @pytest.mark.asyncio
     async def test_seo_keywords_list_converted_to_string(self):
         """When seo_keywords is a list, it should be joined into a comma string."""
-        row = _make_row(id="p1")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — column shape not under test (see GH#337).
+        opaque = object()
+        pool = _make_pool(fetchrow_result=opaque)
         db = _make_db(pool)
 
-        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=row):
+        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=opaque):
             # Should not raise — list coercion happens silently
             await db.create_post({"slug": "x", "seo_keywords": ["AI", "ML", "NLP"]})
 
@@ -131,11 +142,12 @@ class TestCreatePost:
     @pytest.mark.asyncio
     async def test_tag_ids_string_converted_to_list(self):
         """When tag_ids is a single string, it should be wrapped in a list."""
-        row = _make_row(id="p1")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — column shape not under test (see GH#337).
+        opaque = object()
+        pool = _make_pool(fetchrow_result=opaque)
         db = _make_db(pool)
 
-        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=row):
+        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=opaque):
             result = await db.create_post({"slug": "x", "tag_ids": "tag-uuid-1"})
         assert result is not None
 
@@ -165,8 +177,9 @@ class TestCreatePost:
 class TestGetPostBySlug:
     @pytest.mark.asyncio
     async def test_found_returns_post_response(self):
-        row = _make_row(id="post-1", slug="my-post")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — get_post_by_slug hands fetchrow's result straight
+        # to the patched converter without reading any column (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = object()
@@ -255,8 +268,10 @@ class TestUpdatePost:
 class TestGetAllCategories:
     @pytest.mark.asyncio
     async def test_returns_list_on_success(self):
-        rows = [_make_row(id=1, name="Tech", slug="tech"), _make_row(id=2, name="AI", slug="ai")]
-        pool = _make_pool(fetch_result=rows)
+        # Opaque rows — get_all_categories iterates fetch results and
+        # hands each one to the patched converter without reading any
+        # column (GH#337). Test asserts only on the row count.
+        pool = _make_pool(fetch_result=[object(), object()])
         db = _make_db(pool)
 
         with patch(f"{_CONVERTER_PATCH_BASE}.to_category_response", side_effect=lambda r: r):
@@ -286,8 +301,8 @@ class TestGetAllCategories:
 class TestGetAllTags:
     @pytest.mark.asyncio
     async def test_returns_tags_on_success(self):
-        rows = [_make_row(id=1, name="AI", slug="ai")]
-        pool = _make_pool(fetch_result=rows)
+        # Opaque row — column shape not under test (GH#337).
+        pool = _make_pool(fetch_result=[object()])
         db = _make_db(pool)
 
         with patch(f"{_CONVERTER_PATCH_BASE}.to_tag_response", side_effect=lambda r: r):
@@ -313,8 +328,9 @@ class TestGetAllTags:
 class TestGetAuthorByName:
     @pytest.mark.asyncio
     async def test_found_returns_author(self):
-        row = _make_row(id=1, name="Alice")
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — get_author_by_name hands fetchrow's result
+        # straight to the patched converter (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = object()
@@ -351,8 +367,9 @@ class TestGetAuthorByName:
 class TestCreateQualityEvaluation:
     @pytest.mark.asyncio
     async def test_success_returns_response(self):
-        row = _make_row(id=1)
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — create_quality_evaluation hands fetchrow's
+        # result straight to the patched converter (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = object()
@@ -388,8 +405,9 @@ class TestCreateQualityEvaluation:
 class TestCreateQualityImprovementLog:
     @pytest.mark.asyncio
     async def test_success_returns_response(self):
-        row = _make_row(id=1)
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — create_quality_improvement_log hands fetchrow's
+        # result straight to the patched converter (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = object()
@@ -404,8 +422,8 @@ class TestCreateQualityImprovementLog:
     @pytest.mark.asyncio
     async def test_score_improvement_calculated(self):
         """Improvement = improved - initial should be stored correctly."""
-        row = _make_row(id=1)
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — column shape not under test (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         with patch(
@@ -440,23 +458,32 @@ class TestCreateQualityImprovementLog:
 class TestGetMetrics:
     @pytest.mark.asyncio
     async def test_success_returns_metrics_response(self):
-        # fetchval sequence: total=10, completed=8, failed=1, pending=1, then time_row, cost_row
-        time_row = _make_row(avg_seconds=45.0)
+        # Data-flow test: production reads ``counts_row[<key>]`` for the
+        # task counts + avg_seconds (content_db.py:508-522) and
+        # ``cost_result["total"]`` for the cost roll-up (line 543), so
+        # the strict row-faker is correct here. Seeding ONLY those keys
+        # means a future refactor that adds a new column-read will
+        # KeyError loudly instead of silently coasting on the outer
+        # try/except — see GH#337.
+        counts_row = _make_row(
+            total_tasks=10,
+            completed_tasks=8,
+            failed_tasks=1,
+            avg_seconds=45.0,
+        )
         cost_row = _make_row(total=2.50)
 
-        pool = _make_pool(
-            fetchval_results=[10, 8, 1, 1],
-            fetchrow_result=time_row,
-        )
-        db = _make_db(pool)
-
-        # Also need cost fetchrow
+        pool = _make_pool()
         async with pool.acquire() as conn:
-            conn.fetchrow = AsyncMock(side_effect=[time_row, cost_row])
+            conn.fetchrow = AsyncMock(side_effect=[counts_row, cost_row])
 
+        db = _make_db(pool)
         result = await db.get_metrics()
-        # MetricsResponse should be returned (not a dict)
-        assert hasattr(result, "totalTasks") or isinstance(result, object)
+        # MetricsResponse should be returned with the seeded values
+        assert result.totalTasks == 10
+        assert result.completedTasks == 8
+        assert result.failedTasks == 1
+        assert result.totalCost == 2.50
 
     @pytest.mark.asyncio
     async def test_db_error_returns_zero_metrics(self):
@@ -481,8 +508,9 @@ class TestGetMetrics:
 class TestCreateOrchestratorTrainingData:
     @pytest.mark.asyncio
     async def test_success_returns_response(self):
-        row = _make_row(id=1)
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — create_orchestrator_training_data hands
+        # fetchrow's result straight to the patched converter (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         sentinel = object()
@@ -504,8 +532,8 @@ class TestCreateOrchestratorTrainingData:
     @pytest.mark.asyncio
     async def test_tags_as_json_string_parsed(self):
         """tags can be a JSON string; should be parsed to list before insertion."""
-        row = _make_row(id=1)
-        pool = _make_pool(fetchrow_result=row)
+        # Opaque row — column shape not under test (GH#337).
+        pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
         with patch(
