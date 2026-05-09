@@ -52,6 +52,7 @@ _PROVIDER_DIRS: list[tuple[str, str]] = [
 _NON_PROVIDER_MODULES: set[str] = {
     "__init__",
     "dispatcher",  # services/llm_providers/dispatcher.py — dispatch helper
+    "thinking_models",  # services/llm_providers/thinking_models.py — model-class detection helpers
 }
 
 
