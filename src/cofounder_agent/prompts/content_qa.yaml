@@ -157,3 +157,40 @@
     Output one JSON object. The first character is `{{` and the last
     character is `}}`:
     {{"approved": true/false, "quality_score": NUMBER 0-100, "feedback": "concise — name what's strong and what needs revision"}}
+
+- key: qa.aggregate_rewrite
+  category: content_qa
+  description: "QA rewrite — feed every flagged issue (validator + LLM critics + consistency) into a single targeted rewrite, minimum changes, same structure"
+  output_format: text
+  template: |-
+    You are revising your own draft to fix
+    EVERY issue a team of editors identified. Do NOT rewrite the entire
+    article. Do NOT add new sections. Only fix the specific problems
+    listed below, making the minimum changes needed to resolve each one.
+
+    Keep the same structure, same headings, same code examples where they
+    aren't affected by the issues, same length (within 10%).
+
+    TITLE: {title}
+
+    ISSUES TO FIX (from programmatic validator + LLM critics + consistency checker):
+    {issues_to_fix}
+
+    How to interpret:
+    - "[critical]" means the issue will block publishing if not fixed. Top priority.
+    - "[warning]" means it will drag the score down but won't veto. Fix these too.
+    - "Contradictions:" lines mean sections disagree with each other — rewrite the
+      weaker or later one to align with the stronger or earlier one.
+    - "Fabricated" or "Impossible" lines mean the draft made up a person, statistic,
+      quote, or company claim. Remove the fabrication entirely; do NOT replace it
+      with another made-up fact — either soften to a general statement or cut.
+    - "Generic section title" means replace the heading with a creative, benefit-
+      focused alternative (never "Introduction", "Conclusion", "Summary", etc.).
+    - "Filler intro" means rewrite the first paragraph with a concrete hook, not
+      "In this post..." or "In today's fast-paced world...".
+
+    ORIGINAL DRAFT:
+    {content}
+
+    Return ONLY the revised article text. Do not include meta-commentary,
+    notes about what you changed, or markdown code fences around the output.

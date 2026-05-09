@@ -217,8 +217,8 @@ Owned by the stage, not the orchestrator:
 `src/cofounder_agent/services/stages/cross_model_qa.py`. When
 `MultiModelQA.review()` returns `approved=False` AND
 `aggregate_issues_to_fix()` finds at least one blocking issue, the
-stage calls `_rewrite_draft()` (line 476) with the
-`QA_AGGREGATE_REWRITE_PROMPT` (line 65). The prompt feeds every
+stage calls `_rewrite_draft()` with the `qa.aggregate_rewrite`
+prompt (in `prompts/content_qa.yaml`). The prompt feeds every
 flagged issue (validator + LLM critics + consistency checker) into a
 single targeted rewrite — minimum changes, same structure, same
 length within 10%. Up to `qa_max_rewrites` attempts (default 2). A
