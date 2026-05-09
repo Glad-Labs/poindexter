@@ -1,6 +1,6 @@
 # Cost-tier model routing
 
-**Status:** Active. Lane B of `Glad-Labs/poindexter#450` (the OSS migration umbrella). Batch 1 + batch 2 sweep #3 landed 2026-05-09; sweep #4 + end-of-Lane-B vestigial-param cleanup pending.
+**Status:** Active. Lane B of `Glad-Labs/poindexter#450` (the OSS migration umbrella). All four batches landed 2026-05-09: batch 1 (QA surface) + batch 2 sweep #3 (retention) + batch 2 sweep #4 (misc/leaf utilities) + end-of-Lane-B vestigial-param cleanup. Lane B is fully closed.
 
 ## Why this exists
 
