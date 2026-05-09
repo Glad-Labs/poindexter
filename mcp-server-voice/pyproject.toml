@@ -17,7 +17,7 @@ dependencies = [
 # scripts/Dockerfile.voice-agent so the always-on container and the
 # MCP bridge share one Pipecat closure (services/voice_pipecat.py).
 audio = [
-    "pipecat-ai[silero,whisper,kokoro,livekit]>=0.0.49,<1.0",
+    "pipecat-ai[silero,whisper,kokoro,livekit]>=0.0.49,<2.0",
     "livekit>=0.18,<1.0",
     "livekit-api>=0.7,<1.0",
     "faster-whisper>=1.1,<2.0",
