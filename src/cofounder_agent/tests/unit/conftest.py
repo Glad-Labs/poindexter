@@ -274,19 +274,19 @@ async def _db_pool_session():
     finally:
         await admin.close()
 
-    # Replay infra init.sql (extensions + base schema) before migrations.
+    # Install extensions before the baseline migration runs. CREATE
+    # EXTENSION needs ownership of the database, which a worker-level
+    # connection in this DSN already has. We deliberately do NOT replay
+    # ``infrastructure/local-db/init.sql`` here anymore — that file
+    # carried a legacy ``embeddings`` schema (no ``text_search`` column)
+    # that conflicted with the baseline's ``CREATE INDEX ... USING gin
+    # (text_search)``. The 0000_baseline migration now owns bootstrap.
     fresh = await asyncpg.connect(test_dsn)
     try:
         await fresh.execute("CREATE EXTENSION IF NOT EXISTS vector")
         await fresh.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
-        for p in Path(__file__).resolve().parents:
-            init_sql = p / "infrastructure" / "local-db" / "init.sql"
-            if init_sql.is_file():
-                try:
-                    await fresh.execute(init_sql.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-                break
+        await fresh.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        await fresh.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
     finally:
         await fresh.close()
 
@@ -331,9 +331,17 @@ async def db_pool(_db_pool_session):
         yield _db_pool_session
     finally:
         async with _db_pool_session.acquire() as conn:
-            # CASCADE drops dependent rows in niche_goals + niche_sources +
-            # topic_batches + candidates + discovery_runs.
+            # Cascade-delete every test-created niche while leaving the
+            # baseline-seeded ``dev_diary`` row in place — tests that
+            # validate the seed (test_dev_diary_niche.py) need it
+            # present every time, not freshly truncated. Pre-squash this
+            # was ``TRUNCATE niches CASCADE`` because the fixture
+            # re-imported migration 0134 to recreate the seed; that
+            # migration file is now part of 0000_baseline and only runs
+            # at session setup, so we keep the row instead of replaying.
             try:
-                await conn.execute("TRUNCATE niches CASCADE")
+                await conn.execute(
+                    "DELETE FROM niches WHERE slug NOT IN ('dev_diary')"
+                )
             except Exception:
                 pass
