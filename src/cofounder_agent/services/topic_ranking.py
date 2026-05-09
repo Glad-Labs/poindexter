@@ -10,6 +10,7 @@ import math
 
 from services.logger_config import get_logger
 from services.niche_service import NicheGoal
+from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
@@ -217,20 +218,11 @@ async def llm_final_score(
     descriptions = _resolve_goal_descriptions()
     weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {descriptions[g.goal_type]}" for g in weights)
     cand_block = "\n".join(f"[{c.id}] {c.title} — {c.summary or ''}" for c in candidates)
-    prompt = f"""You are scoring topic candidates for a content pipeline against the operator's weighted goals.
-
-Goals (weight in pct):
-{weights_descr}
-
-Candidates:
-{cand_block}
-
-Return STRICT JSON keyed by candidate id, of the form:
-{{"<id>": {{"score": <0-100>, "breakdown": {{"<GOAL_TYPE>": <weighted contribution 0-1>, ...}}}}, ...}}
-
-The breakdown values per candidate should approximately sum to (score / 100).
-Return ONLY the JSON, no commentary.
-"""
+    prompt = get_prompt_manager().get_prompt(
+        "topic.ranking",
+        weights_descr=weights_descr,
+        cand_block=cand_block,
+    )
     raw = await _ollama_chat_json(prompt, model=model)
     parsed = json.loads(raw)
     result: dict[str, ScoredCandidate] = {}

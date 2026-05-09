@@ -7,3 +7,22 @@
   template: |
     Analyze these search results and return JSON with keys: summary, key_points (list), sources (list).
     Search results: {search_results}
+
+- key: topic.ranking
+  category: research
+  description: "Topic discovery — single LLM call ranks shortlisted topic candidates against the operator's weighted niche goals; returns per-candidate score + breakdown"
+  output_format: json
+  template: |
+    You are scoring topic candidates for a content pipeline against the operator's weighted goals.
+
+    Goals (weight in pct):
+    {weights_descr}
+
+    Candidates:
+    {cand_block}
+
+    Return STRICT JSON keyed by candidate id, of the form:
+    {{"<id>": {{"score": <0-100>, "breakdown": {{"<GOAL_TYPE>": <weighted contribution 0-1>, ...}}}}, ...}}
+
+    The breakdown values per candidate should approximately sum to (score / 100).
+    Return ONLY the JSON, no commentary.
