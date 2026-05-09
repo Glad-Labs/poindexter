@@ -61,8 +61,8 @@ export default function AboutPage() {
                   September 25, 2025). Wyoming, Rhode Island.
                 </p>
                 <p className="gl-body gl-body--sm gl-body--muted">
-                  B.A.Sc. Computer Games &amp; Programming Skills, New England
-                  Institute of Technology (2010–2015).
+                  B.A.Sc. Game Development &amp; Simulation Programming, New England Institute of Technology 
+                  (2015).
                 </p>
                 <div className="flex flex-wrap gap-3 pt-1 text-sm">
                   <a
@@ -122,7 +122,7 @@ export default function AboutPage() {
                 around heavy equipment at the family excavation company in
                 Jamestown, Rhode Island — operating machinery, doing septic
                 installs and new-home foundation work. NEIT gave me a B.A.Sc.
-                in Computer Games &amp; Programming Skills (2010–2015) — the
+                in Computer Games &amp; Programming Skills (2015) — the
                 degree that taught me to think in systems, state machines,
                 and update loops before I knew that&apos;s also how AI
                 pipelines work.
