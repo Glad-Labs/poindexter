@@ -44,7 +44,72 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
+async def _resolve_judge_model(site_config: Any = None) -> str:
+    """Resolve Ragas judge model via cost-tier API + per-call-site fallback.
+
+    Lane B batch 2 sweep migration. Order:
+
+    1. ``resolve_tier_model(pool, 'budget')`` — operator-tuned tier
+       mapping (``app_settings.cost_tier.budget.model``). Eval is
+       offline + latency-insensitive; the budget tier is correct.
+    2. ``app_settings[ragas_judge_model]`` — per-call-site override
+       (existing key; pre-dates this sweep).
+    3. ``notify_operator()`` + raise — per ``feedback_no_silent_defaults.md``.
+
+    ``site_config`` is the optional DI-injected SiteConfig instance the
+    Ragas helper already accepts. The pool comes off ``site_config._pool``
+    when available; in tests / legacy paths without a pool the tier step
+    is skipped and the legacy setting is used directly.
+    """
+    from services.integrations.operator_notify import notify_operator
+    from services.llm_providers.dispatcher import resolve_tier_model
+
+    pool = getattr(site_config, "_pool", None) if site_config is not None else None
+    if pool is not None:
+        try:
+            return await resolve_tier_model(pool, "budget")
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            tier_exc: Exception | None = exc
+        else:
+            tier_exc = None
+    else:
+        tier_exc = RuntimeError("no asyncpg pool available")
+
+    fallback: str | None = None
+    if site_config is not None:
+        try:
+            fallback = site_config.get("ragas_judge_model", "") or None
+        except Exception:
+            fallback = None
+
+    if fallback:
+        try:
+            await notify_operator(
+                f"ragas_eval: cost_tier='budget' resolution failed "
+                f"({tier_exc}); falling back to ragas_judge_model={fallback!r}",
+                critical=False,
+                site_config=site_config,
+            )
+        except Exception:
+            pass  # Ragas eval is best-effort; never crash on notify failure
+        return str(fallback)
+
+    try:
+        await notify_operator(
+            f"ragas_eval: cost_tier='budget' has no model AND "
+            f"ragas_judge_model is empty — eval skipped: {tier_exc}",
+            critical=True,
+            site_config=site_config,
+        )
+    except Exception:
+        pass
+    raise RuntimeError(
+        "ragas_eval: no judge model resolvable via tier or "
+        "ragas_judge_model setting"
+    ) from tier_exc
+
+
+async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
     """Build the LLM + embedding wrappers Ragas needs.
 
     Ragas expects LangChain-shaped LLM/embedding objects. We wire it
@@ -54,6 +119,11 @@ def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
     Returns ``(llm_wrapper, embeddings_wrapper)``. Lazy-imports the
     Ragas + langchain modules so the module imports cleanly when those
     deps aren't available.
+
+    Lane B sweep: judge model is resolved through the cost-tier API
+    (``cost_tier='budget'``) with ``ragas_judge_model`` as the
+    per-call-site backstop. Eval is offline + latency-insensitive,
+    so the budget tier is correct.
     """
     from langchain_ollama import ChatOllama, OllamaEmbeddings
     from ragas.llms import LangchainLLMWrapper
@@ -61,17 +131,10 @@ def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
 
     base_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
 
-    # Judge model — pick the same one our writer uses by default; the
-    # operator can override per-call. ``llama3:8b`` is a reasonable
-    # judge floor; the writer's glm-4.7 / qwen3 variants are stronger
-    # but heavier per call.
-    judge_model = "llama3:8b"
+    judge_model = (await _resolve_judge_model(site_config)).removeprefix("ollama/")
     embed_model = "nomic-embed-text"
     if site_config is not None:
         try:
-            judge_model = (
-                site_config.get("ragas_judge_model", "") or judge_model
-            )
             embed_model = (
                 site_config.get("embedding_model", "") or embed_model
             )
@@ -126,7 +189,7 @@ async def evaluate_sample(
             faithfulness,
         )
 
-        llm, embeddings = _build_ragas_models(site_config)
+        llm, embeddings = await _build_ragas_models(site_config)
 
         ds = Dataset.from_dict({
             "question": [topic],

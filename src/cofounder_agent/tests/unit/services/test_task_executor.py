@@ -1130,7 +1130,18 @@ class TestAutoRetryFailedTasks:
         db.pool.fetch = AsyncMock(return_value=fetch_rows)
         db.update_task = AsyncMock(return_value={"task_id": "t1"})
         executor = _make_executor(db=db)
-        executor._get_setting = AsyncMock(return_value="3")  # max_retries
+
+        # Lane B sweep: task_executor_first_retry_writer_model is read
+        # via _get_setting too. Route the per-key value so retry-1 sees
+        # the expected writer literal while every other key keeps the
+        # legacy "3" stub used as the max_retries / window / backoff
+        # placeholder for these tests.
+        async def _fake(key, default=""):
+            if key == "task_executor_first_retry_writer_model":
+                return "qwen3-coder:30b"
+            return "3"
+
+        executor._get_setting = AsyncMock(side_effect=_fake)
         return executor, db
 
     @pytest.mark.asyncio

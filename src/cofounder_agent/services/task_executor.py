@@ -1358,8 +1358,33 @@ class TaskExecutor:
                 # Build adjusted parameters based on retry number
                 adjustments = {}
                 if retry_count == 0:
-                    # First retry: try a different model
-                    adjustments = {"model_selections": {"draft": "qwen3-coder:30b"}}
+                    # First retry: swap to a different writer to dodge
+                    # model-specific failure modes. Lane B sweep moved
+                    # the literal into app_settings — operators tune
+                    # task_executor_first_retry_writer_model to control
+                    # which writer the retry strategy picks. NOT a tier
+                    # migration; this is intent-based ("a different
+                    # model from the default writer"), not a fallback.
+                    retry_writer = await self._get_setting(
+                        "task_executor_first_retry_writer_model", "",
+                    )
+                    if retry_writer:
+                        adjustments = {
+                            "model_selections": {
+                                "draft": retry_writer.removeprefix("ollama/"),
+                            },
+                        }
+                    else:
+                        from services.integrations.operator_notify import (
+                            notify_operator,
+                        )
+                        await notify_operator(
+                            "task_executor first retry: "
+                            "task_executor_first_retry_writer_model is empty "
+                            "— retry will reuse the default writer instead of "
+                            "swapping to dodge model-specific failure modes",
+                            critical=False,
+                        )
                 elif retry_count == 1:
                     # Second retry: shorter content, skip image
                     adjustments = {

@@ -1143,6 +1143,67 @@ async def test_generation():
 # Plan: docs/superpowers/plans/2026-04-30-rag-pivot-niche-discovery.md (Task 14)
 
 
+async def _resolve_rag_writer_model() -> str:
+    """Resolve writer model for the RAG ``generate_with_*`` helpers.
+
+    Lane B sweep migration. Order:
+
+    1. ``resolve_tier_model(pool, 'standard')`` — operator-tuned tier
+       mapping (``app_settings.cost_tier.standard.model``).
+    2. ``app_settings[pipeline_writer_model]`` — legacy per-call-site
+       backstop. Pre-existing setting; the literal "glm-4.7-5090:latest"
+       default that lived in the inline lookup is removed per
+       ``feedback_no_silent_defaults.md``.
+    3. ``notify_operator()`` + raise — fail loud.
+
+    Returns the bare model name (``ollama/`` prefix stripped).
+
+    Note: the model-class detection at lines 607 + 776
+    (``is_thinking_model = any(t in model.lower() for t in ...)``) is
+    NOT a tier-migration target — it branches on model identity to pick
+    a token budget, not to pick which model to call. Leave it in place
+    pending the future ``is_thinking_model`` registry tracked in the
+    Lane B inventory.
+    """
+    from services.integrations.operator_notify import notify_operator
+    from services.llm_providers.dispatcher import resolve_tier_model
+
+    pool = getattr(site_config, "_pool", None)
+    if pool is not None:
+        try:
+            return (await resolve_tier_model(pool, "standard")).removeprefix(
+                "ollama/",
+            )
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            tier_exc: Exception | None = exc
+        else:
+            tier_exc = None
+    else:
+        tier_exc = RuntimeError("no asyncpg pool available")
+
+    fallback = site_config.get("pipeline_writer_model") or ""
+    if fallback:
+        await notify_operator(
+            f"ai_content_generator (RAG): cost_tier='standard' resolution "
+            f"failed ({tier_exc}); falling back to "
+            f"pipeline_writer_model={fallback!r}",
+            critical=False,
+            site_config=site_config,
+        )
+        return fallback.removeprefix("ollama/")
+
+    await notify_operator(
+        f"ai_content_generator (RAG): cost_tier='standard' has no model AND "
+        f"pipeline_writer_model is empty — RAG draft generation aborted: {tier_exc}",
+        critical=True,
+        site_config=site_config,
+    )
+    raise RuntimeError(
+        "ai_content_generator: no writer model resolvable via tier or "
+        "pipeline_writer_model setting"
+    ) from tier_exc
+
+
 async def generate_with_context(
     *, topic: str, angle: str, snippets: list[dict],
     extra_instructions: str | None = None,
@@ -1150,19 +1211,18 @@ async def generate_with_context(
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
 
-    Per-snippet length cap and writer model are operator-tunable via the
-    ``writer_rag_context_snippet_max_chars`` and ``pipeline_writer_model``
-    app_settings (the latter is the codebase-wide writer-model lookup).
+    Per-snippet length cap is operator-tunable via
+    ``writer_rag_context_snippet_max_chars``. Writer model is resolved
+    via the cost-tier API (Lane B sweep) — operators tune
+    ``app_settings.cost_tier.standard.model`` or the legacy
+    ``pipeline_writer_model`` per-call-site backstop.
     """
     from services.topic_ranking import _ollama_chat_json
 
     snippet_max_chars = site_config.get_int(
         "writer_rag_context_snippet_max_chars", 500,
     )
-    model = (
-        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-        or "glm-4.7-5090:latest"
-    ).removeprefix("ollama/")
+    model = await _resolve_rag_writer_model()
     snippet_block = "\n".join(
         f"[{s['source']}/{s['ref']}] {s['snippet'][:snippet_max_chars]}"
         for s in snippets if s.get('snippet')
@@ -1188,19 +1248,18 @@ async def generate_with_outline(
     Used by the STORY_SPINE writer mode after it preprocesses the top
     snippets into a {hook, what_happened, why_it_matters, ...} skeleton.
 
-    Per-snippet length cap and writer model are operator-tunable via the
-    ``writer_rag_context_snippet_max_chars`` and ``pipeline_writer_model``
-    app_settings.
+    Per-snippet length cap is operator-tunable via
+    ``writer_rag_context_snippet_max_chars``. Writer model is resolved
+    via the cost-tier API (Lane B sweep) — operators tune
+    ``app_settings.cost_tier.standard.model`` or the legacy
+    ``pipeline_writer_model`` per-call-site backstop.
     """
     from services.topic_ranking import _ollama_chat_json
 
     snippet_max_chars = site_config.get_int(
         "writer_rag_context_snippet_max_chars", 500,
     )
-    model = (
-        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-        or "glm-4.7-5090:latest"
-    ).removeprefix("ollama/")
+    model = await _resolve_rag_writer_model()
     snippet_block = "\n".join(
         f"[{s['source']}/{s['ref']}] {s['snippet'][:snippet_max_chars]}"
         for s in snippets if s.get('snippet')
