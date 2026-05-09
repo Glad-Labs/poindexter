@@ -91,9 +91,9 @@ class TestRun:
         assert result.metrics["empty_categories"] == 1
         assert result.changes_made == 1
         mock_gitea.assert_called_once()
-        # Issue title should include the empty count.
-        call_args = mock_gitea.call_args.args
-        assert "1 empty" in call_args[0]
+        # Issue title should include the empty count. emit_finding is keyword-only.
+        title = mock_gitea.call_args.kwargs["title"]
+        assert "1 empty" in title
 
     @pytest.mark.asyncio
     async def test_low_coverage_flagged(self):

@@ -349,15 +349,22 @@ class TestResolveProjectsDir:
         result = _resolve_projects_dir({"claude_projects_dir": str(custom)})
         assert result == custom
 
-    def test_env_var_fallback(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-        custom = tmp_path / "from-env"
+    def test_site_config_fallback(self, tmp_path: Path):
+        # The tap dispatcher seeds config["_site_config"] per #330; if
+        # config.claude_projects_dir is unset, _resolve_projects_dir
+        # consults site_config.get("claude_projects_dir") next.
+        custom = tmp_path / "from-site-config"
         custom.mkdir()
-        monkeypatch.setenv("CLAUDE_PROJECTS_DIR", str(custom))
-        result = _resolve_projects_dir({})
+
+        class _StubSiteConfig:
+            def get(self, key: str, default: str = "") -> str:
+                return str(custom) if key == "claude_projects_dir" else default
+
+        result = _resolve_projects_dir({"_site_config": _StubSiteConfig()})
         assert result == custom
 
-    def test_default_home_path(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.delenv("CLAUDE_PROJECTS_DIR", raising=False)
+    def test_default_home_path(self):
+        # No config override + no site_config -> defaults to ~/.claude/projects.
         result = _resolve_projects_dir({})
         # We don't assert the exact value — home-dependent — just the shape.
         assert result.name == "projects"

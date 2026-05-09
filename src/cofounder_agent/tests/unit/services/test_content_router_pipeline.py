@@ -182,12 +182,16 @@ class _ImportPatchContext:
         if self._also_router:
             # The orchestrator does `from .audit_log import audit_log_bg` and
             # `from .webhook_delivery_service import emit_webhook_event` at
-            # module load. Patch those bound names too.
+            # module load. Patch those bound names too. Likewise content_router_service
+            # owns its own per-module `site_config` attribute (poindexter#330 DI seam),
+            # which is what the dry-run severity demote reads — patch it directly so
+            # the override actually takes effect.
             from services import content_router_service as crs
             self._router_patches = [
                 patch.object(crs, "audit_log_bg", self._overrides["services.audit_log"].audit_log_bg),
                 patch.object(crs, "emit_webhook_event", self._overrides["services.webhook_delivery_service"].emit_webhook_event),
                 patch.object(crs, "get_image_service", self._overrides["services.image_service"].get_image_service),
+                patch.object(crs, "site_config", self._overrides["services.site_config"].site_config),
             ]
             for p in self._router_patches:
                 p.start()

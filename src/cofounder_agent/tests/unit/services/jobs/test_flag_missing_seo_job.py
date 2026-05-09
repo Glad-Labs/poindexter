@@ -66,8 +66,9 @@ class TestRun:
         assert result.changes_made == 3
         assert result.metrics["posts_missing_seo"] == 3
         mock_gitea.assert_called_once()
-        call_args = mock_gitea.call_args.args
-        assert "3 posts" in call_args[0]
+        # emit_finding is keyword-only; the human-readable message is title=.
+        title = mock_gitea.call_args.kwargs["title"]
+        assert "3 posts" in title
 
     @pytest.mark.asyncio
     async def test_respects_limit_config(self):

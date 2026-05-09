@@ -143,7 +143,8 @@ class TestRun:
                 {"overlap_threshold": 0.5, "max_pairs_reported": 3},
             )
         assert result.changes_made == 10  # all pairs still counted
-        body = mock_gitea.call_args.args[1]
+        # emit_finding is keyword-only; the rendered list lives in body=.
+        body = mock_gitea.call_args.kwargs["body"]
         # Only 3 pair bullets rendered into the issue body.
         assert body.count("\n- \"") == 3
 
