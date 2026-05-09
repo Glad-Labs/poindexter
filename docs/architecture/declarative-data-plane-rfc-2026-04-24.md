@@ -429,3 +429,68 @@ No code runs without a green light on each.
 No pause for review between phases. Report on Telegram when Phase 1 is live.
 
 <!-- DOC-SYNC 2026-04-26: section 3.2 references `services/integrations/handlers.py`; current impl uses a `services/integrations/handlers/` package directory instead. RFC text still describes the originally proposed shape. -->
+
+---
+
+## 11. Post-implementation status (appended 2026-05-09)
+
+All four Tier 1 / Tier 2 corner tables proposed in Section 4 are now live. The RFC pattern is the working pattern.
+
+### Tables that landed
+
+| Surface      | Table                                        | Migration                                                                                   | Issue / PR                                                                          |
+| ------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `webhook`    | `webhook_endpoints` (`direction='inbound'`)  | seeded by `0000_baseline.py`                                                                | [`Glad-Labs/poindexter#111`](https://github.com/Glad-Labs/poindexter/issues/111) ✅ |
+| `outbound`   | `webhook_endpoints` (`direction='outbound'`) | seeded by `0000_baseline.py`                                                                | bundled with #111 ✅                                                                |
+| `tap`        | `external_taps`                              | seeded by `0000_baseline.py`                                                                | [`Glad-Labs/poindexter#103`](https://github.com/Glad-Labs/poindexter/issues/103) ✅ |
+| `retention`  | `retention_policies`                         | seeded by `0000_baseline.py`                                                                | [`Glad-Labs/poindexter#110`](https://github.com/Glad-Labs/poindexter/issues/110) ✅ |
+| `publishing` | `publishing_adapters`                        | `20260509_175447_add_publishing_adapters.py`                                                | [`Glad-Labs/poindexter#112`](https://github.com/Glad-Labs/poindexter/issues/112) ✅ |
+| `qa_gate`    | `qa_gates`                                   | seeded by `0000_baseline.py` + `20260508_215727_seed_qa_gate_deepeval_brand_fabrication.py` | (Tier 3 #8 — landed early)                                                          |
+
+The only Tier 1 table merged into a sibling rather than getting its own surface is **outbound webhooks** — they share `webhook_endpoints` with inbound, discriminated by the `direction` column, exactly as proposed in §4.1.2.
+
+### Handlers actually registered
+
+`src/cofounder_agent/services/integrations/handlers/` ships **14 handlers** across the 5 surfaces. The registry uses the namespacing-by-surface scheme proposed in §6 (Risk: handler name collisions): every handler is registered as `<surface>.<name>` so the same short name (`revenue_event_writer`, `discord_post`) can coexist where it makes sense.
+
+| Surface      | Handler key                       | Module                                     |
+| ------------ | --------------------------------- | ------------------------------------------ |
+| `webhook`    | `webhook.revenue_event_writer`    | `handlers/revenue_event_writer.py`         |
+| `webhook`    | `webhook.subscriber_event_writer` | `handlers/subscriber_event_writer.py`      |
+| `webhook`    | `webhook.alertmanager_dispatch`   | `handlers/alertmanager_dispatch.py`        |
+| `outbound`   | `outbound.discord_post`           | `handlers/discord_post.py`                 |
+| `outbound`   | `outbound.telegram_post`          | `handlers/telegram_post.py`                |
+| `outbound`   | `outbound.vercel_isr`             | `handlers/vercel_isr.py`                   |
+| `tap`        | `tap.builtin_topic_source`        | `handlers/builtin_topic_source.py`         |
+| `tap`        | `tap.external_metrics_writer`     | `handlers/external_metrics_writer.py`      |
+| `tap`        | `tap.singer_subprocess`           | `handlers/singer_subprocess.py`            |
+| `retention`  | `retention.ttl_prune`             | `handlers/retention_ttl_prune.py`          |
+| `retention`  | `retention.downsample`            | `handlers/retention_downsample.py`         |
+| `retention`  | `retention.summarize_to_table`    | `handlers/retention_summarize_to_table.py` |
+| `publishing` | `publishing.bluesky`              | `handlers/publishing_bluesky.py`           |
+| `publishing` | `publishing.mastodon`             | `handlers/publishing_mastodon.py`          |
+
+### Where the RFC's proposals deviated from what shipped
+
+1. **Handler registry is a package, not a module.** §3.2 proposed `services/integrations/handlers.py`. We ship `services/integrations/handlers/` as a package (one file per handler) with `handlers/__init__.py:load_all()` importing them at startup. Same registry, same `register_handler(surface, name)` decorator semantics — the file structure scales better than a single module.
+2. **`@register_handler` takes two args, not one.** §3.2 proposed `register_handler(name)`. Actual: `register_handler(surface, name)` to enforce the `<surface>.<name>` key shape automatically.
+3. **`secret_key_ref` became `credentials_ref` for publishing rows.** Publishing adapters often need multiple secrets (e.g. Bluesky needs handle + app-password; Mastodon needs instance URL + access token), so the column became a _prefix_ rather than a single key. Each row's `<credentials_ref>handle` / `<credentials_ref>app_password` etc. live in `app_settings`. §3.3's `resolve_secret(row, site_config)` contract still holds — it just runs once per logical secret.
+4. **Legacy `routes/webhooks.py` shim was deleted, not kept.** §4.1.1 proposed keeping legacy routes as shims until flipped off. They were deleted entirely on 2026-05-09 once the seed rows + dispatcher + Grafana panels were live (commit `e7daca9`).
+5. **CLI v1 ships closer to the v1.1 proposal in §10.3.** The minimal v1 (list / enable / disable / set-secret) shipped first, but the test-fire functionality landed alongside as `poindexter <surface> fire <name>` because operators were using SQL to test-fire and the CLI was already half-built.
+
+### What's NOT yet on the pattern (deliberately)
+
+- **Object stores** (Tier 2 #6) — still hardcoded to one S3-compatible bucket. No second store is configured. RFC §6 explicitly de-prioritized this without pain.
+- **Cache invalidation backends** (Tier 3 #7) — only Vercel ISR. `outbound.vercel_isr` covers it adequately as a single outbound handler.
+- **MCP connections** (Tier 3 #9) — no operator demand.
+- **Hardcoded allowlists** (Tier 4) — confirmed no-op. The hallucination dictionary stays in Python.
+
+### Cross-cutting wins beyond the RFC's stated payoff
+
+- **Lane B's cost-tier API** (`docs/architecture/cost-tier-routing.md`) inherited the same "configuration is data, not code" muscle memory. The cost_tier rows feed `app_settings.cost_tier.<tier>.model` instead of a new table, but the operator workflow is identical: insert a row, no deploy.
+- **Lane A's prompt management** (`docs/architecture/prompt-management.md`) is the prompt-surface analogue: YAML-on-disk default + Langfuse runtime override + the same `get_prompt(key)` shape across all callers.
+- **Snapshot tests pinned every migrated body byte-for-byte** during Lane A. The integrations framework's handler tests follow the same shape: contract-pinned test per handler, ports cleanly across handler renames or schema tweaks.
+
+### Pickup pointer for new readers
+
+If you're trying to add a new external integration in 2026-05+, the answer is **almost always one of the 5 surfaces listed in `docs/integrations/README.md`**. Read the per-handler doc that matches the closest existing handler, copy the row shape, and write the handler module. No new RFC needed — this one already covers the pattern.

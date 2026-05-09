@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-05-08.**  
+> **Auto-generated from live `app_settings` table on 2026-05-09.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 699 active rows across 54 categories. 55 stored encrypted via pgcrypto (`is_secret=true`); an additional 3 values are redacted in the preview below as defense-in-depth against secret-shaped strings that weren't classified as secrets in the DB.
+> 723 active rows across 55 categories. 55 stored encrypted via pgcrypto (`is_secret=true`); an additional 3 values are redacted in the preview below as defense-in-depth against secret-shaped strings that weren't classified as secrets in the DB.
 
 > This file is checked into `docs/` which is **excluded from the public Poindexter sync** (`scripts/sync-to-github.sh` strips `docs/`). Safe to regenerate from operator state. Not safe to publish outside the private mirror.
 
@@ -48,6 +48,7 @@ The worker re-reads on every poll; no restart needed.
 - [image](#image) (12 keys)
 - [integration](#integration) (13 keys)
 - [integrations](#integrations) (12 keys)
+- [llm_routing](#llm-routing) (4 keys)
 - [logging](#logging) (2 keys)
 - [memory](#memory) (4 keys)
 - [memory_alerts](#memory-alerts) (6 keys)
@@ -62,7 +63,7 @@ The worker re-reads on every poll; no restart needed.
 - [performance](#performance) (4 keys)
 - [pipeline](#pipeline) (34 keys)
 - [plugins](#plugins) (6 keys)
-- [plugin_telemetry](#plugin-telemetry) (34 keys)
+- [plugin_telemetry](#plugin-telemetry) (54 keys)
 - [podcast](#podcast) (1 key)
 - [prometheus](#prometheus) (4 keys)
 - [publishing](#publishing) (4 keys)
@@ -106,7 +107,7 @@ The worker re-reads on every poll; no restart needed.
 | `openai_api_key`    | `*(encrypted)*`                            | encrypted      | OpenAI API key                |
 | `pexels_api_key`    | `*(encrypted)*`                            | encrypted      | Pexels image search API key   |
 | `resend_api_key`    | `*(encrypted)*`                            | encrypted      | Resend email delivery API key |
-| `sentry_dsn`        | `http://248e191e2f24492e887a5b403cbc66...` |                | Sentry DSN for error tracking |
+| `sentry_dsn`        | `http://31fbc77a-4ad1-4b9a-8bf9-a13548...` |                | Sentry DSN for error tracking |
 
 ## auth
 
@@ -353,7 +354,7 @@ The worker re-reads on every poll; no restart needed.
 | `idle_last_run_sync_newsletter_subscribers`                          | `1776717741.527152`                                                            |                |                                                                                                                          |
 | `idle_last_run_sync_page_views`                                      | `1776717746.5694222`                                                           |                |                                                                                                                          |
 | `idle_last_run_threshold_tune`                                       | `1776706157.2429378`                                                           |                |                                                                                                                          |
-| `idle_last_run_topic_discovery`                                      | `1778207418.0156078`                                                           |                |                                                                                                                          |
+| `idle_last_run_topic_discovery`                                      | `1778293818.8411338`                                                           |                |                                                                                                                          |
 | `idle_last_run_topic_gaps`                                           | `1776662209.1690526`                                                           |                |                                                                                                                          |
 | `idle_last_run_utility_rates`                                        | `1775425727.9157252`                                                           |                |                                                                                                                          |
 | `idle_last_run_video_backfill`                                       | `1776698745.4924042`                                                           |                |                                                                                                                          |
@@ -619,6 +620,15 @@ The worker re-reads on every poll; no restart needed.
 | `telegram_cli_safe_commands`     | `post,settings,validators,auth,check_h...` |                | Comma-separated allowlist of top-level poindexter CLI subcommands the Telegram /cli passthrough will execute. The fir... |
 | `telegram_cli_timeout_seconds`   | `30`                                       |                | Wall-clock timeout (seconds) for a /cli subprocess. After this many seconds the passthrough kills the process group a... |
 
+## llm_routing
+
+| Key                        | Default                      | Classification | Description                                                                                 |
+| -------------------------- | ---------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
+| `cost_tier.budget.model`   | `ollama/gemma3:27b-it-qat`   |                | Model resolved when callers pass cost_tier=budget. Quantized 27B; offline retention work.   |
+| `cost_tier.free.model`     | `ollama/qwen3:8b`            |                | Model resolved when callers pass cost_tier=free. Smallest local; image-decision tier.       |
+| `cost_tier.premium.model`  | `anthropic/claude-haiku-4-5` |                | Model resolved when callers pass cost_tier=premium. Cloud cross-model QA; cost_guard-gated. |
+| `cost_tier.standard.model` | `ollama/gemma3:27b`          |                | Model resolved when callers pass cost_tier=standard. Default writer + critic.               |
+
 ## logging
 
 | Key                    | Default | Classification | Description                                                                                                              |
@@ -766,7 +776,7 @@ The worker re-reads on every poll; no restart needed.
 | ------------------------- | ------------------------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `discord_ops_webhook_url` | `https://discord.com/api/webhooks/1494...` |                |                                                                                                                          |
 | `preview_base_url`        | `http://100.81.93.12:8002`                 |                |                                                                                                                          |
-| `telegram_alerts_enabled` | `false`                                    |                | Telegram is for severity=critical infra alerts only. Discord receives all routine pipeline events (awaiting approval,... |
+| `telegram_alerts_enabled` | `true`                                     |                | Telegram is for severity=critical infra alerts only. Discord receives all routine pipeline events (awaiting approval,... |
 | `telegram_alert_types`    | `error,critical,deploy,probe_failure`      |                | Comma-separated alert types to send (error,critical,deploy,probe_failure,info)                                           |
 | `telegram_chat_id`        | `5318613610`                               |                | Telegram chat ID for all alerts (Matt DM)                                                                                |
 
@@ -846,39 +856,59 @@ The worker re-reads on every poll; no restart needed.
 
 | Key                                                  | Default      | Classification | Description                                                                                            |
 | ---------------------------------------------------- | ------------ | -------------- | ------------------------------------------------------------------------------------------------------ |
-| `plugin_job_last_run_audit_published_quality`        | `1778195486` |                | Unix epoch of last fire for plugin job 'audit_published_quality' (auto-written by PluginScheduler)     |
-| `plugin_job_last_run_auto_embed_posts`               | `1778209889` |                | Unix epoch of last fire for plugin job 'auto_embed_posts' (auto-written by PluginScheduler)            |
-| `plugin_job_last_run_check_published_links`          | `1778195486` |                | Unix epoch of last fire for plugin job 'check_published_links' (auto-written by PluginScheduler)       |
-| `plugin_job_last_run_crosspost_to_devto`             | `1778202686` |                | Unix epoch of last fire for plugin job 'crosspost_to_devto' (auto-written by PluginScheduler)          |
-| `plugin_job_last_run_db_backup`                      | `1778055256` |                | Unix epoch of last fire for plugin job 'db_backup' (auto-written by PluginScheduler)                   |
-| `plugin_job_last_run_expire_stale_approvals`         | `1778195486` |                | Unix epoch of last fire for plugin job 'expire_stale_approvals' (auto-written by PluginScheduler)      |
-| `plugin_job_last_run_flag_missing_seo`               | `1778055256` |                | Unix epoch of last fire for plugin job 'flag_missing_seo' (auto-written by PluginScheduler)            |
-| `plugin_job_last_run_noop`                           | `1778209886` |                | Unix epoch of last fire for plugin job 'noop' (auto-written by PluginScheduler)                        |
-| `plugin_job_last_run_postgres_vacuum`                | `1778195488` |                | Unix epoch of last fire for plugin job 'postgres_vacuum' (auto-written by PluginScheduler)             |
-| `plugin_job_last_run_reload_site_config`             | `1778211986` |                | Unix epoch of last fire for plugin job 'reload_site_config' (auto-written by PluginScheduler)          |
-| `plugin_job_last_run_render_prometheus_rules`        | `1778211986` |                | Unix epoch of last fire for plugin job 'render_prometheus_rules' (auto-written by PluginScheduler)     |
-| `plugin_job_last_run_run_dev_diary_post`             | `1778158810` |                | Unix epoch of last fire for plugin job 'run_dev_diary_post' (auto-written by PluginScheduler)          |
-| `plugin_job_last_run_run_niche_topic_sweep`          | `1778211686` |                | Unix epoch of last fire for plugin job 'run_niche_topic_sweep' (auto-written by PluginScheduler)       |
-| `plugin_job_last_run_sync_newsletter_subscribers`    | `1778211686` |                | Unix epoch of last fire for plugin job 'sync_newsletter_subscribers' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_sync_page_views`                | `1778211686` |                | Unix epoch of last fire for plugin job 'sync_page_views' (auto-written by PluginScheduler)             |
-| `plugin_job_last_run_tune_publish_threshold`         | `1778195486` |                | Unix epoch of last fire for plugin job 'tune_publish_threshold' (auto-written by PluginScheduler)      |
-| `plugin_job_last_run_verify_published_posts`         | `1778211687` |                | Unix epoch of last fire for plugin job 'verify_published_posts' (auto-written by PluginScheduler)      |
+| `plugin_job_last_run_analyze_topic_gaps`             | `1778260286` |                | Unix epoch of last fire for plugin job 'analyze_topic_gaps' (auto-written by PluginScheduler)          |
+| `plugin_job_last_run_audit_published_quality`        | `1778319434` |                | Unix epoch of last fire for plugin job 'audit_published_quality' (auto-written by PluginScheduler)     |
+| `plugin_job_last_run_auto_embed_posts`               | `1778354111` |                | Unix epoch of last fire for plugin job 'auto_embed_posts' (auto-written by PluginScheduler)            |
+| `plugin_job_last_run_check_memory_staleness`         | `1778362136` |                | Unix epoch of last fire for plugin job 'check_memory_staleness' (auto-written by PluginScheduler)      |
+| `plugin_job_last_run_check_published_links`          | `1778319434` |                | Unix epoch of last fire for plugin job 'check_published_links' (auto-written by PluginScheduler)       |
+| `plugin_job_last_run_crosspost_to_devto`             | `1778326634` |                | Unix epoch of last fire for plugin job 'crosspost_to_devto' (auto-written by PluginScheduler)          |
+| `plugin_job_last_run_db_backup`                      | `1778260286` |                | Unix epoch of last fire for plugin job 'db_backup' (auto-written by PluginScheduler)                   |
+| `plugin_job_last_run_detect_duplicate_posts`         | `1778260286` |                | Unix epoch of last fire for plugin job 'detect_duplicate_posts' (auto-written by PluginScheduler)      |
+| `plugin_job_last_run_expire_stale_approvals`         | `1778319434` |                | Unix epoch of last fire for plugin job 'expire_stale_approvals' (auto-written by PluginScheduler)      |
+| `plugin_job_last_run_fix_broken_external_links`      | `1778260287` |                | Unix epoch of last fire for plugin job 'fix_broken_external_links' (auto-written by PluginScheduler)   |
+| `plugin_job_last_run_fix_broken_internal_links`      | `1778260286` |                | Unix epoch of last fire for plugin job 'fix_broken_internal_links' (auto-written by PluginScheduler)   |
+| `plugin_job_last_run_fix_uncategorized_posts`        | `1778260286` |                | Unix epoch of last fire for plugin job 'fix_uncategorized_posts' (auto-written by PluginScheduler)     |
+| `plugin_job_last_run_flag_missing_seo`               | `1778260286` |                | Unix epoch of last fire for plugin job 'flag_missing_seo' (auto-written by PluginScheduler)            |
+| `plugin_job_last_run_morning_brief`                  | `1778310000` |                | Unix epoch of last fire for plugin job 'morning_brief' (auto-written by PluginScheduler)               |
+| `plugin_job_last_run_noop`                           | `1778354109` |                | Unix epoch of last fire for plugin job 'noop' (auto-written by PluginScheduler)                        |
+| `plugin_job_last_run_postgres_vacuum`                | `1778319434` |                | Unix epoch of last fire for plugin job 'postgres_vacuum' (auto-written by PluginScheduler)             |
+| `plugin_job_last_run_reload_site_config`             | `1778362435` |                | Unix epoch of last fire for plugin job 'reload_site_config' (auto-written by PluginScheduler)          |
+| `plugin_job_last_run_render_prometheus_rules`        | `1778362435` |                | Unix epoch of last fire for plugin job 'render_prometheus_rules' (auto-written by PluginScheduler)     |
+| `plugin_job_last_run_rollup_post_performance`        | `1778260286` |                | Unix epoch of last fire for plugin job 'rollup_post_performance' (auto-written by PluginScheduler)     |
+| `plugin_job_last_run_run_dev_diary_post`             | `1778331600` |                | Unix epoch of last fire for plugin job 'run_dev_diary_post' (auto-written by PluginScheduler)          |
+| `plugin_job_last_run_run_niche_topic_sweep`          | `1778362136` |                | Unix epoch of last fire for plugin job 'run_niche_topic_sweep' (auto-written by PluginScheduler)       |
+| `plugin_job_last_run_run_taps`                       | `1778354146` |                | Unix epoch of last fire for plugin job 'run_taps' (auto-written by PluginScheduler)                    |
+| `plugin_job_last_run_sync_newsletter_subscribers`    | `1778362136` |                | Unix epoch of last fire for plugin job 'sync_newsletter_subscribers' (auto-written by PluginScheduler) |
+| `plugin_job_last_run_sync_page_views`                | `1778362135` |                | Unix epoch of last fire for plugin job 'sync_page_views' (auto-written by PluginScheduler)             |
+| `plugin_job_last_run_tune_publish_threshold`         | `1778319434` |                | Unix epoch of last fire for plugin job 'tune_publish_threshold' (auto-written by PluginScheduler)      |
+| `plugin_job_last_run_update_utility_rates`           | `1778260287` |                | Unix epoch of last fire for plugin job 'update_utility_rates' (auto-written by PluginScheduler)        |
+| `plugin_job_last_run_verify_published_posts`         | `1778362136` |                | Unix epoch of last fire for plugin job 'verify_published_posts' (auto-written by PluginScheduler)      |
+| `plugin_job_last_status_analyze_topic_gaps`          | `ok`         |                | Outcome of last fire for plugin job 'analyze_topic_gaps': 'ok' or 'err'                                |
 | `plugin_job_last_status_audit_published_quality`     | `ok`         |                | Outcome of last fire for plugin job 'audit_published_quality': 'ok' or 'err'                           |
 | `plugin_job_last_status_auto_embed_posts`            | `ok`         |                | Outcome of last fire for plugin job 'auto_embed_posts': 'ok' or 'err'                                  |
+| `plugin_job_last_status_check_memory_staleness`      | `ok`         |                | Outcome of last fire for plugin job 'check_memory_staleness': 'ok' or 'err'                            |
 | `plugin_job_last_status_check_published_links`       | `ok`         |                | Outcome of last fire for plugin job 'check_published_links': 'ok' or 'err'                             |
 | `plugin_job_last_status_crosspost_to_devto`          | `ok`         |                | Outcome of last fire for plugin job 'crosspost_to_devto': 'ok' or 'err'                                |
 | `plugin_job_last_status_db_backup`                   | `err`        |                | Outcome of last fire for plugin job 'db_backup': 'ok' or 'err'                                         |
+| `plugin_job_last_status_detect_duplicate_posts`      | `ok`         |                | Outcome of last fire for plugin job 'detect_duplicate_posts': 'ok' or 'err'                            |
 | `plugin_job_last_status_expire_stale_approvals`      | `ok`         |                | Outcome of last fire for plugin job 'expire_stale_approvals': 'ok' or 'err'                            |
+| `plugin_job_last_status_fix_broken_external_links`   | `ok`         |                | Outcome of last fire for plugin job 'fix_broken_external_links': 'ok' or 'err'                         |
+| `plugin_job_last_status_fix_broken_internal_links`   | `ok`         |                | Outcome of last fire for plugin job 'fix_broken_internal_links': 'ok' or 'err'                         |
+| `plugin_job_last_status_fix_uncategorized_posts`     | `ok`         |                | Outcome of last fire for plugin job 'fix_uncategorized_posts': 'ok' or 'err'                           |
 | `plugin_job_last_status_flag_missing_seo`            | `ok`         |                | Outcome of last fire for plugin job 'flag_missing_seo': 'ok' or 'err'                                  |
+| `plugin_job_last_status_morning_brief`               | `ok`         |                | Outcome of last fire for plugin job 'morning_brief': 'ok' or 'err'                                     |
 | `plugin_job_last_status_noop`                        | `ok`         |                | Outcome of last fire for plugin job 'noop': 'ok' or 'err'                                              |
 | `plugin_job_last_status_postgres_vacuum`             | `ok`         |                | Outcome of last fire for plugin job 'postgres_vacuum': 'ok' or 'err'                                   |
 | `plugin_job_last_status_reload_site_config`          | `ok`         |                | Outcome of last fire for plugin job 'reload_site_config': 'ok' or 'err'                                |
 | `plugin_job_last_status_render_prometheus_rules`     | `ok`         |                | Outcome of last fire for plugin job 'render_prometheus_rules': 'ok' or 'err'                           |
+| `plugin_job_last_status_rollup_post_performance`     | `ok`         |                | Outcome of last fire for plugin job 'rollup_post_performance': 'ok' or 'err'                           |
 | `plugin_job_last_status_run_dev_diary_post`          | `ok`         |                | Outcome of last fire for plugin job 'run_dev_diary_post': 'ok' or 'err'                                |
 | `plugin_job_last_status_run_niche_topic_sweep`       | `ok`         |                | Outcome of last fire for plugin job 'run_niche_topic_sweep': 'ok' or 'err'                             |
+| `plugin_job_last_status_run_taps`                    | `ok`         |                | Outcome of last fire for plugin job 'run_taps': 'ok' or 'err'                                          |
 | `plugin_job_last_status_sync_newsletter_subscribers` | `ok`         |                | Outcome of last fire for plugin job 'sync_newsletter_subscribers': 'ok' or 'err'                       |
 | `plugin_job_last_status_sync_page_views`             | `ok`         |                | Outcome of last fire for plugin job 'sync_page_views': 'ok' or 'err'                                   |
 | `plugin_job_last_status_tune_publish_threshold`      | `ok`         |                | Outcome of last fire for plugin job 'tune_publish_threshold': 'ok' or 'err'                            |
+| `plugin_job_last_status_update_utility_rates`        | `ok`         |                | Outcome of last fire for plugin job 'update_utility_rates': 'ok' or 'err'                              |
 | `plugin_job_last_status_verify_published_posts`      | `ok`         |                | Outcome of last fire for plugin job 'verify_published_posts': 'ok' or 'err'                            |
 
 ## podcast
@@ -929,7 +959,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key                       | Default      | Classification | Description                                                                                                           |
 | ------------------------- | ------------ | -------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `dev_diary_last_run_date` | `2026-05-07` |                | YYYY-MM-DD (UTC) of the last successful dev-diary job run. Idempotency marker — the job no-ops if this matches today. |
+| `dev_diary_last_run_date` | `2026-05-09` |                | YYYY-MM-DD (UTC) of the last successful dev-diary job run. Idempotency marker — the job no-ops if this matches today. |
 
 ## secrets
 
