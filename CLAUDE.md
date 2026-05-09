@@ -39,15 +39,15 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 | Public repo     | https://github.com/Glad-Labs/poindexter (auto-mirror)                           |
 | Project board   | https://github.com/orgs/Glad-Labs/projects/2                                    |
 
-### Key Numbers (as of May 6, 2026)
+### Key Numbers (as of May 9, 2026)
 
-- 52 live posts on gladlabs.io (218 posts total: 143 drafts, 23 archived; 1,515 pipeline_tasks across all generation runs)
-- ~455 Python files under `src/cofounder_agent/services/` (18 highlighted in the table below are the load-bearing ones — added template_runner, prompt_manager, and the LiteLLM provider plugin during the 2026-05-04 OSS-migration push). **2026-05-08 services audit** at `.shared-context/audits/2026-05-08-services-folder-audit.md` flagged ~5,000 LOC as deletable + 3 supposedly-completed migrations as still in-flight; Phase 1 of the cleanup is in progress.
-- 161 migration files in `services/migrations/` (UTC-timestamp prefix post-#378; old `0xxx_*.py` stay as-is)
+- 56 live posts on gladlabs.io (222 posts total; 1,519 pipeline_tasks across all generation runs)
+- ~295 Python files under `src/cofounder_agent/services/` (down from ~455 after the 2026-05-08 cleanup pass — agents/content_agent/ tree, pipeline_flow.py, taps/gitea_issues.py, voice_agent_webrtc.py, phases/example_workflows.py, and the model_router/usage_tracker/model_constants trio all removed). 18 services are load-bearing (table below). The **2026-05-08 services audit** at `.shared-context/audits/2026-05-08-services-folder-audit.md` flagged the original ~5,000 LOC deletable; about 1,800 LOC of that landed; Phase 3 (workflow_executor chain → template_runner) is the largest remaining chunk and waits on a canonical_blog template.
+- **1 migration file** (`0000_baseline.py` + sibling `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`). The 169 historical migrations were squashed 2026-05-08 — see `services/migrations/0000_baseline.py` for the rationale. New schema changes still go in fresh `YYYYMMDD_HHMMSS_<slug>.py` files; the runner sorts `0000_baseline.py` first because `0` < `2` lexically.
 - 7 Grafana dashboards (post-merge consolidation), 4 alert rules; Pyroscope app-profiles ship from worker/brain/voice agents under `service_name` tags (poindexter#406)
-- 7,900+ Python unit tests passing (329 test files)
-- 674 app_settings keys (up from 453 on May 3 — the in-code DI layer accepts hundreds more; see PR sweeps #198, #221, and the 2026-05-06 audit)
-- 25,000+ embeddings across posts / issues / audit / memory / brain / claude_sessions
+- 7,900+ Python unit tests passing across 386 test files
+- 715 app_settings keys (660 non-secret + 55 secret) — the baseline seeds the 660 non-secret defaults; secrets get configured per-operator via `poindexter setup` + bootstrap.toml
+- 30,547 embeddings across posts / issues / audit / memory / brain / claude_sessions
 - $0/month infra cost (fully self-hosted; only business-level paid services sit outside the pipeline)
 
 ## Development Commands
@@ -314,24 +314,33 @@ Code quality agent: every 4h at :37 — security/dead code/error handling scans
 
 ## Database migrations
 
-Migrations live in `src/cofounder_agent/services/migrations/`. As of
-Glad-Labs/poindexter#378 (2026-05-05) **new migrations use a UTC
-timestamp prefix** (`YYYYMMDD_HHMMSS_<slug>.py`) — old `0xxx_*.py`
-files stay as-is. The runner sorts lexically; `0xxx` (starts with
-`0`) always sorts before `2xxx_xxxxxx_*` (starts with `2`).
+Migrations live in `src/cofounder_agent/services/migrations/`. The
+169 historical files were squashed into a single `0000_baseline.py`
+(plus `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`) on
+2026-05-08 — the file's docstring explains why and what it captured.
+The runner still sorts lexically; `0000_baseline.py` runs first
+because `0` < `2`.
 
-Generate one with:
+**New migrations use a UTC timestamp prefix** (`YYYYMMDD_HHMMSS_<slug>.py`)
+per Glad-Labs/poindexter#378 (2026-05-05). Generate one with:
 
 ```bash
 python scripts/new-migration.py "describe what the migration does"
 ```
 
+The runner records each filename in `schema_migrations(name)` and
+skips already-applied entries. The baseline self-records on first
+run; on Matt's prod (where the schema is already in place) every
+`CREATE TABLE IF NOT EXISTS` no-ops, every seed `INSERT ... ON
+CONFLICT DO NOTHING` no-ops, and the only mutation is the row
+recording the baseline as applied.
+
 Read [`docs/operations/migrations.md`](docs/operations/migrations.md)
-for the full convention. Verify against a fresh DB with
+for the convention. Verify against a fresh DB with
 [`docs/operations/fresh-db-setup.md`](docs/operations/fresh-db-setup.md)
 or the CI smoke test (`python scripts/ci/migrations_smoke.py`). Lint
-with `python scripts/ci/migrations_lint.py` — it catches collisions,
-missing runner interface, and post-cutoff legacy prefixes.
+with `python scripts/ci/migrations_lint.py` — it catches collisions
+and missing runner interface.
 
 ## Reference Documentation
 
