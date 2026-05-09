@@ -156,6 +156,48 @@ async def get_provider_config(pool: Any, provider_name: str) -> dict[str, Any]:
     return cfg.config
 
 
+_TIER_NAMES = ("free", "budget", "standard", "premium", "flagship")
+
+
+async def resolve_tier_model(pool: Any, tier: str) -> str:
+    """Return the concrete model identifier configured for this cost tier.
+
+    The bridge from ``cost_tier="standard"`` (what call sites should
+    speak) to ``"ollama/gemma3:27b"`` (what providers consume). Reads
+    ``app_settings.cost_tier.<tier>.model`` and raises if no mapping
+    exists — per ``feedback_no_silent_defaults.md`` the absence of a
+    tier mapping is a configuration bug, not a quiet fallback.
+
+    Lane B of the OSS migration plan retired ~22 hardcoded model
+    literals across the codebase by routing them through this
+    function plus the existing tier→provider lookup that ``get_provider``
+    already does. The two halves stay decoupled because operators may
+    want to pin a tier to a specific model (this function) without
+    pinning it to a specific provider (``plugin.llm_provider.primary.<tier>``).
+    """
+    if tier not in _TIER_NAMES:
+        raise ValueError(
+            f"resolve_tier_model: unknown tier {tier!r}; "
+            f"valid tiers are {_TIER_NAMES}"
+        )
+    key = f"cost_tier.{tier}.model"
+    try:
+        async with pool.acquire() as conn:
+            val = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key = $1", key,
+            )
+    except Exception as exc:
+        raise RuntimeError(
+            f"resolve_tier_model: query for {key!r} failed: {exc}"
+        ) from exc
+    if not val or not val.strip():
+        raise RuntimeError(
+            f"resolve_tier_model: no model configured for tier {tier!r}. "
+            f"Set app_settings.{key} or pass an explicit model name."
+        )
+    return val.strip()
+
+
 async def dispatch_complete(
     pool: Any,
     messages: list[dict[str, str]],
