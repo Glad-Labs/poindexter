@@ -78,10 +78,18 @@ async def reject_task(
     try:
         operator = get_operator_identity()
 
-        # Fetch task
+        # Fetch task. db_service.get_task accepts a UUID prefix (LIKE match)
+        # so the operator-friendly `0bc9badd` form resolves a row here.
         task = await db_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Canonicalize the id BEFORE any downstream write. update_task /
+        # PipelineDB.add_review require the full UUID — they use exact-match
+        # WHERE clauses (and pipeline_reviews has a FK to pipeline_tasks),
+        # so handing them the URL-path prefix silently rolls the
+        # transaction back and leaves the task in awaiting_approval.
+        full_task_id = str(task.get("task_id") or task.get("id") or task_id)
 
         # Verify task is awaiting approval
         current_status = task.get("status")
@@ -106,7 +114,7 @@ async def reject_task(
         }
 
         await db_service.update_task(
-            task_id,
+            full_task_id,
             {
                 "status": final_status,
                 "approval_status": "rejected",
@@ -121,7 +129,7 @@ async def reject_task(
         try:
             from services.pipeline_db import PipelineDB
             await PipelineDB(db_service.pool).add_review(
-                task_id=task_id,
+                task_id=full_task_id,
                 decision="rejected",
                 reviewer=operator["id"],
                 feedback=request.feedback,
@@ -129,23 +137,23 @@ async def reject_task(
         except Exception as review_err:
             logger.warning(
                 "[reject_task] pipeline_reviews write failed for %s: %s",
-                task_id, review_err,
+                full_task_id, review_err,
             )
         try:
             await db_service.mark_model_performance_outcome(
-                task_id, human_approved=False,
+                full_task_id, human_approved=False,
             )
         except Exception as mp_err:
             logger.debug(
                 "[reject_task] mark_model_performance_outcome failed: %s", mp_err,
             )
 
-        logger.info("Task %s rejected by %s: %s", task_id, operator['id'], request.reason)
+        logger.info("Task %s rejected by %s: %s", full_task_id, operator['id'], request.reason)
 
         # Broadcast rejection status to connected WebSocket clients
         try:
             await broadcast_approval_status(
-                task_id,
+                full_task_id,
                 "rejected",
                 {
                     "rejected_by": operator["id"],
@@ -159,7 +167,7 @@ async def reject_task(
             logger.warning("Failed to broadcast rejection status: %s", e, exc_info=True)
 
         return {
-            "task_id": task_id,
+            "task_id": full_task_id,
             "status": final_status,
             "approval_status": "rejected",
             "rejection_date": rejection_date.isoformat(),

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from typing import Any
 
 import click
 
@@ -255,7 +256,18 @@ def tasks_approve(task_id: str) -> None:
     default="",
     help="Required explanation surfaced on the task's error_message and audit log.",
 )
-def tasks_reject(task_id: str, feedback: str) -> None:
+@click.option(
+    "--final/--retry",
+    default=False,
+    help=(
+        "--final → terminal rejection (status=rejected_final, no regen). "
+        "--retry → send back for revisions (status=rejected_retry, the "
+        "worker re-runs the pipeline and the task lands back in "
+        "awaiting_approval). Default is --retry to match the API default. "
+        "Use --final for stale or off-topic posts you don't want regenerated."
+    ),
+)
+def tasks_reject(task_id: str, feedback: str, final: bool) -> None:
     """Reject a task. --feedback is required by the worker API."""
     if not feedback:
         click.echo(
@@ -267,8 +279,13 @@ def tasks_reject(task_id: str, feedback: str) -> None:
     # Two different /reject handlers exist on /api/tasks/{id}/reject (one
     # in approval_routes.py wants `feedback`, one in task_publishing_routes.py
     # wants `reason`). Send both so whichever FastAPI routes to is satisfied.
+    payload: dict[str, Any] = {
+        "feedback": feedback,
+        "reason": feedback,
+        "allow_revisions": not final,
+    }
     try:
-        t = _post_action(task_id, "reject", {"feedback": feedback, "reason": feedback})
+        t = _post_action(task_id, "reject", payload)
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
