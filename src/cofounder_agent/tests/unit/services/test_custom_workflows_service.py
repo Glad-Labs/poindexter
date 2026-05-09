@@ -43,6 +43,25 @@ def _make_row(**kwargs):
     Strict ``__getitem__`` (KeyError on missing key) so production code
     that reads a column the test didn't set fails loudly instead of
     silently getting ``None`` and passing — see GH#337.
+
+    Use this helper ONLY when production code reads ``row[<key>]`` — the
+    strict mapping is what gives the test signal value. When a test
+    just hands the row to a patched ``ModelConverter`` and asserts on
+    the converter's return value, prefer ``object()`` directly: a
+    literal sentinel makes it obvious the row contents are not under
+    test, and prevents the row-faker from quietly accumulating stale
+    columns over time (the original symptom in GH#30).
+
+    Note for this file: ``custom_workflows_service`` does NOT use
+    ``ModelConverter``. ``_row_to_workflow`` (services/custom_workflows_service.py
+    lines 406-444) and ``_row_to_execution`` (lines 655-675) read
+    every column directly via ``row[<key>]`` / ``row.get(<key>)``,
+    and ``list_workflows`` / ``get_workflow_executions`` read
+    ``rows[0]["total_count"]`` from the window function. Every
+    ``_make_row`` and ``_make_execution_row`` call site is therefore
+    data-flow — the strict row-faker is load-bearing and no
+    ``object()`` sentinel substitutions apply here. Documenting the
+    audit so the next contributor scanning #337 doesn't re-do it.
     """
     defaults = {
         "id": "wf-uuid-1",
@@ -851,6 +870,9 @@ def _make_execution_row(**kwargs):
     """Build a mock asyncpg Record-like row for workflow_executions.
 
     Strict ``__getitem__`` (KeyError on missing key) — see GH#337.
+    All call sites are data-flow: production's ``_row_to_execution``
+    reads every column directly, so the strict mapping catches stale
+    column drift. Same audit rationale as ``_make_row`` above.
     """
     defaults = {
         "id": "exec-1",
