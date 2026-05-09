@@ -17,6 +17,20 @@ import os
 
 from sqladmin import Admin, ModelView
 from sqlalchemy import (
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
     Boolean,
     Column,
     DateTime,
@@ -29,8 +43,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase
 
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+site_config = site_config
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy base + engine (read-only reflection of asyncpg-managed tables)

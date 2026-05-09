@@ -11,6 +11,20 @@ from enum import Enum
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -129,8 +143,7 @@ class QualityDimensions:
         # readability excluded (#1238) — Flesch penalizes technical vocabulary.
         # CRITICAL_FLOOR is tunable via app_settings (qa_critical_floor).
         try:
-            import services.site_config as _scm
-            effective_floor = _scm.site_config.get_float(
+            effective_floor = site_config.get_float(
                 "qa_critical_floor", self.CRITICAL_FLOOR,
             )
         except Exception:

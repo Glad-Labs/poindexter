@@ -9,7 +9,7 @@ Verifies that ``services.content_validator.validate_content`` emits a
 Also verifies the negative cases — non-tech posts, posts with enough
 code, and the global kill-switch — all skip the gate cleanly.
 
-Tests mutate ``services.site_config.site_config._config`` directly. The
+Tests mutate ``services.content_validator.site_config._config`` directly. The
 unit-test conftest snapshots + restores that dict between tests
 (layer 3 of ``tests/unit/conftest.py``), so per-test seeds don't leak.
 """

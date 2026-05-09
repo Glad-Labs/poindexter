@@ -16,6 +16,20 @@ from .ai_content_generator import AIContentGenerator
 from .error_handler import ServiceError
 from .quality_service import UnifiedQualityService
 from .webhook_delivery_service import emit_webhook_event
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 # Operator notifications now route through services.integrations.outbound_dispatcher
 # (rows: discord_ops, telegram_ops). The OpenClaw gateway dependency was retired —
@@ -27,8 +41,7 @@ async def _notify_discord(message: str) -> None:
     _logger = get_logger(__name__)
     try:
         # Load webhook URL from app_settings (DB-first config)
-        import services.site_config as _scm
-        webhook_url = _scm.site_config.get("discord_ops_webhook_url", "")
+        webhook_url = site_config.get("discord_ops_webhook_url", "")
         if not webhook_url:
             _logger.debug("[NOTIFY:discord] No discord_ops_webhook_url configured — skipping")
             return

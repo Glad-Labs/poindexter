@@ -16,6 +16,20 @@ from __future__ import annotations
 
 import logging
 import re
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +46,7 @@ async def self_review_and_revise(
     - ``revised`` (bool) — True only when we accepted the revision.
     """
     from plugins.registry import get_all_llm_providers
-    import services.site_config as _scm
-    site_config = _scm.site_config
+    site_config = site_config
 
     stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
 

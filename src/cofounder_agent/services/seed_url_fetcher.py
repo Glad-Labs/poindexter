@@ -35,6 +35,20 @@ from typing import Final
 from urllib.parse import urlparse
 
 import httpx
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = logging.getLogger(__name__)
 
@@ -152,8 +166,7 @@ class SeedURLError(Exception):
 
 def _get_timeout_seconds() -> float:
     try:
-        import services.site_config as _scm
-        _sc = _scm.site_config
+        _sc = site_config
         return _sc.get_float(_SETTING_TIMEOUT, _DEFAULT_TIMEOUT_SECONDS)
     except Exception:  # pragma: no cover — site_config absent in bare imports
         return _DEFAULT_TIMEOUT_SECONDS
@@ -161,8 +174,7 @@ def _get_timeout_seconds() -> float:
 
 def _get_user_agent() -> str:
     try:
-        import services.site_config as _scm
-        _sc = _scm.site_config
+        _sc = site_config
         ua = _sc.get(_SETTING_USER_AGENT, _DEFAULT_USER_AGENT)
         return ua or _DEFAULT_USER_AGENT
     except Exception:  # pragma: no cover
@@ -171,8 +183,7 @@ def _get_user_agent() -> str:
 
 def _get_max_bytes() -> int:
     try:
-        import services.site_config as _scm
-        _sc = _scm.site_config
+        _sc = site_config
         return _sc.get_int(_SETTING_MAX_BYTES, _DEFAULT_MAX_BYTES)
     except Exception:  # pragma: no cover
         return _DEFAULT_MAX_BYTES

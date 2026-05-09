@@ -21,9 +21,21 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services.logger_config import get_logger
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+from services.site_config import SiteConfig
 from utils.text_utils import extract_title_from_content
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -864,9 +876,7 @@ async def publish_post_from_task(
                 """Wait for podcast, then generate short video."""
                 import asyncio as _aio
 
-                import services.site_config as _scm_scfg
-                _scfg = _scm_scfg.site_config
-                _delay = int(_scfg.get("short_video_post_publish_delay_seconds", "180"))
+                _delay = int(site_config.get("short_video_post_publish_delay_seconds", "180"))
                 await _aio.sleep(_delay)
                 try:
                     result = await generate_short_video_for_post(
@@ -901,10 +911,8 @@ async def publish_post_from_task(
                 upload_to_r2,
                 upload_video_episode,
             )
-            import services.site_config as _scm_delay
-            _scfg = _scm_delay.site_config
             # Give podcast/video/short generation time to complete
-            _delay = int(_scfg.get("media_r2_upload_delay_seconds", "240"))
+            _delay = int(site_config.get("media_r2_upload_delay_seconds", "240"))
             await _aio.sleep(_delay)
             await upload_podcast_episode(pid)
             await upload_video_episode(pid)
@@ -917,9 +925,7 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                import services.site_config as _scm_scfg
-                _scfg = _scm_scfg.site_config
-                _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 # Per-call temp file via tempfile.mkstemp avoids hardcoded
                 # /tmp paths (Bandit B108) and prevents collisions when
                 # multiple publishes run concurrently.
@@ -948,9 +954,7 @@ async def publish_post_from_task(
                 import httpx as _hx
 
                 from services.bootstrap_defaults import DEFAULT_WORKER_API_URL
-                import services.site_config as _scm_scfg
-                _scfg = _scm_scfg.site_config
-                _api_base = _scfg.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
+                _api_base = site_config.get("internal_api_base_url", DEFAULT_WORKER_API_URL)
                 # Per-call temp file via tempfile.mkstemp avoids hardcoded
                 # /tmp paths (Bandit B108).
                 _fd, _feed_path = tempfile.mkstemp(suffix=".xml", prefix="poindexter-video-")

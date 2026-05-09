@@ -32,6 +32,19 @@ from enum import Enum
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 
 # Module-level logger (unified across the codebase). Used once at import
 # time below for the diffusers-missing warning — the rest of the file
@@ -154,8 +167,7 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
 
 def get_default_image_model() -> ImageModel:
     """Get the default image model from config or fallback."""
-    import services.site_config as _scm
-    model_name = _scm.site_config.get("image_model", "sdxl_lightning")
+    model_name = site_config.get("image_model", "sdxl_lightning")
     try:
         return ImageModel(model_name)
     except ValueError:
@@ -257,9 +269,11 @@ class ImageService:
         # empty default-only singleton, which is fine for the non-secret
         # paths and is overridden by the explicit ctor arg in the
         # regression tests.
+        # Use the module-level lifespan-bound site_config when caller
+        # didn't supply one. ``globals()`` reads the module attr (the
+        # parameter ``site_config`` shadows it within this function).
         if site_config is None:
-            import services.site_config as _scm
-            site_config = _scm.site_config
+            site_config = globals()["site_config"]
         self._site_config = site_config
 
         self.pexels_api_key: str | None = None
@@ -616,8 +630,7 @@ class ImageService:
             return None
 
         # Tuning constants via app_settings (#198).
-        import services.site_config as _scm
-        _sc = _scm.site_config
+        _sc = site_config
         _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
         _model = _sc.get("image_search_query_model", "gemma3:27b")
         _max_tokens = _sc.get_int("image_search_query_max_tokens", 30)
@@ -941,8 +954,7 @@ class ImageService:
             True if successful, False otherwise
         """
         # Strategy 1: Try host SDXL server (runs on GPU outside Docker)
-        import services.site_config as _scm
-        _sc = _scm.site_config
+        _sc = site_config
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
         try:
             import httpx

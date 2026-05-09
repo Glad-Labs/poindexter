@@ -13,6 +13,20 @@ from typing import Any
 from uuid import UUID
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -49,9 +63,7 @@ class InternalRagSource:
         # 0119). The prior hardcoded default was 5; falls back to that
         # when site_config isn't loaded so unit-test fixtures still work.
         if per_kind_limit is None:
-            import services.site_config as _scm
-
-            per_kind_limit = _scm.site_config.get_int(
+            per_kind_limit = site_config.get_int(
                 "niche_internal_rag_per_kind_limit", 5,
             )
         bad = [s for s in source_kinds if s not in VALID_SOURCE_KINDS]
@@ -125,10 +137,9 @@ class InternalRagSource:
         wide writer-model lookup; matches the pattern in
         ``ai_content_generator.py``).
         """
-        import services.site_config as _scm
         from services.topic_ranking import _ollama_chat_json
 
-        site_config = _scm.site_config
+        site_config = site_config
         snippet_max = site_config.get_int(
             "niche_internal_rag_snippet_max_chars", 600,
         )

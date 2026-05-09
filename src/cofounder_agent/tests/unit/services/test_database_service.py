@@ -215,7 +215,7 @@ class TestDatabaseServiceLifecycle:
         )
 
         with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.site_config.site_config", fake_site_config
+            "services.database_service.site_config", fake_site_config
         ), patch("services.database_service.UsersDatabase"), patch(
             "services.database_service.TasksDatabase"
         ), patch("services.database_service.ContentDatabase"), patch(
@@ -249,7 +249,7 @@ class TestDatabaseServiceLifecycle:
         fake_site_config.get = MagicMock(side_effect=lambda key, default=None: default)
 
         with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
-            "services.site_config.site_config", fake_site_config
+            "services.database_service.site_config", fake_site_config
         ), patch("services.database_service.UsersDatabase"), patch(
             "services.database_service.TasksDatabase"
         ), patch("services.database_service.ContentDatabase"), patch(

@@ -48,7 +48,7 @@ def _clear_originality_cache():
 @pytest.fixture
 def _enabled_settings():
     """Patch site_config so the feature is on with default penalty."""
-    with patch("services.site_config.site_config") as mock_cfg:
+    with patch("services.title_originality_external.site_config") as mock_cfg:
         mock_cfg.get_bool.return_value = True
         mock_cfg.get_int.side_effect = lambda key, default: {
             "title_originality_external_penalty": -50,
@@ -59,7 +59,7 @@ def _enabled_settings():
 
 @pytest.fixture
 def _disabled_settings():
-    with patch("services.site_config.site_config") as mock_cfg:
+    with patch("services.title_originality_external.site_config") as mock_cfg:
         mock_cfg.get_bool.return_value = False
         mock_cfg.get_int.side_effect = lambda key, default: default
         yield mock_cfg
@@ -387,7 +387,7 @@ class TestCheckTitleOriginalityIntegration:
         ), patch(
             "services.title_originality_external.check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
-        ), patch("services.site_config.site_config") as mock_cfg:
+        ), patch("services.title_originality_external.site_config") as mock_cfg:
             mock_cfg.get_float.return_value = 0.6
             mock_cfg.get_bool.return_value = True
 
@@ -418,7 +418,7 @@ class TestCheckTitleOriginalityIntegration:
         ), patch(
             "services.title_originality_external.check_external_title_duplicates",
             AsyncMock(return_value=ext_result),
-        ), patch("services.site_config.site_config") as mock_cfg:
+        ), patch("services.title_originality_external.site_config") as mock_cfg:
             mock_cfg.get_float.return_value = 0.6
             mock_cfg.get_bool.return_value = True
 

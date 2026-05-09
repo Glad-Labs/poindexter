@@ -13,6 +13,20 @@ import re
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -28,8 +42,7 @@ def qa_cfg() -> dict:
     (key prefix: qa_). Returns a dict of all values with sensible defaults.
     Change any value with a simple SQL UPDATE on app_settings.
     """
-    import services.site_config as _scm
-    site_config = _scm.site_config
+    site_config = site_config
 
     return {
         # --- Overall pipeline ---
@@ -116,8 +129,7 @@ def score_accuracy(content: str, context: dict[str, Any], cfg: dict | None = Non
     # content_router, so one list covers both external-link validation
     # and citation credibility (#198).
     all_links = re.findall(r"https?://([^\s\)\]\"'>]+)", content)
-    import services.site_config as _scm
-    _sc = _scm.site_config
+    _sc = site_config
     _domain = _sc.get("site_domain", "")
     _override_csv = _sc.get("trusted_source_domains", "")
     _default_reputable = {

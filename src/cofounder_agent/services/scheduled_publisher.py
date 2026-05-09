@@ -16,6 +16,20 @@ appear on www.gladlabs.io.
 import asyncio
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -38,8 +52,7 @@ async def run_scheduled_publisher(get_pool, *, site_config=None):
                 site_config.get("scheduled_publisher_poll_seconds", 60)
             )
         else:
-            import services.site_config as _scm
-            _poll_interval = _scm.site_config.get_int(
+            _poll_interval = site_config.get_int(
                 "scheduled_publisher_poll_seconds", 60,
             )
     except Exception:

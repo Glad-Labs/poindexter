@@ -27,8 +27,19 @@ import httpx
 
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.logger_config import get_logger
-import services.site_config as _site_config_mod
-_sc = _site_config_mod.site_config
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 from services.telegram_config import get_telegram_bot_token, get_telegram_chat_id
 
 from .ollama_client import OllamaClient
@@ -52,11 +63,11 @@ logger = get_logger(__name__)
 
 
 def _site_base_url() -> str:
-    return _sc.get("site_url", "https://localhost:3000")
+    return site_config.get("site_url", "https://localhost:3000")
 
 
 def _openclaw_url() -> str:
-    return _sc.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
+    return site_config.get("openclaw_gateway_url", DEFAULT_OPENCLAW_URL)
 
 
 async def _openclaw_token() -> str:
@@ -68,7 +79,7 @@ async def _openclaw_token() -> str:
     # Sync .get() would return enc:v1:<ciphertext> for is_secret rows
     # (#325 bug class), and the bearer-token comparison upstream would
     # silently 401 every webhook fire.
-    return await _sc.get_secret("openclaw_webhook_token", "hooks-gladlabs")
+    return await site_config.get_secret("openclaw_webhook_token", "hooks-gladlabs")
 
 
 def _get_discord_ops_channel() -> str:
@@ -78,23 +89,23 @@ def _get_discord_ops_channel() -> str:
     worker boots and connects to the DB. Calling it at import time breaks
     pytest collection in any environment without a DB.
     """
-    return _sc.require("discord_ops_channel_id")
+    return site_config.require("discord_ops_channel_id")
 
 
 def _social_model() -> str:
     # Default is a fast small model — social copy is a simple task.
-    return _sc.get("social_poster_model", "ollama/llama3:latest")
+    return site_config.get("social_poster_model", "ollama/llama3:latest")
 
 
 def _twitter_char_limit() -> int:
     # Defaults match current public platform limits; tune via app_settings
     # social_twitter_char_limit / social_linkedin_char_limit when platforms
     # change. (#198)
-    return _sc.get_int("social_twitter_char_limit", 280)
+    return site_config.get_int("social_twitter_char_limit", 280)
 
 
 def _linkedin_char_limit() -> int:
-    return _sc.get_int("social_linkedin_char_limit", 700)
+    return site_config.get_int("social_linkedin_char_limit", 700)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +133,7 @@ def _build_twitter_prompt(title: str, slug: str, excerpt: str, keywords: list[st
     post_url = f"{_site_base_url()}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
-        f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
+        f"You are a social media copywriter for a tech company called {site_config.get('company_name', '')}.\n"
         "Write a single tweet to promote the following blog post.\n\n"
         "Rules:\n"
         f"- The tweet MUST be under {_twitter_char_limit()} characters including the URL and hashtags.\n"
@@ -141,7 +152,7 @@ def _build_linkedin_prompt(title: str, slug: str, excerpt: str, keywords: list[s
     post_url = f"{_site_base_url()}/posts/{slug}"
     hashtags = " ".join(f"#{kw.replace(' ', '')}" for kw in keywords[:3])
     return (
-        f"You are a social media copywriter for a tech company called {_sc.get('company_name', '')}.\n"
+        f"You are a social media copywriter for a tech company called {site_config.get('company_name', '')}.\n"
         "Write a LinkedIn post to promote the following blog article.\n\n"
         "Rules:\n"
         f"- The post MUST be under {_linkedin_char_limit()} characters including the URL and hashtags.\n"
@@ -175,7 +186,7 @@ async def _generate_social_text(
             prompt=prompt,
             model=model,
             temperature=0.8,
-            max_tokens=_sc.get_int("social_poster_max_tokens", 300),
+            max_tokens=site_config.get_int("social_poster_max_tokens", 300),
         )
         text = result.get("text", "").strip()
 
@@ -324,7 +335,7 @@ async def generate_and_distribute_social_posts(
 
     # Determine which adapters are enabled
     enabled = set(
-        _sc.get("social_distribution_platforms", "").split(",")
+        site_config.get("social_distribution_platforms", "").split(",")
     ) - {""}
 
     for post in posts:

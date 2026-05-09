@@ -10,6 +10,20 @@ import math
 
 from services.logger_config import get_logger
 from services.niche_service import NicheGoal
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -41,8 +55,7 @@ def _resolve_goal_descriptions() -> dict[str, str]:
     installs working without the migration applied.
     """
     try:
-        import services.site_config as _scm
-        site_config = _scm.site_config
+        site_config = site_config
 
         raw = site_config.get("niche_goal_descriptions", "")
         if not raw:
@@ -74,8 +87,7 @@ async def _embed_text_cached(text: str) -> list[float]:
     ``services.publish_service`` etc.).
     """
     from plugins.registry import get_all_llm_providers
-    import services.site_config as _scm
-    site_config = _scm.site_config
+    site_config = site_config
 
     providers = {p.name: p for p in get_all_llm_providers()}
     provider = providers.get("ollama_native")
@@ -164,8 +176,7 @@ async def _ollama_chat_json(prompt: str, *, model: str) -> str:
     keep working.
     """
     import httpx
-    import services.site_config as _scm
-    site_config = _scm.site_config
+    site_config = site_config
 
     base_url = (
         site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
@@ -205,8 +216,7 @@ async def llm_final_score(
     test fixtures that don't seed site_config keep working.
     """
     if model is None:
-        import services.site_config as _scm
-        site_config = _scm.site_config
+        site_config = site_config
 
         model = (
             site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")

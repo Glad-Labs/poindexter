@@ -49,10 +49,23 @@ from services.atom_registry import (
     list_atoms,
     to_catalog_text,
 )
+from services.site_config import SiteConfig
 from services.template_runner import (
     PipelineState,
     make_stage_node,
 )
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
 
 logger = logging.getLogger(__name__)
 
@@ -194,8 +207,7 @@ async def compose(
             errors=["FIX: atom registry is empty — call atom_registry.discover() before compose()"],
         )
 
-    import services.site_config as _scm
-    site_config = _scm.site_config
+    site_config = site_config
 
     model = (
         site_config.get("pipeline_architect_model")
@@ -659,8 +671,7 @@ async def _ollama_chat_text(prompt: str, model: str) -> str:
     ``capability_router`` resolver in Phase 2.
     """
     import httpx
-    import services.site_config as _scm
-    site_config = _scm.site_config
+    site_config = site_config
 
     base_url = (
         site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")

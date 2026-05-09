@@ -531,7 +531,7 @@ class TestCheckTitleOriginality:
         mock_researcher.search_simple = AsyncMock(return_value=[])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.site_config.site_config") as mock_cfg:
+            with patch("services.text_utils.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(
@@ -551,7 +551,7 @@ class TestCheckTitleOriginality:
         ])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.site_config.site_config") as mock_cfg:
+            with patch("services.text_utils.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(
@@ -565,7 +565,7 @@ class TestCheckTitleOriginality:
     @pytest.mark.asyncio
     async def test_disabled_returns_original(self):
         """When disabled via config, should always return original."""
-        with patch("services.site_config.site_config") as mock_cfg:
+        with patch("services.text_utils.site_config") as mock_cfg:
             mock_cfg.get_float.return_value = 0.6
             mock_cfg.get_bool.return_value = False
             result = await _check_title_originality("Any Title")
@@ -579,7 +579,7 @@ class TestCheckTitleOriginality:
         mock_researcher.search_simple = AsyncMock(side_effect=Exception("Network error"))
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.site_config.site_config") as mock_cfg:
+            with patch("services.text_utils.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality("Test Title")
@@ -595,7 +595,7 @@ class TestCheckTitleOriginality:
         ])
 
         with patch("services.web_research.WebResearcher", return_value=mock_researcher):
-            with patch("services.site_config.site_config") as mock_cfg:
+            with patch("services.text_utils.site_config") as mock_cfg:
                 mock_cfg.get_float.return_value = 0.6
                 mock_cfg.get_bool.return_value = True
                 result = await _check_title_originality(

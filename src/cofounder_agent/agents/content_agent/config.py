@@ -6,6 +6,20 @@
 import logging as _logging
 import sys
 from pathlib import Path as _PathType
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 
 def _fix_sys_path(path_cls=_PathType):
@@ -32,8 +46,7 @@ del _fix_sys_path, _PathType
 import os
 
 from services.logger_config import get_logger
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+site_config = site_config
 
 # --- Define Base Directory ---
 # Ensures that all file paths are relative to the project root, making the application more portable.
