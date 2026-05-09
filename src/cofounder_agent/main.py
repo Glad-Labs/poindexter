@@ -172,19 +172,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             # returns env/defaults for missed keys until the DB is reachable.
             app.state.site_config = _site_cfg
 
-        # Phase H step 5 (GH#95): point the module-level `site_config`
-        # attribute at the same loaded instance so legacy function-body
-        # imports (~40+ services still pending migration) see the same
-        # DB-loaded values as `app.state.site_config`. Without this, every
-        # ``from services.site_config import site_config`` reaches for a
-        # separate env-default-only instance — a silent regression that
-        # makes the pipeline generate content using the WRONG model /
-        # prompt config. The follow-up migration will remove each lazy
-        # importer; this shim just keeps them pointing at the right
-        # instance until then.
-        import services.site_config as _site_config_mod
-        _site_config_mod.site_config = _site_cfg
-
         # GH#330: wire the lifespan-bound SiteConfig into every module
         # that exposes a set_site_config() setter. Each module owns its
         # own per-module ``site_config`` attribute (defaults to a fresh
@@ -237,6 +224,8 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             "services.ai_content_generator",
             "services.task_executor",
             "services.image_service",
+            "services.content_router_service",
+            "services.seo_content_generator",
             "services.social_poster",
             "utils.route_utils",
             "admin",

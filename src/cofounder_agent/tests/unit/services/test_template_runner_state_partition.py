@@ -236,7 +236,7 @@ def flag_off_for_partition(monkeypatch):
     because it's hermetic; the Postgres path is covered by the existing
     smoke test in test_template_runner_postgres_checkpointer.py.
     """
-    import services.site_config as _scm
+    import services.template_runner as _scm
     monkeypatch.setitem(
         _scm.site_config._config,
         "template_runner_use_postgres_checkpointer",

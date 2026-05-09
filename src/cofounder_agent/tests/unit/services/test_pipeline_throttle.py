@@ -45,7 +45,7 @@ def _make_failing_pool():
 def _sc(max_queue: int) -> MagicMock:
     """Build a mock SiteConfig that returns ``max_queue`` for max_approval_queue.
 
-    Replaces the legacy ``patch("services.site_config.site_config", ...)``
+    Replaces the legacy ``patch("services.pipeline_throttle.site_config", ...)``
     pattern after pipeline_throttle migrated to the DI seam
     (glad-labs-stack#330): is_queue_full now takes site_config as a kwarg.
     """

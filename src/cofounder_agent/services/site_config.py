@@ -7,24 +7,32 @@ Every service reads from this module instead of os.getenv().
 Only DATABASE_URL and PORT remain as env vars (chicken-and-egg).
 Everything else comes from the database.
 
-Usage:
-    from services.site_config import site_config
-    name = site_config.get("site_name")            # "Glad Labs"
-    url = site_config.get("api_base_url")           # "https://..."
-    email = site_config.get("privacy_email")        # "privacy@..."
+The module-level ``site_config`` singleton was deleted 2026-05-09
+(Glad-Labs/glad-labs-stack#330). All production callers now receive a
+SiteConfig instance through the DI seam:
 
-    # Or with a default
-    gpu = site_config.get("gpu_model", "Unknown GPU")
+  - Route handlers:    ``site_config: SiteConfig = Depends(get_site_config_dependency)``
+  - Services:          accept ``site_config`` as a ``__init__`` kwarg
+  - Pipeline stages:   ``context["site_config"]``
+  - Image providers /
+    taps / topic sources: ``config["_site_config"]``
+  - Module-level utils: per-module ``site_config: SiteConfig`` attribute
+                         + ``set_site_config()`` setter, wired by
+                         ``main.py`` lifespan startup.
+
+Usage in code:
+    site_config.get("site_name")            # "Glad Labs"
+    site_config.get("api_base_url")         # "https://..."
+    site_config.require("site_url")         # raises if unset
 
 Startup:
-    Called from main.py lifespan after DB pool is ready:
-        await site_config.load(pool)
+    main.py's lifespan constructs ONE SiteConfig, calls ``await
+    sc.load(pool)``, attaches it to ``app.state.site_config``, and
+    fans out to every wired module via ``set_site_config(sc)``.
 
 Testing:
     Tests should construct their own ``SiteConfig(initial_config=...)``
-    instead of mutating the shared singleton. This avoids test pollution
-    between cases that seed different values, and unblocks #242 one
-    test file at a time without touching production callers.
+    or use the shared instance in ``tests/unit/conftest.py``:
 
         cfg = SiteConfig(initial_config={"site_url": "https://test"})
         assert cfg.get("site_url") == "https://test"
@@ -222,5 +230,17 @@ class SiteConfig:
         return dict(self._config)
 
 
-# Global singleton — import this everywhere
-site_config = SiteConfig()
+# Module-level singleton DELETED 2026-05-09 (Glad-Labs/glad-labs-stack#330).
+# Production code receives the lifespan-bound SiteConfig instance via the
+# DI seam:
+#   - Route handlers:    Depends(get_site_config_dependency)
+#   - Services:          ctor kwarg (``site_config: SiteConfig``)
+#   - Pipeline stages:   ``context["site_config"]``
+#   - Image providers /
+#     taps / topic sources: ``config["_site_config"]``
+#   - Module-level utils: per-module ``site_config: SiteConfig`` attr +
+#                         ``set_site_config()`` setter, wired by main.py
+#                         lifespan startup.
+#
+# Tests construct their own ``SiteConfig(initial_config={...})`` or use
+# the shared instance in ``tests/unit/conftest.py``.

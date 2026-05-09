@@ -24,8 +24,10 @@ from services.content_validator import (
     _is_tech_post,
     validate_content,
 )
-import services.site_config as _site_config_mod
-site_config = _site_config_mod.site_config
+# The content_validator module owns its own ``site_config`` attr
+# (post-#330 sweep). Use that for seeding density-test settings.
+import services.content_validator as _content_validator_mod
+site_config = _content_validator_mod.site_config
 
 
 # ---------------------------------------------------------------------------

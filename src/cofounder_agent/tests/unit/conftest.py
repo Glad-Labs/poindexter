@@ -39,7 +39,15 @@ from urllib.parse import urlparse, urlunparse
 import pytest
 import pytest_asyncio
 
-from services.site_config import site_config
+from services.site_config import SiteConfig
+
+# Single shared SiteConfig instance for the unit-test process. This
+# replaces the deleted module-level singleton at
+# ``services.site_config.site_config``. Every per-module ``site_config``
+# attr (post-#330 sweep) is repointed at this instance below so tests
+# that seed brand-config values via ``_TEST_BRAND_CONFIG`` see them
+# everywhere.
+site_config = SiteConfig()
 
 # ---------------------------------------------------------------------------
 # Layer 1 — brand-identity seed (legacy)
@@ -86,6 +94,8 @@ for _key, _value in _TEST_BRAND_CONFIG.items():
 _SHARED_TEST_MODULES = (
     "services.publish_service",
     "services.image_service",
+    "services.content_router_service",
+    "services.seo_content_generator",
     "services.image_decision_agent",
     "services.podcast_service",
     "services.video_service",
@@ -258,12 +268,15 @@ def _reset_singletons_between_tests():
 
     # site_config has a module-level dict; preserve the brand keys we
     # seeded at conftest import time + drop anything set during the test.
+    # Post-#330 sweep there's no global singleton — reset the conftest's
+    # shared instance instead.
     try:
-        from services.site_config import site_config as _sc
-        _sc._config = {k: v for k, v in _sc._config.items() if k in _TEST_BRAND_CONFIG}
+        site_config._config = {
+            k: v for k, v in site_config._config.items() if k in _TEST_BRAND_CONFIG
+        }
         # Re-seed in case a test wiped the brand keys.
         for k, v in _TEST_BRAND_CONFIG.items():
-            _sc._config.setdefault(k, v)
+            site_config._config.setdefault(k, v)
     except Exception:
         pass
 

@@ -33,10 +33,9 @@ completes. New code should pass ``site_config=`` explicitly.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from services.site_config import SiteConfig
+from services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
 
@@ -70,17 +69,11 @@ def setup_pyroscope(
         # explicit instance. Production callers (main.py lifespan,
         # brain daemon) thread the loaded SiteConfig through.
         try:
-            import services.site_config as _scm
+            from services.site_config import SiteConfig
         except Exception as e:
             logger.debug("[PYROSCOPE] site_config unavailable: %s — skipping", e)
             return
-        # Test-compat: the existing test rig patches
-        # ``services.site_config.site_config.get`` so we read the module
-        # attribute (NOT the alias-form import that falls dangling
-        # after the lifespan rebind). Once ``services.site_config:226``
-        # is deleted in commit 5, this attribute access will KeyError;
-        # at that point the fallback should be ``_scm.SiteConfig()``.
-        cfg = getattr(_scm, "site_config", None) or _scm.SiteConfig()
+        cfg = SiteConfig()
 
     enabled = cfg.get("enable_pyroscope", "false").lower() == "true"
     if not enabled:

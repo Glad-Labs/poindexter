@@ -718,8 +718,7 @@ class AIContentGenerator:
             else:
                 # Read pipeline_writer_model from DB first (DB-first config)
                 try:
-                    import services.site_config as _scm_pwm
-                    db_model = _scm_pwm.site_config.get("pipeline_writer_model", "")
+                    db_model = site_config.get("pipeline_writer_model", "")
                     if db_model:
                         # Strip "ollama/" prefix if present
                         db_model = db_model.removeprefix("ollama/")
@@ -736,7 +735,7 @@ class AIContentGenerator:
 
                 # Read fallback model from DB
                 try:
-                    db_fallback = _scm_pwm.site_config.get("pipeline_fallback_model", "")
+                    db_fallback = site_config.get("pipeline_fallback_model", "")
                     if db_fallback:
                         db_fallback = db_fallback.removeprefix("ollama/")
                         if db_fallback != resolved:

@@ -236,7 +236,7 @@ class TestWaitForGamingClear:
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=10.0)  # below threshold
 
-        with patch("services.site_config.site_config") as mock_sc:
+        with patch("services.gpu_scheduler.site_config") as mock_sc:
             mock_sc.get_int.side_effect = lambda k, d: d  # use defaults
             await scheduler._wait_for_gaming_clear()
         # Did not enter gaming-detected state
@@ -253,7 +253,7 @@ class TestWaitForGamingClear:
         scheduler = GPUScheduler()
         scheduler._get_gpu_utilization = AsyncMock(return_value=None)
 
-        with patch("services.site_config.site_config") as mock_sc:
+        with patch("services.gpu_scheduler.site_config") as mock_sc:
             mock_sc.get_int.side_effect = lambda k, d: d
             await scheduler._wait_for_gaming_clear()
         # No exception, no gaming flag set
@@ -270,7 +270,7 @@ class TestWaitForGamingClear:
         # First check: 90% (high), second check: 5% (idle)
         scheduler._get_gpu_utilization = AsyncMock(side_effect=[90.0, 5.0])
 
-        with patch("services.site_config.site_config") as mock_sc, \
+        with patch("services.gpu_scheduler.site_config") as mock_sc, \
              patch("asyncio.sleep", new=AsyncMock()):
             mock_sc.get_int.side_effect = lambda k, d: d
             await scheduler._wait_for_gaming_clear()
@@ -290,7 +290,7 @@ class TestWaitForGamingClear:
         scheduler._gaming_paused_since = time.monotonic() - 60.0
         scheduler._get_gpu_utilization = AsyncMock(return_value=5.0)
 
-        with patch("services.site_config.site_config") as mock_sc:
+        with patch("services.gpu_scheduler.site_config") as mock_sc:
             mock_sc.get_int.side_effect = lambda k, d: d
             await scheduler._wait_for_gaming_clear()
 
@@ -432,7 +432,7 @@ class TestPropertiesAndConfig:
 
         from services.gpu_scheduler import GPUScheduler
         scheduler = GPUScheduler()
-        with patch("services.site_config.site_config") as mock_sc:
+        with patch("services.gpu_scheduler.site_config") as mock_sc:
             mock_sc.get_int.side_effect = lambda k, d: d
             status = scheduler.status
         assert "config" in status

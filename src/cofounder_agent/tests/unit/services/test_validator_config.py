@@ -97,7 +97,7 @@ class TestLegacyFirstPersonBypass:
 
     def test_csv_bypass_disables_first_person_for_listed_niche(self):
         """Niche listed in the legacy CSV -> validator reports disabled."""
-        import services.site_config as _scm
+        import services.validator_config as _scm
         site_config = _scm.site_config
         site_config._config["qa_allow_first_person_niches"] = "dev_diary"
         # No DB row: rule otherwise fails open. Bypass should still kick in.
@@ -107,14 +107,14 @@ class TestLegacyFirstPersonBypass:
 
     def test_csv_bypass_does_not_affect_other_rules(self):
         """The CSV legacy bridge is scoped to first_person_claims only."""
-        import services.site_config as _scm
+        import services.validator_config as _scm
         site_config = _scm.site_config
         site_config._config["qa_allow_first_person_niches"] = "dev_diary"
         # Some unrelated rule with no DB row -> still enabled regardless of niche.
         assert vc.is_validator_enabled("fake_stat", niche="dev_diary") is True
 
     def test_csv_bypass_case_insensitive(self):
-        import services.site_config as _scm
+        import services.validator_config as _scm
         site_config = _scm.site_config
         site_config._config["qa_allow_first_person_niches"] = "DEV_DIARY,gaming"
         assert vc.is_validator_enabled("first_person_claims", niche="dev_diary") is False
@@ -122,7 +122,7 @@ class TestLegacyFirstPersonBypass:
         assert vc.is_validator_enabled("first_person_claims", niche="ai_ml") is True
 
     def test_empty_csv_means_no_bypass(self):
-        import services.site_config as _scm
+        import services.validator_config as _scm
         site_config = _scm.site_config
         site_config._config["qa_allow_first_person_niches"] = ""
         assert vc.is_validator_enabled("first_person_claims", niche="dev_diary") is True

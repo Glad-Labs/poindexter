@@ -211,52 +211,28 @@ Then call methods on the instance:
   (secrets are filtered out of the cache, so `is_secret=true` keys
   MUST be fetched via this method)
 
-Do NOT write `from services.site_config import site_config` in NEW
-code. CI guardrail at `scripts/ci/check_site_config_singleton.py`
-fails the build on any new caller. The
+**Singleton deleted 2026-05-09 (glad-labs-stack#330).** All production
+code uses the DI seam in all new code; there is no longer a module-level
+`site_config` instance to import. The
 [glad-labs-stack#330](https://github.com/Glad-Labs/glad-labs-stack/issues/330)
-sweep landed 2026-05-08 and migrated **107 of 110 callers** off the
-singleton. Three legitimate keepers remain:
-
-- `routes/settings_routes.py` — operator-facing reload endpoint
-  reaches into the singleton TO refresh it.
-- `services/jobs/reload_site_config.py` — scheduled job that runs
-  the reload.
-- `tests/unit/conftest.py` — test fixture central; mutated by
-  other tests for isolated setup.
-
-Production migration pattern: legacy callers that imported the
-singleton via `from services.site_config import site_config` swap
-to `import services.site_config as _scm; site_config = _scm.site_config`
-at module level (or lazily inside helpers). The CI regex matches
-the `from`-import form only; the alias-via-attribute path slips
-through and points at the same lifespan-shimmed instance — runtime
-semantics unchanged.
-
-The lifespan shim at `main.py:185-186` keeps the alias correct:
-
-```python
-import services.site_config as _site_config_mod
-_site_config_mod.site_config = _site_cfg
-```
+sweep retired the singleton + lifespan-rebind shim entirely; per-module
+utilities now own their own `site_config: SiteConfig` attribute that
+`main.py`'s lifespan wires via `set_site_config(loaded_instance)`.
 
 A scheduled `reload_site_config` job refreshes the DB-loaded values
-every minute (verified live — worker logs show `site_config
-refreshed (620 keys)`).
-
-Final singleton deletion is tracked as
-[glad-labs-stack#333](https://github.com/Glad-Labs/glad-labs-stack/issues/333):
-once the 3 keepers above are themselves refactored to receive the
-SiteConfig instance through their respective DI seams, the module
-attribute and the lifespan shim can be deleted.
+every minute (verified live — worker logs show `site_config refreshed
+(620 keys)`). The job receives the lifespan-bound SiteConfig via
+`config["_site_config"]`, so calling `.reload(pool)` on it propagates
+fresh values to every wired module that points at the same instance.
 
 For NEW code, always use the DI seam (route handlers via
-`Depends()`, services via constructor injection, stages via
-`context.get()`).
+`Depends(get_site_config_dependency)`, services via constructor
+injection, stages via `context.get("site_config")`, leaf utilities
+via the per-module `site_config` attr seeded by `set_site_config`).
 
-Tests should construct their own instance with
-`SiteConfig(initial_config={...})` or use the `test_site_config`
-fixture in `tests/unit/conftest.py`.
+Tests construct their own `SiteConfig(initial_config={...})` instance
+or use the shared instance in `tests/unit/conftest.py` (which fans out
+to every module via `set_site_config` at collection time).
 
 For SaaS / A/B-testing readiness, every tunable should be a
 DB-backed setting. Background algorithm windows (anomaly detection,

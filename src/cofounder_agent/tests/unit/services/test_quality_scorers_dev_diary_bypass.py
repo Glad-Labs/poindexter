@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from services.quality_scorers import score_accuracy
-import services.site_config as _site_config_mod
+import services.quality_scorers as _site_config_mod
 site_config = _site_config_mod.site_config
 
 

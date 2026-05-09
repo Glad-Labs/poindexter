@@ -395,8 +395,9 @@ class TestScrubFabricatedLinks:
         assert "arxiv.org" in result
 
     def test_keeps_own_domain_links(self):
-        import services.site_config as _scm
-        sc = _scm.site_config
+        # Use the conftest-seeded shared SiteConfig (post-#330 sweep —
+        # text_utils takes ``site_config`` as a function arg, no module attr).
+        from tests.unit.conftest import site_config as sc
         from services.text_utils import scrub_fabricated_links as _scrub_fabricated_links
         domain = sc.get("site_domain", "test-site.example.com")
         content = f"Read [our post](https://www.{domain}/posts/ai-trends) about this."
@@ -626,8 +627,7 @@ class TestScrubFabricatedLinksEdgeCases:
 
     def test_internal_post_link_with_no_slug_cache_kept(self):
         """Without a populated slug cache, internal /posts/ links pass through."""
-        import services.site_config as _scm
-        sc = _scm.site_config
+        from tests.unit.conftest import site_config as sc
         domain = sc.get("site_domain", "")
         if not domain:
             return  # skip if no domain configured

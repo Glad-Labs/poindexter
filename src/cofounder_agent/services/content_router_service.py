@@ -8,6 +8,20 @@ from .audit_log import audit_log_bg
 from .database_service import DatabaseService
 from .image_service import get_image_service
 from .webhook_delivery_service import emit_webhook_event
+from services.site_config import SiteConfig
+
+# Lifespan-bound SiteConfig; main.py wires this via set_site_config().
+# Defaults to a fresh env-fallback instance until the lifespan setter
+# fires. Tests can either patch this attribute directly or call
+# ``set_site_config()`` for explicit wiring.
+site_config: SiteConfig = SiteConfig()
+
+
+def set_site_config(sc: SiteConfig) -> None:
+    """Wire the lifespan-bound SiteConfig instance for this module."""
+    global site_config
+    site_config = sc
+
 
 logger = get_logger(__name__)
 
@@ -106,8 +120,7 @@ async def process_content_generation_task(
     # the canonical Phase H DI seam (poindexter#381). Falling back to
     # the module singleton matches what main.py rebinds, so legacy
     # paths still work.
-    import services.site_config as _scm_pipeline
-    image_service = get_image_service(site_config=_scm_pipeline.site_config)
+    image_service = get_image_service(site_config=site_config)
     # Settings + style tracker — pulled from the container/app.state during
     # transition to full DI (#242). Falls back to fresh instances when a
     # stage is invoked outside the lifespan-wired context (e.g. tests).
@@ -130,11 +143,10 @@ async def process_content_generation_task(
     # threaded through so finalize can record_outcome on the same row.
     try:
         from services.pipeline_experiment_hook import assign_pipeline_variant
-        import services.site_config as _scm_exp
         _experiment_assignment = await assign_pipeline_variant(
             task_id=task_id,
             database_service=database_service,
-            site_config=_scm_exp.site_config,
+            site_config=site_config,
             models_by_phase=_models_by_phase,
         )
     except Exception as _exc:
@@ -161,7 +173,7 @@ async def process_content_generation_task(
         # Phase H DI seam — every stage can pull `site_config` from
         # context.get('site_config') and forward it into services that
         # need DB-backed settings or secrets (poindexter#381).
-        "site_config": _scm_pipeline.site_config,
+        "site_config": site_config,
         "models_by_phase": _models_by_phase,
         "quality_preference": quality_preference,
         "target_audience": target_audience,
@@ -276,8 +288,7 @@ async def process_content_generation_task(
         # audit event. Without this, a timed-out 72B silently degrades to
         # a 27B and nobody notices — which cost us task 033803c9 on 2026-04-11.
         try:
-            import services.site_config as _scm_writer
-            _configured_writer = (_scm_writer.site_config.get("pipeline_writer_model", "") or "").removeprefix("ollama/")
+            _configured_writer = (site_config.get("pipeline_writer_model", "") or "").removeprefix("ollama/")
             _actual_writer = (model_used or "").removeprefix("ollama/")
             if _configured_writer and _actual_writer and _configured_writer != _actual_writer:
                 logger.warning(
@@ -388,12 +399,11 @@ async def process_content_generation_task(
         # experiment assignment row (no-op when no experiment active).
         try:
             from services.pipeline_experiment_hook import record_pipeline_outcome
-            import services.site_config as _scm_outcome
             await record_pipeline_outcome(
                 assignment=result.get("experiment_assignment") or {},
                 task_id=task_id,
                 database_service=database_service,
-                site_config=_scm_outcome.site_config,
+                site_config=site_config,
                 metrics={
                     "quality_score": float(
                         result.get("quality_score", quality_result.overall_score) or 0.0
@@ -440,8 +450,7 @@ async def process_content_generation_task(
         # audit_log row severity changes here.
         _is_dry_run_halt = False
         try:
-            import services.site_config as _scm_dry
-            _dry_raw = _scm_dry.site_config.get("pipeline_dry_run_mode", "")
+            _dry_raw = site_config.get("pipeline_dry_run_mode", "")
             _is_dry_run = str(_dry_raw).strip().lower() in ("true", "1", "yes", "on")
             _err_text = str(e)
             _is_dry_run_halt = _is_dry_run and (

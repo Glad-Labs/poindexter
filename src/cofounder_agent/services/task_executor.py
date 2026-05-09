@@ -114,8 +114,7 @@ class TaskExecutor:
         # How long (seconds) the queue may have pending tasks without any being
         # picked up before we fire a CRITICAL alert. Tunable via
         # app_settings.task_executor_idle_alert_threshold_seconds (#198).
-        import services.site_config as _scm_idle
-        self._IDLE_ALERT_THRESHOLD_S: int = _scm_idle.site_config.get_int(
+        self._IDLE_ALERT_THRESHOLD_S: int = site_config.get_int(
             "task_executor_idle_alert_threshold_seconds", 300
         )
         # Timestamp tracker for stale task sweeping (FIX: was dead code)
@@ -749,9 +748,8 @@ class TaskExecutor:
                                WHERE task_id = $2""",
                             preview_token, task_id,
                         )
-                        import services.site_config as _scm_pv
                         # Use worker's own URL for HTML preview (accessible via Tailscale)
-                        _preview_base = _scm_pv.site_config.get(
+                        _preview_base = site_config.get(
                             "preview_base_url", "http://100.81.93.12:8002",
                         )
                         preview_url = f"{_preview_base}/preview/{preview_token}"

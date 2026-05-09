@@ -74,7 +74,7 @@ def trivial_templates(monkeypatch):
 @pytest.fixture
 def flag_on(monkeypatch):
     """Force template_runner_use_postgres_checkpointer = true."""
-    import services.site_config as _scm
+    import services.template_runner as _scm
     site_config = _scm.site_config
     monkeypatch.setitem(
         site_config._config,
@@ -86,7 +86,7 @@ def flag_on(monkeypatch):
 @pytest.fixture
 def flag_off(monkeypatch):
     """Force template_runner_use_postgres_checkpointer = false (default)."""
-    import services.site_config as _scm
+    import services.template_runner as _scm
     site_config = _scm.site_config
     monkeypatch.setitem(
         site_config._config,
