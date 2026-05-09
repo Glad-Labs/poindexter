@@ -321,17 +321,55 @@ async def _build_script_with_llm(title: str, content: str) -> str:
     import httpx
 
     ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-    try:
-        # Use the podcast-specific model, fall back to writer model, then default
-        model = (
-            site_config.get("podcast_script_model")
-            or site_config.get("pipeline_writer_model", "").replace("ollama/", "")
-            or site_config.get("default_ollama_model", "gemma3:27b")
-        )
-    except Exception:
-        model = site_config.get("default_ollama_model", "gemma3:27b")
-    if model == "auto" or not model:
-        model = "gemma3:27b"
+
+    # Cost-tier API (Lane B sweep). Operators tune the standard tier via
+    # app_settings.cost_tier.standard.model — no code edit per niche.
+    # Resolution order: (1) podcast-specific override, (2) cost-tier
+    # mapping, (3) legacy default_ollama_model fallback. Per
+    # feedback_no_silent_defaults.md, if all three miss we page the
+    # operator and let the caller fall back to regex script.
+    from services.llm_providers.dispatcher import resolve_tier_model
+
+    model = (site_config.get("podcast_script_model") or "").removeprefix("ollama/")
+    if not model:
+        pool = getattr(site_config, "_pool", None)
+        if pool is not None:
+            try:
+                model = (
+                    await resolve_tier_model(pool, "standard")
+                ).removeprefix("ollama/")
+            except (RuntimeError, ValueError) as tier_err:
+                logger.debug(
+                    "[PODCAST] cost_tier.standard.model unresolved (%s); "
+                    "trying default_ollama_model fallback",
+                    tier_err,
+                )
+    if not model:
+        fallback = site_config.get("default_ollama_model") or ""
+        if not fallback:
+            from services.integrations.operator_notify import notify_operator
+            await notify_operator(
+                "podcast_service: cost_tier='standard' has no model AND "
+                "default_ollama_model is empty — falling back to regex "
+                "script for this episode",
+                critical=False,
+                site_config=site_config,
+            )
+            return _build_script_fallback(title, content)
+        model = fallback.removeprefix("ollama/")
+    if model == "auto":
+        # Same fallback path — no silent literal default.
+        fallback = site_config.get("default_ollama_model") or ""
+        if not fallback:
+            from services.integrations.operator_notify import notify_operator
+            await notify_operator(
+                "podcast_service: podcast_script_model='auto' AND "
+                "default_ollama_model is empty — falling back to regex script",
+                critical=False,
+                site_config=site_config,
+            )
+            return _build_script_fallback(title, content)
+        model = fallback.removeprefix("ollama/")
 
     prompt = f"""Rewrite the following blog article as a podcast script for a single narrator.
 
