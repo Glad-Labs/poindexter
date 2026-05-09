@@ -255,10 +255,15 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             _te._site_config = _site_cfg
             _te.app_state = app.state
             try:
-                _te.quality_service.set_site_config(_site_cfg)
+                # UnifiedQualityService is a class instance — write the
+                # site_config attribute the constructor stores on
+                # self._site_config (services/quality_service.py:134).
+                # Don't call ``.set_site_config(...)`` here: that method
+                # exists only on the module, not on the instance.
+                _te.quality_service._site_config = _site_cfg
             except Exception as e:
                 logger.warning(
-                    "[LIFESPAN] task_executor.quality_service.set_site_config failed: %s", e,
+                    "[LIFESPAN] task_executor.quality_service site_config wiring failed: %s", e,
                 )
 
         # Re-initialize observability stack now that site_config is loaded from

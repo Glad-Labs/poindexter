@@ -17,6 +17,18 @@ import os
 
 from sqladmin import Admin, ModelView
 from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    create_engine,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import DeclarativeBase
+
 from services.site_config import SiteConfig
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
@@ -30,18 +42,6 @@ def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
     global site_config
     site_config = sc
-
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    Integer,
-    String,
-    Text,
-    create_engine,
-)
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import DeclarativeBase
 
 # ---------------------------------------------------------------------------
 # SQLAlchemy base + engine (read-only reflection of asyncpg-managed tables)
