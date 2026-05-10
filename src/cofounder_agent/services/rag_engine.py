@@ -178,7 +178,20 @@ def _build_retriever_class():
 
             results: list[NodeWithScore] = []
             for row in rows:
-                metadata = dict(row.get("metadata") or {})
+                # asyncpg returns JSONB as either a decoded dict (when
+                # the type codec is registered) or as the raw string
+                # (default). MemoryClient.search handles both — match
+                # that here so the rag_engine path doesn't crash with
+                # ``ValueError: dictionary update sequence element #0
+                # has length 1; 2 is required`` on string-returned rows.
+                raw_meta = row.get("metadata")
+                if isinstance(raw_meta, str):
+                    try:
+                        import json as _json
+                        raw_meta = _json.loads(raw_meta)
+                    except (ValueError, TypeError):
+                        raw_meta = {}
+                metadata = dict(raw_meta or {})
                 metadata.update({
                     "source_table": row["source_table"],
                     "source_id": row["source_id"],
