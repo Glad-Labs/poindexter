@@ -177,8 +177,14 @@ class TaskExecutor:
                 try:
                     from services.pipeline_throttle import is_queue_full
 
+                    # Thread the lifespan-bound SiteConfig so the
+                    # throttle reads ``app_settings.max_approval_queue``
+                    # instead of falling back to its hardcoded ``3``
+                    # default. Glad-Labs/glad-labs-stack#345 — the
+                    # operator-tuned value did nothing prior to this fix.
                     _full, _queue_size, _queue_limit = await is_queue_full(
-                        self.database_service.pool
+                        self.database_service.pool,
+                        site_config=site_config,
                     )
                     if _full and pending_tasks:
                         # WARN (not INFO) so this shows up in the default log
