@@ -10,7 +10,12 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.13,<3.15"
+# Pinned to 3.13.x: litellm >=1.83.7 (which lands proxy-mode CVE
+# patches GHSA-r75f-5x8p-qvmc / -xqmj-j6mv-4862 / -v4p8-mg3p-g94g)
+# regressed its python upper bound to <3.14. We only run on 3.13 in
+# CI + on Matt's PC anyway; widening to 3.14 was speculative and
+# blocked the security bump.
+python = ">=3.13,<3.14"
 
 # Use headless opencv (doesn't require X11/GUI libraries in production)
 
@@ -137,9 +142,13 @@ datasets = "^3.0"
 # — #372 cutover), and the Langfuse callback wiring used at lifespan
 # startup. Without this dep declared, both the cost layer and the
 # Langfuse tracer silently no-op (try/except ImportError guards) — see
-# the migration 0160 docstring for the gap analysis. Pinned to the
-# 1.83.x line that ships the langfuse_otel callback name we register.
-litellm = ">=1.83.0,<2.0"
+# the migration 0160 docstring for the gap analysis. Floor bumped to
+# 1.83.7 to land the proxy-mode patches for GHSA-r75f-5x8p-qvmc
+# (SQL injection in proxy auth — critical), GHSA-xqmj-j6mv-4862
+# (proxy SSTI — high), GHSA-v4p8-mg3p-g94g (proxy MCP RCE — high).
+# Poindexter doesn't run litellm-proxy; the bump is hygiene + closing
+# the dependabot alerts that landed with the guardrails-ai dep.
+litellm = ">=1.83.7,<2.0"
 
 # Langfuse — same gap as litellm. PR #47 (Langfuse-first prompt manager)
 # and PR #241 (LiteLLM→Langfuse callback) both import langfuse with
