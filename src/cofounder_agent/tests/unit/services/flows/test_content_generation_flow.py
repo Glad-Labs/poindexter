@@ -77,7 +77,6 @@ class TestClaimPendingTask:
             "template_slug": "canonical_blog",
             "primary_keyword": "ollama",
             "site_id": None,
-            "stage_data": None,
         }
         pool = _make_pool(claim_row=row)
         db = _make_db_service(pool)
@@ -116,7 +115,6 @@ class TestClaimPendingTask:
             "template_slug": None,
             "primary_keyword": None,
             "site_id": None,
-            "stage_data": None,
         }
         pool = _make_pool(claim_row=row)
         db = _make_db_service(pool)
@@ -168,7 +166,6 @@ class TestContentGenerationFlow:
             "template_slug": "canonical_blog",
             "primary_keyword": "fastapi",
             "site_id": None,
-            "stage_data": None,
         }
         pool = _make_pool(claim_row=row)
         db = _make_db_service(pool)

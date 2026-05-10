@@ -24,6 +24,7 @@ import logging
 from typing import Any
 
 from prefect import flow, task
+from prefect.cache_policies import NO_CACHE
 from prefect.context import get_run_context
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,13 @@ logger = logging.getLogger(__name__)
     ),
     retries=1,
     retry_delay_seconds=10,
+    # Disable Prefect's task-result caching: the ``database_service``
+    # argument wraps an asyncpg pool whose internals are cython-
+    # extension objects that the cache layer can't serialise.
+    # Caching a CLAIM operation would also be a correctness bug —
+    # every call MUST hit the DB so concurrent flow runs see the
+    # FOR UPDATE SKIP LOCKED dance, not a cached "you already won."
+    cache_policy=NO_CACHE,
 )
 async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
     """Atomically claim one pending row.
@@ -55,12 +63,16 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
         return None
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # Column list mirrors what the flow body actually consumes
+            # below. The earlier draft listed a ``stage_data`` column
+            # that doesn't exist on this table — see the post-mortem
+            # in #410: the unit tests covered the dict-consumer shape
+            # but mocked ``fetchrow`` instead of running the real SQL.
             row = await conn.fetchrow(
                 """
                 SELECT task_id, topic, style, tone, target_length,
                        category, target_audience, niche_slug,
-                       template_slug, primary_keyword, site_id,
-                       stage_data
+                       template_slug, primary_keyword, site_id
                 FROM pipeline_tasks
                 WHERE status = 'pending'
                 ORDER BY created_at ASC
