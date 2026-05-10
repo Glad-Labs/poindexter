@@ -574,6 +574,39 @@ class MultiModelQA:
                 )
                 reviews.append(ff_review)
 
+        # 2g.4. Guardrails-AI brand-fabrication rail — sub-issue 3 of #329.
+        # Same regex patterns as content_validator + the deepeval brand
+        # rail, but routed through guardrails-ai's Validator/Guard
+        # framework. Cross-framework signal: the two agreeing/disagreeing
+        # on a draft is itself a correlation-drift indicator.
+        if not self._gate_enabled(gate_states, "guardrails_brand"):
+            logger.info(
+                "[MULTI_QA] Skipped gate 'guardrails_brand' (qa_gates.enabled=False)",
+            )
+        else:
+            gr_brand_review = await self._check_guardrails_brand(content)
+            if gr_brand_review is not None:
+                self._mark_advisory_if_configured(
+                    gr_brand_review, gate_states, "guardrails_brand",
+                )
+                reviews.append(gr_brand_review)
+
+        # 2g.5. Guardrails-AI competitor-mention rail — flags when
+        # operator-listed competitor brand names appear in the post.
+        # Skipped entirely when guardrails_competitor_list is empty
+        # (no list = no enforcement). Fills a gap DeepEval doesn't.
+        if not self._gate_enabled(gate_states, "guardrails_competitor"):
+            logger.info(
+                "[MULTI_QA] Skipped gate 'guardrails_competitor' (qa_gates.enabled=False)",
+            )
+        else:
+            gr_comp_review = await self._check_guardrails_competitor(content)
+            if gr_comp_review is not None:
+                self._mark_advisory_if_configured(
+                    gr_comp_review, gate_states, "guardrails_competitor",
+                )
+                reviews.append(gr_comp_review)
+
         # 2h. Rendered-preview gate — the final "yup looks good"
         # sanity check. Screenshots the post's /preview/{hash} URL
         # via Playwright-chromium and feeds the PNG to the vision
@@ -1251,6 +1284,95 @@ class MultiModelQA:
             score=score_100,
             feedback=reason or "",
             provider="deepeval",
+        )
+
+    async def _check_guardrails_brand(
+        self, content: str,
+    ) -> ReviewerResult | None:
+        """Run the guardrails-ai brand-fabrication validator.
+
+        Parallel signal to ``_check_deepeval_brand`` — same patterns
+        but routed through guardrails-ai instead of DeepEval. The two
+        agreeing/disagreeing on a draft is itself a learnable signal
+        (correlation drift = one of the framework wrappers has a bug).
+
+        Returns ``None`` when the rail is globally disabled via
+        ``app_settings.guardrails_enabled=false``. Pure-CPU regex
+        matching, so we wrap in ``asyncio.to_thread`` only as a
+        defensive measure — the call typically returns in <1ms.
+        """
+        try:
+            from services import guardrails_rails
+        except ImportError:
+            return None
+        try:
+            if not guardrails_rails.is_enabled(site_config):
+                return None
+        except Exception:
+            return None
+
+        try:
+            ok, reason = await asyncio.to_thread(
+                guardrails_rails.run_brand_guard, content,
+            )
+        except Exception as exc:
+            logger.warning("[MULTI_QA] guardrails_brand reviewer error: %s", exc)
+            return None
+
+        return ReviewerResult(
+            reviewer="guardrails_brand",
+            approved=bool(ok),
+            score=100.0 if ok else 0.0,
+            feedback=(reason or "")[:300] if not ok else "no fabrication",
+            provider="guardrails",
+        )
+
+    async def _check_guardrails_competitor(
+        self, content: str,
+    ) -> ReviewerResult | None:
+        """Run the guardrails-ai competitor-mention validator.
+
+        Reads the competitor list from
+        ``app_settings.guardrails_competitor_list`` (CSV). Empty list →
+        skip entirely (no operator-configured list, no enforcement).
+
+        This is a real brand-protection gap that DeepEval's content
+        rails don't cover — accidental mentions of named competitors
+        in branded posts. Operator seeds the list once; every post
+        thereafter gets the check for free.
+        """
+        try:
+            from services import guardrails_rails
+        except ImportError:
+            return None
+        try:
+            if not guardrails_rails.is_enabled(site_config):
+                return None
+        except Exception:
+            return None
+
+        competitors = guardrails_rails._resolve_competitors(site_config)
+        if not competitors:
+            # No list configured — no enforcement (matches the rail's
+            # own behavior, but skip the thread hop entirely).
+            return None
+
+        try:
+            ok, reason = await asyncio.to_thread(
+                guardrails_rails.run_competitor_guard, content, competitors,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[MULTI_QA] guardrails_competitor reviewer error: %s", exc,
+            )
+            return None
+
+        return ReviewerResult(
+            reviewer="guardrails_competitor",
+            approved=bool(ok),
+            score=100.0 if ok else 0.0,
+            feedback=(reason or "")[:300] if not ok else "no competitor mentions",
+            provider="guardrails",
         )
 
     async def _check_citations(self, content: str) -> ReviewerResult | None:

@@ -1,4 +1,4 @@
-"""guardrails-ai integration as a parallel content rail (#198).
+"""guardrails-ai integration as a parallel content rail (#198 / #329 sub-issue 3).
 
 Doesn't replace the domain-specific fabrication-detection patterns in
 ``services/content_validator.py`` — those are the brand-protection
@@ -22,14 +22,20 @@ guardrails pass alongside the existing content_validator. Default
 ``false`` keeps the rail dormant. Per-validator toggles via
 ``app_settings.guardrails_validator_<name>_enabled = true|false``.
 
-Custom validator pattern
-------------------------
+Two custom validators ship today:
 
-The example below registers a single ``brand_fabrication`` validator
-that wraps the existing ``content_validator._check_patterns`` helper.
-This is the "learning artifact" — once you've written one
-``BaseValidator``, the others (toxicity, PII, JSON-shape) follow the
-same pattern.
+- ``BrandFabricationValidator`` — wraps ``content_validator``'s
+  fabrication pattern sets as a guardrails ``Validator``. Same
+  detections, different framework (lets us correlate the two
+  signals + start migrating patterns into declarative rules).
+- ``CompetitorMentionValidator`` — flags the post when any name
+  in the operator-configured ``guardrails_competitor_list`` (CSV
+  of competitor brand names) appears in the body. Fills a gap
+  DeepEval doesn't cover — accidental competitor promotion in
+  branded content.
+
+Both wire in as reviewers in ``services/multi_model_qa.py`` via
+``run_brand_guard`` / ``run_competitor_guard``.
 """
 
 from __future__ import annotations
@@ -193,7 +199,167 @@ def is_enabled(site_config: Any) -> bool:
             return False
 
 
+# ---------------------------------------------------------------------------
+# Competitor-mention validator
+# ---------------------------------------------------------------------------
+
+
+def _build_competitor_validator():
+    """Lazy-build the competitor-mention validator class.
+
+    Imported lazily so callers without guardrails-ai installed don't
+    crash on module import. Word-boundary regex match is case-insensitive
+    so 'Acme' / 'ACME' / 'acme' all hit. Returns a registered Validator
+    class — instantiate with ``competitors=["Acme", "Foo"]``.
+    """
+    import re
+
+    from guardrails.validators import (
+        FailResult,
+        PassResult,
+        Validator,
+        register_validator,
+    )
+
+    @register_validator(name="poindexter/competitor_mention", data_type="string")
+    class CompetitorMentionValidator(Validator):
+        """Reject content that mentions any operator-configured competitor.
+
+        The competitor list is supplied at construction time (typically
+        from ``app_settings.guardrails_competitor_list`` — CSV of brand
+        names). Empty list → always passes. Match is case-insensitive
+        and word-boundary — "Acme" matches "Acme Corp" and "acme",
+        but not "AcmeForge" (longer compound brand names should be
+        listed separately if the operator wants to flag them).
+        """
+
+        def __init__(self, competitors: list[str] | None = None, on_fail=None):
+            super().__init__(on_fail=on_fail)
+            self._competitors = [c.strip() for c in (competitors or []) if c.strip()]
+            self._patterns = [
+                (c, re.compile(rf"\b{re.escape(c)}\b", re.IGNORECASE))
+                for c in self._competitors
+            ]
+
+        def validate(self, value: str, metadata: dict | None = None) -> Any:
+            if not isinstance(value, str) or not value.strip():
+                return PassResult()
+            if not self._patterns:
+                return PassResult()
+
+            hits: list[str] = []
+            for name, pat in self._patterns:
+                if pat.search(value):
+                    hits.append(name)
+
+            if hits:
+                return FailResult(
+                    error_message=(
+                        f"Competitor-mention validator flagged "
+                        f"{len(hits)} brand(s): "
+                        + ", ".join(sorted(set(hits))[:5])
+                        + ("" if len(hits) <= 5 else f" (+{len(hits)-5} more)")
+                    ),
+                    fix_value=None,
+                )
+            return PassResult()
+
+    return CompetitorMentionValidator
+
+
+def _resolve_competitors(site_config: Any) -> list[str]:
+    """Pull the operator-configured competitor list out of site_config.
+
+    Reads ``app_settings.guardrails_competitor_list`` (CSV). Empty /
+    missing → empty list (validator passes everything). Trimmed of
+    whitespace, deduped while preserving order.
+    """
+    if site_config is None:
+        return []
+    try:
+        raw = site_config.get("guardrails_competitor_list", "") or ""
+    except Exception:
+        return []
+    if not raw or not isinstance(raw, str):
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in raw.split(","):
+        n = name.strip()
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    return out
+
+
+def _get_competitor_guard(competitors: list[str]) -> Any:
+    """Lazy-build a Guard for the competitor validator.
+
+    Cache key is the lowercase-sorted competitor tuple so equivalent
+    lists reuse the same Guard instance. Different lists rebuild —
+    Guards are cheap to construct and the cache is just to avoid
+    re-registering the validator class on every call.
+    """
+    key = "competitor:" + "|".join(sorted(c.lower() for c in competitors))
+    if key in _GUARD_CACHE:
+        return _GUARD_CACHE[key]
+
+    from guardrails import Guard
+
+    validator_cls = _build_competitor_validator()
+    guard = Guard().use(
+        validator_cls(competitors=competitors, on_fail="exception")
+    )
+    _GUARD_CACHE[key] = guard
+    return guard
+
+
+def run_competitor_guard(
+    content: str, competitors: list[str],
+) -> tuple[bool, str | None]:
+    """Run the competitor-mention guardrail.
+
+    Returns ``(ok, reason)`` — ok=True when the post mentions none of
+    the supplied competitors; ok=False with a human-readable reason
+    listing the offenders when it doesn't.
+
+    Empty / missing ``competitors`` → ``(True, None)`` (no list, no
+    enforcement). Never raises — guardrails-ai's exceptions are
+    caught and surfaced as the (False, reason) tuple.
+    """
+    if not content or not isinstance(content, str):
+        return True, None
+    if not competitors:
+        return True, None
+
+    try:
+        guard = _get_competitor_guard(competitors)
+        result = guard.validate(content)
+        if not result.validation_passed:
+            return False, str(
+                result.validation_summaries or "guardrails: competitor mention"
+            )
+        return True, None
+    except ImportError as e:
+        logger.warning(
+            "[guardrails] guardrails-ai not installed (%s) — skipping rail",
+            e,
+        )
+        return True, None
+    except Exception as e:
+        from guardrails.errors import ValidationError as _GuardrailsVE
+        if isinstance(e, _GuardrailsVE):
+            return False, str(e)
+        logger.warning(
+            "[guardrails] Unexpected error in competitor rail: %s",
+            e, exc_info=True,
+        )
+        return True, None
+
+
 __all__ = [
     "is_enabled",
     "run_brand_guard",
+    "run_competitor_guard",
+    "_resolve_competitors",
 ]

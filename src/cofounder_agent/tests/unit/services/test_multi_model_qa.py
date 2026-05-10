@@ -1442,3 +1442,140 @@ class TestDeepEvalFaithfulnessGate:
 
         assert result is None
         judge_mock.assert_not_called()
+
+
+@pytest.mark.unit
+class TestGuardrailsBrandGate:
+    """``_check_guardrails_brand`` wraps the guardrails-ai brand validator.
+
+    Sub-issue 3 of #329 — same regex patterns as content_validator +
+    deepeval_brand but routed through guardrails-ai. Cross-framework
+    parallel signal.
+    """
+
+    @pytest.mark.asyncio
+    async def test_clean_content_returns_score_100(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails.run_brand_guard",
+            return_value=(True, None),
+        ), patch(
+            "services.guardrails_rails.is_enabled", return_value=True,
+        ):
+            result = await qa._check_guardrails_brand(GOOD_CONTENT)
+
+        assert result is not None
+        assert result.reviewer == "guardrails_brand"
+        assert result.provider == "guardrails"
+        assert result.approved is True
+        assert result.score == 100.0
+
+    @pytest.mark.asyncio
+    async def test_fabrication_detected_returns_score_0(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails.run_brand_guard",
+            return_value=(False, "fake_quote: 'Bill Gates said...'"),
+        ), patch(
+            "services.guardrails_rails.is_enabled", return_value=True,
+        ):
+            result = await qa._check_guardrails_brand("body text")
+
+        assert result is not None
+        assert result.approved is False
+        assert result.score == 0.0
+        assert "fake_quote" in result.feedback
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_disabled(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails.is_enabled", return_value=False,
+        ), patch(
+            "services.guardrails_rails.run_brand_guard",
+        ) as run_mock:
+            result = await qa._check_guardrails_brand(GOOD_CONTENT)
+
+        assert result is None
+        run_mock.assert_not_called()
+
+
+@pytest.mark.unit
+class TestGuardrailsCompetitorGate:
+    """``_check_guardrails_competitor`` flags configured competitor names.
+
+    Skips entirely without a competitor list — no list, no
+    enforcement (avoids false positives on fresh installs that
+    haven't seeded the list yet).
+    """
+
+    @pytest.mark.asyncio
+    async def test_skips_with_empty_competitor_list(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails._resolve_competitors",
+            return_value=[],
+        ), patch(
+            "services.guardrails_rails.is_enabled", return_value=True,
+        ), patch(
+            "services.guardrails_rails.run_competitor_guard",
+        ) as run_mock:
+            result = await qa._check_guardrails_competitor("body")
+
+        assert result is None
+        run_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clean_content_with_list_passes(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails._resolve_competitors",
+            return_value=["Acme", "Foo"],
+        ), patch(
+            "services.guardrails_rails.run_competitor_guard",
+            return_value=(True, None),
+        ), patch(
+            "services.guardrails_rails.is_enabled", return_value=True,
+        ):
+            result = await qa._check_guardrails_competitor(
+                "Post about FastAPI and uvicorn.",
+            )
+
+        assert result is not None
+        assert result.reviewer == "guardrails_competitor"
+        assert result.approved is True
+        assert result.score == 100.0
+
+    @pytest.mark.asyncio
+    async def test_competitor_mention_fails(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails._resolve_competitors",
+            return_value=["Acme"],
+        ), patch(
+            "services.guardrails_rails.run_competitor_guard",
+            return_value=(False, "Competitor-mention validator flagged 1 brand(s): Acme"),
+        ), patch(
+            "services.guardrails_rails.is_enabled", return_value=True,
+        ):
+            result = await qa._check_guardrails_competitor(
+                "We've been using Acme for years.",
+            )
+
+        assert result is not None
+        assert result.approved is False
+        assert result.score == 0.0
+        assert "Acme" in result.feedback
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_rail_disabled(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails.is_enabled", return_value=False,
+        ), patch(
+            "services.guardrails_rails.run_competitor_guard",
+        ) as run_mock:
+            result = await qa._check_guardrails_competitor("body")
+
+        assert result is None
+        run_mock.assert_not_called()

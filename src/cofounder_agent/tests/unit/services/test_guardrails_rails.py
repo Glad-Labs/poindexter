@@ -1,5 +1,5 @@
 """Tests for services/guardrails_rails.py — guardrails-ai integration
-as a parallel content rail (#198)."""
+as a parallel content rail (#198 / #329 sub-issue 3)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from services.guardrails_rails import (
+    _resolve_competitors,
     is_enabled,
     run_brand_guard,
+    run_competitor_guard,
 )
 
 
@@ -120,3 +122,133 @@ class TestGuardCaching:
         run_brand_guard("Second clean content.")
         guard2 = guardrails_rails._GUARD_CACHE.get("brand")
         assert guard1 is guard2  # cache hit, no re-register
+
+
+# ---------------------------------------------------------------------------
+# _resolve_competitors — operator config CSV → cleaned list
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestResolveCompetitors:
+    def test_no_site_config_returns_empty(self):
+        assert _resolve_competitors(None) == []
+
+    def test_empty_string_returns_empty(self):
+        sc = MagicMock()
+        sc.get.return_value = ""
+        assert _resolve_competitors(sc) == []
+
+    def test_csv_parses_to_list(self):
+        sc = MagicMock()
+        sc.get.return_value = "Acme, Foo, Bar Inc."
+        assert _resolve_competitors(sc) == ["Acme", "Foo", "Bar Inc."]
+
+    def test_dedupes_case_insensitively(self):
+        sc = MagicMock()
+        sc.get.return_value = "Acme, ACME, acme, Foo"
+        # First-seen wins; later case-variants are dropped.
+        assert _resolve_competitors(sc) == ["Acme", "Foo"]
+
+    def test_strips_whitespace(self):
+        sc = MagicMock()
+        sc.get.return_value = "  Acme  ,   Foo "
+        assert _resolve_competitors(sc) == ["Acme", "Foo"]
+
+
+# ---------------------------------------------------------------------------
+# run_competitor_guard — flagging configured competitor names
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRunCompetitorGuard:
+    def test_clean_content_passes(self):
+        ok, reason = run_competitor_guard(
+            "Post about FastAPI and uvicorn.",
+            competitors=["Acme", "Foo"],
+        )
+        assert ok is True
+        assert reason is None
+
+    def test_competitor_mention_fails(self):
+        ok, reason = run_competitor_guard(
+            "We've been using Acme Corp's product for years.",
+            competitors=["Acme", "Foo"],
+        )
+        assert ok is False
+        assert reason is not None
+        assert "Acme" in reason
+
+    def test_case_insensitive_match(self):
+        ok, _ = run_competitor_guard(
+            "ACME makes the best widgets.",
+            competitors=["Acme"],
+        )
+        assert ok is False
+
+    def test_word_boundary_avoids_substring_false_positive(self):
+        # 'Acme' should NOT match inside 'AcmeForge' (compound brand)
+        ok, _ = run_competitor_guard(
+            "AcmeForge is a different product entirely.",
+            competitors=["Acme"],
+        )
+        assert ok is True
+
+    def test_empty_competitor_list_skips(self):
+        ok, reason = run_competitor_guard(
+            "Anything goes.", competitors=[],
+        )
+        assert ok is True
+        assert reason is None
+
+    def test_empty_content_skips(self):
+        ok, reason = run_competitor_guard("", competitors=["Acme"])
+        assert ok is True
+        assert reason is None
+
+    def test_multiple_hits_reported(self):
+        ok, reason = run_competitor_guard(
+            "Both Acme and Foo make great products.",
+            competitors=["Acme", "Foo"],
+        )
+        assert ok is False
+        assert "Acme" in (reason or "")
+        assert "Foo" in (reason or "")
+
+
+# ---------------------------------------------------------------------------
+# Competitor guard caching — different lists get different Guards
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCompetitorGuardCaching:
+    def test_same_list_reuses_guard(self):
+        from services import guardrails_rails
+
+        guardrails_rails._GUARD_CACHE.clear()
+        run_competitor_guard("text", ["Acme"])
+        run_competitor_guard("other text", ["Acme"])
+        # One competitor cache entry shared between the two calls.
+        keys = [k for k in guardrails_rails._GUARD_CACHE if k.startswith("competitor:")]
+        assert len(keys) == 1
+
+    def test_different_lists_get_different_guards(self):
+        from services import guardrails_rails
+
+        guardrails_rails._GUARD_CACHE.clear()
+        run_competitor_guard("text", ["Acme"])
+        run_competitor_guard("text", ["Foo"])
+        keys = [k for k in guardrails_rails._GUARD_CACHE if k.startswith("competitor:")]
+        assert len(keys) == 2
+
+    def test_order_irrelevant_for_cache_key(self):
+        from services import guardrails_rails
+
+        guardrails_rails._GUARD_CACHE.clear()
+        run_competitor_guard("text", ["Acme", "Foo"])
+        run_competitor_guard("text", ["Foo", "Acme"])
+        # Sorted-tuple cache key collapses the two orderings.
+        keys = [k for k in guardrails_rails._GUARD_CACHE if k.startswith("competitor:")]
+        assert len(keys) == 1
