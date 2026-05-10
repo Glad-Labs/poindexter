@@ -158,6 +158,8 @@ litellm = ">=1.83.7,<2.0"
 langfuse = ">=3.0,<4.0"
 deepeval = "^4.0.0"
 guardrails-ai = "^0.7.3"
+ragas = "^0.2"
+langchain-ollama = "^1.1.0"
 
 [tool.poetry.extras]
 ml = ["torch", "transformers", "diffusers"]

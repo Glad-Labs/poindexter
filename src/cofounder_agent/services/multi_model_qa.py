@@ -607,6 +607,26 @@ class MultiModelQA:
                 )
                 reviews.append(gr_comp_review)
 
+        # 2g.6. Ragas — sub-issue 2 of #329. Single reviewer averaging
+        # faithfulness + answer_relevancy + context_precision into one
+        # ReviewerResult; per-metric breakdown lives in the feedback
+        # string. Default-disabled (ragas_enabled=false) because each
+        # call costs ~6K judge tokens — operators opt in once they
+        # care about RAG quality trend lines.
+        if not self._gate_enabled(gate_states, "ragas_eval"):
+            logger.info(
+                "[MULTI_QA] Skipped gate 'ragas_eval' (qa_gates.enabled=False)",
+            )
+        else:
+            ragas_review = await self._check_ragas_eval(
+                content, topic, research_sources,
+            )
+            if ragas_review is not None:
+                self._mark_advisory_if_configured(
+                    ragas_review, gate_states, "ragas_eval",
+                )
+                reviews.append(ragas_review)
+
         # 2h. Rendered-preview gate — the final "yup looks good"
         # sanity check. Screenshots the post's /preview/{hash} URL
         # via Playwright-chromium and feeds the PNG to the vision
@@ -1325,6 +1345,76 @@ class MultiModelQA:
             score=100.0 if ok else 0.0,
             feedback=(reason or "")[:300] if not ok else "no fabrication",
             provider="guardrails",
+        )
+
+    async def _check_ragas_eval(
+        self, content: str, topic: str, research_sources: str | None,
+    ) -> ReviewerResult | None:
+        """Run Ragas faithfulness + answer_relevancy + context_precision.
+
+        Single ReviewerResult averages the three sub-scores; the
+        feedback string carries the per-metric breakdown so operators
+        can correlate trends.
+
+        Default-off (``ragas_enabled=false``) because each call costs
+        ~6K judge-model tokens. When enabled, runs on every QA pass —
+        operators with a tighter budget should sample (mark the qa_gate
+        as ``required_to_pass=false`` and intercept with a lower-cost
+        reviewer first, or only enable on auto-publish candidates).
+
+        Returns ``None`` when:
+        - ragas_enabled=false
+        - research_sources is empty (Ragas needs context to evaluate)
+        - Ragas itself errors (judge unreachable, ImportError, etc)
+        """
+        try:
+            from services import ragas_eval
+        except ImportError:
+            return None
+        try:
+            if not ragas_eval.is_enabled(site_config):
+                return None
+        except Exception:
+            return None
+
+        if not research_sources or not research_sources.strip():
+            return None
+
+        chunks = [
+            p.strip() for p in research_sources.split("\n\n") if p.strip()
+        ]
+        if not chunks:
+            return None
+
+        try:
+            scores = await ragas_eval.evaluate_sample(
+                topic=topic,
+                generated_content=content,
+                retrieved_contexts=chunks,
+                site_config=site_config,
+            )
+        except Exception as exc:
+            logger.warning("[MULTI_QA] ragas_eval reviewer error: %s", exc)
+            return None
+
+        # Drop any -1.0 sentinels (per-metric Ragas failure) before
+        # averaging — averaging in a sentinel would slam the result
+        # to 0 and surface as a hard veto.
+        valid = {k: v for k, v in scores.items() if v >= 0}
+        if not valid:
+            return None
+
+        avg = sum(valid.values()) / len(valid)
+        score_100 = round(float(avg) * 100.0, 1)
+        breakdown = ", ".join(
+            f"{k}={v:.2f}" for k, v in sorted(valid.items())
+        )
+        return ReviewerResult(
+            reviewer="ragas_eval",
+            approved=avg >= 0.6,  # Ragas threshold; configurable downstream
+            score=score_100,
+            feedback=breakdown,
+            provider="ragas",
         )
 
     async def _check_guardrails_competitor(

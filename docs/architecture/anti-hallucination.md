@@ -165,6 +165,7 @@ nothing to evaluate).
 | `deepeval_faithfulness`      | `deepeval`         | (`_check_deepeval_faithfulness`)     | DeepEval `FaithfulnessMetric` — every claim in the post must be attributable to a paragraph chunk of `research_sources` (the corpus the writer was given). Skips entirely without research. Threshold via `deepeval_threshold_faithfulness` (default 0.8). Advisory by default.                                                                                                                                                                                                                                                                                      |
 | `guardrails_brand`           | `guardrails`       | (`_check_guardrails_brand`)          | guardrails-ai-wrapped `BrandFabricationValidator` — same regex patterns as content_validator, routed through guardrails-ai's `Validator` / `Guard` framework. Cross-framework parallel signal (brand check now reports through three lenses: `programmatic_validator`, `deepeval_brand_fabrication`, and this rail; correlation drift = framework wrapper bug). Master switch `guardrails_enabled` (default true). Advisory.                                                                                                                                         |
 | `guardrails_competitor`      | `guardrails`       | (`_check_guardrails_competitor`)     | guardrails-ai `CompetitorMentionValidator` — flags when any name in `app_settings.guardrails_competitor_list` (CSV) appears in the post body. Word-boundary, case-insensitive match. Skipped entirely when the list is empty (no list = no enforcement). Fills a gap DeepEval doesn't cover. Advisory.                                                                                                                                                                                                                                                               |
+| `ragas_eval`                 | `ragas`            | (`_check_ragas_eval`)                | Ragas RAG-quality reviewer — averages `faithfulness` + `answer_relevancy` + `context_precision` into one score; per-metric breakdown surfaces in the feedback string. Disabled by default (qa_gates row + `ragas_enabled` master switch both default off) because each call costs ~6K judge tokens. Skipped when `research_sources` is empty (Ragas needs grounding context). Judge model resolved via `cost_tier='budget'` (Lane B). Advisory when enabled.                                                                                                         |
 
 ### Aggregation
 
@@ -186,6 +187,9 @@ Inside `MultiModelQA.review()` around line 485:
      fallback weight is the intentional default)
    - `guardrails` (brand, competitor) → 0.5 fallback (same
      calibration posture as the deepeval rails)
+   - `ragas` (single combined eval) → 0.5 fallback (default-off so
+     it doesn't normally enter the average; flips on once the
+     operator opts in to the RAG-quality signal)
 3. **Direct warning penalty** — `final_score -= warning_count ×
 content_validator_warning_qa_penalty` (default 3 pts/warning, line
    524). GH-91 fix: this lands on the final score, not the validator

@@ -1579,3 +1579,135 @@ class TestGuardrailsCompetitorGate:
 
         assert result is None
         run_mock.assert_not_called()
+
+
+@pytest.mark.unit
+class TestRagasEvalGate:
+    """``_check_ragas_eval`` averages Ragas's three metrics into one
+    ReviewerResult. Lane D #329 sub-issue 2.
+
+    Default-disabled (heavy) — these tests just exercise the wrapper
+    contract, not the underlying Ragas evaluation (that's covered by
+    test_ragas_eval.py against a mocked judge).
+    """
+
+    @pytest.mark.asyncio
+    async def test_skips_without_research(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.ragas_eval.evaluate_sample",
+        ) as eval_mock, patch(
+            "services.ragas_eval.is_enabled", return_value=True,
+        ):
+            result = await qa._check_ragas_eval(
+                "body", "topic", research_sources=None,
+            )
+
+        assert result is None
+        eval_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_disabled(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.ragas_eval.is_enabled", return_value=False,
+        ), patch(
+            "services.ragas_eval.evaluate_sample",
+        ) as eval_mock:
+            result = await qa._check_ragas_eval(
+                "body", "topic", "research bundle",
+            )
+
+        assert result is None
+        eval_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_averages_three_scores(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.ragas_eval.evaluate_sample",
+            new=AsyncMock(return_value={
+                "faithfulness": 0.9,
+                "answer_relevancy": 0.8,
+                "context_precision": 0.7,
+            }),
+        ), patch(
+            "services.ragas_eval.is_enabled", return_value=True,
+        ):
+            result = await qa._check_ragas_eval(
+                "body", "topic", "ctx1\n\nctx2",
+            )
+
+        assert result is not None
+        assert result.reviewer == "ragas_eval"
+        assert result.provider == "ragas"
+        # Average of 0.9, 0.8, 0.7 = 0.8 → 80.0 score
+        assert result.score == 80.0
+        assert result.approved is True  # 0.8 >= 0.6 threshold
+        assert "faithfulness=0.90" in result.feedback
+        assert "answer_relevancy=0.80" in result.feedback
+        assert "context_precision=0.70" in result.feedback
+
+    @pytest.mark.asyncio
+    async def test_drops_sentinel_failures(self):
+        """Per-metric -1.0 sentinel = ragas couldn't compute that one.
+        Averaging in -1.0 would slam the score; instead we drop the
+        sentinel and average just the valid metrics."""
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.ragas_eval.evaluate_sample",
+            new=AsyncMock(return_value={
+                "faithfulness": 0.9,
+                "answer_relevancy": -1.0,  # judge errored on this metric
+                "context_precision": 0.7,
+            }),
+        ), patch(
+            "services.ragas_eval.is_enabled", return_value=True,
+        ):
+            result = await qa._check_ragas_eval(
+                "body", "topic", "ctx",
+            )
+
+        assert result is not None
+        # Average of 0.9, 0.7 = 0.8 → 80.0 (sentinel dropped, not 0.0)
+        assert result.score == 80.0
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_all_metrics_failed(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.ragas_eval.evaluate_sample",
+            new=AsyncMock(return_value={
+                "faithfulness": -1.0,
+                "answer_relevancy": -1.0,
+                "context_precision": -1.0,
+            }),
+        ), patch(
+            "services.ragas_eval.is_enabled", return_value=True,
+        ):
+            result = await qa._check_ragas_eval(
+                "body", "topic", "ctx",
+            )
+
+        assert result is None  # nothing valid to average
+
+    @pytest.mark.asyncio
+    async def test_low_score_marks_unapproved(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.ragas_eval.evaluate_sample",
+            new=AsyncMock(return_value={
+                "faithfulness": 0.3,
+                "answer_relevancy": 0.4,
+                "context_precision": 0.5,
+            }),
+        ), patch(
+            "services.ragas_eval.is_enabled", return_value=True,
+        ):
+            result = await qa._check_ragas_eval(
+                "body", "topic", "ctx",
+            )
+
+        assert result is not None
+        assert result.approved is False  # 0.4 avg < 0.6 threshold
+        assert result.score == 40.0
