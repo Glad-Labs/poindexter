@@ -1711,3 +1711,141 @@ class TestRagasEvalGate:
         assert result is not None
         assert result.approved is False  # 0.4 avg < 0.6 threshold
         assert result.score == 40.0
+
+
+@pytest.mark.unit
+class TestSurfaceReviewerFailure:
+    """`_surface_reviewer_failure` is the loud-skip helper every QA-rail
+    wrapper calls when its underlying call raises. Two surfaces fire:
+    WARNING log + audit_log row. No notify_operator (six rails would
+    page Discord too often)."""
+
+    def test_logs_warning_with_traceback(self, caplog):
+        from services.multi_model_qa import _surface_reviewer_failure
+        with caplog.at_level("WARNING"):
+            _surface_reviewer_failure("deepeval_g_eval", RuntimeError("boom"))
+        assert any("deepeval_g_eval" in r.message for r in caplog.records)
+        assert any("RuntimeError" in r.message for r in caplog.records)
+
+    def test_emits_audit_log_row(self):
+        from services.multi_model_qa import _surface_reviewer_failure
+        with patch("services.audit_log.audit_log_bg") as audit_mock:
+            _surface_reviewer_failure(
+                "ragas_eval", ValueError("threshold parse error"),
+            )
+        audit_mock.assert_called_once()
+        args, kwargs = audit_mock.call_args
+        assert args[0] == "qa_reviewer_failure"
+        assert args[1] == "multi_model_qa"
+        assert args[2]["reviewer"] == "ragas_eval"
+        assert args[2]["exception_type"] == "ValueError"
+        assert "threshold parse error" in args[2]["exception_message"]
+        assert kwargs.get("severity") == "warning"
+
+    def test_audit_logger_uninitialised_swallowed(self):
+        """`audit_log_bg` already silently drops when the global isn't
+        bound; if its module fails to import for some reason, the helper
+        must still complete without raising."""
+        from services.multi_model_qa import _surface_reviewer_failure
+        with patch(
+            "services.audit_log.audit_log_bg",
+            side_effect=RuntimeError("audit not initialised"),
+        ):
+            # Must not raise.
+            _surface_reviewer_failure("guardrails_brand", IOError("disk full"))
+
+
+@pytest.mark.unit
+class TestReviewerFailureWiredIntoRails:
+    """End-to-end: when each reviewer's underlying call raises, the
+    wrapper returns None AND `_surface_reviewer_failure` fires.
+    Mirrors what would happen in production when a deepeval/guardrails/
+    ragas dep is misconfigured but the rail is still enabled."""
+
+    @pytest.mark.asyncio
+    async def test_deepeval_g_eval_failure_surfaces(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.evaluate_g_eval",
+            side_effect=RuntimeError("judge unreachable"),
+        ), patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ), patch(
+            "services.multi_model_qa._surface_reviewer_failure",
+        ) as surface_mock:
+            result = await qa._check_deepeval_g_eval("body", "topic")
+
+        assert result is None
+        surface_mock.assert_called_once()
+        assert surface_mock.call_args.args[0] == "deepeval_g_eval"
+
+    @pytest.mark.asyncio
+    async def test_deepeval_faithfulness_failure_surfaces(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.evaluate_faithfulness",
+            side_effect=RuntimeError("judge unreachable"),
+        ), patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ), patch(
+            "services.multi_model_qa._surface_reviewer_failure",
+        ) as surface_mock:
+            result = await qa._check_deepeval_faithfulness("body", "ctx text")
+
+        assert result is None
+        surface_mock.assert_called_once()
+        assert surface_mock.call_args.args[0] == "deepeval_faithfulness"
+
+    @pytest.mark.asyncio
+    async def test_guardrails_brand_failure_surfaces(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails.run_brand_guard",
+            side_effect=RuntimeError("validator import failure"),
+        ), patch(
+            "services.guardrails_rails.is_enabled", return_value=True,
+        ), patch(
+            "services.multi_model_qa._surface_reviewer_failure",
+        ) as surface_mock:
+            result = await qa._check_guardrails_brand("body")
+
+        assert result is None
+        surface_mock.assert_called_once()
+        assert surface_mock.call_args.args[0] == "guardrails_brand"
+
+    @pytest.mark.asyncio
+    async def test_guardrails_competitor_failure_surfaces(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.guardrails_rails._resolve_competitors",
+            return_value=["Acme"],
+        ), patch(
+            "services.guardrails_rails.run_competitor_guard",
+            side_effect=RuntimeError("validator threw"),
+        ), patch(
+            "services.guardrails_rails.is_enabled", return_value=True,
+        ), patch(
+            "services.multi_model_qa._surface_reviewer_failure",
+        ) as surface_mock:
+            result = await qa._check_guardrails_competitor("body")
+
+        assert result is None
+        surface_mock.assert_called_once()
+        assert surface_mock.call_args.args[0] == "guardrails_competitor"
+
+    @pytest.mark.asyncio
+    async def test_ragas_eval_failure_surfaces(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.ragas_eval.evaluate_sample",
+            new=AsyncMock(side_effect=RuntimeError("ragas exploded")),
+        ), patch(
+            "services.ragas_eval.is_enabled", return_value=True,
+        ), patch(
+            "services.multi_model_qa._surface_reviewer_failure",
+        ) as surface_mock:
+            result = await qa._check_ragas_eval("body", "topic", "ctx")
+
+        assert result is None
+        surface_mock.assert_called_once()
+        assert surface_mock.call_args.args[0] == "ragas_eval"

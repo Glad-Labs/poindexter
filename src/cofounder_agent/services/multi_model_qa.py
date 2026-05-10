@@ -158,6 +158,56 @@ def format_qa_feedback_from_reviews(
     return text
 
 
+def _surface_reviewer_failure(reviewer: str, exc: Exception) -> None:
+    """Loud-skip helper for QA-rail reviewers per ``feedback_no_silent_defaults``.
+
+    Used by every reviewer wrapper that catches ``Exception`` and
+    returns ``None`` (skip). The QA chain is intentionally tolerant
+    to per-reviewer failures — the chain still completes without
+    that rail's signal — but a silent skip masks regressions
+    (a removed dep, a judge model that 502'd, a graph-wiring bug).
+
+    Two surfaces fire on every reviewer skip:
+
+    1. ``WARNING`` log with full traceback (``exc_info=exc``) plus
+       a one-line repair instruction.
+    2. ``audit_log`` row — ``event_type='qa_reviewer_failure'``,
+       ``severity='warning'``. The QA Rails dashboard's "Reviewer
+       Skips (24h)" panel projects this so the operator can see
+       which rails are flaking.
+
+    No ``notify_operator`` call — six rails throwing periodically
+    would page Discord too often. The dashboard threshold alert
+    handles the "is something genuinely broken vs. a one-off blip"
+    decision via volume-based rules.
+    """
+    logger.warning(
+        "[MULTI_QA] reviewer=%s skipped due to %s: %s — failure is "
+        "loudly logged + audit_log'd; QA chain continues without "
+        "this rail's signal. Investigate or set "
+        "qa_gates.<name>.enabled=false until repaired.",
+        reviewer, type(exc).__name__, exc,
+        exc_info=exc,
+    )
+    try:
+        from services.audit_log import audit_log_bg
+        audit_log_bg(
+            "qa_reviewer_failure",
+            "multi_model_qa",
+            {
+                "reviewer": reviewer,
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc)[:500],
+            },
+            severity="warning",
+        )
+    except Exception:
+        # audit_log_bg already silently drops when the global isn't
+        # initialised. Wrap defensively in case the import itself
+        # fails — never let an observability call break the chain.
+        pass
+
+
 class MultiModelQA:
     """Multi-model quality assurance for content pipeline.
 
@@ -1263,7 +1313,7 @@ class MultiModelQA:
                 threshold=threshold,
             )
         except Exception as exc:
-            logger.warning("[MULTI_QA] deepeval_g_eval reviewer error: %s", exc)
+            _surface_reviewer_failure("deepeval_g_eval", exc)
             return None
 
         score_100 = round(float(score_unit) * 100.0, 1)
@@ -1328,7 +1378,7 @@ class MultiModelQA:
                 threshold=threshold,
             )
         except Exception as exc:
-            logger.warning("[MULTI_QA] deepeval_faithfulness reviewer error: %s", exc)
+            _surface_reviewer_failure("deepeval_faithfulness", exc)
             return None
 
         score_100 = round(float(score_unit) * 100.0, 1)
@@ -1370,7 +1420,7 @@ class MultiModelQA:
                 guardrails_rails.run_brand_guard, content,
             )
         except Exception as exc:
-            logger.warning("[MULTI_QA] guardrails_brand reviewer error: %s", exc)
+            _surface_reviewer_failure("guardrails_brand", exc)
             return None
 
         return ReviewerResult(
@@ -1428,7 +1478,7 @@ class MultiModelQA:
                 site_config=site_config,
             )
         except Exception as exc:
-            logger.warning("[MULTI_QA] ragas_eval reviewer error: %s", exc)
+            _surface_reviewer_failure("ragas_eval", exc)
             return None
 
         # Drop any -1.0 sentinels (per-metric Ragas failure) before
@@ -1486,9 +1536,7 @@ class MultiModelQA:
                 guardrails_rails.run_competitor_guard, content, competitors,
             )
         except Exception as exc:
-            logger.warning(
-                "[MULTI_QA] guardrails_competitor reviewer error: %s", exc,
-            )
+            _surface_reviewer_failure("guardrails_competitor", exc)
             return None
 
         return ReviewerResult(
