@@ -510,12 +510,27 @@ def _resolve_sdxl_featured_response(
         if host_home and output_path.startswith(host_home):
             output_path = output_path.replace(host_home, os.path.expanduser("~"), 1)
         output_path = output_path.replace("\\", "/")
-        logger.info(
-            "[IMAGE] Featured SDXL generated: %s (%dms)",
-            os.path.basename(output_path), data.get("generation_time_ms", 0),
-        )
+        gen_ms = data.get("generation_time_ms", 0)
         if output_path and os.path.exists(output_path):
+            logger.info(
+                "[IMAGE] Featured SDXL generated: %s (%dms)",
+                os.path.basename(output_path), gen_ms,
+            )
             return output_path
+        # SDXL returned a path the worker can't see — almost always a
+        # volume-mount mismatch between the SDXL container and the
+        # worker container. Log loud (not silent return None) per
+        # ``feedback_no_silent_defaults``; the caller will fall back to
+        # Pexels but at least the regression is visible. See
+        # Glad-Labs/glad-labs-stack#343.
+        logger.warning(
+            "[IMAGE] SDXL responded 200 with image_path=%r (gen_ms=%d) "
+            "but worker can't see the file. Volume mount mismatch — "
+            "post will fall back to Pexels. Check SDXL container "
+            "<-> worker container shared volume on the generated-images "
+            "directory.",
+            output_path, gen_ms,
+        )
         return None
     if ct.startswith("image/"):
         output_dir = os.path.join(
