@@ -15,8 +15,7 @@ from __future__ import annotations
 import pytest
 
 from services.quality_scorers import score_accuracy
-import services.quality_scorers as _site_config_mod
-site_config = _site_config_mod.site_config
+import services.quality_scorers as _qs_mod
 
 
 _FIRST_PERSON_CONTENT = (
@@ -40,13 +39,14 @@ _CFG = {
 def _seed_allow_list():
     """Seed the bypass list before each test, restore after.
 
-    The conftest's `_reset_singletons_between_tests` autouse fixture
-    will scrub site_config at test teardown; this fixture prepends
-    a known value so each test starts from a clean known state.
+    Reads the site_config attribute fresh each time — the conftest's
+    `_share_test_site_config` fixture rebinds the module attribute on
+    every test, so capturing a local reference at import time would
+    silently miss the rebinding (#330 DI seam pattern).
     """
-    site_config._config["qa_allow_first_person_niches"] = "dev_diary"
+    _qs_mod.site_config._config["qa_allow_first_person_niches"] = "dev_diary"
     yield
-    site_config._config.pop("qa_allow_first_person_niches", None)
+    _qs_mod.site_config._config.pop("qa_allow_first_person_niches", None)
 
 
 @pytest.mark.unit
@@ -104,7 +104,7 @@ class TestFirstPersonValidatorBypass:
     def test_unrelated_niche_in_allow_list_does_not_help_dev_diary_post(self):
         """If only ``other_niche`` is in the allow list, dev_diary posts
         are still penalised."""
-        site_config._config["qa_allow_first_person_niches"] = "other_niche"
+        _qs_mod.site_config._config["qa_allow_first_person_niches"] = "other_niche"
         score = score_accuracy(
             _FIRST_PERSON_CONTENT,
             context={"niche": "dev_diary"},
@@ -118,7 +118,7 @@ class TestFirstPersonValidatorBypass:
         """When the allow list is empty/unset, all niches get the strict
         rule — preserves backward compatibility for operators who haven't
         run migration 0134 yet."""
-        site_config._config["qa_allow_first_person_niches"] = ""
+        _qs_mod.site_config._config["qa_allow_first_person_niches"] = ""
         score = score_accuracy(
             _FIRST_PERSON_CONTENT,
             context={"niche": "dev_diary"},

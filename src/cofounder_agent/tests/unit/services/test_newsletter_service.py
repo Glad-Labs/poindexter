@@ -10,18 +10,36 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Seed the newsletter_service module's per-module ``site_config`` attr
-# (post-#330 sweep — each module owns its DI seam, no shared singleton).
 import services.newsletter_service as _newsletter_service_mod  # noqa: E402
-
-_newsletter_service_mod.site_config._config["site_url"] = "https://test.example.com"
-_newsletter_service_mod.site_config._config["company_name"] = "Test Company"
 
 from services.newsletter_service import (  # noqa: E402
     _build_html,
     _get_active_subscribers,
     send_post_newsletter,
 )
+
+
+# Seed the newsletter_service module's per-module ``site_config`` attr
+# (post-#330 sweep — each module owns its DI seam, no shared singleton).
+# Uses an autouse fixture instead of a module-import seed because the
+# conftest's _share_test_site_config rebinds the module attr on every
+# test; a module-level seed gets overwritten before the first test runs.
+@pytest.fixture(autouse=True)
+def _seed_newsletter_site_config():
+    sc = _newsletter_service_mod.site_config
+    prior_url = sc._config.get("site_url")
+    prior_co = sc._config.get("company_name")
+    sc._config["site_url"] = "https://test.example.com"
+    sc._config["company_name"] = "Test Company"
+    yield
+    if prior_url is None:
+        sc._config.pop("site_url", None)
+    else:
+        sc._config["site_url"] = prior_url
+    if prior_co is None:
+        sc._config.pop("company_name", None)
+    else:
+        sc._config["company_name"] = prior_co
 
 # ---------------------------------------------------------------------------
 # _build_html
