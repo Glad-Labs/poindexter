@@ -27,11 +27,28 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
+from pathlib import Path
 
-from prefect.client.orchestration import get_client
-from prefect.client.schemas.schedules import CronSchedule
+# Make the repo-root brain/ package importable. When poetry runs this
+# script from src/cofounder_agent/ the brain/ module — which lives one
+# level up at the repo root — isn't on sys.path. Mirror the pattern
+# from src/cofounder_agent/migrations/apply_migrations.py.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-from services.flows.content_generation import content_generation_flow
+# Point Prefect at the local server BEFORE importing prefect.* — the
+# settings snapshot is taken at import time, so setting this later
+# (e.g. inside main()) silently routes us to an in-memory ephemeral
+# server on a random port instead of the running container on :4200.
+os.environ.setdefault("PREFECT_API_URL", "http://localhost:4200/api")
+
+from prefect.client.orchestration import get_client  # noqa: E402
+from prefect.client.schemas.schedules import CronSchedule  # noqa: E402
+from prefect.types.entrypoint import EntrypointType  # noqa: E402
+
+from services.flows.content_generation import content_generation_flow  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -121,13 +138,6 @@ async def _ensure_work_pool(name: str, concurrency: int) -> None:
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    # Tell Prefect where the server is. The dev compose stack runs the
-    # API on port 4200 of the host; from this script's vantage (host
-    # shell), localhost is the right address. The Prefect worker
-    # container has its own PREFECT_API_URL.
-    if not os.environ.get("PREFECT_API_URL"):
-        os.environ["PREFECT_API_URL"] = "http://localhost:4200/api"
-
     cron = await _resolve_setting("prefect_content_flow_cron", DEFAULT_CRON)
     work_pool = await _resolve_setting(
         "prefect_content_flow_work_pool", DEFAULT_WORK_POOL,
@@ -143,7 +153,20 @@ async def main() -> None:
 
     await _ensure_work_pool(work_pool, concurrency)
 
-    deployment_id = await content_generation_flow.to_deployment(
+    # In an async context Prefect's ``Flow.to_deployment`` is a
+    # ``sync_compatible``-decorated method that returns a coroutine
+    # producing a ``RunnerDeployment``. Await it, THEN call
+    # ``.apply()`` (also async in 3.x).
+    #
+    # ``entrypoint_type=MODULE_PATH`` is critical for same-machine
+    # workers: it tells the worker to ``import services.flows.content_generation``
+    # instead of trying to "download flow code from storage" into a temp
+    # dir. With FILE_PATH (the default), the worker creates an empty
+    # workdir then errors out trying to load the entrypoint file. With
+    # MODULE_PATH, the worker uses its existing PYTHONPATH — which the
+    # ``poetry run prefect worker start`` command + the eventual
+    # prefect-worker compose service both have wired correctly.
+    deployment = await content_generation_flow.to_deployment(
         name="content-generation",
         description=(
             "Drives one pipeline_tasks row through the canonical_blog "
@@ -154,7 +177,9 @@ async def main() -> None:
         work_pool_name=work_pool,
         schedules=[CronSchedule(cron=cron)],
         tags=["poindexter", "content-pipeline", "issue-410"],
-    ).apply()
+        entrypoint_type=EntrypointType.MODULE_PATH,
+    )
+    deployment_id = await deployment.apply()
 
     logger.info(
         "[DEPLOY] content_generation deployment registered (id=%s)\n"

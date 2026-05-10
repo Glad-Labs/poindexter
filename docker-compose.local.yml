@@ -411,9 +411,9 @@ services:
       retries: 3
 
   # ===========================================
-  # Prefect 3 — content pipeline orchestration (#206)
+  # Prefect 3 — content pipeline orchestration (#206 / #410)
   # ===========================================
-  # Three services per the canonical 3-latest self-host pattern:
+  # Four services per the canonical 3-latest self-host pattern:
   #   prefect-redis    — messaging broker (event bus between server + services)
   #   prefect-server   — API + UI on :4200, postgres-backed via shared
   #                      postgres-local container (`prefect` database)
@@ -421,10 +421,11 @@ services:
   #                      processor, scheduler, etc). Separate container
   #                      because `prefect server start` needs --no-services
   #                      when paired with a dedicated services process.
-  #
-  # We do NOT run a `prefect-worker` (no work pool). Flows execute
-  # in-process inside our existing worker container — Prefect server
-  # just records runs for observability + retry coordination.
+  #   prefect-worker   — pulls flow runs from `content-pool`, executes
+  #                      `content_generation_flow` as a subprocess. Added
+  #                      2026-05-10 alongside #410 phase 0 (replaces
+  #                      task_executor.py's polling daemon). Reuses the
+  #                      worker image for matching deps + code mount.
   prefect-redis:
     image: redis:7
     container_name: poindexter-prefect-redis
@@ -490,6 +491,70 @@ services:
       PREFECT_REDIS_MESSAGING_PORT: "6379"
       PREFECT_REDIS_MESSAGING_DB: "0"
     command: prefect server services start
+
+  # Prefect worker — pulls runs from `content-pool` and executes them as
+  # subprocesses. Reuses `Dockerfile.worker` so it has the full pipeline
+  # dep tree (asyncpg, structlog, langchain, etc.) — a vanilla
+  # prefecthq/prefect:3-latest image lacks them and the flow body's
+  # ``from services.content_router_service import ...`` would fail.
+  #
+  # Code is mounted read-only from the host (matches the worker
+  # container's pattern); flow runs spawn in subprocesses inside this
+  # container, isolated from the legacy ``poindexter-worker``'s
+  # cofounder_agent.log (which it holds open and rotates). No more
+  # WinError 32 file-locking conflicts.
+  prefect-worker:
+    build:
+      context: ./src/cofounder_agent
+      dockerfile: Dockerfile.worker
+    container_name: poindexter-prefect-worker
+    restart: unless-stopped
+    command: ["prefect", "worker", "start", "--pool", "content-pool", "--name", "prefect-worker-1", "--type", "process"]
+    environment:
+      # Database lives in the postgres-local container; bootstrap.toml
+      # mounted below resolves to the same DSN.
+      DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
+      # Don't write to /app/logs (read-only mount); Docker captures
+      # stdout instead. This is what sidesteps Phase 1's WinError 32
+      # mess — no file rotation contention with the legacy worker.
+      LOG_TO_FILE: "false"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: "/app:/opt/poindexter"
+      PYTHONUTF8: "1"
+      # Talk to the Prefect API server on the docker network, NOT
+      # localhost. The worker container's localhost is itself.
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+      # Langfuse credentials so flow-run telemetry traces correctly
+      # — the flow body calls into the same LLM dispatchers as the
+      # legacy worker, which expect these.
+      LANGFUSE_HOST: "http://langfuse-web:3000"
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_PUBLIC_KEY is generated in bootstrap.toml}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_SECRET_KEY is generated in bootstrap.toml}
+    volumes:
+      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
+      - ./src/cofounder_agent:/app:ro
+      - ./brain:/opt/poindexter/brain:ro
+      - ./scripts:/opt/scripts:ro
+    extra_hosts:
+      # Ollama + SDXL servers run on the host machine, not in the
+      # docker network. host.docker.internal resolves to host-gateway
+      # so flow bodies can reach them when invoked by this worker.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+      brain-daemon:
+        condition: service_healthy
+    healthcheck:
+      # The worker is alive if its process is alive. There's no HTTP
+      # endpoint to probe; the API-side heartbeat covers run-pickup.
+      test: ["CMD", "pgrep", "-f", "prefect worker start"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
 
   # ===========================================
   # Langfuse v3 — LLM observability + prompt management + experiments (#202, #203)

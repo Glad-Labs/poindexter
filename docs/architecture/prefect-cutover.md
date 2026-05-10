@@ -91,27 +91,65 @@ Both daemons can run side-by-side without double-claiming because the
 TaskExecutor short-circuits when the flag is on. Nothing observable
 changes for the operator until Stage 1.
 
-### Stage 1 — single-task smoke (operator-driven)
+### Stage 1 — single-task smoke (PROVEN 2026-05-10)
+
+`smoke-docker-001` reached `state=COMPLETED` in 98.7s via the
+docker-based prefect-worker — full pipeline path (Ollama draft →
+originality check → link scrubber → quality 76/100 → URL validation
+→ SDXL featured image → finalize) running through Prefect dispatch
+end-to-end. The dispatch overhead vs. the legacy poll-loop is in the
+noise.
+
+To repeat the smoke after a fresh install:
 
 ```bash
-# 1. Register the deployment
+# 1. Register the deployment (uses module-path entrypoint so the
+#    worker imports services.flows.content_generation directly
+#    from its PYTHONPATH — no source-storage download required).
 cd src/cofounder_agent
 poetry run python -m scripts.deploy_content_flow
 
-# 2. Verify deployment landed
-curl -s http://localhost:4200/api/deployments | python -m json.tool | grep content-generation
+# 2. Verify deployment landed.
+curl -s -X POST http://localhost:4200/api/deployments/filter \
+    -H "Content-Type: application/json" -d '{}' | python -m json.tool
 
-# 3. Trigger a single flow run from Prefect UI or CLI
-poetry run prefect deployment run content_generation/content-generation \
-    --param topic="Why local Ollama beats cloud LLMs" \
-    --param task_id=manual-smoke-test
+# 3. Start the prefect-worker compose service.
+docker compose -f docker-compose.local.yml up -d prefect-worker
 
-# 4. Watch the flow run complete in Prefect UI:
-#    http://localhost:4200/deployments/deployment/<id>
+# 4. Verify the worker is ONLINE in the pool.
+curl -s -X POST http://localhost:4200/api/work_pools/content-pool/workers/filter \
+    -H "Content-Type: application/json" -d "{}"
+
+# 5. Trigger one flow run via the REST API (CLI's success-message
+#    print crashes on Windows cp1252 — known issue, irrelevant on
+#    the docker side but the deployment-run CLI runs from the host).
+DEPLOYMENT_ID=$(curl -s -X POST http://localhost:4200/api/deployments/filter \
+    -H "Content-Type: application/json" -d '{}' | python -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+curl -s -X POST "http://localhost:4200/api/deployments/$DEPLOYMENT_ID/create_flow_run" \
+    -H "Content-Type: application/json" -d '{
+      "name": "manual-smoke",
+      "parameters": {"topic": "Why local Ollama beats cloud LLMs",
+                      "task_id": "manual-smoke-001", "target_length": 900}
+    }'
+
+# 6. Watch the flow run reach a terminal state in the Prefect UI
+#    (http://localhost:4200) or via the API.
+```
+
+For a fast diagnostic that bypasses Prefect entirely and surfaces
+flow-body errors directly (useful when the worker subprocess is
+hiding the real exception), use the direct-call helper:
+
+```bash
+cd src/cofounder_agent
+PREFECT_LOGGING_TO_API_ENABLED=False \
+    poetry run python -m scripts.smoke_content_flow_direct
 ```
 
 The smoke test should produce a `pipeline_tasks` row that lands in
-`awaiting_approval` exactly like the existing TaskExecutor path.
+`awaiting_approval` exactly like the existing TaskExecutor path. For
+runs with a fake task_id (the smoke pattern), DB updates log
+non-fatal "Update returned no row" warnings — that's expected.
 
 ### Stage 2 — A/B canary (recommended ~24h)
 
@@ -178,7 +216,11 @@ touching `app_settings` or code.
 ## Ground truth
 
 - Flow + claim helper: `services/flows/content_generation.py`
-- Deployment script: `scripts/deploy_content_flow.py`
+- Deployment script: `scripts/deploy_content_flow.py` (module-path entrypoint
+  - sys.path repo-root fix for `brain.bootstrap` import)
+- Diagnostic smoke runner: `scripts/smoke_content_flow_direct.py`
+- Worker container: `prefect-worker` service in `docker-compose.local.yml`
+  (reuses `Dockerfile.worker` for matching dep tree + code mount)
 - Cutover seam: `services/task_executor.py:_process_loop` (short-circuit branch)
 - Migration: `services/migrations/20260510_182824_seed_prefect_cutover_flag.py`
 - Tests: `tests/unit/services/flows/test_content_generation_flow.py` (8 cases)
