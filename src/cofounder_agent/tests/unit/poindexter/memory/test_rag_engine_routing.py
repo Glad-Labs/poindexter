@@ -145,8 +145,76 @@ class TestSearchRoutingThroughRagEngine:
 
     @pytest.mark.asyncio
     async def test_rag_engine_failure_falls_back_to_legacy(self):
-        """Fail-soft: rag_engine raising must not break the search
-        contract — MemoryClient catches and runs the legacy path."""
+        """Loud fallback per `feedback_no_silent_defaults`. Search
+        keeps working (fallback to legacy) BUT all three surfaces
+        fire so the regression can't hide:
+          1. WARNING log
+          2. audit_log row
+          3. notify_operator
+        """
+        client = _make_client_with_pool(_FakePoolWithSetting("true"))
+        notify_mock = AsyncMock()
+        with patch.object(
+            client,
+            "_search_via_rag_engine",
+            new=AsyncMock(side_effect=RuntimeError("llama exploded")),
+        ), patch.object(
+            client, "embed", new=AsyncMock(return_value=[0.0] * 768),
+        ), patch(
+            "services.audit_log.audit_log_bg",
+        ) as audit_mock, patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=notify_mock,
+        ):
+            # Should not raise — fall through to legacy path which
+            # returns [] given our fake pool's empty fetch.
+            result = await client.search("query", limit=5)
+
+        assert result == []
+        # Surface 2: audit_log fired with the right event_type.
+        audit_mock.assert_called_once()
+        args, kwargs = audit_mock.call_args
+        assert args[0] == "rag_engine_fallback"
+        assert kwargs.get("severity") == "warning"
+        assert "exception_type" in args[2]
+        assert args[2]["exception_type"] == "RuntimeError"
+        # Surface 3: operator notification fired (non-critical).
+        notify_mock.assert_called_once()
+        notify_args, notify_kwargs = notify_mock.call_args
+        assert "rag_engine fallback" in notify_args[0]
+        assert "RuntimeError" in notify_args[0]
+        assert notify_kwargs.get("critical") is False
+
+    @pytest.mark.asyncio
+    async def test_fallback_survives_audit_logger_uninitialised(self):
+        """Surfaces are independent: if audit_log_bg raises (logger not
+        wired up yet), the operator notification still fires and the
+        search still returns results. No surface can suppress another."""
+        client = _make_client_with_pool(_FakePoolWithSetting("true"))
+        notify_mock = AsyncMock()
+        with patch.object(
+            client,
+            "_search_via_rag_engine",
+            new=AsyncMock(side_effect=RuntimeError("llama exploded")),
+        ), patch.object(
+            client, "embed", new=AsyncMock(return_value=[0.0] * 768),
+        ), patch(
+            "services.audit_log.audit_log_bg",
+            side_effect=RuntimeError("audit not initialised"),
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=notify_mock,
+        ):
+            result = await client.search("query", limit=5)
+
+        assert result == []
+        notify_mock.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fallback_survives_notify_failure(self):
+        """If notify_operator itself raises, search must still work
+        and the legacy path must still run. notify failure is logged
+        at debug, never re-raised."""
         client = _make_client_with_pool(_FakePoolWithSetting("true"))
         with patch.object(
             client,
@@ -154,9 +222,13 @@ class TestSearchRoutingThroughRagEngine:
             new=AsyncMock(side_effect=RuntimeError("llama exploded")),
         ), patch.object(
             client, "embed", new=AsyncMock(return_value=[0.0] * 768),
+        ), patch(
+            "services.audit_log.audit_log_bg",
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=AsyncMock(side_effect=RuntimeError("discord webhook down")),
         ):
-            # Should not raise — fall through to legacy path which
-            # returns [] given our fake pool's empty fetch.
+            # Must not raise.
             result = await client.search("query", limit=5)
         assert result == []
 

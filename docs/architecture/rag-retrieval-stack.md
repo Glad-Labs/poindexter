@@ -36,9 +36,30 @@ Routing into Path B happens transparently at
 
 If `get_rag_retriever` raises for any reason — llama-index not
 installed, embedding model not pulled, query embedding fails —
-`MemoryClient.search` catches the exception and silently falls
-back to Path A. Operators never lose semantic search because of
-a framework bug.
+`MemoryClient.search` catches the exception and falls back to
+Path A so semantic search keeps working. The fallback is **loud**
+per `feedback_no_silent_defaults`: every fallback fires three
+independent observability surfaces before continuing to the legacy
+path:
+
+1. **Exception log** — `WARNING` with the full traceback in
+   stdout/Loki, plus a one-line repair instruction ("either fix
+   the retriever or set `rag_engine_enabled=false` until repaired").
+2. **`audit_log` row** — `event_type='rag_engine_fallback'`,
+   `severity='warning'`. Lights up the Observability dashboard's
+   "rag_engine fallbacks (24h)" panel; alert rules can trip on
+   threshold (e.g. > 5 in 10 min).
+3. **`notify_operator`** — Discord ops webhook (escalates to
+   Telegram if the dedup logic flags it as critical).
+
+The three surfaces are independent: a Discord webhook outage doesn't
+suppress the audit_log row, and an unbound audit logger doesn't
+swallow the operator notification. You will know if the rail breaks.
+
+The fallback to Path A still runs after the surfaces fire, so a
+bad framework upgrade can't take down the site. But silent
+degradation — operator-enabled rail goes back to legacy without
+anyone noticing — is explicitly forbidden.
 
 ### What Path B unlocks
 

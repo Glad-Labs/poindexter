@@ -119,7 +119,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"QA Passes\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND created_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"QA Passes\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND timestamp > NOW() - INTERVAL '24 hours';",
           "refId": "A"
         }
       ],
@@ -173,12 +173,68 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(AVG(CASE WHEN (details->>'approved')::boolean THEN 1.0 ELSE 0.0 END), 0)::float AS \"Approval Rate\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND created_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COALESCE(AVG(CASE WHEN (details->>'approved')::boolean THEN 1.0 ELSE 0.0 END), 0)::float AS \"Approval Rate\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND timestamp > NOW() - INTERVAL '24 hours';",
           "refId": "A"
         }
       ],
       "title": "Approval Rate (24h)",
       "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Count of MemoryClient.search → rag_engine fallbacks in the last 24h. The rail is operator-opt-in (rag_engine_enabled=true); a non-zero count means an enabled rail is failing and silently reverting to the legacy pgvector path. RED at 1+ — investigate and either fix the retriever or set rag_engine_enabled=false. Per `feedback_no_silent_defaults` — operator-enabled rails must never silently degrade.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "color": "green", "text": "✓ 0" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 1 },
+      "id": 10,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"rag_engine Fallbacks\" FROM audit_log WHERE event_type = 'rag_engine_fallback' AND timestamp > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "rag_engine Fallbacks (24h)",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -215,7 +271,7 @@
           "unit": "short"
         }
       },
-      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 1 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
       "id": 4,
       "options": {
         "legend": {
@@ -235,7 +291,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', created_at) AS time, CASE WHEN (details->>'approved')::boolean THEN 'approved' ELSE 'rejected' END AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_pass_completed' AND $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1;",
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, CASE WHEN (details->>'approved')::boolean THEN 'approved' ELSE 'rejected' END AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_pass_completed' AND $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -341,7 +397,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH expanded AS (\n  SELECT al.created_at,\n         (al.details->>'approved')::boolean AS pass_approved,\n         r.value->>'reviewer' AS reviewer,\n         r.value->>'provider' AS provider,\n         (r.value->>'approved')::boolean AS reviewer_approved,\n         (r.value->>'score')::float AS reviewer_score,\n         (r.value->>'advisory')::boolean AS advisory\n  FROM audit_log al\n  CROSS JOIN LATERAL jsonb_array_elements(al.details->'reviews') AS r(value)\n  WHERE al.event_type = 'qa_pass_completed'\n    AND al.created_at > NOW() - INTERVAL '24 hours'\n)\nSELECT reviewer AS \"Reviewer\",\n       provider AS \"Provider\",\n       COUNT(*)::int AS \"Runs\",\n       AVG(CASE WHEN reviewer_approved THEN 1.0 ELSE 0.0 END)::float AS \"Approval Rate\",\n       ROUND(AVG(reviewer_score)::numeric, 1) AS \"Avg Score\",\n       SUM(CASE WHEN advisory THEN 1 ELSE 0 END)::int AS \"Advisory Calls\",\n       SUM(CASE WHEN NOT advisory AND NOT reviewer_approved THEN 1 ELSE 0 END)::int AS \"Hard Vetoes\"\nFROM expanded\nGROUP BY reviewer, provider\nORDER BY \"Runs\" DESC;",
+          "rawSql": "WITH expanded AS (\n  SELECT al.timestamp,\n         (al.details->>'approved')::boolean AS pass_approved,\n         r.value->>'reviewer' AS reviewer,\n         r.value->>'provider' AS provider,\n         (r.value->>'approved')::boolean AS reviewer_approved,\n         (r.value->>'score')::float AS reviewer_score,\n         (r.value->>'advisory')::boolean AS advisory\n  FROM audit_log al\n  CROSS JOIN LATERAL jsonb_array_elements(al.details->'reviews') AS r(value)\n  WHERE al.event_type = 'qa_pass_completed'\n    AND al.timestamp > NOW() - INTERVAL '24 hours'\n)\nSELECT reviewer AS \"Reviewer\",\n       provider AS \"Provider\",\n       COUNT(*)::int AS \"Runs\",\n       AVG(CASE WHEN reviewer_approved THEN 1.0 ELSE 0.0 END)::float AS \"Approval Rate\",\n       ROUND(AVG(reviewer_score)::numeric, 1) AS \"Avg Score\",\n       SUM(CASE WHEN advisory THEN 1 ELSE 0 END)::int AS \"Advisory Calls\",\n       SUM(CASE WHEN NOT advisory AND NOT reviewer_approved THEN 1 ELSE 0 END)::int AS \"Hard Vetoes\"\nFROM expanded\nGROUP BY reviewer, provider\nORDER BY \"Runs\" DESC;",
           "refId": "A"
         }
       ],
@@ -398,7 +454,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH expanded AS (\n  SELECT r.value->>'reviewer' AS reviewer,\n         (r.value->>'score')::float AS reviewer_score\n  FROM audit_log al\n  CROSS JOIN LATERAL jsonb_array_elements(al.details->'reviews') AS r(value)\n  WHERE al.event_type = 'qa_pass_completed'\n    AND al.created_at > NOW() - INTERVAL '24 hours'\n)\nSELECT reviewer AS metric,\n       ROUND(AVG(reviewer_score)::numeric, 1)::float AS value\nFROM expanded\nGROUP BY reviewer\nHAVING COUNT(*) >= 5\nORDER BY value DESC;",
+          "rawSql": "WITH expanded AS (\n  SELECT r.value->>'reviewer' AS reviewer,\n         (r.value->>'score')::float AS reviewer_score\n  FROM audit_log al\n  CROSS JOIN LATERAL jsonb_array_elements(al.details->'reviews') AS r(value)\n  WHERE al.event_type = 'qa_pass_completed'\n    AND al.timestamp > NOW() - INTERVAL '24 hours'\n)\nSELECT reviewer AS metric,\n       ROUND(AVG(reviewer_score)::numeric, 1)::float AS value\nFROM expanded\nGROUP BY reviewer\nHAVING COUNT(*) >= 5\nORDER BY value DESC;",
           "refId": "A"
         }
       ],
@@ -500,7 +556,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT created_at AS \"Time\",\n       (details->>'approved')::boolean AS \"Approved\",\n       (details->>'final_score')::float AS \"Final Score\",\n       (details->>'reviewer_count')::int AS \"Reviewers\",\n       task_id AS \"Task ID\",\n       details AS \"Details (JSON)\"\nFROM audit_log\nWHERE event_type = 'qa_pass_completed'\nORDER BY created_at DESC\nLIMIT 20;",
+          "rawSql": "SELECT timestamp AS \"Time\",\n       (details->>'approved')::boolean AS \"Approved\",\n       (details->>'final_score')::float AS \"Final Score\",\n       (details->>'reviewer_count')::int AS \"Reviewers\",\n       task_id AS \"Task ID\",\n       details AS \"Details (JSON)\"\nFROM audit_log\nWHERE event_type = 'qa_pass_completed'\nORDER BY timestamp DESC\nLIMIT 20;",
           "refId": "A"
         }
       ],

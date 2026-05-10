@@ -462,12 +462,20 @@ class MemoryClient:
                 )
                 return hits
             except Exception as e:
-                # Fail-soft: never let the LlamaIndex path break the
-                # legacy semantic-search contract. Log + fall through.
-                logger.warning(
-                    "[memory] rag_engine path failed (%s) — falling back to legacy",
-                    e,
-                )
+                # Loud fallback per `feedback_no_silent_defaults`. The
+                # operator turned this rail on intentionally — silently
+                # reverting to the legacy path masks regressions (a
+                # missing dep, an unreachable embed model, a graph
+                # wiring bug) and creates "why did my hybrid+rerank
+                # extras stop affecting result quality?" mysteries.
+                #
+                # Three independent surfaces fire:
+                #   1. exception log with full traceback
+                #   2. audit_log row → QA Rails / Observability dashboards
+                #   3. notify_operator → Discord ops (or Telegram if critical)
+                # Search itself still works — fallback continues below —
+                # so a bad framework upgrade can't take down the site.
+                await self._notify_rag_engine_fallback(query, e)
 
         embedding = await self.embed(query)
         vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
@@ -629,6 +637,67 @@ class MemoryClient:
             await self.connect()
         assert self._pool is not None
         return self._pool
+
+    async def _notify_rag_engine_fallback(
+        self, query: str, exc: Exception,
+    ) -> None:
+        """Surface a rag_engine→legacy fallback through three channels.
+
+        Per ``feedback_no_silent_defaults``: when an operator-enabled
+        rail breaks, every observability surface needs to fire so the
+        regression can't hide as "queries silently went back to the
+        legacy path." Each surface is independent — a failure in one
+        (Discord webhook down, audit logger not yet bound) doesn't
+        suppress the others.
+        """
+        # 1. Local logger — always fires, full traceback to stderr/Loki.
+        logger.warning(
+            "[memory] rag_engine_enabled=true but the LlamaIndex path "
+            "raised %s: %s — falling back to legacy pgvector. "
+            "Investigate + either fix the retriever or set "
+            "app_settings.rag_engine_enabled='false' until repaired. "
+            "query=%r",
+            type(exc).__name__, exc, query[:120],
+            exc_info=exc,
+        )
+
+        # 2. audit_log → Grafana dashboards. Best-effort: if the audit
+        # logger isn't initialised (early bootstrap, test env) the helper
+        # silently drops the event. That's the only surface where silent
+        # is acceptable — the WARNING above already fired and the
+        # operator notification below still runs.
+        try:
+            from services.audit_log import audit_log_bg
+            audit_log_bg(
+                "rag_engine_fallback",
+                "memory_client",
+                {
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc)[:500],
+                    "query_preview": query[:200],
+                },
+                severity="warning",
+            )
+        except Exception:
+            pass
+
+        # 3. Operator notification — Discord ops by default, escalates
+        # to Telegram on the next failure window via the existing
+        # notify_operator dedup. Never let notify itself raise.
+        try:
+            from services.integrations.operator_notify import notify_operator
+            await notify_operator(
+                f"⚠️ rag_engine fallback fired — {type(exc).__name__}: "
+                f"{str(exc)[:160]}. Search reverted to legacy path. "
+                f"Check the Observability dashboard or set "
+                f"`rag_engine_enabled=false` until fixed.",
+                critical=False,
+            )
+        except Exception as notify_exc:
+            logger.debug(
+                "[memory] notify_operator for rag_engine_fallback failed: %s",
+                notify_exc,
+            )
 
     async def _rag_engine_enabled(self) -> bool:
         """Return True when ``app_settings.rag_engine_enabled = 'true'``.
