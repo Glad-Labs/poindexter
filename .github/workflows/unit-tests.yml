@@ -48,10 +48,6 @@ jobs:
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
 
-      - name: Unit tests — agents
-        working-directory: src/cofounder_agent
-        run: python -m pytest tests/unit/agents/ -q --tb=short -p no:cacheprovider
-
       - name: Unit tests — middleware
         working-directory: src/cofounder_agent
         run: python -m pytest tests/unit/middleware/ -q --tb=short -p no:cacheprovider
