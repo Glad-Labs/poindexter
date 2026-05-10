@@ -147,8 +147,13 @@ def _build_retriever_class():
             # Identical filter clause to EmbeddingsDatabase.search_similar
             # — keep them aligned so the legacy and LlamaIndex paths
             # see the same corpus.
+            #
+            # writer + origin_path are surfaced into NodeWithScore.metadata
+            # so callers like MemoryClient.search can reconstruct a full
+            # MemoryHit without a second query (#329 sub-issue 4).
             sql_parts = [
                 "SELECT source_table, source_id, text_preview, metadata, "
+                "writer, origin_path, "
                 "1 - (embedding <=> $1::vector) AS similarity "
                 "FROM embeddings",
                 "WHERE 1 - (embedding <=> $1::vector) >= $2",
@@ -177,6 +182,8 @@ def _build_retriever_class():
                 metadata.update({
                     "source_table": row["source_table"],
                     "source_id": row["source_id"],
+                    "writer": row.get("writer"),
+                    "origin_path": row.get("origin_path"),
                 })
                 node = TextNode(
                     text=row.get("text_preview") or "",

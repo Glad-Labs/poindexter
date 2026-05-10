@@ -435,9 +435,39 @@ class MemoryClient:
             limit: Max rows to return.
 
         Returns a list of MemoryHit objects, sorted by similarity descending.
+
+        When ``app_settings.rag_engine_enabled`` is true AND no ``writer``
+        filter is passed, the query is routed through the LlamaIndex
+        retriever (``services.rag_engine.get_rag_retriever``) instead of
+        the inline pgvector path. That activates whatever extras the
+        operator has enabled — ``rag_hybrid_enabled`` (BM25 + vector RRF
+        fusion), ``rag_rerank_enabled`` (cross-encoder rerank), etc.
+        Writer-filtered queries fall through to the legacy path because
+        the rag_engine retriever doesn't expose a writer filter today.
         """
         if not query.strip():
             return []
+
+        # Lane D #329 sub-issue 4: optional LlamaIndex routing.
+        # Default-off; operator opts in via rag_engine_enabled. Writer
+        # filter skips the routing because the retriever has no
+        # writer-filter parameter yet.
+        if writer is None and await self._rag_engine_enabled():
+            try:
+                hits = await self._search_via_rag_engine(
+                    query,
+                    source_table=source_table,
+                    min_similarity=min_similarity,
+                    limit=limit,
+                )
+                return hits
+            except Exception as e:
+                # Fail-soft: never let the LlamaIndex path break the
+                # legacy semantic-search contract. Log + fall through.
+                logger.warning(
+                    "[memory] rag_engine path failed (%s) — falling back to legacy",
+                    e,
+                )
 
         embedding = await self.embed(query)
         vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
@@ -599,3 +629,72 @@ class MemoryClient:
             await self.connect()
         assert self._pool is not None
         return self._pool
+
+    async def _rag_engine_enabled(self) -> bool:
+        """Return True when ``app_settings.rag_engine_enabled = 'true'``.
+
+        Per #329 sub-issue 4 — operator opts in to LlamaIndex retrieval.
+        Reads through the pool MemoryClient already owns; the value is
+        cheap enough that we don't bother caching (one row per call,
+        and the call site is a single semantic search at content-pipeline
+        cadence — not a hot loop).
+        """
+        try:
+            pool = await self._require_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT value FROM app_settings "
+                    "WHERE key = 'rag_engine_enabled' AND is_active = true "
+                    "LIMIT 1"
+                )
+        except Exception:
+            return False
+        if not row:
+            return False
+        return str(row["value"] or "").strip().lower() in ("true", "1", "yes", "on")
+
+    async def _search_via_rag_engine(
+        self,
+        query: str,
+        *,
+        source_table: str | None,
+        min_similarity: float,
+        limit: int,
+    ) -> list[MemoryHit]:
+        """Route the search through ``services.rag_engine.get_rag_retriever``.
+
+        Converts the LlamaIndex ``NodeWithScore`` output back into
+        ``MemoryHit`` so callers see the same shape regardless of which
+        path serviced the query. ``writer`` and ``origin_path`` survive
+        the round-trip via the retriever's metadata payload.
+        """
+        from services.rag_engine import get_rag_retriever
+
+        pool = await self._require_pool()
+        retriever = await get_rag_retriever(
+            pool,
+            top_k=limit,
+            min_similarity=min_similarity,
+            source_filter=[source_table] if source_table else None,
+        )
+        nodes = await retriever.aretrieve(query)
+
+        hits: list[MemoryHit] = []
+        for nws in nodes:
+            md = dict(getattr(nws.node, "metadata", {}) or {})
+            hits.append(
+                MemoryHit(
+                    source_table=str(md.get("source_table", "")),
+                    source_id=str(md.get("source_id", "")),
+                    similarity=float(getattr(nws, "score", 0.0) or 0.0),
+                    text_preview=getattr(nws.node, "text", "") or "",
+                    writer=md.get("writer"),
+                    origin_path=md.get("origin_path"),
+                    metadata={
+                        k: v
+                        for k, v in md.items()
+                        if k not in ("source_table", "source_id", "writer", "origin_path")
+                    },
+                )
+            )
+        return hits
