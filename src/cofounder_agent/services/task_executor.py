@@ -165,6 +165,23 @@ class TaskExecutor:
             try:
                 self.last_poll_at = time.monotonic()
                 self._poll_cycle += 1
+
+                # Glad-Labs/poindexter#410 Phase-0 cutover seam — when
+                # ``app_settings.use_prefect_orchestration='true'``, the
+                # Prefect deployment owns dispatch entirely. This loop
+                # becomes a no-op poller (still ticks last_poll_at +
+                # cycle counter so the operator UI shows it's alive),
+                # both daemons stay running side-by-side without
+                # double-claiming tasks. Default ``'false'`` preserves
+                # today's behavior. See docs/architecture/prefect-cutover.md.
+                if site_config.get_bool("use_prefect_orchestration", False):
+                    logger.debug(
+                        "[TASK_EXEC_LOOP] use_prefect_orchestration=true — "
+                        "Prefect owns dispatch, sleeping until next cycle"
+                    )
+                    await asyncio.sleep(self.poll_interval)
+                    continue
+
                 # Get pending tasks from database
                 logger.debug("[TASK_EXEC_LOOP] Polling for pending tasks...")
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
