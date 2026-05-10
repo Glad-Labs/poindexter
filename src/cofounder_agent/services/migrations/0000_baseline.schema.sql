@@ -2144,6 +2144,26 @@ CREATE TABLE IF NOT EXISTS public.embeddings (
     text_search tsvector GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, (COALESCE(text_preview, ''::character varying))::text)) STORED
 );
 
+-- Reconcile column drift when ``infrastructure/local-db/init.sql`` ran
+-- first and created a stripped ``embeddings`` table — the CREATE TABLE
+-- IF NOT EXISTS above is a no-op in that case, so writer / origin_path /
+-- is_summary / text_search never get added and the gin index that
+-- follows fails with UndefinedColumnError. The four ALTER TABLE
+-- statements below are idempotent: each ADD COLUMN IF NOT EXISTS is a
+-- no-op when the column already exists (production DB, post-baseline
+-- DB), and a real ALTER on a stripped table (integration_db harness's
+-- disposable test DB).
+ALTER TABLE IF EXISTS public.embeddings
+    ADD COLUMN IF NOT EXISTS writer character varying(50);
+ALTER TABLE IF EXISTS public.embeddings
+    ADD COLUMN IF NOT EXISTS origin_path text;
+ALTER TABLE IF EXISTS public.embeddings
+    ADD COLUMN IF NOT EXISTS is_summary boolean DEFAULT false NOT NULL;
+ALTER TABLE IF EXISTS public.embeddings
+    ADD COLUMN IF NOT EXISTS text_search tsvector
+    GENERATED ALWAYS AS (to_tsvector('simple'::regconfig,
+        (COALESCE(text_preview, ''::character varying))::text)) STORED;
+
 --
 --
 
