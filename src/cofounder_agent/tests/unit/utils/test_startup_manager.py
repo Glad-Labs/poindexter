@@ -9,9 +9,6 @@ Covers:
 - _setup_redis_cache(): enabled, disabled, Exception
 - _initialize_task_executor(): success, Exception (non-fatal)
 - _verify_connections(): healthy, unhealthy status, Exception
-- _initialize_agent_registry(): dev mode skip, success, Exception
-- _initialize_custom_workflows_service(): with DB, without DB, Exception
-- _initialize_template_execution_service(): with service, without service, Exception
 - _log_startup_summary(): smoke test (no crash)
 - shutdown(): executor running, executor stopped/None, redis, DB, Exception
 - initialize_all_services(): success path, Exception path, SystemExit re-raise
@@ -63,8 +60,6 @@ class TestInit:
         assert mgr.database_service is None
         assert mgr.redis_cache is None
         assert mgr.task_executor is None
-        assert mgr.custom_workflows_service is None
-        assert mgr.template_execution_service is None
         assert mgr.startup_error is None
 
 
@@ -508,131 +503,6 @@ class TestVerifyConnections:
 
 
 # ---------------------------------------------------------------------------
-# _initialize_agent_registry
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestInitializeAgentRegistry:
-    def test_initializes_registry(self):
-        mgr = _make_manager()
-
-        mock_registry = MagicMock()
-        mock_registry.__len__ = MagicMock(return_value=0)
-        mock_get_registry = MagicMock(return_value=mock_registry)
-
-        mock_registry_module = MagicMock(get_agent_registry=mock_get_registry)
-
-        with patch.dict(
-            "sys.modules",
-            {"agents.registry": mock_registry_module},
-        ):
-            _run(mgr._initialize_agent_registry())
-
-        mock_get_registry.assert_called_once()
-
-    def test_exception_logs_warning_not_raises(self):
-        mgr = _make_manager()
-
-        mock_registry_module = MagicMock()
-        mock_registry_module.get_agent_registry.side_effect = Exception("agent registry failed")
-
-        with patch.dict(
-            "sys.modules",
-            {"agents.registry": mock_registry_module},
-        ):
-            _run(mgr._initialize_agent_registry())  # Must not raise
-
-
-# ---------------------------------------------------------------------------
-# _initialize_custom_workflows_service
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestInitializeCustomWorkflowsService:
-    def test_with_database_sets_service(self):
-        mgr = _make_manager()
-        mgr.database_service = MagicMock()
-
-        mock_service = MagicMock()
-        mock_cls = MagicMock(return_value=mock_service)
-        mock_module = MagicMock(CustomWorkflowsService=mock_cls)
-
-        with patch.dict("sys.modules", {"services.custom_workflows_service": mock_module}):
-            _run(mgr._initialize_custom_workflows_service())
-
-        assert mgr.custom_workflows_service is mock_service
-
-    def test_without_database_leaves_none(self):
-        mgr = _make_manager()
-        mgr.database_service = None
-
-        mock_module = MagicMock()
-
-        with patch.dict("sys.modules", {"services.custom_workflows_service": mock_module}):
-            _run(mgr._initialize_custom_workflows_service())
-
-        assert mgr.custom_workflows_service is None
-
-    def test_exception_sets_none_not_raises(self):
-        mgr = _make_manager()
-        mgr.database_service = MagicMock()
-
-        mock_cls = MagicMock(side_effect=Exception("custom workflows init failed"))
-        mock_module = MagicMock(CustomWorkflowsService=mock_cls)
-
-        with patch.dict("sys.modules", {"services.custom_workflows_service": mock_module}):
-            _run(mgr._initialize_custom_workflows_service())
-
-        assert mgr.custom_workflows_service is None
-
-
-# ---------------------------------------------------------------------------
-# _initialize_template_execution_service
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestInitializeTemplateExecutionService:
-    def test_with_custom_workflows_service_sets_service(self):
-        mgr = _make_manager()
-        mgr.custom_workflows_service = MagicMock()
-
-        mock_service = MagicMock()
-        mock_cls = MagicMock(return_value=mock_service)
-        mock_module = MagicMock(TemplateExecutionService=mock_cls)
-
-        with patch.dict("sys.modules", {"services.template_execution_service": mock_module}):
-            _run(mgr._initialize_template_execution_service())
-
-        assert mgr.template_execution_service is mock_service
-
-    def test_without_custom_workflows_service_leaves_none(self):
-        mgr = _make_manager()
-        mgr.custom_workflows_service = None
-
-        mock_module = MagicMock()
-
-        with patch.dict("sys.modules", {"services.template_execution_service": mock_module}):
-            _run(mgr._initialize_template_execution_service())
-
-        assert mgr.template_execution_service is None
-
-    def test_exception_sets_none_not_raises(self):
-        mgr = _make_manager()
-        mgr.custom_workflows_service = MagicMock()
-
-        mock_cls = MagicMock(side_effect=Exception("template execution init failed"))
-        mock_module = MagicMock(TemplateExecutionService=mock_cls)
-
-        with patch.dict("sys.modules", {"services.template_execution_service": mock_module}):
-            _run(mgr._initialize_template_execution_service())
-
-        assert mgr.template_execution_service is None
-
-
-# ---------------------------------------------------------------------------
 # _log_startup_summary
 # ---------------------------------------------------------------------------
 
@@ -742,9 +612,6 @@ class TestInitializeAllServices:
         mgr._setup_redis_cache = AsyncMock()
         mgr._initialize_task_executor = AsyncMock()
         mgr._verify_connections = AsyncMock()
-        mgr._initialize_agent_registry = AsyncMock()
-        mgr._initialize_custom_workflows_service = AsyncMock()
-        mgr._initialize_template_execution_service = AsyncMock()
         mgr._log_startup_summary = MagicMock()
 
     def test_success_returns_dict_with_expected_keys(self):
@@ -758,8 +625,6 @@ class TestInitializeAllServices:
             "database",
             "redis_cache",
             "task_executor",
-            "custom_workflows_service",
-            "template_execution_service",
             "startup_error",
         }
         assert set(result.keys()) == expected_keys
@@ -817,13 +682,6 @@ class TestInitializeAllServices:
         mgr._setup_redis_cache = AsyncMock(side_effect=lambda: call_order.append("redis"))
         mgr._initialize_task_executor = AsyncMock(side_effect=lambda: call_order.append("executor"))
         mgr._verify_connections = AsyncMock(side_effect=lambda: call_order.append("verify"))
-        mgr._initialize_agent_registry = AsyncMock(side_effect=lambda: call_order.append("agents"))
-        mgr._initialize_custom_workflows_service = AsyncMock(
-            side_effect=lambda: call_order.append("custom_wf")
-        )
-        mgr._initialize_template_execution_service = AsyncMock(
-            side_effect=lambda: call_order.append("template")
-        )
         mgr._log_startup_summary = MagicMock()
 
         _run(mgr.initialize_all_services())
@@ -835,7 +693,4 @@ class TestInitializeAllServices:
             "redis",
             "executor",
             "verify",
-            "agents",
-            "custom_wf",
-            "template",
         ]

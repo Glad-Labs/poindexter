@@ -31,8 +31,6 @@ class TestServiceContainerInit:
         assert c.get_workflow_history() is None
         assert c.get_workflow_engine() is None
         assert c.get_redis_cache() is None
-        assert c.get_custom_workflows_service() is None
-        assert c.get_template_execution_service() is None
 
     def test_additional_services_start_empty(self):
         all_svcs = self.container.get_all_services()
@@ -71,16 +69,6 @@ class TestServiceContainerSetGet:
         self.container.set_redis_cache(mock)
         assert self.container.get_redis_cache() is mock
 
-    def test_set_and_get_custom_workflows_service(self):
-        mock = MagicMock(name="cws")
-        self.container.set_custom_workflows_service(mock)
-        assert self.container.get_custom_workflows_service() is mock
-
-    def test_set_and_get_template_execution_service(self):
-        mock = MagicMock(name="tes")
-        self.container.set_template_execution_service(mock)
-        assert self.container.get_template_execution_service() is mock
-
     def test_set_and_get_arbitrary_service(self):
         mock = MagicMock(name="custom")
         self.container.set_service("my_svc", mock)
@@ -97,8 +85,6 @@ class TestServiceContainerSetGet:
             "workflow_history",
             "workflow_engine",
             "redis_cache",
-            "custom_workflows_service",
-            "template_execution_service",
         }
         for key in expected_keys:
             assert key in all_svcs
@@ -291,72 +277,6 @@ class TestDependencyFunctions:
         finally:
             self._restore_services(orig)
 
-    def test_get_custom_workflows_service_dependency_returns_svc(self):
-        from utils.route_utils import get_custom_workflows_service_dependency
-
-        c = self._fresh_container()
-        mock_svc = MagicMock()
-        c.set_custom_workflows_service(mock_svc)
-        orig = self._patch_services(c)
-        try:
-            assert get_custom_workflows_service_dependency() is mock_svc
-        finally:
-            self._restore_services(orig)
-
-    def test_get_custom_workflows_service_dependency_raises_when_none(self):
-        from utils.route_utils import get_custom_workflows_service_dependency
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            with pytest.raises(RuntimeError, match="Custom workflows service not initialized"):
-                get_custom_workflows_service_dependency()
-        finally:
-            self._restore_services(orig)
-
-    def test_get_custom_workflows_service_optional_returns_none(self):
-        from utils.route_utils import get_custom_workflows_service_optional
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            assert get_custom_workflows_service_optional() is None
-        finally:
-            self._restore_services(orig)
-
-    def test_get_template_execution_service_dependency_returns_svc(self):
-        from utils.route_utils import get_template_execution_service_dependency
-
-        c = self._fresh_container()
-        mock_svc = MagicMock()
-        c.set_template_execution_service(mock_svc)
-        orig = self._patch_services(c)
-        try:
-            assert get_template_execution_service_dependency() is mock_svc
-        finally:
-            self._restore_services(orig)
-
-    def test_get_template_execution_service_dependency_raises_when_none(self):
-        from utils.route_utils import get_template_execution_service_dependency
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            with pytest.raises(RuntimeError, match="Template execution service not initialized"):
-                get_template_execution_service_dependency()
-        finally:
-            self._restore_services(orig)
-
-    def test_get_template_execution_service_optional_returns_none(self):
-        from utils.route_utils import get_template_execution_service_optional
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            assert get_template_execution_service_optional() is None
-        finally:
-            self._restore_services(orig)
-
     def test_get_service_dependency_returns_named_service(self):
         from utils.route_utils import get_service_dependency
 
@@ -461,8 +381,6 @@ class TestInitializeServices:
                     "task_executor",
                     "workflow_history",
                     "redis_cache",
-                    "custom_workflows_service",
-                    "template_execution_service",
                 ]
             }
             initialize_services(app, **svcs)
@@ -470,8 +388,6 @@ class TestInitializeServices:
             assert c.get_task_executor() is svcs["task_executor"]
             assert c.get_workflow_history() is svcs["workflow_history"]
             assert c.get_redis_cache() is svcs["redis_cache"]
-            assert c.get_custom_workflows_service() is svcs["custom_workflows_service"]
-            assert c.get_template_execution_service() is svcs["template_execution_service"]
         finally:
             mod._services = orig
 

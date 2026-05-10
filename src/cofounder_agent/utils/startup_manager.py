@@ -41,8 +41,6 @@ class StartupManager:
         self.database_service = None
         self.redis_cache = None
         self.task_executor = None
-        self.custom_workflows_service = None
-        self.template_execution_service = None
         self.startup_error = None
         # Hold strong refs to long-running background tasks so asyncio's
         # weakref tracking doesn't GC them mid-loop. (ruff RUF006)
@@ -117,15 +115,6 @@ class StartupManager:
             # Step 10: Register services with routes
             await self._register_route_services()
 
-            # Step 11: Initialize agent registry
-            await self._initialize_agent_registry()
-
-            # Step 12: Initialize custom workflows service
-            await self._initialize_custom_workflows_service()
-
-            # Step 13: Initialize template execution service
-            await self._initialize_template_execution_service()
-
             # Step 13b: Start retention janitor (gitea#271 Phase 4.1) —
             # periodically prunes unbounded high-churn tables. Runs in the
             # background; retention windows configurable per table via
@@ -167,8 +156,6 @@ class StartupManager:
                 "database": self.database_service,
                 "redis_cache": self.redis_cache,
                 "task_executor": self.task_executor,
-                "custom_workflows_service": self.custom_workflows_service,
-                "template_execution_service": self.template_execution_service,
                 "startup_error": self.startup_error,
             }
 
@@ -412,67 +399,6 @@ class StartupManager:
             logger.debug(
                 "   Database service available via dependency injection (get_database_dependency)"
             )
-
-    async def _initialize_agent_registry(self) -> None:
-        """Initialize agent registry with available agents"""
-        try:
-            from agents.registry import get_agent_registry
-
-            registry = get_agent_registry()
-            agent_count = len(registry)
-            logger.info(f"  Agent registry initialized with {agent_count} agents")
-        except Exception as e:
-            logger.warning(
-                f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}",
-                exc_info=True,
-            )
-            # Continue anyway - system can function without agent registry
-
-    async def _initialize_custom_workflows_service(self) -> None:
-        """Initialize custom workflows service for workflow builder"""
-        logger.info("  🔧 Initializing custom workflows service...")
-        try:
-            from services.custom_workflows_service import CustomWorkflowsService
-
-            if self.database_service:
-                self.custom_workflows_service = CustomWorkflowsService(self.database_service)
-                logger.info(
-                    "   Custom workflows service initialized - users can create custom workflows"
-                )
-            else:
-                logger.warning(
-                    "   Custom workflows service not available - database service required"
-                )
-                self.custom_workflows_service = None
-        except Exception as e:
-            logger.warning(
-                f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}",
-                exc_info=True,
-            )
-            self.custom_workflows_service = None
-
-    async def _initialize_template_execution_service(self) -> None:
-        """Initialize template execution service for workflow templates."""
-        logger.info("  🔧 Initializing template execution service...")
-        try:
-            from services.template_execution_service import TemplateExecutionService
-
-            if self.custom_workflows_service:
-                self.template_execution_service = TemplateExecutionService(
-                    self.custom_workflows_service
-                )
-                logger.info("   Template execution service initialized")
-            else:
-                logger.warning(
-                    "   Template execution service not available - custom workflows service required"
-                )
-                self.template_execution_service = None
-        except Exception as e:
-            logger.warning(
-                f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}",
-                exc_info=True,
-            )
-            self.template_execution_service = None
 
     async def _warmup_sdxl_models(self) -> None:
         """Warmup SDXL models to avoid timeout on first request.
