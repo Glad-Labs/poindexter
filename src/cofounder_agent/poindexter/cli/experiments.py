@@ -40,21 +40,32 @@ async def _open_pool():
     return await asyncpg.create_pool(_dsn(), min_size=1, max_size=1)
 
 
-def _make_service(pool):
-    """Construct an ExperimentService with a stub site_config.
+async def _make_service(pool):
+    """Construct a LangfuseExperimentService for the CLI process.
 
-    The service doesn't currently consult site_config for any of its
-    methods — kept on the constructor for forward-compat with the broader
-    DI sweep. Pass an empty dict-backed shim so we don't pull in the
-    real site_config module from the CLI process.
+    Post-#202 the experiment harness lives entirely in Langfuse — the
+    service needs ``langfuse_host`` / ``langfuse_public_key`` /
+    ``langfuse_secret_key`` from ``app_settings`` to construct a
+    Langfuse client. We pre-fetch those once and stuff them into a
+    dict-backed shim so the CLI doesn't import the full SiteConfig
+    module (heavy + async-only).
     """
-    from services.experiment_service import ExperimentService
+    from services.langfuse_experiments import LangfuseExperimentService
+
+    creds: dict[str, str] = {}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT key, value FROM app_settings "
+            "WHERE key IN ('langfuse_host', 'langfuse_public_key', 'langfuse_secret_key')"
+        )
+        for r in rows:
+            creds[r["key"]] = r["value"] or ""
 
     class _StubSiteConfig:
         def get(self, key: str, default: Any = None) -> Any:
-            return default
+            return creds.get(key, default)
 
-    return ExperimentService(site_config=_StubSiteConfig(), pool=pool)
+    return LangfuseExperimentService(site_config=_StubSiteConfig(), pool=pool)
 
 
 @click.group(
@@ -246,7 +257,7 @@ def experiments_create(
     async def _run_create():
         pool = await _open_pool()
         try:
-            svc = _make_service(pool)
+            svc = await _make_service(pool)
             return await svc.create(
                 key=key,
                 description=description,
@@ -356,7 +367,7 @@ def experiments_assign(subject_id: str, experiment_key: str) -> None:
     async def _run_assign():
         pool = await _open_pool()
         try:
-            svc = _make_service(pool)
+            svc = await _make_service(pool)
             return await svc.assign(
                 experiment_key=experiment_key,
                 subject_id=subject_id,
@@ -392,7 +403,7 @@ def experiments_report(key: str, json_output: bool) -> None:
     async def _run_report():
         pool = await _open_pool()
         try:
-            svc = _make_service(pool)
+            svc = await _make_service(pool)
             return await svc.summary(key)
         finally:
             await pool.close()
@@ -442,7 +453,7 @@ def experiments_conclude(key: str, winner: str) -> None:
     async def _run_conclude():
         pool = await _open_pool()
         try:
-            svc = _make_service(pool)
+            svc = await _make_service(pool)
             await svc.conclude(experiment_key=key, winner_variant=winner)
         finally:
             await pool.close()

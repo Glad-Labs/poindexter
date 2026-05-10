@@ -70,24 +70,23 @@ def _get_variant_config(
     *,
     experiment_key: str,
     variant_key: str,
-    pool: Any,
+    site_config: Any,
 ) -> Any:
     """Coroutine returning the variant's ``config`` dict, or ``{}``.
 
-    Done here rather than via ExperimentService because the service
-    intentionally doesn't expose a "give me the config for one variant"
-    method — that's an integration concern, not a harness concern.
-    Keeping the SQL local also means a hand-edited variants array in
-    the DB doesn't crash the pipeline.
+    Reads the Langfuse Dataset for ``experiment_key`` and returns the
+    matching variant's config from the dataset metadata. Best-effort —
+    Langfuse outage / missing dataset / unknown variant_key all return
+    ``{}`` so the pipeline falls back to default config rather than
+    crashing.
     """
 
     async def _read() -> dict[str, Any]:
         try:
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT variants FROM experiments WHERE key = $1",
-                    experiment_key,
-                )
+            from services.langfuse_experiments import LangfuseExperimentService
+            svc = LangfuseExperimentService(site_config=site_config, pool=None)
+            client = svc._get_client()
+            ds = client.get_dataset(experiment_key)
         except Exception as e:
             logger.debug(
                 "[experiment_hook] could not load variants for %r: %s",
@@ -95,24 +94,11 @@ def _get_variant_config(
             )
             return {}
 
-        if row is None:
+        md = getattr(ds, "metadata", {}) or {}
+        variants = md.get("variants") or []
+        if not isinstance(variants, list):
             return {}
-
-        # Decode JSONB — asyncpg may return str or already-decoded list.
-        raw = row["variants"]
-        if isinstance(raw, str):
-            import json
-            try:
-                raw = json.loads(raw)
-            except json.JSONDecodeError:
-                logger.debug(
-                    "[experiment_hook] variants JSON decode failed for %r",
-                    experiment_key,
-                )
-                return {}
-        if not isinstance(raw, list):
-            return {}
-        for v in raw:
+        for v in variants:
             if not isinstance(v, dict):
                 continue
             if v.get("key") == variant_key:
@@ -163,7 +149,9 @@ async def assign_pipeline_variant(
         return no_op
 
     try:
-        from services.experiment_service import ExperimentService
+        from services.langfuse_experiments import (
+            LangfuseExperimentService as ExperimentService,
+        )
     except Exception as e:
         logger.debug("[experiment_hook] ExperimentService import failed: %s", e)
         return no_op
@@ -192,7 +180,7 @@ async def assign_pipeline_variant(
         cfg = await _get_variant_config(
             experiment_key=experiment_key,
             variant_key=variant_key,
-            pool=pool,
+            site_config=site_config,
         )
         writer_override = cfg.get("writer_model") if isinstance(cfg, dict) else None
         if writer_override and "writer" not in models_by_phase:
@@ -244,7 +232,9 @@ async def record_pipeline_outcome(
         return
 
     try:
-        from services.experiment_service import ExperimentService
+        from services.langfuse_experiments import (
+            LangfuseExperimentService as ExperimentService,
+        )
     except Exception as e:
         logger.debug("[experiment_hook] ExperimentService import failed: %s", e)
         return
