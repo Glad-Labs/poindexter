@@ -17,10 +17,17 @@ from brain import operator_url_probe as oup
 
 
 def _make_pool(rows=None):
-    """Build a mock asyncpg pool whose fetch/fetchrow return canned rows."""
+    """Build a mock asyncpg pool whose fetch/fetchrow return canned rows.
+
+    fetchval defaults to None so the operator_url_probe's
+    target-overrides loader resolves cleanly without firing its
+    JSON-parse warning. Tests that need specific fetchval results
+    override after construction.
+    """
     pool = MagicMock()
     pool.fetch = AsyncMock(return_value=rows or [])
     pool.fetchrow = AsyncMock()
+    pool.fetchval = AsyncMock(return_value=None)
     pool.execute = AsyncMock()
     return pool
 
@@ -340,7 +347,7 @@ class TestRunOperatorUrlProbe:
         def fake_notify(**kwargs):
             notifies.append(kwargs)
 
-        async def fake_probe(targets, *, concurrency=10):
+        async def fake_probe(targets, *, concurrency=10, overrides=None):
             return [
                 {"surface": t["surface"], "url": t["url"], "ok": False,
                  "status": 0, "detail": "ConnectError"}
@@ -365,7 +372,7 @@ class TestRunOperatorUrlProbe:
         pool = _make_pool([])
         notifies = []
 
-        async def fake_probe(targets, *, concurrency=10):
+        async def fake_probe(targets, *, concurrency=10, overrides=None):
             return [
                 {"surface": t["surface"], "url": t["url"], "ok": True,
                  "status": 200, "detail": "HTTP 200"}
@@ -397,7 +404,7 @@ class TestRunOperatorUrlProbe:
         pool.execute = AsyncMock()
         notifies = []
 
-        async def fake_probe(targets, *, concurrency=10):
+        async def fake_probe(targets, *, concurrency=10, overrides=None):
             return []
 
         with patch.object(oup, "probe_urls", side_effect=fake_probe), \
@@ -448,3 +455,175 @@ class TestMaybeRun:
         assert result is not None
         assert "error" in result
         assert "RuntimeError" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# Per-URL probe overrides (#347 alternative-to-skip-list)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestParseAliveCodes:
+    """``_parse_alive_codes`` accepts the operator-facing string DSL
+    that the override JSON specifies."""
+
+    def test_simple_range(self):
+        out = oup._parse_alive_codes("200-399")
+        assert any(200 in r for r in out)
+        assert any(399 in r for r in out)
+        assert not any(400 in r for r in out)
+
+    def test_extended_range_includes_4xx(self):
+        out = oup._parse_alive_codes("200-499")
+        assert any(404 in r for r in out)
+        assert any(405 in r for r in out)
+        assert not any(500 in r for r in out)
+
+    def test_singletons_in_csv(self):
+        out = oup._parse_alive_codes("200,201,418")
+        assert any(200 in r for r in out)
+        assert any(418 in r for r in out)
+        assert not any(202 in r for r in out)
+
+    def test_mixed_singleton_and_range(self):
+        out = oup._parse_alive_codes("200-299,418")
+        assert any(250 in r for r in out)
+        assert any(418 in r for r in out)
+        assert not any(300 in r for r in out)
+
+    def test_malformed_falls_back_to_default(self):
+        """Garbage in the override doesn't make every URL look alive —
+        falls back to the strict 200–399 range."""
+        out = oup._parse_alive_codes("not-a-range,abc,999-foo")
+        assert any(200 in r for r in out)
+        assert any(399 in r for r in out)
+        assert not any(404 in r for r in out)
+
+
+@pytest.mark.unit
+class TestIsAlivePerOverride:
+    """``_is_alive_per_override`` decides per-URL whether a status
+    code counts as alive based on the override config."""
+
+    def test_no_override_uses_default(self):
+        assert oup._is_alive_per_override(200, None) is True
+        assert oup._is_alive_per_override(404, None) is False
+        assert oup._is_alive_per_override(500, None) is False
+
+    def test_extended_alive_codes_accepts_4xx(self):
+        override = {"alive_codes": "200-499"}
+        assert oup._is_alive_per_override(404, override) is True
+        assert oup._is_alive_per_override(405, override) is True
+        assert oup._is_alive_per_override(500, override) is False
+        assert oup._is_alive_per_override(0, override) is False  # network error
+
+    def test_specific_codes_only(self):
+        override = {"alive_codes": "200,418"}
+        assert oup._is_alive_per_override(200, override) is True
+        assert oup._is_alive_per_override(418, override) is True
+        assert oup._is_alive_per_override(201, override) is False
+
+
+@pytest.mark.unit
+class TestLoadTargetOverrides:
+    """``_load_target_overrides`` reads the JSON config from
+    app_settings; degrades safely on errors."""
+
+    @pytest.mark.asyncio
+    async def test_missing_setting_returns_empty(self):
+        pool = _make_pool()
+        # fetchval already returns None by default
+        out = await oup._load_target_overrides(pool)
+        assert out == {}
+
+    @pytest.mark.asyncio
+    async def test_valid_json_parsed(self):
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(return_value=json.dumps({
+            "google_sitemap_ping_url": {"alive_codes": "200-499"},
+        }))
+        out = await oup._load_target_overrides(pool)
+        assert "google_sitemap_ping_url" in out
+        assert out["google_sitemap_ping_url"]["alive_codes"] == "200-499"
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_warns_returns_empty(self):
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(return_value="{not-json")
+        out = await oup._load_target_overrides(pool)
+        assert out == {}  # safe degradation
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_empty(self):
+        pool = _make_pool()
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("db down"))
+        out = await oup._load_target_overrides(pool)
+        assert out == {}
+
+
+@pytest.mark.unit
+class TestProbeUrlsHonorsOverrides:
+    """End-to-end: ``probe_urls`` plumbs overrides through to the
+    per-target probe so 4xx is rendered as 'ok' for outbound APIs."""
+
+    @pytest.mark.asyncio
+    async def test_outbound_api_4xx_marked_alive_with_override(self):
+        # Patch _probe_one_url to inspect what the caller passes for
+        # override + return a fake 405 response so we can confirm the
+        # override is what makes it alive (not the default).
+        captured = []
+
+        async def fake_probe_one(client, sem, surface, url, override=None):
+            captured.append((url, override))
+            return {
+                "surface": surface,
+                "url": url,
+                "ok": oup._is_alive_per_override(405, override),
+                "status": 405,
+                "detail": "HTTP 405",
+                "override_applied": bool(override),
+                "override_reason": (override or {}).get("reason", ""),
+            }
+
+        targets = [
+            {"surface": "app_settings.google_sitemap_ping_url",
+             "key": "google_sitemap_ping_url",
+             "url": "https://www.google.com/ping"},
+            {"surface": "app_settings.dashboards.grafana",
+             "key": "",  # dashboard targets have no key
+             "url": "https://grafana.example/health"},
+        ]
+        overrides = {
+            "google_sitemap_ping_url": {"alive_codes": "200-499"},
+        }
+
+        with patch.object(oup, "_probe_one_url", new=fake_probe_one):
+            results = await oup.probe_urls(
+                targets, concurrency=2, overrides=overrides,
+            )
+
+        # Override applied to the keyed target, not the dashboard one.
+        keyed = next(r for r in results if "google" in r["url"])
+        dash = next(r for r in results if "grafana" in r["url"])
+        assert keyed["ok"] is True       # 405 alive under 200-499
+        assert dash["ok"] is False       # 405 NOT alive under default
+
+    @pytest.mark.asyncio
+    async def test_no_overrides_uses_strict_default(self):
+        async def fake_probe_one(client, sem, surface, url, override=None):
+            return {
+                "surface": surface,
+                "url": url,
+                "ok": oup._is_alive_per_override(404, override),
+                "status": 404,
+                "detail": "HTTP 404",
+                "override_applied": bool(override),
+                "override_reason": "",
+            }
+
+        with patch.object(oup, "_probe_one_url", new=fake_probe_one):
+            results = await oup.probe_urls(
+                [{"surface": "x", "key": "anything", "url": "https://x"}],
+                concurrency=1,
+            )
+        assert results[0]["ok"] is False  # 404 fails strict check

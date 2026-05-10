@@ -417,27 +417,103 @@ async def collect_app_setting_urls(pool) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
+def _parse_alive_codes(spec: str) -> list[range]:
+    """Parse an alive_codes spec into a list of ranges.
+
+    Accepts:
+      - ``"200-399"`` — inclusive single range
+      - ``"200-399,418"`` — comma-separated mix of ranges + singletons
+      - ``"200,201,204"`` — comma-separated singletons only
+
+    Returns a list of Python ``range`` objects (each ``stop`` is
+    exclusive in the standard way). Default when parse fails: the
+    standard 200–399 range, so a malformed override never makes
+    ALL URLs look alive.
+    """
+    out: list[range] = []
+    for part in (spec or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            try:
+                lo, hi = part.split("-", 1)
+                out.append(range(int(lo), int(hi) + 1))
+            except (ValueError, TypeError):
+                continue
+        else:
+            try:
+                v = int(part)
+                out.append(range(v, v + 1))
+            except (ValueError, TypeError):
+                continue
+    return out or [range(200, 400)]
+
+
+def _is_alive_per_override(
+    status_code: int, override: dict[str, Any] | None,
+) -> bool:
+    """Apply per-URL alive_codes override if present.
+
+    Default behavior (override is None or missing alive_codes): the
+    standard ``200 <= status < 400``. Overrides that mark e.g.
+    ``alive_codes='200-499'`` extend the alive range to cover legit
+    4xx responses from outbound-only APIs.
+    """
+    if not override or "alive_codes" not in override:
+        return 200 <= status_code < 400
+    for r in _parse_alive_codes(override["alive_codes"]):
+        if status_code in r:
+            return True
+    return False
+
+
 async def _probe_one_url(
     client: "httpx.AsyncClient",
     semaphore: asyncio.Semaphore,
     surface: str,
     url: str,
+    override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """HEAD an URL; if HEAD isn't supported, retry with GET. Always returns a
-    dict, never raises — surface name is preserved for downstream notify."""
+    dict, never raises — surface name is preserved for downstream notify.
+
+    ``override`` is a per-URL probe-config dict from
+    ``operator_url_probe_target_overrides``. When supplied it can widen
+    the ``alive_codes`` range (e.g. include 4xx for outbound-only APIs)
+    and/or change the request method. The override is preserved in the
+    result dict so downstream notify formatting can show why a 4xx
+    was treated as alive.
+    """
+    method = (override or {}).get("method", "HEAD").upper()
     async with semaphore:
         try:
-            resp = await client.head(url, follow_redirects=True)
-            # Some servers return 405 for HEAD even when GET works. Retry
-            # once with a small range request to avoid pulling a full body.
-            if resp.status_code in (405, 501):
-                resp = await client.get(url, headers={"Range": "bytes=0-64"})
+            if method == "GET":
+                resp = await client.get(
+                    url, follow_redirects=True,
+                    headers={"Range": "bytes=0-64"},
+                )
+            elif method == "OPTIONS":
+                resp = await client.options(url, follow_redirects=True)
+            else:
+                resp = await client.head(url, follow_redirects=True)
+                # Some servers return 405 for HEAD even when GET works. Retry
+                # once with a small range request to avoid pulling a full body.
+                # Skip the retry when the operator's override already
+                # accepts 405 as alive — the explicit config wins.
+                if resp.status_code in (405, 501):
+                    if not _is_alive_per_override(resp.status_code, override):
+                        resp = await client.get(
+                            url, headers={"Range": "bytes=0-64"},
+                        )
             return {
                 "surface": surface,
                 "url": url,
-                "ok": 200 <= resp.status_code < 400,
+                "ok": _is_alive_per_override(resp.status_code, override),
                 "status": resp.status_code,
                 "detail": f"HTTP {resp.status_code}",
+                "override_applied": bool(override),
+                "override_reason": (override or {}).get("reason", ""),
             }
         except Exception as exc:
             return {
@@ -446,20 +522,70 @@ async def _probe_one_url(
                 "ok": False,
                 "status": 0,
                 "detail": f"{type(exc).__name__}: {str(exc)[:160]}",
+                "override_applied": False,
+                "override_reason": "",
             }
+
+
+async def _load_target_overrides(pool) -> dict[str, dict[str, Any]]:
+    """Read ``app_settings.operator_url_probe_target_overrides``.
+
+    Returns a dict mapping app_setting key → override config dict.
+    Missing setting / unparseable JSON / DB error all return ``{}``
+    so the probe degrades to its default (strict 200–399 = alive)
+    rather than crashing. The override file existing-but-broken is
+    itself a state worth seeing in logs; we WARN on JSON parse errors
+    so the operator notices.
+    """
+    try:
+        raw = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "operator_url_probe_target_overrides",
+        )
+    except Exception as exc:
+        logger.warning(
+            "[OPERATOR_URL_PROBE] target-overrides read failed: %s", exc,
+        )
+        return {}
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "[OPERATOR_URL_PROBE] target-overrides JSON parse failed (%s) — "
+            "ignoring overrides this cycle. Fix the JSON in app_settings.",
+            exc,
+        )
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "[OPERATOR_URL_PROBE] target-overrides isn't a JSON object "
+            "(got %s) — ignoring.", type(parsed).__name__,
+        )
+        return {}
+    return parsed
 
 
 async def probe_urls(
     targets: list[dict[str, str]],
     *,
     concurrency: int = DEFAULT_CONCURRENCY,
+    overrides: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Probe ``targets`` (list of {surface, url, ...}) and return per-URL results.
+    """Probe ``targets`` (list of {surface, url, key?, ...}) and return per-URL results.
 
     Returns one dict per input target. Failures are reported, not raised — the
     caller decides whether to escalate. ``httpx`` is required; if it's missing
     every target is reported as ``ok=False`` so the operator notices the dep
     is broken instead of silently passing.
+
+    ``overrides`` (loaded by ``_load_target_overrides``) maps app_setting
+    keys to per-URL probe behavior — see the migration docstring at
+    ``20260510_152609_url_probe_per_target_overrides.py`` for the schema.
+    Targets carrying a ``key`` field (i.e. those collected from
+    ``app_settings``) get override lookup; dashboard-extracted targets
+    keep the strict default.
     """
     if not targets:
         return []
@@ -479,6 +605,7 @@ async def probe_urls(
             for t in targets
         ]
 
+    overrides = overrides or {}
     timeout = httpx.Timeout(HTTP_READ_TIMEOUT_S, connect=HTTP_CONNECT_TIMEOUT_S)
     headers = {"User-Agent": _USER_AGENT}
     semaphore = asyncio.Semaphore(concurrency)
@@ -490,7 +617,10 @@ async def probe_urls(
         # redirects when a HEAD bounces; the per-request settings win.
     ) as client:
         coros = [
-            _probe_one_url(client, semaphore, t["surface"], t["url"])
+            _probe_one_url(
+                client, semaphore, t["surface"], t["url"],
+                override=overrides.get(t.get("key", "")),
+            )
             for t in targets
         ]
         # return_exceptions guards against a misbehaving probe taking down the
@@ -570,13 +700,24 @@ async def run_operator_url_probe(
         seen_urls.add(t["url"])
         all_targets.append(t)
 
+    # ---- 1b) Load per-URL probe overrides --------------------------------
+    # See migration 20260510_152609 — operator-visible per-URL config that
+    # widens alive_codes for outbound-only APIs (Google sitemap ping,
+    # IndexNow, R2 public bucket etc.) where 4xx means "host alive,
+    # request shape wrong" rather than "service down".
+    overrides = await _load_target_overrides(pool)
+
     logger.info(
-        "[OPERATOR_URL_PROBE] Probing %d URL(s) (%d dashboard, %d app_settings)",
+        "[OPERATOR_URL_PROBE] Probing %d URL(s) (%d dashboard, %d app_settings, "
+        "%d with overrides)",
         len(all_targets), len(dashboard_targets), len(appsetting_targets),
+        sum(1 for t in all_targets if t.get("key") in overrides),
     )
 
     # ---- 2) HTTP probe everything in parallel -----------------------------
-    url_results = await probe_urls(all_targets, concurrency=concurrency)
+    url_results = await probe_urls(
+        all_targets, concurrency=concurrency, overrides=overrides,
+    )
 
     # ---- 3) Tailscale drift detection -------------------------------------
     drift = await detect_tailscale_drift(pool)
