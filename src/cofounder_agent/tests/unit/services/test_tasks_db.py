@@ -346,6 +346,143 @@ class TestAddTask:
 
 
 # ---------------------------------------------------------------------------
+# Lane C cutover seam — template_slug routing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAddTaskTemplateSlug:
+    """``tasks_db.add_task`` resolves ``template_slug`` per
+    Glad-Labs/poindexter#355 Lane C cutover. Caller wins; otherwise
+    ``app_settings.default_template_slug``; otherwise NULL → legacy
+    chunked StageRunner path runs.
+
+    The pipeline_tasks INSERT is the FIRST execute call; template_slug
+    is the second-to-last positional arg (last is created_at).
+    """
+
+    @staticmethod
+    def _capture_pipeline_tasks_args(captured_args):
+        """Pull the args list from the first INSERT INTO pipeline_tasks
+        call captured by the mock."""
+        return next(
+            args for sql, args in captured_args
+            if "INSERT INTO pipeline_tasks" in sql
+        )
+
+    @pytest.mark.asyncio
+    async def test_caller_template_slug_wins(self):
+        captured_args: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured_args.append((sql, args))
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        # First call hits the template_slug lookup (fetchrow returns None
+        # → empty default); INSERT runs after.
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+            conn.fetchrow = AsyncMock(return_value=None)
+        db = _make_db(pool)
+
+        await db.add_task({
+            "id": "t-1", "topic": "AI",
+            "template_slug": "canonical_blog",
+        })
+
+        args = self._capture_pipeline_tasks_args(captured_args)
+        # template_slug is positional arg 17 in the INSERT (1-indexed
+        # in the SQL, so index 16 in the 0-indexed args tuple).
+        assert args[16] == "canonical_blog"
+
+    @pytest.mark.asyncio
+    async def test_default_setting_used_when_caller_omits(self):
+        captured_args: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured_args.append((sql, args))
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+            # Setting row returns 'canonical_blog'.
+            conn.fetchrow = AsyncMock(
+                return_value={"value": "canonical_blog"},
+            )
+        db = _make_db(pool)
+
+        await db.add_task({"id": "t-1", "topic": "AI"})
+
+        args = self._capture_pipeline_tasks_args(captured_args)
+        assert args[16] == "canonical_blog"
+
+    @pytest.mark.asyncio
+    async def test_empty_setting_yields_null_slug(self):
+        """The legacy default — empty setting → NULL slug → chunked
+        StageRunner runs (today's behavior preserved)."""
+        captured_args: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured_args.append((sql, args))
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+            conn.fetchrow = AsyncMock(return_value={"value": ""})
+        db = _make_db(pool)
+
+        await db.add_task({"id": "t-1", "topic": "AI"})
+
+        args = self._capture_pipeline_tasks_args(captured_args)
+        assert args[16] is None  # NULL → legacy path
+
+    @pytest.mark.asyncio
+    async def test_setting_lookup_failure_falls_back_to_null(self):
+        """If the app_settings query raises (transient hiccup), the
+        helper returns ''; INSERT writes NULL; legacy path runs.
+        Better to lose the cutover for one task than break task
+        creation entirely."""
+        captured_args: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured_args.append((sql, args))
+            return "INSERT 0 1"
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+            conn.fetchrow = AsyncMock(side_effect=RuntimeError("settings down"))
+        db = _make_db(pool)
+
+        await db.add_task({"id": "t-1", "topic": "AI"})
+
+        args = self._capture_pipeline_tasks_args(captured_args)
+        assert args[16] is None
+
+    @pytest.mark.asyncio
+    async def test_caller_slug_skips_setting_lookup(self):
+        """When the caller passes template_slug, the setting helper
+        is not called — saves a DB round-trip per task and isolates
+        per-call overrides (e.g. dev_diary cron) from the global flag."""
+        from unittest.mock import patch
+
+        pool = _make_pool()
+        db = _make_db(pool)
+        with patch(
+            "services.tasks_db._resolve_default_template_slug",
+            new=AsyncMock(return_value="canonical_blog"),
+        ) as resolver_mock:
+            await db.add_task({
+                "id": "t-1", "topic": "AI",
+                "template_slug": "dev_diary",
+            })
+        resolver_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # get_task
 # ---------------------------------------------------------------------------
 

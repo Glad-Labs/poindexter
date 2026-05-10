@@ -56,6 +56,33 @@ def serialize_value_for_postgres(value: Any) -> Any:
     return str(value)
 
 
+async def _resolve_default_template_slug(pool: Pool) -> str:
+    """Read ``app_settings.default_template_slug``.
+
+    Lane C cutover seam (Glad-Labs/poindexter#355). Empty string +
+    missing row both return ``""`` so the caller's ``or None`` collapse
+    produces a NULL ``template_slug`` and the legacy chunked
+    StageRunner path runs unchanged. Operators flip to
+    ``'canonical_blog'`` to route every new task through TemplateRunner.
+
+    Best-effort — any DB error returns the empty string so a transient
+    setting-table hiccup never breaks task creation. The legacy path
+    is the safe fallback.
+    """
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value FROM app_settings "
+                "WHERE key = 'default_template_slug' AND is_active = true "
+                "LIMIT 1"
+            )
+    except Exception:
+        return ""
+    if row is None:
+        return ""
+    return str(row["value"] or "").strip()
+
+
 class TasksDatabase(DatabaseServiceMixin):
     """Task-related database operations."""
 
@@ -258,6 +285,19 @@ class TasksDatabase(DatabaseServiceMixin):
 
             task_type = task_data.get("task_type", "blog_post")
 
+            # Lane C cutover (Glad-Labs/poindexter#355) — resolve the
+            # template_slug for this task. Caller-supplied value wins;
+            # otherwise we read app_settings.default_template_slug. Empty
+            # string / None → NULL slug → legacy chunked StageRunner flow
+            # in content_router_service runs (preserves pre-#355
+            # behavior). Setting to 'canonical_blog' routes every new
+            # task through TemplateRunner + the LangGraph
+            # canonical_blog template.
+            template_slug = task_data.get("template_slug")
+            if not template_slug:
+                template_slug = await _resolve_default_template_slug(self.pool)
+            template_slug = template_slug or None  # '' / falsy → NULL
+
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
                     await conn.execute(
@@ -267,13 +307,15 @@ class TasksDatabase(DatabaseServiceMixin):
                             site_id, style, tone, target_length,
                             category, primary_keyword, target_audience,
                             percentage, message, model_used,
-                            error_message, created_at, updated_at
+                            error_message, template_slug,
+                            created_at, updated_at
                         ) VALUES (
                             $1, $2, $3, $4, $5,
                             $6, $7, $8, $9,
                             $10, $11, $12,
                             $13, $14, $15,
-                            $16, $17, $17
+                            $16, $17,
+                            $18, $18
                         )
                         """,
                         task_id,
@@ -292,6 +334,7 @@ class TasksDatabase(DatabaseServiceMixin):
                         metadata.get("message"),
                         task_data.get("model_used"),
                         task_data.get("error_message"),
+                        template_slug,
                         now,
                     )
                     await conn.execute(
@@ -363,6 +406,11 @@ class TasksDatabase(DatabaseServiceMixin):
         version_rows: list[tuple] = []
         task_ids: list[str] = []
 
+        # Lane C cutover (#355): resolve the default once per bulk batch
+        # rather than per-row. The setting rarely changes, and bulk
+        # inserts of N tasks shouldn't fire N separate setting reads.
+        default_slug = await _resolve_default_template_slug(self.pool)
+
         for task_data in tasks:
             task_id = task_data.get("id", task_data.get("task_id", str(uuid4())))
             if isinstance(task_id, UUID):
@@ -394,6 +442,10 @@ class TasksDatabase(DatabaseServiceMixin):
                 if _md:
                     stage_data["metadata"] = _md
 
+            # Per-task template_slug wins; otherwise use the batch-resolved
+            # default; otherwise NULL (legacy chunked StageRunner path).
+            row_slug = task_data.get("template_slug") or default_slug or None
+
             pipeline_rows.append(
                 (
                     task_id,
@@ -408,6 +460,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     task_data.get("category"),
                     task_data.get("primary_keyword"),
                     task_data.get("target_audience"),
+                    row_slug,
                     now,
                 )
             )
@@ -425,12 +478,12 @@ class TasksDatabase(DatabaseServiceMixin):
                 task_id, task_type, topic, status, stage,
                 site_id, style, tone, target_length,
                 category, primary_keyword, target_audience,
-                created_at, updated_at
+                template_slug, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8, $9,
                 $10, $11, $12,
-                $13, $13
+                $13, $14, $14
             )
         """
 
