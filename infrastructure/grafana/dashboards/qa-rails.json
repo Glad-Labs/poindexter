@@ -1,0 +1,511 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Anti-Hallucination doc",
+      "tooltip": "Open the docs/architecture/anti-hallucination.md reviewer table",
+      "type": "link",
+      "url": "https://github.com/Glad-Labs/glad-labs-stack/blob/main/docs/architecture/anti-hallucination.md"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "RAG Retrieval Stack doc",
+      "tooltip": "Path A vs Path B — LlamaIndex retriever activation runbook",
+      "type": "link",
+      "url": "https://github.com/Glad-Labs/glad-labs-stack/blob/main/docs/architecture/rag-retrieval-stack.md"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Langfuse UI",
+      "tooltip": "LLM trace explorer — drill into specific reviewer LLM calls",
+      "type": "link",
+      "url": "http://100.81.93.12:3010"
+    },
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "GlitchTip",
+      "tooltip": "Self-hosted error tracker — reviewer exceptions land here",
+      "type": "link",
+      "url": "http://localhost:8050/glad-labs/poindexter/issues/"
+    }
+  ],
+  "tags": ["qa", "lane-d", "issue-329"],
+  "timezone": "browser",
+  "title": "QA Rails — Multi-Model Review",
+  "uid": "qa-rails",
+  "version": 1,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "panels": [
+    {
+      "type": "row",
+      "title": "QA Pass Throughput",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": [],
+      "id": 1
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Total qa_pass_completed events in the selected time window.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "orange", "value": 500 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"QA Passes\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND created_at > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "QA Passes (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Fraction of QA passes that ended with approved=true. Higher = pipeline producing publishable drafts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.4 },
+              { "color": "yellow", "value": 0.6 },
+              { "color": "green", "value": 0.8 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
+      "id": 3,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(AVG(CASE WHEN (details->>'approved')::boolean THEN 1.0 ELSE 0.0 END), 0)::float AS \"Approval Rate\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND created_at > NOW() - INTERVAL '24 hours';",
+          "refId": "A"
+        }
+      ],
+      "title": "Approval Rate (24h)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "QA passes per hour, split by approved/rejected. Lets you spot regressions when a model swap or prompt change tanks the approval rate.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 1 },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time, CASE WHEN (details->>'approved')::boolean THEN 'approved' ELSE 'rejected' END AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_pass_completed' AND $__timeFilter(created_at) GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "QA Passes per Hour (approved vs rejected)",
+      "type": "timeseries"
+    },
+    {
+      "type": "row",
+      "title": "Per-Reviewer Health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "panels": [],
+      "id": 5
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "For each reviewer in the last 24h: how often it ran, what fraction approved, average score, and whether it was advisory or required-to-pass on each call. Drives the per-rail false-positive analysis Lane D was built to enable.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 80 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Approval Rate" },
+            "properties": [
+              { "id": "unit", "value": "percentunit" },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "orange", "value": 0.5 },
+                    { "color": "yellow", "value": 0.7 },
+                    { "color": "green", "value": 0.9 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Avg Score" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "orange", "value": 50 },
+                    { "color": "yellow", "value": 70 },
+                    { "color": "green", "value": 85 }
+                  ]
+                }
+              },
+              { "id": "max", "value": 100 },
+              { "id": "min", "value": 0 }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 12, "w": 16, "x": 0, "y": 10 },
+      "id": 6,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH expanded AS (\n  SELECT al.created_at,\n         (al.details->>'approved')::boolean AS pass_approved,\n         r.value->>'reviewer' AS reviewer,\n         r.value->>'provider' AS provider,\n         (r.value->>'approved')::boolean AS reviewer_approved,\n         (r.value->>'score')::float AS reviewer_score,\n         (r.value->>'advisory')::boolean AS advisory\n  FROM audit_log al\n  CROSS JOIN LATERAL jsonb_array_elements(al.details->'reviews') AS r(value)\n  WHERE al.event_type = 'qa_pass_completed'\n    AND al.created_at > NOW() - INTERVAL '24 hours'\n)\nSELECT reviewer AS \"Reviewer\",\n       provider AS \"Provider\",\n       COUNT(*)::int AS \"Runs\",\n       AVG(CASE WHEN reviewer_approved THEN 1.0 ELSE 0.0 END)::float AS \"Approval Rate\",\n       ROUND(AVG(reviewer_score)::numeric, 1) AS \"Avg Score\",\n       SUM(CASE WHEN advisory THEN 1 ELSE 0 END)::int AS \"Advisory Calls\",\n       SUM(CASE WHEN NOT advisory AND NOT reviewer_approved THEN 1 ELSE 0 END)::int AS \"Hard Vetoes\"\nFROM expanded\nGROUP BY reviewer, provider\nORDER BY \"Runs\" DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Per-Reviewer Stats (24h)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Average score per reviewer (24h). Skips reviewers with <5 runs to avoid noise.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 50 },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 85 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 10 },
+      "id": 7,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH expanded AS (\n  SELECT r.value->>'reviewer' AS reviewer,\n         (r.value->>'score')::float AS reviewer_score\n  FROM audit_log al\n  CROSS JOIN LATERAL jsonb_array_elements(al.details->'reviews') AS r(value)\n  WHERE al.event_type = 'qa_pass_completed'\n    AND al.created_at > NOW() - INTERVAL '24 hours'\n)\nSELECT reviewer AS metric,\n       ROUND(AVG(reviewer_score)::numeric, 1)::float AS value\nFROM expanded\nGROUP BY reviewer\nHAVING COUNT(*) >= 5\nORDER BY value DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Score by Reviewer (24h)",
+      "type": "bargauge"
+    },
+    {
+      "type": "row",
+      "title": "Recent Activity",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "panels": [],
+      "id": 8
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Last 20 QA passes — full reviewer breakdown in the details column. Click into a row to copy the JSON for a deeper trace.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": true
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Approved" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-text", "mode": "basic" }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "true": { "color": "green", "text": "✓ APPROVED" },
+                      "false": { "color": "red", "text": "✗ REJECTED" }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Final Score" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "orange", "value": 60 },
+                    { "color": "yellow", "value": 75 },
+                    { "color": "green", "value": 85 }
+                  ]
+                }
+              },
+              { "id": "max", "value": 100 },
+              { "id": "min", "value": 0 }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 23 },
+      "id": 9,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT created_at AS \"Time\",\n       (details->>'approved')::boolean AS \"Approved\",\n       (details->>'final_score')::float AS \"Final Score\",\n       (details->>'reviewer_count')::int AS \"Reviewers\",\n       task_id AS \"Task ID\",\n       details AS \"Details (JSON)\"\nFROM audit_log\nWHERE event_type = 'qa_pass_completed'\nORDER BY created_at DESC\nLIMIT 20;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest 20 QA Passes",
+      "type": "table"
+    }
+  ]
+}

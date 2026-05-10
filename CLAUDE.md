@@ -26,18 +26,37 @@ Glad Labs is an AI-operated content business — a solo founder using AI to run 
 
 ### Production URLs
 
+**Production / public surfaces:**
+
 | Service         | URL                                                                             |
 | --------------- | ------------------------------------------------------------------------------- |
 | Public site     | https://gladlabs.io (→ www.gladlabs.io)                                         |
-| Backend API     | http://localhost:8002                                                           |
-| Brain daemon    | Local process (brain/)                                                          |
-| Grafana         | http://localhost:3000 (or http://100.81.93.12:3000 via Tailscale)               |
-| Pyroscope       | http://localhost:4040                                                           |
-| Voice (LiveKit) | https://nightrider.taild4f626.ts.net/voice/join (tap-to-join, Tailscale Funnel) |
 | Public docs     | https://gladlabs.mintlify.app                                                   |
+| Voice (LiveKit) | https://nightrider.taild4f626.ts.net/voice/join (tap-to-join, Tailscale Funnel) |
 | Private repo    | https://github.com/Glad-Labs/glad-labs-stack                                    |
 | Public repo     | https://github.com/Glad-Labs/poindexter (auto-mirror)                           |
 | Project board   | https://github.com/orgs/Glad-Labs/projects/2                                    |
+
+**Local services** (Docker, accessible via http://localhost:&lt;port&gt; on Matt's PC, or via http://100.81.93.12:&lt;port&gt; on the Tailnet):
+
+| Service            | URL / Port                       | What it's for                                                                                                                      |
+| ------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Backend API        | http://localhost:8002            | FastAPI worker (poindexter-worker container)                                                                                       |
+| Brain daemon       | Local process (brain/), no HTTP  | Self-healing watchdog — Telegram alerts on failure                                                                                 |
+| Grafana            | http://localhost:3000            | 8 dashboards (Mission Control / Pipeline / Auto-Publish Gate / Cost / Observability / System Health / Integrations / **QA Rails**) |
+| QA Rails dashboard | http://localhost:3000/d/qa-rails | Per-reviewer pass-rate, score distribution, latest QA passes (#329 Lane D) — created 2026-05-10                                    |
+| Langfuse           | http://localhost:3010            | LLM trace explorer + prompt UI (UnifiedPromptManager edits land here, every reviewer LLM call is traced)                           |
+| GlitchTip          | http://localhost:8080            | Self-hosted Sentry — runtime errors from worker / brain / voice agent (org `glad-labs`, project `poindexter`)                      |
+| pgAdmin            | http://localhost:18443           | Postgres admin — direct DB access (login: see bootstrap.toml)                                                                      |
+| Prefect            | http://localhost:4200            | Orchestration UI for the Prefect server (flow runs, schedules)                                                                     |
+| Pyroscope          | http://localhost:4040            | Continuous profiler — flame graphs from worker / brain / voice (`service_name` tag)                                                |
+| Uptime Kuma        | http://localhost:3002            | External-uptime monitor                                                                                                            |
+| Tempo              | http://localhost:3200            | Trace storage (consumed via Grafana Explore — Tempo datasource)                                                                    |
+| Loki               | http://localhost:3100            | Log storage (consumed via Grafana Explore — Loki datasource)                                                                       |
+| Prometheus         | http://localhost:9091            | Metrics storage (consumed via Grafana datasource)                                                                                  |
+| AlertManager       | http://localhost:9093            | Alert-routing UI                                                                                                                   |
+| LiveKit (local)    | ws://localhost:7880              | Local LiveKit server (the public Tailscale Funnel proxies to this)                                                                 |
+| SDXL server        | http://localhost:9836            | Local image generation backend                                                                                                     |
 
 ### Key Numbers (as of May 9, 2026)
 
@@ -277,11 +296,21 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 
 ## Monitoring
 
-- **Grafana (self-hosted):** http://localhost:3000 (or http://100.81.93.12:3000 from the tailnet) — 7 dashboards (merged set). Grafana Cloud was retired 2026-05-03; the local Docker container (poindexter-grafana) is the only Grafana now. Local Prometheus scrapes windows_exporter + nvidia-smi-exporter directly; Alloy was the Cloud shipper and is no longer used.
-- **Dashboards:** Ops (home), Performance, Hardware, Pipeline, Cost, Quality, plus built-in
-- **Alerts → Telegram + Discord:** stuck tasks, failure rate, worker offline, GPU temp, VRAM usage
-- **Playlist:** "Glad Labs Command Center" cycles all dashboards every 30s
+- **Grafana (self-hosted):** http://localhost:3000 (or http://100.81.93.12:3000 from the tailnet) — 8 dashboards. Grafana Cloud was retired 2026-05-03; the local Docker container (poindexter-grafana) is the only Grafana now. Local Prometheus scrapes windows_exporter + nvidia-smi-exporter directly; Alloy was the Cloud shipper and is no longer used.
+- **Dashboards:**
+  - **Mission Control** — top-level operator view
+  - **Pipeline** — content pipeline throughput + stage durations
+  - **Auto-Publish Gate** — score distribution / approval-rate decisions
+  - **Cost & Analytics** — LLM spend, energy, posts published
+  - **Observability** — Pyroscope flame graphs, log volumes, error rates
+  - **System Health** — worker / brain / voice container health
+  - **Integrations & Admin** — qa_gates / publishing_adapters / external_taps tables
+  - **QA Rails — Multi-Model Review** (`/d/qa-rails`) — per-reviewer pass-rate, score distribution, latest QA passes. Powered by `audit_log` rows where `event_type='qa_pass_completed'` (one row per `MultiModelQA.review` call, full reviewer breakdown in JSON details). Created 2026-05-10 alongside the Lane D #329 close-out.
+- **Alerts → Telegram + Discord:** stuck tasks, failure rate, worker offline, GPU temp, VRAM usage. Routing rules in `infrastructure/grafana/provisioning/alerting/`.
+- **Playlist:** "Glad Labs Command Center" cycles all dashboards every 30s.
 - **Pyroscope app-profiles (Glad-Labs/poindexter#406):** CPU flame graphs ship from the worker, brain, and voice agents under four `service_name` values — `poindexter-worker`, `poindexter-brain`, `poindexter-voice-livekit`, `poindexter-voice-webrtc`. Master switch is `app_settings.enable_pyroscope` (default true post-#406); per-service panel lives on the Observability dashboard.
+- **GlitchTip (self-hosted Sentry):** http://localhost:8080 — runtime exceptions from worker / brain / voice. Org `glad-labs`, project `poindexter`. Sentry SDK auto-initialised in `main.py` when `app_settings.sentry_dsn` is set (provisioned 2026-05-09).
+- **Langfuse:** http://localhost:3010 — every reviewer LLM call (DeepEval g-eval / faithfulness, Ragas, the legacy critic) traces here. Use it to drill into a specific qa_pass_completed event and read the judge model's reasoning.
 
 ## Cron Jobs (re-create on new sessions)
 

@@ -759,6 +759,40 @@ class MultiModelQA:
         except Exception as exc:  # noqa: BLE001
             logger.debug("[MULTI_QA] qa_gates counter update skipped: %s", exc)
 
+        # One audit row per QA pass with the full reviewer breakdown.
+        # Powers the QA-rails Grafana dashboard (panels query
+        # audit_log WHERE event_type='qa_pass_completed' and project
+        # the JSON details column). Best-effort — telemetry writes
+        # never break the chain.
+        try:
+            from services.audit_log import audit_log_bg
+            audit_log_bg(
+                "qa_pass_completed",
+                "multi_model_qa",
+                {
+                    "approved": bool(approved),
+                    "final_score": round(float(final_score), 2),
+                    "approval_threshold": float(approval_threshold),
+                    "reviewer_count": len(reviews),
+                    "reviews": [
+                        {
+                            "reviewer": r.reviewer,
+                            "provider": r.provider,
+                            "approved": bool(r.approved),
+                            "score": round(float(r.score), 2),
+                            "advisory": bool(getattr(r, "advisory", False)),
+                            # First 200 chars of feedback for debugging;
+                            # full feedback stays in process logs.
+                            "feedback_preview": (r.feedback or "")[:200],
+                        }
+                        for r in reviews
+                    ],
+                },
+                severity="info" if approved else "warning",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[MULTI_QA] qa_pass_completed audit skipped: %s", exc)
+
         logger.info("[MULTI_QA] %s — %s", title[:50], result.summary.split("\n")[0])
         return result
 
