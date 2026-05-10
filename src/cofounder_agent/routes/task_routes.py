@@ -19,8 +19,9 @@ from schemas.unified_task_response import UnifiedTaskResponse
 # Import async database service
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 from utils.rate_limiter import limiter
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 # Configure logging
 logger = get_logger(__name__)
@@ -265,6 +266,7 @@ async def create_task(
     task_request: UnifiedTaskRequest,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
     background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
 ):
     """Unified task creation endpoint - routes to appropriate handler based on task_type.
@@ -302,7 +304,7 @@ async def create_task(
             )
         # Solo-operator: pass a dict with "id" for backward compat with handlers
         operator_user = {"id": "operator"}
-        return await handler(task_request, operator_user, db_service)
+        return await handler(task_request, operator_user, db_service, site_config=site_config)
 
     except HTTPException:
         raise
@@ -320,7 +322,8 @@ async def create_task(
 
 
 async def _handle_blog_post_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Handle blog post task creation"""
     task_id = str(uuid_lib.uuid4())
@@ -394,7 +397,8 @@ async def _handle_blog_post_creation(
         from services.pipeline_throttle import is_queue_full
 
         queue_full, queue_position, queue_limit = await is_queue_full(
-            db_service.pool if db_service else None
+            db_service.pool if db_service else None,
+            site_config=site_config,
         )
     except Exception as e:
         logger.debug("[create_task] Throttle state check failed: %s", e)
@@ -436,7 +440,8 @@ async def _handle_blog_post_creation(
 
 
 async def _handle_social_media_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Handle social media task creation"""
     task_id = str(uuid_lib.uuid4())
@@ -476,7 +481,8 @@ async def _handle_social_media_creation(
 
 
 async def _handle_email_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Handle email task creation"""
     task_id = str(uuid_lib.uuid4())
@@ -510,7 +516,8 @@ async def _handle_email_creation(
 
 
 async def _handle_newsletter_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Handle newsletter task creation"""
     task_id = str(uuid_lib.uuid4())
@@ -543,7 +550,8 @@ async def _handle_newsletter_creation(
 
 
 async def _handle_business_analytics_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Handle business analytics task creation"""
     task_id = str(uuid_lib.uuid4())
@@ -581,7 +589,8 @@ async def _handle_business_analytics_creation(
 
 
 async def _handle_data_retrieval_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Handle data retrieval task creation"""
     task_id = str(uuid_lib.uuid4())
@@ -617,7 +626,8 @@ async def _handle_data_retrieval_creation(
 
 
 async def _handle_market_research_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Handle market research task creation"""
     task_id = str(uuid_lib.uuid4())
@@ -650,7 +660,8 @@ async def _handle_market_research_creation(
 
 
 async def _handle_financial_analysis_creation(
-    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService,
+    site_config: SiteConfig | None = None,
 ) -> dict[str, Any]:
     """Handle financial analysis task creation"""
     task_id = str(uuid_lib.uuid4())

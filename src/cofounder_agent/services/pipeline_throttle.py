@@ -106,6 +106,12 @@ async def is_queue_full(
 
     Updates module state as a side effect so ``get_state()`` stays
     current even for callers that just want to observe.
+
+    Operator escape hatch: set ``max_approval_queue=0`` to disable the
+    throttle entirely (returns ``(False, queue_size, 0)`` regardless of
+    actual queue depth). Useful for stress tests and intentional bulk
+    runs where the operator has explicitly acknowledged that queue
+    depth is not a concern.
     """
     now = _now()
     max_queue = (
@@ -128,6 +134,13 @@ async def is_queue_full(
         # next tick rather than silently stalling.
         _STATE.last_check_monotonic = now
         return False, 0, max_queue
+
+    # Operator escape hatch — max_approval_queue=0 means "throttle off."
+    # Documented sentinel; preserves the observed queue_size in state
+    # so dashboards still show real-time depth.
+    if max_queue <= 0:
+        _mark_inactive(now, queue_size, 0)
+        return False, queue_size, 0
 
     full = queue_size >= max_queue
     if full:

@@ -207,3 +207,46 @@ class TestResetForTests:
         assert s["active"] is False
         assert s["total_seconds"] == 0.0
         assert s["queue_size"] == 0
+
+
+@pytest.mark.unit
+class TestRealSiteConfigIntegration:
+    """Pin the actual contract — a real SiteConfig with
+    ``max_approval_queue=100`` must produce ``limit=100``, not the
+    hardcoded fallback. The mock-shape tests above (TestIsQueueFull,
+    TestMetricToggle, etc.) all use a MagicMock for site_config, which
+    can't catch the class of bug surfaced in poindexter#457: a caller
+    passing ``site_config=None`` AND the consumer silently falling back
+    to a hardcoded 3.
+
+    These tests construct REAL ``SiteConfig`` instances via the
+    ``initial_config`` seam so the get_int → cache → int-coerce chain
+    is exercised end-to-end. If any link in that chain regresses, these
+    tests fail; the mock-shape tests would still pass."""
+
+    @pytest.mark.asyncio
+    async def test_real_site_config_max_approval_queue_wins(self):
+        """``initial_config={"max_approval_queue": "100"}`` → limit=100."""
+        from services.site_config import SiteConfig
+
+        sc = SiteConfig(initial_config={"max_approval_queue": "100"})
+        full, qsize, limit = await is_queue_full(_make_pool(0), site_config=sc)
+        assert limit == 100, (
+            f"expected limit=100 from DB-config, got {limit} — the "
+            "site_config-DI plumbing isn't being read"
+        )
+        assert full is False
+        assert qsize == 0
+
+    @pytest.mark.asyncio
+    async def test_max_approval_queue_zero_disables_throttle(self):
+        """``max_approval_queue=0`` is the documented operator escape
+        hatch — disables the throttle even with deep queues."""
+        from services.site_config import SiteConfig
+
+        sc = SiteConfig(initial_config={"max_approval_queue": "0"})
+        # 50 items waiting; with the sentinel, full must be False.
+        full, qsize, limit = await is_queue_full(_make_pool(50), site_config=sc)
+        assert full is False, "max_approval_queue=0 must disable throttling"
+        assert limit == 0
+        assert qsize == 50, "queue_size must still reflect actual depth"

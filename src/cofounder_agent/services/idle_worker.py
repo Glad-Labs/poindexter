@@ -311,7 +311,9 @@ class IdleWorker:
         try:
             from services.pipeline_throttle import is_queue_full
 
-            full, queue_size, queue_limit = await is_queue_full(self.pool)
+            full, queue_size, queue_limit = await is_queue_full(
+                self.pool, site_config=self._site_config
+            )
             if full:
                 return False, f"queue_full({queue_size}>={queue_limit})"
         except Exception as e:
