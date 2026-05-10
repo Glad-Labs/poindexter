@@ -19,6 +19,7 @@ Usage:
         # Safe to publish
 """
 
+import asyncio
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -536,6 +537,42 @@ class MultiModelQA:
                     deepeval_review, gate_states, "deepeval_brand_fabrication",
                 )
                 reviews.append(deepeval_review)
+
+        # 2g.2. DeepEval G-Eval (LLM-judge) — sub-issue 1 of #329.
+        # Uses the configured judge model to grade the post against
+        # ``deepeval_g_eval_criterion`` (default: groundedness +
+        # internal consistency + no invented facts). Advisory by
+        # default — operator can promote it to required via the
+        # qa_gates row.
+        if not self._gate_enabled(gate_states, "deepeval_g_eval"):
+            logger.info(
+                "[MULTI_QA] Skipped gate 'deepeval_g_eval' (qa_gates.enabled=False)",
+            )
+        else:
+            ge_review = await self._check_deepeval_g_eval(content, topic)
+            if ge_review is not None:
+                self._mark_advisory_if_configured(
+                    ge_review, gate_states, "deepeval_g_eval",
+                )
+                reviews.append(ge_review)
+
+        # 2g.3. DeepEval Faithfulness — only fires when research_sources
+        # is non-empty. Splits the corpus into paragraph chunks and
+        # asks the judge whether every claim in the post is attributable
+        # to one of them. Advisory by default.
+        if not self._gate_enabled(gate_states, "deepeval_faithfulness"):
+            logger.info(
+                "[MULTI_QA] Skipped gate 'deepeval_faithfulness' (qa_gates.enabled=False)",
+            )
+        else:
+            ff_review = await self._check_deepeval_faithfulness(
+                content, research_sources,
+            )
+            if ff_review is not None:
+                self._mark_advisory_if_configured(
+                    ff_review, gate_states, "deepeval_faithfulness",
+                )
+                reviews.append(ff_review)
 
         # 2h. Rendered-preview gate — the final "yup looks good"
         # sanity check. Screenshots the post's /preview/{hash} URL
@@ -1082,6 +1119,134 @@ class MultiModelQA:
         score_100 = round(float(score_unit) * 100.0, 1)
         return ReviewerResult(
             reviewer="deepeval_brand_fabrication",
+            approved=bool(passed),
+            score=score_100,
+            feedback=reason or "",
+            provider="deepeval",
+        )
+
+    async def _check_deepeval_g_eval(
+        self, content: str, topic: str,
+    ) -> ReviewerResult | None:
+        """Run DeepEval's G-Eval (LLM-judge) and return a ReviewerResult.
+
+        Async because the judge model issues an LLM call. The underlying
+        ``deepeval_rails.evaluate_g_eval`` is sync (DeepEval's measure()
+        is sync) but we wrap it in ``asyncio.to_thread`` so the
+        FastAPI event loop isn't blocked while the judge runs.
+
+        Returns ``None`` if the rail is globally disabled. Threshold +
+        criterion + judge model are pulled from app_settings so operators
+        can tune without a code change.
+        """
+        try:
+            from services import deepeval_rails
+        except ImportError:
+            return None
+        try:
+            if not deepeval_rails.is_enabled(site_config):
+                return None
+        except Exception:
+            return None
+
+        threshold = 0.7
+        criterion = deepeval_rails._DEFAULT_G_EVAL_CRITERION
+        judge_model = deepeval_rails._resolve_judge_model(site_config)
+        if self.settings:
+            try:
+                raw = await self.settings.get("deepeval_threshold_g_eval")
+                if raw is not None:
+                    threshold = float(raw)
+            except (TypeError, ValueError):
+                pass
+            try:
+                raw_c = await self.settings.get("deepeval_g_eval_criterion")
+                if raw_c is not None and str(raw_c).strip():
+                    criterion = str(raw_c).strip()
+            except Exception:
+                pass
+
+        try:
+            passed, score_unit, reason = await asyncio.to_thread(
+                deepeval_rails.evaluate_g_eval,
+                content,
+                topic,
+                criterion=criterion,
+                judge_model=judge_model,
+                threshold=threshold,
+            )
+        except Exception as exc:
+            logger.warning("[MULTI_QA] deepeval_g_eval reviewer error: %s", exc)
+            return None
+
+        score_100 = round(float(score_unit) * 100.0, 1)
+        return ReviewerResult(
+            reviewer="deepeval_g_eval",
+            approved=bool(passed),
+            score=score_100,
+            feedback=reason or "",
+            provider="deepeval",
+        )
+
+    async def _check_deepeval_faithfulness(
+        self, content: str, research_sources: str | None,
+    ) -> ReviewerResult | None:
+        """Run DeepEval's FaithfulnessMetric against the research bundle.
+
+        Splits ``research_sources`` (the same corpus the writer was given)
+        into paragraph-level snippets and asks the judge whether every
+        claim in ``content`` is attributable to one of them. Returns
+        ``None`` when the rail is disabled or there is no research
+        corpus to ground against — the metric cannot run without context.
+        """
+        try:
+            from services import deepeval_rails
+        except ImportError:
+            return None
+        try:
+            if not deepeval_rails.is_enabled(site_config):
+                return None
+        except Exception:
+            return None
+
+        if not research_sources or not research_sources.strip():
+            # Nothing to ground against. The brand-fabrication rail
+            # still catches the regex-detectable fabrications.
+            return None
+
+        threshold = 0.8
+        judge_model = deepeval_rails._resolve_judge_model(site_config)
+        if self.settings:
+            try:
+                raw = await self.settings.get("deepeval_threshold_faithfulness")
+                if raw is not None:
+                    threshold = float(raw)
+            except (TypeError, ValueError):
+                pass
+
+        # Paragraph-level chunks keep the metric's per-claim attribution
+        # tractable (a single 5KB blob makes the judge punt).
+        chunks = [
+            p.strip() for p in research_sources.split("\n\n") if p.strip()
+        ]
+        if not chunks:
+            return None
+
+        try:
+            passed, score_unit, reason = await asyncio.to_thread(
+                deepeval_rails.evaluate_faithfulness,
+                content,
+                chunks,
+                judge_model=judge_model,
+                threshold=threshold,
+            )
+        except Exception as exc:
+            logger.warning("[MULTI_QA] deepeval_faithfulness reviewer error: %s", exc)
+            return None
+
+        score_100 = round(float(score_unit) * 100.0, 1)
+        return ReviewerResult(
+            reviewer="deepeval_faithfulness",
             approved=bool(passed),
             score=score_100,
             feedback=reason or "",

@@ -1,4 +1,4 @@
-"""DeepEval integration as a parallel content reviewer (#197).
+"""DeepEval integration as a parallel content reviewer (#197 / #329).
 
 Doesn't replace the multi-reviewer orchestration in
 ``services/multi_model_qa.py`` — that's our domain logic with vision
@@ -19,16 +19,31 @@ Activation
 ``app_settings.deepeval_enabled = true`` runs the DeepEval rail
 alongside the existing multi_model_qa pass. Default ``false``.
 
+Three rails ship today (Lane D, sub-issue 1 of #329):
+
+- ``evaluate_brand_fabrication`` — pure-CPU regex wrapper around
+  ``content_validator``'s fabrication pattern sets. Binary score.
+- ``evaluate_g_eval`` — LLM-judge that grades content against an
+  operator-defined criterion (default: "the post is well-grounded,
+  internally consistent, and does not invent facts"). Graded 0–1.
+- ``evaluate_faithfulness`` — DeepEval's built-in
+  ``FaithfulnessMetric``: every claim in the content must be
+  attributable to the supplied retrieval context. Graded 0–1.
+
+The two LLM-judge rails respect ``app_settings.deepeval_judge_model``
+and route through OpenAI-compatible providers via DeepEval's standard
+configuration. They share the same fail-soft contract as the brand
+metric — ``ImportError`` / runtime failure returns
+``(True, 1.0, "deepeval-skipped")`` so the rail can never take down
+the pipeline.
+
 Custom-metric pattern
 ---------------------
 
-The example below registers a single ``BrandFabricationMetric``
-that wraps the existing fabrication patterns. The shape — subclass
-``BaseMetric``, implement ``measure(test_case)``, return a
-score in [0, 1] — is the canonical "wrap an existing domain check
-as a DeepEval metric" example for the Glad Labs codebase. Future
-custom metrics (citation grounding, brand-voice adherence) follow
-the same shape.
+The ``BrandFabricationMetric`` below shows the canonical shape:
+subclass ``BaseMetric``, implement ``measure(test_case)``, return a
+score in [0, 1]. Future custom metrics (citation grounding,
+brand-voice adherence) follow the same template.
 """
 
 from __future__ import annotations
@@ -166,6 +181,137 @@ def evaluate_brand_fabrication(content: str, topic: str = "") -> tuple[bool, flo
         return True, 1.0, f"deepeval-error: {type(e).__name__}"
 
 
+_DEFAULT_G_EVAL_CRITERION = (
+    "The output is well-grounded in the input topic, internally "
+    "consistent across paragraphs, and does not invent specific facts, "
+    "names, statistics, or quotes that lack support."
+)
+
+
+def _resolve_judge_model(site_config: Any) -> str:
+    """Pick the LLM judge model for the LLM-graded DeepEval metrics.
+
+    Reads ``app_settings.deepeval_judge_model`` if available,
+    otherwise falls back to ``glm-4.7-5090`` — Matt's local thinking
+    model, free at the point of use and the same family that drafts
+    posts. Operators on cloud OpenAI-compat keys can override to e.g.
+    ``gpt-4o-mini`` for a stronger second opinion.
+    """
+    if site_config is not None:
+        try:
+            v = site_config.get("deepeval_judge_model", "") or ""
+            if v.strip():
+                return v.strip()
+        except Exception:
+            pass
+    return "glm-4.7-5090"
+
+
+def evaluate_g_eval(
+    content: str,
+    topic: str = "",
+    *,
+    criterion: str = _DEFAULT_G_EVAL_CRITERION,
+    judge_model: str = "glm-4.7-5090",
+    threshold: float = 0.7,
+) -> tuple[bool, float, str]:
+    """Run DeepEval's G-Eval (LLM-judge) against ``content``.
+
+    G-Eval is a chain-of-thought LLM-judge metric: the judge model
+    decides on its own evaluation steps from the criterion, scores
+    the output along those steps, and emits a 0.0–1.0 grade. It's
+    the closest DeepEval analogue to our existing critic gate, so
+    we treat it as advisory rather than a hard veto.
+
+    Returns ``(passed, score, reason)`` — ``passed = score >= threshold``.
+    Never raises: import failures or judge errors return safe defaults.
+    """
+    if not content or not isinstance(content, str):
+        return True, 1.0, "empty content"
+
+    try:
+        from deepeval.metrics import GEval as _GEvalMetric
+        from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+    except ImportError as e:
+        logger.warning("[deepeval] deepeval not installed (%s) — skipping g-eval", e)
+        return True, 1.0, "deepeval-not-installed"
+
+    try:
+        metric = _GEvalMetric(
+            name="ContentGroundedness",
+            criteria=criterion,
+            evaluation_params=[
+                LLMTestCaseParams.INPUT,
+                LLMTestCaseParams.ACTUAL_OUTPUT,
+            ],
+            model=judge_model,
+            threshold=threshold,
+        )
+        case = LLMTestCase(input=topic or "blog post", actual_output=content)
+        score = float(metric.measure(case))
+        reason = (getattr(metric, "reason", None) or "")[:300]
+        passed = bool(getattr(metric, "success", score >= threshold))
+        return passed, score, reason
+    except Exception as e:
+        logger.warning("[deepeval] g-eval error: %s", e, exc_info=True)
+        return True, 1.0, f"deepeval-error: {type(e).__name__}"
+
+
+def evaluate_faithfulness(
+    content: str,
+    retrieval_context: list[str] | None,
+    *,
+    judge_model: str = "glm-4.7-5090",
+    threshold: float = 0.8,
+) -> tuple[bool, float, str]:
+    """Run DeepEval's ``FaithfulnessMetric`` on ``content``.
+
+    Every claim in the output must be attributable to one of the
+    strings in ``retrieval_context`` (typically: research bundle
+    snippets seeded earlier in the pipeline). Score is the fraction
+    of claims that are faithful to the context — 1.0 means every
+    claim is grounded; lower scores flag potential fabrications.
+
+    Returns ``(passed, score, reason)``. Returns
+    ``(True, 1.0, "no-context")`` when ``retrieval_context`` is empty
+    or None — the metric can't run without grounding text, so we
+    skip rather than fail (the brand-fabrication rail catches the
+    fabrication patterns at a different layer).
+    """
+    if not content or not isinstance(content, str):
+        return True, 1.0, "empty content"
+    if not retrieval_context:
+        return True, 1.0, "no-context"
+
+    try:
+        from deepeval.metrics import FaithfulnessMetric
+        from deepeval.test_case import LLMTestCase
+    except ImportError as e:
+        logger.warning(
+            "[deepeval] deepeval not installed (%s) — skipping faithfulness", e,
+        )
+        return True, 1.0, "deepeval-not-installed"
+
+    try:
+        metric = FaithfulnessMetric(
+            threshold=threshold,
+            model=judge_model,
+            include_reason=True,
+        )
+        case = LLMTestCase(
+            input="",
+            actual_output=content,
+            retrieval_context=list(retrieval_context),
+        )
+        score = float(metric.measure(case))
+        reason = (getattr(metric, "reason", None) or "")[:300]
+        passed = bool(getattr(metric, "success", score >= threshold))
+        return passed, score, reason
+    except Exception as e:
+        logger.warning("[deepeval] faithfulness error: %s", e, exc_info=True)
+        return True, 1.0, f"deepeval-error: {type(e).__name__}"
+
+
 def is_enabled(site_config: Any) -> bool:
     """Operator gate. ``app_settings.deepeval_enabled = true`` to run."""
     if site_config is None:
@@ -182,6 +328,8 @@ def is_enabled(site_config: Any) -> bool:
 
 __all__ = [
     "evaluate_brand_fabrication",
+    "evaluate_faithfulness",
+    "evaluate_g_eval",
     "is_enabled",
     "make_test_case",
 ]

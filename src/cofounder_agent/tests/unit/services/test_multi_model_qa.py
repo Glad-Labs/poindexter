@@ -1293,8 +1293,8 @@ class TestDeepEvalBrandFabricationGate:
 
     def test_partial_score_rescales_to_0_100(self):
         """Brand metric is binary today, but the rescaler must work
-        for graded scores — future G-Eval and Faithfulness reviewers
-        will return values like 0.73 that should land at 73.0."""
+        for graded scores — the G-Eval and Faithfulness reviewers
+        return values like 0.73 that should land at 73.0."""
         qa = MultiModelQA(pool=None, settings_service=None)
         with patch(
             "services.deepeval_rails.evaluate_brand_fabrication",
@@ -1306,3 +1306,139 @@ class TestDeepEvalBrandFabricationGate:
 
         assert result is not None
         assert result.score == 73.0
+
+
+@pytest.mark.unit
+class TestDeepEvalGEvalGate:
+    """Wraps the LLM-judge rail. Lane D sub-issue 1 of #329."""
+
+    @pytest.mark.asyncio
+    async def test_high_score_returns_approved(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.evaluate_g_eval",
+            return_value=(True, 0.9, "well grounded"),
+        ), patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            result = await qa._check_deepeval_g_eval(GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result is not None
+        assert result.reviewer == "deepeval_g_eval"
+        assert result.provider == "deepeval"
+        assert result.approved is True
+        assert result.score == 90.0
+
+    @pytest.mark.asyncio
+    async def test_low_score_returns_rejected(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.evaluate_g_eval",
+            return_value=(False, 0.4, "vague claims"),
+        ), patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            result = await qa._check_deepeval_g_eval("body", "topic")
+
+        assert result is not None
+        assert result.approved is False
+        assert result.score == 40.0
+        assert "vague" in result.feedback
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_rail_disabled(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.is_enabled", return_value=False,
+        ), patch(
+            "services.deepeval_rails.evaluate_g_eval",
+        ) as judge_mock:
+            result = await qa._check_deepeval_g_eval(GOOD_CONTENT, GOOD_TOPIC)
+
+        assert result is None
+        judge_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_threshold_pulled_from_settings(self):
+        """Operator can override threshold + criterion via app_settings."""
+        settings = AsyncMock()
+        settings.get = AsyncMock(side_effect=lambda key: {
+            "deepeval_threshold_g_eval": "0.85",
+            "deepeval_g_eval_criterion": "Custom criterion text",
+        }.get(key))
+        qa = MultiModelQA(pool=None, settings_service=settings)
+
+        with patch(
+            "services.deepeval_rails.evaluate_g_eval",
+            return_value=(True, 0.9, "ok"),
+        ) as judge_mock, patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            await qa._check_deepeval_g_eval("body", "topic")
+
+        kwargs = judge_mock.call_args.kwargs
+        assert kwargs["threshold"] == 0.85
+        assert kwargs["criterion"] == "Custom criterion text"
+
+
+@pytest.mark.unit
+class TestDeepEvalFaithfulnessGate:
+    """Wraps the FaithfulnessMetric rail.
+
+    Skips without research_sources; when present, splits into paragraph
+    chunks and asks the judge whether every claim is attributable.
+    """
+
+    @pytest.mark.asyncio
+    async def test_skips_without_research(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.evaluate_faithfulness",
+        ) as judge_mock, patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            result = await qa._check_deepeval_faithfulness(
+                "body", research_sources=None,
+            )
+
+        assert result is None
+        judge_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_grounded_post_passes(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.evaluate_faithfulness",
+            return_value=(True, 0.95, "all claims attributable"),
+        ) as judge_mock, patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            result = await qa._check_deepeval_faithfulness(
+                "FastAPI uses uvicorn.",
+                research_sources=(
+                    "FastAPI is a Python framework.\n\n"
+                    "It uses uvicorn as its ASGI server."
+                ),
+            )
+
+        assert result is not None
+        assert result.reviewer == "deepeval_faithfulness"
+        assert result.approved is True
+        assert result.score == 95.0
+        chunks = judge_mock.call_args.args[1]
+        assert len(chunks) == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_rail_disabled(self):
+        qa = MultiModelQA(pool=None, settings_service=None)
+        with patch(
+            "services.deepeval_rails.is_enabled", return_value=False,
+        ), patch(
+            "services.deepeval_rails.evaluate_faithfulness",
+        ) as judge_mock:
+            result = await qa._check_deepeval_faithfulness(
+                "body", "research bundle text",
+            )
+
+        assert result is None
+        judge_mock.assert_not_called()
