@@ -224,6 +224,15 @@ services:
       # 2026-05-08 (.shared-context/audits/2026-05-08-self-healing-...).
       # Pair with: setting backup_watcher_backup_dir to /host-backups/auto.
       - ${USERPROFILE:-${HOME}}/.poindexter/backups:/host-backups:ro
+      # Glad-Labs/poindexter#444 — sentinel files dropped by the
+      # host-side dr-backup scripts at ~/.poindexter/scripts/dr-backup/
+      # when the script's primary Telegram alert path failed (creds
+      # missing, postgres down, network broken). brain/backup_watcher.py
+      # scans /host-backup-logs each cycle and surfaces any sentinels
+      # via alert_events — second line of defense behind the in-stack
+      # age check above. Pair with: app_settings.backup_watcher_sentinel_dir
+      # = /host-backup-logs (default seeded by the migration).
+      - ${USERPROFILE:-${HOME}}/.poindexter/logs:/host-backup-logs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

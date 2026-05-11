@@ -78,6 +78,14 @@ DAILY_MAX_AGE_HOURS_KEY = "backup_watcher_daily_max_age_hours"
 MAX_RETRIES_KEY = "backup_watcher_max_retries"
 RETRY_DELAY_SECONDS_KEY = "backup_watcher_retry_delay_seconds"
 BACKUP_DIR_KEY = "backup_watcher_backup_dir"
+# Glad-Labs/poindexter#444: dr-backup scripts (host-side, not the
+# in-stack tiers above) drop ``dr-backup-*-failed.sentinel`` files
+# under ``~/.poindexter/logs/`` when both the script failed AND the
+# script's primary Telegram alert path failed. The brain bind-mounts
+# that directory read-only at /host-backup-logs and surfaces any
+# sentinels through alert_events on each cycle — the second line of
+# defense behind the in-stack age-based check.
+SENTINEL_DIR_KEY = "backup_watcher_sentinel_dir"
 
 DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 5
@@ -86,6 +94,7 @@ DEFAULT_DAILY_MAX_AGE_HOURS = 26
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_DELAY_SECONDS = 120
 DEFAULT_BACKUP_DIR = str(Path.home() / ".poindexter" / "backups" / "auto")
+DEFAULT_SENTINEL_DIR = "/host-backup-logs"
 
 # Container names match docker-compose.local.yml. Kept as constants
 # rather than settings — changing them would break dozens of other
@@ -114,6 +123,24 @@ PROBE_INTERVAL_SECONDS = 300
 _ALERTNAME_BY_TIER: dict[str, str] = {
     "hourly": "backup_hourly_failed",
     "daily": "backup_daily_failed",
+}
+
+# Glad-Labs/poindexter#444 — dr-backup sentinel surfacing. These map
+# the on-disk sentinel filenames the host-side scripts at
+# ``~/.poindexter/scripts/dr-backup/*.sh`` drop when the primary
+# Telegram alert path failed, to a distinct alertname so the operator
+# can tell the host-side dr-backup failure apart from the in-stack
+# ``backup_<tier>_failed`` page above. The "_path → tier → alertname"
+# mapping is kept here (not in app_settings) because changing it would
+# require a coordinated edit on the script side too — same rationale
+# as the container-name constants above.
+_SENTINEL_FILES_BY_TIER: dict[str, str] = {
+    "hourly": "dr-backup-hourly-failed.sentinel",
+    "daily": "dr-backup-failed.sentinel",
+}
+_SENTINEL_ALERTNAME_BY_TIER: dict[str, str] = {
+    "hourly": "dr_backup_hourly_failed",
+    "daily": "dr_backup_daily_failed",
 }
 
 
@@ -173,7 +200,7 @@ def _coerce_int(val: Any, default: int) -> int:
 async def _read_config(pool: Any) -> dict[str, Any]:
     """Pull every probe tunable in one helper.
 
-    Returns a dict with all seven settings resolved + coerced. Cheap
+    Returns a dict with all eight settings resolved + coerced. Cheap
     because the brain pool is local to the same Postgres instance.
     """
     enabled = _coerce_bool(
@@ -204,6 +231,10 @@ async def _read_config(pool: Any) -> dict[str, Any]:
     if backup_dir is None or str(backup_dir).strip() == "":
         backup_dir = DEFAULT_BACKUP_DIR
     backup_dir = os.path.expanduser(str(backup_dir).strip())
+    sentinel_dir = await _read_setting(pool, SENTINEL_DIR_KEY, DEFAULT_SENTINEL_DIR)
+    if sentinel_dir is None or str(sentinel_dir).strip() == "":
+        sentinel_dir = DEFAULT_SENTINEL_DIR
+    sentinel_dir = os.path.expanduser(str(sentinel_dir).strip())
 
     return {
         "enabled": enabled,
@@ -213,6 +244,7 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "max_retries": max_retries,
         "retry_delay_seconds": retry_delay_seconds,
         "backup_dir": backup_dir,
+        "sentinel_dir": sentinel_dir,
     }
 
 
@@ -436,6 +468,286 @@ async def _emit_audit_event(
             "[BACKUP_WATCHER] Could not write audit event %s: %s",
             event, exc,
         )
+
+
+# ---------------------------------------------------------------------------
+# dr-backup sentinel surfacing (Glad-Labs/poindexter#444).
+#
+# The host-side dr-backup scripts at ``~/.poindexter/scripts/dr-backup/``
+# write a sentinel file under ``~/.poindexter/logs/`` when the script
+# itself failed AND its primary Telegram-alert path also failed
+# (creds missing, postgres down, network broken). brain bind-mounts
+# that log dir read-only at /host-backup-logs so this probe can scan
+# for the sentinels and surface them through the existing alert_events
+# pipeline. Sentinel cleanup is owned by the script side — the script
+# rms its own sentinel on the next successful run, so we never delete
+# files we don't own.
+# ---------------------------------------------------------------------------
+
+
+def _parse_sentinel_file(path: Path) -> dict[str, str]:
+    """Parse a dr-backup sentinel file into a dict of key→value strings.
+
+    Sentinel format (see ~/.poindexter/scripts/dr-backup/run-*.sh)::
+
+        rc=<exit_code>
+        ts=<utc-iso>
+        host=<hostname>          # daily only
+        log=<log_path>
+        tail<<EOF
+        <multi-line tail>
+        EOF
+
+    The parser is deliberately tolerant — the script format is owned
+    elsewhere and may evolve. Unknown keys pass through; missing keys
+    are simply absent from the returned dict. The parsed ``tail`` (if
+    any) is rejoined with ``\\n``.
+    """
+    parsed: dict[str, str] = {"_path": str(path)}
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        logger.warning(
+            "[BACKUP_WATCHER] Could not read sentinel %s: %s", path, exc
+        )
+        return parsed
+
+    in_tail = False
+    tail_lines: list[str] = []
+    for raw in text.splitlines():
+        if in_tail:
+            if raw.strip() == "EOF":
+                in_tail = False
+                continue
+            tail_lines.append(raw)
+            continue
+        if raw == "tail<<EOF":
+            in_tail = True
+            continue
+        if "=" not in raw:
+            continue
+        key, _, value = raw.partition("=")
+        parsed[key.strip()] = value.strip()
+    if tail_lines:
+        parsed["tail"] = "\n".join(tail_lines)
+    return parsed
+
+
+def _scan_sentinel_dir(
+    sentinel_dir: str,
+) -> list[tuple[str, Path, dict[str, str]]]:
+    """Find every dr-backup sentinel under ``sentinel_dir``.
+
+    Returns ``(tier, path, parsed)`` triples for each existing sentinel.
+    Missing directory returns an empty list — the dir-not-mounted case
+    is logged separately by the caller so a missing /host-backup-logs
+    mount becomes a single visible warning rather than a per-cycle
+    silent skip.
+    """
+    out: list[tuple[str, Path, dict[str, str]]] = []
+    base = Path(sentinel_dir)
+    if not base.is_dir():
+        return out
+    for tier, filename in _SENTINEL_FILES_BY_TIER.items():
+        candidate = base / filename
+        if candidate.is_file():
+            out.append((tier, candidate, _parse_sentinel_file(candidate)))
+    return out
+
+
+async def _alert_with_fingerprint_exists(pool: Any, fingerprint: str) -> bool:
+    """True if ``alert_events`` already has a row with this fingerprint.
+
+    ``alert_events.fingerprint`` has no UNIQUE constraint, so this
+    check-before-insert is what dedups sentinel pages: the sentinel
+    file persists until the next successful run, but the operator
+    only wants one page per failure incident — not one per probe cycle.
+    """
+    try:
+        row = await pool.fetchrow(
+            "SELECT 1 FROM alert_events WHERE fingerprint = $1 LIMIT 1",
+            fingerprint,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[BACKUP_WATCHER] alert_events fingerprint lookup failed "
+            "for %s: %s", fingerprint, exc,
+        )
+        return False
+    return row is not None
+
+
+async def _emit_sentinel_alert(
+    pool: Any,
+    *,
+    tier: str,
+    sentinel_path: Path,
+    parsed: dict[str, str],
+) -> bool:
+    """Insert a firing alert_events row for an unhandled dr-backup sentinel.
+
+    Returns True if a new row was written, False if a row with the same
+    fingerprint already exists (we already paged on this incident) or
+    the insert failed (already logged). Severity is ``warning`` to
+    match the surrounding ``notify_fn`` calls in this module.
+    """
+    alertname = _SENTINEL_ALERTNAME_BY_TIER[tier]
+    ts_seed = parsed.get("ts")
+    if not ts_seed:
+        try:
+            ts_seed = str(int(sentinel_path.stat().st_mtime))
+        except OSError:
+            ts_seed = str(int(time.time()))
+    fingerprint = f"dr-backup-sentinel-{tier}-{ts_seed}"
+
+    if await _alert_with_fingerprint_exists(pool, fingerprint):
+        return False
+
+    labels = {
+        "source": "brain.backup_watcher.sentinel",
+        "tier": tier,
+        "category": "backup",
+        "host": parsed.get("host", "unknown"),
+    }
+    annotations = {
+        "summary": (
+            f"dr-backup tier={tier} script failed AND its primary "
+            f"alert path was unreachable — sentinel surfaced by brain."
+        ),
+        "description": (
+            f"Sentinel {sentinel_path.name} present.\n"
+            f"rc={parsed.get('rc', '?')} ts={parsed.get('ts', '?')} "
+            f"host={parsed.get('host', '?')} log={parsed.get('log', '?')}\n"
+            f"\nTail:\n{parsed.get('tail', '(no tail captured)')}"
+        ),
+    }
+    try:
+        await pool.execute(
+            """
+            INSERT INTO alert_events (
+                alertname, severity, status, labels, annotations,
+                starts_at, fingerprint
+            ) VALUES (
+                $1, 'warning', 'firing', $2::jsonb, $3::jsonb, NOW(), $4
+            )
+            """,
+            alertname,
+            json.dumps(labels),
+            json.dumps(annotations),
+            fingerprint,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[BACKUP_WATCHER] Failed to write sentinel alert for %s: %s",
+            alertname, exc,
+        )
+        return False
+
+
+async def _check_sentinels(
+    pool: Any,
+    *,
+    sentinel_dir: str,
+    scan_fn: Callable[[str], list[tuple[str, Path, dict[str, str]]]],
+    notify_fn: Callable[..., None],
+) -> dict[str, Any]:
+    """Scan ``sentinel_dir`` for dr-backup sentinels and emit alerts.
+
+    Mirrors the per-tier-summary shape returned elsewhere in this
+    module so the top-level probe summary stays homogeneous. The
+    missing-dir branch fires a single warning notify (not per-cycle
+    spam — the dispatcher dedups by fingerprint, but notify_operator
+    has no such dedup) so an operator who forgot the bind mount
+    notices, then the probe goes back to clean status.
+    """
+    if not Path(sentinel_dir).is_dir():
+        detail = (
+            f"Sentinel dir {sentinel_dir!r} not present in container. "
+            f"Add the bind mount to docker-compose.local.yml "
+            f"(brain-daemon → volumes) or set "
+            f"app_settings.{SENTINEL_DIR_KEY} to a path that is mounted."
+        )
+        logger.info("[BACKUP_WATCHER] %s", detail)
+        return {
+            "ok": True,
+            "status": "dir_missing",
+            "detail": detail,
+            "sentinels": [],
+        }
+
+    found = scan_fn(sentinel_dir)
+    if not found:
+        return {
+            "ok": True,
+            "status": "clean",
+            "detail": "No dr-backup sentinels present.",
+            "sentinels": [],
+        }
+
+    summaries: list[dict[str, Any]] = []
+    for tier, path, parsed in found:
+        emitted = await _emit_sentinel_alert(
+            pool,
+            tier=tier,
+            sentinel_path=path,
+            parsed=parsed,
+        )
+        if emitted:
+            await _emit_audit_event(
+                pool,
+                "probe.backup_watcher_sentinel_alert",
+                f"Surfaced dr-backup {tier} sentinel via alert_events.",
+                extra={
+                    "tier": tier,
+                    "sentinel": str(path),
+                    "rc": parsed.get("rc"),
+                    "ts": parsed.get("ts"),
+                    "host": parsed.get("host"),
+                },
+            )
+            try:
+                # Belt-and-suspenders: the alert_dispatcher routing
+                # picks up the alert_events row on its 30s poll, but
+                # if dispatcher routing is itself broken (the exact
+                # scenario where the sentinel exists in the first
+                # place), notify_operator's fallback chain (Telegram →
+                # Discord → alerts.log → stderr) is the last resort.
+                notify_fn(
+                    title=(
+                        f"dr-backup {tier} failed (sentinel surfaced)"
+                    ),
+                    detail=(
+                        f"rc={parsed.get('rc', '?')} "
+                        f"ts={parsed.get('ts', '?')} "
+                        f"host={parsed.get('host', '?')}\n"
+                        f"See {path}"
+                    ),
+                    source="brain.backup_watcher",
+                    severity="warning",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[BACKUP_WATCHER] notify_fn failed on sentinel: %s", exc
+                )
+        summaries.append({
+            "tier": tier,
+            "path": str(path),
+            "rc": parsed.get("rc"),
+            "ts": parsed.get("ts"),
+            "alert_emitted": emitted,
+        })
+
+    new_count = sum(1 for s in summaries if s["alert_emitted"])
+    return {
+        "ok": False,
+        "status": "sentinels_found",
+        "detail": (
+            f"Surfaced {new_count} new dr-backup sentinel alert(s); "
+            f"{len(summaries)} sentinel(s) currently present."
+        ),
+        "sentinels": summaries,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -690,6 +1002,9 @@ async def run_backup_watcher_probe(
     restart_fn: Optional[Callable[[str], tuple[bool, str]]] = None,
     sleep_fn: Optional[Callable[[float], None]] = None,
     notify_fn: Optional[Callable[..., None]] = None,
+    scan_sentinels_fn: Optional[
+        Callable[[str], list[tuple[str, Path, dict[str, str]]]]
+    ] = None,
 ) -> dict[str, Any]:
     """Single execution of the backup-watcher probe.
 
@@ -702,9 +1017,13 @@ async def run_backup_watcher_probe(
         sleep_fn: ``(seconds) -> None`` — defaults to ``time.sleep``.
             Tests inject a no-op so they don't wait two minutes.
         notify_fn: operator notifier callable. Defaults to
-            :func:`brain.operator_notifier.notify_operator`. Only used
-            for "docker is broken" surface; per-tier escalation is
-            left to the existing alert_events dispatcher pipeline.
+            :func:`brain.operator_notifier.notify_operator`. Used for
+            the "docker is broken" surface AND the sentinel-found
+            fallback path; per-tier escalation is left to the existing
+            alert_events dispatcher pipeline.
+        scan_sentinels_fn: ``(sentinel_dir) -> [(tier, path, parsed)]``
+            — defaults to the real filesystem scan. Tests inject a
+            canned list (Glad-Labs/poindexter#444).
 
     Returns a structured summary suitable for inclusion in
     ``brain_decisions`` / the cycle's ``probe_results`` map.
@@ -713,6 +1032,7 @@ async def run_backup_watcher_probe(
     restart_fn = restart_fn or _restart_backup_container
     sleep_fn = sleep_fn or time.sleep
     notify_fn = notify_fn or notify_operator
+    scan_sentinels_fn = scan_sentinels_fn or _scan_sentinel_dir
 
     config = await _read_config(pool)
     if not config["enabled"]:
@@ -795,7 +1115,32 @@ async def run_backup_watcher_probe(
                 "error": str(exc)[:200],
             }
 
-    overall_ok = all(t.get("ok", False) for t in tier_summaries.values())
+    # dr-backup sentinel surfacing (Glad-Labs/poindexter#444). Runs
+    # AFTER the in-stack age check so a degraded sentinel scan never
+    # masks a stale-dump escalation. Wrapped in its own try/except for
+    # the same reason ``_check_one_tier`` is — a sentinel-parsing bug
+    # shouldn't take the whole probe down.
+    try:
+        sentinel_summary = await _check_sentinels(
+            pool,
+            sentinel_dir=config["sentinel_dir"],
+            scan_fn=scan_sentinels_fn,
+            notify_fn=notify_fn,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[BACKUP_WATCHER] sentinel scan raised: %s", exc, exc_info=True,
+        )
+        sentinel_summary = {
+            "ok": False,
+            "status": "exception",
+            "detail": f"Sentinel scan raised: {type(exc).__name__}",
+            "sentinels": [],
+        }
+
+    overall_ok = all(t.get("ok", False) for t in tier_summaries.values()) and bool(
+        sentinel_summary.get("ok", False)
+    )
     statuses = ", ".join(
         f"{tier}={t.get('status', 'unknown')}"
         for tier, t in tier_summaries.items()
@@ -803,8 +1148,12 @@ async def run_backup_watcher_probe(
     return {
         "ok": overall_ok,
         "status": "ok" if overall_ok else "degraded",
-        "detail": f"Backup watcher cycle: {statuses}",
+        "detail": (
+            f"Backup watcher cycle: {statuses}; "
+            f"sentinels={sentinel_summary.get('status', 'unknown')}"
+        ),
         "tiers": tier_summaries,
+        "sentinels": sentinel_summary,
         "config": {k: v for k, v in config.items() if k != "enabled"},
     }
 
@@ -845,6 +1194,7 @@ class BackupWatcherProbe:
                     tier: t.get("status")
                     for tier, t in (summary.get("tiers") or {}).items()
                 },
+                "sentinels": (summary.get("sentinels") or {}).get("status"),
             },
             severity="warning" if not summary.get("ok") else "info",
         )

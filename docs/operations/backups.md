@@ -96,6 +96,35 @@ paged, just on the actual problem rather than on a transient hiccup.
 | `backup_watcher_max_retries`            | `2`                          | Cumulative across cycles before escalation                 |
 | `backup_watcher_retry_delay_seconds`    | `120`                        | Wait between `docker restart` and the post-restart re-stat |
 | `backup_watcher_backup_dir`             | `~/.poindexter/backups/auto` | Host path where the backup containers write dumps          |
+| `backup_watcher_sentinel_dir`           | `/host-backup-logs`          | Container path of the sentinel scan dir (#444)             |
+
+### dr-backup sentinel surfacing (#444)
+
+The host-side dr-backup scripts at `~/.poindexter/scripts/dr-backup/`
+write a `dr-backup-*-failed.sentinel` file under `~/.poindexter/logs/`
+when both:
+
+1. the script itself failed (non-zero exit), AND
+2. the script's primary Telegram alert path failed too (creds missing,
+   postgres down, network broken).
+
+The sentinel is the second line of defense — the assumption is that
+brain's backup-watcher will pick it up on its next sweep and surface
+the failure through whatever channel still works.
+
+`brain/backup_watcher.py` scans the configured `backup_watcher_sentinel_dir`
+each cycle and inserts a firing `alert_events` row for every sentinel it
+finds, named `dr_backup_hourly_failed` or `dr_backup_daily_failed`. The
+fingerprint embeds the sentinel's `ts` field so re-scans of the same
+sentinel dedup — the operator gets exactly one page per failure
+incident, not one per probe cycle. Cleanup is owned by the script side
+(it `rm`s its own sentinel on the next successful run), so brain never
+deletes files it didn't write.
+
+The bind mount `~/.poindexter/logs:/host-backup-logs:ro` in
+`docker-compose.local.yml` (under the `brain-daemon` service) is what
+exposes the sentinel directory inside the container. If you change
+`backup_watcher_sentinel_dir`, change the mount target to match.
 
 ## Operational hygiene
 

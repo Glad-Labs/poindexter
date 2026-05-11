@@ -52,20 +52,25 @@ def _make_pool(
     *,
     setting_values: Optional[dict[str, str]] = None,
     firing_alertnames: Optional[set[str]] = None,
+    existing_fingerprints: Optional[set[str]] = None,
 ):
     """Build an asyncpg-style mock pool that:
 
     - returns ``setting_values[key]`` for ``SELECT value FROM app_settings``
       lookups (via ``fetchval``),
-    - returns ``{"status": "firing"}`` for alert_events lookups for
-      alertnames in ``firing_alertnames``, ``None`` otherwise (via
+    - returns ``{"status": "firing"}`` for alert_events alertname lookups
+      for names in ``firing_alertnames``, ``None`` otherwise (via
       ``fetchrow``),
+    - returns ``{"?column?": 1}`` for alert_events fingerprint lookups
+      for fingerprints in ``existing_fingerprints``, ``None`` otherwise
+      (Glad-Labs/poindexter#444 sentinel dedup).
     - records every ``execute`` call so tests can assert on what was
       written (audit_log rows, status='resolved' alert_events rows).
     """
     pool = MagicMock()
     settings = {**_default_settings(), **(setting_values or {})}
     firing = firing_alertnames or set()
+    fingerprints = existing_fingerprints or set()
 
     async def _fetchval(query, *args):
         # The watcher only ever issues
@@ -75,8 +80,11 @@ def _make_pool(
         return None
 
     async def _fetchrow(query, *args):
-        # The watcher's only fetchrow target is alert_events.
+        # Two callers — alertname lookup (latest status) and
+        # fingerprint lookup (sentinel dedup, #444).
         if "alert_events" in query and args:
+            if "fingerprint" in query:
+                return {"?column?": 1} if args[0] in fingerprints else None
             alertname = args[0]
             if alertname in firing:
                 return {"status": "firing"}
@@ -571,6 +579,7 @@ class TestProbeWrapper:
                     "hourly": {"status": "fresh"},
                     "daily": {"status": "fresh"},
                 },
+                "sentinels": {"status": "clean"},
             }
 
         import brain.backup_watcher as _bw_mod
@@ -586,3 +595,265 @@ class TestProbeWrapper:
         assert result.detail == "fake"
         assert result.metrics["status"] == "ok"
         assert result.metrics["tiers"]["hourly"] == "fresh"
+        assert result.metrics["sentinels"] == "clean"
+
+
+# ---------------------------------------------------------------------------
+# dr-backup sentinel surfacing — Glad-Labs/poindexter#444
+# ---------------------------------------------------------------------------
+
+
+def _write_sentinel(
+    path: Path,
+    *,
+    rc: int = 1,
+    ts: str = "2026-05-09T03:00:00Z",
+    host: Optional[str] = "nightrider",
+    log_path: str = "/c/Users/mattm/.poindexter/logs/dr-backup.log",
+    tail: str = "restic: error\nwhich tier: hourly",
+) -> None:
+    """Write a sentinel matching the dr-backup script format."""
+    lines: list[str] = [f"rc={rc}", f"ts={ts}"]
+    if host is not None:
+        lines.append(f"host={host}")
+    lines.append(f"log={log_path}")
+    lines.append("tail<<EOF")
+    lines.append(tail)
+    lines.append("EOF")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+@pytest.mark.unit
+class TestParseSentinel:
+    def test_parses_full_format(self, tmp_path):
+        sentinel = tmp_path / "dr-backup-failed.sentinel"
+        _write_sentinel(
+            sentinel,
+            rc=2,
+            ts="2026-05-09T03:00:00Z",
+            host="nightrider",
+            log_path="/var/log/dr-backup.log",
+            tail="boom\nbang",
+        )
+        parsed = bw._parse_sentinel_file(sentinel)
+        assert parsed["rc"] == "2"
+        assert parsed["ts"] == "2026-05-09T03:00:00Z"
+        assert parsed["host"] == "nightrider"
+        assert parsed["log"] == "/var/log/dr-backup.log"
+        assert parsed["tail"] == "boom\nbang"
+        assert parsed["_path"] == str(sentinel)
+
+    def test_tolerates_missing_host_field(self, tmp_path):
+        # The hourly script omits ``host=`` — parser must not blow up.
+        sentinel = tmp_path / "dr-backup-hourly-failed.sentinel"
+        _write_sentinel(sentinel, host=None, tail="hourly tail")
+        parsed = bw._parse_sentinel_file(sentinel)
+        assert "host" not in parsed
+        assert parsed["rc"] == "1"
+        assert parsed["tail"] == "hourly tail"
+
+    def test_returns_path_when_unreadable(self, tmp_path):
+        # Pointing at a directory triggers OSError on read_text.
+        result = bw._parse_sentinel_file(tmp_path)
+        assert result == {"_path": str(tmp_path)}
+
+
+@pytest.mark.unit
+class TestScanSentinelDir:
+    def test_returns_empty_when_dir_missing(self, tmp_path):
+        assert bw._scan_sentinel_dir(str(tmp_path / "nope")) == []
+
+    def test_finds_both_tier_sentinels(self, tmp_path):
+        _write_sentinel(tmp_path / "dr-backup-failed.sentinel")
+        _write_sentinel(tmp_path / "dr-backup-hourly-failed.sentinel", host=None)
+        out = bw._scan_sentinel_dir(str(tmp_path))
+        tiers = sorted(t for t, _, _ in out)
+        assert tiers == ["daily", "hourly"]
+
+    def test_skips_unrelated_files(self, tmp_path):
+        (tmp_path / "some-other.log").write_text("noise", encoding="utf-8")
+        assert bw._scan_sentinel_dir(str(tmp_path)) == []
+
+
+@pytest.mark.unit
+class TestSentinelAlertEmission:
+    @pytest.mark.asyncio
+    async def test_emits_firing_alert_with_ts_fingerprint(self, _reset_module_state, tmp_path):
+        sentinel_dir = tmp_path / "logs"
+        sentinel_dir.mkdir()
+        _write_sentinel(
+            sentinel_dir / "dr-backup-failed.sentinel",
+            ts="2026-05-09T03:00:00Z",
+        )
+        pool = _make_pool(
+            setting_values={
+                bw.BACKUP_DIR_KEY: _reset_module_state,
+                bw.SENTINEL_DIR_KEY: str(sentinel_dir),
+            },
+        )
+
+        notify_calls: list[dict] = []
+
+        def fake_notify(**kwargs):
+            notify_calls.append(kwargs)
+
+        # All tiers fresh so the only path under test is the sentinel scan.
+        summary = await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda d, t: 60.0,
+            restart_fn=lambda c: (True, ""),
+            sleep_fn=lambda s: None,
+            notify_fn=fake_notify,
+        )
+
+        assert summary["sentinels"]["status"] == "sentinels_found"
+        assert summary["ok"] is False
+        # Exactly one INSERT INTO alert_events for the sentinel.
+        inserted = _executed_alertnames(pool)
+        assert inserted == ["dr_backup_daily_failed"], inserted
+        # Audit event recorded.
+        events = _executed_audit_events(pool)
+        assert "probe.backup_watcher_sentinel_alert" in events
+        # notify_fn fallback fired with the sentinel summary.
+        assert any(
+            "sentinel surfaced" in (c.get("title") or "").lower()
+            or "dr-backup" in (c.get("title") or "").lower()
+            for c in notify_calls
+        ), notify_calls
+
+    @pytest.mark.asyncio
+    async def test_does_not_double_page_existing_fingerprint(
+        self, _reset_module_state, tmp_path
+    ):
+        """Re-scanning the same sentinel must not insert a second alert.
+
+        The script leaves the file in place until the next successful
+        run; the brain probe runs every 5 minutes. Without dedup the
+        operator would be paged on every cycle.
+        """
+        sentinel_dir = tmp_path / "logs"
+        sentinel_dir.mkdir()
+        _write_sentinel(
+            sentinel_dir / "dr-backup-hourly-failed.sentinel",
+            ts="2026-05-09T04:00:00Z",
+            host=None,
+        )
+        # Pretend a row with the matching fingerprint already exists.
+        pool = _make_pool(
+            setting_values={
+                bw.BACKUP_DIR_KEY: _reset_module_state,
+                bw.SENTINEL_DIR_KEY: str(sentinel_dir),
+            },
+            existing_fingerprints={
+                "dr-backup-sentinel-hourly-2026-05-09T04:00:00Z",
+            },
+        )
+
+        summary = await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda d, t: 60.0,
+            restart_fn=lambda c: (True, ""),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+        )
+
+        # Sentinel was found, but no new alert row was inserted.
+        assert summary["sentinels"]["status"] == "sentinels_found"
+        assert _executed_alertnames(pool) == [], (
+            "Watcher must dedup by fingerprint when re-scanning the "
+            "same sentinel; got "
+            f"{_executed_alertnames(pool)!r}"
+        )
+        # And no audit event for an emitted alert (since none was emitted).
+        events = _executed_audit_events(pool)
+        assert "probe.backup_watcher_sentinel_alert" not in events
+
+    @pytest.mark.asyncio
+    async def test_clean_dir_returns_clean_status(self, _reset_module_state, tmp_path):
+        sentinel_dir = tmp_path / "logs"
+        sentinel_dir.mkdir()
+        pool = _make_pool(
+            setting_values={
+                bw.BACKUP_DIR_KEY: _reset_module_state,
+                bw.SENTINEL_DIR_KEY: str(sentinel_dir),
+            },
+        )
+
+        summary = await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda d, t: 60.0,
+            restart_fn=lambda c: (True, ""),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+        )
+
+        assert summary["sentinels"]["status"] == "clean"
+        assert summary["sentinels"]["sentinels"] == []
+        assert summary["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_missing_sentinel_dir_does_not_break_probe(
+        self, _reset_module_state, tmp_path
+    ):
+        """If the operator forgot the bind mount, the probe should
+        return ``dir_missing`` for sentinels but keep the per-tier
+        check intact (don't let one degraded surface mask the other).
+        """
+        bogus_dir = str(tmp_path / "no-mount-here")
+        pool = _make_pool(
+            setting_values={
+                bw.BACKUP_DIR_KEY: _reset_module_state,
+                bw.SENTINEL_DIR_KEY: bogus_dir,
+            },
+        )
+
+        summary = await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda d, t: 60.0,
+            restart_fn=lambda c: (True, ""),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+        )
+
+        assert summary["sentinels"]["status"] == "dir_missing"
+        # dir_missing is reported as ok=True (informational) so the
+        # absence of a mount doesn't keep the probe permanently
+        # degraded — the per-tier age check still works.
+        assert summary["sentinels"]["ok"] is True
+        assert summary["ok"] is True
+        assert summary["tiers"]["hourly"]["status"] == "fresh"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_mtime_when_ts_missing(
+        self, _reset_module_state, tmp_path
+    ):
+        """A malformed sentinel without ``ts=`` should still get a
+        deterministic fingerprint (file mtime) so dedup still works.
+        """
+        sentinel_dir = tmp_path / "logs"
+        sentinel_dir.mkdir()
+        sentinel = sentinel_dir / "dr-backup-failed.sentinel"
+        sentinel.write_text("rc=99\nhost=nightrider\n", encoding="utf-8")
+        # Pin the mtime so the generated fingerprint is predictable.
+        import os as _os
+        _os.utime(sentinel, (1_700_000_000.0, 1_700_000_000.0))
+
+        expected_fp = "dr-backup-sentinel-daily-1700000000"
+        pool = _make_pool(
+            setting_values={
+                bw.BACKUP_DIR_KEY: _reset_module_state,
+                bw.SENTINEL_DIR_KEY: str(sentinel_dir),
+            },
+            existing_fingerprints={expected_fp},
+        )
+
+        await bw.run_backup_watcher_probe(
+            pool,
+            stat_fn=lambda d, t: 60.0,
+            restart_fn=lambda c: (True, ""),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+        )
+
+        # mtime-derived fingerprint dedups exactly the same way.
+        assert _executed_alertnames(pool) == []
