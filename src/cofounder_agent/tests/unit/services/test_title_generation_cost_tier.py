@@ -15,7 +15,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.title_generation import generate_canonical_title
+from services.title_generation import (
+    generate_canonical_title,
+    sanitize_generated_title,
+)
 
 
 class _FakeConn:
@@ -150,3 +153,196 @@ async def test_pages_operator_when_both_miss():
     assert "cost_tier" in msg
     # Provider was never called because we bailed before dispatch.
     provider.complete.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# sanitize_generated_title — pure-function edge cases.
+# Pins the thinking-model failure-mode handling described in the docstring
+# (#198 follow-up). No async / no mocks — these are the cheapest assertions
+# in the module and were entirely uncovered before this expansion.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "\n\n\t  \n"])
+def test_sanitize_returns_none_for_empty_or_whitespace(raw: str):
+    """Empty / whitespace-only input has no salvageable title."""
+    assert sanitize_generated_title(raw) is None
+
+
+def test_sanitize_strips_think_block_then_returns_clean_title():
+    """``<think>…</think>`` deliberation traces must be removed before the
+    line walk; what's left is the actual title."""
+    raw = (
+        "<think>Hmm, the user wants something punchy. Let me consider a few "
+        "options...</think>The Rise of Tiny LLMs"
+    )
+    assert sanitize_generated_title(raw) == "The Rise of Tiny LLMs"
+
+
+def test_sanitize_walks_in_reverse_skipping_bullet_deliberation():
+    """When the model deliberates above its final answer, the reverse walk
+    picks the last viable line and the deliberation lines never beat it."""
+    raw = (
+        "Option 1: First rough idea\n"
+        "* Let's go with the question form\n"
+        "The Definitive Guide to Vector Databases"
+    )
+    assert (
+        sanitize_generated_title(raw)
+        == "The Definitive Guide to Vector Databases"
+    )
+
+
+def test_sanitize_strips_list_markers_and_bold_wrappers():
+    """Numbered list prefix ``1.`` plus ``**…**`` bold wrapper both removed."""
+    assert sanitize_generated_title("1. **Bold Title Here**") == "Bold Title Here"
+
+
+def test_sanitize_strips_markdown_header_and_quotes():
+    """Header ``#`` prefix and surrounding double-quotes both stripped."""
+    assert (
+        sanitize_generated_title("# A Comprehensive Header Title")
+        == "A Comprehensive Header Title"
+    )
+    assert (
+        sanitize_generated_title('"Quoted Title Goes Here"')
+        == "Quoted Title Goes Here"
+    )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Hi",                              # 2 chars — under the 5-char floor
+        "Here are 3 options for you",      # deliberation marker "here are"
+        "Let's go with the question form", # deliberation marker "let's go with"
+        "A" * 250,                          # single line >200 chars — skipped
+    ],
+)
+def test_sanitize_rejects_unsalvageable_outputs(raw: str):
+    """Too-short, deliberation-flavored, or absurdly-long lines all yield None."""
+    assert sanitize_generated_title(raw) is None
+
+
+def test_sanitize_truncates_long_titles_with_ellipsis():
+    """Lines between 101–200 chars get truncated to 100 chars total
+    (97 + ``...``); anything past 200 is dropped, not truncated."""
+    raw = "A" * 105
+    out = sanitize_generated_title(raw)
+    assert out is not None
+    assert len(out) == 100
+    assert out.endswith("...")
+    # The 97-char prefix is preserved before the ellipsis
+    assert out[:97] == "A" * 97
+
+
+# ---------------------------------------------------------------------------
+# generate_canonical_title — error / fallback paths the cost-tier suite
+# above did not exercise.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_returns_none_when_ollama_native_provider_missing():
+    """If ``ollama_native`` isn't in the registry, bail out early — no
+    silent default to another provider."""
+    fake_sc = MagicMock()
+    fake_sc._pool = _FakePool("ollama/gemma3:27b")
+    fake_sc.get.return_value = ""
+    fake_sc.get_int.return_value = 4000
+
+    other = MagicMock()
+    other.name = "claude_haiku"  # registered, but not the writer
+
+    with patch("services.title_generation.site_config", fake_sc), \
+         patch(
+             "plugins.registry.get_all_llm_providers",
+             return_value=[other],
+         ), \
+         patch("services.prompt_manager.get_prompt_manager") as pm:
+        pm.return_value.get_prompt.return_value = "PROMPT"
+        out = await generate_canonical_title(
+            topic="AI", primary_keyword="AI", content_excerpt="x",
+        )
+
+    assert out is None
+
+
+@pytest.mark.asyncio
+async def test_returns_none_when_sanitizer_rejects_llm_output():
+    """When the writer emits a deliberation trace the sanitizer can't
+    salvage, the function returns None instead of the raw text."""
+    captured: dict[str, Any] = {}
+    provider = MagicMock()
+    provider.name = "ollama_native"
+
+    async def _complete(**_kwargs):
+        captured["called"] = True
+        result = MagicMock()
+        result.text = "Here are 3 options for you to consider"
+        return result
+
+    provider.complete = AsyncMock(side_effect=_complete)
+
+    fake_sc = MagicMock()
+    fake_sc._pool = _FakePool("ollama/gemma3:27b")
+    fake_sc.get.return_value = ""
+    fake_sc.get_int.return_value = 4000
+
+    with patch("services.title_generation.site_config", fake_sc), \
+         patch(
+             "plugins.registry.get_all_llm_providers",
+             return_value=[provider],
+         ), \
+         patch("services.prompt_manager.get_prompt_manager") as pm:
+        pm.return_value.get_prompt.return_value = "PROMPT"
+        out = await generate_canonical_title(
+            topic="AI", primary_keyword="AI", content_excerpt="x",
+        )
+
+    assert captured.get("called") is True
+    assert out is None
+
+
+@pytest.mark.asyncio
+async def test_existing_titles_appended_to_avoidance_prompt():
+    """When ``existing_titles`` is supplied the avoidance preamble must
+    appear in the prompt sent to the writer — pins the regen-loop contract
+    that the content-router relies on."""
+    captured: dict[str, Any] = {}
+    provider = MagicMock()
+    provider.name = "ollama_native"
+
+    async def _complete(**kwargs):
+        captured["prompt"] = kwargs["messages"][0]["content"]
+        result = MagicMock()
+        result.text = "A Distinctly Different Title"
+        return result
+
+    provider.complete = AsyncMock(side_effect=_complete)
+
+    fake_sc = MagicMock()
+    fake_sc._pool = _FakePool("ollama/gemma3:27b")
+    fake_sc.get.return_value = ""
+    fake_sc.get_int.return_value = 4000
+
+    with patch("services.title_generation.site_config", fake_sc), \
+         patch(
+             "plugins.registry.get_all_llm_providers",
+             return_value=[provider],
+         ), \
+         patch("services.prompt_manager.get_prompt_manager") as pm:
+        pm.return_value.get_prompt.return_value = "BASE PROMPT"
+        out = await generate_canonical_title(
+            topic="AI",
+            primary_keyword="AI",
+            content_excerpt="x",
+            existing_titles="- Old Title One\n- Old Title Two",
+        )
+
+    assert out == "A Distinctly Different Title"
+    prompt = captured["prompt"]
+    assert "BASE PROMPT" in prompt
+    assert "AVOID SIMILARITY" in prompt
+    assert "Old Title One" in prompt
+    assert "DISTINCTLY DIFFERENT" in prompt
