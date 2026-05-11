@@ -78,6 +78,9 @@ class GenerateContentStage:
             check_title_originality as _check_title_originality,
         )
         from services.title_generation import (
+            choose_canonical_title as _choose_canonical_title,
+        )
+        from services.title_generation import (
             generate_canonical_title as _generate_canonical_title,
         )
         from services.writing_style_context import (
@@ -180,9 +183,15 @@ class GenerateContentStage:
         logger.info("Generating title from content...")
         primary_keyword = tags[0] if tags else topic
         existing_titles = await self._fetch_existing_titles(database_service)
-        title = await _generate_canonical_title(
+        llm_title = await _generate_canonical_title(
             topic, primary_keyword, content_text[:500], existing_titles=existing_titles,
-        ) or topic
+        )
+        # poindexter#471: prefer the writer's H1 over the raw topic when
+        # the LLM title-gen call returns nothing. The raw topic carries
+        # the QA test-batch tracking suffix into sitemaps / OG cards.
+        # ``choose_canonical_title`` handles the suffix strip + H1
+        # extraction + drift WARN in one place.
+        title = _choose_canonical_title(topic, content_text, llm_title)
         logger.info("Title generated: %s", title)
 
         # Title originality: if the title collides with something on the

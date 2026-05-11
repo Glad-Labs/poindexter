@@ -201,15 +201,27 @@ class FinalizeTaskStage:
             "short_summary_script": context.get("short_summary_script", ""),
         }
 
+        # poindexter#471: the title chain here historically allowed the raw
+        # ``topic`` to land in ``pipeline_versions.title`` when the upstream
+        # generate_content stage failed to set a canonical title. Topics
+        # produced by the QA batch generator carry a tracking suffix
+        # (``(YYYY-MM-DD HH:MM #N)``) — stripping it here keeps sitemaps /
+        # OG cards / `<title>` tags free of internal tagging conventions
+        # even if upstream regresses.
+        from services.title_generation import strip_qa_batch_suffix
+        final_title = (
+            context.get("title")
+            or seo_title
+            or strip_qa_batch_suffix(topic)
+        )
+
         updates = {
             "status": "awaiting_approval",
             "approval_status": "pending",
             # Clear stale error_message from any prior auto-cancel attempt.
             "error_message": None,
             "quality_score": final_quality_score,
-            "title": (
-                context.get("title") or seo_title or topic
-            ),
+            "title": final_title,
             "featured_image_url": context.get("featured_image_url"),
             "seo_title": seo_title,
             "seo_description": seo_description,

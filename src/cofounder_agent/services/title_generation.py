@@ -59,6 +59,126 @@ TITLE_DELIBERATION_MARKERS: tuple[str, ...] = (
 )
 
 
+# QA test-batch tracking suffix, e.g. " (2026-05-10 06:43 #11)". Topics
+# produced by the QA batch generator carry this tag through the pipeline;
+# strip it before the topic is used as a canonical title so the suffix
+# doesn't leak into sitemaps / OG cards / `<title>` tags.
+#
+# poindexter#471: every awaiting_approval post on 2026-05-10 had the
+# suffix attached. The writer model produced a clean H1 inside the body;
+# the DB column was set from the raw topic.
+_QA_BATCH_SUFFIX_RE = re.compile(
+    r"\s*\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+#\d+\)\s*$"
+)
+
+
+def strip_qa_batch_suffix(title: str) -> str:
+    """Remove the QA test-batch tracking suffix from a title or topic.
+
+    The suffix has the shape ``(YYYY-MM-DD HH:MM #N)`` and is appended by
+    the QA batch generator so we can correlate awaiting_approval posts
+    back to a specific QA run. It is internal tracking only — never
+    appropriate for canonical surfaces.
+
+    Returns the input unchanged when no suffix is present. Operates on
+    the trailing match only so legitimate parentheticals earlier in the
+    title (``"… (2026)"``, ``"… (Part 2)"``, ``"… (v3)"``) are preserved.
+    """
+    if not title:
+        return title
+    return _QA_BATCH_SUFFIX_RE.sub("", title).rstrip()
+
+
+# Markdown heading marker for the writer's H1. We accept H1 (`# `) and
+# H2 (`## `) — the writer occasionally emits `## ` for the title line when
+# its template uses a different outline convention. Anything deeper (H3+)
+# is body structure, not the post title.
+_H1_HEADING_RE = re.compile(r"^\s{0,3}#{1,2}\s+(.+?)\s*$")
+
+
+def extract_h1_title(content: str) -> str | None:
+    """Return the first markdown H1/H2 heading text from ``content``, or None.
+
+    Handles Windows line endings, leading whitespace (up to 3 spaces per
+    CommonMark), and the model occasionally emitting ``## `` instead of
+    ``# `` for the title line. The trailing QA batch suffix is stripped
+    from the extracted heading too (defense in depth — the suffix should
+    never have reached the H1, but if it did we still clean it).
+
+    Returns None when no H1/H2 is present, or when the heading text is
+    empty after stripping.
+    """
+    if not content:
+        return None
+    for line in content.splitlines():
+        match = _H1_HEADING_RE.match(line)
+        if not match:
+            continue
+        heading = match.group(1).strip().strip('"').strip("'").strip()
+        # Strip any wrapping bold markers — writer sometimes emits
+        # ``# **Title**`` instead of ``# Title``.
+        heading = re.sub(r"\*\*([^*]+)\*\*", r"\1", heading).strip()
+        heading = strip_qa_batch_suffix(heading)
+        if heading:
+            return heading
+    return None
+
+
+def choose_canonical_title(
+    topic: str,
+    content: str,
+    llm_title: str | None = None,
+) -> str:
+    """Pick the cleanest canonical title for ``pipeline_versions.title``.
+
+    Preference order:
+
+    1. ``llm_title`` when the title-generation LLM produced something
+       (already passed through :func:`sanitize_generated_title`, which
+       now also strips the QA batch suffix).
+    2. The first H1/H2 heading from ``content`` — the writer commonly
+       produces a cleanly-cased title there even when the LLM
+       title-gen call fails.
+    3. The topic with the QA batch suffix stripped, as a final fallback.
+
+    poindexter#471: previously the fallback was just the raw topic. The
+    QA batch suffix leaked into sitemaps / OG cards via this path.
+
+    Emits a WARN when the chosen title diverges sharply (>50% character
+    distance) from the cleaned topic — that drift signals the writer
+    model produced a wildly different angle than what was requested, and
+    the operator should review the post before approval.
+    """
+    cleaned_topic = strip_qa_batch_suffix(topic or "").strip()
+
+    chosen: str
+    source: str
+    if llm_title and llm_title.strip():
+        chosen = strip_qa_batch_suffix(llm_title).strip()
+        source = "llm"
+    else:
+        h1 = extract_h1_title(content or "")
+        if h1 and h1 != cleaned_topic:
+            chosen = h1
+            source = "h1"
+        else:
+            chosen = cleaned_topic
+            source = "topic"
+
+    if cleaned_topic and chosen and chosen != cleaned_topic:
+        distance = 1.0 - SequenceMatcher(
+            None, chosen.lower(), cleaned_topic.lower(),
+        ).ratio()
+        if distance > 0.5:
+            logger.warning(
+                "[TITLE] Canonical title drifted >50%% from topic "
+                "(source=%s, distance=%.2f): topic=%r → title=%r",
+                source, distance, cleaned_topic, chosen,
+            )
+
+    return chosen
+
+
 def sanitize_generated_title(raw: str) -> str | None:
     """Clean an LLM title response, or return None if it's unsalvageable.
 
@@ -74,9 +194,12 @@ def sanitize_generated_title(raw: str) -> str | None:
        like an actual title (not bullet / deliberation / empty).
     3. Strip list markers (``*``, ``-``, ``+``, ``1.``), bold wrappers,
        leading ``#`` headers, and surrounding quotes.
-    4. Reject anything that still contains deliberation markers.
-    5. Reject empty, too-short (<5 chars), or too-long (>120) results.
-    6. Final length trim — SEO caps around 60, hard cap at 100.
+    4. Strip the QA test-batch suffix (poindexter#471) — applied before
+       the "looks like a title" short-circuit so a topic that already
+       reads as a title still loses the trailing tag.
+    5. Reject anything that still contains deliberation markers.
+    6. Reject empty, too-short (<5 chars), or too-long (>120) results.
+    7. Final length trim — SEO caps around 60, hard cap at 100.
     """
     if not raw:
         return None
@@ -85,6 +208,9 @@ def sanitize_generated_title(raw: str) -> str | None:
     text = re.sub(
         r"<think>.*?</think>", " ", text, flags=re.DOTALL | re.IGNORECASE,
     ).strip()
+    # Strip the QA test-batch suffix up-front so downstream length
+    # checks and the "looks like a title" branch see the cleaned form.
+    text = strip_qa_batch_suffix(text)
 
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     candidate: str | None = None
@@ -93,6 +219,10 @@ def sanitize_generated_title(raw: str) -> str | None:
         stripped = re.sub(r"^#+\s+", "", stripped)
         stripped = stripped.strip('"').strip("'").strip()
         stripped = re.sub(r"\*\*([^*]+)\*\*", r"\1", stripped)
+        # Defense in depth: re-strip the QA batch suffix after list/header
+        # markers are gone, in case it survived the top-of-function pass
+        # (e.g. the suffix arrived on a deeper line).
+        stripped = strip_qa_batch_suffix(stripped)
         if not stripped or len(stripped) < 5 or len(stripped) > 200:
             continue
         lower = stripped.lower()
