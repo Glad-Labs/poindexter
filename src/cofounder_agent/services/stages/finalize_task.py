@@ -165,7 +165,21 @@ class FinalizeTaskStage:
             seo_keywords_string = ""
             seo_keywords_list = []
 
+        # Generate a preview token so the Grafana approval-queue panel
+        # can render clickable title links (the panel SQL builds the
+        # URL from ``app_settings.preview_base_url || '/preview/' ||
+        # metadata->>'preview_token'``). Historically this was generated
+        # in ``services/task_executor.py::_process_loop`` AFTER the
+        # pipeline returned — but the Prefect cutover (#410) short-
+        # circuits past that loop entirely, so Prefect-orchestrated
+        # tasks landed with no preview_token + clickable titles broke
+        # in the dashboard. Doing it here in the terminal stage means
+        # both legacy and Prefect orchestrators surface the token.
+        import secrets as _secrets
+        preview_token = _secrets.token_hex(16)
+
         task_metadata = {
+            "preview_token": preview_token,
             "featured_image_url": context.get("featured_image_url"),
             "featured_image_alt": context.get("featured_image_alt", ""),
             "featured_image_width": context.get("featured_image_width"),
