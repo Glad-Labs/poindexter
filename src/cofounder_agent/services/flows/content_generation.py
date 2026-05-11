@@ -141,9 +141,31 @@ async def content_generation_flow(
     # the module to register flows during deployment-time discovery
     # but doesn't need the heavy database/services tree).
     from services.content_router_service import process_content_generation_task
+    from services.di_wiring import build_and_wire_for_subprocess
 
     if database_service is None:
         database_service = await _build_default_database_service()
+
+    # poindexter#477: Prefect spawns this flow inside a fresh Python
+    # subprocess that never runs ``main.py``'s lifespan. Without the
+    # explicit wire here, every wired module's ``site_config`` stays
+    # the empty default — ``site_config.get("preferred_ollama_model")``
+    # returns ``""``, the ``auto`` resolver in ollama_client falls
+    # through to "pick largest installed model by file size", and the
+    # 70-150B parameter local models that ship for testing get loaded
+    # into 32 GB VRAM + 63 GB host RAM and thrash the system.
+    # ``build_and_wire_for_subprocess`` loads SiteConfig from the
+    # database_service's pool and rebinds it across every wired
+    # module before any pipeline code runs.
+    _pool = getattr(database_service, "pool", None)
+    if _pool is not None:
+        await build_and_wire_for_subprocess(_pool)
+    else:
+        logger.warning(
+            "[CONTENT_FLOW] database_service has no .pool — skipping "
+            "subprocess SiteConfig wiring. Stage code that relies on "
+            "site_config will fall through to env defaults.",
+        )
 
     # Schedule-driven: no task_id → claim from queue.
     if task_id is None and topic is None:

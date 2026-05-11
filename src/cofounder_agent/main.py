@@ -176,69 +176,20 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # own per-module ``site_config`` attribute (defaults to a fresh
         # env-fallback SiteConfig at import); the setters point them all
         # at the SAME loaded instance carried in ``app.state.site_config``.
-        # This replaces the old singleton + lifespan-shim pattern.
-        _wired_modules = [
-            "services.admin",  # not a module — placeholder; admin.py is wired below as a special
-        ]
-        # Modules with module-level set_site_config():
-        for _modname in (
-            "services.gpu_scheduler",
-            "services.decorators",
-            "services.ollama_client",
-            "services.url_validator",
-            "services.url_scraper",
-            "services.web_research",
-            "services.redis_cache",
-            "services.r2_upload_service",
-            "services.revalidation_service",
-            "services.static_export_service",
-            "services.telegram_config",
-            "services.video_service",
-            "services.webhook_delivery_service",
-            "services.publish_service",
-            "services.newsletter_service",
-            "services.podcast_service",
-            "services.multi_model_qa",
-            "services.image_decision_agent",
-            "services.content_validator",
-            "services.research_service",
-            "services.research_quality_service",
-            "services.seed_url_fetcher",
-            "services.self_review",
-            "services.title_generation",
-            "services.title_originality_external",
-            "services.internal_rag_source",
-            "services.scheduled_publisher",
-            "services.topic_ranking",
-            "services.database_service",
-            "services.quality_scorers",
-            "services.quality_models",
-            "services.quality_service",
-            "services.validator_config",
-            "services.template_runner",
-            "services.topic_batch_service",
-            "services.pipeline_architect",
-            "services.prompt_manager",
-            "services.retention_janitor",
-            "services.ai_content_generator",
-            "services.task_executor",
-            "services.image_service",
-            "services.content_router_service",
-            "services.seo_content_generator",
-            "services.social_poster",
-            "utils.route_utils",
-            "admin",
-        ):
-            try:
-                _mod = __import__(_modname, fromlist=["set_site_config"])
-                _setter = getattr(_mod, "set_site_config", None)
-                if callable(_setter):
-                    _setter(_site_cfg)
-            except Exception as e:
-                logger.warning(
-                    "[LIFESPAN] set_site_config wiring failed for %s: %s",
-                    _modname, e,
-                )
+        # poindexter#477: the module list now lives in
+        # ``services.di_wiring.WIRED_MODULES`` so Prefect-spawned
+        # subprocesses (which never run this lifespan) can re-use the
+        # same list via ``build_and_wire_for_subprocess``.
+        try:
+            from services.di_wiring import wire_site_config_modules
+            _wired_count = wire_site_config_modules(_site_cfg)
+            logger.info(
+                "[LIFESPAN] SiteConfig wired into %d modules", _wired_count,
+            )
+        except Exception as e:
+            logger.warning(
+                "[LIFESPAN] di_wiring import / call failed: %s", e,
+            )
 
         # Phase H (GH#95): wire site_config into the TaskExecutor that
         # startup_manager built. startup_manager runs before the DB pool
