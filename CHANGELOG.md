@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## [0.8.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.7.0...v0.8.0) (2026-05-11)
+
+
+### Features
+
+* **prompts:** ban first-person authorial fakery + tighten sourcing rules ([#354](https://github.com/Glad-Labs/glad-labs-stack/issues/354)) ([e776afb](https://github.com/Glad-Labs/glad-labs-stack/commit/e776afbf8944ddaecfd6ec35d0c844e8b8c6c36c))
+
+
+### Bug Fixes
+
+* **alt_text:** drop SDXL-prompt-shaped strings from alt (closes [#469](https://github.com/Glad-Labs/glad-labs-stack/issues/469)) ([#356](https://github.com/Glad-Labs/glad-labs-stack/issues/356)) ([6d5cc70](https://github.com/Glad-Labs/glad-labs-stack/commit/6d5cc7071e0e0bd90470bfa856cf43b19a3cb5c0))
+* **brain:** pin host_port -&gt; external_url contract + warn on parse failure (closes Glad-Labs/poindexter[#472](https://github.com/Glad-Labs/glad-labs-stack/issues/472)) ([#360](https://github.com/Glad-Labs/glad-labs-stack/issues/360)) ([7408fdd](https://github.com/Glad-Labs/glad-labs-stack/commit/7408fdd2d720b99ddd8c91fa335b0270e5e5a0eb))
+* **internal_link_coherence:** only link to published posts (closes [#470](https://github.com/Glad-Labs/glad-labs-stack/issues/470)) ([#357](https://github.com/Glad-Labs/glad-labs-stack/issues/357)) ([467292d](https://github.com/Glad-Labs/glad-labs-stack/commit/467292da81f05019a214784095fecbde14a8ae46))
+* **stages:** persist drafts to pipeline_versions (closes poindexter[#473](https://github.com/Glad-Labs/glad-labs-stack/issues/473)) ([#361](https://github.com/Glad-Labs/glad-labs-stack/issues/361)) ([ee24949](https://github.com/Glad-Labs/glad-labs-stack/commit/ee24949240646ae917bbe5f28167e8cae4ffd416))
+* **title_generation:** strip QA batch suffix + prefer writer H1 (closes [#471](https://github.com/Glad-Labs/glad-labs-stack/issues/471)) ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([74e4beb](https://github.com/Glad-Labs/glad-labs-stack/commit/74e4beb660ffff34f26bda77fe9fde897ac6bcc8))
+
 ## [0.7.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.6.0...v0.7.0) (2026-05-11)
 
 
