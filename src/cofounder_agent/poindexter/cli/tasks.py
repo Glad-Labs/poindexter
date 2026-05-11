@@ -302,3 +302,284 @@ def tasks_publish(task_id: str) -> None:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
     click.secho(f"Published: {task_id}  status={t.get('status', '?')}", fg="green")
+
+
+# ---------------------------------------------------------------------------
+# bulk-ops: reject-batch / approve-batch
+# ---------------------------------------------------------------------------
+#
+# A batch is any union of three input sources:
+#
+# 1. Variadic positional task_ids  →  ``poindexter tasks reject-batch <id1> <id2>``
+# 2. ``--filter "<SQL WHERE>"``    →  runs ``SELECT task_id FROM pipeline_tasks
+#                                      WHERE <SQL WHERE>``. The clause is
+#                                      passed verbatim — operator-only surface;
+#                                      authn is the OAuth token + DB DSN, not
+#                                      input sanitisation.
+# 3. ``--from-stdin``              →  reads task_ids one-per-line from stdin
+#                                      so ``psql … | poindexter tasks reject-batch
+#                                      --from-stdin --feedback "..."`` pipes
+#                                      cleanly.
+#
+# Sources are unioned and de-duplicated. ``--dry-run`` prints the plan
+# and exits 0 without firing anything. Confirmation prompt fires for
+# >5 tasks unless ``--yes`` (matches ``gh pr merge`` defaults).
+
+
+_BATCH_CONFIRM_THRESHOLD = 5
+
+
+async def _resolve_filter_ids(filter_clause: str) -> list[str]:
+    """Run a SELECT against pipeline_tasks with the operator's WHERE.
+
+    Operator-only surface; no SQL sanitisation. The trust boundary is
+    that anyone who can run ``poindexter`` against the local DB
+    already holds the DSN.
+    """
+    import asyncpg
+
+    from poindexter.cli._bootstrap import resolve_dsn as _dsn
+
+    pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+    try:
+        rows = await pool.fetch(
+            f"SELECT task_id FROM pipeline_tasks WHERE {filter_clause}"
+        )
+    finally:
+        await pool.close()
+    return [r["task_id"] for r in rows]
+
+
+def _gather_batch_ids(
+    args: tuple[str, ...],
+    filter_clause: str | None,
+    from_stdin: bool,
+) -> list[str]:
+    """Union the three input sources, preserving first-seen order."""
+    seen: dict[str, None] = {}
+
+    for tid in args:
+        if tid and tid not in seen:
+            seen[tid] = None
+
+    if from_stdin:
+        for line in sys.stdin:
+            tid = line.strip()
+            if tid and not tid.startswith("#") and tid not in seen:
+                seen[tid] = None
+
+    if filter_clause:
+        for tid in _run(_resolve_filter_ids(filter_clause)):
+            if tid not in seen:
+                seen[tid] = None
+
+    return list(seen.keys())
+
+
+def _confirm_or_abort(ids: list[str], action_label: str, yes: bool) -> None:
+    """Prompt before bulk operations unless ``--yes`` is set.
+
+    Short-circuit when the count is below the threshold — single-digit
+    batches don't need a prompt and rerunning a small command twice is
+    cheap.
+    """
+    if yes or len(ids) <= _BATCH_CONFIRM_THRESHOLD:
+        return
+    click.echo(f"\nAbout to {action_label} {len(ids)} tasks:")
+    for tid in ids[:10]:
+        click.echo(f"  {tid}")
+    if len(ids) > 10:
+        click.echo(f"  ...and {len(ids) - 10} more")
+    if not click.confirm("\nProceed?", default=False):
+        click.echo("Aborted.")
+        sys.exit(2)
+
+
+def _execute_batch(
+    ids: list[str],
+    action: str,
+    payload: dict | None,
+    fg_ok: str,
+) -> tuple[int, int]:
+    """Loop the post action across every id, never halts on per-task error.
+
+    Returns ``(success_count, fail_count)`` so the caller can compose a
+    final summary line and set the exit code. Each per-task error is
+    printed inline so operators see *which* tasks failed when scrolling
+    back through the output.
+    """
+    ok = 0
+    fail = 0
+    for tid in ids:
+        try:
+            t = _post_action(tid, action, payload)
+            status = t.get("status", "?")
+            click.secho(f"  ✓ {tid}  status={status}", fg=fg_ok)
+            ok += 1
+        except RuntimeError as e:
+            click.secho(f"  ✗ {tid}  {e}", fg="red")
+            fail += 1
+    return ok, fail
+
+
+@tasks_group.command("reject-batch")
+@click.argument("task_ids", nargs=-1)
+@click.option(
+    "--filter",
+    "filter_clause",
+    default=None,
+    help=(
+        "SQL WHERE clause appended to ``SELECT task_id FROM pipeline_tasks``. "
+        "Example: --filter \"status='awaiting_approval' AND topic LIKE '%batch C%'\"."
+    ),
+)
+@click.option(
+    "--from-stdin",
+    is_flag=True,
+    help="Read task_ids from stdin (one per line). Lines starting with # are ignored.",
+)
+@click.option(
+    "--feedback",
+    default="",
+    help="Explanation surfaced on each task's error_message + audit log. Required.",
+)
+@click.option(
+    "--final/--retry",
+    default=False,
+    help=(
+        "--final → terminal rejection (rejected_final, no regen). "
+        "--retry → send back for revisions (rejected_retry). Default --retry."
+    ),
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print the resolved task list + exit without firing the worker API.",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help=(
+        f"Skip the confirmation prompt that fires for batches > "
+        f"{_BATCH_CONFIRM_THRESHOLD} tasks. Match ``gh pr merge`` semantics."
+    ),
+)
+def tasks_reject_batch(
+    task_ids: tuple[str, ...],
+    filter_clause: str | None,
+    from_stdin: bool,
+    feedback: str,
+    final: bool,
+    dry_run: bool,
+    yes: bool,
+) -> None:
+    """Reject multiple tasks in one call.
+
+    Inputs union from positional args, --filter SQL-where, and --from-stdin.
+    Worker API is called once per task; per-task failures are surfaced
+    inline and counted in the final summary.
+    """
+    if not feedback:
+        click.echo(
+            "Error: --feedback is required. It lands on every task's "
+            "error_message + the audit log.",
+            err=True,
+        )
+        sys.exit(2)
+
+    ids = _gather_batch_ids(task_ids, filter_clause, from_stdin)
+    if not ids:
+        click.echo(
+            "Error: no task_ids resolved from args / --filter / --from-stdin.",
+            err=True,
+        )
+        sys.exit(2)
+
+    if dry_run:
+        click.echo(f"Would reject {len(ids)} task(s):")
+        for tid in ids:
+            click.echo(f"  {tid}")
+        return
+
+    _confirm_or_abort(ids, "reject", yes)
+
+    payload = {"feedback": feedback, "reason": feedback, "allow_revisions": not final}
+    ok, fail = _execute_batch(ids, "reject", payload, fg_ok="yellow")
+
+    color = "green" if fail == 0 else ("yellow" if ok > 0 else "red")
+    click.secho(
+        f"\nRejected: {ok} ok, {fail} failed (of {len(ids)} requested)",
+        fg=color,
+    )
+    sys.exit(0 if fail == 0 else 1)
+
+
+@tasks_group.command("approve-batch")
+@click.argument("task_ids", nargs=-1)
+@click.option(
+    "--filter",
+    "filter_clause",
+    default=None,
+    help=(
+        "SQL WHERE clause appended to ``SELECT task_id FROM pipeline_tasks``. "
+        "Example: --filter \"status='awaiting_approval' AND quality_score>=85\"."
+    ),
+)
+@click.option(
+    "--from-stdin",
+    is_flag=True,
+    help="Read task_ids from stdin (one per line).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print the resolved task list + exit without firing the worker API.",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help=(
+        f"Skip the confirmation prompt that fires for batches > "
+        f"{_BATCH_CONFIRM_THRESHOLD} tasks."
+    ),
+)
+def tasks_approve_batch(
+    task_ids: tuple[str, ...],
+    filter_clause: str | None,
+    from_stdin: bool,
+    dry_run: bool,
+    yes: bool,
+) -> None:
+    """Approve multiple tasks in one call.
+
+    Use with care — approval moves a task from ``awaiting_approval``
+    into the publish pipeline. Pair with --dry-run + a tight --filter
+    when you're confident the gate signal is right (e.g.
+    ``quality_score >= 85 AND topic LIKE '%batch C%'``).
+    """
+    ids = _gather_batch_ids(task_ids, filter_clause, from_stdin)
+    if not ids:
+        click.echo(
+            "Error: no task_ids resolved from args / --filter / --from-stdin.",
+            err=True,
+        )
+        sys.exit(2)
+
+    if dry_run:
+        click.echo(f"Would approve {len(ids)} task(s):")
+        for tid in ids:
+            click.echo(f"  {tid}")
+        return
+
+    _confirm_or_abort(ids, "approve", yes)
+
+    ok, fail = _execute_batch(ids, "approve", None, fg_ok="green")
+
+    color = "green" if fail == 0 else ("yellow" if ok > 0 else "red")
+    click.secho(
+        f"\nApproved: {ok} ok, {fail} failed (of {len(ids)} requested)",
+        fg=color,
+    )
+    sys.exit(0 if fail == 0 else 1)
