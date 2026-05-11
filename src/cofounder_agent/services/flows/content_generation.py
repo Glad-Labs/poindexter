@@ -157,9 +157,10 @@ async def content_generation_flow(
     # ``build_and_wire_for_subprocess`` loads SiteConfig from the
     # database_service's pool and rebinds it across every wired
     # module before any pipeline code runs.
+    _wired_site_config: Any = None
     _pool = getattr(database_service, "pool", None)
     if _pool is not None:
-        await build_and_wire_for_subprocess(_pool)
+        _wired_site_config = await build_and_wire_for_subprocess(_pool)
     else:
         logger.warning(
             "[CONTENT_FLOW] database_service has no .pool — skipping "
@@ -216,6 +217,48 @@ async def content_generation_flow(
         category=category,
         target_audience=target_audience,
     )
+
+    # Glad-Labs/poindexter#478: the inline post-pipeline-success block
+    # in ``services/task_executor.py::_process_loop`` (webhook + auto-
+    # curator + auto-publish + operator notification) never fires
+    # under Prefect because the loop short-circuits when
+    # ``use_prefect_orchestration=true``. Both orchestrators now
+    # delegate to the same helper so the four behaviours survive
+    # both code paths. We only run the helper on successful pipeline
+    # completions (status != 'failed') — failures are handled by the
+    # task_executor's failure-path block below it, which is not yet
+    # mirrored here (separate scope; failure-path webhooks fire
+    # via the existing FailedTaskHandler stage where it matters).
+    try:
+        final_status = (
+            result.get("status", "awaiting_approval")
+            if isinstance(result, dict)
+            else "awaiting_approval"
+        )
+        if final_status != "failed":
+            from services.post_pipeline_actions import run_post_pipeline_actions
+
+            await run_post_pipeline_actions(
+                database_service=database_service,
+                task_id=task_id,
+                topic=topic,
+                result=result if isinstance(result, dict) else None,
+                site_config=_wired_site_config,
+                # Prefect path doesn't have a TaskExecutor instance —
+                # auto-publish stays disabled here for now. Operators
+                # who need Prefect auto-publish should follow the
+                # tracking issue (poindexter#478 acceptance criteria
+                # explicitly tags this as a follow-up E2E test).
+                task_executor=None,
+            )
+    except Exception:
+        logger.warning(
+            "[CONTENT_FLOW] post-pipeline actions raised for task %s — "
+            "the pipeline result is still committed, but downstream "
+            "webhook/notification side-effects may not have fired",
+            task_id, exc_info=True,
+        )
+
     return {"claimed": True, "task_id": task_id, "result": result}
 
 
@@ -234,6 +277,7 @@ async def _build_default_database_service() -> Any:
     container, the host shell, or the Prefect worker pool.
     """
     from brain.bootstrap import resolve_database_url
+
     from services.database_service import DatabaseService
 
     dsn = resolve_database_url()

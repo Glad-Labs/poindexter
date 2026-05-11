@@ -10,13 +10,13 @@ from typing import Any
 import httpx as _httpx
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
 from .error_handler import ServiceError
 from .quality_service import UnifiedQualityService
 from .webhook_delivery_service import emit_webhook_event
-from services.site_config import SiteConfig
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
 # Defaults to a fresh env-fallback instance until the lifespan setter
@@ -675,217 +675,24 @@ class TaskExecutor:
                     final_status, task_id,
                 )
 
-                # Emit task.completed webhook unconditionally for all successful completions
-                quality_score = float(result.get("quality_score", 0)) if isinstance(result, dict) else 0.0
-                try:
-                    await emit_webhook_event(getattr(self.database_service, "cloud_pool", None) or self.database_service.pool, "task.completed", {
-                        "task_id": task_id, "topic": topic, "quality_score": quality_score,
-                        "status": final_status,
-                    })
-                except Exception:
-                    logger.warning("[WEBHOOK] Failed to emit task.completed event", exc_info=True)
+                # Centralised post-pipeline side-effects (webhook, auto-
+                # curator, auto-publish, operator notification + preview
+                # QA). Closes Glad-Labs/poindexter#478 — the inline block
+                # used to live here, but the Prefect cutover short-
+                # circuits ``_process_loop`` before any of it could fire,
+                # so the four behaviours silently went dark in prod.
+                # ``services.post_pipeline_actions.run_post_pipeline_actions``
+                # is the single helper both orchestrators delegate to.
+                from .post_pipeline_actions import run_post_pipeline_actions
 
-                # Auto-curation: reject posts that don't meet minimum quality bar
-                # before bothering the human with a review notification.
-                # Tunable via app_settings key: min_curation_score (default 70)
-                min_curation_score = float(await self._get_setting("min_curation_score", "70"))
-                # DETERMINISTIC_COMPOSITOR niches (dev_diary) bypass the
-                # auto-curator. The compositor produces a deterministic
-                # restatement of the context_bundle — no creative writing,
-                # no hooks, no CTAs — so the LLM-tuned quality scorer
-                # underrates it (e.g. flags the footer as "truncated
-                # content"). Operator review is the only gate.
-                bypass_curator = False
-                with suppress(Exception):
-                    pool = getattr(self.database_service, "pool", None)
-                    if pool is not None:
-                        async with pool.acquire() as _conn:
-                            wrm = await _conn.fetchval(
-                                "SELECT writer_rag_mode FROM pipeline_tasks WHERE task_id = $1",
-                                str(task_id),
-                            )
-                        if str(wrm or "").upper() == "DETERMINISTIC_COMPOSITOR":
-                            bypass_curator = True
-                            logger.info(
-                                "[CURATE] Bypassing auto-curator for DETERMINISTIC_COMPOSITOR task %s "
-                                "(score=%.1f) — deterministic output, operator review only",
-                                task_id, quality_score,
-                            )
-                if (not bypass_curator) and 0 < quality_score < min_curation_score:
-                    logger.info(
-                        "[CURATE] Auto-rejecting low-quality post: %s (score %.1f < %.1f)",
-                        topic[:40], quality_score, min_curation_score,
-                    )
-                    await self.database_service.update_task(task_id, {"status": "rejected"})
-                    # Record the rejection on pipeline_gate_history so
-                    # the `content_tasks` view's approval_status column
-                    # stops resolving NULL for auto-rejected rows.
-                    with suppress(Exception):
-                        await self.database_service.pool.execute(
-                            """
-                            INSERT INTO pipeline_gate_history
-                                (task_id, gate_name, event_kind, feedback, metadata)
-                            VALUES ($1, $2, $3, $4, $5::jsonb)
-                            """,
-                            task_id,
-                            "auto_curator",
-                            "rejected",
-                            f"Quality score {quality_score:.1f} below threshold {min_curation_score:.1f}",
-                            json.dumps(
-                                {
-                                    "reviewer": "auto_curator",
-                                    "decision": "rejected",
-                                    "quality_score": quality_score,
-                                    "threshold": min_curation_score,
-                                },
-                                default=str,
-                            ),
-                        )
-                    # Flip model_performance.human_approved=False for the
-                    # learning signal (gitea#271 Phase 3.A1).
-                    with suppress(Exception):
-                        await self.database_service.mark_model_performance_outcome(
-                            task_id, human_approved=False,
-                        )
-                    # Webhook delivery is best-effort; don't mask the rejection
-                    # with an emitter failure.
-                    with suppress(Exception):
-                        await emit_webhook_event(
-                            getattr(self.database_service, "cloud_pool", None) or self.database_service.pool,
-                            "task.auto_rejected",
-                            {"task_id": task_id, "topic": topic, "quality_score": quality_score,
-                             "reason": f"score {quality_score:.0f} < {min_curation_score:.0f}"},
-                        )
-                    return
-
-                # Check if human approval is required before publishing
-                auto_published = False
-                try:
-                    require_approval = await self._get_setting("require_human_approval", "true")
-                    if require_approval.lower() in ("true", "1", "yes"):
-                        logger.info(
-                            "[APPROVAL] Human approval required — task %s (score: %.0f) queued as awaiting_approval",
-                            task_id, quality_score,
-                        )
-                    else:
-                        auto_threshold = await self._get_auto_publish_threshold()
-                        if auto_threshold > 0 and quality_score >= auto_threshold:
-                            logger.info(
-                                "[AUTO_PUBLISH] Quality score %s >= threshold %s, "
-                                "auto-publishing task %s",
-                                quality_score, auto_threshold, task_id,
-                            )
-                            await self._auto_publish_task(task_id, quality_score)
-                            auto_published = True
-                except Exception:
-                    logger.warning("Auto-publish check failed, task stays in awaiting_approval", exc_info=True)
-
-                # Single notification: direct Discord + Telegram with preview link.
-                # No duplicate webhook events — this is the ONLY notification per task.
-                # publish_post_from_task handles its own notification if auto-published.
-                if auto_published:
-                    pass  # publish_service.py handles the notification
-                else:
-                    # Generate preview token so Matt can see the post before approving
-                    # NOTE: At this point, no post row exists yet (post is created on approval).
-                    # Store preview_token on the content_tasks table instead.
-                    preview_url = ""
-                    try:
-                        import secrets as _secrets
-                        preview_token = _secrets.token_hex(16)
-                        pool = getattr(self.database_service, "cloud_pool", None) or self.database_service.pool
-                        await pool.execute(
-                            """UPDATE content_tasks
-                               SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('preview_token', $1::text)
-                               WHERE task_id = $2""",
-                            preview_token, task_id,
-                        )
-                        # Use worker's own URL for HTML preview (accessible via Tailscale)
-                        _preview_base = site_config.get(
-                            "preview_base_url", "http://100.81.93.12:8002",
-                        )
-                        preview_url = f"{_preview_base}/preview/{preview_token}"
-                    except Exception:
-                        logger.debug("[PREVIEW] Failed to create preview token", exc_info=True)
-
-                    # Final visual QA: screenshot the rendered preview and
-                    # run it through the vision model. Only fires when
-                    # qa_preview_screenshot_enabled is true in app_settings
-                    # (default false — opt-in). Result is stored on task
-                    # metadata and surfaced in the approval notification
-                    # so Matt sees it before reviewing.
-                    preview_qa_note = ""
-                    if preview_url:
-                        try:
-                            from services.container import get_service
-                            from services.multi_model_qa import MultiModelQA
-
-                            _settings_svc = get_service("settings")
-                            # Resolve preview URL to one reachable from
-                            # inside the worker container. The external
-                            # preview_base_url may be a Tailscale hostname
-                            # that isn't resolvable here.
-                            _internal_preview_url = f"http://localhost:8002/preview/{preview_token}"
-
-                            _pqa = MultiModelQA(
-                                pool=self.database_service.pool,
-                                settings_service=_settings_svc,
-                            )
-                            _pqa_review = await _pqa._check_rendered_preview(
-                                title=topic,
-                                topic=topic,
-                                preview_url=_internal_preview_url,
-                            )
-                            if _pqa_review is not None:
-                                preview_qa_note = (
-                                    f"Visual QA: {int(_pqa_review.score)}/100 — "
-                                    + _pqa_review.feedback[:200]
-                                )
-                                _qa_pool = (
-                                    getattr(self.database_service, "cloud_pool", None)
-                                    or getattr(self.database_service, "pool", None)
-                                )
-                                if _qa_pool is None:
-                                    raise RuntimeError("preview QA: no DB pool available")
-                                try:
-                                    await _qa_pool.execute(
-                                        """UPDATE content_tasks
-                                           SET metadata = COALESCE(metadata, '{}'::jsonb)
-                                               || jsonb_build_object(
-                                                   'preview_qa_score', $1::numeric,
-                                                   'preview_qa_approved', $2::boolean,
-                                                   'preview_qa_feedback', $3::text
-                                               )
-                                           WHERE task_id = $4""",
-                                        float(_pqa_review.score),
-                                        bool(_pqa_review.approved),
-                                        _pqa_review.feedback[:500],
-                                        task_id,
-                                    )
-                                except Exception as _persist_err:
-                                    logger.debug(
-                                        "[PREVIEW_QA] persist failed: %s", _persist_err
-                                    )
-                                logger.info(
-                                    "[PREVIEW_QA] Task %s visual score=%s approved=%s",
-                                    task_id[:8], _pqa_review.score, _pqa_review.approved,
-                                )
-                        except Exception as _vqa_err:
-                            logger.debug(
-                                "[PREVIEW_QA] skipped (non-critical): %s", _vqa_err
-                            )
-
-                    msg = f"Awaiting approval: \"{topic}\"\n"
-                    msg += f"Score: {quality_score:.0f}/100\n"
-                    if preview_qa_note:
-                        msg += preview_qa_note + "\n"
-                    if preview_url:
-                        msg += f"Preview: {preview_url}\n"
-                    msg += f"Approve: /approve-post {task_id[:8]}"
-                    from services.integrations.operator_notify import (
-                        notify_operator,
-                    )
-                    await notify_operator(msg, critical=True)
+                await run_post_pipeline_actions(
+                    database_service=self.database_service,
+                    task_id=task_id,
+                    topic=topic,
+                    result=result,
+                    site_config=site_config,
+                    task_executor=self,
+                )
 
                 return
 
