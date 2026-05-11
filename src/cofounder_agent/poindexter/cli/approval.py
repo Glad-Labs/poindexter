@@ -91,6 +91,86 @@ def _exit_error(msg: str, code: int = 1) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Helpers — task_id prefix resolution + no-gate redirect
+# (poindexter#480)
+# ---------------------------------------------------------------------------
+
+
+class _AmbiguousPrefixError(Exception):
+    """Operator passed a prefix that matches more than one task."""
+
+
+async def _resolve_task_id_prefix(pool: Any, task_id_or_prefix: str) -> str | None:
+    """Expand an 8-char task_id prefix to its full UUID.
+
+    The Grafana awaiting-approval panel and ``poindexter tasks list``
+    surface ``LEFT(task_id::text, 8)`` so operators read short prefixes
+    and naturally paste them back into CLI commands. The service layer
+    (``approval_service._fetch_task_row``) does an exact-match query
+    that doesn't recognise prefixes — so resolution happens HERE
+    before the service call.
+
+    Behaviour:
+
+    - Full UUID (36 chars with dashes) → return as-is, no DB hit.
+    - Prefix → ``WHERE task_id::text LIKE $1 || '%'`` query:
+      - exactly 1 match → return the full task_id
+      - 0 matches → return None (caller raises "not found")
+      - >1 matches → raise ``_AmbiguousPrefixError`` with the
+        candidates listed so the operator can pick.
+
+    poindexter#480.
+    """
+    # Full UUID — skip the DB roundtrip.
+    if len(task_id_or_prefix) >= 36 and task_id_or_prefix.count("-") == 4:
+        return task_id_or_prefix
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT task_id::text AS task_id, status, topic
+              FROM pipeline_tasks
+             WHERE task_id::text LIKE $1 || '%'
+             ORDER BY created_at DESC
+             LIMIT 5
+            """,
+            task_id_or_prefix,
+        )
+
+    if not rows:
+        return None
+    if len(rows) > 1:
+        candidates = "\n".join(
+            f"  {r['task_id']}  status={r['status']}  topic={(r['topic'] or '')[:60]}"
+            for r in rows
+        )
+        raise _AmbiguousPrefixError(
+            f"Prefix {task_id_or_prefix!r} matches {len(rows)} tasks "
+            f"(showing up to 5):\n{candidates}\n"
+            f"\nUse the full task_id or a longer prefix."
+        )
+    return rows[0]["task_id"]
+
+
+def _format_not_paused_hint(task_id: str, current_status: str | None) -> str:
+    """Upgrade ``TaskNotPausedError`` to a one-liner that points the
+    operator at the right command.
+
+    ``poindexter approve`` / ``reject`` only operate on gate-paused
+    tasks (``awaiting_gate IS NOT NULL``). Batch-C-shape tasks have
+    ``status='awaiting_approval'`` with no gate — those go through the
+    worker-API ``tasks approve`` / ``tasks reject`` commands instead.
+    """
+    return (
+        f"Task {task_id} exists but isn't paused at a HITL gate "
+        f"(current status={current_status!r}). "
+        f"For the non-gated awaiting_approval flow, use:\n"
+        f"  poindexter tasks approve {task_id[:8]}\n"
+        f"  poindexter tasks reject  {task_id[:8]} --feedback '...'\n"
+    )
+
+
+# ---------------------------------------------------------------------------
 # approve
 # ---------------------------------------------------------------------------
 
@@ -114,15 +194,22 @@ def approve_command(
     """
     from services.approval_service import (
         ApprovalServiceError,
+        TaskNotFoundError,
+        TaskNotPausedError,
         approve as approve_service,
     )
 
     async def _impl():
         pool = await _make_pool()
         try:
+            # poindexter#480: expand short-prefix → full UUID before
+            # the service call (which does exact-match).
+            resolved = await _resolve_task_id_prefix(pool, task_id)
+            if resolved is None:
+                raise TaskNotFoundError(f"Task {task_id} not found")
             site_config = await _make_site_config(pool)
-            return await approve_service(
-                task_id=task_id,
+            return resolved, await approve_service(
+                task_id=resolved,
                 gate_name=gate_name,
                 feedback=feedback,
                 site_config=site_config,
@@ -132,7 +219,21 @@ def approve_command(
             await pool.close()
 
     try:
-        result = _run(_impl())
+        resolved_id, result = _run(_impl())
+    except _AmbiguousPrefixError as e:
+        _exit_error(str(e), code=2)
+        return
+    except TaskNotPausedError as e:
+        # poindexter#480: upgrade the error to point at the right command.
+        # Pull the resolved task's current status out of the message
+        # for the hint — fall back to "unknown" if the format changes.
+        import re
+        m = re.search(r"status=([^)]+)\)", str(e))
+        status = m.group(1).strip("'\"") if m else "unknown"
+        # The resolved_id isn't bound when this fires inside _impl, but
+        # the user passed input is what they saw — show it back.
+        _exit_error(_format_not_paused_hint(task_id, status))
+        return
     except ApprovalServiceError as e:
         _exit_error(str(e))
         return
@@ -145,7 +246,7 @@ def approve_command(
         return
 
     click.secho(
-        f"Approved task {task_id} at gate {result.get('gate_name')!r}.",
+        f"Approved task {resolved_id} at gate {result.get('gate_name')!r}.",
         fg="green",
     )
     if feedback:
@@ -172,15 +273,21 @@ def reject_command(
     """
     from services.approval_service import (
         ApprovalServiceError,
+        TaskNotFoundError,
+        TaskNotPausedError,
         reject as reject_service,
     )
 
     async def _impl():
         pool = await _make_pool()
         try:
+            # poindexter#480: prefix → full UUID.
+            resolved = await _resolve_task_id_prefix(pool, task_id)
+            if resolved is None:
+                raise TaskNotFoundError(f"Task {task_id} not found")
             site_config = await _make_site_config(pool)
-            return await reject_service(
-                task_id=task_id,
+            return resolved, await reject_service(
+                task_id=resolved,
                 gate_name=gate_name,
                 reason=reason,
                 site_config=site_config,
@@ -190,7 +297,16 @@ def reject_command(
             await pool.close()
 
     try:
-        result = _run(_impl())
+        resolved_id, result = _run(_impl())
+    except _AmbiguousPrefixError as e:
+        _exit_error(str(e), code=2)
+        return
+    except TaskNotPausedError as e:
+        import re
+        m = re.search(r"status=([^)]+)\)", str(e))
+        status = m.group(1).strip("'\"") if m else "unknown"
+        _exit_error(_format_not_paused_hint(task_id, status))
+        return
     except ApprovalServiceError as e:
         _exit_error(str(e))
         return
@@ -203,7 +319,7 @@ def reject_command(
         return
 
     click.secho(
-        f"Rejected task {task_id} at gate {result.get('gate_name')!r} "
+        f"Rejected task {resolved_id} at gate {result.get('gate_name')!r} "
         f"→ status={result.get('new_status')!r}.",
         fg="yellow",
     )
