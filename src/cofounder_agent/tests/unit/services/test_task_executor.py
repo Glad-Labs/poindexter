@@ -768,6 +768,70 @@ class TestProcessSingleTask:
         assert update_data["status"] == "failed"
 
     @pytest.mark.asyncio
+    async def test_off_brand_rejection_emits_audit_log_row(self):
+        """Closes Glad-Labs/poindexter#460. When a task fails the
+        brand-keyword pre-filter, an ``audit_log`` row with
+        event_type='task_off_brand_rejected' must be emitted so the
+        QA Rails / Mission Control dashboards can surface
+        "what got filtered out today" — otherwise the brand filter is
+        operator-invisible and a too-narrow keyword list over-rejects
+        silently until topic creators complain."""
+        db = _make_db()
+        db.tasks = MagicMock()
+        db.tasks.log_status_change = AsyncMock(return_value=None)
+        executor = _make_executor(db=db)
+        task = _make_task()
+        task["topic"] = "Quantum entanglement of teapot lids"  # off-brand
+
+        audit_calls = []
+
+        def _capture_audit(event_type, source, details, **kwargs):
+            audit_calls.append({
+                "event_type": event_type,
+                "source": source,
+                "details": details,
+                **kwargs,
+            })
+
+        with (
+            patch(
+                "services.topic_discovery.TopicDiscovery._is_brand_relevant",
+                return_value=False,
+            ),
+            patch("services.audit_log.audit_log_bg", side_effect=_capture_audit),
+            patch("services.task_executor.emit_task_progress", new_callable=AsyncMock),
+            patch("services.task_executor.emit_notification", new_callable=AsyncMock),
+        ):
+            await executor._process_single_task(task)
+
+        # Task was rejected, not processed (no in_progress→content_router→...
+        # chain). The status update went straight to rejected. update_task
+        # is called with keyword args task_id= + updates=, so reach into
+        # kwargs rather than positional args.
+        rejected_calls = [
+            c for c in db.update_task.call_args_list
+            if (c.kwargs.get("updates") or {}).get("status") == "rejected"
+        ]
+        assert rejected_calls, "Expected at least one status='rejected' update"
+
+        # The audit row must have landed.
+        off_brand_events = [
+            c for c in audit_calls
+            if c["event_type"] == "task_off_brand_rejected"
+        ]
+        assert off_brand_events, (
+            "Off-brand rejection must emit an audit_log row "
+            "(event_type='task_off_brand_rejected') — without it the brand "
+            "filter is silent and dashboards can't show what got filtered."
+        )
+        evt = off_brand_events[0]
+        assert evt["source"] == "task_executor"
+        assert evt["task_id"] == TASK_ID
+        assert evt["details"]["topic"].startswith("Quantum entanglement")
+        assert evt["details"]["reason"] == "did_not_match_brand_keywords"
+        assert evt["details"]["stage"] == "pre_generation"
+
+    @pytest.mark.asyncio
     async def test_task_missing_id_returns_early(self):
         """A task with no id or task_id should return early without touching DB."""
         db = _make_db()

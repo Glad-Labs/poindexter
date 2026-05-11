@@ -447,6 +447,28 @@ class TaskExecutor:
                         "result": '{"reason": "Off-topic: not relevant to brand"}',
                     },
                 )
+                # Loud audit event — closes Glad-Labs/poindexter#460.
+                # Without this row the brand filter was operator-invisible:
+                # dashboards couldn't show "what got filtered out today,"
+                # and a too-narrow keyword list would over-reject silently
+                # until topic creators complained. Mirrors the
+                # semantic_dedup_rejected emission below.
+                try:
+                    from services.audit_log import audit_log_bg
+                    audit_log_bg(
+                        "task_off_brand_rejected", "task_executor",
+                        {
+                            "topic": topic[:200],
+                            "matched_keywords": [],
+                            "reason": "did_not_match_brand_keywords",
+                            "stage": "pre_generation",
+                        },
+                        task_id=task_id, severity="info",
+                    )
+                except Exception as _audit_err:
+                    logger.debug(
+                        "off_brand audit log failed: %s", _audit_err,
+                    )
                 return
 
             # Pre-generation semantic duplicate check — reject near-duplicate
