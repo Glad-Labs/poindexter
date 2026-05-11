@@ -18,6 +18,7 @@ import pytest
 from services.alt_text import (
     assert_alt_text_clean,
     iter_img_alts,
+    looks_like_sdxl_prompt,
     sanitize_alt_text,
     strip_pipeline_tokens,
     strip_tokens_from_img_tags,
@@ -284,3 +285,241 @@ class TestIterImgAlts:
 
     def test_no_img_yields_nothing(self):
         assert list(iter_img_alts("<p>hello</p>")) == []
+
+
+# ---------------------------------------------------------------------------
+# looks_like_sdxl_prompt — Glad-Labs/poindexter#469
+# ---------------------------------------------------------------------------
+
+
+class TestLooksLikeSdxlPrompt:
+    """Positive cases — these MUST be flagged as SDXL-prompt-shaped."""
+
+    @pytest.mark.parametrize("verb", [
+        "Show", "Render", "Depict", "Create", "Generate",
+        "Draw", "Illustrate", "Visualize", "Visualise", "Imagine",
+    ])
+    def test_imperative_opener_at_string_start(self, verb):
+        assert looks_like_sdxl_prompt(f"{verb} the key components of SDXL")
+
+    @pytest.mark.parametrize("verb", [
+        "show", "render", "depict", "create", "generate",
+        "draw", "illustrate", "visualize", "visualise", "imagine",
+    ])
+    def test_imperative_opener_case_insensitive(self, verb):
+        assert looks_like_sdxl_prompt(f"{verb} a serene server room")
+
+    def test_imperative_after_first_sentence(self):
+        # The exact bug from issue #469.
+        poisoned = (
+            "An isometric diagram of a simplified SDXL architecture. "
+            "Show the key components (encoder, decoder, refiner)..."
+        )
+        assert looks_like_sdxl_prompt(poisoned)
+
+    def test_imperative_after_semicolon(self):
+        assert looks_like_sdxl_prompt(
+            "A serene server room; render with cinematic lighting"
+        )
+
+    def test_style_prefix_isometric(self):
+        assert looks_like_sdxl_prompt(
+            "isometric 3D illustration, clean vector style, soft shadows"
+        )
+
+    def test_style_prefix_photorealistic(self):
+        assert looks_like_sdxl_prompt(
+            "photorealistic scene, cinematic lighting"
+        )
+
+    def test_style_prefix_cinematic(self):
+        # Bare "cinematic, ..." opener IS a prompt shape.
+        assert looks_like_sdxl_prompt(
+            "cinematic lighting, dramatic shadows, no text"
+        )
+
+    def test_style_prefix_flat_vector(self):
+        assert looks_like_sdxl_prompt(
+            "flat vector illustration, simple geometric shapes, cyan and dark navy"
+        )
+
+    def test_style_prefix_cyberpunk(self):
+        assert looks_like_sdxl_prompt(
+            "cyberpunk neon style, dark background, glowing cyan purple"
+        )
+
+    def test_style_prefix_dark_moody_editorial(self):
+        assert looks_like_sdxl_prompt(
+            "dark moody editorial photograph, dramatic lighting"
+        )
+
+    def test_style_prefix_macro_close_up(self):
+        # The full style entry from INLINE_STYLES, not the word "macro" alone.
+        assert looks_like_sdxl_prompt(
+            "macro close-up photograph, extreme detail, bokeh"
+        )
+
+    def test_negative_fragment_no_text(self):
+        assert looks_like_sdxl_prompt(
+            "A diagram of three layers of cloud infrastructure, no text, no faces"
+        )
+
+    def test_negative_fragment_no_faces(self):
+        assert looks_like_sdxl_prompt(
+            "Server room with monitors, no faces, soft shadows"
+        )
+
+    def test_negative_fragment_faceless_silhouettes(self):
+        assert looks_like_sdxl_prompt(
+            "Engineers working at terminals, faceless silhouettes only"
+        )
+
+    def test_negative_fragment_negative_prompt_phrase(self):
+        assert looks_like_sdxl_prompt(
+            "A serene server room. Negative prompt: people, text, watermark"
+        )
+
+    def test_negative_fragment_low_quality(self):
+        assert looks_like_sdxl_prompt(
+            "A blueprint diagram, low quality, distorted"
+        )
+
+    # Real-world poisoned alt — end-to-end check ---------------------------
+
+    def test_exact_issue_469_repro_string(self):
+        poisoned = (
+            "An isometric diagram of a simplified SDXL architecture. "
+            "Show the key components (encoder, decoder, refiner) with "
+            "interconnected arrows, no text, no faces."
+        )
+        assert looks_like_sdxl_prompt(poisoned)
+
+
+class TestLooksLikeSdxlPromptNegatives:
+    """Negative cases — real human-written alts must pass through unchanged.
+
+    These are the false-positive guards. The heuristic is deliberately
+    conservative; if any of these flip to True the regex needs to be
+    tightened, NOT loosened with carve-outs.
+    """
+
+    def test_macro_photo_of_circuit_board(self):
+        # "macro" appears, but as a noun modifier, not a style prefix.
+        assert not looks_like_sdxl_prompt(
+            "A close-up macro photo of a circuit board"
+        )
+
+    def test_isometric_tile_maps_in_retro_games(self):
+        # "isometric" appears as an adjective in normal prose.
+        assert not looks_like_sdxl_prompt(
+            "Isometric tile maps in classic retro RPGs"
+        )
+
+    def test_cinematic_still_from_trailer(self):
+        # "Cinematic" as an adjective, no comma-delimited style chain.
+        assert not looks_like_sdxl_prompt(
+            "Cinematic still from the 1982 Blade Runner trailer"
+        )
+
+    def test_server_room_with_blue_lighting(self):
+        assert not looks_like_sdxl_prompt(
+            "A modern server room with cool blue accent lighting"
+        )
+
+    def test_diagram_of_kubernetes_architecture(self):
+        # No imperative verb, no style prefix, no negative fragment.
+        assert not looks_like_sdxl_prompt(
+            "A diagram showing the Kubernetes control-plane architecture"
+        )
+
+    def test_developer_workspace_with_dual_monitors(self):
+        assert not looks_like_sdxl_prompt(
+            "A developer workspace with dual monitors and a mechanical keyboard"
+        )
+
+    def test_chart_comparing_training_time(self):
+        assert not looks_like_sdxl_prompt(
+            "A line chart comparing training time across three GPU generations"
+        )
+
+    def test_show_inside_noun_phrase(self):
+        # "show" not at sentence boundary — "trade show booth" type usage.
+        assert not looks_like_sdxl_prompt(
+            "Photograph of a busy trade show booth at SIGGRAPH 2024"
+        )
+
+    def test_empty_and_whitespace_return_false(self):
+        assert not looks_like_sdxl_prompt("")
+        assert not looks_like_sdxl_prompt("   ")
+        assert not looks_like_sdxl_prompt(None)  # type: ignore[arg-type]
+
+    def test_short_real_alt(self):
+        assert not looks_like_sdxl_prompt("A cat napping on a windowsill")
+
+
+# ---------------------------------------------------------------------------
+# sanitize_alt_text + the SDXL heuristic — falls back to topic alt
+# ---------------------------------------------------------------------------
+
+
+class TestSanitizeAltTextDropsSdxlPrompts:
+    """Integration of looks_like_sdxl_prompt into sanitize_alt_text."""
+
+    def test_imperative_prompt_returns_topic_fallback(self):
+        out = sanitize_alt_text(
+            "Show the key components of SDXL with arrows",
+            budget=120,
+            topic="Stable Diffusion XL",
+        )
+        # Topic-derived fallback, not the raw prompt.
+        assert "Stable Diffusion XL" in out
+        assert "Show" not in out
+
+    def test_style_prefix_prompt_returns_topic_fallback(self):
+        out = sanitize_alt_text(
+            "isometric 3D illustration, clean vector style, soft shadows",
+            budget=120,
+            topic="Cloud architecture",
+        )
+        assert "Cloud architecture" in out
+        assert "isometric" not in out.lower()
+
+    def test_negative_fragment_prompt_returns_topic_fallback(self):
+        out = sanitize_alt_text(
+            "A diagram of three cloud layers, no text, no faces",
+            budget=120,
+            topic="Multi-cloud strategy",
+        )
+        assert "Multi-cloud strategy" in out
+        assert "no text" not in out
+        assert "no faces" not in out
+
+    def test_issue_469_exact_repro_lands_clean(self):
+        # End-to-end through sanitize_alt_text with the exact poisoned
+        # string from the bug.
+        poisoned = (
+            "An isometric diagram of a simplified SDXL architecture. "
+            "Show the key components (encoder, decoder, refiner)..."
+        )
+        out = sanitize_alt_text(
+            poisoned, budget=120, topic="Stable Diffusion XL on RTX 5090",
+        )
+        assert "Show the key" not in out
+        assert "Stable Diffusion XL on RTX 5090" in out
+
+    def test_real_alt_passes_through_unchanged(self):
+        # The negative test that matters most — real alts must survive.
+        alt = "A close-up macro photo of a circuit board with red LEDs"
+        out = sanitize_alt_text(alt, budget=120, topic="electronics")
+        assert out == alt
+
+    def test_no_topic_falls_back_to_article_illustration(self):
+        # When the caller forgets to pass topic, we still drop the
+        # prompt rather than ship it — fallback is the generic phrase.
+        out = sanitize_alt_text(
+            "Render a serene server room with cinematic lighting",
+            budget=120,
+        )
+        assert "Render" not in out
+        # _fallback_alt's no-topic default.
+        assert "article illustration" in out

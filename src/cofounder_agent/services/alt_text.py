@@ -5,15 +5,23 @@ Fixes GitHub issue Glad-Labs/poindexter#84: pipeline stage tokens
 of inline ``<img>`` tags, and alt strings were being mid-word-truncated
 via ``.slice(0, N)``.
 
+Also fixes Glad-Labs/poindexter#469: SDXL-prompt-shaped descriptors
+(imperative verbs, style-rotation prefixes, canonical negative-prompt
+fragments) were landing as the ``alt`` attribute when the Image
+Decision Agent injected ``[IMAGE-N: <SDXL-prompt>]`` placeholders.
+See :func:`looks_like_sdxl_prompt` for the detection heuristic.
+
 This module is the single source of truth for:
 
 1. :func:`strip_pipeline_tokens` — remove ``||provider:hint||`` markers.
-2. :func:`sanitize_alt_text`     — produce a budgeted, complete-sentence
-   alt string without mid-word truncation.
-3. :func:`strip_tokens_from_img_tags` — scrub every ``alt="..."`` in a
+2. :func:`looks_like_sdxl_prompt` — detect SDXL-prompt-shaped strings.
+3. :func:`sanitize_alt_text`     — produce a budgeted, complete-sentence
+   alt string without mid-word truncation. Substitutes a topic-derived
+   fallback when the draft looks like an SDXL prompt.
+4. :func:`strip_tokens_from_img_tags` — scrub every ``alt="..."`` in a
    rendered block of HTML/Markdown (used post image-stage finalization
    and by the one-shot backfill script).
-4. :func:`assert_alt_text_clean` — loud-fail assertion for the pipeline;
+5. :func:`assert_alt_text_clean` — loud-fail assertion for the pipeline;
    shipping a broken alt is worse than failing the task.
 
 Budget default is ``alt_text_budget`` in ``app_settings`` (default 120
@@ -23,7 +31,10 @@ reads, no silent fallbacks that mask misconfiguration.
 
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 # Matches ``||<lowercase-provider>:<anything-without-pipe>||``
 # Examples: ``||sdxl:blueprint||``, ``||pexels:screens with code||``
@@ -39,6 +50,167 @@ _IMG_ALT_RE = re.compile(r'(<img\b[^>]*?\balt=")([^"]*)(")', re.IGNORECASE)
 # A word-char at the tail is fine only when followed by ending
 # punctuation (``. ! ?``) — otherwise we suspect a mid-word chop.
 _WORD_CHAR_RE = re.compile(r"\w")
+
+
+# ---------------------------------------------------------------------------
+# SDXL-prompt-shape detection (Glad-Labs/poindexter#469)
+# ---------------------------------------------------------------------------
+#
+# Three orthogonal signals — any one fires the fallback path:
+#
+# 1. **Imperative-verb opener.** Match the verb at the start of the
+#    string OR at the start of any sentence (after ``. ! ? ;``). The
+#    real-world bug had "An isometric diagram of a simplified SDXL
+#    architecture. Show the key components..." — the first clause is
+#    a legitimate-looking phrase, but the second sentence is the
+#    smoking gun.
+# 2. **Style-rotation prefix.** The pipeline's inline + featured-image
+#    style rotation entries are distinctive: comma-separated style
+#    tokens (``isometric 3D illustration, clean vector style, soft
+#    shadows``). The list is sourced from
+#    ``services/stages/replace_inline_images.py::INLINE_STYLES`` plus
+#    ``services/stages/source_featured_image.py::DEFAULT_STYLES``.
+# 3. **Canonical SDXL negative-prompt fragments.** Literal substrings
+#    that only appear in our prompt-construction code (``no text``,
+#    ``no faces``, ``negative prompt``, ``faceless silhouettes``,
+#    ``bokeh``, ``low quality``).
+#
+# The matchers are deliberately conservative on edge cases (e.g.
+# ``macro`` alone is NOT a flag — only ``macro,`` or ``macro close-up
+# photograph`` followed by SDXL-style adjective clauses). Real human
+# alts like "A close-up macro photo of a circuit board" pass through
+# unchanged. See ``test_alt_text.py::TestLooksLikeSdxlPrompt`` for the
+# locked-in positive-case set.
+
+# Verbs the SDXL prompt builder reaches for in inline + featured
+# image construction. Case-insensitive match at a sentence boundary.
+_IMPERATIVE_VERBS: tuple[str, ...] = (
+    "show",
+    "render",
+    "depict",
+    "create",
+    "generate",
+    "draw",
+    "illustrate",
+    "visualize",
+    "visualise",
+    "imagine",
+)
+
+# Sentence-boundary imperative — matches:
+#   "Show the key components..."   (string start)
+#   "...architecture. Show the..." (after . ! ? ;)
+# Requires the verb to be followed by a space + word, so "show" inside
+# a noun-phrase like "trade show booth" doesn't fire.
+_IMPERATIVE_OPENER_RE = re.compile(
+    r"(?:^|[.!?;]\s+)(" + "|".join(_IMPERATIVE_VERBS) + r")\s+\w",
+    re.IGNORECASE,
+)
+
+# Style-rotation prefixes the pipeline picks from. Match at the start
+# of the string, immediately followed by a comma OR a style descriptor
+# word. The comma is the strong tell — INLINE_STYLES entries are all
+# ``"<style>, <adjective phrases>"`` shapes.
+_STYLE_PREFIXES: tuple[str, ...] = (
+    "isometric",
+    "photorealistic",
+    "cinematic",
+    "flat vector",
+    "cyberpunk",
+    "dark moody editorial",
+    "clean minimal flat",
+    "macro close-up",
+)
+
+# Anchored at start. The trailing context (a comma chain OR a
+# follow-on style descriptor within the next ~3 words) keeps
+# single-word noun usage from tripping the matcher: "Isometric tile
+# maps in retro games" stays put; "isometric 3D illustration, clean
+# vector style" + "cyberpunk neon style, dark background" both flag.
+#
+# Descriptor words come from the catalog of words that appear in
+# INLINE_STYLES / DEFAULT_STYLES entries — extend cautiously, every
+# addition raises the false-positive risk.
+_STYLE_DESCRIPTOR_WORDS: tuple[str, ...] = (
+    "3d",
+    "scene",
+    "illustration",
+    "style",
+    "styles",
+    "photograph",
+    "photo",
+    "editorial",
+    "render",
+    "lighting",
+    "design",
+    "neon",
+    "vector",
+    "minimal",
+    "geometric",
+    "isometric",
+    "moody",
+    "shadows",
+)
+
+_STYLE_PREFIX_RE = re.compile(
+    r"^\s*(?:"
+    + "|".join(re.escape(p) for p in _STYLE_PREFIXES)
+    + r")\b\s*(?:,|(?:\s+\w+){0,2}\s+(?:"
+    + "|".join(_STYLE_DESCRIPTOR_WORDS)
+    + r")\b)",
+    re.IGNORECASE,
+)
+
+# Canonical negative-prompt phrases. These literal strings live in
+# our SDXL prompt builders (``SDXL_NEGATIVE_PROMPT`` in both
+# replace_inline_images.py and source_featured_image.py, plus the
+# ``no text, no faces`` requirement passed to Ollama). If we see them
+# in an alt, the model echoed the prompt back into the placeholder.
+_NEGATIVE_FRAGMENTS: tuple[str, ...] = (
+    "no text",
+    "no faces",
+    "no people",
+    "faceless silhouettes",
+    "negative prompt",
+    "low quality",
+)
+
+_NEGATIVE_FRAGMENT_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(f) for f in _NEGATIVE_FRAGMENTS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_sdxl_prompt(text: str) -> bool:
+    """Return True when *text* looks like an SDXL prompt, not an alt.
+
+    Three orthogonal signals — any one is enough to flag the string:
+
+    * imperative verb at start-of-string or start-of-sentence
+      (``Show the key components...``, ``...architecture. Render``)
+    * style-rotation prefix at string start
+      (``isometric 3D illustration, clean vector style``)
+    * canonical negative-prompt fragment
+      (``no text``, ``no faces``, ``faceless silhouettes``,
+      ``negative prompt``, ``low quality``)
+
+    Designed to err on the side of false negatives — real human alts
+    like ``"A close-up macro photo of a circuit board"`` and
+    ``"Cinematic still from the trailer"`` must NOT be flagged. See
+    :mod:`test_alt_text` for the positive-case lockdown.
+    """
+    if not text:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if _IMPERATIVE_OPENER_RE.search(stripped):
+        return True
+    if _STYLE_PREFIX_RE.match(stripped):
+        return True
+    if _NEGATIVE_FRAGMENT_RE.search(stripped):
+        return True
+    return False
 
 
 def strip_pipeline_tokens(text: str) -> str:
@@ -160,6 +332,18 @@ def sanitize_alt_text(
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
     if not cleaned:
+        return _fallback_alt(topic, budget)
+
+    # GH-469: when the Image Decision Agent injects [IMAGE-N: <SDXL-prompt>],
+    # the prompt text reaches us as the descriptor. Detect that shape and
+    # substitute the topic-derived fallback so screen readers / SEO don't
+    # see "Show the key components (encoder, decoder, refiner)..." text.
+    if looks_like_sdxl_prompt(cleaned):
+        # Log a WARN so future false-positives surface (no silent defaults).
+        logger.warning(
+            "alt_text: dropping SDXL-prompt-shaped draft, using topic fallback: %r",
+            cleaned[:80],
+        )
         return _fallback_alt(topic, budget)
 
     if len(cleaned) <= budget:

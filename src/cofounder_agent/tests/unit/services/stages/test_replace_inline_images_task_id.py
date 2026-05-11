@@ -159,6 +159,92 @@ async def test_stage_propagates_task_id_into_try_sdxl():
 
 
 @pytest.mark.asyncio
+async def test_sdxl_prompt_in_placeholder_does_not_leak_to_alt():
+    """Glad-Labs/poindexter#469 — SDXL-shaped descriptor → topic fallback alt.
+
+    When the Image Decision Agent injects ``[IMAGE-N: <SDXL-prompt>]``
+    and the SDXL render succeeds, the rendered ``<img alt="...">`` must
+    show the topic-derived fallback, not the raw imperative-mood prompt.
+    """
+    from services.stages.replace_inline_images import _resolve_one_placeholder
+
+    # The exact poisoned descriptor shape from the bug report.
+    poisoned_desc = (
+        "An isometric diagram of a simplified SDXL architecture. "
+        "Show the key components (encoder, decoder, refiner) with arrows, "
+        "no text, no faces"
+    )
+    topic = "Stable Diffusion XL on a Single RTX 5090"
+    content_text = f"Intro\n\n[IMAGE-1: {poisoned_desc}]\n\nOutro"
+
+    # SDXL path succeeds — returns a URL we can assert on.
+    with patch(
+        "services.stages.replace_inline_images._try_sdxl",
+        new=AsyncMock(return_value="https://r2.example/inline-1.png"),
+    ), patch(
+        "services.stages.replace_inline_images._record_inline_image_asset",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await _resolve_one_placeholder(
+            num="1",
+            desc=poisoned_desc,
+            topic=topic,
+            content_text=content_text,
+            image_service=SimpleNamespace(),
+            used_image_ids=set(),
+            site_config=_FAKE_SITE_CONFIG,
+            task_id="task-469-repro",
+            post_id=None,
+        )
+
+    # The raw SDXL prompt must NOT appear in the alt attribute.
+    assert "Show the key components" not in result
+    assert "no text" not in result
+    assert "no faces" not in result
+    # And the topic-derived fallback must.
+    assert "Stable Diffusion XL on a Single RTX 5090" in result
+    # Sanity-check the image src is the SDXL URL.
+    assert 'src="https://r2.example/inline-1.png"' in result
+
+
+@pytest.mark.asyncio
+async def test_real_human_alt_in_placeholder_passes_through():
+    """Negative case — a legitimate descriptor flows into alt unchanged.
+
+    Protects against the heuristic going overboard and dropping
+    real alts. "A close-up macro photo..." is a normal alt — the
+    word "macro" appears in our INLINE_STYLES rotation but here it's
+    used as a noun-modifier in natural prose.
+    """
+    from services.stages.replace_inline_images import _resolve_one_placeholder
+
+    clean_desc = "A close-up macro photo of a circuit board with red LEDs"
+    content_text = f"Intro\n\n[IMAGE-1: {clean_desc}]\n\nOutro"
+
+    with patch(
+        "services.stages.replace_inline_images._try_sdxl",
+        new=AsyncMock(return_value="https://r2.example/inline-1.png"),
+    ), patch(
+        "services.stages.replace_inline_images._record_inline_image_asset",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await _resolve_one_placeholder(
+            num="1",
+            desc=clean_desc,
+            topic="Electronics",
+            content_text=content_text,
+            image_service=SimpleNamespace(),
+            used_image_ids=set(),
+            site_config=_FAKE_SITE_CONFIG,
+            task_id="task-clean",
+            post_id=None,
+        )
+
+    # Real alt passes through.
+    assert f'alt="{clean_desc}"' in result
+
+
+@pytest.mark.asyncio
 async def test_gpu_task_session_recorded_with_task_id():
     """``gpu_scheduler._record_task_session`` writes the task_id to the DB.
 

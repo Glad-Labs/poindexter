@@ -308,12 +308,15 @@ async def _resolve_one_placeholder(
     alt_text = re.sub(r"^(?:IMAGE|FIGURE|Image|Figure)\s*[-:]\s*", "", alt_text).strip()
     # GH-84: strip ``||provider:hint||`` pipeline tokens + enforce a
     # DB-configurable budget with word-boundary truncation (no mid-word chop).
+    # GH-469: pass topic so SDXL-prompt-shaped descriptors fall back to
+    # a topic-derived alt instead of leaking imperative-mood prompt text.
     alt_text = sanitize_alt_text(
         alt_text,
         budget=(
             site_config.get_int("alt_text_budget", 120)
             if site_config is not None else 120
         ),
+        topic=topic,
     )
 
     # Strategy 1: SDXL.
