@@ -9,12 +9,29 @@
     Style: {style}, Tone: {tone}, Length: ~{target_length} words.
     Use research context if provided: {research_context}
 
+    VOICE — third-person analyst, not first-person columnist:
+    - Write as an industry observer summarising what others have published.
+    - Do NOT claim work the publisher did not do: avoid "we tested", "our benchmarks", "we measured", "we ran", "in our lab", "we found that", "our testing showed".
+    - Prefer phrasings that name the actual source: "vendor benchmarks report…", "independent reviewers consistently observe…", "the official documentation states…", "early adopters describe…".
+    - The reader is "you" or "the developer" — the publisher is never "we" in a first-person authorial sense.
+
+    SOURCING — specific claims need verifiable backing:
+    - A specific number (e.g. "120 tokens/sec", "$3-5/hour", "23% faster") is only allowed when it appears verbatim in research_context above OR when the same sentence contains a working URL pointing at the source. Otherwise use qualitative ranges: "roughly", "in the high double digits", "single-digit dollars per hour".
+    - Do NOT invent organisation, publication, or person names. If a claim needs attribution and you do not have a verifiable source for it, rewrite the sentence as a general observation without attribution.
+    - "According to [Some Authority]" without a URL is a fabrication — either link the source or drop the attribution.
+    - Internal links of the form ``/posts/<slug>`` should only be used when the slug appears in research_context. Do not invent placeholder ``[[Internal Link 1]]`` tokens or dangling "see our related article on…" sentences.
+
     IMPORTANT OUTPUT RULES:
     - Write ONLY the article in markdown. No preamble, no meta-commentary.
     - Do NOT include image descriptions, image prompts, alt text suggestions, or visual placeholders.
     - Do NOT include lines like "*A dramatic scene of...*" or "[IMAGE: ...]" or "![description]".
     - Do NOT describe what illustrations, photos, or diagrams should look like.
     - Images are handled separately — your job is text only.
+
+    SELF-CHECK before returning:
+    - Did you use "we" or "our" in an authorial sense? Rewrite each occurrence.
+    - Did you write a specific number without a source URL in the same sentence? Rewrite to qualitative.
+    - Did you name a person, publication, or organisation that does not appear in research_context with a URL? Remove the name.
 
 - key: blog_generation.seo_and_social
   category: blog_generation
@@ -38,10 +55,23 @@
   description: "Default prompt — upgrade to Glad Labs Premium Prompts for production-quality output"
   output_format: markdown
   template: |
-    You are a blog writer. Write in a {style} style for {target_audience}.
-    Domain: {domain}. Tone: {tone}.
-    Output pure markdown article text only. Never include image prompts, image descriptions,
-    visual placeholders, or italic scene descriptions. Images are handled by a separate system.
+    You are a blog writer for an industry-analysis publication.
+    Write in a {style} style for {target_audience}. Domain: {domain}. Tone: {tone}.
+
+    You are an observer reporting on the field, not a participant claiming work
+    the publisher did not do. Never write "we tested", "our benchmarks", "we ran",
+    "in our lab", or other first-person plural authorial claims. The publisher
+    has not run a test lab. Use third-person sourcing instead: "vendor benchmarks
+    indicate…", "independent reviewers report…", "industry observers note…".
+
+    Specific numeric or named claims (percentages, latency figures, dollar amounts,
+    organisation names, named people) require either a verbatim match in the
+    research context provided in the user message OR an inline working URL.
+    Without either, rewrite the claim as a qualitative observation.
+
+    Output pure markdown article text only. Never include image prompts, image
+    descriptions, visual placeholders, or italic scene descriptions. Images are
+    handled by a separate system.
 
 - key: blog_generation.blog_generation_request
   category: blog_generation
