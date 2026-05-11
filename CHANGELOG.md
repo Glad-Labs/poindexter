@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## [0.7.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.6.0...v0.7.0) (2026-05-11)
+
+
+### Features
+
+* **brain:** backup_watcher surfaces dr-backup sentinel files (closes Glad-Labs/poindexter[#444](https://github.com/Glad-Labs/glad-labs-stack/issues/444)) ([#346](https://github.com/Glad-Labs/glad-labs-stack/issues/346)) ([c530a16](https://github.com/Glad-Labs/glad-labs-stack/commit/c530a1602081eedd4fc919bea56ec85807ed9bee))
+
+
+### Bug Fixes
+
+* **stages:** SDXL → worker via HTTP download, drop fs coupling ([#459](https://github.com/Glad-Labs/glad-labs-stack/issues/459)) ([#349](https://github.com/Glad-Labs/glad-labs-stack/issues/349)) ([ebd649e](https://github.com/Glad-Labs/glad-labs-stack/commit/ebd649e0f5e7a3c1e4474ae072fd8b8b48de1266))
+* **tests:** bracket flows tests in prefect_test_harness — unblock CI ([#352](https://github.com/Glad-Labs/glad-labs-stack/issues/352)) ([5a9ff15](https://github.com/Glad-Labs/glad-labs-stack/commit/5a9ff15a9995385d3862a7c871a2a5fdb2f1922f))
+
 ## [0.6.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.5.0...v0.6.0) (2026-05-11)
 
 
