@@ -56,9 +56,11 @@ services:
       POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
       POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}
       POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}
+    # poindexter#328: init.sql was deleted; baseline migration now
+    # carries the same schema. See docker-compose.local.yml for full
+    # context.
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
-      - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-poindexter}"]
       interval: 10s

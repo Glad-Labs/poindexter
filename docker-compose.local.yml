@@ -52,9 +52,16 @@ services:
       - "-c"
       - "pg_stat_statements.track=all"
     shm_size: "256mb"
+    # poindexter#328: ``init.sql`` was deleted — the schema it created
+    # (pgvector + pg_trgm + pg_stat_statements extensions, plus the
+    # embeddings / audit_log / system_devices / gpu_metrics /
+    # affiliate_links tables) lives in
+    # ``services/migrations/0000_baseline.schema.sql`` which the
+    # migrations runner applies on first boot via ``0000_baseline.py``.
+    # Both used ``IF NOT EXISTS`` so the rip-out is idempotent on
+    # existing databases.
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
-      - ./infrastructure/local-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-poindexter}"]
       interval: 10s

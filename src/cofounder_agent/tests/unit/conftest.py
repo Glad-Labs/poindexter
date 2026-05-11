@@ -388,11 +388,9 @@ async def _db_pool_session():
 
     # Install extensions before the baseline migration runs. CREATE
     # EXTENSION needs ownership of the database, which a worker-level
-    # connection in this DSN already has. We deliberately do NOT replay
-    # ``infrastructure/local-db/init.sql`` here anymore — that file
-    # carried a legacy ``embeddings`` schema (no ``text_search`` column)
-    # that conflicted with the baseline's ``CREATE INDEX ... USING gin
-    # (text_search)``. The 0000_baseline migration now owns bootstrap.
+    # connection in this DSN already has. poindexter#328 deleted
+    # ``infrastructure/local-db/init.sql`` — the schema it created is
+    # owned by ``0000_baseline.schema.sql`` + the migrations runner.
     fresh = await asyncpg.connect(test_dsn)
     try:
         await fresh.execute("CREATE EXTENSION IF NOT EXISTS vector")

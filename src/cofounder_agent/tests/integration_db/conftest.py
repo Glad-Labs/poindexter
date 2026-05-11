@@ -125,23 +125,32 @@ async def test_dsn(admin_dsn: str, test_db_name: str) -> AsyncGenerator[str, Non
         await admin.close()
 
     dsn = _test_dsn_from(admin_dsn, test_db_name)
-    # pgvector + initial CMS schema come from infrastructure/local-db/init.sql
-    # which runs at postgres container init time, NOT from the Python
-    # migration system. Replay it against the disposable test DB so the
-    # tables + extensions the migrations + fixtures depend on exist.
+    # poindexter#328: the schema (pgvector + extensions + embeddings /
+    # audit_log / system_devices / gpu_metrics / affiliate_links + all
+    # the migration-history tables) lives in
+    # ``services/migrations/0000_baseline.schema.sql`` after the
+    # 2026-05-08 squash. ``infrastructure/local-db/init.sql`` was
+    # deleted as redundant. Replay the baseline schema against the
+    # disposable test DB so integration fixtures find every expected
+    # table without needing to drive the full migration runner here.
     try:
         fresh = await asyncpg.connect(dsn)
         try:
             await fresh.execute("CREATE EXTENSION IF NOT EXISTS vector")
             for p in Path(__file__).resolve().parents:
-                init_sql = p / "infrastructure" / "local-db" / "init.sql"
-                if init_sql.is_file():
+                schema_sql = (
+                    p / "src" / "cofounder_agent" / "services"
+                    / "migrations" / "0000_baseline.schema.sql"
+                )
+                if schema_sql.is_file():
                     try:
-                        await fresh.execute(init_sql.read_text(encoding="utf-8"))
+                        await fresh.execute(schema_sql.read_text(encoding="utf-8"))
                     except Exception:
-                        # init.sql may have partial-apply errors against a
-                        # DB the migrations also touch — swallow so the
-                        # harness still usable even when init.sql drifts.
+                        # The baseline is ``IF NOT EXISTS`` throughout, so
+                        # partial-apply errors usually mean the migration
+                        # runner ran first and beat us to a row. Swallow
+                        # so the harness stays usable even when the
+                        # baseline drifts.
                         pass
                     break
         finally:
