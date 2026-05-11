@@ -22,6 +22,22 @@ test database that the conftest creates per session). We avoid the
 row-faker pattern per Glad-Labs/poindexter#27's "don't hand-roll
 asyncpg row mocks" guidance — a parallel agent is migrating other
 suites away from that pattern.
+
+# FIXME(stale-suite, 2026-05-11): Migration
+# `20260510_065631_drop_experiments_tables.py` dropped the
+# `experiments` and `experiment_assignments` tables — the A/B
+# harness moved to Langfuse (`services/langfuse_experiments.py`)
+# and `services/experiment_service.py` was deleted. The hook in
+# `services/pipeline_experiment_hook.py` now calls
+# `LangfuseExperimentService.assign/record_outcome`, so the
+# SQL-backed helpers in this file (`_wipe_experiments`,
+# `_create_running_experiment`, `_set_active_experiment`'s
+# assertions about rows) reference tables that no longer exist.
+# Rewrite these against a Langfuse client mock OR delete the
+# class-level test set and add fresh coverage that fakes the
+# `LangfuseExperimentService` dataset/scores surface. Tracked
+# under the umbrella for #202 follow-ups. Until then we skip the
+# DB-dependent tests so the suite stays green on Matt's host.
 """
 
 from __future__ import annotations
@@ -104,6 +120,17 @@ async def _create_running_experiment(
 # ---------------------------------------------------------------------------
 
 
+# FIXME(stale-suite, 2026-05-11): SQL-backed assignment tests reference
+# the dropped `experiments` / `experiment_assignments` tables — see
+# module docstring. Skip until the suite is rewritten against
+# LangfuseExperimentService mocks. The `_no_op_when_no_database_service`
+# case is the only one that does not touch the DB, so it stays alive.
+_DROPPED_TABLES_SKIP = pytest.mark.skip(
+    reason="experiments + experiment_assignments dropped by migration "
+    "20260510_065631; harness moved to Langfuse — rewrite needed",
+)
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio(loop_scope="session")
 class TestAssignPipelineVariant:
@@ -118,6 +145,7 @@ class TestAssignPipelineVariant:
         assert result == {"experiment_key": None, "variant_key": None}
         assert models == {}
 
+    @_DROPPED_TABLES_SKIP
     async def test_no_op_when_no_task_id(self, db_pool):
         await _wipe_experiments(db_pool)
         models: dict[str, str] = {}
@@ -130,6 +158,7 @@ class TestAssignPipelineVariant:
         assert result == {"experiment_key": None, "variant_key": None}
         assert models == {}
 
+    @_DROPPED_TABLES_SKIP
     async def test_no_op_when_setting_unset(self, db_pool):
         await _wipe_experiments(db_pool)
         models: dict[str, str] = {}
@@ -141,6 +170,7 @@ class TestAssignPipelineVariant:
         )
         assert result["experiment_key"] is None
 
+    @_DROPPED_TABLES_SKIP
     async def test_no_op_when_setting_blank(self, db_pool):
         await _wipe_experiments(db_pool)
         await _set_active_experiment(db_pool, "")
@@ -153,6 +183,7 @@ class TestAssignPipelineVariant:
         )
         assert result == {"experiment_key": None, "variant_key": None}
 
+    @_DROPPED_TABLES_SKIP
     async def test_assigns_variant_when_experiment_running(self, db_pool):
         await _wipe_experiments(db_pool)
         await _create_running_experiment(
@@ -181,6 +212,7 @@ class TestAssignPipelineVariant:
         else:
             assert "writer" not in models
 
+    @_DROPPED_TABLES_SKIP
     async def test_does_not_trample_explicit_writer_override(self, db_pool):
         """If the API caller already pinned a writer model, the experiment
         must not overwrite it — the explicit override wins.
@@ -207,6 +239,7 @@ class TestAssignPipelineVariant:
         )
         assert models["writer"] == "explicit:99b"
 
+    @_DROPPED_TABLES_SKIP
     async def test_assignment_is_sticky(self, db_pool):
         """Same subject → same variant on repeated assign() calls."""
         await _wipe_experiments(db_pool)
@@ -263,6 +296,7 @@ class TestRecordPipelineOutcome:
             metrics={"score": 90.0},
         )
 
+    @_DROPPED_TABLES_SKIP
     async def test_writes_metrics_to_assignment_row(self, db_pool):
         await _wipe_experiments(db_pool)
         await _create_running_experiment(

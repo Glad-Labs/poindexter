@@ -151,7 +151,40 @@ def _make_jwt(exp_offset: int) -> str:
 _BASH = shutil.which("bash")
 
 
-@pytest.mark.skipif(_BASH is None, reason="bash not on PATH")
+def _bash_actually_works(bash_path: str | None) -> bool:
+    """Return True only if `bash -c 'echo ok'` round-trips a string.
+
+    On Windows `shutil.which("bash")` happily returns
+    `C:\\Windows\\System32\\bash.exe` — the WSL launcher stub — even
+    when no Linux distro is installed. Invoking it then fails with
+    `execvpe(/bin/bash) failed: No such file or directory` from WSL,
+    which leaves the helper tests in this file unable to even source
+    `get_token.sh`. Widen the PATH-presence check to a functional
+    probe so the suite skips on hosts where bash is a non-functional
+    stub (Matt's Windows host as of 2026-05-11) but still runs on CI
+    Linux where bash is the real shell.
+    """
+    if not bash_path:
+        return False
+    try:
+        result = subprocess.run(
+            [bash_path, "-c", "echo ok"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0 and result.stdout.strip() == "ok"
+
+
+_BASH_USABLE = _bash_actually_works(_BASH)
+
+
+@pytest.mark.skipif(
+    not _BASH_USABLE,
+    reason="bash not on PATH or non-functional (e.g. WSL stub without distro)",
+)
 class TestBashHelper:
     """Exercise ``skills/poindexter/_lib/get_token.sh`` via subprocess.
 
