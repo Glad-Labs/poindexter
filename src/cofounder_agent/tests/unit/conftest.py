@@ -36,6 +36,22 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
+# Glad-Labs/glad-labs-stack#410 follow-up. The Prefect Phase-0 cutover
+# (commit 669bf1ef) made several services import
+# ``services.flows.content_generation`` transitively (notably
+# ``services.task_executor``). That module's ``@flow`` / ``@task``
+# decorators trigger Prefect's ephemeral-server fallback when
+# ``PREFECT_API_URL`` is unset — a uvicorn subprocess on a random
+# port whose ``GlobalEventLoopThread`` never drains at pytest
+# teardown, hanging the whole ``services (forked)`` step in CI for
+# the full 30-minute workflow timeout. Setting these env vars at the
+# top of the unit-tier conftest (before *any* services import) blocks
+# the ephemeral fallback for every unit test. Tests that genuinely
+# need a Prefect API still get one via the per-module
+# ``prefect_test_harness`` fixture in ``services/flows/conftest.py``.
+os.environ.setdefault("PREFECT_SERVER_ALLOW_EPHEMERAL_MODE", "false")
+os.environ.setdefault("PREFECT_API_URL", "http://127.0.0.1:1/api")
+
 import pytest
 import pytest_asyncio
 

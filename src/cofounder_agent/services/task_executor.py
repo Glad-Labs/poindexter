@@ -174,7 +174,14 @@ class TaskExecutor:
                 # both daemons stay running side-by-side without
                 # double-claiming tasks. Default ``'false'`` preserves
                 # today's behavior. See docs/architecture/prefect-cutover.md.
-                if site_config.get_bool("use_prefect_orchestration", False):
+                # ``is True`` (not truthy) guards against MagicMock-typed
+                # site_config doubles in tests that don't set get_bool —
+                # in prod, get_bool always returns a real bool so this
+                # is semantically identical to the truthy form. Without
+                # this, every test that patches ``services.task_executor
+                # .site_config`` with a bare ``MagicMock()`` short-circuits
+                # the loop forever (MagicMock() is truthy by default).
+                if site_config.get_bool("use_prefect_orchestration", False) is True:
                     logger.debug(
                         "[TASK_EXEC_LOOP] use_prefect_orchestration=true — "
                         "Prefect owns dispatch, sleeping until next cycle"
