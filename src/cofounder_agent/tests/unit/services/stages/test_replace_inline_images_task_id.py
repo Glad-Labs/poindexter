@@ -91,7 +91,7 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
         return_value=mock_client,
     ), patch(
         "services.stages.replace_inline_images._resolve_sdxl_response",
-        return_value="/tmp/glad-labs-generated-images/x.png",
+        new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
     ), patch(
         "services.stages.replace_inline_images._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/x.png"),

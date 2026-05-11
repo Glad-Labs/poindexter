@@ -498,7 +498,7 @@ async def _try_sdxl(
             logger.warning("  [IMAGE-%s] SDXL returned %s", num, img_resp.status_code)
             return None
 
-        tmp_path = _resolve_sdxl_response(img_resp, site_config=site_config)
+        tmp_path = await _resolve_sdxl_response(img_resp, sdxl_url=sdxl_url)
         logger.info("  [IMAGE-%s] SDXL generated: %s", num, os.path.basename(tmp_path))
 
         # Step 3: R2 upload, with local-path fallback.
@@ -508,71 +508,80 @@ async def _try_sdxl(
         return None
 
 
-def _resolve_sdxl_response(
-    img_resp: httpx.Response, *, site_config: Any = None,
+async def _resolve_sdxl_response(
+    img_resp: httpx.Response, *, sdxl_url: str,
 ) -> str:
-    """Decode the SDXL server's response to a local image path.
+    """Materialise an SDXL server response as a worker-local file path.
 
     The server either:
-    - Returns JSON with ``image_path`` (when SDXL runs on the host and
-      the worker runs in docker — we translate host paths to container
-      paths using ``site_config.host_home``).
-    - Returns raw image bytes (for setups without a shared filesystem).
+    - Returns JSON with ``filename``/``image_path``. We fetch the bytes
+      back via ``GET <sdxl_url>/images/<filename>`` rather than trusting
+      the path — SDXL and the worker run in separate containers as
+      ``appuser`` whose in-container ``$HOME`` is ephemeral and not
+      reliably bind-mount-shared. Closes Glad-Labs/poindexter#459.
+    - Returns raw image bytes (older code path, kept for compatibility).
 
-    Raises RuntimeError on any other response shape or if the returned
-    path escapes the allowed directories (path traversal guard).
-
-    site_config is the DI seam (glad-labs-stack#330) — passed by the
-    stage's execute() rather than imported as a module-level singleton.
+    Raises RuntimeError on any other response shape.
     """
     ct = img_resp.headers.get("content-type", "")
     if ct.startswith("application/json"):
         data = img_resp.json()
-        tmp_path = data.get("image_path", "")
-        # Host → container path translation.
-        host_home = site_config.get("host_home", "") if site_config is not None else ""
-        if host_home and tmp_path.startswith(host_home):
-            tmp_path = tmp_path.replace(host_home, os.path.expanduser("~"), 1)
-        # Normalize Windows backslashes.
-        tmp_path = tmp_path.replace("\\", "/")
-        # Path traversal guard — SDXL response is external input. The
-        # allowlist must cover the canonical container paths where SDXL
-        # writes (shared volume mount at /root/.poindexter) AND the
-        # current user's home (/home/appuser) for the legacy bytes-
-        # content codepath below which writes to ~/Downloads. Hard-coding
-        # /root/.poindexter vs using expanduser('~/.poindexter') matters
-        # because the worker runs as appuser (uid 1001), not root —
-        # ``~`` expands to /home/appuser, which is NOT where SDXL writes.
-        allowed = [
-            "/root/Downloads",
-            "/root/.poindexter",
-            os.path.realpath(os.path.expanduser("~/Downloads")),
-            os.path.realpath(os.path.expanduser("~/.poindexter")),
-        ]
-        resolved = os.path.realpath(tmp_path)
-        if not any(resolved.startswith(d) for d in allowed):
+        filename = data.get("filename") or os.path.basename(
+            data.get("image_path", "") or "",
+        )
+        if not filename:
             raise RuntimeError(
-                f"SDXL returned path outside allowed directories: "
-                f"{os.path.basename(tmp_path)}"
+                "SDXL returned JSON without filename / image_path",
             )
-        if not tmp_path or not os.path.exists(tmp_path):
-            raise RuntimeError(
-                f"SDXL returned JSON but image_path missing or invalid: {tmp_path}"
-            )
-        return tmp_path
+        return await _download_sdxl_image(sdxl_url, filename)
 
     if ct.startswith("image/"):
-        output_dir = os.path.join(
-            os.path.expanduser("~"), "Downloads", "glad-labs-generated-images",
-        )
-        os.makedirs(output_dir, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            suffix=".png", delete=False, dir=output_dir,
-        ) as tmp:
-            tmp.write(img_resp.content)
-            return tmp.name
+        return _write_bytes_to_tempfile(img_resp.content)
 
     raise RuntimeError(f"SDXL returned unexpected content-type: {ct}")
+
+
+def _generated_images_dir() -> str:
+    """Worker-local directory for materialised SDXL bytes.
+
+    Matches the path fragment that ``_upload_to_r2_with_fallback`` keys
+    on (``/glad-labs-generated-images/``) so the post-R2 local-serve URL
+    rewrite continues to work when R2 is unavailable.
+    """
+    output_dir = os.path.join(
+        os.path.expanduser("~"), "Downloads", "glad-labs-generated-images",
+    )
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+
+def _write_bytes_to_tempfile(content: bytes) -> str:
+    """Persist image bytes to the worker-local generated-images dir."""
+    with tempfile.NamedTemporaryFile(
+        suffix=".png", delete=False, dir=_generated_images_dir(),
+    ) as tmp:
+        tmp.write(content)
+        return tmp.name
+
+
+async def _download_sdxl_image(sdxl_url: str, filename: str) -> str:
+    """GET the bytes from the SDXL server's ``/images/<filename>`` and save.
+
+    Avoids the filesystem coupling between the SDXL and worker
+    containers — the SDXL server already exposes its outputs over HTTP
+    (see ``scripts/sdxl-server.py``'s ``GET /images/{filename}``).
+    """
+    safe_name = os.path.basename(filename)
+    url = f"{sdxl_url.rstrip('/')}/images/{safe_name}"
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0, connect=5.0),
+    ) as client:
+        resp = await client.get(url)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"SDXL /images returned {resp.status_code} for {safe_name}",
+        )
+    return _write_bytes_to_tempfile(resp.content)
 
 
 async def _upload_to_r2_with_fallback(tmp_path: str) -> str:

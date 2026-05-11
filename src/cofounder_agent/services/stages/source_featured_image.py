@@ -344,8 +344,7 @@ async def _try_sdxl_featured(
             else "http://host.docker.internal:9836"
         )
         output_path = await _render_sdxl(
-            sdxl_url, sdxl_prompt, negative,
-            task_id=task_id, site_config=site_config,
+            sdxl_url, sdxl_prompt, negative, task_id=task_id,
         )
         if output_path is None:
             return None
@@ -468,8 +467,6 @@ async def _render_sdxl(
     sdxl_prompt: str,
     negative_prompt: str,
     task_id: str | None = None,
-    *,
-    site_config: Any = None,
 ) -> str | None:
     """Call the SDXL server and return the local path of the generated image."""
     from services.gpu_scheduler import gpu
@@ -495,54 +492,95 @@ async def _render_sdxl(
     if resp.status_code != 200:
         return None
 
-    return _resolve_sdxl_featured_response(resp, site_config=site_config)
+    return await _resolve_sdxl_featured_response(resp, sdxl_url=sdxl_url)
 
 
-def _resolve_sdxl_featured_response(
-    resp: httpx.Response, *, site_config: Any = None,
+async def _resolve_sdxl_featured_response(
+    resp: httpx.Response, *, sdxl_url: str,
 ) -> str | None:
-    """Decode the SDXL server's response to a local path."""
+    """Materialise the SDXL server's featured-image response on disk.
+
+    Fetches bytes via ``GET <sdxl_url>/images/<filename>`` when SDXL
+    returns JSON, rather than trusting the in-container path. The SDXL
+    and worker containers both run as ``appuser`` with ephemeral
+    in-container homes — the volume mount that was supposed to bridge
+    them lands on ``/root/.poindexter/`` while the SDXL server writes
+    to ``/home/appuser/.poindexter/``, so the worker never sees the
+    file on disk. Closes Glad-Labs/poindexter#459.
+    """
     ct = resp.headers.get("content-type", "")
     if ct.startswith("application/json"):
         data = resp.json()
-        output_path = data.get("image_path", "")
-        host_home = site_config.get("host_home", "") if site_config is not None else ""
-        if host_home and output_path.startswith(host_home):
-            output_path = output_path.replace(host_home, os.path.expanduser("~"), 1)
-        output_path = output_path.replace("\\", "/")
+        filename = data.get("filename") or os.path.basename(
+            data.get("image_path", "") or "",
+        )
         gen_ms = data.get("generation_time_ms", 0)
-        if output_path and os.path.exists(output_path):
-            logger.info(
-                "[IMAGE] Featured SDXL generated: %s (%dms)",
-                os.path.basename(output_path), gen_ms,
+        if not filename:
+            logger.warning(
+                "[IMAGE] SDXL returned JSON without filename / image_path",
             )
-            return output_path
-        # SDXL returned a path the worker can't see — almost always a
-        # volume-mount mismatch between the SDXL container and the
-        # worker container. Log loud (not silent return None) per
-        # ``feedback_no_silent_defaults``; the caller will fall back to
-        # Pexels but at least the regression is visible. See
-        # Glad-Labs/glad-labs-stack#343.
-        logger.warning(
-            "[IMAGE] SDXL responded 200 with image_path=%r (gen_ms=%d) "
-            "but worker can't see the file. Volume mount mismatch — "
-            "post will fall back to Pexels. Check SDXL container "
-            "<-> worker container shared volume on the generated-images "
-            "directory.",
-            output_path, gen_ms,
+            return None
+        try:
+            output_path = await _download_featured_sdxl_image(
+                sdxl_url, filename,
+            )
+        except Exception as e:
+            logger.warning(
+                "[IMAGE] SDXL /images fetch failed for %s: %s", filename, e,
+            )
+            return None
+        logger.info(
+            "[IMAGE] Featured SDXL generated: %s (%dms)",
+            os.path.basename(output_path), gen_ms,
         )
-        return None
+        return output_path
     if ct.startswith("image/"):
-        output_dir = os.path.join(
-            os.path.expanduser("~"), "Downloads", "glad-labs-generated-images",
-        )
-        os.makedirs(output_dir, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            suffix=".png", delete=False, dir=output_dir,
-        ) as tmp:
-            tmp.write(resp.content)
-            return tmp.name
+        return _write_featured_bytes_to_tempfile(resp.content)
     return None
+
+
+def _featured_generated_images_dir() -> str:
+    """Worker-local directory for materialised SDXL bytes.
+
+    Matches the path fragment that ``_upload_featured_to_r2``'s
+    local-fallback URL rewrite keys on (``/glad-labs-generated-images/``),
+    so the local-serve URL still resolves when R2 is unavailable.
+    """
+    output_dir = os.path.join(
+        os.path.expanduser("~"), "Downloads", "glad-labs-generated-images",
+    )
+    os.makedirs(output_dir, exist_ok=True)
+    return output_dir
+
+
+def _write_featured_bytes_to_tempfile(content: bytes) -> str:
+    """Persist image bytes to the worker-local generated-images dir."""
+    with tempfile.NamedTemporaryFile(
+        suffix=".png", delete=False, dir=_featured_generated_images_dir(),
+    ) as tmp:
+        tmp.write(content)
+        return tmp.name
+
+
+async def _download_featured_sdxl_image(sdxl_url: str, filename: str) -> str:
+    """GET the bytes from the SDXL server's ``/images/<filename>``.
+
+    The SDXL server already serves its outputs over HTTP (see
+    ``scripts/sdxl-server.py``'s ``GET /images/{filename}``), so the
+    worker no longer needs the SDXL container's filesystem to be
+    mounted in.
+    """
+    safe_name = os.path.basename(filename)
+    url = f"{sdxl_url.rstrip('/')}/images/{safe_name}"
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0, connect=5.0),
+    ) as client:
+        get_resp = await client.get(url)
+    if get_resp.status_code != 200:
+        raise RuntimeError(
+            f"SDXL /images returned {get_resp.status_code} for {safe_name}",
+        )
+    return _write_featured_bytes_to_tempfile(get_resp.content)
 
 
 async def _upload_featured_to_r2(output_path: str, task_id: str | None) -> str:
