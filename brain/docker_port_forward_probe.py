@@ -218,6 +218,14 @@ def _parse_watch_list(raw: Any) -> list[dict[str, Any]]:
                 int(host_port_raw) if host_port_raw is not None else port_int
             )
         except (TypeError, ValueError):
+            # Silent fallback to ``port`` would re-create the bug from
+            # Glad-Labs/poindexter#472, where the external probe quietly
+            # used the wrong port for 24h. Surface the misconfiguration.
+            logger.warning(
+                "[PORT_FORWARD] %s entry has unparseable host_port=%r — "
+                "falling back to port %d for the external probe URL",
+                container, host_port_raw, port_int,
+            )
             host_port = port_int
         out.append({
             "container": str(container),

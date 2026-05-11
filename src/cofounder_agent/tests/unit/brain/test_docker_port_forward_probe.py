@@ -600,6 +600,87 @@ class TestInverseInternalOnlyDownDoesNotRestart:
 
 
 # ---------------------------------------------------------------------------
+# Regression — external_url uses host_port end-to-end
+# (Glad-Labs/poindexter#472)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestExternalUrlUsesHostPort:
+    """The watch_list ``host_port`` field exists because compose can map
+    host:CONTAINER ports on different sides (e.g. ``3010:3000`` for
+    langfuse-web). ``_parse_watch_list`` honours it correctly, but a
+    24h false-positive incident proved nothing pinned that the value
+    flows through to the actual external probe URL. Lock the contract.
+    """
+
+    @pytest.mark.asyncio
+    async def test_external_url_uses_host_port_when_different_from_port(self):
+        """Reproduces the langfuse-web / pgadmin scenario from #472.
+        Without this contract, a regression in either ``_parse_watch_list``
+        or ``_check_one_service`` would silently route the external probe
+        at ``port`` instead of ``host_port``.
+        """
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {
+                    "container": "poindexter-langfuse-web",
+                    "port": 3000,
+                    "host_port": 3010,
+                    "path": "/api/public/health",
+                },
+                {
+                    "container": "poindexter-pgadmin",
+                    "port": 80,
+                    "host_port": 18443,
+                    "path": "/misc/ping",
+                },
+            ]),
+        })
+
+        probed_urls: list[str] = []
+
+        def fake_http(url, _timeout):
+            probed_urls.append(url)
+            return True  # happy path — we only care about which URLs were hit
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=fake_http,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (True, ""),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        # External URLs MUST use host_port; internal URLs MUST use port.
+        # If anyone re-introduces the #472 bug we'll see :3000 / :80 here.
+        assert (
+            "http://host.docker.internal:3010/api/public/health" in probed_urls
+        ), probed_urls
+        assert (
+            "http://host.docker.internal:18443/misc/ping" in probed_urls
+        ), probed_urls
+        assert (
+            "http://host.docker.internal:3000/api/public/health"
+            not in probed_urls
+        ), probed_urls
+        assert (
+            "http://host.docker.internal:80/misc/ping" not in probed_urls
+        ), probed_urls
+
+        # And the summary's recorded external_url echoes host_port too —
+        # this is the field that gets written to audit_log details.
+        lf = summary["services"]["poindexter-langfuse-web"]
+        pg = summary["services"]["poindexter-pgadmin"]
+        assert lf["external_url"] == (
+            "http://host.docker.internal:3010/api/public/health"
+        )
+        assert pg["external_url"] == "http://host.docker.internal:18443/misc/ping"
+
+
+# ---------------------------------------------------------------------------
 # Helpers — watch list parsing + restart cap window math
 # ---------------------------------------------------------------------------
 
@@ -643,6 +724,30 @@ class TestWatchListParsing:
         ]))
         assert out[0]["host_port"] == 9091
         assert out[0]["port"] == 9090
+
+    def test_unparseable_host_port_logs_warning_and_falls_back(self, caplog):
+        """Regression for Glad-Labs/poindexter#472. A non-int ``host_port``
+        used to silently fall back to ``port`` — that meant a typo in the
+        watch_list config produced 24h of false-positive recovery_failed
+        alerts before anyone noticed the external probe was hitting the
+        wrong port. Surface the misconfiguration as a warning instead.
+        """
+        import logging
+        with caplog.at_level(logging.WARNING, logger=pf.logger.name):
+            out = pf._parse_watch_list(json.dumps([
+                {
+                    "container": "poindexter-langfuse-web",
+                    "port": 3000,
+                    "host_port": "not-an-int",
+                    "path": "/api/public/health",
+                },
+            ]))
+        assert out[0]["host_port"] == 3000  # fallback to ``port``
+        assert any(
+            "unparseable host_port" in rec.message
+            and "poindexter-langfuse-web" in rec.message
+            for rec in caplog.records
+        ), [rec.message for rec in caplog.records]
 
     def test_invalid_json_returns_empty_list(self):
         assert pf._parse_watch_list("{not json") == []
