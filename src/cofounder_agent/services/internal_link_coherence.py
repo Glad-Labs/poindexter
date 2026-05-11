@@ -320,17 +320,37 @@ class InternalLinkCoherenceFilter:
         *,
         source_tags: Iterable[str],
         candidates: list[LinkCandidate],
+        current_post_id: str | None = None,
     ) -> list[LinkCandidate]:
         """Filter ``candidates`` in place-style, returning the survivors.
 
         Rejected candidates are NOT returned; their ``rejection_reason`` is
         set on the original object so callers that retain the full list can
         still introspect.
+
+        poindexter#470: ``current_post_id`` (optional) is the UUID of the
+        post the link is being added *to*. A candidate whose ``post_id``
+        matches is rejected as a self-link before any tag/cap work happens
+        — a post should not link to itself.
         """
         survivors: list[LinkCandidate] = []
         normalized_source = normalize_tag_set(source_tags)
+        normalized_current_post_id = (
+            current_post_id.removeprefix("post/") if current_post_id else None
+        )
 
         for cand in candidates:
+            # 0. Self-link suppression (poindexter#470). Short-circuit
+            # before any DB work — a post must never link to itself.
+            if normalized_current_post_id and cand.post_id:
+                cand_lookup_id = str(cand.post_id).removeprefix("post/")
+                if cand_lookup_id == normalized_current_post_id:
+                    cand.rejection_reason = "self_link"
+                    logger.debug(
+                        "[LINK_COHERENCE] reject %s: self-link", cand.slug
+                    )
+                    continue
+
             # Hydrate tag slugs if the caller didn't provide them.
             if cand.tag_slugs is None:
                 cand.tag_slugs = await get_tag_slugs_for_post(

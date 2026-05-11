@@ -344,6 +344,110 @@ class TestFilterCandidates:
         assert cand.rejection_reason == "no_tag_overlap"
 
     @pytest.mark.asyncio
+    async def test_self_link_rejected(self):
+        """poindexter#470: a post must never link to itself.
+
+        When ``current_post_id`` matches the candidate's ``post_id`` the
+        candidate is short-circuited as ``self_link`` — no DB work, no
+        tag lookup, no cap check.
+        """
+        pool = AsyncMock()
+        # If self-link short-circuit is broken, the filter falls through
+        # to hydrate tags via this pool — we'd see fetch awaited.
+        pool.fetch = AsyncMock(return_value=[{"slug": "python"}])
+        filt = InternalLinkCoherenceFilter(
+            pool=pool,
+            tag_coherence_required=True,
+            cap_enabled=False,
+        )
+        cand = LinkCandidate(
+            slug="my-own-post",
+            title="My Own Post",
+            post_id="11111111-1111-1111-1111-111111111111",
+            tag_slugs={"python"},
+        )
+        survivors = await filt.filter_candidates(
+            source_tags=["python"],
+            candidates=[cand],
+            current_post_id="11111111-1111-1111-1111-111111111111",
+        )
+        assert survivors == []
+        assert cand.rejection_reason == "self_link"
+        pool.fetch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_self_link_rejected_with_post_prefix(self):
+        """poindexter#470: ``post/<uuid>`` is normalized for comparison."""
+        filt = InternalLinkCoherenceFilter(
+            pool=None,
+            tag_coherence_required=False,
+            cap_enabled=False,
+        )
+        cand = LinkCandidate(
+            slug="x",
+            title="X",
+            post_id="post/22222222-2222-2222-2222-222222222222",
+            tag_slugs={"python"},
+        )
+        survivors = await filt.filter_candidates(
+            source_tags=["python"],
+            candidates=[cand],
+            current_post_id="22222222-2222-2222-2222-222222222222",
+        )
+        assert survivors == []
+        assert cand.rejection_reason == "self_link"
+
+    @pytest.mark.asyncio
+    async def test_no_current_post_id_skips_self_check(self):
+        """Backwards-compat: when current_post_id is None, no self-link gate."""
+        filt = InternalLinkCoherenceFilter(
+            pool=None,
+            tag_coherence_required=False,
+            cap_enabled=False,
+        )
+        cand = LinkCandidate(
+            slug="x",
+            title="X",
+            post_id="33333333-3333-3333-3333-333333333333",
+            tag_slugs={"python"},
+        )
+        # current_post_id omitted -> existing behaviour, candidate passes.
+        survivors = await filt.filter_candidates(
+            source_tags=["python"], candidates=[cand]
+        )
+        assert survivors == [cand]
+        assert cand.rejection_reason is None
+
+    @pytest.mark.asyncio
+    async def test_self_link_does_not_affect_siblings(self):
+        """poindexter#470: only the matching candidate is dropped."""
+        filt = InternalLinkCoherenceFilter(
+            pool=None,
+            tag_coherence_required=False,
+            cap_enabled=False,
+        )
+        self_cand = LinkCandidate(
+            slug="self",
+            title="Self",
+            post_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            tag_slugs={"python"},
+        )
+        other_cand = LinkCandidate(
+            slug="other",
+            title="Other",
+            post_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            tag_slugs={"python"},
+        )
+        survivors = await filt.filter_candidates(
+            source_tags=["python"],
+            candidates=[self_cand, other_cand],
+            current_post_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        )
+        assert survivors == [other_cand]
+        assert self_cand.rejection_reason == "self_link"
+        assert other_cand.rejection_reason is None
+
+    @pytest.mark.asyncio
     async def test_hydrates_tag_slugs_from_pool(self):
         """If the candidate has no pre-seeded tags, the filter queries the DB."""
         pool = AsyncMock()

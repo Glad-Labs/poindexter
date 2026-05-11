@@ -24,6 +24,7 @@ async def build_rag_context(
     topic: str,
     source_tags: list[str] | None = None,
     source_category: str | None = None,
+    current_post_id: str | None = None,
 ) -> str | None:
     """Search pgvector for similar published posts. Returns None if unavailable.
 
@@ -32,6 +33,13 @@ async def build_rag_context(
     being rendered — rejects off-topic suggestions (e.g. CadQuery pinned
     as "related" to an asyncio post) and caps how many times any single
     target can be recommended across the corpus.
+
+    poindexter#470: every candidate is re-checked against
+    ``posts.status = 'published'`` during slug resolution. The pgvector
+    embeddings table happily indexes drafts / rejected / archived posts,
+    so a similarity hit alone is not proof the target post is live —
+    without this filter, draft links could point at slugs that 404 on
+    gladlabs.io once the draft itself ships.
     """
     if not topic or not topic.strip():
         return None
@@ -54,25 +62,61 @@ async def build_rag_context(
 
         # Resolve slug + excerpt for every hit up front; we need slug for
         # the coherence filter's target-tag lookup anyway.
+        #
+        # poindexter#470: filter by ``status = 'published'`` here so a
+        # rejected / awaiting_approval / archived target never reaches the
+        # writer prompt. Self-link suppression via ``current_post_id`` is
+        # the natural sibling — a post should not link to itself. If a hit
+        # doesn't survive the filter the row simply isn't returned and the
+        # candidate is dropped (we log the count below — no silent default).
         resolved: list[dict[str, Any]] = []
+        dropped_non_published = 0
+        dropped_self = 0
+        normalized_current_post_id = (
+            current_post_id.removeprefix("post/") if current_post_id else None
+        )
         for hit in similar_posts:
             post_id = hit.source_id
             similarity = hit.similarity
             title = (hit.metadata or {}).get("title", "Untitled")
+            lookup_id = post_id.removeprefix("post/")
+
+            # Self-link suppression — short-circuit before the DB hit.
+            if (
+                normalized_current_post_id
+                and lookup_id == normalized_current_post_id
+            ):
+                dropped_self += 1
+                continue
+
             slug = ""
             excerpt = ""
             if pool:
                 try:
-                    lookup_id = post_id.removeprefix("post/")
                     row = await pool.fetchrow(
-                        "SELECT slug, excerpt FROM posts WHERE id::text = $1 LIMIT 1",
+                        """
+                        SELECT slug, excerpt
+                        FROM posts
+                        WHERE id::text = $1
+                          AND status = 'published'
+                        LIMIT 1
+                        """,
                         lookup_id,
                     )
                     if row:
                         slug = row.get("slug") or ""
                         excerpt = row.get("excerpt") or ""
+                    else:
+                        # Either the post doesn't exist or it isn't
+                        # published. Either way, it's not a valid link
+                        # target.
+                        dropped_non_published += 1
+                        continue
                 except Exception:
-                    pass
+                    # DB error fetching the row — be defensive and skip
+                    # this candidate rather than emitting an unverified
+                    # link to the writer.
+                    continue
             resolved.append({
                 "post_id": post_id,
                 "similarity": similarity,
@@ -80,6 +124,18 @@ async def build_rag_context(
                 "slug": slug,
                 "excerpt": excerpt,
             })
+
+        if dropped_non_published or dropped_self:
+            # No silent defaults — surface the filter activity so we can
+            # spot regressions in the embeddings table (e.g. drafts being
+            # auto-embedded) and tune accordingly.
+            logger.info(
+                "[RAG_CONTEXT] dropped %d non-published / %d self-link "
+                "candidate(s) from %d hits",
+                dropped_non_published,
+                dropped_self,
+                len(similar_posts),
+            )
 
         # GH-88: apply the coherence filter if we have source context + a DB.
         # source_category is accepted here for call-site symmetry with
@@ -95,6 +151,7 @@ async def build_rag_context(
                     LinkCandidate(
                         slug=r["slug"],
                         title=r["title"],
+                        post_id=r["post_id"],
                         similarity=r["similarity"],
                     )
                     for r in resolved
@@ -104,6 +161,7 @@ async def build_rag_context(
                 kept = await filt.filter_candidates(
                     source_tags=list(source_tags or []),
                     candidates=candidates,
+                    current_post_id=current_post_id,
                 )
                 kept_slugs = {c.slug for c in kept}
                 resolved = [r for r in resolved if r["slug"] in kept_slugs]

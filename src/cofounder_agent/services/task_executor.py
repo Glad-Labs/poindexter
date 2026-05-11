@@ -1121,8 +1121,18 @@ class TaskExecutor:
                     # UUID or "post/<uuid>". Strip the prefix before the DB
                     # lookup to cover both shapes.
                     lookup_id = source_id.removeprefix("post/")
+                    # poindexter#470: only treat the slug as a valid
+                    # link target if the post is actually published.
+                    # Otherwise the dedup-reason text would print a URL
+                    # that 404s on the live site.
                     row = await pool.fetchrow(
-                        "SELECT slug FROM posts WHERE id::text = $1 LIMIT 1",
+                        """
+                        SELECT slug
+                        FROM posts
+                        WHERE id::text = $1
+                          AND status = 'published'
+                        LIMIT 1
+                        """,
                         lookup_id,
                     )
                     if row and row["slug"]:
