@@ -285,6 +285,48 @@ class FinalizeTaskStage:
 
         await database_service.update_task(task_id=task_id, updates=updates)
 
+        # poindexter#473: persist the canonical draft to ``pipeline_versions``
+        # so operators can actually read the post in the approval queue.
+        # When the legacy ``workflow_executor`` chain was deleted in the
+        # 2026-05-09 services audit the only production call to
+        # ``upsert_version`` went with it; Prefect's Phase 0 cutover (#410)
+        # then flipped use_prefect_orchestration=true in prod without
+        # re-wiring this write, so every canonical_blog task since
+        # 2026-05-10 13:00Z reached awaiting_approval with NULL content.
+        try:
+            from services.pipeline_db import PipelineDB
+            await PipelineDB(database_service.pool).upsert_version(
+                task_id,
+                {
+                    "title": final_title,
+                    "content": content_text,
+                    "excerpt": excerpt_text,
+                    "featured_image_url": context.get("featured_image_url"),
+                    "seo_title": seo_title,
+                    "seo_description": seo_description,
+                    "seo_keywords": seo_keywords_string,
+                    "quality_score": final_quality_score,
+                    "qa_feedback": qa_feedback_text,
+                    "models_used_by_phase": context.get("models_used_by_phase", {}),
+                    "metadata": task_metadata,
+                    "task_metadata": task_metadata,
+                    "featured_image_prompt": context.get("featured_image_prompt"),
+                    "tags": context.get("tags"),
+                },
+            )
+        except Exception as ver_err:
+            # Don't fail the stage on a version-write hiccup — the task
+            # is already committed via update_task above and operators
+            # would still rather see the awaiting_approval row land than
+            # have the whole pipeline blow up here. Log loud so the
+            # regression is visible in Loki / Grafana.
+            logger.warning(
+                "[finalize_task] pipeline_versions write failed for %s "
+                "(poindexter#473 regression — operator-visible content "
+                "will be unreadable until next run succeeds): %s",
+                task_id, ver_err,
+            )
+
         # Snapshot the finalized draft so the feedback loop has a clear
         # terminal row per task (gitea#271 Phase 3.A2). The initial draft
         # + any QA rewrite iterations precede this row, so the diff chain

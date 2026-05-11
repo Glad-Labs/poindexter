@@ -462,6 +462,34 @@ class CrossModelQAStage:
                 # 70 vs catastrophic 0).
                 "quality_score": float(qa_result.final_score),
             })
+
+            # poindexter#473: persist the rejected draft too. Operator
+            # review of *why* a post was vetoed needs the prose, not just
+            # the gate verdict — and the diff-against-the-prior-version
+            # story doesn't work without the rejected text on disk.
+            try:
+                from services.pipeline_db import PipelineDB
+                await PipelineDB(database_service.pool).upsert_version(
+                    task_id,
+                    {
+                        "title": context.get("title") or context.get("topic", ""),
+                        "content": context.get("content", ""),
+                        "quality_score": int(round(float(qa_result.final_score))),
+                        "qa_feedback": (
+                            qa_result.format_feedback_text()
+                            if hasattr(qa_result, "format_feedback_text")
+                            else qa_result.summary
+                        ),
+                        "models_used_by_phase": context.get(
+                            "models_used_by_phase", {},
+                        ),
+                    },
+                )
+            except Exception as ver_err:
+                logger.warning(
+                    "[cross_model_qa] pipeline_versions write failed for "
+                    "rejected task %s: %s", task_id[:8], ver_err,
+                )
             # Flip model_performance.human_approved=False for the learning
             # signal — mirror what the operator-reject and auto-curate
             # paths do, so QA rejections also contribute to model-selection
