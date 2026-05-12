@@ -66,47 +66,43 @@ async def _resolve_active_experiment_key(database_service: Any) -> str | None:
     return trimmed or None
 
 
-def _get_variant_config(
+async def _get_variant_config(
     *,
     experiment_key: str,
     variant_key: str,
-    site_config: Any,
-) -> Any:
-    """Coroutine returning the variant's ``config`` dict, or ``{}``.
+    client: Any,
+) -> dict[str, Any]:
+    """Return the variant's ``config`` dict, or ``{}``.
 
     Reads the Langfuse Dataset for ``experiment_key`` and returns the
-    matching variant's config from the dataset metadata. Best-effort —
-    Langfuse outage / missing dataset / unknown variant_key all return
-    ``{}`` so the pipeline falls back to default config rather than
-    crashing.
+    matching variant's config from the dataset metadata. ``client`` is
+    the cached Langfuse client from the assign-side ``svc`` — passing
+    it in avoids rebuilding a second client per happy-path assign.
+
+    Best-effort — Langfuse outage / missing dataset / unknown
+    variant_key all return ``{}`` so the pipeline falls back to default
+    config rather than crashing.
     """
-
-    async def _read() -> dict[str, Any]:
-        try:
-            from services.langfuse_experiments import LangfuseExperimentService
-            svc = LangfuseExperimentService(site_config=site_config, pool=None)
-            client = svc._get_client()
-            ds = client.get_dataset(experiment_key)
-        except Exception as e:
-            logger.debug(
-                "[experiment_hook] could not load variants for %r: %s",
-                experiment_key, e,
-            )
-            return {}
-
-        md = getattr(ds, "metadata", {}) or {}
-        variants = md.get("variants") or []
-        if not isinstance(variants, list):
-            return {}
-        for v in variants:
-            if not isinstance(v, dict):
-                continue
-            if v.get("key") == variant_key:
-                cfg = v.get("config", {})
-                return cfg if isinstance(cfg, dict) else {}
+    try:
+        ds = client.get_dataset(experiment_key)
+    except Exception as e:
+        logger.debug(
+            "[experiment_hook] could not load variants for %r: %s",
+            experiment_key, e,
+        )
         return {}
 
-    return _read()
+    md = getattr(ds, "metadata", {}) or {}
+    variants = md.get("variants") or []
+    if not isinstance(variants, list):
+        return {}
+    for v in variants:
+        if not isinstance(v, dict):
+            continue
+        if v.get("key") == variant_key:
+            cfg = v.get("config", {})
+            return cfg if isinstance(cfg, dict) else {}
+    return {}
 
 
 async def assign_pipeline_variant(
@@ -180,7 +176,7 @@ async def assign_pipeline_variant(
         cfg = await _get_variant_config(
             experiment_key=experiment_key,
             variant_key=variant_key,
-            site_config=site_config,
+            client=svc._get_client(),
         )
         writer_override = cfg.get("writer_model") if isinstance(cfg, dict) else None
         if writer_override and "writer" not in models_by_phase:
@@ -220,11 +216,13 @@ async def record_pipeline_outcome(
     same row over time.
 
     No-op when assignment carries no experiment_key (the pipeline ran
-    with default config, nothing to attribute). Best-effort — never
-    raises.
+    with default config, nothing to attribute) or when task_id is
+    empty (subject_id="" would otherwise score against a deterministic
+    trace id derived from the empty string — mirrors the assign-side
+    guard for consistency). Best-effort — never raises.
     """
     experiment_key = (assignment or {}).get("experiment_key")
-    if not experiment_key or database_service is None:
+    if not experiment_key or not task_id or database_service is None:
         return
 
     pool = getattr(database_service, "pool", None)
@@ -241,7 +239,7 @@ async def record_pipeline_outcome(
 
     try:
         svc = ExperimentService(site_config=site_config, pool=pool)
-        await svc.record_outcome(
+        ok = await svc.record_outcome(
             experiment_key=experiment_key,
             subject_id=str(task_id),
             metrics=metrics,
@@ -250,6 +248,19 @@ async def record_pipeline_outcome(
         logger.warning(
             "[experiment_hook] record_outcome() failed for experiment=%r task=%s: %s",
             experiment_key, task_id, e,
+        )
+        return
+
+    if not ok:
+        # ``record_outcome`` returns False when one or more individual
+        # score writes failed (the service logs each at WARNING). Surface
+        # at hook level so operators can distinguish "no record_outcome
+        # call happened" from "call happened, partial Langfuse blip".
+        logger.warning(
+            "[experiment_hook] record_outcome() partially failed for "
+            "experiment=%r task=%s — see prior [experiments] warnings "
+            "for per-metric detail",
+            experiment_key, task_id,
         )
 
 

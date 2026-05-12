@@ -18,10 +18,15 @@ Contract pinned per test:
   active-setting / running experiment, propagates service failures as
   no-ops (error isolation), forwards the right kwargs, merges
   ``variant.config['writer_model']`` into ``models_by_phase`` only when
-  not already pinned, and honours service-side stickiness.
-- ``record_pipeline_outcome`` no-ops on empty/missing assignment,
-  forwards the right kwargs on the happy path, and swallows service
-  exceptions so finalize never crashes on a Langfuse blip.
+  not already pinned, honours service-side stickiness, and on the happy
+  path constructs the Langfuse service exactly once (the variant-config
+  read reuses the assign-side client — Glad-Labs/poindexter#479 P3.1).
+- ``record_pipeline_outcome`` no-ops on empty/missing assignment, on
+  empty task_id (mirrors assign-side guard — poindexter#479 P3.2),
+  forwards the right kwargs on the happy path, swallows service
+  exceptions so finalize never crashes on a Langfuse blip, and surfaces
+  a WARNING when ``svc.record_outcome`` returns False to make partial
+  Langfuse blips visible to operators (poindexter#479 P3.3).
 """
 
 from __future__ import annotations
@@ -81,6 +86,7 @@ def _make_mocked_service(
     *,
     assign_return: str | None = None,
     assign_side_effect: Exception | None = None,
+    record_outcome_return: bool = True,
     record_outcome_side_effect: Exception | None = None,
     dataset_variants: list[dict[str, Any]] | None = None,
 ) -> MagicMock:
@@ -100,7 +106,7 @@ def _make_mocked_service(
     if record_outcome_side_effect is not None:
         svc.record_outcome = AsyncMock(side_effect=record_outcome_side_effect)
     else:
-        svc.record_outcome = AsyncMock(return_value=True)
+        svc.record_outcome = AsyncMock(return_value=record_outcome_return)
 
     dataset = SimpleNamespace(metadata={"variants": dataset_variants or []})
     client = MagicMock()
@@ -180,7 +186,13 @@ class TestAssignPipelineVariant:
 
     async def test_assigns_variant_when_experiment_running(self):
         """Happy path: setting set → service returns variant_key →
-        variant.config['writer_model'] flows into models_by_phase."""
+        variant.config['writer_model'] flows into models_by_phase.
+
+        Also pins the poindexter#479 P3.1 fix: the assign-side ``svc``'s
+        cached client must be reused to read the variant config, so
+        ``LangfuseExperimentService`` is constructed exactly once per
+        happy-path assign (previously twice — once in assign, once
+        inside ``_get_variant_config``)."""
         db = _stub_database_service(active_experiment_key="writer_test_run")
         mocked_svc = _make_mocked_service(
             assign_return="fast",
@@ -190,7 +202,7 @@ class TestAssignPipelineVariant:
             ],
         )
         models: dict[str, str] = {}
-        with patch(_LF_PATCH_TARGET, return_value=mocked_svc):
+        with patch(_LF_PATCH_TARGET, return_value=mocked_svc) as svc_ctor:
             result = await assign_pipeline_variant(
                 task_id="task-deterministic-1",
                 database_service=db,
@@ -209,6 +221,8 @@ class TestAssignPipelineVariant:
             experiment_key="writer_test_run",
             subject_id="task-deterministic-1",
         )
+        # poindexter#479 P3.1: one service per happy-path assign.
+        svc_ctor.assert_called_once()
 
     async def test_assigns_variant_with_no_writer_model_leaves_models_untouched(self):
         """Variant whose config has no ``writer_model`` key must NOT
@@ -427,3 +441,82 @@ class TestRecordPipelineOutcome:
                 metrics={"quality_score": 88.5},
             )
         mocked_svc.record_outcome.assert_awaited_once()
+
+    async def test_no_op_when_task_id_empty(self):
+        """poindexter#479 P3.2: mirror the assign-side guard. An empty
+        ``task_id`` paired with a real ``experiment_key`` previously
+        called ``svc.record_outcome(subject_id="")`` which Langfuse
+        would score against the deterministic trace id derived from the
+        empty string. The hook now treats this as a no-op for consistency
+        with ``assign_pipeline_variant``."""
+        db = _stub_database_service(active_experiment_key="outcome_test")
+        with patch(_LF_PATCH_TARGET) as svc_ctor:
+            await record_pipeline_outcome(
+                assignment={"experiment_key": "outcome_test", "variant_key": "v"},
+                task_id="",
+                database_service=db,
+                site_config=_StubSiteConfig(),
+                metrics={"quality_score": 88.5},
+            )
+        svc_ctor.assert_not_called()
+
+    async def test_warns_when_record_outcome_returns_false(self, caplog):
+        """poindexter#479 P3.3: ``svc.record_outcome`` returns False when
+        one or more individual score writes failed. The hook used to
+        discard the bool entirely — operators saw the per-metric
+        WARNINGs from the service but no hook-level signal that
+        ``record_outcome`` itself partially failed. We now log a
+        hook-level WARNING so partial Langfuse blips are visible without
+        having to correlate by trace id."""
+        import logging
+
+        db = _stub_database_service(active_experiment_key="partial_fail")
+        mocked_svc = _make_mocked_service(record_outcome_return=False)
+        with patch(_LF_PATCH_TARGET, return_value=mocked_svc):
+            with caplog.at_level(logging.WARNING, logger="services.pipeline_experiment_hook"):
+                await record_pipeline_outcome(
+                    assignment={"experiment_key": "partial_fail", "variant_key": "v"},
+                    task_id="partial-task",
+                    database_service=db,
+                    site_config=_StubSiteConfig(),
+                    metrics={"quality_score": 88.5, "winner": "v"},
+                )
+        mocked_svc.record_outcome.assert_awaited_once()
+        partial_warnings = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING
+            and "partially failed" in r.getMessage()
+            and "partial_fail" in r.getMessage()
+        ]
+        assert partial_warnings, (
+            "expected a hook-level WARNING surfacing the partial "
+            f"record_outcome failure; got {[r.getMessage() for r in caplog.records]}"
+        )
+
+    async def test_no_warning_when_record_outcome_succeeds(self, caplog):
+        """Counter-test to the False-return case: when ``record_outcome``
+        returns True (the happy path), no hook-level WARNING fires.
+        Otherwise we'd flood Grafana with bogus "partial failure" lines
+        on every successful pipeline run."""
+        import logging
+
+        db = _stub_database_service(active_experiment_key="happy_path")
+        mocked_svc = _make_mocked_service(record_outcome_return=True)
+        with patch(_LF_PATCH_TARGET, return_value=mocked_svc):
+            with caplog.at_level(logging.WARNING, logger="services.pipeline_experiment_hook"):
+                await record_pipeline_outcome(
+                    assignment={"experiment_key": "happy_path", "variant_key": "v"},
+                    task_id="happy-task",
+                    database_service=db,
+                    site_config=_StubSiteConfig(),
+                    metrics={"quality_score": 95.0},
+                )
+        partial_warnings = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING
+            and "partially failed" in r.getMessage()
+        ]
+        assert not partial_warnings, (
+            f"unexpected partial-failure warning on happy path: "
+            f"{[r.getMessage() for r in partial_warnings]}"
+        )
