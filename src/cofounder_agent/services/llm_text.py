@@ -63,19 +63,57 @@ except ImportError:  # pragma: no cover — Langfuse is a worker dep, not a test
 
 def resolve_local_model(model: str | None = None, *, site_config: Any = None) -> str:
     """Pick the local model to call. Removes ``ollama/`` prefix and
-    falls back through ``pipeline_writer_model`` → hard default.
+    falls back through ``pipeline_writer_model`` → ``cost_tier.standard.model``.
 
     Accepts the SiteConfig instance via the DI seam (glad-labs-stack#330).
-    Falls through to the hard default when ``site_config`` is None.
+
+    2026-05-12 cleanup (poindexter#485): the hardcoded
+    ``"glm-4.7-5090:latest"`` fallback that used to live here baked
+    Matt's specific custom model name into a public OSS file — forks
+    installing Poindexter wouldn't have that model and would get a
+    confusing "model not found" error from Ollama at call time. Now
+    chains through the tier API instead.
+
+    Raises:
+        ValueError when every resolution path is unset — fail loud so
+        the operator notices a broken install before content generation
+        blows up mid-stage.
     """
     if model:
         return model.removeprefix("ollama/")
     if site_config is None:
-        return "glm-4.7-5090:latest"
-    return (
-        site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-        or "glm-4.7-5090:latest"
-    ).removeprefix("ollama/")
+        raise ValueError(
+            "llm_text.resolve_local_model: site_config is required to "
+            "resolve the writer model (no hardcoded fallback by design). "
+            "Pass site_config explicitly or set the lifespan-bound instance."
+        )
+    try:
+        writer = (
+            site_config.get("pipeline_writer_model", "") or ""
+        ).strip()
+        if writer:
+            return writer.removeprefix("ollama/")
+    except Exception as e:  # noqa: BLE001 — defensive against test stubs
+        logger.warning(
+            "[llm_text] site_config.get('pipeline_writer_model') raised %s — "
+            "falling through to cost-tier resolution", e,
+        )
+    try:
+        tier = (
+            site_config.get("cost_tier.standard.model", "") or ""
+        ).strip()
+        if tier:
+            return tier.removeprefix("ollama/")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[llm_text] cost-tier lookup failed (%s) — no writer model "
+            "can be resolved", e,
+        )
+    raise ValueError(
+        "llm_text: no writer model resolvable from app_settings — "
+        "set ``pipeline_writer_model`` OR ``cost_tier.standard.model`` "
+        "via `poindexter set-setting`."
+    )
 
 
 @observe(as_type="generation", name="ollama_chat_text")
