@@ -313,6 +313,37 @@ IMAGE_PLACEHOLDER_PATTERNS = [
     r"\[SCREENSHOT(?:-\d+)?:\s*[^\]]+\]",  # [SCREENSHOT: description]
 ]
 
+# Unresolved internal-link placeholders — [posts/abc-123] / [posts/{slug}] /
+# [POST_ID: x] left in the body because the writer hinted at the template
+# shape but the resolution step (internal_link_coherence + slug substitution)
+# never converted them into real Markdown links. Showed up in the screenshot
+# Matt flagged on 2026-05-12 (poindexter#489): a post with quality_score=90
+# shipped with literal `[posts/<something>]` strings in the body that the
+# reader sees as broken brackets.
+#
+# Critical rather than warning — these are visible to the reader, they make
+# the site look broken, and they undercut the same "trust the byline" guard
+# IMAGE_PLACEHOLDER_PATTERNS protects.
+#
+# Notes on the angle-bracket form: ``[posts/<uuid>]`` literally is caught
+# upstream by ``_strip_html`` (which removes any ``<token>`` it sees), so
+# only the bracket-without-angles shape can reach the regex. Still worth
+# scanning the curly-brace and POST_ID variants — those survive cleanly.
+#
+# Negative lookahead ``(?!\()`` on the slug variant skips legit Markdown
+# links of the shape ``[posts/foo](/posts/foo)`` — the bracket-only form
+# is the bug.
+PLACEHOLDER_MARKER_PATTERNS = [
+    # Curly-brace template still unsubstituted.
+    r"\[posts?/\{[^\]}]{1,80}\}\]",
+    # Bare bracketed UUID / slug — `[posts/abc-123]` not followed by `(`.
+    # Requires the slug/UUID to look "real" (≥3 chars, lowercase/digit/
+    # hyphen/underscore) so genuine prose like "[posts/...]" doesn't fire.
+    r"\[posts?/[a-z0-9_\-]{3,}\](?!\()",
+    # Alternative shapes a model might emit when asked for "post-id tokens".
+    r"\[POSTS?[_\s\-]?ID[:\-=]\s*[^\]]{1,80}\]",
+]
+
 
 @dataclass
 class ValidationIssue:
@@ -1062,6 +1093,18 @@ def validate_content(
         issues.extend(_check_patterns(
             full_text, IMAGE_PLACEHOLDER_PATTERNS, "critical", "image_placeholder",
             "LLM image placeholder left in content: '{matched}'"
+        ))
+
+    # 7b-bis. Unresolved internal-link placeholders ([posts/<uuid>], [posts/abc-123]).
+    # poindexter#489 — the writer emits these when it thinks it's hinting at a
+    # related post but the internal_link_coherence resolution step never turned
+    # them into real Markdown links. They show up as broken brackets in the
+    # reader's view. Critical: a post that ships with literal "[posts/<uuid>]"
+    # in the body has the same trust-cost as an [IMAGE: ...] placeholder.
+    if _enabled("unresolved_placeholder"):
+        issues.extend(_check_patterns(
+            full_text, PLACEHOLDER_MARKER_PATTERNS, "critical", "unresolved_placeholder",
+            "Unresolved internal-link placeholder leaked to content: '{matched}'"
         ))
 
     # 7c. Known-wrong facts -- loaded from DB (fact_overrides table).

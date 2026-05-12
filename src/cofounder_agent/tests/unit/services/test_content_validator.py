@@ -136,6 +136,51 @@ class TestImagePlaceholders:
         assert all(i.severity == "critical" for i in image_issues)
 
 
+class TestUnresolvedPlaceholders:
+    """poindexter#489 — catch [posts/...] template tokens leaking to publish."""
+
+    def test_catches_curly_brace_template(self):
+        content = "Related reading: [posts/{slug}] on this topic."
+        result = validate_content("Title", content, "tech")
+        assert not result.passed
+        assert any(i.category == "unresolved_placeholder" for i in result.issues)
+
+    def test_catches_bare_uuid_reference(self):
+        content = "Related: [posts/a1b2c3d4-e5f6-7890-abcd-1234567890ef] explains more."
+        result = validate_content("Title", content, "tech")
+        assert not result.passed
+        assert any(i.category == "unresolved_placeholder" for i in result.issues)
+
+    def test_catches_bare_slug_reference(self):
+        content = "More on this in [posts/llm-workforce-thesis]."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "unresolved_placeholder" for i in result.issues)
+
+    def test_catches_post_id_variant(self):
+        content = "Cross-reference: [POST_ID: 12345] for details."
+        result = validate_content("Title", content, "tech")
+        assert any(i.category == "unresolved_placeholder" for i in result.issues)
+
+    def test_does_not_fire_on_resolved_markdown_link(self):
+        # Real Markdown link: bracket immediately followed by paren.
+        content = "Read [posts/llm-workforce-thesis](/posts/llm-workforce-thesis) for more."
+        result = validate_content("Title", content, "tech")
+        assert not any(i.category == "unresolved_placeholder" for i in result.issues)
+
+    def test_does_not_fire_on_prose_brackets(self):
+        # A real sentence with brackets but no posts/ path.
+        content = "The system [logs everything] for audit purposes."
+        result = validate_content("Title", content, "tech")
+        assert not any(i.category == "unresolved_placeholder" for i in result.issues)
+
+    def test_unresolved_placeholder_is_critical(self):
+        content = "See [posts/llm-workforce-thesis] for context."
+        result = validate_content("Title", content, "tech")
+        ph_issues = [i for i in result.issues if i.category == "unresolved_placeholder"]
+        assert ph_issues, "expected at least one unresolved_placeholder issue"
+        assert all(i.severity == "critical" for i in ph_issues)
+
+
 class TestLeakedImagePrompts:
     """Detect leaked image generation prompts in content."""
 
