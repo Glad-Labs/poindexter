@@ -76,7 +76,13 @@ class TestStaticExportReconciliation:
             new=AsyncMock(),
         ) as rebuild_mock:
             job = StaticExportReconciliationJob()
-            result = await job.run(pool, config={"alert_on_drift": False})
+            result = await job.run(
+                pool,
+                config={
+                    "alert_on_drift": False,
+                    "r2_manifest_url": "https://example.test/static/manifest.json",
+                },
+            )
 
         assert result.ok is True
         assert "in sync" in result.detail
@@ -98,7 +104,13 @@ class TestStaticExportReconciliation:
             "services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
-            result = await job.run(pool, config={"alert_on_drift": True})
+            result = await job.run(
+                pool,
+                config={
+                    "alert_on_drift": True,
+                    "r2_manifest_url": "https://example.test/static/manifest.json",
+                },
+            )
 
         assert result.ok is True  # Rebuild succeeded
         assert "drift detected" in result.detail
@@ -124,7 +136,13 @@ class TestStaticExportReconciliation:
             "services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
-            result = await job.run(pool, config={"alert_on_drift": True})
+            result = await job.run(
+                pool,
+                config={
+                    "alert_on_drift": True,
+                    "r2_manifest_url": "https://example.test/static/manifest.json",
+                },
+            )
 
         # Rebuild failed in this scenario, so ok=False (matches rebuild outcome)
         assert result.ok is False
@@ -147,6 +165,76 @@ class TestStaticExportReconciliation:
             "services.jobs.static_export_reconciliation.emit_finding",
         ) as finding_mock:
             job = StaticExportReconciliationJob()
-            await job.run(pool, config={"alert_on_drift": False})
+            await job.run(
+                pool,
+                config={
+                    "alert_on_drift": False,
+                    "r2_manifest_url": "https://example.test/static/manifest.json",
+                },
+            )
 
         finding_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_manifest_url_configured(self):
+        """No config.r2_manifest_url AND no app_settings.r2_public_url → skip.
+
+        2026-05-12 cleanup (poindexter#485): the old hardcoded
+        ``_DEFAULT_MANIFEST_URL`` constant baked Matt's R2 bucket into
+        a public OSS file. Pin the new behaviour: when neither source
+        resolves, skip the job rather than probing somebody else's bucket.
+        """
+        # Pool's app_settings lookup returns no row (r2_public_url unset).
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value=None)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        with patch(
+            "services.static_export_service.export_full_rebuild",
+            new=AsyncMock(),
+        ) as rebuild_mock, patch(
+            "services.jobs.static_export_reconciliation.emit_finding",
+        ) as finding_mock:
+            job = StaticExportReconciliationJob()
+            result = await job.run(pool, config={})
+
+        assert result.ok is True
+        assert "no R2 manifest URL" in result.detail
+        rebuild_mock.assert_not_awaited()
+        finding_mock.assert_called_once()
+        finding_kwargs = finding_mock.call_args.kwargs
+        assert finding_kwargs["dedup_key"] == "static_export_manifest_url_unresolved"
+
+    @pytest.mark.asyncio
+    async def test_resolves_manifest_url_from_app_settings(self):
+        """When r2_manifest_url isn't in config, fall through to
+        app_settings.r2_public_url + '/static/manifest.json'."""
+        now = datetime.now(timezone.utc)
+        # Pool needs to answer TWO different queries: app_settings + posts.
+        conn = AsyncMock()
+        async def _fetchrow(query, *args, **kwargs):  # noqa: ARG001
+            if "app_settings" in query:
+                return {"value": "https://configured.example/"}
+            return {"db_count": 7, "db_latest": now - timedelta(minutes=1)}
+        conn.fetchrow = AsyncMock(side_effect=_fetchrow)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        manifest = {"post_count": 7, "exported_at": now.isoformat()}
+        with _patch_manifest(manifest), patch(
+            "services.static_export_service.export_full_rebuild",
+            new=AsyncMock(),
+        ):
+            job = StaticExportReconciliationJob()
+            result = await job.run(pool, config={"alert_on_drift": False})
+
+        # Should have synthesized URL from app_settings + path suffix.
+        assert result.ok is True
+        assert "in sync" in result.detail

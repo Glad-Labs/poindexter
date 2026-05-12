@@ -45,9 +45,36 @@ from utils.findings import emit_finding
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_MANIFEST_URL = (
-    "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static/manifest.json"
-)
+_MANIFEST_PATH_SUFFIX = "/static/manifest.json"
+
+
+async def _resolve_manifest_url(pool: Any, config: dict[str, Any]) -> str | None:
+    """Resolve the manifest URL from job config or app_settings.r2_public_url.
+
+    Returns None when neither source is configured — caller treats that
+    as "fork hasn't set up R2 yet, skip the job rather than crash".
+
+    2026-05-12 cleanup (poindexter#485): the old ``_DEFAULT_MANIFEST_URL``
+    constant baked Matt's R2 bucket name into a public OSS file. Forks
+    would have pointed reconciliation at his bucket and seen drift on
+    every cycle.
+    """
+    explicit = (config.get("r2_manifest_url") or "").strip()
+    if explicit:
+        return explicit
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'r2_public_url'",
+            )
+        base = ((row["value"] if row else "") or "").strip().rstrip("/")
+        if base:
+            return f"{base}{_MANIFEST_PATH_SUFFIX}"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "static_export_reconciliation: r2_public_url lookup failed: %s", e,
+        )
+    return None
 
 
 class StaticExportReconciliationJob:
@@ -58,7 +85,32 @@ class StaticExportReconciliationJob:
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:
         stale_minutes = int(config.get("stale_minutes", 30))
-        manifest_url = config.get("r2_manifest_url") or _DEFAULT_MANIFEST_URL
+        manifest_url = await _resolve_manifest_url(pool, config)
+        if not manifest_url:
+            logger.warning(
+                "static_export_reconciliation: skipped — no manifest URL "
+                "resolved (set app_settings.r2_public_url or "
+                "config.r2_manifest_url)",
+            )
+            try:
+                emit_finding(
+                    source="static_export_reconciliation",
+                    kind="manifest_url_unresolved",
+                    severity="info",
+                    title="Static-export reconciliation skipped — R2 not configured",
+                    body=(
+                        "Neither config.r2_manifest_url nor "
+                        "app_settings.r2_public_url is set. Static-export "
+                        "drift detection is dormant until one of them is."
+                    ),
+                    dedup_key="static_export_manifest_url_unresolved",
+                )
+            except Exception:
+                pass
+            return JobResult(
+                ok=True,
+                detail="skipped — no R2 manifest URL configured",
+            )
         alert_on_drift = bool(config.get("alert_on_drift", True))
 
         try:

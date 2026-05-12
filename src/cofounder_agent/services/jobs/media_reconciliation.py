@@ -64,8 +64,36 @@ from utils.findings import emit_finding
 logger = logging.getLogger(__name__)
 
 
-_DEFAULT_R2_PUBLIC_BASE = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
 _DEFAULT_PODCAST_CDN_VERSION = "v2"
+
+
+async def _resolve_r2_public_base(pool: Any, config: dict[str, Any]) -> str | None:
+    """Resolve the R2 public base URL from job config or app_settings.
+
+    Returns None when neither source is configured — caller treats that
+    as "fork hasn't set up R2 yet, skip the job rather than crash".
+
+    2026-05-12 cleanup (poindexter#485): the old ``_DEFAULT_R2_PUBLIC_BASE``
+    constant baked Matt's R2 bucket name into a public OSS file. Forks
+    would have probed his bucket for media existence and seen drift on
+    every cycle.
+    """
+    explicit = (config.get("r2_public_base") or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'r2_public_url'",
+            )
+        base = ((row["value"] if row else "") or "").strip().rstrip("/")
+        if base:
+            return base
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "media_reconciliation: r2_public_url lookup failed: %s", e,
+        )
+    return None
 _HTTP_TIMEOUT = httpx.Timeout(8.0, connect=3.0)
 
 
@@ -82,10 +110,32 @@ class MediaReconciliationJob:
         podcast_cap = max(0, int(config.get("podcast_cap_per_cycle", 3)))
         video_cap = max(0, int(config.get("video_cap_per_cycle", 2)))
         alert_on_drift = bool(config.get("alert_on_drift", True))
-        r2_base = (
-            config.get("r2_public_base")
-            or _DEFAULT_R2_PUBLIC_BASE
-        ).rstrip("/")
+        r2_base = await _resolve_r2_public_base(pool, config)
+        if not r2_base:
+            logger.warning(
+                "media_reconciliation: skipped — no R2 public base URL "
+                "resolved (set app_settings.r2_public_url or "
+                "config.r2_public_base)",
+            )
+            try:
+                emit_finding(
+                    source="media_reconciliation",
+                    kind="r2_public_base_unresolved",
+                    severity="info",
+                    title="Media reconciliation skipped — R2 not configured",
+                    body=(
+                        "Neither config.r2_public_base nor "
+                        "app_settings.r2_public_url is set. Media drift "
+                        "detection is dormant until one of them is."
+                    ),
+                    dedup_key="media_reconciliation_r2_public_base_unresolved",
+                )
+            except Exception:
+                pass
+            return JobResult(
+                ok=True,
+                detail="skipped — no R2 public base configured",
+            )
         cdn_ver = config.get("podcast_cdn_version") or _DEFAULT_PODCAST_CDN_VERSION
 
         since = datetime.now(timezone.utc) - timedelta(days=lookback_days)

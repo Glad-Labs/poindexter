@@ -34,9 +34,15 @@ from services.jobs.media_reconciliation import MediaReconciliationJob
 
 
 def _make_pool(rows: list[dict[str, Any]]) -> Any:
-    """asyncpg pool stub: conn.fetch returns ``rows``, conn.execute swallowed."""
+    """asyncpg pool stub: conn.fetch returns ``rows``, conn.execute swallowed.
+
+    fetchrow defaults to returning the seeded r2_public_url so the
+    URL resolver short-circuits to ``https://r2.test`` — matches the
+    URL prefix the test's _patch_head helpers route on.
+    """
     conn = AsyncMock()
     conn.fetch = AsyncMock(return_value=[dict(r) for r in rows])
+    conn.fetchrow = AsyncMock(return_value={"value": "https://r2.test"})
     conn.execute = AsyncMock(return_value=None)
     ctx = AsyncMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
@@ -261,3 +267,35 @@ class TestMediaReconciliation:
         assert result.metrics["regen_podcast_fail"] == 1
         assert result.ok is False
         assert emit_mock.call_args.kwargs["severity"] == "critical"
+
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_r2_public_base_configured(self):
+        """No config.r2_public_base AND no app_settings.r2_public_url → skip.
+
+        2026-05-12 cleanup (poindexter#485): the old hardcoded
+        ``_DEFAULT_R2_PUBLIC_BASE`` constant baked Matt's R2 bucket into
+        a public OSS file. Pin the new behaviour: when neither source
+        resolves, skip the job rather than probing somebody else's bucket.
+        """
+        # Pool: posts query returns rows so we actually hit the resolver path;
+        # app_settings query returns None (r2_public_url unset).
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[_post(id_="p1")])
+        conn.fetchrow = AsyncMock(return_value=None)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        with patch(
+            "services.jobs.media_reconciliation.emit_finding"
+        ) as emit_mock:
+            result = await MediaReconciliationJob().run(pool, config={})
+
+        assert result.ok is True
+        assert "no R2 public base" in result.detail
+        emit_mock.assert_called_once()
+        kwargs = emit_mock.call_args.kwargs
+        assert kwargs["dedup_key"] == "media_reconciliation_r2_public_base_unresolved"
