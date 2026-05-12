@@ -26,9 +26,11 @@ This ensures all loggers use the centralized configuration.
 
 import logging
 import os
+import re
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 # Try to import structlog for structured logging support
 try:
@@ -96,6 +98,245 @@ def _add_request_id(
     return event_dict
 
 
+# ---------------------------------------------------------------------------
+# Secret redaction processor (audit-2026-05-12 P1 #12)
+# ---------------------------------------------------------------------------
+#
+# Two layers of defense against accidentally logging secrets:
+#
+# 1. KEY-based redaction. Any event_dict key whose NAME matches
+#    SECRET_KEY_PATTERN gets its value replaced with REDACTED_VALUE,
+#    regardless of the value's shape.
+#
+# 2. VALUE-shape detection. Any *string* value that looks like a credential
+#    on its face — "Bearer ...", Langfuse keys, Poindexter-prefixed
+#    secrets, the envelope-encryption sentinel — gets redacted even when
+#    the key name is something innocuous like "data" or "value". Catches
+#    the "loaded auth header into a generic field" pattern.
+#
+# Both walks are recursive (dicts AND lists) with a depth cap to avoid
+# pathological inputs. Any exception inside the redactor is swallowed —
+# we'd rather log unredacted than crash the logger.
+#
+# To add a new secret-key family: extend SECRET_KEY_PATTERN with another
+# alternative. To detect a new credential value shape: extend
+# SECRET_VALUE_PREFIXES (literal prefix) or SECRET_VALUE_PATTERN (regex).
+
+REDACTED_VALUE = "***REDACTED***"
+_MAX_REDACTION_DEPTH = 5
+
+# Keys whose values should ALWAYS be masked, by name (case-insensitive,
+# matched against the whole key — `re.search` so suffixed variants like
+# `x_api_key_header` and `discord_ops_webhook_url` are caught).
+SECRET_KEY_PATTERN = re.compile(
+    r"(?i)("
+    r"token|secret|password|api_key|api-key|authorization|cookie|"
+    r"bearer|dsn|signing_key|signing-key|access_key|access-key|"
+    r"client_secret|client-secret|webhook_url|webhook-url|"
+    r"x[-_]revalidate[-_]secret|x[-_]api[-_]key|langfuse_secret|"
+    r"discord_ops_webhook|indexnow_key"
+    r")"
+)
+
+# String VALUES that obviously look like a credential, regardless of which
+# key they appeared under. Catches `logger.info("loaded", data=bearer_hdr)`.
+SECRET_VALUE_PREFIXES: tuple[str, ...] = (
+    "Bearer ",
+    "bearer ",
+    "pk-lf-",  # Langfuse public key
+    "sk-lf-",  # Langfuse secret key
+    "pdx_",  # Poindexter-issued tokens
+    "enc:v1:",  # plugins/secrets.py envelope-encryption sentinel
+    "sk-",  # OpenAI-style
+    "ghp_",  # GitHub personal access token
+    "gho_",  # GitHub OAuth token
+    "xoxb-",  # Slack bot token
+    "xoxp-",  # Slack user token
+)
+
+# Regex form for prefixes that need anchored matching beyond a simple
+# `startswith`. Currently empty — every shape today is a literal prefix —
+# but the slot is here so adding shape-rules doesn't require restructuring.
+SECRET_VALUE_PATTERN = re.compile(r"^(?:Basic [A-Za-z0-9+/=]{8,})$")
+
+
+def _looks_like_secret_value(value: Any) -> bool:
+    """Return True if a value's *shape* alone says it's a credential."""
+    if not isinstance(value, str):
+        return False
+    if not value:
+        return False
+    for prefix in SECRET_VALUE_PREFIXES:
+        if value.startswith(prefix):
+            return True
+    if SECRET_VALUE_PATTERN.match(value):
+        return True
+    return False
+
+
+def _redact_walk(obj: Any, depth: int = 0) -> Any:
+    """Recursively walk dict/list trees, returning a redacted copy.
+
+    Strings/scalars are returned as-is (they're already at the leaf —
+    the caller's KEY decides whether to mask). The depth cap prevents
+    blowing the stack on circular references or pathologically deep
+    payloads; once the cap is hit we just return the subtree unchanged
+    (degraded redaction is still better than crashing the logger).
+    """
+    if depth >= _MAX_REDACTION_DEPTH:
+        return obj
+
+    if isinstance(obj, dict):
+        out: dict[Any, Any] = {}
+        for k, v in obj.items():
+            if isinstance(k, str) and SECRET_KEY_PATTERN.search(k):
+                out[k] = REDACTED_VALUE
+            elif _looks_like_secret_value(v):
+                out[k] = REDACTED_VALUE
+            elif isinstance(v, (dict, list)):
+                out[k] = _redact_walk(v, depth + 1)
+            else:
+                out[k] = v
+        return out
+
+    if isinstance(obj, list):
+        return [
+            REDACTED_VALUE
+            if _looks_like_secret_value(item)
+            else (
+                _redact_walk(item, depth + 1)
+                if isinstance(item, (dict, list))
+                else item
+            )
+            for item in obj
+        ]
+
+    return obj
+
+
+def redact_secrets(
+    _logger: Any, _method_name: str, event_dict: dict
+) -> dict:
+    """Structlog processor that masks secret keys + secret-looking values.
+
+    Mounted between the timestamper and the renderer in the structlog
+    processor chain. Any exception is swallowed (logged once to stderr)
+    so a bug in the redactor can never crash the logger.
+    """
+    try:
+        redacted: dict[Any, Any] = {}
+        for k, v in event_dict.items():
+            if isinstance(k, str) and SECRET_KEY_PATTERN.search(k):
+                redacted[k] = REDACTED_VALUE
+            elif _looks_like_secret_value(v):
+                redacted[k] = REDACTED_VALUE
+            elif isinstance(v, (dict, list)):
+                redacted[k] = _redact_walk(v, depth=1)
+            else:
+                redacted[k] = v
+        return redacted
+    except Exception as exc:  # pragma: no cover - defensive
+        # Emit a single stderr line and fall back to the un-redacted dict.
+        # Crashing the logger is worse than logging an unredacted line.
+        try:
+            print(
+                f"Warning: secret-redaction processor failed: {exc}",
+                file=sys.stderr,
+            )
+        except Exception:
+            pass
+        return event_dict
+
+
+class SecretRedactionFilter(logging.Filter):
+    """Stdlib `logging.Filter` mirror of `redact_secrets`.
+
+    Walks `record.args` (positional `%`-args used by stdlib formatters)
+    and `record.__dict__` extras for any keys/values matching the secret
+    rules above. Mounted on every handler in `configure_standard_logging`
+    so third-party libraries that log via stdlib (uvicorn, httpx, asyncpg,
+    etc.) get the same masking treatment as our structlog calls.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            # Redact extras attached via `logger.info("msg", extra={...})`.
+            # These show up as attributes on `record`. Iterate a snapshot
+            # so we can mutate during iteration.
+            for attr_name in list(record.__dict__.keys()):
+                # Skip the stdlib-internal attrs — they're not user data.
+                if attr_name in _STDLIB_LOGRECORD_ATTRS:
+                    continue
+                value = record.__dict__[attr_name]
+                if SECRET_KEY_PATTERN.search(attr_name):
+                    record.__dict__[attr_name] = REDACTED_VALUE
+                elif _looks_like_secret_value(value):
+                    record.__dict__[attr_name] = REDACTED_VALUE
+                elif isinstance(value, (dict, list)):
+                    record.__dict__[attr_name] = _redact_walk(value, depth=1)
+
+            # Redact positional `%`-args. Dict-shaped args get walked;
+            # tuple/list-shaped args have value-shape detection applied
+            # element-wise.
+            if record.args:
+                if isinstance(record.args, dict):
+                    record.args = _redact_walk(record.args, depth=0)
+                elif isinstance(record.args, tuple):
+                    record.args = tuple(
+                        REDACTED_VALUE
+                        if _looks_like_secret_value(a)
+                        else (
+                            _redact_walk(a, depth=1)
+                            if isinstance(a, (dict, list))
+                            else a
+                        )
+                        for a in record.args
+                    )
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                print(
+                    f"Warning: SecretRedactionFilter failed: {exc}",
+                    file=sys.stderr,
+                )
+            except Exception:
+                pass
+        # Always allow the record through.
+        return True
+
+
+# The stdlib LogRecord attributes we should NOT treat as user-supplied data.
+# Sourced from cpython logging.LogRecord.__init__.
+_STDLIB_LOGRECORD_ATTRS = frozenset(
+    {
+        "name",
+        "msg",
+        "args",
+        "levelname",
+        "levelno",
+        "pathname",
+        "filename",
+        "module",
+        "exc_info",
+        "exc_text",
+        "stack_info",
+        "lineno",
+        "funcName",
+        "created",
+        "msecs",
+        "relativeCreated",
+        "thread",
+        "threadName",
+        "processName",
+        "process",
+        "taskName",
+        "message",
+        "asctime",
+        # Our own request-id filter attribute — already safe.
+        "request_id",
+    }
+)
+
+
 def configure_structlog() -> bool:
     """
     Configure structlog for structured JSON logging.
@@ -118,6 +359,12 @@ def configure_structlog() -> bool:
                 structlog.stdlib.PositionalArgumentsFormatter(),
                 # Add timestamps in ISO format
                 structlog.processors.TimeStamper(fmt="ISO"),
+                # Mask secret-named keys and bearer-shaped values
+                # (audit-2026-05-12 P1 #12). Runs after the timestamper
+                # so internal `_record`-style keys are already in place,
+                # and before the renderer so the masked dict is what
+                # actually hits stdout / Loki / disk.
+                redact_secrets,
                 # Include stack information for exceptions
                 structlog.processors.StackInfoRenderer(),
                 # Format exception information
@@ -197,10 +444,15 @@ def configure_standard_logging() -> None:
         except Exception as e:
             print(f"Warning: Failed to configure rotating file logging: {e}", file=sys.stderr)
 
-    # Apply the request-ID-aware formatter to every handler
+    # Apply the request-ID-aware formatter to every handler. Also attach
+    # the stdlib secret-redaction filter (audit-2026-05-12 P1 #12) so any
+    # third-party library that logs via stdlib (uvicorn, httpx, asyncpg,
+    # etc.) gets the same secret masking as our structlog calls.
     formatter = _RequestIDFormatter(log_format)
+    redaction_filter = SecretRedactionFilter()
     for handler in handlers:
         handler.setFormatter(formatter)
+        handler.addFilter(redaction_filter)
 
     # Configure root logger
     root = logging.getLogger()
@@ -282,6 +534,7 @@ def set_log_level(level: str) -> None:
                 _add_request_id,
                 structlog.stdlib.PositionalArgumentsFormatter(),
                 structlog.processors.TimeStamper(fmt="ISO"),
+                redact_secrets,
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),
