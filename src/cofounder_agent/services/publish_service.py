@@ -174,8 +174,48 @@ async def _sync_published_post(post_id: str) -> None:
                 logger.info("[SYNC] Pushed published post to cloud DB: %s", post_id)
             else:
                 logger.warning("[SYNC] push_post returned False for post %s", post_id)
+                # 2026-05-12 fail-loud sweep: emit a finding so the
+                # operator sees persistent sync failures in the
+                # findings UI. Dedup_key keeps repeat-failures from
+                # spamming. The publish_status table is the canonical
+                # source of truth; this finding is the operator alert
+                # surface.
+                from utils.findings import emit_finding
+                emit_finding(
+                    source="publish_service.sync_to_cloud",
+                    kind="cloud_sync_returned_false",
+                    severity="warning",
+                    title=f"Cloud DB sync returned False for post {post_id}",
+                    body=(
+                        f"SyncService.push_post({post_id}) returned False "
+                        "without raising. The post is published locally "
+                        "but may not be visible to the cloud read path. "
+                        "Check sync_service logs + the cloud DB "
+                        "connectivity."
+                    ),
+                    dedup_key="publish_sync_to_cloud_false",
+                )
     except Exception as e:
         logger.warning("[SYNC] Failed to sync published post (non-fatal): %s", e)
+        try:
+            from utils.findings import emit_finding
+            emit_finding(
+                source="publish_service.sync_to_cloud",
+                kind="cloud_sync_exception",
+                severity="warning",
+                title=f"Cloud DB sync raised {type(e).__name__} for post {post_id}",
+                body=(
+                    f"Post {post_id} published locally but cloud sync "
+                    f"failed: {type(e).__name__}: {e}. Recurring "
+                    "failures here mean the cloud read path is stale; "
+                    "investigate sync_service network + auth."
+                ),
+                dedup_key=f"publish_sync_exception_{type(e).__name__}",
+            )
+        except Exception:
+            # Never let the finding-emit path itself escalate — the
+            # warning log above is already the minimum signal.
+            pass
 
 
 async def _ping_search_engines(site_url: str, post_url: str) -> None:
@@ -249,6 +289,32 @@ async def _embed_published_post(db_service, post_dict: dict) -> None:
         logger.info("[RAG] Embedded published post for future RAG: %s", post_dict.get("title", "")[:60])
     except Exception as e:
         logger.warning("[RAG] Failed to embed published post (non-fatal): %s", e)
+        # 2026-05-12 fail-loud sweep: RAG embedding silently failing
+        # degrades the writer's search quality over time and is
+        # invisible to operators. Emit a finding so persistent
+        # failures show up in the findings UI.
+        try:
+            from utils.findings import emit_finding
+            post_id_for_log = (
+                post_dict.get("id") or post_dict.get("post_id") or "?"
+            )
+            emit_finding(
+                source="publish_service.embed_published_post",
+                kind="rag_embed_failed",
+                severity="warning",
+                title=f"RAG embedding failed for post {post_id_for_log}",
+                body=(
+                    f"Post {post_id_for_log} published but its embedding "
+                    f"failed: {type(e).__name__}: {e}. RAG retrieval "
+                    "for future posts won't include this content until "
+                    "the embedding succeeds. Common causes: ollama "
+                    "unreachable, embedding model unloaded, "
+                    "embeddings_db disk full."
+                ),
+                dedup_key=f"rag_embed_failed_{type(e).__name__}",
+            )
+        except Exception:
+            pass
 
 
 def _parse_json_field(value, field_name: str = "field", task_id: str = "") -> dict:

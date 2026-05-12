@@ -69,8 +69,28 @@ async def select_category_for_topic(
                 )
             if cat_id:
                 return cat_id
-        except Exception:
-            pass
+        except Exception as e:
+            # Explicit request failed at the DB level — log loud and fall
+            # through to keyword matching so the post still gets categorised.
+            logger.warning(
+                "Explicit category lookup failed for %r; falling back to keyword match: %s",
+                requested_category,
+                e,
+                exc_info=True,
+            )
+            try:
+                from utils.findings import emit_finding
+                emit_finding(
+                    source="category_resolver.select_category_for_topic",
+                    kind="explicit_category_lookup_failed",
+                    severity="warning",
+                    title=f"Explicit category lookup failed for {requested_category!r}",
+                    body=f"DB error while resolving requested category {requested_category!r}: {e!r}. Falling back to keyword match.",
+                    dedup_key=f"category_resolver_lookup_failed_{type(e).__name__}",
+                )
+            except Exception:
+                # findings is observability — never let it gate the resolver.
+                logger.debug("emit_finding unavailable in category_resolver", exc_info=True)
 
     # Priority 2: keyword matching.
     topic_lower = topic.lower()
