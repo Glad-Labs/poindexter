@@ -1,0 +1,82 @@
+# Force LF line endings on every text file in the tree.
+#
+# Why: Matt develops on Windows (CRLF default) but CI runs on Linux
+# (LF). Without normalization, the same file scanned by gitleaks
+# locally vs in CI can produce different findings — regex token
+# boundaries shift depending on whether `\n` or `\r\n` is the
+# line separator. We hit this with src/cofounder_agent/main.py:581
+# in poindexter#404 / #487.
+#
+# `text=auto` lets git auto-detect text files; `eol=lf` normalizes
+# their working-tree representation to LF on every platform. Binary
+# files are unaffected.
+#
+# Per-extension overrides come below for the cases where `text=auto`
+# guesses wrong or we want belt-and-suspenders.
+* text=auto eol=lf
+
+# Shell + Linux scripts: always LF (bash chokes on CRLF).
+*.sh   text eol=lf
+*.bash text eol=lf
+
+# Python: LF — gitleaks regex matching depends on it (poindexter#487).
+*.py text eol=lf
+
+# YAML / TOML / JSON: LF for tool consistency.
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+
+# Markdown / plain text docs: LF.
+*.md  text eol=lf
+*.txt text eol=lf
+
+# Web sources: LF.
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.jsx  text eol=lf
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+*.css  text eol=lf
+*.scss text eol=lf
+*.html text eol=lf
+
+# Dockerfiles + compose: LF.
+Dockerfile        text eol=lf
+Dockerfile.*      text eol=lf
+docker-compose*.yml text eol=lf
+.dockerignore     text eol=lf
+
+# Lock files: LF (their generators emit LF anyway).
+poetry.lock      text eol=lf
+package-lock.json text eol=lf
+
+# Windows scripts stay CRLF (cmd.exe / PowerShell prefer it).
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary — explicit so git doesn't try to normalize.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.svg  text eol=lf
+*.pdf  binary
+*.zip  binary
+*.tar  binary
+*.tar.gz binary
+*.gz   binary
+*.mp3  binary
+*.mp4  binary
+*.wav  binary
+*.onnx binary
+*.safetensors binary
+*.bin  binary
+*.pyc  binary
+*.so   binary
+*.dll  binary
+*.exe  binary

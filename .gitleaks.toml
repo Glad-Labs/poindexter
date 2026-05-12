@@ -64,4 +64,8 @@ regexes = [
   '''http://[0-9a-f]{32}@[a-z0-9\-]+:\d+/\d+''',
   # bootstrap.toml example placeholders written as "<generated>" etc.
   '''<generated[^>]*>''',
+  # FastAPI openapi/docs/redoc URL paths — gitleaks generic-api-key
+  # entropy heuristic fires on the literal "/api/openapi.json" string
+  # in `services/main.py`. They're URL paths, not secrets.
+  '''/api/(openapi\.json|docs|redoc)''',
 ]
