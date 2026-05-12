@@ -211,7 +211,19 @@ services:
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./brain:/brain:ro
+      # Glad-Labs/poindexter#456 — the historical `- ./brain:/brain:ro`
+      # mount was decorative: brain_daemon imports use bare-name form
+      # (e.g. `from operator_url_probe import ...`), which resolves
+      # against `/app` (WORKDIR), not `/brain`. The bind-mount made it
+      # LOOK like host-side edits to brain/ were live, but Python always
+      # loaded the image-baked copy at /app/ — leading to 30+ min
+      # debug-edit-restart cycles that never picked up the change. We
+      # now require a `docker compose build brain-daemon` (or full
+      # `up --build`) for every brain code edit, matching how every
+      # other container in the stack works. The same `./brain` directory
+      # is still mounted as `/opt/poindexter/brain:ro` in OTHER services
+      # (worker, voice agents, etc.) where it IS on PYTHONPATH and the
+      # bind-mount is functional.
       # GH#213 — compose-spec drift probe needs to read the compose file
       # to compare against `docker inspect` for each service. Read-only —
       # the brain only inspects, it never edits the spec.
