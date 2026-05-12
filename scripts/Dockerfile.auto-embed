@@ -32,5 +32,13 @@ COPY brain/ /brain/
 
 ENV PYTHONPATH="/app:/"
 
+# Drop privileges (Trivy DS-0002 / poindexter#488). auto-embed reads
+# pg via asyncpg and writes embeddings back to pg — no filesystem
+# state outside /app, so a non-root user is straightforward.
+RUN groupadd --system --gid 1001 embedder \
+ && useradd  --system --uid 1001 --gid embedder --create-home --home-dir /home/embedder embedder \
+ && chown -R embedder:embedder /app /brain /home/embedder
+USER embedder
+
 # Run every hour via shell loop (no cron daemon needed)
 CMD ["sh", "-c", "while true; do python /app/auto-embed.py; sleep 3600; done"]

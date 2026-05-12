@@ -23,16 +23,9 @@
 #     surface is tiny (no Python, no app code), which limits the
 #     blast radius.
 #
-#   scripts/Dockerfile.gpu-exporter
-#     Reads /proc/driver/nvidia (driver-owned). Dropping privileges
-#     requires fiddling with the nvidia-smi capability model that
-#     isn't worth it for a low-value metric exporter.
-#
-#   scripts/Dockerfile.auto-embed
-#     Phase-B one-shot job — runs to completion, exits, container
-#     destroyed. Not a persistent attack surface.
-#
-# scripts/Dockerfile.voice-bot, scripts/Dockerfile.sdxl, and
-# scripts/Dockerfile.wan already have USER directives and DO NOT
-# rely on this suppression.
+# scripts/Dockerfile.voice-bot, scripts/Dockerfile.sdxl,
+# scripts/Dockerfile.wan, scripts/Dockerfile.gpu-exporter, and
+# scripts/Dockerfile.auto-embed already have USER directives and DO
+# NOT rely on this suppression. The two entries above are the
+# remaining root-only images.
 DS-0002

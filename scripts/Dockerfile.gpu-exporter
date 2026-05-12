@@ -12,4 +12,14 @@ ENV PYTHONPATH="/app:/"
 
 EXPOSE 9835
 
+# Drop privileges (Trivy DS-0002 / poindexter#488). The exporter calls
+# nvidia-smi via NVIDIA Container Toolkit, which doesn't require root —
+# the toolkit injects the device + driver into the container at runtime
+# and the binary is world-readable. asyncpg writes only to its own pool
+# state in memory, no filesystem writes.
+RUN groupadd --system --gid 1001 exporter \
+ && useradd  --system --uid 1001 --gid exporter --create-home --home-dir /home/exporter exporter \
+ && chown -R exporter:exporter /app /brain /home/exporter
+USER exporter
+
 CMD ["python", "/app/nvidia-smi-exporter.py"]
