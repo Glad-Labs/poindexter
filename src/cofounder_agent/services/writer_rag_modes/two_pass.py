@@ -63,6 +63,49 @@ _SITE_CONFIG_REGISTRY: dict[str, Any] = {}
 logger = get_logger(__name__)
 
 
+# Prompt key in UnifiedPromptManager + YAML registry. YAML default at
+# prompts/writer_rag_modes.yaml; Langfuse overrides take effect on the
+# next get_prompt call. Per feedback_prompts_must_be_db_configurable.
+_REVISE_PROMPT_KEY = "writer_rag_modes.two_pass.revise_prompt"
+
+
+def _resolve_revise_prompt(*, draft: str, aug_block: str) -> str:
+    """Pull the TWO_PASS revise prompt via UnifiedPromptManager.
+
+    Langfuse > YAML defaults > inline fallback. The inline constant only
+    fires when the prompt registry hasn't been initialized (bootstrap /
+    test paths). Production reads from YAML at minimum.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(
+            _REVISE_PROMPT_KEY, draft=draft, aug_block=aug_block,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[writer_rag_modes.two_pass] prompt_manager lookup for %r "
+            "failed (%s) — using inline fallback",
+            _REVISE_PROMPT_KEY, exc,
+        )
+        return _REVISE_PROMPT_FALLBACK.format(draft=draft, aug_block=aug_block)
+
+
+# Inline fallback — last-resort for bootstrap / test / registry-unreachable
+# paths. Canonical prompt lives in prompts/writer_rag_modes.yaml.
+_REVISE_PROMPT_FALLBACK = """\
+Revise the following draft. For each [EXTERNAL_NEEDED: ...] marker,
+substitute the corresponding external fact provided below. Keep everything else unchanged.
+If revision exposes a new claim that needs outside support, mark it [EXTERNAL_NEEDED: ...]
+again so the next pass can fill it.
+
+Original draft:
+{draft}
+
+External facts:
+{aug_block}
+"""
+
+
 _NEED_PATTERN = re.compile(r"\[EXTERNAL_NEEDED:\s*([^\]]+)\]")
 
 # Hard fallback used when ``writer_rag_two_pass_max_revision_loops`` is
@@ -304,17 +347,13 @@ async def _revise_node(state: _State) -> _State:
         f"[EXTERNAL_NEEDED: {r['need']}] → {r['research']}"
         for r in state["research_results"]
     )
-    revise_prompt = f"""Revise the following draft. For each [EXTERNAL_NEEDED: ...] marker,
-substitute the corresponding external fact provided below. Keep everything else unchanged.
-If revision exposes a new claim that needs outside support, mark it [EXTERNAL_NEEDED: ...]
-again so the next pass can fill it.
-
-Original draft:
-{state['draft']}
-
-External facts:
-{aug_block}
-"""
+    # 2026-05-12 (poindexter#485): migrated the inline f-string revise
+    # prompt to UnifiedPromptManager. YAML default at
+    # prompts/writer_rag_modes.yaml; Langfuse overrides take effect on
+    # the next call.
+    revise_prompt = _resolve_revise_prompt(
+        draft=state["draft"], aug_block=aug_block,
+    )
     new_draft = await _ollama_chat_json(revise_prompt, model=model)
     return {**state, "draft": new_draft, "revision_loops": state.get("revision_loops", 0) + 1}
 

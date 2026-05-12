@@ -18,6 +18,68 @@ from services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
+# Prompt key in UnifiedPromptManager + YAML registry. YAML default lives
+# at prompts/writer_rag_modes.yaml; Langfuse production-label overrides
+# take effect on the next get_prompt call (60s SDK cache). Per
+# feedback_prompts_must_be_db_configurable.
+_OUTLINE_PROMPT_KEY = "writer_rag_modes.story_spine.outline_prompt"
+
+
+def _resolve_outline_prompt(
+    *, snippet_limit: int, topic: str, angle: str, snippet_block: str,
+) -> str:
+    """Pull the STORY_SPINE outline prompt via UnifiedPromptManager.
+
+    Langfuse > YAML defaults > inline fallback. The inline constant
+    below only fires when the prompt registry hasn't been initialized
+    (early bootstrap / test paths). Production reads from YAML at
+    minimum.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(
+            _OUTLINE_PROMPT_KEY,
+            snippet_limit=snippet_limit,
+            topic=topic,
+            angle=angle,
+            snippet_block=snippet_block,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[writer_rag_modes.story_spine] prompt_manager lookup for %r "
+            "failed (%s) — using inline fallback",
+            _OUTLINE_PROMPT_KEY, exc,
+        )
+        return _OUTLINE_PROMPT_FALLBACK.format(
+            snippet_limit=snippet_limit,
+            topic=topic,
+            angle=angle,
+            snippet_block=snippet_block,
+        )
+
+
+# Inline fallback — last-resort for bootstrap / test / registry-unreachable
+# paths. Canonical prompt lives in prompts/writer_rag_modes.yaml. Update
+# both when the prompt changes, or remove this fallback once Langfuse +
+# YAML is the established norm. {{ }} escapes literal curly braces.
+_OUTLINE_PROMPT_FALLBACK = """\
+Read these {snippet_limit} snippets from an AI-operated content business's records.
+Produce a structured outline for a blog post about: "{topic}" (angle: "{angle}").
+
+Outline format (return JSON):
+{{
+  "hook": "<opening hook, one sentence>",
+  "what_happened": "<the timeline of events as drawn from snippets>",
+  "why_it_matters": "<the lesson or insight>",
+  "what_we_learned": "<concrete takeaways>",
+  "close": "<call-to-action or final framing>"
+}}
+
+Snippets:
+{snippet_block}
+"""
+
+
 async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) -> dict[str, Any]:
     from services.topic_ranking import _ollama_chat_json, embed_text
 
@@ -57,21 +119,17 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
         s["snippet"][:snippet_max_chars] for s in snippets if s["snippet"]
     )
 
-    spine_prompt = f"""Read these {snippet_limit} snippets from an AI-operated content business's records.
-Produce a structured outline for a blog post about: "{topic}" (angle: "{angle}").
-
-Outline format (return JSON):
-{{
-  "hook": "<opening hook, one sentence>",
-  "what_happened": "<the timeline of events as drawn from snippets>",
-  "why_it_matters": "<the lesson or insight>",
-  "what_we_learned": "<concrete takeaways>",
-  "close": "<call-to-action or final framing>"
-}}
-
-Snippets:
-{snippet_block}
-"""
+    # 2026-05-12 (poindexter#485): migrated the inline f-string outline
+    # prompt to UnifiedPromptManager. YAML default at
+    # prompts/writer_rag_modes.yaml; Langfuse overrides take effect on
+    # the next call. Inline fallback in _resolve_outline_prompt covers
+    # bootstrap / test paths.
+    spine_prompt = _resolve_outline_prompt(
+        snippet_limit=snippet_limit,
+        topic=topic,
+        angle=angle,
+        snippet_block=snippet_block,
+    )
     spine_raw = await _ollama_chat_json(spine_prompt, model=model)
     spine = json.loads(spine_raw)
 

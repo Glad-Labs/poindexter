@@ -1,0 +1,47 @@
+# Writer-mode prompts — used by services/writer_rag_modes/* handlers.
+#
+# These ship as YAML defaults for first boot. UnifiedPromptManager loads
+# them at startup; Langfuse production-label overrides take effect on the
+# next get_prompt call without a worker restart (60s SDK cache). Per
+# feedback_prompts_must_be_db_configurable: every LLM prompt is
+# operator-tunable. Inline f-strings are tech debt.
+#
+# Keys follow the dotted shape: writer_rag_modes.<mode>.<purpose>.
+# Variables use {name} placeholders matched against str.format kwargs.
+# Curly literals inside JSON-shaped templates must be doubled: {{ and }}.
+
+- key: writer_rag_modes.story_spine.outline_prompt
+  category: blog_generation
+  description: "STORY_SPINE outline-stage prompt — reads top-N embeddings snippets and emits a structured JSON outline (hook / what_happened / why_it_matters / what_we_learned / close)."
+  output_format: json
+  template: |
+    Read these {snippet_limit} snippets from an AI-operated content business's records.
+    Produce a structured outline for a blog post about: "{topic}" (angle: "{angle}").
+
+    Outline format (return JSON):
+    {{
+      "hook": "<opening hook, one sentence>",
+      "what_happened": "<the timeline of events as drawn from snippets>",
+      "why_it_matters": "<the lesson or insight>",
+      "what_we_learned": "<concrete takeaways>",
+      "close": "<call-to-action or final framing>"
+    }}
+
+    Snippets:
+    {snippet_block}
+
+- key: writer_rag_modes.two_pass.revise_prompt
+  category: blog_generation
+  description: "TWO_PASS revision-stage prompt — rewrites a draft, substituting [EXTERNAL_NEEDED: ...] markers with the corresponding external facts."
+  output_format: markdown
+  template: |
+    Revise the following draft. For each [EXTERNAL_NEEDED: ...] marker,
+    substitute the corresponding external fact provided below. Keep everything else unchanged.
+    If revision exposes a new claim that needs outside support, mark it [EXTERNAL_NEEDED: ...]
+    again so the next pass can fill it.
+
+    Original draft:
+    {draft}
+
+    External facts:
+    {aug_block}
