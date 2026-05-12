@@ -191,20 +191,68 @@ _DEFAULT_G_EVAL_CRITERION = (
 def _resolve_judge_model(site_config: Any) -> str:
     """Pick the LLM judge model for the LLM-graded DeepEval metrics.
 
-    Reads ``app_settings.deepeval_judge_model`` if available,
-    otherwise falls back to ``glm-4.7-5090`` — Matt's local thinking
-    model, free at the point of use and the same family that drafts
-    posts. Operators on cloud OpenAI-compat keys can override to e.g.
-    ``gpt-4o-mini`` for a stronger second opinion.
+    Resolution order:
+
+    1. ``app_settings.deepeval_judge_model`` — explicit per-rail override.
+    2. ``app_settings.cost_tier.standard.model`` — the same tier the
+       reviewers use, so this rail picks up automatically when the
+       operator swaps writer/judge models.
+    3. ``app_settings.pipeline_writer_model`` — last-ditch fallback;
+       the writer model exists in every install by construction.
+
+    2026-05-12 cleanup (issue #487): the hardcoded ``glm-4.7-5090``
+    fallback that used to live here baked Matt's specific custom
+    model name into a public OSS file — forks installing Poindexter
+    wouldn't have that model and would get a confusing "model not
+    found" error from DeepEval at run time. The cost-tier path is
+    operator-managed and works everywhere.
+
+    Raises:
+        ValueError when every resolution path is unset — fail loud so
+        the operator notices a broken install before the QA rail
+        silently approves everything.
     """
-    if site_config is not None:
-        try:
-            v = site_config.get("deepeval_judge_model", "") or ""
-            if v.strip():
-                return v.strip()
-        except Exception:
-            pass
-    return "glm-4.7-5090"
+    if site_config is None:
+        raise ValueError(
+            "deepeval._resolve_judge_model: site_config is required to "
+            "resolve the judge model (no hardcoded fallback by design)"
+        )
+    try:
+        explicit = (site_config.get("deepeval_judge_model", "") or "").strip()
+        if explicit:
+            return explicit
+    except Exception as e:  # noqa: BLE001 — defensive against test stubs
+        logger.warning(
+            "[deepeval] site_config.get('deepeval_judge_model') raised %s — "
+            "falling through to cost-tier resolution",
+            e,
+        )
+    try:
+        tier = (
+            site_config.get("cost_tier.standard.model", "") or ""
+        ).strip()
+        if tier:
+            return tier.removeprefix("ollama/")
+    except Exception as e:  # noqa: BLE001
+        logger.debug(
+            "[deepeval] cost-tier lookup failed (%s); trying writer model", e,
+        )
+    try:
+        writer = (
+            site_config.get("pipeline_writer_model", "") or ""
+        ).strip()
+        if writer:
+            return writer.removeprefix("ollama/")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[deepeval] writer-model lookup failed (%s) — no judge model "
+            "can be resolved", e,
+        )
+    raise ValueError(
+        "deepeval_rails: no judge model resolvable from app_settings — "
+        "set ``deepeval_judge_model`` OR ``cost_tier.standard.model`` "
+        "OR ``pipeline_writer_model``."
+    )
 
 
 def evaluate_g_eval(

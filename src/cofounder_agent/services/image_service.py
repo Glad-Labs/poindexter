@@ -622,13 +622,19 @@ class ImageService:
         # OllamaClient directly. Keeps image_service swap-able across
         # local inference backends (Ollama, vllm, llama.cpp) by
         # changing ``plugin.llm_provider.primary.free`` in app_settings.
-        try:
-            import asyncio
+        #
+        # 2026-05-12 fix: these are stdlib (asyncio) + first-party imports
+        # that must always resolve in a healthy worker. Swallowing
+        # ImportError as a "fall back to raw topic" path hid setup-time
+        # bugs as runtime degradation — the operator would see worse
+        # featured-image quality and never know why. Let ImportError
+        # propagate; the worker init path will fail loud at startup
+        # instead, which is the correct level of escalation for missing
+        # provider plumbing.
+        import asyncio
 
-            from plugins.registry import get_all_llm_providers
-            from services.llm_providers.dispatcher import resolve_tier_model
-        except Exception:
-            return None
+        from plugins.registry import get_all_llm_providers
+        from services.llm_providers.dispatcher import resolve_tier_model
 
         # Tuning constants via app_settings (#198).
         _sc = site_config

@@ -1312,6 +1312,20 @@ class TestDeepEvalBrandFabricationGate:
 class TestDeepEvalGEvalGate:
     """Wraps the LLM-judge rail. Lane D sub-issue 1 of #329."""
 
+    @pytest.fixture(autouse=True)
+    def _stub_resolve_judge_model(self):
+        """2026-05-12: ``_resolve_judge_model`` now fails loud (raises
+        ValueError) when no judge model is configured. Tests use an
+        empty default SiteConfig, so the resolver would raise and the
+        production rail would log + skip — which makes every test here
+        a "rail skipped" no-op. Patch the resolver to return a sentinel
+        so the rail proceeds along its happy path."""
+        with patch(
+            "services.deepeval_rails._resolve_judge_model",
+            return_value="test-judge-model",
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_high_score_returns_approved(self):
         qa = MultiModelQA(pool=None, settings_service=None)
@@ -1388,6 +1402,15 @@ class TestDeepEvalFaithfulnessGate:
     Skips without research_sources; when present, splits into paragraph
     chunks and asks the judge whether every claim is attributable.
     """
+
+    @pytest.fixture(autouse=True)
+    def _stub_resolve_judge_model(self):
+        # See TestDeepEvalGEvalGate — same fail-loud-but-skip pattern.
+        with patch(
+            "services.deepeval_rails._resolve_judge_model",
+            return_value="test-judge-model",
+        ):
+            yield
 
     @pytest.mark.asyncio
     async def test_skips_without_research(self):
@@ -1761,6 +1784,19 @@ class TestReviewerFailureWiredIntoRails:
     wrapper returns None AND `_surface_reviewer_failure` fires.
     Mirrors what would happen in production when a deepeval/guardrails/
     ragas dep is misconfigured but the rail is still enabled."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_resolve_judge_model(self):
+        # See TestDeepEvalGEvalGate. The resolver fails loud on empty
+        # site_config; these tests target the DOWNSTREAM failure path
+        # (evaluate_* raising), so we short-circuit the resolver to a
+        # sentinel and let the rail proceed to the call that's mocked
+        # to raise.
+        with patch(
+            "services.deepeval_rails._resolve_judge_model",
+            return_value="test-judge-model",
+        ):
+            yield
 
     @pytest.mark.asyncio
     async def test_deepeval_g_eval_failure_surfaces(self):

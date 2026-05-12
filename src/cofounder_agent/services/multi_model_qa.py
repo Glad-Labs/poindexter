@@ -1288,7 +1288,19 @@ class MultiModelQA:
 
         threshold = 0.7
         criterion = deepeval_rails._DEFAULT_G_EVAL_CRITERION
-        judge_model = deepeval_rails._resolve_judge_model(site_config)
+        try:
+            judge_model = deepeval_rails._resolve_judge_model(site_config)
+        except ValueError as e:
+            # 2026-05-12: the resolver now fails loud (raises) when no
+            # judge model is configured. For this rail specifically the
+            # right response is "skip + log warning" (the rail is
+            # advisory; we don't want a missing judge to brick the whole
+            # pipeline). The log line surfaces the misconfig to ops.
+            logger.warning(
+                "[deepeval_g_eval] judge model unresolvable, skipping rail: %s",
+                e,
+            )
+            return None
         if self.settings:
             try:
                 raw = await self.settings.get("deepeval_threshold_g_eval")
@@ -1352,7 +1364,18 @@ class MultiModelQA:
             return None
 
         threshold = 0.8
-        judge_model = deepeval_rails._resolve_judge_model(site_config)
+        try:
+            judge_model = deepeval_rails._resolve_judge_model(site_config)
+        except ValueError as e:
+            # See _check_deepeval_g_eval — same fail-loud-but-skip-rail
+            # contract. The rail is advisory; a missing judge model is
+            # a misconfig that should surface via WARNING log, not a
+            # pipeline crash.
+            logger.warning(
+                "[deepeval_faithfulness] judge model unresolvable, "
+                "skipping rail: %s", e,
+            )
+            return None
         if self.settings:
             try:
                 raw = await self.settings.get("deepeval_threshold_faithfulness")

@@ -268,15 +268,48 @@ class TestEvaluateFaithfulness:
 
 @pytest.mark.unit
 class TestResolveJudgeModel:
-    def test_default_when_site_config_none(self):
-        assert _de_mod._resolve_judge_model(None) == "glm-4.7-5090"
+    def test_none_site_config_raises(self):
+        """2026-05-12: removed the hardcoded ``glm-4.7-5090`` fallback
+        because it baked Matt's specific model name into a public OSS
+        file. Forks installing Poindexter wouldn't have that model and
+        would get a confusing "model not found" from DeepEval at run
+        time. Now: missing site_config raises (fail-loud) rather than
+        silently using an unknown model."""
+        with pytest.raises(ValueError, match="site_config is required"):
+            _de_mod._resolve_judge_model(None)
 
-    def test_override_via_site_config(self):
+    def test_override_via_explicit_setting(self):
         sc = MagicMock()
-        sc.get.return_value = "gpt-4o-mini"
+        sc.get = MagicMock(return_value="gpt-4o-mini")
         assert _de_mod._resolve_judge_model(sc) == "gpt-4o-mini"
 
-    def test_blank_value_falls_back_to_default(self):
+    def test_falls_back_to_cost_tier_when_explicit_blank(self):
+        """No deepeval_judge_model → use cost_tier.standard.model
+        (the same tier reviewers use, so this rail picks up automatically
+        when the operator swaps writer/judge models)."""
         sc = MagicMock()
-        sc.get.return_value = "   "
-        assert _de_mod._resolve_judge_model(sc) == "glm-4.7-5090"
+        sc.get = MagicMock(side_effect=lambda key, default="": {
+            "deepeval_judge_model": "",
+            "cost_tier.standard.model": "ollama/glm-4.7-flash:latest",
+            "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
+        }.get(key, default))
+        assert _de_mod._resolve_judge_model(sc) == "glm-4.7-flash:latest"
+
+    def test_falls_back_to_writer_when_explicit_and_tier_blank(self):
+        """Both explicit + cost_tier blank → fall through to writer."""
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda key, default="": {
+            "deepeval_judge_model": "",
+            "cost_tier.standard.model": "",
+            "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
+        }.get(key, default))
+        assert _de_mod._resolve_judge_model(sc) == "glm-4.7-flash:latest"
+
+    def test_all_paths_blank_raises(self):
+        """Every resolution path empty → fail loud with a fix-the-config
+        message. Better than silently using a model that may not exist
+        on the operator's box."""
+        sc = MagicMock()
+        sc.get = MagicMock(return_value="")
+        with pytest.raises(ValueError, match="no judge model resolvable"):
+            _de_mod._resolve_judge_model(sc)
