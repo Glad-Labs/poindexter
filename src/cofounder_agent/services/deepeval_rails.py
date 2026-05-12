@@ -260,7 +260,7 @@ def evaluate_g_eval(
     topic: str = "",
     *,
     criterion: str = _DEFAULT_G_EVAL_CRITERION,
-    judge_model: str = "glm-4.7-5090",
+    judge_model: str = "",
     threshold: float = 0.7,
 ) -> tuple[bool, float, str]:
     """Run DeepEval's G-Eval (LLM-judge) against ``content``.
@@ -309,7 +309,7 @@ def evaluate_faithfulness(
     content: str,
     retrieval_context: list[str] | None,
     *,
-    judge_model: str = "glm-4.7-5090",
+    judge_model: str = "",
     threshold: float = 0.8,
 ) -> tuple[bool, float, str]:
     """Run DeepEval's ``FaithfulnessMetric`` on ``content``.
