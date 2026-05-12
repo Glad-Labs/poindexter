@@ -327,7 +327,31 @@ services:
       LIVEKIT_DEFAULT_IDENTITY: "${LIVEKIT_DEFAULT_IDENTITY:-matt}"
       LIVEKIT_PUBLIC_WSS_URL: "${LIVEKIT_PUBLIC_WSS_URL:-wss://nightrider.taild4f626.ts.net/livekit-signal/}"
     volumes:
+      # The worker Dockerfile runs the FastAPI process as user `appuser`
+      # (UID 1001), so the in-container HOME is /home/appuser. Code paths
+      # that resolve ``~/.poindexter`` (podcast_service, video_service,
+      # r2_upload_service) write to /home/appuser/.poindexter — NOT
+      # /root/.poindexter. Pre-2026-05-12 this only mounted /root and
+      # silently broke media generation: writes went to a container-local
+      # path that disappeared on restart and was never picked up by the
+      # R2 upload step. 13 days of "podcast generation queued" log lines
+      # produced zero output files on the host (last successful mp3:
+      # 2026-04-29 14:00 UTC).
+      #
+      # Mount media subdirs at the appuser home so generation writes
+      # persist on the host. Pinpoint-subdir mounts (not the whole
+      # ~/.poindexter dir) to keep bootstrap.toml OUT of appuser's HOME
+      # — resolve_database_url() reads ~/.poindexter/bootstrap.toml as
+      # priority 1, and the host file's DSN points at localhost:15432
+      # which is unreachable from inside the worker container.
+      - ${USERPROFILE:-.}/.poindexter/podcast:/home/appuser/.poindexter/podcast
+      - ${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video
+      - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
+      - ${USERPROFILE:-.}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
+      # Legacy /root mount stays for code paths that still reference
+      # /root/.poindexter or HOST_HOME=/root.
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
+      - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
       # Dev mount: edit Python files on host, restart worker to pick up changes.
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
