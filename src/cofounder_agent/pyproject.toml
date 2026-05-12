@@ -267,6 +267,7 @@ web_search = "cofounder_agent.services.topic_sources.web_search:WebSearchSource"
 knowledge = "cofounder_agent.services.topic_sources.knowledge:KnowledgeSource"
 codebase = "cofounder_agent.services.topic_sources.codebase:CodebaseSource"
 dev_diary = "cofounder_agent.services.topic_sources.dev_diary_source:DevDiarySource"
+igdb = "cofounder_agent.services.topic_sources.igdb:IGDBSource"
 
 [tool.poetry.plugins."poindexter.image_providers"]
 pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
