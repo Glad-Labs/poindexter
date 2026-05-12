@@ -37,7 +37,8 @@ def load_all() -> None:
     # outbound.* surface: outbound_discord, outbound_telegram, outbound_vercel_isr
     # publishing.* surface: publishing_bluesky, publishing_mastodon
     # retention.* surface: retention_downsample, retention_summarize_to_table, retention_ttl_prune
-    # tap.* surface: tap_builtin_topic_source, tap_external_metrics_writer, tap_singer_subprocess
+    # tap.* surface: tap_builtin_topic_source, tap_corsair_csv,
+    #                tap_external_metrics_writer, tap_singer_subprocess
     from services.integrations.handlers import (  # noqa: F401
         outbound_discord,
         outbound_telegram,
@@ -48,6 +49,7 @@ def load_all() -> None:
         retention_summarize_to_table,
         retention_ttl_prune,
         tap_builtin_topic_source,
+        tap_corsair_csv,
         tap_external_metrics_writer,
         tap_singer_subprocess,
         webhook_alertmanager,
@@ -62,7 +64,8 @@ def load_all() -> None:
         outbound_discord, outbound_telegram, outbound_vercel_isr,
         publishing_bluesky, publishing_mastodon,
         retention_downsample, retention_summarize_to_table, retention_ttl_prune,
-        tap_builtin_topic_source, tap_external_metrics_writer, tap_singer_subprocess,
+        tap_builtin_topic_source, tap_corsair_csv,
+        tap_external_metrics_writer, tap_singer_subprocess,
     )
 
     logger.info("integrations.handlers.load_all: handler modules imported")

@@ -170,9 +170,19 @@ def get_cpu_power_metrics():
 
             if name == "_total":
                 continue
-            elif "pkg" in name:
+            # AMD Energy Meter instance names look like:
+            #   rapl_package0_pkg     → package total
+            #   rapl_package0_core0_core → per-core
+            # The old logic checked ``"pkg" in name`` which matched both
+            # (because "pkg" is also a substring of "package"), so each
+            # core sample overwrote pkg_power. The values landed
+            # accidentally-correct on systems where the pkg entry came
+            # last alphabetically, but on other locales the metric
+            # silently held a per-core value. Match the suffix
+            # explicitly instead.
+            elif name.endswith("_pkg"):
                 pkg_power = watts
-            elif "core" in name:
+            elif name.endswith("_core"):
                 # Extract core number: rapl_package0_core5_core -> 5
                 parts = name.split("_")
                 core_num = "0"

@@ -353,6 +353,14 @@ services:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
+      # Corsair iCUE LINK CSV exports — read-only mount so the
+      # tap.corsair_csv handler (services/integrations/handlers/
+      # tap_corsair_csv.py) can ingest sensor data without leaving the
+      # worker container. iCUE writes to the host path on Windows; the
+      # tap's row.config.directory is set to the in-container path
+      # (/host/sensor_logs) so the same handler works regardless of
+      # whether the operator runs the worker via Docker or natively.
+      - ${USERPROFILE:-.}/sensor_logs:/host/sensor_logs:ro
       # Dev mount: edit Python files on host, restart worker to pick up changes.
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
       - ./src/cofounder_agent:/app:ro
