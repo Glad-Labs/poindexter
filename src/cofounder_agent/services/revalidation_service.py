@@ -10,10 +10,18 @@ that promotes scheduled→published) shares the same revalidation
 helper. Previously the bypass paths inserted directly into ``posts``
 and never told Vercel to bust its 5-minute ISR cache.
 
-Two helpers are exposed:
+Three helpers are exposed:
 
+* ``trigger_nextjs_revalidation_detailed(paths, tags, *, site_config)``
+  — the low-level POST. Returns a ``RevalidationResult`` carrying
+  ``success`` + the upstream HTTP status + the truncated error body
+  + the request duration. Callers who need to surface the underlying
+  failure (e.g. the operator-facing ``/api/revalidate-cache`` route)
+  use this one.
 * ``trigger_nextjs_revalidation(paths, tags, *, site_config=None)`` —
-  the low-level POST to the Next.js ``/api/revalidate`` endpoint.
+  thin wrapper that returns the boolean ``success`` for backwards
+  compatibility with every existing caller. Internal failure context
+  is captured in the structured log line.
 * ``trigger_isr_revalidate(slug, paths, tags, site_config)`` — the
   publish-time wrapper. Always includes the canonical site routes
   (``/``, ``/archive``, ``/posts``, ``/sitemap.xml``) and the
@@ -21,6 +29,10 @@ Two helpers are exposed:
   Idempotent, never raises — revalidation failure must not roll back
   a publish.
 """
+
+import time
+from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -104,52 +116,56 @@ async def _resolve_revalidate_secret(site_cfg) -> str:
     return legacy or ""
 
 
-async def trigger_nextjs_revalidation(
-    paths: list | None = None,
-    tags: list | None = None,
-    *,
-    site_config: object | None = None,
-) -> bool:
-    """Trigger Next.js ISR revalidation on the public site.
+@dataclass(frozen=True)
+class RevalidationResult:
+    """Outcome of a single revalidation POST.
 
-    Args:
-        paths: List of paths to revalidate. Defaults to ``["/", "/archive"]``.
-        tags: List of cache tags to revalidate. Defaults to
-            ``["posts", "post-index"]``.
-        site_config: Optional ``SiteConfig`` instance for DI. Falls
-            back to the module-level singleton when omitted (the
-            singleton is still populated at app startup via
-            ``main.py``'s lifespan).
+    Fields populated even on failure so callers (operator-facing route,
+    monitoring, tests) can surface the underlying cause instead of just
+    a blank ``success=false``.
 
-    Returns:
-        True if revalidation succeeded (HTTP 200), False otherwise.
-        Never raises — a publish must not be rolled back by a
-        revalidation failure.
+    poindexter#458 — previously the worker route returned
+    ``{"success": false, "message": "Cache revalidation failed"}`` with
+    no upstream detail, sending the operator to grep `docker logs` to
+    find out whether the public site 401'd, 5xx'd, or timed out.
     """
-    if paths is None:
-        paths = ["/", "/archive"]
-    if tags is None:
-        tags = ["posts", "post-index"]
 
-    # Fall back to the lifespan-bound SiteConfig when no DI instance
-    # was passed. (The function-local ``site_config`` parameter
-    # shadows the module-level attr; ``globals()`` reads the latter.)
-    site_cfg = site_config if site_config is not None else globals()["site_config"]
+    success: bool
+    skipped: bool  # True when the secret was unset and the POST was never attempted.
+    status_code: int | None  # Upstream HTTP status, or None when the request never landed.
+    error: str  # Truncated upstream body, exception class+message, or skip reason. "" on success.
+    error_kind: str  # Categorical tag: '', 'skipped', 'timeout', 'http', 'exception'.
+    duration_ms: int
+    url: str  # The fully resolved revalidate URL we POSTed against.
 
+
+async def _post_revalidate(
+    paths: list,
+    tags: list,
+    site_cfg: Any,
+) -> RevalidationResult:
+    """Resolve config + execute the actual httpx POST. Always returns a result."""
     revalidate_url = _resolve_revalidate_url(site_cfg)
     revalidate_secret = await _resolve_revalidate_secret(site_cfg)
 
     if not revalidate_secret:
-        # Skip — but warn loudly. Per the no-silent-defaults rule,
-        # operators get told that revalidation was skipped instead of
-        # silently swallowing the misconfiguration.
         environment = (site_cfg.get("environment", "development") or "development").lower()
         logger.warning(
             "[revalidation] revalidate_secret is unset — skipping ISR revalidation in %s",
             environment,
+            extra={"revalidate_url": revalidate_url, "paths": paths, "tags": tags},
         )
-        return False
+        return RevalidationResult(
+            success=False,
+            skipped=True,
+            status_code=None,
+            error=f"revalidate_secret unset (environment={environment})",
+            error_kind="skipped",
+            duration_ms=0,
+            url=revalidate_url,
+        )
 
+    started = time.monotonic()
     try:
         logger.info(
             "[revalidation] POST %s paths=%s tags=%s",
@@ -166,24 +182,124 @@ async def trigger_nextjs_revalidation(
                 },
             )
 
+            duration_ms = int((time.monotonic() - started) * 1000)
             if response.status_code == 200:
-                logger.info("[revalidation] ISR revalidation successful")
-                return True
+                logger.info(
+                    "[revalidation] ISR revalidation successful in %dms",
+                    duration_ms,
+                )
+                return RevalidationResult(
+                    success=True,
+                    skipped=False,
+                    status_code=200,
+                    error="",
+                    error_kind="",
+                    duration_ms=duration_ms,
+                    url=revalidate_url,
+                )
+
+            body_excerpt = response.text[:500]
             logger.warning(
-                "[revalidation] ISR revalidation returned %s: %s",
-                response.status_code, response.text[:200],
+                "[revalidation] ISR revalidation returned %s in %dms: %s",
+                response.status_code, duration_ms, body_excerpt[:200],
+                extra={
+                    "revalidate_url": revalidate_url,
+                    "status_code": response.status_code,
+                    "duration_ms": duration_ms,
+                    "paths": paths,
+                    "tags": tags,
+                },
             )
-            return False
+            return RevalidationResult(
+                success=False,
+                skipped=False,
+                status_code=response.status_code,
+                error=body_excerpt,
+                error_kind="http",
+                duration_ms=duration_ms,
+                url=revalidate_url,
+            )
 
     except httpx.TimeoutException:
-        logger.warning("[revalidation] ISR revalidation timed out (10s)")
-        return False
-    except Exception as e:
+        duration_ms = int((time.monotonic() - started) * 1000)
+        logger.warning(
+            "[revalidation] ISR revalidation timed out after %dms (10s budget)",
+            duration_ms,
+            extra={"revalidate_url": revalidate_url, "paths": paths, "tags": tags},
+        )
+        return RevalidationResult(
+            success=False,
+            skipped=False,
+            status_code=None,
+            error="timeout (10s)",
+            error_kind="timeout",
+            duration_ms=duration_ms,
+            url=revalidate_url,
+        )
+    except Exception as exc:
+        duration_ms = int((time.monotonic() - started) * 1000)
         logger.warning(
             "[revalidation] Failed to trigger ISR revalidation: %s: %s",
-            type(e).__name__, e,
+            type(exc).__name__, exc,
+            extra={
+                "revalidate_url": revalidate_url,
+                "duration_ms": duration_ms,
+                "exception_type": type(exc).__name__,
+            },
         )
-        return False
+        return RevalidationResult(
+            success=False,
+            skipped=False,
+            status_code=None,
+            error=f"{type(exc).__name__}: {exc}",
+            error_kind="exception",
+            duration_ms=duration_ms,
+            url=revalidate_url,
+        )
+
+
+async def trigger_nextjs_revalidation_detailed(
+    paths: list | None = None,
+    tags: list | None = None,
+    *,
+    site_config: object | None = None,
+) -> RevalidationResult:
+    """Trigger Next.js ISR revalidation and return the full result struct.
+
+    Use this when the caller wants to surface the failure reason
+    (operator-facing route, monitoring, tests). Never raises.
+    """
+    if paths is None:
+        paths = ["/", "/archive"]
+    if tags is None:
+        tags = ["posts", "post-index"]
+
+    site_cfg = site_config if site_config is not None else globals()["site_config"]
+    return await _post_revalidate(paths, tags, site_cfg)
+
+
+async def trigger_nextjs_revalidation(
+    paths: list | None = None,
+    tags: list | None = None,
+    *,
+    site_config: object | None = None,
+) -> bool:
+    """Trigger Next.js ISR revalidation on the public site (legacy bool API).
+
+    Thin wrapper over ``trigger_nextjs_revalidation_detailed``. Existing
+    callers that only care about success/failure stay untouched. Code
+    that needs the upstream status code / error body uses the detailed
+    variant instead.
+
+    Returns:
+        True if revalidation succeeded (HTTP 200), False otherwise.
+        Never raises — a publish must not be rolled back by a
+        revalidation failure.
+    """
+    result = await trigger_nextjs_revalidation_detailed(
+        paths, tags, site_config=site_config,
+    )
+    return result.success
 
 
 # Canonical paths that EVERY publish must revalidate, in addition to

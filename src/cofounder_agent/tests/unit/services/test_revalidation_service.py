@@ -31,9 +31,11 @@ from services.revalidation_service import (
     _CANONICAL_PATHS,
     _CANONICAL_TAGS,
     DEFAULT_REVALIDATE_URL,
+    RevalidationResult,
     _resolve_revalidate_url,
     trigger_isr_revalidate,
     trigger_nextjs_revalidation,
+    trigger_nextjs_revalidation_detailed,
 )
 
 
@@ -424,3 +426,89 @@ class TestScheduledPublisherCallsHelper:
 
         # Both rows were attempted — exception on row 1 didn't skip row 2.
         assert seen == ["first", "second"]
+
+
+# ---------------------------------------------------------------------------
+# trigger_nextjs_revalidation_detailed — surfaces upstream cause (poindexter#458)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestTriggerNextjsRevalidationDetailed:
+    @pytest.mark.asyncio
+    async def test_success_returns_status_and_url(self):
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = _build_httpx_client(200, text='{"success":true}')
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
+        assert isinstance(result, RevalidationResult)
+        assert result.success is True
+        assert result.skipped is False
+        assert result.status_code == 200
+        assert result.error == ""
+        assert result.error_kind == ""
+        assert result.url == "https://www.gladlabs.io/api/revalidate"
+        assert result.duration_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_http_failure_captures_status_and_body(self):
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = _build_httpx_client(401, text="Unauthorized: invalid x-revalidate-secret")
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
+        assert result.success is False
+        assert result.skipped is False
+        assert result.status_code == 401
+        assert result.error_kind == "http"
+        assert "Unauthorized" in result.error
+
+    @pytest.mark.asyncio
+    async def test_timeout_tagged_as_timeout(self):
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+        client.post = AsyncMock(side_effect=httpx.TimeoutException("slow"))
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
+        assert result.success is False
+        assert result.status_code is None
+        assert result.error_kind == "timeout"
+        assert "timeout" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_exception_tagged_as_exception(self):
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+        client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
+        assert result.success is False
+        assert result.status_code is None
+        assert result.error_kind == "exception"
+        assert "RuntimeError" in result.error
+        assert "connection refused" in result.error
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_secret_empty(self):
+        cfg = _build_site_config(secret="", url="https://www.gladlabs.io/api/revalidate")
+        result = await trigger_nextjs_revalidation_detailed(["/"], ["posts"], site_config=cfg)
+        assert result.success is False
+        assert result.skipped is True
+        assert result.status_code is None
+        assert result.error_kind == "skipped"
+        assert "revalidate_secret" in result.error
+
+    @pytest.mark.asyncio
+    async def test_legacy_bool_api_still_wraps_detailed(self):
+        # The legacy trigger_nextjs_revalidation MUST keep returning a plain bool
+        # so every existing caller (publish_service, scheduled_publisher,
+        # task_publishing_routes) stays untouched.
+        cfg = _build_site_config(url="https://www.gladlabs.io/api/revalidate")
+        client = _build_httpx_client(500, text="boom")
+        with patch("services.revalidation_service.httpx.AsyncClient", return_value=client):
+            ok = await trigger_nextjs_revalidation(["/"], ["posts"], site_config=cfg)
+        assert ok is False
+        assert isinstance(ok, bool)

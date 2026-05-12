@@ -20,6 +20,27 @@ from fastapi.testclient import TestClient
 
 from middleware.api_token_auth import verify_api_token
 from routes.revalidate_routes import router, trigger_nextjs_revalidation
+from services.revalidation_service import RevalidationResult
+
+
+def _ok_result(url: str = "https://www.gladlabs.io/api/revalidate") -> RevalidationResult:
+    return RevalidationResult(
+        success=True, skipped=False, status_code=200, error="", error_kind="",
+        duration_ms=10, url=url,
+    )
+
+
+def _fail_result(
+    *,
+    status_code: int | None = 500,
+    error: str = "boom",
+    error_kind: str = "http",
+    url: str = "https://www.gladlabs.io/api/revalidate",
+) -> RevalidationResult:
+    return RevalidationResult(
+        success=False, skipped=False, status_code=status_code, error=error,
+        error_kind=error_kind, duration_ms=10, url=url,
+    )
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token-for-revalidate"}
 
@@ -40,8 +61,8 @@ def _build_app() -> FastAPI:
 class TestRevalidateCache:
     def test_returns_200_on_success(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation",
-            new=AsyncMock(return_value=True),
+            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            new=AsyncMock(return_value=_ok_result()),
         ):
             client = TestClient(_build_app())
             resp = client.post(
@@ -53,8 +74,8 @@ class TestRevalidateCache:
 
     def test_response_has_success_true_when_revalidation_succeeds(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation",
-            new=AsyncMock(return_value=True),
+            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            new=AsyncMock(return_value=_ok_result()),
         ):
             client = TestClient(_build_app())
             data = client.post(
@@ -67,8 +88,8 @@ class TestRevalidateCache:
 
     def test_response_has_success_false_when_revalidation_fails(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation",
-            new=AsyncMock(return_value=False),
+            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            new=AsyncMock(return_value=_fail_result()),
         ):
             client = TestClient(_build_app())
             data = client.post(
@@ -81,8 +102,8 @@ class TestRevalidateCache:
 
     def test_response_includes_paths(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation",
-            new=AsyncMock(return_value=True),
+            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            new=AsyncMock(return_value=_ok_result()),
         ):
             client = TestClient(_build_app())
             data = client.post(
@@ -94,8 +115,8 @@ class TestRevalidateCache:
 
     def test_defaults_to_root_and_archive_when_paths_omitted(self):
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation",
-            new=AsyncMock(return_value=True),
+            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            new=AsyncMock(return_value=_ok_result()),
         ) as mock_trigger:
             client = TestClient(_build_app())
             client.post("/api/revalidate-cache", json={}, headers=AUTH_HEADERS)
@@ -121,8 +142,8 @@ class TestRevalidateCache:
         # ['posts', 'post-index']. Verify both arguments are passed.
         custom_paths = ["/blog", "/about"]
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation",
-            new=AsyncMock(return_value=True),
+            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            new=AsyncMock(return_value=_ok_result()),
         ) as mock_trigger:
             client = TestClient(_build_app())
             client.post(
@@ -139,8 +160,8 @@ class TestRevalidateCache:
     def test_returns_200_with_empty_paths_list(self):
         """Empty paths list falls back to default paths inside the route handler."""
         with patch(
-            "routes.revalidate_routes.trigger_nextjs_revalidation",
-            new=AsyncMock(return_value=True),
+            "routes.revalidate_routes.trigger_nextjs_revalidation_detailed",
+            new=AsyncMock(return_value=_ok_result()),
         ):
             client = TestClient(_build_app())
             resp = client.post(

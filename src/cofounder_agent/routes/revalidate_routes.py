@@ -16,7 +16,10 @@ from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
-from services.revalidation_service import trigger_nextjs_revalidation
+from services.revalidation_service import (
+    trigger_nextjs_revalidation,  # noqa: F401 — re-exported for legacy tests
+    trigger_nextjs_revalidation_detailed,
+)
 
 logger = get_logger(__name__)
 
@@ -48,17 +51,49 @@ async def revalidate_cache(
         request_data: {"paths": ["/"]} - Paths to revalidate
 
     Returns:
-        {"success": bool, "message": str, "paths": list}
+        On success::
+
+            {"success": true, "message": "Cache revalidation successful",
+             "paths": [...], "tags": [...], "status_code": 200,
+             "duration_ms": 142, "url": "https://.../api/revalidate"}
+
+        On failure (poindexter#458 — surface the upstream cause so
+        the operator doesn't have to grep `docker logs`)::
+
+            {"success": false, "message": "Cache revalidation failed (http 401)",
+             "paths": [...], "tags": [...], "status_code": 401,
+             "error": "Unauthorized", "error_kind": "http",
+             "duration_ms": 88, "url": "https://.../api/revalidate"}
     """
     paths = request_data.paths or ["/", "/archive"]
     tags = request_data.tags or ["posts", "post-index"]
 
-    # Trigger ISR revalidation on public site (both paths and tags)
-    success = await trigger_nextjs_revalidation(paths, tags)
+    # Use the detailed variant so the operator (or whoever called this
+    # route) sees the upstream HTTP status + body on failure instead of
+    # a blank "success": false.
+    result = await trigger_nextjs_revalidation_detailed(paths, tags)
 
-    return {
-        "success": success,
-        "message": "Cache revalidation " + ("successful" if success else "failed"),
+    if result.success:
+        message = "Cache revalidation successful"
+    elif result.skipped:
+        message = "Cache revalidation skipped (revalidate_secret unset)"
+    elif result.error_kind == "timeout":
+        message = "Cache revalidation timed out"
+    elif result.error_kind == "http":
+        message = f"Cache revalidation failed (http {result.status_code})"
+    else:
+        message = "Cache revalidation failed"
+
+    payload: dict[str, Any] = {
+        "success": result.success,
+        "message": message,
         "paths": paths,
         "tags": tags,
+        "status_code": result.status_code,
+        "duration_ms": result.duration_ms,
+        "url": result.url,
     }
+    if not result.success:
+        payload["error"] = result.error
+        payload["error_kind"] = result.error_kind
+    return payload
