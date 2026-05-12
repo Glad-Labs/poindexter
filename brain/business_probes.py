@@ -419,9 +419,28 @@ async def probe_silent_alerter(pool, notify_fn) -> dict:
 
     quiet_hours = await _setting_int(pool, "silent_alerter_quiet_hours", 6)
 
+    # Two alert delivery paths to check:
+    #
+    #   1. ``alert_events.received_at``   — Grafana → webhook → brain
+    #      dispatcher pipeline. This is the table the original watchdog
+    #      v1 looked at.
+    #   2. ``audit_log.timestamp WHERE event_type='operator_paged'``  —
+    #      direct ``notify_operator()`` calls from brain probes. The
+    #      v1 watchdog couldn't see these and produced a false-positive
+    #      on 2026-05-12 15:29 UTC (compose drift was firing pages every
+    #      cycle but the watchdog thought the alerter was dead).
+    #
+    # We treat "last alert" as the MAX over both paths so either delivery
+    # mechanism counts as proof the alerter is alive.
     try:
         last_received = await pool.fetchval(
             "SELECT MAX(received_at) FROM alert_events"
+        )
+        last_paged = await pool.fetchval(
+            """
+            SELECT MAX(timestamp) FROM audit_log
+             WHERE event_type = 'operator_paged'
+            """
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("[BUSINESS_PROBE] silent_alerter DB read failed: %s", e)
@@ -429,13 +448,15 @@ async def probe_silent_alerter(pool, notify_fn) -> dict:
 
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
-    if last_received is None:
-        # Never received an alert — only worth paging if this is also a
-        # never-published system. Fresh installs shouldn't get spammed.
-        # Probe failure counter is the proxy for "real workload exists".
+    candidates = [t for t in (last_received, last_paged) if t is not None]
+    last_signal = max(candidates) if candidates else None
+    if last_signal is None:
+        # Neither delivery path has ever recorded a page. Only worth
+        # flagging when probes are also failing — fresh installs and
+        # genuinely-healthy systems shouldn't get a false alarm.
         quiet_hours_actual = 24 * 365  # effectively infinite
     else:
-        quiet_hours_actual = (now - last_received).total_seconds() / 3600
+        quiet_hours_actual = (now - last_signal).total_seconds() / 3600
 
     if quiet_hours_actual < quiet_hours:
         return {

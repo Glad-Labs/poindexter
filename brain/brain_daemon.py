@@ -1648,6 +1648,37 @@ async def _maybe_sync_grafana_alerts(pool) -> None:
         logger.warning("[BRAIN] Grafana alert sync failed: %s", e, exc_info=True)
 
 
+async def _record_operator_paged(pool, payload: dict, detail: str) -> None:
+    """Best-effort write of an ``operator_paged`` row to ``audit_log``.
+
+    Called from the ``set_notify_audit_sink`` shim wired in ``main()``.
+    Failures are swallowed — the operator has already been paged via
+    Telegram/Discord by the time this runs, so audit-recording is purely
+    observability. The silent-alerter watchdog reads these to confirm
+    the alerting plane delivered.
+    """
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO audit_log (event_type, source, severity, details)
+                VALUES ($1, $2, $3, $4::jsonb)
+                """,
+                "operator_paged",
+                payload.get("source") or "brain",
+                payload.get("severity") or "warning",
+                json.dumps({
+                    "title": payload.get("title"),
+                    "detail_excerpt": (detail or "")[:500],
+                    "channels": payload.get("channels") or {},
+                }),
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(
+            "[brain_daemon] operator_paged audit insert failed: %s", e,
+        )
+
+
 async def alert_dispatch_loop(pool, shutdown_event):
     """Background task: poll alert_events for undispatched rows.
 
@@ -2003,6 +2034,58 @@ async def main():
     # (with ``read_app_setting`` decrypting on the fly per #342). Operators
     # who haven't migrated their token to app_settings should run
     # ``poindexter setup`` or ``poindexter settings set telegram_bot_token <value>``.
+
+    # Wire the operator-notifier audit sink so every successful page
+    # leaves an ``operator_paged`` audit_log trail. The silent-alerter
+    # watchdog reads these to distinguish "alerter is broken" from "no
+    # alerts in the last N hours because nothing's wrong". Bug 2026-05-12:
+    # the watchdog only saw alert_events rows (Grafana → webhook path)
+    # and treated direct-to-Telegram brain notifications as silent.
+    try:
+        from operator_notifier import set_notify_audit_sink  # type: ignore[import-not-found]
+    except ImportError:
+        try:
+            from brain.operator_notifier import set_notify_audit_sink  # type: ignore[import-not-found]
+        except ImportError:
+            set_notify_audit_sink = None
+
+    if set_notify_audit_sink is not None:
+        def _audit_sink(*, source, severity, title, detail, results):
+            """Sync wrapper that drops the audit row via a one-shot
+            asyncpg task. notify_operator is sync (kept stdlib-only for
+            bootstrap-time callers), so we schedule the write on the
+            running loop without blocking the caller. Loop unavailable
+            fallback (CLI usage outside an event loop): silently skip —
+            the page itself already went out via Telegram/Discord."""
+            payload = {
+                "event_type": "operator_paged",
+                "source": source,
+                "severity": severity,
+                "title": title,
+                "channels": {
+                    k: ("ok" if v == "ok" else v)
+                    for k, v in (results or {}).items()
+                },
+            }
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            try:
+                loop.create_task(
+                    _record_operator_paged(pool, payload, detail),
+                    name="record_operator_paged",
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug(
+                    "[brain_daemon] could not schedule operator_paged "
+                    "audit write: %s", e,
+                )
+
+        set_notify_audit_sink(_audit_sink)
+        logger.info(
+            "[BRAIN] notify_operator → audit_log sink wired (operator_paged events)"
+        )
 
     shutdown = asyncio.Event()
 

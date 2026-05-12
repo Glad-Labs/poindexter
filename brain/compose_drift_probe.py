@@ -168,6 +168,14 @@ PROBE_INTERVAL_SECONDS = 300
 # ``frozenset`` so the equality check is order-insensitive.
 _last_notified_drifted: frozenset[str] = frozenset()
 
+# Timestamp of the last notify_fn fire for the current drift set.
+# 2026-05-12 bug: with set-only dedup, persistent drift on the same
+# service set went silent forever after the first notify (Matt's
+# compose drift wasn't paging for 38+ hours despite firing every 5
+# min). Re-notify after this window so persistent drift gets re-paged.
+_last_notified_at: float = 0.0
+_RENOTIFY_AFTER_SECONDS = 3600.0  # 1 hour
+
 
 # ---------------------------------------------------------------------------
 # YAML / spec parsing
@@ -892,9 +900,16 @@ async def run_compose_drift_probe(
             },
         )
 
-    # ---- 5a) Auto-recover disabled — single notify (deduped) --------------
+    # ---- 5a) Auto-recover disabled — periodic notify (set-aware + time-bound) --
     if not auto_recover_enabled:
-        if drifted_names != _last_notified_drifted:
+        global _last_notified_at
+        now_ts = time.time()
+        # Fire when the drift set changed OR the renotify window elapsed
+        # on the same set. The time gate stops persistent drift from
+        # going silent for hours after the first page (2026-05-12 bug).
+        set_changed = drifted_names != _last_notified_drifted
+        time_elapsed = (now_ts - _last_notified_at) >= _RENOTIFY_AFTER_SECONDS
+        if set_changed or time_elapsed:
             try:
                 notify_fn(
                     title=f"Compose drift detected ({len(drifted)} service(s))",
@@ -912,14 +927,15 @@ async def run_compose_drift_probe(
                     severity="warning",
                 )
                 _last_notified_drifted = drifted_names
+                _last_notified_at = now_ts
             except Exception as exc:
                 logger.warning(
                     "[COMPOSE_DRIFT] notify_fn failed: %s", exc
                 )
         else:
             logger.debug(
-                "[COMPOSE_DRIFT] Drift unchanged across %d service(s) — "
-                "skipping duplicate notification",
+                "[COMPOSE_DRIFT] Drift unchanged across %d service(s) "
+                "and within renotify window — skipping duplicate notification",
                 len(drifted),
             )
         return {

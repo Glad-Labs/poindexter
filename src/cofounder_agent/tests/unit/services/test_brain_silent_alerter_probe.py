@@ -37,13 +37,15 @@ def _make_pool(
     *,
     settings: dict[str, str] | None = None,
     last_alert_received: datetime | None = None,
+    last_operator_paged: datetime | None = None,
     probe_failures: list[str] | None = None,
 ) -> Any:
-    """Async pool stub serving:
+    """Async pool stub serving the four reads the probe makes:
 
     1. ``SELECT value FROM app_settings WHERE key = $1`` (interval, etc.)
     2. ``SELECT MAX(received_at) FROM alert_events``
-    3. ``SELECT DISTINCT event_type FROM audit_log WHERE … probe.%``
+    3. ``SELECT MAX(timestamp) FROM audit_log WHERE event_type='operator_paged'``
+    4. ``SELECT DISTINCT event_type FROM audit_log WHERE … probe.%``
     """
     settings = settings or {}
     probe_failures = probe_failures or []
@@ -53,6 +55,8 @@ def _make_pool(
             return settings.get(args[0])
         if "MAX(received_at)" in query:
             return last_alert_received
+        if "operator_paged" in query:
+            return last_operator_paged
         return None
 
     async def _fetch(query: str, *args: Any) -> Any:  # noqa: ARG001
@@ -194,6 +198,44 @@ class TestProbeSilentAlerterQuietAndRed:
         pool = _make_pool(
             settings={"silent_alerter_quiet_hours": "1"},
             last_alert_received=recent_ish,
+            probe_failures=["probe.compose_drift_detected"],
+        )
+        notify = AsyncMock()
+        result = await bp.probe_silent_alerter(pool, notify)
+        assert "paged" in result["detail"]
+        assert notify.await_count == 1
+
+    async def test_operator_paged_event_silences_watchdog(self):
+        """2026-05-12 false-positive: alert_events was 38h quiet, but
+        brain probes had paged via notify_operator() the same hour.
+        The watchdog v1 only checked alert_events and incorrectly
+        fired. After the fix, a recent operator_paged audit row
+        satisfies the "alerter is alive" gate even when alert_events
+        is stale.
+        """
+        very_old = datetime.now(timezone.utc) - timedelta(hours=48)
+        recent_page = datetime.now(timezone.utc) - timedelta(minutes=30)
+        pool = _make_pool(
+            last_alert_received=very_old,           # alert_events stale
+            last_operator_paged=recent_page,        # but notify_operator fired recently
+            probe_failures=["probe.compose_drift_detected"],
+        )
+        notify = AsyncMock()
+        result = await bp.probe_silent_alerter(pool, notify)
+        # Must NOT page — the alerter plane is alive via the
+        # operator_paged path even though alert_events is stale.
+        assert result["ok"] is True
+        assert "recent alert" in result["detail"]
+        notify.assert_not_called()
+
+    async def test_both_paths_stale_still_pages(self):
+        """Both alert_events AND operator_paged stale, probes red →
+        the alerter really is silent and the watchdog must page.
+        """
+        very_old = datetime.now(timezone.utc) - timedelta(hours=48)
+        pool = _make_pool(
+            last_alert_received=very_old,
+            last_operator_paged=very_old,
             probe_failures=["probe.compose_drift_detected"],
         )
         notify = AsyncMock()

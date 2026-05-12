@@ -128,6 +128,42 @@ def _append_alerts_log(text: str) -> tuple[bool, str]:
         return False, f"alerts.log write failed: {e!r}"
 
 
+# Optional sink for "I just paged the operator" events. Set by
+# brain_daemon at startup (see brain.brain_daemon.set_notify_audit_sink)
+# so calls from probes / business logic land in audit_log with
+# event_type="operator_paged". The silent-alerter watchdog
+# (brain/business_probes.probe_silent_alerter) uses this to know
+# whether the alert plane is actually delivering pages — without it,
+# direct-to-Telegram notifications looked identical to a dead alerter.
+#
+# Kept as an injectable callable so this module stays stdlib-only;
+# the wiring happens in brain_daemon where asyncpg is already imported.
+_NOTIFY_AUDIT_SINK: "_NotifyAuditSink | None" = None
+
+
+def set_notify_audit_sink(sink) -> None:
+    """Wire a callable that records ``operator_paged`` audit events.
+
+    Sink signature: ``sink(*, source: str, severity: str, title: str,
+    detail: str, results: dict)``. Called once per ``notify_operator``
+    invocation, after the external channels have been attempted, so
+    ``results`` reflects which channels succeeded.
+
+    The sink is called best-effort — exceptions are swallowed so a
+    broken sink can't disable the operator alerting path.
+    """
+    global _NOTIFY_AUDIT_SINK
+    _NOTIFY_AUDIT_SINK = sink
+
+
+# Forward declaration for type checkers; runtime is the duck-typed callable above.
+class _NotifyAuditSink:
+    def __call__(
+        self, *, source: str, severity: str, title: str,
+        detail: str, results: dict,
+    ) -> None: ...
+
+
 def notify_operator(
     title: str,
     detail: str,
@@ -184,5 +220,27 @@ def notify_operator(
             "or DISCORD_OPS_WEBHOOK_URL so you hear about future failures.\n"
         )
         sys.stderr.flush()
+
+    # Record the page in audit_log when a sink is wired up. The
+    # silent-alerter watchdog reads these to distinguish "alerter is
+    # broken" from "no alerts in the last N hours because nothing's
+    # wrong". Wrapped in a broad except so a flaky sink can never
+    # take down the notification path — by the time we get here,
+    # the operator has already been paged via the external channels
+    # above; audit recording is purely observability.
+    if _NOTIFY_AUDIT_SINK is not None:
+        try:
+            _NOTIFY_AUDIT_SINK(
+                source=source,
+                severity=severity,
+                title=title,
+                detail=detail,
+                results=results,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[operator_notifier] audit sink failed (page itself was "
+                "sent): %s", e,
+            )
 
     return results
