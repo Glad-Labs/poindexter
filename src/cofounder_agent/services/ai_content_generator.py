@@ -722,13 +722,41 @@ class AIContentGenerator:
                 model_list = [preferred_model]
                 logger.info("   ├─ Using UI-selected model: %s", preferred_model)
             else:
-                # Read pipeline_writer_model from DB first (DB-first config)
+                # Read pipeline_writer_model from DB first (DB-first config).
+                # 2026-05-12 fail-loud sweep: previously this swallowed
+                # the read failure silently and the writer fell back to
+                # auto-resolve. Per the writer-model-canary feedback,
+                # an unintended writer swap is exactly what breaks
+                # approval rates — operators MUST see this.
                 try:
                     db_model = site_config.get("pipeline_writer_model", "")
                     if db_model:
                         # Strip "ollama/" prefix if present
                         db_model = db_model.removeprefix("ollama/")
-                except Exception:
+                except Exception as e:
+                    logger.warning(
+                        "Failed to read pipeline_writer_model from site_config; "
+                        "falling back to auto-resolve. This may flip the writer "
+                        "model and tank approval rates: %s",
+                        e, exc_info=True,
+                    )
+                    try:
+                        from utils.findings import emit_finding
+                        emit_finding(
+                            source="ai_content_generator.resolve_writer_model",
+                            kind="pipeline_writer_model_read_failed",
+                            severity="warning",
+                            title="pipeline_writer_model read failed — auto-resolve fallback engaged",
+                            body=(
+                                f"site_config.get('pipeline_writer_model') raised "
+                                f"{type(e).__name__}: {e}. Writer model will be "
+                                "chosen by ollama.resolve_model() instead. "
+                                "Content quality may shift until this is fixed."
+                            ),
+                            dedup_key=f"pipeline_writer_model_read_failed_{type(e).__name__}",
+                        )
+                    except Exception:
+                        logger.debug("emit_finding unavailable", exc_info=True)
                     db_model = ""
 
                 if db_model:
@@ -739,15 +767,22 @@ class AIContentGenerator:
                     logger.info("   ├─ Primary model (auto): %s", resolved)
                 model_list = [resolved]
 
-                # Read fallback model from DB
+                # Read fallback model from DB. Less critical than the
+                # primary read above — if this fails, model discovery
+                # below still adds installed-model fallbacks, so the
+                # pipeline keeps working. Still log so operators can
+                # spot a pattern of SiteConfig reads failing.
                 try:
                     db_fallback = site_config.get("pipeline_fallback_model", "")
                     if db_fallback:
                         db_fallback = db_fallback.removeprefix("ollama/")
                         if db_fallback != resolved:
                             model_list.append(db_fallback)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(
+                        "Failed to read pipeline_fallback_model; relying on "
+                        "auto-discovered fallbacks only: %s", e, exc_info=True,
+                    )
 
                 # Add other installed models as fallbacks (smaller first for speed)
                 try:
