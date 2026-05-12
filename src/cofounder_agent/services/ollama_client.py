@@ -28,6 +28,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+from services.langfuse_shim import langfuse_context, observe
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
@@ -452,6 +453,7 @@ class OllamaClient:
     # Generation
     # ========================================================================
 
+    @observe(as_type="generation", name="ollama_client.generate")
     async def generate(
         self,
         prompt: str,
@@ -472,6 +474,10 @@ class OllamaClient:
         ``timeout`` (seconds) overrides ``self.timeout`` for this single
         call only — lets callers (QA reviewers, writer self-review) set
         aggressive timeouts without constructing a whole new client.
+
+        Langfuse trace: every call lands a ``generation`` span with
+        model + input messages + output text + token usage. See
+        services/langfuse_shim.py for the wire-up.
         """
         model = await self.resolve_model(model)
         call_timeout = timeout if timeout is not None else self.timeout
@@ -491,6 +497,19 @@ class OllamaClient:
 
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
+
+        # Stamp model + input on the Langfuse generation span before the
+        # call so the trace records the request even if Ollama errors.
+        langfuse_context.update_current_observation(
+            model=model,
+            input=messages,
+            metadata={
+                "base_url": self.base_url,
+                "timeout": call_timeout,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        )
 
         try:
             async with _get_concurrency_limiter():
@@ -543,6 +562,21 @@ class OllamaClient:
                 electricity_cost_usd=electricity_cost,
             )
 
+            # Stamp output + token counts on the Langfuse generation span.
+            # No-op when Langfuse isn't configured (see langfuse_shim).
+            langfuse_context.update_current_observation(
+                output=text,
+                usage={
+                    "input": result.get("prompt_eval_count", 0),
+                    "output": result.get("eval_count", 0),
+                    "total": (
+                        result.get("eval_count", 0)
+                        + result.get("prompt_eval_count", 0)
+                    ),
+                    "unit": "TOKENS",
+                },
+            )
+
             return {
                 "text": text,
                 "response": text,  # Legacy key for callers using response.get("response")
@@ -559,6 +593,7 @@ class OllamaClient:
             logger.error("[generate] Ollama generation failed: %s", e, exc_info=True, model=model)
             raise
 
+    @observe(as_type="generation", name="ollama_client.chat")
     async def chat(
         self,
         messages: list[dict[str, str]],
@@ -569,6 +604,9 @@ class OllamaClient:
         """
         Chat completion using Ollama's native /api/chat endpoint.
         Supports full message history with roles.
+
+        Langfuse trace: every call lands a ``generation`` span with
+        model + messages + output + token usage.
         """
         model = await self.resolve_model(model)
 
@@ -581,6 +619,16 @@ class OllamaClient:
 
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
+
+        langfuse_context.update_current_observation(
+            model=model,
+            input=messages,
+            metadata={
+                "base_url": self.base_url,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        )
 
         try:
             async with _get_concurrency_limiter():
@@ -604,6 +652,19 @@ class OllamaClient:
                 model=model,
                 tokens=result.get("eval_count", 0),
                 electricity_cost_usd=electricity_cost,
+            )
+
+            langfuse_context.update_current_observation(
+                output=msg.get("content", ""),
+                usage={
+                    "input": result.get("prompt_eval_count", 0),
+                    "output": result.get("eval_count", 0),
+                    "total": (
+                        result.get("eval_count", 0)
+                        + result.get("prompt_eval_count", 0)
+                    ),
+                    "unit": "TOKENS",
+                },
             )
 
             return {

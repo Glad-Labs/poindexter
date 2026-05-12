@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 
 from services.content_validator import ValidationResult, validate_content
 from services.integrations.operator_notify import notify_operator
+from services.langfuse_shim import observe
 from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
@@ -1699,6 +1700,7 @@ class MultiModelQA:
             prompt, reviewer_name="internal_consistency", pass_key="consistent"
         )
 
+    @observe(as_type="generation", name="multi_model_qa._check_image_relevance")
     async def _check_image_relevance(
         self, title: str, topic: str, content: str
     ) -> ReviewerResult | None:
@@ -1904,6 +1906,7 @@ class MultiModelQA:
             provider="vision_gate",
         )
 
+    @observe(as_type="generation", name="multi_model_qa._check_rendered_preview")
     async def _check_rendered_preview(
         self, title: str, topic: str, preview_url: str
     ) -> ReviewerResult | None:

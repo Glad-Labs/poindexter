@@ -37,28 +37,11 @@ logger = logging.getLogger(__name__)
 
 # Langfuse @observe — wires every ollama_chat_text call into the
 # trace tree so the operator can drill into model/prompt/latency in
-# the Langfuse UI at http://localhost:3010. Falls back to a no-op
-# decorator when the SDK isn't installed (keeps tests + non-worker
-# entry-points importable). The SDK itself silently drops events
-# when LANGFUSE_HOST/PUBLIC_KEY/SECRET_KEY are unset, so the
-# decorator is safe in dev environments too.
-try:
-    from langfuse.decorators import langfuse_context, observe  # type: ignore[import-not-found]
-    _LANGFUSE_AVAILABLE = True
-except ImportError:  # pragma: no cover — Langfuse is a worker dep, not a test dep
-    _LANGFUSE_AVAILABLE = False
-
-    def observe(*_args, **_kwargs):  # type: ignore[no-redef]
-        def _decorate(fn):
-            return fn
-        return _decorate
-
-    class _NoopLangfuseContext:
-        @staticmethod
-        def update_current_observation(*_args, **_kwargs):
-            return None
-
-    langfuse_context = _NoopLangfuseContext()  # type: ignore[assignment]
+# the Langfuse UI at http://localhost:3010. Shared with the other
+# Ollama-calling modules via services.langfuse_shim (poindexter#485
+# follow-up: previously this module was the only @observe'd entry
+# point — see the shim docstring for the broader rollout context).
+from services.langfuse_shim import langfuse_context, observe
 
 
 def resolve_local_model(model: str | None = None, *, site_config: Any = None) -> str:

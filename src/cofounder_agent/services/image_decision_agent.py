@@ -21,6 +21,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
+from services.langfuse_shim import observe
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
@@ -60,6 +61,7 @@ class ImagePlanResult:
     raw_response: str = ""
 
 
+@observe(as_type="generation", name="image_decision_agent.plan_images")
 async def plan_images(
     content: str,
     topic: str,

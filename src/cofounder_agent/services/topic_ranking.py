@@ -161,6 +161,10 @@ class ScoredCandidate:
     score_breakdown: dict[str, float] | None = None
 
 
+from services.langfuse_shim import langfuse_context, observe
+
+
+@observe(as_type="generation", name="topic_ranking._ollama_chat_json")
 async def _ollama_chat_json(prompt: str, *, model: str) -> str:
     """One-shot Ollama chat call; returns the assistant's content as a string.
     Indirection so tests can monkeypatch.
@@ -171,6 +175,12 @@ async def _ollama_chat_json(prompt: str, *, model: str) -> str:
     0119). Both fall back to the prior hardcoded values if app_settings
     isn't loaded so unit-test fixtures that don't seed site_config
     keep working.
+
+    Langfuse trace: every call lands a ``generation`` span. The
+    writer_rag_modes (story_spine outline, two_pass revise) and the
+    LLM-judge fallback path in topic_ranking.llm_final_score all route
+    through here, so wrapping at this layer covers all three call sites
+    at once.
     """
     import httpx
     base_url = (
@@ -179,17 +189,32 @@ async def _ollama_chat_json(prompt: str, *, model: str) -> str:
     timeout = site_config.get_float(
         "niche_ollama_chat_timeout_seconds", 60.0,
     )
+    messages = [{"role": "user", "content": prompt}]
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages,
         "stream": False,
         "format": "json",
     }
+    langfuse_context.update_current_observation(
+        model=model,
+        input=messages,
+        metadata={"base_url": base_url, "timeout": timeout, "format": "json"},
+    )
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{base_url}/api/chat", json=payload)
         resp.raise_for_status()
         data = resp.json()
-    return data["message"]["content"]
+    content = data["message"]["content"]
+    langfuse_context.update_current_observation(
+        output=content,
+        usage={
+            "input": data.get("prompt_eval_count"),
+            "output": data.get("eval_count"),
+            "unit": "TOKENS",
+        },
+    )
+    return content
 
 
 async def llm_final_score(
