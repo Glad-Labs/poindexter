@@ -31,6 +31,7 @@ from tenacity import (
 from services.langfuse_shim import langfuse_context, observe
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from services.telemetry import traced_method
 
 logger = get_logger(__name__)
 
@@ -454,6 +455,7 @@ class OllamaClient:
     # ========================================================================
 
     @observe(as_type="generation", name="ollama_client.generate")
+    @traced_method("ollama.generate", attrs=("model", "prompt"))
     async def generate(
         self,
         prompt: str,
@@ -594,6 +596,7 @@ class OllamaClient:
             raise
 
     @observe(as_type="generation", name="ollama_client.chat")
+    @traced_method("ollama.chat", attrs=("model", "messages"))
     async def chat(
         self,
         messages: list[dict[str, str]],

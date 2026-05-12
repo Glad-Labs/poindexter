@@ -169,3 +169,123 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
         # If telemetry setup fails entirely, just log and continue
         logging.error(f"[setup_telemetry] Error setting up telemetry: {e}", exc_info=True)
         logging.exception("[TELEMETRY] Application will continue without OpenTelemetry tracing")
+
+
+# ---------------------------------------------------------------------------
+# traced_method — span-emitting decorator for individual hot-path calls.
+#
+# Glad-Labs/poindexter#416: until the LiteLLM dispatcher routing lands and
+# every primary content-gen call flows through services/llm_providers/
+# dispatcher (which already emits spans), the OllamaClient hot path is
+# invisible to Tempo. Decorating OllamaClient.generate / chat / embed
+# with this helper buys span coverage immediately, and the wrapper
+# survives the eventual dispatcher migration.
+#
+# Behavior:
+#
+# - When the opentelemetry SDK isn't installed (OPENTELEMETRY_AVAILABLE is
+#   False), the decorator is a no-op pass-through. No try/except in hot
+#   path, no attribute lookups — just the original function.
+# - When the SDK is installed but `enable_tracing` is false in app_settings,
+#   spans are emitted but the global tracer-provider's noop processor
+#   drops them. Same code path; no special-case here.
+# - The decorator pulls span attribute values from the wrapped function's
+#   arguments by name (positional or keyword), via inspect.signature. This
+#   is the same shape as the issue's example — `@traced_method("ollama.generate",
+#   attrs=("model", "prompt"))` reads ``model`` and ``prompt`` off the
+#   call. Non-string attrs are stringified; missing names are skipped.
+# - Exceptions in the wrapped function record a span event + status=ERROR
+#   then re-raise. We DO NOT swallow.
+# - The prompt attribute is truncated to PROMPT_ATTR_MAX_CHARS to keep
+#   span size sane; full bodies belong in Langfuse via the @observe
+#   decorator that already wraps these calls (poindexter#401).
+# ---------------------------------------------------------------------------
+
+import functools
+import inspect
+from typing import Any, Awaitable, Callable, ParamSpec, TypeVar
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+_HOT_PATH_TRACER: Any = None
+if OPENTELEMETRY_AVAILABLE and trace is not None:
+    _HOT_PATH_TRACER = trace.get_tracer("poindexter.hot_path")
+
+# Truncate prompt-like attributes so a 30 KB prompt doesn't blow up Tempo's
+# per-span byte budget. Full prompt body lives in Langfuse via @observe.
+PROMPT_ATTR_MAX_CHARS = 1000
+
+# Attributes whose values we should always truncate (likely-long strings).
+_TRUNCATE_ATTRS = frozenset({"prompt", "system", "messages", "text", "content"})
+
+
+def _coerce_attr(name: str, value: Any) -> str:
+    """Stringify a span attribute value; truncate the long ones."""
+    s = str(value) if not isinstance(value, str) else value
+    if name in _TRUNCATE_ATTRS and len(s) > PROMPT_ATTR_MAX_CHARS:
+        return s[:PROMPT_ATTR_MAX_CHARS] + "…[truncated]"
+    return s
+
+
+def traced_method(
+    span_name: str, attrs: tuple[str, ...] = (),
+) -> Callable[[Callable[_P, Awaitable[_R]]], Callable[_P, Awaitable[_R]]]:
+    """Wrap an async function so each call emits one OTel span.
+
+    Args:
+        span_name: The span name reported to Tempo (e.g. ``"ollama.generate"``).
+        attrs: Argument names to copy onto the span as attributes (e.g.
+            ``("model", "prompt")``). Read by name via the wrapped
+            function's signature, so positional or keyword form both work.
+
+    No-op when ``OPENTELEMETRY_AVAILABLE`` is False — the wrapper returns
+    the original function unchanged so production hot-path import time is
+    unaffected on operator boxes without the SDK installed.
+
+    The ``ParamSpec`` + ``TypeVar`` plumbing keeps the wrapped function's
+    signature visible to type checkers; without it Pyright reports every
+    ``model=...`` / ``prompt=...`` kwarg as "no parameter named ..." on
+    decorated calls.
+    """
+    if not OPENTELEMETRY_AVAILABLE or _HOT_PATH_TRACER is None or trace is None:
+        def _passthrough(fn: Callable[_P, Awaitable[_R]]) -> Callable[_P, Awaitable[_R]]:
+            return fn
+        return _passthrough
+
+    def _decorator(fn: Callable[_P, Awaitable[_R]]) -> Callable[_P, Awaitable[_R]]:
+        # Bind argument-name lookup once at decoration time, not per call.
+        sig = inspect.signature(fn)
+
+        @functools.wraps(fn)
+        async def _wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            with _HOT_PATH_TRACER.start_as_current_span(span_name) as span:
+                if attrs:
+                    try:
+                        bound = sig.bind_partial(*args, **kwargs)
+                    except TypeError:
+                        bound = None
+                    if bound is not None:
+                        for attr_name in attrs:
+                            if attr_name in bound.arguments:
+                                span.set_attribute(
+                                    attr_name,
+                                    _coerce_attr(attr_name, bound.arguments[attr_name]),
+                                )
+                try:
+                    return await fn(*args, **kwargs)
+                except Exception as exc:
+                    span.record_exception(exc)
+                    # Status.ERROR import is annoying — set via the constant
+                    # without importing the enum, mirroring dispatcher.py's
+                    # tolerance-of-noop-tracer pattern.
+                    try:
+                        from opentelemetry.trace import Status, StatusCode  # type: ignore
+                        span.set_status(Status(StatusCode.ERROR, str(exc)))
+                    except Exception:
+                        pass
+                    raise
+
+        return _wrapped
+
+    return _decorator
