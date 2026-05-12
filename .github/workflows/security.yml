@@ -28,16 +28,16 @@ jobs:
         with:
           fetch-depth: 0
       # Use the gitleaks CLI directly instead of gitleaks/gitleaks-action@v2,
-      # which requires a paid org license and has been silently erroring with
-      # "missing gitleaks license" on every push — meaning the public repo's
-      # secret scan has not actually run in weeks. Mirrors .gitea/workflows/
-      # security.yml so the same thing executes on both sides.
+      # which requires a paid org license. Mirrors the same scan logic across
+      # both the private (glad-labs-stack) repo and the public (poindexter)
+      # mirror; the baseline file ships to both since the sync script no
+      # longer strips it (see scripts/sync-to-github.sh — the rotated-creds
+      # in the baseline are already in git history regardless).
       #
-      # NOTE: .gitleaks-baseline.json is stripped from the public-sync tree by
-      # scripts/sync-to-github.sh (operator-specific + reveals internal commit
-      # history). Until a sanitized public baseline is shipped, this scan will
-      # surface the full historical false-positive set the private run has
-      # baselined — tracked in the same ticket as the license swap.
+      # --baseline-path: every entry in .gitleaks-baseline.json is a historical
+      # finding that's been triaged and accepted (rotated credentials or
+      # docs/fixture strings that look like secrets). NEW findings still fail
+      # the build via --exit-code=1.
       - name: Install gitleaks
         run: |
           curl -sSfL -o gitleaks.tar.gz \
@@ -50,6 +50,7 @@ jobs:
           ./gitleaks detect \
             --config=.gitleaks.toml \
             --source=. \
+            --baseline-path=.gitleaks-baseline.json \
             --verbose \
             --redact \
             --exit-code=1

@@ -135,11 +135,18 @@ git rm --cached --quiet infrastructure/grafana/dashboards/infrastructure-data.js
 git rm --cached --quiet infrastructure/grafana/dashboards/link-registry.json 2>/dev/null || true
 git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2>/dev/null || true
 
-# === Local gitleaks baseline — operator-specific, regenerated per clone ===
-# Contains historical commit hashes + file paths where gitleaks flagged
-# known-false-positive secrets. Reveals repo history structure + author
-# emails; every operator should generate their own baseline anyway.
-git rm --cached --quiet .gitleaks-baseline.json 2>/dev/null || true
+# === Gitleaks baseline — SHIPPED to public mirror, NOT stripped ===
+# 2026-05-12: previously this line stripped .gitleaks-baseline.json from
+# the public tree, which meant the public mirror's security workflow
+# (.github/workflows/security.yml) had no baseline and re-discovered the
+# 53 historical-false-positive findings on every push — causing the
+# entire gate to fail loudly on the public side.
+#
+# The baseline contains: commit SHAs + file paths + the matched strings
+# (rotated credentials, fixture-shaped strings, doc curl examples) +
+# author email. All of these are ALREADY public via git history on the
+# mirror — the file adds no new information. Shipping it gives both
+# repos a consistent baseline so the CI gate works on both sides.
 
 # Commit the removal (temporary — only pushed to github, never to origin/glad-labs-stack)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
