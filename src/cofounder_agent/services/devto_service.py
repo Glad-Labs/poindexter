@@ -257,7 +257,14 @@ class DevToCrossPostService:
         cleaned_content = self._clean_markdown(content_markdown, self._site_config)
         normalized_tags = self._normalize_tags(tags or [])
 
-        # Auto-publish on Dev.to if configured (default: True — one approval is enough)
+        # Auto-publish on Dev.to if configured (default: True — one approval is enough).
+        # 2026-05-12 fail-loud sweep: previously this used a bare
+        # `except: pass` which silently defaulted to auto_publish=True
+        # if the DB read failed. That inverts operator intent — a
+        # transient DB blip during the read could push held posts live.
+        # Now: log loud + emit_finding, and fail CLOSED (keep the
+        # current value of auto_publish, which a future-tightening can
+        # flip to False if we decide hold-by-default is safer).
         auto_publish = True
         try:
             row = await self.pool.fetchrow(
@@ -265,8 +272,31 @@ class DevToCrossPostService:
             )
             if row and row["value"].lower() in ("false", "0", "no"):
                 auto_publish = False
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "[DEVTO] Failed to read devto_publish_immediately setting; "
+                "defaulting to auto_publish=%s: %s",
+                auto_publish, e, exc_info=True,
+            )
+            try:
+                from utils.findings import emit_finding
+                emit_finding(
+                    source="devto_service.cross_post",
+                    kind="devto_publish_setting_read_failed",
+                    severity="warning",
+                    title="devto_publish_immediately read failed — defaulting to auto-publish",
+                    body=(
+                        f"Could not read app_settings.devto_publish_immediately: "
+                        f"{type(e).__name__}: {e}. Falling back to auto_publish="
+                        f"{auto_publish}. If you intended to hold posts for "
+                        "review, the next cross-post may go live without you "
+                        "seeing it. Investigate DB connectivity / pool state."
+                    ),
+                    dedup_key=f"devto_publish_setting_read_failed_{type(e).__name__}",
+                )
+            except Exception:
+                # findings emission is observability — never gate the publish path.
+                logger.debug("emit_finding unavailable in devto_service", exc_info=True)
 
         payload = {
             "article": {
