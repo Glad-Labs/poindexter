@@ -188,13 +188,21 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     def _sc_get(key: str, default: str = "") -> str:
         return site_config.get(key, default) if site_config is not None else default
 
+    # 2026-05-12 (poindexter#485): removed the trailing "glm-4.7-5090:latest"
+    # constants — those baked Matt's specific model name. The chain still
+    # prefers critic-specific settings, then falls back to writer model,
+    # then through the shared resolver (writer → cost_tier.standard.model →
+    # raise). If nothing resolves, the critic raises rather than silently
+    # picking a model the operator may not have installed.
     model = (
         state.get("critic_model_override")
         or (_sc_get(f"pipeline_critic_model_{critic_role}") if critic_role else None)
         or _sc_get("pipeline_critic_model")
-        or _sc_get("pipeline_writer_model", "glm-4.7-5090:latest")
-        or "glm-4.7-5090:latest"
+        or _sc_get("pipeline_writer_model")
     )
+    if not model:
+        from services.llm_text import resolve_local_model
+        model = resolve_local_model(site_config=site_config)
 
     user_prompt = (
         f"TITLE: {title}\n\n" if title else ""

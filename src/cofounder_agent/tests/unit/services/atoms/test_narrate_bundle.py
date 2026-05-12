@@ -165,6 +165,7 @@ class TestRunPromptConstruction:
                 "task_id": "354-repro",
                 "topic": "Daily dev diary — 2026-05-04: a misleading topic string",
                 "context_bundle": bundle,
+                "site_config": _CaptureSiteConfig(),
             })
 
         assert len(captured) == 1, "narrate_bundle must call the LLM exactly once"
@@ -204,6 +205,7 @@ class TestRunPromptConstruction:
                 "task_id": "354-repro",
                 "topic": "any topic",
                 "context_bundle": bundle,
+                "site_config": _CaptureSiteConfig(),
             })
 
         prompt = captured[0]
@@ -245,6 +247,7 @@ class TestRunPromptConstruction:
                 "task_id": "354-repro",
                 "topic": misleading_topic,
                 "context_bundle": bundle,
+                "site_config": _CaptureSiteConfig(),
             })
 
         prompt = captured[0]

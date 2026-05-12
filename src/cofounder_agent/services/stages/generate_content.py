@@ -668,9 +668,20 @@ class GenerateContentStage:
             database_service, task_id,
         )
 
+        # 2026-05-12 (poindexter#485): the GPU-scheduler lock label and
+        # the "model_used" attribution fallback both used to bake
+        # ``glm-4.7-5090:latest`` — Matt's specific model — into a
+        # public OSS file. Resolve from site_config so the scheduler
+        # logs + metrics match whatever model the operator actually
+        # has installed. resolve_local_model fails loud (raise) when
+        # neither pipeline_writer_model nor cost_tier.standard.model
+        # is set; the writer-mode dispatch below would fail for the
+        # same reason, so we're not regressing observability.
         from services.gpu_scheduler import gpu
+        from services.llm_text import resolve_local_model
+        scheduler_model_label = resolve_local_model(site_config=site_config)
         async with gpu.lock(
-            "ollama", model="glm-4.7-5090:latest",
+            "ollama", model=scheduler_model_label,
             task_id=task_id, phase="generate_content",
         ):
             result = await dispatch_writer_mode(
@@ -690,8 +701,9 @@ class GenerateContentStage:
         draft = result.get("draft") or ""
         # The writer-mode helpers all call _ollama_chat_json with this model.
         # If a future mode picks a different model it should put it on the
-        # result dict so we can surface the real value.
-        model_used = result.get("model_used") or "glm-4.7-5090:latest"
+        # result dict so we can surface the real value. Falls back to the
+        # scheduler label (same resolver) instead of a hardcoded model name.
+        model_used = result.get("model_used") or scheduler_model_label
         metrics: dict[str, Any] = {
             "writer_rag_mode": writer_rag_mode,
             "snippets_used_count": len(result.get("snippets_used") or []),

@@ -438,12 +438,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         return {"content": body, "model_used": "none"}
 
     # DI seam (glad-labs-stack#330) — atoms read site_config from state.
+    # 2026-05-12 (poindexter#485): replaced the three-place hardcoded
+    # ``glm-4.7-5090:latest`` fallback with the shared resolver, which
+    # chains pipeline_writer_model → cost_tier.standard.model → raise.
+    # If neither setting resolves, the atom now fails loud instead of
+    # silently trying a model the operator may not have.
+    from services.llm_text import resolve_local_model
     site_config = state.get("site_config")
-    model = (
-        (site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-            if site_config is not None else "glm-4.7-5090:latest")
-        or "glm-4.7-5090:latest"
-    ).removeprefix("ollama/")
+    model = resolve_local_model(site_config=site_config)
 
     bundle_text = _format_bundle_for_narrative(bundle)
     system_prompt = _resolve_system_prompt()
