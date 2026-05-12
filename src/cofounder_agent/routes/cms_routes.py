@@ -296,15 +296,17 @@ async def preview_post(
                 post["has_podcast"] = (PODCAST_DIR / f"{post_id}.mp3").exists()
                 post["has_video"] = (VIDEO_DIR / f"{post_id}.mp4").exists()
                 post["is_preview"] = True
-                # Include direct media URLs for preview players
-                _r2_url = site_config_dep.get(
-                    "r2_public_url",
-                    "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev",
-                )
-                if post["has_podcast"]:
-                    post["podcast_url"] = f"{_r2_url}/podcast/{post_id}.mp3"
-                if post["has_video"]:
-                    post["video_url"] = f"{_r2_url}/video/{post_id}.mp4"
+                # Include direct media URLs for preview players. 2026-05-12
+                # (poindexter#485): removed the hardcoded R2 bucket fallback —
+                # when r2_public_url isn't configured, omit the URLs so the
+                # preview UI just hides the media section rather than serving
+                # broken links to Matt's bucket.
+                _r2_url = (site_config_dep.get("r2_public_url", "") or "").rstrip("/")
+                if _r2_url:
+                    if post["has_podcast"]:
+                        post["podcast_url"] = f"{_r2_url}/podcast/{post_id}.mp3"
+                    if post["has_video"]:
+                        post["video_url"] = f"{_r2_url}/video/{post_id}.mp4"
 
                 return post
 

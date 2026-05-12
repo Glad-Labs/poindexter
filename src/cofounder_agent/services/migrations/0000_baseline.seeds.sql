@@ -543,7 +543,16 @@ INSERT INTO app_settings (key, value, category, description, is_secret, is_activ
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_workflow_blog_content', '{"reviewers": ["programmatic_validator", "seo_checker"], "min_score": 70, "require_unanimous": false, "description": "Standard blog post QA"}', 'qa_workflows', 'Blog content QA workflow chain', 'f', 't') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_workflow_premium_content', '{"reviewers": ["programmatic_validator", "llm_critic", "seo_checker"], "min_score": 80, "require_unanimous": true, "description": "Premium content with multi-model review"}', 'qa_workflows', 'Premium QA with LLM critic - all reviewers must pass', 'f', 't') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_workflow_quick_check', '{"reviewers": ["programmatic_validator"], "min_score": 60, "require_unanimous": false, "description": "Quick validation only - no SEO or LLM review"}', 'qa_workflows', 'Fast validation for bulk content', 'f', 't') ON CONFLICT (key) DO NOTHING;
-INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('r2_public_url', 'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev', 'general', '', 'f', 't') ON CONFLICT (key) DO NOTHING;
+-- 2026-05-12 (poindexter#485): cleared the hardcoded R2 bucket URL that
+-- previously seeded Matt's specific bucket. Fresh installs now get an
+-- empty default — operators set their own R2 base via
+--   poindexter set-setting r2_public_url 'https://<your-bucket>.r2.dev'
+-- The reconciliation jobs (media_reconciliation, static_export_reconciliation)
+-- detect this and skip cleanly with an info-severity finding rather than
+-- probing somebody else's bucket. No retro-update migration written
+-- because the baked URL happens to match Matt's production value, and
+-- a WHERE value = <baked> rule would wipe his real setting too.
+INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('r2_public_url', '', 'general', 'Public R2/S3 base URL — set via poindexter set-setting', 'f', 't') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('ragas_enabled', 'true', 'general', '', 'f', 't') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('ragas_judge_model', '', 'general', 'Auto-seeded by services.settings_defaults (#379)', 'f', 't') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('rag_default_top_k', '5', 'general', 'Auto-seeded by services.settings_defaults (#379)', 'f', 't') ON CONFLICT (key) DO NOTHING;

@@ -86,6 +86,13 @@ _TEST_BRAND_CONFIG = {
     "site_description": "Test site description",
     "owner_name": "Tester",
     "owner_email": "owner@test.example.com",
+    # 2026-05-12 (poindexter#485): podcast/video routes now bail with 503
+    # when r2_public_url is unset (used to silently fall back to Matt's
+    # specific bucket URL). Seeding a test-only base keeps the existing
+    # feed-rendering tests green without re-introducing the hardcoded
+    # bucket. Tests that want to exercise the unconfigured branch can
+    # override via monkeypatch.
+    "r2_public_url": "https://pub-test-bucket.r2.dev",
 }
 
 for _key, _value in _TEST_BRAND_CONFIG.items():

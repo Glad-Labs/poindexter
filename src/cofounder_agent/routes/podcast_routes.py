@@ -28,7 +28,11 @@ router = APIRouter(prefix="/api/podcast", tags=["podcast"])
 # Helpers
 # ---------------------------------------------------------------------------
 
-_R2_FALLBACK = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
+# 2026-05-12 (poindexter#485): removed the "_R2_FALLBACK" constant that
+# baked Matt's specific R2 bucket URL into a public OSS file. Forks
+# without R2 configured would have served podcast feeds pointing at
+# Matt's bucket. Now the helper returns the configured value or empty
+# string; routes detect empty and bail with 503.
 
 
 def _site_url(site_config: Any) -> str:
@@ -36,8 +40,25 @@ def _site_url(site_config: Any) -> str:
 
 
 def _r2_url(site_config: Any) -> str:
-    """Get R2 CDN base URL, with DB override support."""
-    return site_config.get("r2_public_url", _R2_FALLBACK)
+    """Get R2 CDN base URL. Returns '' when unconfigured — caller must
+    check before composing media URLs (use ``_r2_url_or_503``)."""
+    return (site_config.get("r2_public_url", "") or "").rstrip("/")
+
+
+def _r2_url_or_503(site_config: Any) -> str:
+    """Variant that raises HTTP 503 when r2_public_url is unset. Use this
+    in feed/route handlers where the URL is mandatory."""
+    url = _r2_url(site_config)
+    if not url:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "r2_public_url not configured — podcast feed unavailable. "
+                "Set via `poindexter set-setting r2_public_url 'https://<bucket>.r2.dev'`."
+            ),
+        )
+    return url
 
 
 def _format_duration(seconds: int) -> str:
@@ -181,7 +202,7 @@ def _build_rss_xml(episodes: list[dict], site_config: Any) -> str:
     _domain = site_config.get("site_domain", "podcast")
     # Bump via: UPDATE app_settings SET value = 'v3' WHERE key = 'podcast_cdn_version';
     _cdn_ver = site_config.get("podcast_cdn_version", "v2")
-    _r2 = _r2_url(site_config)
+    _r2 = _r2_url_or_503(site_config)
     _site = _site_url(site_config)
 
     # Episodes
