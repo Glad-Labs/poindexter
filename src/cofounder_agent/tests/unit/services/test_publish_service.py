@@ -1328,6 +1328,10 @@ class TestPingSearchEnginesEmptyConfig:
         sc = MagicMock()
         # IndexNow disabled, sitemap ping disabled too
         sc.get = MagicMock(side_effect=lambda k, default="": "" if "indexnow" in k or "sitemap" in k else default)
+        # indexnow_key is is_secret=true since the 2026-05-12 hotfix —
+        # _ping_search_engines now awaits get_secret() for it. Mock as
+        # AsyncMock so the await resolves to '' (key absent → ping skipped).
+        sc.get_secret = AsyncMock(return_value="")
 
         with patch("services.publish_service.site_config", sc):
             mock_client = AsyncMock()

@@ -103,16 +103,37 @@ authorization_router = APIRouter(tags=["OAuth"])
 # ---------------------------------------------------------------------------
 
 
-def _build_sdk_routes(issuer_url: str, db_service: DatabaseService):
+def _build_sdk_routes(
+    issuer_url: str,
+    db_service: DatabaseService,
+    site_config: Any = None,
+):
     pool = getattr(db_service, "pool", None)
     if pool is None:
         raise RuntimeError("database pool unavailable")
     provider = PoindexterOAuthProvider(pool)
+    # 2026-05-12 security audit (P0): open Dynamic Client Registration
+    # (DCR) at /register lets any unauthenticated visitor self-issue a
+    # client with default scopes mcp:read+mcp:write, then exchange it
+    # via client_credentials for a fully privileged JWT — bypassing
+    # the operator's intended single-tenant boundary. Gate DCR behind
+    # app_settings.oauth_dcr_enabled (default false). When operators
+    # need to onboard a new consumer (mcp-server, external integration)
+    # they flip the flag briefly, register the client, capture the
+    # (client_id, client_secret), then flip back. Long-term plan:
+    # replace DCR with a `poindexter auth register-client` CLI that
+    # requires the master OAuth client cred.
+    dcr_enabled = False
+    if site_config is not None:
+        try:
+            dcr_enabled = bool(site_config.get_bool("oauth_dcr_enabled", False))
+        except Exception:
+            dcr_enabled = False
     auth_routes = create_auth_routes(
         provider=provider,
         issuer_url=AnyHttpUrl(issuer_url),
         client_registration_options=ClientRegistrationOptions(
-            enabled=True,
+            enabled=dcr_enabled,
             valid_scopes=sorted(ALLOWED_SCOPES),
             default_scopes=["mcp:read", "mcp:write"],
         ),
@@ -154,7 +175,7 @@ async def _dispatch_sdk(
     replay it as a single ``http.request`` message.
     """
     issuer = _issuer_url(request, site_config)
-    _, routes = _build_sdk_routes(issuer, db_service)
+    _, routes = _build_sdk_routes(issuer, db_service, site_config)
     target = _find_route(routes, path)
     if target is None:
         return JSONResponse({"error": "not_found"}, status_code=404)

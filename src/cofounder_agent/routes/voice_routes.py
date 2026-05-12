@@ -19,12 +19,18 @@ Why a static HTML page instead of a React app? The page is ~80 lines.
 Building a React app would be more code than the actual logic, plus
 add a build step. The LiveKit JS SDK is the only "framework" needed.
 
-Auth: the page is intentionally available without OAuth on the worker.
-The JWT IS the auth — anyone who can pull the page (Tailscale-only,
-since the worker is funnel-protected to Matt's tailnet identity) gets
-a valid 7-day token. For multi-operator deployments, gate the route
-behind ``Depends(verify_api_token)`` and pass the operator's username
-as the JWT identity.
+Auth: gated behind ``Depends(verify_api_token)`` since 2026-05-12.
+
+Pre-2026-05-12 this route was unauthenticated on the assumption that
+the worker was Tailscale-only. The actual deployment exposes the
+worker via Tailscale **Funnel** (public internet) at
+``https://nightrider.taild4f626.ts.net/voice/join``, so any internet
+visitor could mint a 7-day LiveKit JWT with room-join + publish +
+subscribe + publish-data permissions for Matt's voice room. Security
+audit caught it; this route now requires a valid OAuth JWT before
+minting the LiveKit token, AND refuses to mint when
+``LIVEKIT_API_SECRET`` is unset or equal to the dev placeholder
+(fail-loud per the no-silent-defaults rule).
 """
 
 from __future__ import annotations
@@ -37,10 +43,18 @@ import os
 import time
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 
+from middleware.api_token_auth import verify_api_token
+
 router = APIRouter(prefix="/voice", tags=["voice"])
+
+
+# 2026-05-12 security audit: refuse to mint LiveKit tokens with the dev
+# placeholder. Surface a clear error so the operator sees the
+# misconfiguration instead of silently shipping forgeable tokens.
+_DEV_PLACEHOLDER_SECRET = "devsecret_change_me_change_me_change_me"
 
 
 # ---------------------------------------------------------------------------
@@ -91,19 +105,39 @@ def _mint_livekit_token(
 
 
 @router.get("/join", response_class=HTMLResponse)
-async def voice_join() -> HTMLResponse:
+async def voice_join(
+    _principal: str = Depends(verify_api_token),
+) -> HTMLResponse:
     """Render the LiveKit web client with a freshly-minted JWT.
 
     Reads LIVEKIT_API_KEY + LIVEKIT_API_SECRET from env (matches the
     voice-agent-livekit container's env shape). LIVEKIT_WSS_URL points
     at the Tailscale-funneled wss endpoint; default assumes the
     standard /livekit-signal/ path on this funnel hostname.
+
+    Requires a valid OAuth JWT (verified by ``verify_api_token``).
+    The 2026-05-12 security audit caught this route shipping unauth
+    over the Tailscale **Funnel** (public internet) — any visitor
+    could mint a 7-day room-join token with publish + subscribe
+    privileges for Matt's voice room. The gate closed that window.
     """
-    api_key = os.environ.get("LIVEKIT_API_KEY", "devkey")
-    api_secret = os.environ.get(
-        "LIVEKIT_API_SECRET",
-        "devsecret_change_me_change_me_change_me",
-    )
+    api_key = os.environ.get("LIVEKIT_API_KEY", "")
+    api_secret = os.environ.get("LIVEKIT_API_SECRET", "")
+    if not api_secret or api_secret == _DEV_PLACEHOLDER_SECRET or not api_key:
+        # Fail-loud per the no-silent-defaults rule. Pre-fix this branch
+        # silently minted forgeable tokens against the well-known dev
+        # placeholder; that's worse than a 503 because forged tokens
+        # can join the room undetected.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "LIVEKIT_API_KEY / LIVEKIT_API_SECRET not configured "
+                "or still set to the dev placeholder. Refusing to mint "
+                "tokens. Set both env vars on the worker container and "
+                "restart."
+            ),
+        )
+
     room = os.environ.get("LIVEKIT_ROOM", "poindexter")
     identity = os.environ.get("LIVEKIT_DEFAULT_IDENTITY", "matt")
     # Default to the same-origin tailscale-funneled path. Operators can
@@ -114,16 +148,7 @@ async def voice_join() -> HTMLResponse:
         "wss://nightrider.taild4f626.ts.net/livekit-signal/",
     )
 
-    if not api_secret or api_secret == "devsecret_change_me_change_me_change_me":
-        # Dev defaults are fine for tailnet-only use; no hard fail. Just
-        # surface the warning in the page so a future operator catches it.
-        secret_warn = (
-            "<div style='background:#3a2a00;color:#fa3;padding:8px;border-radius:6px;"
-            "margin-bottom:12px;font-size:13px'>WARNING: LiveKit running with dev "
-            "API secret. Rotate before exposing publicly.</div>"
-        )
-    else:
-        secret_warn = ""
+    secret_warn = ""
 
     token = _mint_livekit_token(api_key, api_secret, identity, room)
 

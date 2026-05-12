@@ -40,8 +40,11 @@ async def _notify_discord(message: str) -> None:
     """Send ops notification to Discord #ops channel via webhook."""
     _logger = get_logger(__name__)
     try:
-        # Load webhook URL from app_settings (DB-first config)
-        webhook_url = site_config.get("discord_ops_webhook_url", "")
+        # discord_ops_webhook_url is is_secret=true since 2026-05-12 — must
+        # fetch via the async get_secret path; sync site_config.get() would
+        # return '' for cached-out secret rows. See
+        # docs/security/audit-2026-05-12.md finding P1 #8.
+        webhook_url = await site_config.get_secret("discord_ops_webhook_url", "")
         if not webhook_url:
             _logger.debug("[NOTIFY:discord] No discord_ops_webhook_url configured — skipping")
             return
