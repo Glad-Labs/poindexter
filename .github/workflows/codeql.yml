@@ -44,10 +44,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@7fd177fa680c9881b53cdab4d346d32574c9f7f4  # v3.35.4 as of 2026-05-12
         with:
           languages: ${{ matrix.language }}
           # Default queries + the security-extended pack catch more
@@ -55,6 +55,6 @@ jobs:
           queries: security-extended
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@7fd177fa680c9881b53cdab4d346d32574c9f7f4  # v3.35.4 as of 2026-05-12
         with:
           category: "/language:${{ matrix.language }}"

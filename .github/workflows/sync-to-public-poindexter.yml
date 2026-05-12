@@ -54,7 +54,7 @@ jobs:
 
     steps:
       - name: Checkout glad-labs-stack (full history for sync filter)
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
         with:
           fetch-depth: 0
           # Don't persist the GITHUB_TOKEN credential helper — it sets an
