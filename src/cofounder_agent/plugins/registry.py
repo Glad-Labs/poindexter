@@ -311,6 +311,17 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.fix_uncategorized_posts", "FixUncategorizedPostsJob"),
         ("jobs", "services.jobs.tune_publish_threshold", "TunePublishThresholdJob"),
         ("jobs", "services.jobs.verify_published_posts", "VerifyPublishedPostsJob"),
+        # Static-export reconciliation — 15-min DB ↔ R2 drift watchdog. The
+        # public site reads R2 static/posts/index.json as source of truth;
+        # publish_service used to fire export_post as a fire-and-forget asyncio
+        # task that died silently when cancelled (Prefect teardown / worker
+        # restart), freezing the bucket for days. This job rebuilds the index
+        # whenever count or latest-published-at drift between DB and R2.
+        (
+            "jobs",
+            "services.jobs.static_export_reconciliation",
+            "StaticExportReconciliationJob",
+        ),
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
         ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         # ("jobs", "services.jobs.sync_shared_context", "SyncSharedContextJob"),

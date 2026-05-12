@@ -64,7 +64,7 @@ export async function generateMetadata({
   }
 
   const imageUrl =
-    post.cover_image_url || post.featured_image_url || '/og-image.jpg';
+    post.featured_image_url || post.cover_image_url || '/og-image.jpg';
   const description = post.seo_description || post.excerpt || '';
   const title = post.seo_title || post.title;
   const canonicalUrl = generateCanonicalURL(post.slug, SITE_URL);
@@ -131,7 +131,7 @@ export default async function PostPage({
     ? await getRelatedPosts(post.category_id, post.id, 3)
     : [];
 
-  const imageUrl = post.cover_image_url || post.featured_image_url;
+  const imageUrl = post.featured_image_url || post.cover_image_url;
   const publishDate = post.published_at || post.created_at;
 
   const breadcrumbs = [

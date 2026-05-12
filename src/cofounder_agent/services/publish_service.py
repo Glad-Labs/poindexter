@@ -79,6 +79,7 @@ class PublishResult:
         published_url: str | None = None,
         post_title: str | None = None,
         revalidation_success: bool = False,
+        static_export_success: bool = False,
         error: str | None = None,
     ):
         self.success = success
@@ -87,6 +88,7 @@ class PublishResult:
         self.published_url = published_url
         self.post_title = post_title
         self.revalidation_success = revalidation_success
+        self.static_export_success = static_export_success
         self.error = error
 
     def to_dict(self) -> dict[str, Any]:
@@ -97,6 +99,7 @@ class PublishResult:
             "published_url": self.published_url,
             "post_title": self.post_title,
             "revalidation_success": self.revalidation_success,
+            "static_export_success": self.static_export_success,
             "error": self.error,
         }
 
@@ -786,26 +789,46 @@ async def publish_post_from_task(
             logger.warning("[publish_service] ISR revalidation error (non-fatal): %s", reval_err)
 
     # ---------------------------------------------------------------
-    # 10b. Static JSON export to CDN (fire-and-forget)
+    # 10b. Static JSON export to CDN (inline, not fire-and-forget)
     # ---------------------------------------------------------------
+    # The public site reads R2 ``static/posts/index.json`` as its source
+    # of truth (web/public-site/lib/posts.ts → ``fetchPostIndex``). When
+    # this step is fire-and-forget, any process boundary that cancels
+    # the asyncio task (Prefect subprocess teardown for auto-publish,
+    # worker restart, transient hiccup) silently freezes R2 — between
+    # 2026-05-08 and 2026-05-11 four published posts never reached the
+    # bucket because the background task never completed.
+    #
+    # Awaiting inline costs ~3-5s on R2 (5 small JSON files) which is
+    # well within the publish-endpoint latency budget. The return value
+    # lands on PublishResult.static_export_success so /approve + /publish
+    # callers can surface the failure to the operator.
+    #
     # Strict-mode gate (#24): same reason as ISR — static export filters
     # on status='published', so 'awaiting_gates' posts are excluded
     # automatically. But we ALSO skip the export call entirely as a
     # belt-and-suspenders against future filter changes.
+    static_export_success = False
     if not _gates_block_distribution:
         try:
             from services.static_export_service import export_post
 
             _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
-            if background_tasks:
-                background_tasks.add_task(export_post, _pool, slug)
+            static_export_success = await export_post(_pool, slug)
+            if static_export_success:
+                logger.info("[STATIC_EXPORT] Synchronous export complete for %s", slug)
             else:
-                _spawn_background(
-                    export_post(_pool, slug), name=f"static_export({slug})"
+                logger.warning(
+                    "[STATIC_EXPORT] export_post returned failure for %s — "
+                    "R2 index will be stale until the reconciliation watchdog "
+                    "fires or the next successful publish completes",
+                    slug,
                 )
-            logger.info("[STATIC_EXPORT] Queued export for %s", slug)
         except Exception as e:
-            logger.warning("[STATIC_EXPORT] Failed to queue export (non-fatal): %s", e)
+            logger.error(
+                "[STATIC_EXPORT] export_post raised for %s: %s",
+                slug, e, exc_info=True,
+            )
 
     # ---------------------------------------------------------------
     # 11. Ping search engines (fire-and-forget)
@@ -1065,6 +1088,7 @@ async def publish_post_from_task(
         published_url=f"/posts/{slug}",
         post_title=post_title,
         revalidation_success=revalidation_success,
+        static_export_success=static_export_success,
     )
 
 

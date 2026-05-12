@@ -1,5 +1,12 @@
 """Tests for services/guardrails_rails.py — guardrails-ai integration
-as a parallel content rail (#198 / #329 sub-issue 3)."""
+as a parallel content rail (#198 / #329 sub-issue 3).
+
+Skipped at collection time when the guardrails-ai package isn't
+importable. The dep was dropped from pyproject.toml on 2026-05-12 after
+PyPI quarantined the package; this test file stays in the tree so the
+moment we re-add the dep the contract is back under coverage, but it
+must not block CI in the dep-less interim.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +14,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.guardrails_rails import (
+pytest.importorskip(
+    "guardrails",
+    reason=(
+        "guardrails-ai package not installed (dropped from pyproject.toml "
+        "on 2026-05-12 after PyPI quarantine)"
+    ),
+)
+
+from services.guardrails_rails import (  # noqa: E402
     _resolve_competitors,
     is_enabled,
     run_brand_guard,

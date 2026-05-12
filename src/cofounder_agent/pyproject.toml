@@ -157,7 +157,16 @@ litellm = ">=1.83.7,<2.0"
 # so the worker image rebuild picks both up alongside litellm.
 langfuse = ">=3.0,<4.0"
 deepeval = "^4.0.0"
-guardrails-ai = "^0.7.3"
+# guardrails-ai dropped 2026-05-12 — PyPI quarantined the package after
+# a suspect 0.10.1 release published that day. Our installed 0.7.3 wheel
+# was clean, but the dep blocks every CI run because Poetry can't
+# resolve any version while the package is quarantined. The two QA
+# rails it powered (guardrails_brand, guardrails_competitor) are
+# advisory-only and already covered by deepeval_brand_fabrication +
+# content_validator's fabrication patterns. multi_model_qa.py wraps
+# the rail call in try/except ImportError so the runtime degrades
+# silently. Re-add once PyPI lifts the quarantine.
+# guardrails-ai = "^0.7.3"
 ragas = ">=0.2,<0.4"
 langchain-ollama = "^1.1.0"
 llama-index-core = "^0.14.21"

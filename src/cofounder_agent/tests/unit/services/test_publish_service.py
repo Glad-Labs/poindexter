@@ -213,12 +213,14 @@ class TestPublishResult:
             published_url="/posts/my-slug",
             post_title="My Title",
             revalidation_success=True,
+            static_export_success=True,
         )
         d = r.to_dict()
         assert d["success"] is True
         assert d["post_id"] == "p1"
         assert d["post_slug"] == "my-slug"
         assert d["error"] is None
+        assert d["static_export_success"] is True
 
     def test_error_result_to_dict(self):
         r = PublishResult(success=False, error="boom")
@@ -226,6 +228,15 @@ class TestPublishResult:
         assert d["success"] is False
         assert d["error"] == "boom"
         assert d["post_id"] is None
+        # Default: static_export_success is False on an error result
+        assert d["static_export_success"] is False
+
+    def test_static_export_success_defaults_false(self):
+        """The new field defaults to False so existing callers keep working
+        without having to set it, but the field is always present in to_dict()."""
+        r = PublishResult(success=True, post_id="p1")
+        assert r.static_export_success is False
+        assert r.to_dict()["static_export_success"] is False
 
 
 # ---------------------------------------------------------------------------
