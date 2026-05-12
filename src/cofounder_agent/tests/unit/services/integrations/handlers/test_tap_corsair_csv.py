@@ -30,6 +30,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from services.integrations.handlers.tap_corsair_csv import (
+    _derive_offset_hours_from_mtime,
     _parse_timestamp,
     _parse_value,
     corsair_csv,
@@ -174,6 +175,73 @@ class TestParseTimestamp:
     def test_invalid_returns_none(self):
         assert _parse_timestamp("not a timestamp") is None
         assert _parse_timestamp("") is None
+
+
+# ---------------------------------------------------------------------------
+# TZ derivation tests (poindexter#484)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDeriveOffsetHoursFromMtime:
+    """Verify mtime-vs-last-row derivation produces the right operator offset."""
+
+    def _write_csv(self, path: Path, last_row_local: datetime) -> None:
+        # iCUE format is `d/m/yyyy HH:MM:SS AM/PM` (Windows locale).
+        # AM/PM is redundant with 24h clock but the parser expects it.
+        body = (
+            "Timestamp,CPU Package\n"
+            f"01/01/2026 00:00:00 AM,40\n"
+            f"{last_row_local.strftime('%d/%m/%Y %H:%M:%S')} {'AM' if last_row_local.hour < 12 else 'PM'},50\n"
+        )
+        path.write_bytes(("﻿" + body).encode("utf-8"))
+
+    def test_edt_offset_minus_four(self, tmp_path: Path):
+        # iCUE wrote 12:00 local; file was saved at 16:00 UTC → EDT (-4).
+        path = tmp_path / "cue.csv"
+        self._write_csv(path, datetime(2026, 5, 12, 12, 0, 0))
+        import os
+        target_mtime_utc = datetime(2026, 5, 12, 16, 0, 0, tzinfo=timezone.utc)
+        os.utime(path, (target_mtime_utc.timestamp(), target_mtime_utc.timestamp()))
+        assert _derive_offset_hours_from_mtime(path) == -4.0
+
+    def test_est_offset_minus_five(self, tmp_path: Path):
+        path = tmp_path / "cue.csv"
+        self._write_csv(path, datetime(2026, 1, 15, 12, 0, 0))
+        import os
+        target_mtime_utc = datetime(2026, 1, 15, 17, 0, 0, tzinfo=timezone.utc)
+        os.utime(path, (target_mtime_utc.timestamp(), target_mtime_utc.timestamp()))
+        assert _derive_offset_hours_from_mtime(path) == -5.0
+
+    def test_jst_offset_plus_nine(self, tmp_path: Path):
+        # iCUE wrote 21:00 local; file was saved at 12:00 UTC → JST (+9).
+        path = tmp_path / "cue.csv"
+        self._write_csv(path, datetime(2026, 5, 12, 21, 0, 0))
+        import os
+        target_mtime_utc = datetime(2026, 5, 12, 12, 0, 0, tzinfo=timezone.utc)
+        os.utime(path, (target_mtime_utc.timestamp(), target_mtime_utc.timestamp()))
+        assert _derive_offset_hours_from_mtime(path) == 9.0
+
+    def test_unparseable_last_row_returns_none(self, tmp_path: Path):
+        path = tmp_path / "cue.csv"
+        path.write_bytes(("﻿Timestamp,Metric\nnot-a-timestamp,123\n").encode("utf-8"))
+        assert _derive_offset_hours_from_mtime(path) is None
+
+    def test_empty_file_returns_none(self, tmp_path: Path):
+        path = tmp_path / "cue.csv"
+        path.write_bytes(b"")
+        assert _derive_offset_hours_from_mtime(path) is None
+
+    def test_drift_beyond_real_timezones_returns_none(self, tmp_path: Path):
+        # A 20-hour delta is past any real timezone (max +14 / min -12).
+        # Likely manual backdating or clock skew; don't apply a nonsense
+        # offset.
+        path = tmp_path / "cue.csv"
+        self._write_csv(path, datetime(2026, 5, 12, 0, 0, 0))
+        import os
+        target_mtime_utc = datetime(2026, 5, 12, 20, 0, 0, tzinfo=timezone.utc)
+        os.utime(path, (target_mtime_utc.timestamp(), target_mtime_utc.timestamp()))
+        assert _derive_offset_hours_from_mtime(path) is None
 
 
 # ---------------------------------------------------------------------------

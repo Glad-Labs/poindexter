@@ -165,6 +165,73 @@ def _local_offset_delta(hours: float):
     return timedelta(hours=hours)
 
 
+def _derive_offset_hours_from_mtime(path: Path) -> float | None:
+    """Auto-derive the operator's UTC offset from the CSV file's mtime.
+
+    poindexter#484: iCUE writes naive wall-clock timestamps. The OS
+    records mtime in true UTC. So:
+
+        offset_hours ≈ (mtime_utc - last_row_local_naive) / 1 hour
+
+    Rounded to the nearest 15-minute boundary because every real
+    timezone is quarter-hour aligned. The sign is negated to match the
+    existing ``local_timezone_offset_hours`` convention (-4 for EDT,
+    -5 for EST, +9 for JST etc.).
+
+    Returns ``None`` on any parse failure / unreadable file; callers
+    fall back to the explicit config knob.
+    """
+    try:
+        st = path.stat()
+        file_mtime_utc = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
+        # Read the tail of the file so we sample a RECENT row, not the
+        # first row written by a long-lived session. 8 KB is plenty for
+        # one CSV row even with wide metric maps.
+        size = st.st_size
+        if size == 0:
+            return None
+        with path.open("rb") as fh:
+            fh.seek(max(0, size - 8192))
+            tail_bytes = fh.read()
+        tail = tail_bytes.decode("utf-8-sig", errors="replace")
+        # The last non-empty line is the most recent CSV row. Strip
+        # whitespace so a trailing newline doesn't mask a real row.
+        lines = [ln for ln in tail.splitlines() if ln.strip()]
+        if not lines:
+            return None
+        last_line = lines[-1]
+        first_col = last_line.split(",", 1)[0].strip()
+        naive_dt: datetime | None = None
+        for fmt in _TIMESTAMP_FORMATS:
+            try:
+                naive_dt = datetime.strptime(first_col, fmt)
+                break
+            except ValueError:
+                continue
+        if naive_dt is None:
+            return None
+        # mtime is wall-clock UTC; naive_dt is the operator's local
+        # wall-clock. Their difference is how far AHEAD UTC is of local.
+        # Negate to land on the config convention (negative for west of
+        # UTC, positive for east).
+        delta_seconds = (
+            file_mtime_utc.replace(tzinfo=None) - naive_dt
+        ).total_seconds()
+        offset_hours = -round(delta_seconds / 900) * 0.25
+        # Sanity clamp — real timezones are in [-12, +14]. A value past
+        # this range means the file mtime and the last row clock have
+        # drifted by something other than a TZ flip (clock skew, manual
+        # backdating, etc.). Don't apply a nonsense offset.
+        if not (-12.0 <= offset_hours <= 14.0):
+            return None
+        return offset_hours
+    except Exception as exc:  # noqa: BLE001 — derivation is best-effort
+        logger.warning(
+            "[tap.corsair_csv] mtime-based TZ derivation failed: %s", exc,
+        )
+        return None
+
+
 def _find_latest_csv(directory: Path, glob: str) -> Path | None:
     """Return the newest matching CSV in ``directory``, or None when empty."""
     if not directory.is_dir():
@@ -243,7 +310,14 @@ async def corsair_csv(
     # Operator's local UTC offset for the CSV's naive timestamps.
     # Default 0 = "treat as UTC"; only correct in zero-offset zones.
     # Matt's PC is EDT (-4) in summer / EST (-5) in winter.
-    local_offset_hours = float(config.get("local_timezone_offset_hours", 0.0))
+    config_local_offset_hours = float(
+        config.get("local_timezone_offset_hours", 0.0)
+    )
+    auto_derive_tz = bool(config.get("auto_derive_timezone_offset", True))
+    # Default before the rotation/derivation block runs; overwritten
+    # below once `latest` is known. Sustains the early-return paths
+    # (no files / not due) which never reach the derivation block.
+    local_offset_hours = config_local_offset_hours
 
     if not directory or str(directory) == ".":
         raise ValueError("tap.corsair_csv: row.config.directory is required")
@@ -260,16 +334,43 @@ async def corsair_csv(
         return {"records": 0, "file": None, "reason": "no files found"}
 
     # File rotation: iCUE restarts produce a new dated CSV. Detect it
-    # by name change and reset the byte cursor.
-    current_file = state.get("current_file")
+    # by name change and reset the byte cursor + derived-offset cache.
+    prior_file = state.get("current_file")
     byte_offset = int(state.get("byte_offset", 0))
-    if current_file != latest.name:
+    offset_cache: dict[str, float] = dict(state.get("derived_offset_hours_cache") or {})
+    current_file: str = str(latest.name)
+    if prior_file != current_file:
         logger.info(
-            "[tap.corsair_csv] file rotated %s → %s — resetting byte_offset",
-            current_file, latest.name,
+            "[tap.corsair_csv] file rotated %s → %s — resetting byte_offset + offset cache",
+            prior_file, current_file,
         )
-        current_file = latest.name
         byte_offset = 0
+        # Drop the prior file's cached offset on rotation — the new
+        # file may have been written under a DST flip.
+        offset_cache.pop(current_file, None)
+
+    # poindexter#484 — auto-derive TZ offset from file mtime so the
+    # operator doesn't have to flip local_timezone_offset_hours twice
+    # a year at DST. Cache per-filename so we only derive once per
+    # rotation. Fall back to the explicit config knob on any failure.
+    if auto_derive_tz:
+        cached = offset_cache.get(current_file)
+        if cached is not None:
+            local_offset_hours = float(cached)
+        else:
+            derived = _derive_offset_hours_from_mtime(latest)
+            if derived is not None:
+                logger.info(
+                    "[tap.corsair_csv] auto-derived TZ offset %.2fh for %s "
+                    "(file mtime vs last-row wall-clock)",
+                    derived, current_file,
+                )
+                offset_cache[current_file] = derived
+                local_offset_hours = derived
+            else:
+                local_offset_hours = config_local_offset_hours
+    else:
+        local_offset_hours = config_local_offset_hours
 
     file_size = latest.stat().st_size
     if file_size <= byte_offset:
@@ -329,6 +430,7 @@ async def corsair_csv(
             **state,
             "current_file": current_file,
             "byte_offset": file_size,
+            "derived_offset_hours_cache": offset_cache,
         }
         await _save_state(pool, row["id"], new_state)
         return {"records": 0, "file": current_file, "reason": "no metrics matched"}
@@ -410,6 +512,9 @@ async def corsair_csv(
             if last_sample_at is not None
             else state.get("last_sample_at")
         ),
+        # poindexter#484 — persist the derived TZ offset cache so the
+        # next cycle skips re-derivation until the file rotates.
+        "derived_offset_hours_cache": offset_cache,
     }
     await _save_state(pool, row["id"], new_state)
 
