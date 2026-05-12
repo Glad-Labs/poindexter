@@ -275,6 +275,20 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_DISCORD_BOT_PROBE = False
 
+try:
+    # poindexter#434 — MCP HTTP server (:8004) liveness probe. Pings
+    # the OAuth discovery endpoint every configurable interval; alerts
+    # on unreachable/5xx and optionally invokes the operator-configured
+    # launcher script for auto-recovery (capped at N restarts per window).
+    from mcp_http_probe import run_mcp_http_probe
+    _HAS_MCP_HTTP_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.mcp_http_probe import run_mcp_http_probe
+        _HAS_MCP_HTTP_PROBE = True
+    except ImportError:
+        _HAS_MCP_HTTP_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1945,6 +1959,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] discord_bot probe failed: %s", e)
+
+    # MCP HTTP server (:8004) liveness probe (poindexter#434). Pings the
+    # OAuth discovery endpoint; pages the operator on unreachable/5xx
+    # and optionally invokes the configured launcher path for auto-
+    # recovery. Restart count is capped per rolling window so a
+    # genuinely broken server can't busy-loop the launcher.
+    if _HAS_MCP_HTTP_PROBE:
+        try:
+            mcp_summary = await run_mcp_http_probe(pool)
+            probe_results["mcp_http"] = {
+                "ok": bool(mcp_summary.get("ok", False)),
+                "detail": mcp_summary.get("detail", ""),
+                "summary": mcp_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] mcp_http probe failed: %s", e)
 
     # Refresh Prometheus scrape secrets (uptime_kuma_api_key, etc.)
     # from app_settings → bind-mounted password_file paths so the next
