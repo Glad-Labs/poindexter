@@ -31,4 +31,19 @@ COPY brain/ /brain/
 
 ENV PYTHONPATH="/app:/:/brain"
 
+# Drop privileges before running the bot. Trivy DS-0002 / CIS Docker
+# 4.1 — a container started without a USER directive runs as root,
+# which broadens the blast radius of any RCE in the bot, webrtcvad,
+# or kokoro-onnx C extensions. The huggingface model cache at
+# /root/.cache lives on a bind-mount volume in docker-compose, so
+# we chown it to the runtime user up-front; first-run model fetch
+# (~370 MB) writes there without escalation.
+RUN groupadd --system --gid 1001 voicebot \
+ && useradd  --system --uid 1001 --gid voicebot --create-home --home-dir /home/voicebot voicebot \
+ && chown -R voicebot:voicebot /app /brain \
+ && mkdir -p /home/voicebot/.cache/huggingface \
+ && chown -R voicebot:voicebot /home/voicebot/.cache
+ENV HF_HOME=/home/voicebot/.cache/huggingface
+USER voicebot
+
 CMD ["python", "discord-voice-bot.py"]

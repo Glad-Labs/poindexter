@@ -578,7 +578,7 @@ Admin panel at `/admin`.
         "url": _site_cfg.get("site_url", "https://localhost:3000"),
     },
     license_info={"name": "Apache-2.0", "url": "https://www.apache.org/licenses/LICENSE-2.0"},
-    openapi_url=None if _is_production else "/api/openapi.json",
+    openapi_url=None if _is_production else "/api/openapi.json",  # gitleaks:allow — literal URL path, not a secret
     docs_url=None if _is_production else "/api/docs",
     redoc_url=None if _is_production else "/api/redoc",
     swagger_ui_parameters={"defaultModelsExpandDepth": 1},

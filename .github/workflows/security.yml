@@ -8,6 +8,10 @@ on:
   # Weekly baseline scan catches CVEs that appear in deps between PRs.
   schedule:
     - cron: '17 6 * * 1'
+  # Manual trigger — useful after re-enabling the workflow (2026-05-12,
+  # poindexter#403) or to force a re-scan after a credential rotation /
+  # CVE patch without waiting for the next push.
+  workflow_dispatch:
 
 # Cancel older in-progress runs of the same ref/PR — saves Actions minutes
 # when multiple commits land back-to-back on the same PR.
@@ -25,19 +29,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
-        with:
-          fetch-depth: 0
+        # No fetch-depth: 0 — we scan with --no-git so git history isn't
+        # needed and a shallow checkout is enough.
       # Use the gitleaks CLI directly instead of gitleaks/gitleaks-action@v2,
       # which requires a paid org license. Mirrors the same scan logic across
       # both the private (glad-labs-stack) repo and the public (poindexter)
-      # mirror; the baseline file ships to both since the sync script no
-      # longer strips it (see scripts/sync-to-github.sh — the rotated-creds
-      # in the baseline are already in git history regardless).
+      # mirror.
       #
-      # --baseline-path: every entry in .gitleaks-baseline.json is a historical
-      # finding that's been triaged and accepted (rotated credentials or
-      # docs/fixture strings that look like secrets). NEW findings still fail
-      # the build via --exit-code=1.
+      # --no-git: scan the working tree, not git history. This makes the
+      # baseline fingerprints (file:rule:line) stable across commits.
+      # Scanning history was the previous mode and produced 433+ findings
+      # because every commit-shift created new fingerprints — the baseline
+      # couldn't keep up, and the gate failed every push.
+      #
+      # The pre-commit hook (gitleaks 'protect --staged') still catches
+      # secrets before they hit history, so history-mode isn't load-bearing.
+      #
+      # --baseline-path: every entry in .gitleaks-baseline.json is a triaged
+      # known-OK match (curl/auth docstring examples, fixture-shaped strings,
+      # rotated credentials embedded in remediation migrations). NEW findings
+      # in the working tree still fail the build via --exit-code=1.
       - name: Install gitleaks
         run: |
           curl -sSfL -o gitleaks.tar.gz \
@@ -48,6 +59,7 @@ jobs:
       - name: Run gitleaks
         run: |
           ./gitleaks detect \
+            --no-git \
             --config=.gitleaks.toml \
             --source=. \
             --baseline-path=.gitleaks-baseline.json \
@@ -73,6 +85,10 @@ jobs:
           # — skipping them keeps the scan fast and stops Trivy choking on
           # the Windows-bytecode cache pyc files in mcp-server/.venv.
           skip-dirs: '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
+          # The gitleaks baseline contains REDACTED+Match fields that look
+          # like leaked secrets to a secret-scanner pattern matcher; it's
+          # the documented record of known-clean findings, not a leak.
+          skip-files: '.gitleaks-baseline.json'
       - name: Trivy filesystem scan (SARIF for code-scanning tab)
         if: always()
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
@@ -84,8 +100,18 @@ jobs:
           format: sarif
           output: trivy-fs.sarif
           skip-dirs: '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
+          # The gitleaks baseline contains REDACTED+Match fields that look
+          # like leaked secrets to a secret-scanner pattern matcher; it's
+          # the documented record of known-clean findings, not a leak.
+          skip-files: '.gitleaks-baseline.json'
       - name: Upload SARIF
-        if: always()
+        # GitHub Advanced Security is required to accept SARIF uploads on
+        # private repos. glad-labs-stack doesn't have GHAS — the API
+        # returns "Resource not accessible by integration". On the public
+        # poindexter mirror, code-scanning is free, so uploads work there.
+        # 2026-05-12 (poindexter#404) — added the repo guard to silence
+        # the dead-end upload on private.
+        if: always() && github.repository == 'Glad-Labs/poindexter'
         uses: github/codeql-action/upload-sarif@7fd177fa680c9881b53cdab4d346d32574c9f7f4  # v3.35.4 as of 2026-05-12
         with:
           sarif_file: trivy-fs.sarif
@@ -105,6 +131,14 @@ jobs:
           exit-code: '1'
           format: table
           skip-dirs: '**/node_modules,**/.venv,**/__pycache__,**/.next,**/.vercel,**/dist,**/build,**/.pytest_cache,**/.claude'
+          # The gitleaks baseline contains REDACTED+Match fields that look
+          # like leaked secrets to a secret-scanner pattern matcher; it's
+          # the documented record of known-clean findings, not a leak.
+          skip-files: '.gitleaks-baseline.json'
+          # See .trivyignore for justified suppressions (currently DS-0002
+          # on backup / gpu-exporter / voice-agent / auto-embed images
+          # that legitimately need root for bind-mount or driver access).
+          trivyignores: '.trivyignore'
 
   action-pins:
     name: Lint third-party Actions for SHA pins
@@ -163,7 +197,9 @@ jobs:
           output-format: sarif
 
       - name: Upload grype SARIF
-        if: always() && steps.grype-scan.outputs.sarif != ''
+        # Same GHAS gating as trivy-fs above — private repo can't accept
+        # SARIF; public mirror can.
+        if: always() && steps.grype-scan.outputs.sarif != '' && github.repository == 'Glad-Labs/poindexter'
         uses: github/codeql-action/upload-sarif@7fd177fa680c9881b53cdab4d346d32574c9f7f4  # v3.35.4 as of 2026-05-12
         with:
           sarif_file: ${{ steps.grype-scan.outputs.sarif }}

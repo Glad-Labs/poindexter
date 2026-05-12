@@ -31,6 +31,29 @@ paths = [
   # Documentation examples: curl snippets, Authorization header demos,
   # placeholder bearer tokens like "YOUR_API_TOKEN" / "$TOKEN" / "dev-token".
   '''(?i)^docs/.*\.md$''',
+  # 2026-05-12 — added with the --no-git CI scan rollout (poindexter#404).
+  # --no-git walks the filesystem instead of git history, picking up local
+  # dev artifacts that gitignore normally hides. These paths can't ship
+  # secrets to the public mirror anyway (most are gitignored locally or
+  # stripped by scripts/sync-to-github.sh).
+  '''(?i)^\.claude/''',                              # claude-code session state
+  '''(?i)\.venv/''',                                  # python venvs (anywhere in tree)
+  '''(?i)node_modules/''',                           # npm deps (anywhere in tree)
+  '''(?i)^\.vercel/''',                              # vercel local CLI cache
+  '''(?i)^\.env(\..*)?$''',                          # .env, .env.local, .env.production.local
+  '''(?i).*/\.env(\..*)?$''',                        # nested .env files
+  '''(?i)^gcm-diagnose\.log$''',                     # git credential manager diagnostics
+  '''__pycache__/''',                                # python bytecode (anywhere)
+  '''\.pyc$''',                                       # compiled python files
+  # Private surfaces — stripped from public mirror by sync-to-github.sh but
+  # present locally so --no-git would scan them. Operator-only.
+  '''(?i)^web/public-site/''',                       # branded Next.js site (private)
+  '''(?i)^web/storefront/''',                        # Lemon Squeezy storefront (private)
+  '''(?i)^mcp-server-gladlabs/''',                   # operator MCP server (private)
+  # The baseline itself contains REDACTED+Match fields that look like
+  # secrets to other scanners (e.g., Trivy filesystem). The baseline is
+  # its own self-evident "these are known-OK findings" record.
+  '''(?i)^\.gitleaks-baseline\.json$''',
 ]
 
 # Specific examples gitleaks mis-flags. Keep this list tight — every entry

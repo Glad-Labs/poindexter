@@ -1,0 +1,38 @@
+# Trivy IaC / vuln scan suppressions for Glad-Labs/poindexter.
+#
+# Each entry must include a rationale comment. CI policy: suppression
+# without explanation is grounds for revert.
+
+# DS-0002 — "Specify at least 1 USER command in Dockerfile with non-root user"
+#
+# Container images that legitimately run as root in this stack:
+#
+#   scripts/Dockerfile.voice-agent
+#     Spawns `claude` (Claude Code CLI) as a subprocess, which reads
+#     ~/.claude bind-mounted READ-WRITE from the host. Switching the
+#     in-container user breaks host-side ownership of the cached
+#     session JSONLs and the per-call --session-id resume flow.
+#     Hardening tracked separately as a per-component split
+#     (Glad-Labs/poindexter#432).
+#
+#   scripts/Dockerfile.backup
+#     Alpine + postgresql-client running pg_dump against the brain
+#     volume. The dump writes into a bind-mounted host directory; the
+#     host UID alignment is messy on Windows-Docker-Desktop, and
+#     dropping privileges makes the bind-mount unwritable. The image
+#     surface is tiny (no Python, no app code), which limits the
+#     blast radius.
+#
+#   scripts/Dockerfile.gpu-exporter
+#     Reads /proc/driver/nvidia (driver-owned). Dropping privileges
+#     requires fiddling with the nvidia-smi capability model that
+#     isn't worth it for a low-value metric exporter.
+#
+#   scripts/Dockerfile.auto-embed
+#     Phase-B one-shot job — runs to completion, exits, container
+#     destroyed. Not a persistent attack surface.
+#
+# scripts/Dockerfile.voice-bot, scripts/Dockerfile.sdxl, and
+# scripts/Dockerfile.wan already have USER directives and DO NOT
+# rely on this suppression.
+DS-0002
