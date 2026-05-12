@@ -196,3 +196,30 @@ class TestProbeWebhookFreshness:
         notify = MagicMock()
         result = await bp.probe_webhook_freshness(pool, notify)
         assert "fired 1" in result["detail"]
+
+    async def test_async_notify_fn_is_awaited(self):
+        """Regression: production `notify` is async (since #344) — the
+        probe MUST await it. The brain logged
+        ``RuntimeWarning: coroutine 'notify' was never awaited`` for
+        weeks because business_probes called notify_fn synchronously
+        and silently dropped every alert. This test pins the await.
+        """
+        old = datetime.now(timezone.utc) - timedelta(days=60)
+        pool = _make_pool(
+            revenue_last=old,
+            subscriber_last=old,
+        )
+        notify = AsyncMock()
+        result = await bp.probe_webhook_freshness(pool, notify)
+
+        assert result["ok"] is True
+        assert "fired 2" in result["detail"]
+        # The contract: notify_fn was both CALLED and AWAITED. AsyncMock
+        # tracks await_count separately from call_count — a sync
+        # ``notify_fn(body)`` call would bump call_count without ever
+        # awaiting (the silent-failure shape).
+        assert notify.await_count == 1, (
+            "notify_fn was not awaited — silent-failure regression. "
+            "If you intentionally changed the call shape, update this "
+            "test and double-check no RuntimeWarning fires."
+        )

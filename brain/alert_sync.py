@@ -54,6 +54,16 @@ GRAFANA_RULE_GROUP = "poindexter-db-alerts"
 # generous. Kept small so a hung Grafana doesn't stall the brain cycle.
 HTTP_TIMEOUT_SECONDS = 10
 
+# Fail-loud cadence for the "empty token" skip path. Default cycle interval
+# is 15 min, so 4 = ~1 h of silent skipping before we escalate. The
+# counter doubles after each fire to avoid spamming the operator while
+# the token is genuinely unset. Reset to zero on the first successful
+# sync (token present, regardless of Grafana HTTP outcome) so a temporary
+# misconfig doesn't permanently mute the alarm.
+_empty_token_skips: int = 0
+_empty_token_alarm_at: int = 4
+_EMPTY_TOKEN_ALARM_MAX: int = 96  # ~24h at 15-min cadence — hard ceiling
+
 
 def _rule_uid(name: str) -> str:
     """Deterministic Grafana rule UID from the rule name.
@@ -316,14 +326,35 @@ async def sync_alert_rules(pool) -> dict[str, Any]:
         logger.debug("alert_sync: disabled via app_settings — skipping")
         return summary
 
+    global _empty_token_skips, _empty_token_alarm_at  # noqa: PLW0603
+
     token = await _get_setting(pool, "grafana_api_token", "")
     if not token:
+        _empty_token_skips += 1
         summary["error"] = "grafana_api_token not set"
+        summary["empty_token_skip_count"] = _empty_token_skips
         logger.warning(
             "alert_sync: grafana_api_token is empty — set it via "
-            "app_settings to enable Grafana push. Skipping this cycle."
+            "app_settings to enable Grafana push. Skipping this cycle "
+            "(consecutive skips: %d).",
+            _empty_token_skips,
         )
+        if _empty_token_skips >= _empty_token_alarm_at:
+            await _fire_empty_token_alarm(pool, _empty_token_skips)
+            # Exponential back-off so the operator gets one page per
+            # hour, then ~2h, then ~4h, etc. — bounded at ~24h.
+            _empty_token_alarm_at = min(
+                _empty_token_alarm_at * 2, _EMPTY_TOKEN_ALARM_MAX,
+            )
         return summary
+
+    # Token present — reset the skip counter so a temporary misconfig
+    # doesn't permanently mute the alarm. An empty token is a config
+    # problem; an unreachable Grafana is a runtime problem with its
+    # own alerting downstream.
+    if _empty_token_skips:
+        _empty_token_skips = 0
+        _empty_token_alarm_at = 4
 
     base_url = (await _get_setting(
         pool, "grafana_api_base_url", "http://poindexter-grafana:3000"
@@ -398,3 +429,49 @@ async def sync_alert_rules(pool) -> dict[str, Any]:
         summary["rules_unchanged"], summary["rules_failed"],
     )
     return summary
+
+
+async def _fire_empty_token_alarm(pool: Any, skip_count: int) -> None:
+    """Page the operator that the Grafana sync has been silently no-oping.
+
+    Lazy-imports ``brain_daemon.notify`` to avoid the circular import a
+    top-level dep would create (brain_daemon imports alert_sync inside
+    ``_maybe_sync_grafana_alerts``). Both name resolution forms — the
+    package-qualified one used when brain runs as a module and the bare
+    one used when ``python brain_daemon.py`` is the entrypoint — are
+    tried, matching the pattern brain_daemon itself uses for its own
+    optional imports. Failures are swallowed: a missing ``notify`` shouldn't
+    crash the sync cycle.
+    """
+    minutes = skip_count * 15  # default cycle cadence = 15 min
+    body = (
+        "[brain.alert_sync] grafana_api_token has been empty for "
+        f"{skip_count} cycle(s) (~{minutes} min). DB-driven alert rules "
+        "are NOT being pushed to Grafana — any rule edits since the "
+        "token went empty are unapplied. Fix: set app_settings."
+        "grafana_api_token to a Grafana service-account token with "
+        "alerting write scope."
+    )
+    notify_fn = None
+    try:
+        from brain_daemon import notify as _notify  # type: ignore[import-not-found]
+
+        notify_fn = _notify
+    except ImportError:
+        try:
+            from brain.brain_daemon import notify as _notify  # type: ignore[import-not-found]
+
+            notify_fn = _notify
+        except ImportError:
+            logger.warning(
+                "alert_sync: cannot import brain_daemon.notify — "
+                "empty-token alarm logged but not paged (skip_count=%d)",
+                skip_count,
+            )
+            return
+    try:
+        result = notify_fn(body, pool=pool)
+        if hasattr(result, "__await__"):
+            await result
+    except Exception as e:  # noqa: BLE001 — never let alarm crash the sync
+        logger.warning("alert_sync: notify_operator failed: %s", e)

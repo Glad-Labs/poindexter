@@ -379,6 +379,14 @@ async def preview_post_html(preview_token: str):
     podcast_url = _esc(post.get("podcast_url") or "")
     video_url = _esc(post.get("video_url") or "")
     safe_title = _esc(title)
+    # 2026-05-12 security audit P0 #6: title/excerpt/status are operator-
+    # facing strings derived from LLM output (via research_service) which
+    # an attacker-controlled web page could poison through a prompt-
+    # injection vector. They flowed into the HTML body raw pre-fix.
+    # Escape them explicitly before any string interpolation below.
+    safe_excerpt = _esc(excerpt)
+    safe_status = _esc(status)
+    safe_quality = _esc(str(quality))
 
     # Build podcast/video players
     media_html = ""
@@ -418,7 +426,7 @@ async def preview_post_html(preview_token: str):
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>[PREVIEW] {title}</title>
+<title>[PREVIEW] {safe_title}</title>
 <style>
 body{{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#cbd5e1;margin:0;padding:0}}
 .banner{{background:#f59e0b;color:#000;text-align:center;padding:8px;font-weight:bold;font-size:13px;position:sticky;top:0;z-index:50}}
@@ -445,14 +453,14 @@ article img{{max-width:100%;height:auto;aspect-ratio:auto;border-radius:8px;marg
 .approve{{margin:24px 0;padding:16px;background:#1e293b;border-radius:12px;text-align:center}}
 .approve a{{display:inline-block;padding:12px 32px;background:#22c55e;color:#000;text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px}}
 </style></head><body>
-<div class="banner">PREVIEW MODE<small>{status.upper()} | Q: {quality}</small></div>
+<div class="banner">PREVIEW MODE<small>{safe_status.upper()} | Q: {safe_quality}</small></div>
 <div class="container">
 {img_html}
-<h1>{title}</h1>
-{"<p class='excerpt'>" + excerpt + "</p>" if excerpt else ""}
+<h1>{safe_title}</h1>
+{"<p class='excerpt'>" + safe_excerpt + "</p>" if excerpt else ""}
 <div class="badges">
-<span class="badge-status">{status.upper()}</span>
-<span class="badge-quality">Quality: {quality}</span>
+<span class="badge-status">{safe_status.upper()}</span>
+<span class="badge-quality">Quality: {safe_quality}</span>
 {"<span class='badge-podcast'>Podcast Ready</span>" if has_podcast else ""}
 {"<span class='badge-video'>Video Ready</span>" if has_video else ""}
 </div>
@@ -460,7 +468,35 @@ article img{{max-width:100%;height:auto;aspect-ratio:auto;border-radius:8px;marg
 <article>{content}</article>
 </div></body></html>"""
 
-    return Response(content=html, media_type="text/html; charset=utf-8")
+    # 2026-05-12 security audit P0 #6: strict Content-Security-Policy
+    # blocks every script execution path even if an attacker manages
+    # to inject markup through the markdown body (the LLM writer reads
+    # from web research and could echo back attacker-controlled
+    # `<script>` tags). The preview page doesn't need any JS, so the
+    # policy can be aggressively narrow: no scripts at all (no
+    # 'unsafe-inline' or 'unsafe-eval'), no fonts, no XHR. Style stays
+    # inline-allowed because the page CSS lives in a <style> block.
+    csp = (
+        "default-src 'none'; "
+        "style-src 'unsafe-inline'; "
+        "img-src https: data:; "
+        "media-src https: blob:; "
+        "base-uri 'none'; "
+        "form-action 'none'; "
+        "frame-ancestors 'none'"
+    )
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Security-Policy": csp,
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+            # No-cache so a rotated/revoked preview token doesn't sit
+            # in a CDN edge after the operator burns it.
+            "Cache-Control": "private, no-cache, no-store, must-revalidate",
+        },
+    )
 
 
 @router.get("/api/posts/search")

@@ -29,8 +29,10 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
+
+from middleware.api_token_auth import verify_api_token
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +114,9 @@ async def _resolve_staleness_threshold(writer: str) -> int:
 
 
 @router.get("/api/memory/stats")
-async def memory_stats() -> JSONResponse:
+async def memory_stats(
+    _principal: str = Depends(verify_api_token),
+) -> JSONResponse:
     """Aggregated counts + timestamps across the shared memory store.
 
     Returns::
@@ -192,6 +196,7 @@ async def memory_search_endpoint(
     source_table: str = Query("", description="Optional source_table filter"),
     min_similarity: float = Query(0.3, ge=0.0, le=1.0),
     limit: int = Query(10, ge=1, le=50),
+    _principal: str = Depends(verify_api_token),
 ) -> JSONResponse:
     """Thin HTTP wrapper over `MemoryClient.search` for debugging +
     dashboard use. Not intended as a high-throughput public search API —
@@ -240,7 +245,9 @@ async def memory_search_endpoint(
 
 
 @router.get("/memory", response_class=HTMLResponse)
-async def memory_dashboard() -> HTMLResponse:
+async def memory_dashboard(
+    _principal: str = Depends(verify_api_token),
+) -> HTMLResponse:
     """Minimal HTML dashboard that polls /api/memory/stats every 10s.
 
     Two tables: by source_table (memory/posts/issues/audit) and by writer

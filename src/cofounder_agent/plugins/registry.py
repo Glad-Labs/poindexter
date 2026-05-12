@@ -322,6 +322,17 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.static_export_reconciliation",
             "StaticExportReconciliationJob",
         ),
+        # Media-generation reconciliation — sibling watchdog for podcast +
+        # video MP3/MP4 assets on R2. Catches the same fire-and-forget
+        # anti-pattern that froze the static index, but for media files:
+        # the 2026-04-29 → 2026-05-11 silent media outage motivated this
+        # job. Self-heals by regenerating missing files, capped per cycle
+        # so the GPU/disk don't pile up under backlog.
+        (
+            "jobs",
+            "services.jobs.media_reconciliation",
+            "MediaReconciliationJob",
+        ),
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
         ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         # ("jobs", "services.jobs.sync_shared_context", "SyncSharedContextJob"),

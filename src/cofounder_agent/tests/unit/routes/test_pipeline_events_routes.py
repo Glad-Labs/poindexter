@@ -104,9 +104,19 @@ def _mock_pool_with_rows(rows: list[dict]) -> tuple[MagicMock, AsyncMock]:
 
 
 def _make_client(mock_pool: MagicMock) -> TestClient:
-    """Build a TestClient with the pipeline events router and a mocked pool."""
+    """Build a TestClient with the pipeline events router and a mocked pool.
+
+    The 2026-05-12 security audit (P0 #4) gated every endpoint on this
+    router behind ``verify_api_token``. These functional tests run
+    without a real token, so we override the dependency to a no-op
+    return — the dedicated auth-contract regressions live in
+    ``test_pipeline_events_and_memory_auth.py``.
+    """
+    from middleware.api_token_auth import verify_api_token
+
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[verify_api_token] = lambda: "test-token"
     # Patch _get_pool at the module level to return our mock pool
     import routes.pipeline_events_routes as mod
 

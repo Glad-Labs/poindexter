@@ -91,7 +91,13 @@ class TestApproveCommand:
                 "feedback": kwargs.get("feedback") or "",
             }
 
+        # poindexter#480 added a prefix-resolve step before the service
+        # call. Stub it to return the input unchanged so the legacy
+        # "t-1" exact-match contract this test pins still holds.
         with patch(
+            "poindexter.cli.approval._resolve_task_id_prefix",
+            AsyncMock(return_value="t-1"),
+        ), patch(
             "services.approval_service.approve",
             AsyncMock(side_effect=_ok),
         ) as mock_svc:

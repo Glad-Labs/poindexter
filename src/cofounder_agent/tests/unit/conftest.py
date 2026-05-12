@@ -293,6 +293,13 @@ def _reset_singletons_between_tests():
         # Re-seed in case a test wiped the brand keys.
         for k, v in _TEST_BRAND_CONFIG.items():
             site_config._config.setdefault(k, v)
+        # Re-wire every shared module's ``site_config`` attr back to the
+        # conftest's seeded instance. Required because tests like
+        # ``test_di_wiring_prefect_474`` call ``wire_site_config_modules``
+        # with a fresh empty ``SiteConfig`` sentinel, leaving downstream
+        # modules pointing at an empty config that fails
+        # ``site_config.require("site_url")`` in subsequent tests.
+        _share_test_site_config()
     except Exception:
         pass
 

@@ -26,9 +26,10 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from middleware.api_token_auth import verify_api_token
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
 
@@ -90,6 +91,7 @@ async def list_pipeline_events(
     since_minutes: int = Query(
         60, ge=1, le=1440, description="Only events from the last N minutes (default 60)"
     ),
+    _principal: str = Depends(verify_api_token),
 ) -> JSONResponse:
     """List recent pipeline events (QA decisions, rewrites, approvals).
 
@@ -143,7 +145,10 @@ async def list_pipeline_events(
 
 
 @router.get("/api/pipeline/events/task/{task_id}")
-async def task_pipeline_events(task_id: str) -> JSONResponse:
+async def task_pipeline_events(
+    task_id: str,
+    _principal: str = Depends(verify_api_token),
+) -> JSONResponse:
     """Every pipeline event for a single task, oldest first — the
     full decision trail for one post from creation to approval or
     rejection. Useful for debugging why a specific task landed where
@@ -176,7 +181,10 @@ async def task_pipeline_events(task_id: str) -> JSONResponse:
 
 
 @router.get("/pipeline", response_class=HTMLResponse)
-async def pipeline_dashboard(request: Request) -> HTMLResponse:
+async def pipeline_dashboard(
+    request: Request,
+    _principal: str = Depends(verify_api_token),
+) -> HTMLResponse:
     """Minimal mobile-friendly HTML dashboard that polls the JSON
     endpoint every 5 seconds. No framework, no build step — just
     vanilla JS.

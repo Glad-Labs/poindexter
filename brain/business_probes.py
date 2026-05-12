@@ -13,12 +13,27 @@ Probes:
   - (future) revenue_monitor: Lemon Squeezy sales + Mercury balance
 """
 
+import inspect
 import json
 import logging
 import time
 import urllib.request
+from typing import Any
 
 logger = logging.getLogger("brain.business_probes")
+
+
+async def _maybe_await(value: Any) -> Any:
+    """Await `value` when notify_fn returned a coroutine; pass through otherwise.
+
+    Why: brain's production `notify` is async (since #344) but legacy tests
+    pass `MagicMock()` which returns a non-awaitable. Without this shim the
+    production call site emits `RuntimeWarning: coroutine 'notify' was never
+    awaited` and the alert silently dies — the bug this helper closes.
+    """
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 # Schedule tracking — brain runs every 5 min, probes run on their own intervals
 _last_run: dict[str, float] = {}
@@ -187,7 +202,10 @@ async def probe_status_digest(pool, notify_fn) -> dict:
         lines.extend(alert_lines)
 
         message = "\n".join(lines)
-        notify_fn(message)
+        # notify is async since #344; awaiting matters — without it the
+        # coroutine warns + the digest never leaves the process (the bug
+        # that silenced status digests + webhook_freshness pages).
+        await _maybe_await(notify_fn(message))
         _mark_run("status_digest")
 
         logger.info("[BUSINESS_PROBE] Status digest sent to Telegram")
@@ -347,11 +365,170 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
         "`poindexter settings set webhook_freshness_*_threshold_days`."
     )
     try:
-        notify_fn(body)
+        await _maybe_await(notify_fn(body))
     except Exception as e:
         logger.warning("[BUSINESS_PROBE] notify_fn failed: %s", e)
     logger.warning("[BUSINESS_PROBE] webhook_freshness fired %d alert(s)", len(alerts))
     return {"ok": True, "detail": f"fired {len(alerts)} alert(s)", "alerts": alerts}
+
+
+# ============================================================================
+# SILENT-ALERTER META-WATCHDOG — does the alerter itself still work?
+# ============================================================================
+#
+# Matt 2026-05-12 05:25 UTC: "If we find silent failures we should add at
+# least a way to make it fail loud, ideally make it self healing." This
+# probe is the meta-failure case: the whole monitoring chain looks
+# healthy (probes return ok, brain cycles), but no alerts have been
+# raised in N hours despite real production breakage upstream
+# (R2 publish broken 4 days, media gen broken 13 days — both eventually
+# noticed by Matt by eye, not by Telegram). Two ways this happens:
+#
+#   1. Grafana → webhook → alert_events ingestion is broken (token
+#      empty, contact point misconfigured, webhook URL stale).
+#   2. The brain dispatcher itself died silently and stopped polling.
+#
+# The probe doesn't try to fix the underlying chain — that's case-by-
+# case. It just pages the operator that "the alerter has been quiet
+# for N hours while X probes are failing", which is the load-bearing
+# signal: 0 alerts in a healthy system is fine; 0 alerts while probes
+# are red is a self-silencing failure.
+
+async def probe_silent_alerter(pool, notify_fn) -> dict:
+    """Page if no alert_events have arrived in N hours AND probes are red.
+
+    Cadence is governed by ``silent_alerter_probe_interval_minutes``
+    (default 60) — there's no value in running this more often than
+    the alert-staleness threshold. The threshold itself is
+    ``silent_alerter_quiet_hours`` (default 6).
+
+    Self-healing is OUT OF SCOPE: the upstream causes (Grafana
+    misconfig, dead webhook target, dispatcher crash) are case-by-case
+    and need a human to decide what to fix. The probe's job is to
+    make sure the operator *finds out*.
+    """
+    interval_minutes = await _setting_int(
+        pool, "silent_alerter_probe_interval_minutes", 60,
+    )
+    if not _is_due("silent_alerter", interval_minutes):
+        return {"ok": True, "detail": "not due yet"}
+    _mark_run("silent_alerter")
+
+    if not await _setting_bool(pool, "silent_alerter_probe_enabled", True):
+        return {"ok": True, "detail": "disabled via app_settings"}
+
+    quiet_hours = await _setting_int(pool, "silent_alerter_quiet_hours", 6)
+
+    try:
+        last_received = await pool.fetchval(
+            "SELECT MAX(received_at) FROM alert_events"
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[BUSINESS_PROBE] silent_alerter DB read failed: %s", e)
+        return {"ok": False, "detail": f"db read failed: {e}"}
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    if last_received is None:
+        # Never received an alert — only worth paging if this is also a
+        # never-published system. Fresh installs shouldn't get spammed.
+        # Probe failure counter is the proxy for "real workload exists".
+        quiet_hours_actual = 24 * 365  # effectively infinite
+    else:
+        quiet_hours_actual = (now - last_received).total_seconds() / 3600
+
+    if quiet_hours_actual < quiet_hours:
+        return {
+            "ok": True,
+            "detail": f"recent alert {quiet_hours_actual:.1f}h ago < {quiet_hours}h threshold",
+        }
+
+    # Quiet — now correlate with probe state. If the system is genuinely
+    # idle (no probe failures), this is fine. Only page when "quiet + red".
+    try:
+        recent_failures = await pool.fetch(
+            """
+            SELECT DISTINCT event_type
+            FROM audit_log
+            WHERE timestamp > NOW() - INTERVAL '1 hour'
+              AND severity IN ('warning', 'error', 'critical')
+              AND event_type LIKE 'probe.%'
+            """
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[BUSINESS_PROBE] silent_alerter probe-state read failed: %s", e
+        )
+        return {"ok": False, "detail": f"db read failed: {e}"}
+
+    failure_count = len(recent_failures)
+    if failure_count == 0:
+        return {
+            "ok": True,
+            "detail": (
+                f"quiet {quiet_hours_actual:.1f}h but no probe failures — "
+                f"system is genuinely idle, no page"
+            ),
+        }
+
+    failure_names = sorted({dict(r)["event_type"] for r in recent_failures})
+    body = (
+        f"⚠️ ALERTER APPEARS SILENT — meta-watchdog fired.\n\n"
+        f"Last alert_event received: {quiet_hours_actual:.1f}h ago "
+        f"(threshold {quiet_hours}h).\n"
+        f"Probe failures in last 1h: {failure_count} distinct event types:\n"
+        f"  - " + "\n  - ".join(failure_names[:8])
+        + ("\n  - …" if len(failure_names) > 8 else "")
+        + "\n\nThis is the silent-failure pattern: probes are red but no "
+        "Telegram/Discord pages have fired. Likely causes:\n"
+        "  1. Grafana → webhook ingestion broken (token? URL stale?)\n"
+        "  2. Brain alert_dispatch_loop crashed silently — check\n"
+        "     `docker logs poindexter-brain-daemon | grep dispatcher`\n"
+        "  3. All real failures suppressed by dedup window (check\n"
+        "     alert_events dispatch_result column for 'suppressed: …')\n"
+    )
+    try:
+        await _maybe_await(notify_fn(body))
+    except Exception as e:
+        logger.warning("[BUSINESS_PROBE] silent_alerter notify_fn failed: %s", e)
+    logger.warning(
+        "[BUSINESS_PROBE] silent_alerter PAGED — quiet=%.1fh, probe_failures=%d",
+        quiet_hours_actual, failure_count,
+    )
+    return {
+        "ok": True,
+        "detail": f"paged: quiet={quiet_hours_actual:.1f}h failures={failure_count}",
+        "quiet_hours": quiet_hours_actual,
+        "probe_failure_count": failure_count,
+    }
+
+
+async def _setting_int(pool, key: str, default: int) -> int:
+    """Read an int-valued app_settings key. Returns ``default`` on miss / parse fail."""
+    try:
+        raw = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1 AND is_active = TRUE",
+            key,
+        )
+        if raw is None or str(raw).strip() == "":
+            return default
+        return int(str(raw).strip())
+    except Exception:  # noqa: BLE001
+        return default
+
+
+async def _setting_bool(pool, key: str, default: bool) -> bool:
+    """Read a bool-valued app_settings key (``"true"``/``"false"``)."""
+    try:
+        raw = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1 AND is_active = TRUE",
+            key,
+        )
+        if raw is None:
+            return default
+        return str(raw).strip().lower() == "true"
+    except Exception:  # noqa: BLE001
+        return default
 
 
 # ============================================================================
@@ -367,6 +544,7 @@ async def run_business_probes(pool, notify_fn) -> dict:
 
     results["status_digest"] = await probe_status_digest(pool, notify_fn)
     results["webhook_freshness"] = await probe_webhook_freshness(pool, notify_fn)
+    results["silent_alerter"] = await probe_silent_alerter(pool, notify_fn)
 
     # Future probes:
     # results["email_triage"] = await probe_email_triage(pool, notify_fn)

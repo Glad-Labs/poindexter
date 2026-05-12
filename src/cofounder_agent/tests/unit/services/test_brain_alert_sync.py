@@ -251,6 +251,11 @@ class TestSyncAlertRulesDisabledOrUnconfigured:
 
     async def test_empty_token_returns_without_http_and_warns(self, caplog):
         import logging
+        # Reset module-level skip counter so tests are order-independent
+        # (the fail-loud escalation in sync_alert_rules accumulates state
+        # across calls — see _empty_token_skips).
+        asx._empty_token_skips = 0
+        asx._empty_token_alarm_at = 4
         pool = _mock_pool(settings={"grafana_api_token": ""})
         with patch("urllib.request.urlopen") as urlopen, \
              caplog.at_level(logging.WARNING, logger="brain.alert_sync"):
@@ -259,6 +264,62 @@ class TestSyncAlertRulesDisabledOrUnconfigured:
         assert summary["enabled"] is False
         assert "token" in summary["error"]
         assert any("token" in r.getMessage().lower() for r in caplog.records)
+        # First skip increments the counter but does NOT fire the alarm.
+        assert summary["empty_token_skip_count"] == 1
+
+    async def test_empty_token_alarm_fires_at_threshold(self):
+        """After N consecutive empty-token cycles the sync MUST page the
+        operator — the silent-failure pattern this fix closes. Default
+        threshold is 4 cycles (~1 h at the standard 15-min cadence).
+        """
+        asx._empty_token_skips = 0
+        asx._empty_token_alarm_at = 4
+        notify_calls = []
+
+        async def fake_notify(message, *, pool=None):  # noqa: ARG001
+            notify_calls.append(message)
+            return {"telegram_message_id": 1}
+
+        # Patch the lazy-imported notify symbol on the brain_daemon module
+        # the helper imports from. We can't pre-stub the import path
+        # because the helper imports inside the function — patch the
+        # resolved attribute instead.
+        import types
+        fake_module = types.ModuleType("brain_daemon")
+        fake_module.notify = fake_notify  # type: ignore[attr-defined]
+        with patch.dict(sys.modules, {"brain_daemon": fake_module}):
+            pool = _mock_pool(settings={"grafana_api_token": ""})
+            with patch("urllib.request.urlopen"):
+                summaries = []
+                for _ in range(4):
+                    # Each iteration constructs a fresh pool because the
+                    # AsyncMock side_effect list is consumed per call.
+                    summaries.append(
+                        await asx.sync_alert_rules(
+                            _mock_pool(settings={"grafana_api_token": ""}),
+                        )
+                    )
+        # Cycles 1-3: warn only. Cycle 4: alarm fires.
+        assert summaries[0]["empty_token_skip_count"] == 1
+        assert summaries[3]["empty_token_skip_count"] == 4
+        assert len(notify_calls) == 1, (
+            f"expected one operator page after 4 silent skips, "
+            f"got {len(notify_calls)}"
+        )
+        assert "grafana_api_token" in notify_calls[0]
+        assert "60 min" in notify_calls[0] or "4 cycle" in notify_calls[0]
+
+    async def test_token_present_resets_skip_counter(self):
+        """A successful sync (token present) must reset the counter so a
+        temporary misconfig doesn't permanently mute the alarm.
+        """
+        asx._empty_token_skips = 3
+        asx._empty_token_alarm_at = 8
+        pool = _mock_pool(rows=[])  # token defaults to "tok-abc123"
+        with patch("urllib.request.urlopen", side_effect=_http_2xx()):
+            await asx.sync_alert_rules(pool)
+        assert asx._empty_token_skips == 0
+        assert asx._empty_token_alarm_at == 4
 
 
 @pytest.mark.unit

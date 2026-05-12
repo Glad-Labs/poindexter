@@ -979,3 +979,130 @@ class TestTrackPageView:
         second_sql = conn.execute.await_args_list[1].args[0]
         assert "UPDATE posts" in second_sql
         assert "view_count" in second_sql
+
+
+# ---------------------------------------------------------------------------
+# GET /preview/{preview_token} — XSS hardening (audit P0 #6)
+#
+# The preview HTML page is reachable over Tailscale Funnel (public internet
+# in practice). The post fields it renders — title, excerpt, status —
+# originate from LLM output that reads attacker-controllable web research,
+# so a poisoned page could plant `<script>` or `<img onerror=>` payloads.
+# The fix has two layers:
+#   1. html-escape every interpolated post field at the Python level
+#   2. ship a strict `Content-Security-Policy` so even a markdown-derived
+#      script tag in the body cannot execute.
+# Both layers are pinned here.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPreviewPostHtmlSecurity:
+    """Pin the XSS + CSP hardening on `GET /preview/{preview_token}`."""
+
+    _VALID_TOKEN = "a" * 32  # 32-char hex passes the format guard
+
+    def _poisoned_post(self, **overrides):
+        """A preview post payload with XSS payloads in every field that
+        flows into the HTML template. ``preview_post`` (the underlying
+        JSON endpoint) returns the same shape this test inlines below.
+        """
+        base = {
+            "id": "post-xss",
+            "title": "<script>alert('xss-title')</script>",
+            "excerpt": "<img src=x onerror=alert('xss-excerpt')>",
+            "status": "<svg onload=alert('xss-status')>",
+            "quality_score": "<b>not-a-number</b>",
+            "content": "Body text. <script>alert('xss-body')</script>",
+            "featured_image_url": "",
+            "has_podcast": False,
+            "has_video": False,
+            "podcast_url": "",
+            "video_url": "",
+            "is_preview": True,
+        }
+        base.update(overrides)
+        return base
+
+    def _client_with_stub_preview(self, post):
+        """Patch the underlying `preview_post` JSON endpoint to skip the DB
+        path entirely — we're testing the HTML renderer's escape contract,
+        not the DB lookup.
+        """
+        from unittest.mock import AsyncMock as _AM
+        client = TestClient(_build_app())
+        return client, patch(
+            "routes.cms_routes.preview_post",
+            new=_AM(return_value=post),
+        )
+
+    def test_rejects_malformed_token_with_404(self):
+        client = TestClient(_build_app())
+        resp = client.get("/preview/not-hex")
+        assert resp.status_code == 404
+
+    def test_xss_in_title_is_html_escaped(self):
+        post = self._poisoned_post()
+        client, patcher = self._client_with_stub_preview(post)
+        with patcher:
+            resp = client.get(f"/preview/{self._VALID_TOKEN}")
+        assert resp.status_code == 200
+        body = resp.text
+        # Title appears in <title>, <h1>, and as an <img alt> — all three
+        # must be escaped. Raw `<script>` from the title MUST NOT survive.
+        assert "<script>alert('xss-title')</script>" not in body
+        assert "&lt;script&gt;alert(&#x27;xss-title&#x27;)&lt;/script&gt;" in body
+
+    def test_xss_in_excerpt_and_status_and_quality_are_escaped(self):
+        post = self._poisoned_post()
+        client, patcher = self._client_with_stub_preview(post)
+        with patcher:
+            resp = client.get(f"/preview/{self._VALID_TOKEN}")
+        body = resp.text
+        # Excerpt: `<img onerror=>` payload neutralised.
+        assert "<img src=x onerror=" not in body.lower()
+        assert "&lt;img src=x onerror=alert(&#x27;xss-excerpt&#x27;)&gt;" in body
+        # Status: <svg onload=> neutralised. Note the page uppercases via
+        # str.upper(), so the escaped form is also uppercased — the
+        # critical contract is that no raw `<svg` survives.
+        assert "<svg onload=" not in body.lower()
+        # Quality_score: `<b>` markup neutralised even though it's not a
+        # scripting tag (the rule is "escape everything operator-facing").
+        assert "<b>not-a-number</b>" not in body
+
+    def test_csp_header_blocks_inline_scripts(self):
+        """Defense-in-depth: even if a markdown body smuggles a `<script>`
+        through (the body is interpolated raw at line 468), the CSP must
+        block it. Audit P0 #6 hard requirement.
+        """
+        post = self._poisoned_post()
+        client, patcher = self._client_with_stub_preview(post)
+        with patcher:
+            resp = client.get(f"/preview/{self._VALID_TOKEN}")
+        csp = resp.headers.get("Content-Security-Policy", "")
+        assert "default-src 'none'" in csp, (
+            f"CSP must default-deny; got: {csp!r}"
+        )
+        # No 'unsafe-inline' / 'unsafe-eval' for scripts — script-src is
+        # absent which means scripts inherit default-src 'none'.
+        assert "script-src" not in csp or "'unsafe-inline'" not in csp.split("script-src", 1)[1].split(";", 1)[0]
+        # Frames denied so the page can't be embedded for clickjacking.
+        assert "frame-ancestors 'none'" in csp
+
+    def test_response_carries_supporting_security_headers(self):
+        """The three headers that pair with the CSP — sniff guard,
+        Referer suppression, and a 'don't cache the secret token URL'
+        directive. All three are part of the audit fix and shouldn't
+        silently regress.
+        """
+        post = self._poisoned_post()
+        client, patcher = self._client_with_stub_preview(post)
+        with patcher:
+            resp = client.get(f"/preview/{self._VALID_TOKEN}")
+        assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+        assert resp.headers.get("Referrer-Policy") == "no-referrer"
+        cache = resp.headers.get("Cache-Control", "")
+        assert "no-store" in cache, (
+            f"Preview URLs leak the secret token in browser history "
+            f"caches unless no-store is set; got Cache-Control={cache!r}"
+        )
