@@ -35,6 +35,32 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+# Langfuse @observe — wires every ollama_chat_text call into the
+# trace tree so the operator can drill into model/prompt/latency in
+# the Langfuse UI at http://localhost:3010. Falls back to a no-op
+# decorator when the SDK isn't installed (keeps tests + non-worker
+# entry-points importable). The SDK itself silently drops events
+# when LANGFUSE_HOST/PUBLIC_KEY/SECRET_KEY are unset, so the
+# decorator is safe in dev environments too.
+try:
+    from langfuse.decorators import langfuse_context, observe  # type: ignore[import-not-found]
+    _LANGFUSE_AVAILABLE = True
+except ImportError:  # pragma: no cover — Langfuse is a worker dep, not a test dep
+    _LANGFUSE_AVAILABLE = False
+
+    def observe(*_args, **_kwargs):  # type: ignore[no-redef]
+        def _decorate(fn):
+            return fn
+        return _decorate
+
+    class _NoopLangfuseContext:
+        @staticmethod
+        def update_current_observation(*_args, **_kwargs):
+            return None
+
+    langfuse_context = _NoopLangfuseContext()  # type: ignore[assignment]
+
+
 def resolve_local_model(model: str | None = None, *, site_config: Any = None) -> str:
     """Pick the local model to call. Removes ``ollama/`` prefix and
     falls back through ``pipeline_writer_model`` → hard default.
@@ -52,6 +78,7 @@ def resolve_local_model(model: str | None = None, *, site_config: Any = None) ->
     ).removeprefix("ollama/")
 
 
+@observe(as_type="generation", name="ollama_chat_text")
 async def ollama_chat_text(
     prompt: str,
     *,
@@ -102,12 +129,29 @@ async def ollama_chat_text(
         "messages": messages,
         "stream": False,
     }
+    # Stamp model + input on the Langfuse generation span before the
+    # call so the trace records latency + model even if Ollama errors.
+    # update_current_observation is a no-op when Langfuse isn't wired.
+    langfuse_context.update_current_observation(
+        model=resolved_model,
+        input=messages,
+        metadata={"base_url": base_url, "timeout": timeout},
+    )
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{base_url}/api/chat", json=payload)
         resp.raise_for_status()
         data = resp.json()
     raw = (data.get("message") or {}).get("content", "") or ""
-    return maybe_unwrap_json(raw)
+    output = maybe_unwrap_json(raw)
+    # Stamp output + ollama's prompt/completion token counts when present
+    # so the trace surfaces tokens in the Langfuse UI (the JSON envelope
+    # is the same shape Anthropic SDK Langfuse-integrations use).
+    usage = {
+        "input": data.get("prompt_eval_count"),
+        "output": data.get("eval_count"),
+    }
+    langfuse_context.update_current_observation(output=output, usage=usage)
+    return output
 
 
 def maybe_unwrap_json(prose: str) -> str:
