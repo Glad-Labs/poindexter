@@ -278,7 +278,35 @@ def _resolve_competitors(site_config: Any) -> list[str]:
         return []
     try:
         raw = site_config.get("guardrails_competitor_list", "") or ""
-    except Exception:
+    except Exception as e:
+        # 2026-05-12 fail-loud sweep: previously this swallowed the
+        # exception and returned []. That means the competitor
+        # validator silently passes posts that mention competitors,
+        # which defeats the whole rail. SiteConfig.get is sync + reads
+        # from in-memory cache, so a raise here means SiteConfig isn't
+        # wired correctly — a structural problem operators need to see.
+        logger.warning(
+            "guardrails_rails: failed to read guardrails_competitor_list; "
+            "competitor validator will pass everything until fixed: %s",
+            e, exc_info=True,
+        )
+        try:
+            from utils.findings import emit_finding
+            emit_finding(
+                source="guardrails_rails._resolve_competitors",
+                kind="guardrails_competitor_list_read_failed",
+                severity="warning",
+                title="Guardrails competitor-list read failed — validator open",
+                body=(
+                    f"site_config.get('guardrails_competitor_list') raised "
+                    f"{type(e).__name__}: {e}. The competitor-mention "
+                    "validator is effectively disabled until this is fixed. "
+                    "Investigate SiteConfig wiring."
+                ),
+                dedup_key=f"guardrails_competitor_list_read_failed_{type(e).__name__}",
+            )
+        except Exception:
+            logger.debug("emit_finding unavailable in guardrails_rails", exc_info=True)
         return []
     if not raw or not isinstance(raw, str):
         return []
