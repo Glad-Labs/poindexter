@@ -260,6 +260,21 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_PR_STALENESS_PROBE = False
 
+try:
+    # poindexter#435 — Discord bot reachability probe. Pings
+    # https://discord.com/api/v10/users/@me with the bot token every
+    # configured interval (default 5 min). Pages the operator on 401/403
+    # (token revoked); 5xx + network errors are transient and only logged.
+    # Symmetric to the Telegram getMe check in claude-code-watchdog.ps1.
+    from discord_bot_probe import run_discord_bot_probe
+    _HAS_DISCORD_BOT_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.discord_bot_probe import run_discord_bot_probe
+        _HAS_DISCORD_BOT_PROBE = True
+    except ImportError:
+        _HAS_DISCORD_BOT_PROBE = False
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -1913,6 +1928,23 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] pr_staleness probe failed: %s", e)
+
+    # Discord bot reachability probe (poindexter#435). Pings
+    # https://discord.com/api/v10/users/@me with the bot token every
+    # configured interval; pages the operator (via alert_events) only on
+    # 401/403, treats 5xx + transient network errors as info-level.
+    # Internal cadence gate (default 5 min) inside the probe — dispatched
+    # every brain cycle but skips between intervals.
+    if _HAS_DISCORD_BOT_PROBE:
+        try:
+            disc_summary = await run_discord_bot_probe(pool)
+            probe_results["discord_bot"] = {
+                "ok": bool(disc_summary.get("ok", False)),
+                "detail": disc_summary.get("detail", ""),
+                "summary": disc_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] discord_bot probe failed: %s", e)
 
     # Refresh Prometheus scrape secrets (uptime_kuma_api_key, etc.)
     # from app_settings → bind-mounted password_file paths so the next
