@@ -28,6 +28,23 @@ from services.writer_rag_modes import two_pass
 pytestmark = pytest.mark.asyncio
 
 
+def _fake_site_config():
+    """Minimal SiteConfig stub so two_pass's resolve_local_model has a
+    pipeline_writer_model to return. Added 2026-05-12 with batch 11 of
+    the fail-loud sweep (poindexter#485): the previous hardcoded
+    ``glm-4.7-5090:latest`` fallback was removed in favour of failing
+    loud when neither pipeline_writer_model nor cost_tier.standard.model
+    resolves."""
+    sc = MagicMock()
+    sc.get = MagicMock(side_effect=lambda key, default="": {
+        "pipeline_writer_model": "glm-4.7-5090:latest",
+        "cost_tier.standard.model": "",
+    }.get(key, default))
+    sc.get_int = MagicMock(side_effect=lambda key, default=0: default)
+    sc.get_float = MagicMock(side_effect=lambda key, default=0.0: default)
+    return sc
+
+
 def _fake_pool_with_no_snippets():
     """Fake asyncpg pool whose acquire() context manager yields a conn with
     fetch() → []. Note: pool.acquire is a SYNC method that returns an
@@ -51,7 +68,11 @@ async def test_no_external_needed_returns_pass1_draft(monkeypatch):
     async def fake_embed(text): return [0.0] * 768
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
-    result = await two_pass.run(topic="t", angle="a", niche_id="n", pool=_fake_pool_with_no_snippets())
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
     assert result["draft"] == "A clean first draft with no markers."
     assert result["external_lookups"] == []
     assert result["revision_loops"] == 0
@@ -75,7 +96,11 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
     async def fake_embed(text): return [0.0] * 768
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
-    result = await two_pass.run(topic="t", angle="a", niche_id="n", pool=_fake_pool_with_no_snippets())
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
     assert "Revised draft" in result["draft"]
     assert len(result["external_lookups"]) == 1
     assert result["revision_loops"] == 1
@@ -98,6 +123,10 @@ async def test_loop_caps_at_max_revisions(monkeypatch):
     async def fake_embed(text): return [0.0] * 768
     monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
 
-    result = await two_pass.run(topic="t", angle="a", niche_id="n", pool=_fake_pool_with_no_snippets())
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
     assert result["revision_loops"] == 3
     assert result["loop_capped"] is True

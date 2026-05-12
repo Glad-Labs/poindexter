@@ -296,11 +296,10 @@ async def _revise_node(state: _State) -> _State:
     from services.topic_ranking import _ollama_chat_json
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
-    model = (
-        (site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-            if site_config is not None else "glm-4.7-5090:latest")
-        or "glm-4.7-5090:latest"
-    ).removeprefix("ollama/")
+    # 2026-05-12 (poindexter#485): replaced 3 hardcoded glm-4.7-5090
+    # fallbacks with the shared resolver. See batch 6 (PR #392).
+    from services.llm_text import resolve_local_model
+    model = resolve_local_model(site_config=site_config)
     aug_block = "\n\n".join(
         f"[EXTERNAL_NEEDED: {r['need']}] → {r['research']}"
         for r in state["research_results"]

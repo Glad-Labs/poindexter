@@ -187,11 +187,10 @@ async def _generate_narrative(
     back to the deterministic one-liner.
     """
     try:
-        model = (
-            (site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-                if site_config is not None else "glm-4.7-5090:latest")
-            or "glm-4.7-5090:latest"
-        ).removeprefix("ollama/")
+        # 2026-05-12 (poindexter#485): replaced 3 hardcoded glm-4.7-5090
+        # fallbacks with the shared resolver. See batch 6 (PR #392).
+        from services.llm_text import resolve_local_model
+        model = resolve_local_model(site_config=site_config)
 
         bundle_text = _format_bundle_for_narrative(bundle)
         if not bundle_text.strip():

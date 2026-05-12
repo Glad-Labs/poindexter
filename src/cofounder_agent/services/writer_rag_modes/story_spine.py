@@ -31,11 +31,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
         site_config.get_int("writer_rag_story_spine_snippet_max_chars", 600)
         if site_config is not None else 600
     )
-    model = (
-        (site_config.get("pipeline_writer_model", "glm-4.7-5090:latest")
-            if site_config is not None else "glm-4.7-5090:latest")
-        or "glm-4.7-5090:latest"
-    ).removeprefix("ollama/")
+    # 2026-05-12 (poindexter#485): replaced 3 hardcoded glm-4.7-5090
+    # fallbacks with the shared resolver (pipeline_writer_model →
+    # cost_tier.standard.model → raise). See batch 6 (PR #392).
+    from services.llm_text import resolve_local_model
+    model = resolve_local_model(site_config=site_config)
 
     qvec = await embed_text(f"{topic} — {angle}")
     async with pool.acquire() as conn:
