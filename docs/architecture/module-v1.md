@@ -359,9 +359,11 @@ we need for Phase 2 + 3.
 
 ## Open questions / future work
 
-- **Naming.** Is `Module` the right word, or does it collide with
+- ~~**Naming.** Is `Module` the right word, or does it collide with
   Python's existing `module` semantics in confusing ways? Maybe
-  `Workspace` or `Domain` or `Slice`? Defer until Phase 1 review.
+  `Workspace` or `Domain` or `Slice`? Defer until Phase 1 review.~~
+  **Resolved 2026-05-13:** keep `Module`. Matt: "modules in reference
+  to Python files etc. is very broad — we'll know the difference."
 - **Sub-modules.** Should `gladlabs-business` further decompose into
   `gladlabs-storefront`, `gladlabs-licenses`, `gladlabs-premium`?
   Not now — get one private overlay module shipping first.
