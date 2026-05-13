@@ -178,12 +178,21 @@ UPDATE app_settings SET value = 'false' WHERE key = 'use_prefect_orchestration';
 
 TaskExecutor resumes its poll loop on the next cycle.
 
-### Stage 3 — production cutover
+### Stage 3 — production cutover (PROVEN 2026-05-13)
 
-Leave `use_prefect_orchestration='true'` indefinitely. Default-flip the
-seed migration so new installs get Prefect by default. TaskExecutor
-becomes a no-op poller that just ticks `last_poll_at` for the metrics
-endpoint.
+Default flipped to `'true'` for fresh installs via
+`20260513_161559_default_prefect_orchestration_to_true.py`. Existing
+rows (operator-set values) are preserved via `ON CONFLICT DO NOTHING`,
+so this migration is strictly forward-compatible — it cannot silently
+downgrade or upgrade an explicit operator choice.
+
+Triggered by: the operator's 2-3 day canary on `'true'` stayed clean —
+no regression in `qa_pass_completed` cadence, approval-rate stayed
+within band, no spike in `qa_reviewer_failure` or `rag_engine_fallback`.
+TaskExecutor's `_process_loop` is effectively a no-op poller for every
+install on or after this migration, ticking `last_poll_at` so the
+metrics endpoint still shows "alive" while Prefect's deployment owns
+all dispatch.
 
 ### Stage 4 — legacy code removal (~7 days post-Stage 3)
 
