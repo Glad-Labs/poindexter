@@ -316,6 +316,72 @@ class StartupManager:
                 exc_info=True,
             )
 
+        # Module v1 Phase 2 — per-module migrations. Substrate migrations
+        # (including the module_schema_migrations table itself) have
+        # already run above; now walk every registered Module and apply
+        # its own. Best-effort: a module migration failure logs +
+        # continues. Blast radius of one broken module's migration is
+        # one module.
+        try:
+            from pathlib import Path
+
+            from plugins.registry import get_modules
+            from services.module_migrations import run_module_migrations
+
+            modules = get_modules()
+            if not modules:
+                logger.debug("   [INFO] module_migrations: no modules registered")
+            else:
+                pool = self.database_service.pool if self.database_service else None
+                if pool is None:
+                    logger.warning(
+                        "   [WARNING] module_migrations: no pool — skipping"
+                    )
+                else:
+                    for mod in modules:
+                        try:
+                            manifest = mod.manifest()
+                            mod_name = manifest.name
+                            # Discovery: prefer an explicit migrations_dir
+                            # attr (test hook), then fall back to
+                            # <package>/migrations/ next to the module
+                            # source.
+                            migrations_dir = getattr(mod, "migrations_dir", None)
+                            if migrations_dir is None:
+                                import sys
+                                mod_pkg = sys.modules.get(type(mod).__module__)
+                                pkg_file = getattr(mod_pkg, "__file__", None) if mod_pkg else None
+                                if pkg_file:
+                                    migrations_dir = Path(pkg_file).parent / "migrations"
+                            if migrations_dir is None:
+                                logger.info(
+                                    "   [INFO] module_migrations: %s — "
+                                    "no migrations/ resolvable, skipping",
+                                    mod_name,
+                                )
+                                continue
+                            result = await run_module_migrations(
+                                pool, mod_name, Path(migrations_dir),
+                            )
+                            logger.info(
+                                "   [OK] module_migrations: %s — "
+                                "applied=%d skipped=%d failed=%d",
+                                mod_name, result.applied, result.skipped,
+                                result.failed,
+                            )
+                        except Exception as inner:
+                            logger.warning(
+                                "   [WARNING] module_migrations: module "
+                                "%r failed — %s",
+                                mod, inner, exc_info=True,
+                            )
+        except Exception as e:
+            logger.warning(
+                f"   [WARNING] module_migrations bootstrap error: {e!s} "
+                "(proceeding anyway)",
+                exc_info=True,
+            )
+
         # ContentTaskStore: no longer a singleton (Phase G1). Routes that
         # need a store instance construct one inline via Depends(db).
 
