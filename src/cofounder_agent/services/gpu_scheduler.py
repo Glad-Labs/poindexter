@@ -100,6 +100,35 @@ class GPUScheduler:
         self._gaming_detected: bool = False
         self._gaming_paused_since: float = 0
         self._total_gaming_paused_s: float = 0  # cumulative for metrics
+        # Lazily-initialised shared httpx client. Every public-API call
+        # used to spin up a fresh ``httpx.AsyncClient(...)`` for one GET
+        # (nvidia-smi exporter, Ollama /api/ps, SDXL /unload) — that's
+        # TCP handshake + httpx-init overhead amortised over a single
+        # request. With a shared client the underlying connection pool
+        # reuses keep-alive sockets across the scheduler's ~5s-cadence
+        # ticks, which matters because all four hot-path callers talk
+        # to localhost services (the nvidia-smi exporter, Ollama, SDXL
+        # server) on a single host port each.
+        self._http_client: httpx.AsyncClient | None = None
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        """Return the shared httpx client, building it on first use.
+
+        Per-request timeouts override the conservative default (30s)
+        when callers pass ``timeout=`` explicitly, so this single
+        client serves the quick health-check and slow Ollama-unload
+        paths alike.
+        """
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0))
+        return self._http_client
+
+    async def aclose(self) -> None:
+        """Close the shared httpx client. Idempotent. Called from main.py
+        on app shutdown; safe to call when no client was ever built."""
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()
+        self._http_client = None
 
     @asynccontextmanager
     async def lock(
@@ -278,20 +307,20 @@ class GPUScheduler:
     async def _get_gpu_power_watts(self) -> float | None:
         """Query nvidia-smi exporter for current GPU power draw (watts)."""
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
-                resp = await client.get(_nvidia_exporter_url(), timeout=5)
-                if resp.status_code != 200:
-                    logger.warning(
-                        "[GPU] nvidia exporter returned HTTP %s — power reading unavailable",
-                        resp.status_code,
-                    )
-                    await self._emit_exporter_finding(
-                        "power_watts", f"HTTP {resp.status_code}",
-                    )
-                    return None
-                for line in resp.text.splitlines():
-                    if line.startswith("nvidia_gpu_power_usage_watts{"):
-                        return float(line.split("}")[1].strip())
+            client = self._get_http_client()
+            resp = await client.get(_nvidia_exporter_url(), timeout=5)
+            if resp.status_code != 200:
+                logger.warning(
+                    "[GPU] nvidia exporter returned HTTP %s — power reading unavailable",
+                    resp.status_code,
+                )
+                await self._emit_exporter_finding(
+                    "power_watts", f"HTTP {resp.status_code}",
+                )
+                return None
+            for line in resp.text.splitlines():
+                if line.startswith("nvidia_gpu_power_usage_watts{"):
+                    return float(line.split("}")[1].strip())
         except Exception as exc:
             logger.warning(
                 "[GPU] nvidia exporter unreachable for power reading: %s: %s",
@@ -306,20 +335,20 @@ class GPUScheduler:
     async def _get_gpu_utilization(self) -> float | None:
         """Query nvidia-smi exporter for current GPU utilization %."""
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
-                resp = await client.get(_nvidia_exporter_url(), timeout=5)
-                if resp.status_code != 200:
-                    logger.warning(
-                        "[GPU] nvidia exporter returned HTTP %s — utilization unavailable",
-                        resp.status_code,
-                    )
-                    await self._emit_exporter_finding(
-                        "utilization_percent", f"HTTP {resp.status_code}",
-                    )
-                    return None
-                for line in resp.text.splitlines():
-                    if line.startswith("nvidia_gpu_utilization_percent{"):
-                        return float(line.split("}")[1].strip())
+            client = self._get_http_client()
+            resp = await client.get(_nvidia_exporter_url(), timeout=5)
+            if resp.status_code != 200:
+                logger.warning(
+                    "[GPU] nvidia exporter returned HTTP %s — utilization unavailable",
+                    resp.status_code,
+                )
+                await self._emit_exporter_finding(
+                    "utilization_percent", f"HTTP {resp.status_code}",
+                )
+                return None
+            for line in resp.text.splitlines():
+                if line.startswith("nvidia_gpu_utilization_percent{"):
+                    return float(line.split("}")[1].strip())
         except Exception as exc:
             logger.warning(
                 "[GPU] nvidia exporter unreachable for utilization: %s: %s",
@@ -386,19 +415,19 @@ class GPUScheduler:
     async def _unload_ollama_models(self):
         """Unload all Ollama models to free VRAM for SDXL."""
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=3.0)) as client:
-                resp = await client.get(f"{_ollama_base_url()}/api/ps", timeout=10)
-                if resp.status_code != 200:
-                    return
-                data = resp.json()
-                for model in data.get("models", []):
-                    name = model["name"]
-                    logger.info("Unloading Ollama model for SDXL", model=name)
-                    await client.post(
-                        f"{_ollama_base_url()}/api/generate",
-                        json={"model": name, "keep_alive": 0},
-                        timeout=30,
-                    )
+            client = self._get_http_client()
+            resp = await client.get(f"{_ollama_base_url()}/api/ps", timeout=10)
+            if resp.status_code != 200:
+                return
+            data = resp.json()
+            for model in data.get("models", []):
+                name = model["name"]
+                logger.info("Unloading Ollama model for SDXL", model=name)
+                await client.post(
+                    f"{_ollama_base_url()}/api/generate",
+                    json={"model": name, "keep_alive": 0},
+                    timeout=30,
+                )
         except Exception as e:
             logger.warning("Failed to unload Ollama models: %s", e)
 
@@ -429,12 +458,20 @@ class GPUScheduler:
         from services.bootstrap_defaults import DEFAULT_SDXL_URL
         sdxl_url = _sc_get("sdxl_server_url", DEFAULT_SDXL_URL)
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
-                resp = await client.post(f"{sdxl_url}/unload", timeout=10)
-                if resp.status_code == 200:
-                    logger.info("[GPU] SDXL model unloaded via /unload endpoint")
-        except Exception:
-            pass  # SDXL server not running — nothing to unload
+            client = self._get_http_client()
+            resp = await client.post(f"{sdxl_url}/unload", timeout=10)
+            if resp.status_code == 200:
+                logger.info("[GPU] SDXL model unloaded via /unload endpoint")
+        except Exception as exc:
+            # poindexter#455 — used to be `except: pass`. Log at debug
+            # because the SDXL server being offline is the common case
+            # (it's only running when SDXL phase is active), not a
+            # genuine bug. A persistent failure would surface via the
+            # nvidia-exporter finding when SDXL is supposed to be up.
+            logger.debug(
+                "[GPU] SDXL /unload call failed (server likely offline): %s: %s",
+                type(exc).__name__, exc,
+            )
 
     @property
     def is_busy(self) -> bool:

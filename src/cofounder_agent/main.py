@@ -529,6 +529,15 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 logger.info("[STOP] Webhook delivery service stopped")
             except Exception as e:
                 logger.error(f"[STOP] Error stopping webhook delivery: {e}", exc_info=True)
+
+        # Close the GPUScheduler's shared httpx client so we don't leak
+        # the underlying connection pool at process shutdown.
+        try:
+            from services.gpu_scheduler import gpu as _gpu
+            await _gpu.aclose()
+        except Exception as e:
+            logger.error(f"[STOP] Error closing gpu_scheduler httpx client: {e}", exc_info=True)
+
         await startup_manager.shutdown()
 
 
