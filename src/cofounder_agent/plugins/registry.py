@@ -4,6 +4,13 @@ No custom registry, no decorators, no pkgutil auto-imports. We use
 ``importlib.metadata.entry_points()`` — the same mechanism pytest,
 click, and flask use.
 
+As of 2026-05-13, **20 entry-point groups** are wired here. 19 are
+capability plugins (Tap, Stage, Reviewer, Adapter, Provider, …) and
+the 20th is ``modules`` — the Module v1 group (Glad-Labs/poindexter#490),
+the unit of business-function composition. See ``plugins/module.py``
+and ``docs/architecture/module-v1.md`` for the Module Protocol; this
+file's ``get_modules()`` accessor is the registry side.
+
 Each plugin package declares its contributions in its ``pyproject.toml``:
 
 .. code:: toml

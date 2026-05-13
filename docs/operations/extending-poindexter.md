@@ -25,6 +25,17 @@ This guide is prescriptive. If you want design rationale, read
 | Run a background probe for health / business metrics      | **Probe**    | `plugins/probe.py::Probe`       | `brain/health_probes.py`                   |
 | Schedule a recurring background task                      | **Job**      | `plugins/job.py::Job`           | `services/jobs/reload_site_config.py`      |
 | Swap the LLM backend (Ollama → vLLM / OpenAI / Claude)    | **Provider** | `plugins/provider.py::Provider` | Phase J, tracked at GH-104                 |
+| **Add an entire business function (finance, HR, ...)**    | **Module**   | `plugins/module.py::Module`     | `src/cofounder_agent/modules/content/`     |
+
+**Capability plugins vs business modules.** Every row above the last is a
+_capability plugin_ — a discrete piece (one tap, one provider, one stage) the
+substrate consumes directly. The last row is a _business module_ — a
+manifest+lifecycle bundle that composes several capability plugins into a
+self-contained business function. Most extensions are capability plugins; you
+only need a Module when you're adding a new business surface (finance,
+customer support, ops/security, HR), not just a new step inside an existing
+business surface. See [Module v1](../architecture/module-v1.md) for the full
+contract; section 9 below walks through adding one.
 
 Each column below describes the full "how" per extension type.
 
@@ -548,10 +559,163 @@ verification walkthrough lives in [`fresh-db-setup.md`](fresh-db-setup.md).
 
 ---
 
+## 9. Adding a Module (Module v1)
+
+A _Module_ is the unit of install / version / OSS visibility for a whole
+business function. The substrate (brain, Prefect, Langfuse, cost_guard,
+prompt_manager, …) keeps running unchanged; a Module bundles the lower-level
+plugin contributions (stages, reviewers, probes, jobs, taps, adapters,
+providers, packs) + things the existing plugin registry doesn't track
+(DB migrations, Grafana panels, HTTP routes, CLI subcommands) and gives them
+a manifest.
+
+**When to add a Module vs a single plugin:** a Module makes sense when you're
+adding a new _business function_ with its own DB tables, jobs, HTTP routes,
+and operator surface — finance, customer support, ops/security, HR. For one
+new pipeline step, one new image provider, one new probe — just use the
+capability-plugin patterns above. The reference Module is `content` at
+[`src/cofounder_agent/modules/content/`](../../src/cofounder_agent/modules/content/);
+the first private operator-overlay Module is `finance` (Mercury banking).
+
+### Step 1 — Scaffold the package
+
+```
+src/cofounder_agent/modules/<name>/
+├── __init__.py            # re-exports the Module class
+├── <name>_module.py       # the Module class
+├── migrations/            # per-module DB migrations (Phase 2 runner)
+│   └── __init__.py
+└── jobs/                  # optional: module-owned scheduled jobs
+    └── __init__.py
+```
+
+Copy the layout of `modules/content/` or `modules/finance/`. Public modules
+use `visibility="public"`; operator-overlay modules use `visibility="private"`
+(those get filtered out of the public OSS mirror — see the sync script).
+
+### Step 2 — Define the Module class
+
+```python
+# modules/<name>/<name>_module.py
+from pathlib import Path
+
+from plugins.module import ModuleManifest
+
+
+_MANIFEST = ModuleManifest(
+    name="<name>",                  # ^[a-z][a-z0-9_]*$
+    version="0.1.0",
+    visibility="public",            # or "private" for operator overlay
+    description="One-line human description.",
+    requires=(),
+)
+
+
+class <Name>Module:
+    @property
+    def migrations_dir(self) -> Path:
+        return Path(__file__).parent / "migrations"
+
+    def manifest(self) -> ModuleManifest:
+        return _MANIFEST
+
+    async def migrate(self, pool: object) -> None:
+        from services.module_migrations import run_module_migrations
+        await run_module_migrations(pool, _MANIFEST.name, self.migrations_dir)
+
+    # Phase 4 lifecycle hooks — leave as no-ops until you actually wire them.
+    def register_routes(self, app: object) -> None:
+        del app
+
+    def register_cli(self, parser: object) -> None:
+        del parser
+
+    def register_dashboards(self, grafana: object) -> None:
+        del grafana
+
+    def register_probes(self, brain: object) -> None:
+        del brain
+
+    async def healthcheck(self, pool: object) -> object:
+        del pool
+        return None
+```
+
+### Step 3 — Register the Module in `_SAMPLES`
+
+Add one line to `plugins/registry.py`'s `_SAMPLES` list:
+
+```python
+("modules", "modules.<name>", "<Name>Module"),
+```
+
+Verify discovery:
+
+```bash
+cd src/cofounder_agent && poetry run python -c "
+from plugins.registry import get_modules, clear_registry_cache
+clear_registry_cache()
+print([m.manifest().name for m in get_modules()])
+"
+```
+
+### Step 4 — Add a migration if your module owns DB tables
+
+```bash
+# from the repo root
+python scripts/new-migration.py "create <name> tables"
+# This drops the file in services/migrations/; MOVE it to
+# src/cofounder_agent/modules/<name>/migrations/<file>.py.
+```
+
+The Phase 2 runner records each migration in `module_schema_migrations`
+keyed on `(module_name, migration_name)` — so two modules can both have
+an `init.py` migration without colliding.
+
+### Step 5 — Add module-owned jobs (optional)
+
+Module-owned scheduled jobs live at `modules/<name>/jobs/<job>.py`
+implementing the `JobResult`-returning `run(pool, config)` contract.
+Register in `_SAMPLES`:
+
+```python
+("jobs", "modules.<name>.jobs.<job_module>", "<JobClass>"),
+```
+
+The plugin scheduler picks them up at worker startup.
+
+### Step 6 — Verify end-to-end
+
+Restart the worker. The boot log should show:
+
+```
+PluginScheduler started with N jobs: [..., '<your_job>', ...]
+module_migrations: <name> done — applied=X skipped=0 failed=0
+module <name> — register_routes() complete
+```
+
+If you see all three, your Module is live.
+
+### What's deferred
+
+- **Phase 3.5** — physical pipeline-code moves into `modules/content/`
+  (today substrate still owns the 21-stage tree). Wait for sample size ≥ 3.
+- **Phase 4.5** — `register_dashboards` (Grafana folder per module),
+  `register_cli` (subparser auto-discovery), `register_probes` (brain
+  daemon integration). Today these are no-op stubs; wire them inline in
+  your module's package until the substrate generalizes them.
+- **Phase 5** — `visibility="private"` drives `scripts/sync-to-github.sh`
+  automatically. Today private modules are stripped via explicit
+  pattern list in the sync script.
+
+---
+
 ## See also
 
 - [Plugin architecture](../architecture/plugin-architecture) —
   full roadmap + rationale
+- [Module v1 spec](../architecture/module-v1.md) — design rationale,
+  shipped status, deferred phases
 - [Services reference](../reference/services) — catalog of every
   service in the worker
 - [Content pipeline](../architecture/content-pipeline) — how the

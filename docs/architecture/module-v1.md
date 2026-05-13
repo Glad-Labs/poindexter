@@ -1,10 +1,35 @@
 # Module v1 — making the plugin substrate explicit
 
-**Status:** Spec / proposed. Not yet implemented.
-**Date:** 2026-05-13
+**Status:** Phases 1, 2, 3-lite, 4-lite shipped on 2026-05-13. Phases 3.5 / 4.5 / 5 deferred — see "What shipped" below.
+**Date:** 2026-05-13 (spec) / 2026-05-13 (implementation)
 **Author:** brainstormed with Matt 2026-05-13 16:48 UTC
 **Tracker:** [Glad-Labs/poindexter#490](https://github.com/Glad-Labs/poindexter/issues/490) (umbrella)
 **Supersedes (when implemented):** the informal "module = collection of contributions across 19 entry-point groups" pattern.
+
+## What shipped 2026-05-13
+
+End-to-end validated against a real second module (FinanceModule + Mercury
+banking integration in the Glad Labs operator overlay).
+
+| Phase   | Status      | What landed                                                                                                                                                                                                                                                                                                                                                                          |
+| ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Phase 1 | ✅ Full     | `plugins/module.py` Protocol + `ModuleManifest` + `get_modules()` registry accessor with name + manifest validation + duplicate-drop + first-discovered-wins precedence. 5 unit tests pin the contract.                                                                                                                                                                              |
+| Phase 2 | ✅ Full     | `services/module_migrations.py` runner + `module_schema_migrations` table (compound key on `module_name, migration_name`) + boot wiring in `utils/startup_manager._run_migrations`. 6 unit + 2 integration_db tests.                                                                                                                                                                 |
+| Phase 3 | ⚠️ Lite     | `src/cofounder_agent/modules/content/` skeleton (`ContentModule` class) registered via `_SAMPLES`. The 21-stage tree, `content_router_service`, `multi_model_qa`, `content_validator`, and content prompts STAY in substrate — physical pipeline-code moves deferred to **Phase 3.5** until a 2nd module gives us a comparison point. Avoids refactoring for sample-size-1 symmetry. |
+| Phase 4 | ⚠️ Lite     | Route auto-discovery wired in `utils/route_registration.register_all_routes` — iterates `get_modules()` after substrate routes mount, calls each module's `register_routes(app)`. Grafana dashboard registration, CLI subparser registration, brain-probe registration deferred to **Phase 4.5**.                                                                                    |
+| Phase 5 | ⏭ Deferred | `visibility` flag drives `scripts/sync-to-github.sh` — currently the sync filter strips private modules via an explicit pattern list (works for n=1 module; will refactor when n≥3).                                                                                                                                                                                                 |
+
+**Concrete second module shipped under this pattern:** `src/cofounder_agent/modules/finance/`
+(FinanceModule, `visibility="private"`) implements Mercury read-only
+banking — Module v1 was validated by writing FinanceModule against
+the freshly-shipped scaffolding, not by retrofitting old content code.
+
+**The cost-benefit takeaway from shipping all four phases in one day:** the
+Module v1 scaffolding (Phases 1 + 2) is small and high-leverage (~250 LOC). The
+"lite" approach to Phases 3 + 4 avoids ~100 file import-path churn by deferring
+physical moves until a 3rd module concretely demands them. Total ratio:
+~700 LOC of scaffolding + glue now supports a 1-day path to "add a new
+business module" (`modules/<name>/` + `_SAMPLES` registration + migrations).
 
 ## Why
 

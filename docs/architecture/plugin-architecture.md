@@ -1,8 +1,17 @@
 # Plugin Architecture
 
-**Last Updated:** 2026-04-19
-**Status:** 📐 Design — umbrella [#64](https://github.com/Glad-Labs/poindexter/issues/64) v3 locked; child phases [#65-#72](https://github.com/Glad-Labs/poindexter/issues/64#issuecomment-4276031164) rewritten to match
+**Last Updated:** 2026-05-13
+**Status:** 📐 Design — umbrella [#64](https://github.com/Glad-Labs/poindexter/issues/64) v3 locked; child phases [#65-#72](https://github.com/Glad-Labs/poindexter/issues/64#issuecomment-4276031164) rewritten to match. Layered on top of the plugin substrate is **Module v1** ([#490](https://github.com/Glad-Labs/poindexter/issues/490), spec at [`module-v1.md`](module-v1.md)) — the unit of business-function composition (one Module = one business: content / finance / customer-support / ops). The first four Module v1 phases shipped 2026-05-13.
 **Scope:** Canonical in-repo reference for how Poindexter is evolving from a handful of god-files into a plugin-shaped system.
+
+> **Capability plugins vs business modules.** The Phases A–J on this page
+> describe _capability plugins_ — atoms like `Tap`, `Stage`, `Provider`,
+> `LLMProvider`. Module v1 is the _next layer up_: a Module bundles
+> several capability plugins into a manifested, install-shaped business
+> function. They're orthogonal axes, not competing decompositions. Most
+> extensions slot into the capability layer; you only reach for a Module
+> when you're adding a new business surface that needs its own DB
+> migrations, jobs, routes, dashboards.
 
 > **v3 locked decisions (2026-04-19):**
 >

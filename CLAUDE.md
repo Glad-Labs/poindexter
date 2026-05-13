@@ -123,6 +123,23 @@ npm run type:check            # Python mypy
 - `DEPLOYMENT_MODE=coordinator` — minimal read-only API (intended for future cloud host; currently unused)
 - `DEPLOYMENT_MODE=worker` (local PC) — claims tasks, runs content pipeline via Ollama
 
+**Modules** (Module v1 — `src/cofounder_agent/modules/`):
+
+The 20th entry-point group in the plugin registry. Each Module bundles
+capability-plugin contributions plus DB migrations, jobs, HTTP routes,
+and Grafana panels into a manifested business function. As of 2026-05-13:
+
+| Module    | Path               | Visibility | What it does                                                                                         |
+| --------- | ------------------ | ---------- | ---------------------------------------------------------------------------------------------------- |
+| `content` | `modules/content/` | public     | Reference Module — proves the pattern. Substrate still owns the 21-stage tree until Phase 3.5.       |
+| `finance` | `modules/finance/` | private    | Mercury read-only banking (Glad Labs operator overlay). Stripped from public mirror via sync filter. |
+
+Adding a new business module (HR, customer support, ops/security) follows
+the [extending-poindexter §9 walkthrough](docs/operations/extending-poindexter.md).
+Operator-overlay specifics for the finance module live in
+[docs/operations/finance-module-operator.md](docs/operations/finance-module-operator.md)
+(also stripped from public mirror).
+
 **Key services (17 load-bearing):**
 
 | Service                                   | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |

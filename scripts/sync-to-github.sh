@@ -97,6 +97,7 @@ git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # p
 git rm -r --cached --quiet src/cofounder_agent/modules/finance/ 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/poindexter/cli/finance.py 2>/dev/null || true
 git rm -r --cached --quiet src/cofounder_agent/tests/unit/modules/finance/ 2>/dev/null || true
+git rm --cached --quiet docs/operations/finance-module-operator.md 2>/dev/null || true   # private operator-overlay setup doc (Mercury banking)
 
 # Patch the substrate registration + CLI wiring so the stripped tree is
 # internally consistent. Each pattern is a literal string; grep -v -F
