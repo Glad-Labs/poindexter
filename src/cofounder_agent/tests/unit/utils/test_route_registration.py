@@ -252,3 +252,39 @@ class TestRegisterAllRoutes:
             register_all_routes(app)
         # Default should register coordinator route count
         assert app.include_router.call_count == len(_COORDINATOR_ROUTES)
+
+
+class TestModuleV1RouteIteration:
+    """Phase 4-lite — ``register_all_routes`` iterates ``get_modules()``
+    after substrate routes mount, and calls ``register_routes(app)`` on
+    each.
+
+    Test strategy: use the REAL ``ContentModule`` (registered via
+    core-samples in ``plugins/registry.py:_SAMPLES``). It's a Phase-4
+    stub whose ``register_routes`` is a no-op — perfect for verifying
+    the iteration fires without side effects. Trying to patch the
+    registry from the test harness fights Python's import mechanics
+    (multiple ``plugins.registry`` entries can exist in sys.modules
+    under different qualified names with pytest's path layout); the
+    real module is more reliable AND tests the actual code path."""
+
+    def test_iteration_calls_register_routes_on_content_module(self):
+        """The in-tree ContentModule (registered via _SAMPLES) shows
+        up in the result dict as ``module:content`` after register_all_routes
+        runs. Implicit assertion: ``ContentModule.register_routes(app)``
+        ran without raising (Phase-3-lite no-op stub).
+
+        NOTE: this test does NOT patch ``importlib.import_module`` like
+        its sibling tests do — that patch corrupts core-samples
+        discovery (ContentModule would load as a MagicMock and fail
+        validation). The substrate routes may fail to load against the
+        unconfigured test environment; we only care about the module
+        iteration here, which appends to the same status dict."""
+        app = _make_app()
+        result = register_all_routes(app)
+
+        assert "module:content" in result, (
+            f"expected 'module:content' in result, got module keys: "
+            f"{[k for k in result if k.startswith('module:')]}"
+        )
+        assert result["module:content"] is True

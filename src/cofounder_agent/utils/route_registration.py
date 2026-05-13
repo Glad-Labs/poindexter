@@ -130,6 +130,43 @@ def register_all_routes(
         total_routes,
     )
 
+    # Module v1 Phase 4-lite (Glad-Labs/poindexter#490) — after the
+    # substrate routes are mounted, iterate discovered Modules and let
+    # each contribute its own routes. ContentModule's register_routes
+    # is a no-op in Phase 3-lite, so this is currently a no-op iteration;
+    # future modules (finance, customer support, ops/security) plug in
+    # here without editing this file. Failures log + continue so one
+    # bad module can't take down the worker's HTTP surface.
+    try:
+        from plugins.registry import get_modules
+
+        modules = get_modules()
+        if modules:
+            logger.info(
+                " Module v1: iterating %d module(s) for route registration",
+                len(modules),
+            )
+            for mod in modules:
+                try:
+                    mod_name = mod.manifest().name
+                    mod.register_routes(app)
+                    logger.info(" module %s — register_routes() complete", mod_name)
+                    status[f"module:{mod_name}"] = True
+                except Exception as exc:
+                    mod_repr = getattr(getattr(mod, "manifest", lambda: None)(), "name", repr(mod))
+                    logger.error(
+                        " module %s — register_routes failed: %s",
+                        mod_repr, exc, exc_info=True,
+                    )
+                    status[f"module:{mod_repr}"] = False
+        else:
+            logger.debug(" Module v1: no modules registered")
+    except Exception as exc:
+        logger.warning(
+            " Module v1 route iteration bootstrap error: %s (proceeding)",
+            exc, exc_info=True,
+        )
+
     return status
 
 
