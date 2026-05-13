@@ -1588,8 +1588,17 @@ async def log_electricity_cost(pool):
             elif estimate_watts:
                 watts = estimate_watts
                 power_source = "estimate"
-        except Exception:
-            pass  # Exporter not running, use estimate
+        except Exception as exc:
+            # poindexter#455 — used to be silent. Exporter unreachable
+            # is normal during host reboots but a sustained outage
+            # means the cost dashboard's per-cycle watts come from a
+            # 150W static estimate. Debug-log keeps the cycle quiet
+            # in steady state but flags a transition operator-side.
+            logger.debug(
+                "[BRAIN] PSU exporter unreachable (%s: %s) — using "
+                "software estimate / static fallback this cycle",
+                type(exc).__name__, exc,
+            )
 
         if watts is None:
             # Fallback estimate: local PC idles around 150W
@@ -1662,8 +1671,19 @@ async def log_electricity_cost(pool):
                 VALUES ('psu_watchdog', 'last_source', $1, 1.0, 'brain_daemon')
                 ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
             """, power_source)
-        except Exception:
-            pass  # watchdog is best-effort
+        except Exception as exc:
+            # poindexter#455 — used to be silent. The watchdog's
+            # state-transition Telegram/Discord notifications above
+            # already fired; this is just the DB write that powers
+            # the NEXT-cycle comparison. Silent failure here means
+            # the next cycle sees prev_source=None and may re-fire
+            # the same "PSU dropped" alert. Debug-log so a stuck
+            # state is traceable.
+            logger.debug(
+                "[BRAIN] psu_watchdog brain_knowledge write failed "
+                "(%s: %s) — next cycle may re-notify",
+                type(exc).__name__, exc,
+            )
 
     except Exception as e:
         logger.debug("[BRAIN] Electricity cost logging failed: %s", e)
