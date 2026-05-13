@@ -16,7 +16,6 @@ import pytest
 
 from services.module_migrations import run_module_migrations
 
-
 pytestmark = [
     pytest.mark.integration_db,
     # Session-scoped fixtures need the session loop, matching the
