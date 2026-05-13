@@ -538,6 +538,17 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         except Exception as e:
             logger.error(f"[STOP] Error closing gpu_scheduler httpx client: {e}", exc_info=True)
 
+        # Same for the revalidation service's shared client (one TLS
+        # session reused across all publish-time /api/revalidate calls).
+        try:
+            from services import revalidation_service as _revalidation
+            await _revalidation.aclose()
+        except Exception as e:
+            logger.error(
+                f"[STOP] Error closing revalidation_service httpx client: {e}",
+                exc_info=True,
+            )
+
         await startup_manager.shutdown()
 
 

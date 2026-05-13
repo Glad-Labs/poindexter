@@ -62,6 +62,39 @@ logger = get_logger(__name__)
 DEFAULT_REVALIDATE_URL = "https://www.gladlabs.io/api/revalidate"
 
 
+# ---------------------------------------------------------------------------
+# Shared httpx client — pool reuse across publish bursts.
+#
+# Every revalidation call used to build a fresh ``httpx.AsyncClient`` for one
+# POST. When a newsletter blast or batch approval flips multiple posts to
+# published in quick succession (and we hit /api/revalidate for each), every
+# call paid the TCP + TLS handshake to www.gladlabs.io. With a module-level
+# shared client, the underlying connection pool keeps the TLS session warm
+# across the burst. Hot enough to matter — multi-publish runs ship 5-20
+# revalidate requests within a second.
+# ---------------------------------------------------------------------------
+
+_shared_http_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_client() -> httpx.AsyncClient:
+    """Lazily build the shared client. Per-request timeouts override the
+    conservative module default."""
+    global _shared_http_client
+    if _shared_http_client is None or _shared_http_client.is_closed:
+        _shared_http_client = httpx.AsyncClient(timeout=10)
+    return _shared_http_client
+
+
+async def aclose() -> None:
+    """Close the shared httpx client. Idempotent. Wired into the FastAPI
+    lifespan shutdown so process exit doesn't leak the connection pool."""
+    global _shared_http_client
+    if _shared_http_client is not None and not _shared_http_client.is_closed:
+        await _shared_http_client.aclose()
+    _shared_http_client = None
+
+
 def _resolve_revalidate_url(site_cfg) -> str:
     """Pick the Next.js /api/revalidate endpoint from settings.
 
@@ -172,53 +205,54 @@ async def _post_revalidate(
             revalidate_url, paths, tags,
         )
 
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(
-                revalidate_url,
-                json={"paths": paths, "tags": tags},
-                headers={
-                    "x-revalidate-secret": revalidate_secret,
-                    "Content-Type": "application/json",
-                },
-            )
+        client = _get_shared_client()
+        response = await client.post(
+            revalidate_url,
+            json={"paths": paths, "tags": tags},
+            headers={
+                "x-revalidate-secret": revalidate_secret,
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
 
-            duration_ms = int((time.monotonic() - started) * 1000)
-            if response.status_code == 200:
-                logger.info(
-                    "[revalidation] ISR revalidation successful in %dms",
-                    duration_ms,
-                )
-                return RevalidationResult(
-                    success=True,
-                    skipped=False,
-                    status_code=200,
-                    error="",
-                    error_kind="",
-                    duration_ms=duration_ms,
-                    url=revalidate_url,
-                )
-
-            body_excerpt = response.text[:500]
-            logger.warning(
-                "[revalidation] ISR revalidation returned %s in %dms: %s",
-                response.status_code, duration_ms, body_excerpt[:200],
-                extra={
-                    "revalidate_url": revalidate_url,
-                    "status_code": response.status_code,
-                    "duration_ms": duration_ms,
-                    "paths": paths,
-                    "tags": tags,
-                },
+        duration_ms = int((time.monotonic() - started) * 1000)
+        if response.status_code == 200:
+            logger.info(
+                "[revalidation] ISR revalidation successful in %dms",
+                duration_ms,
             )
             return RevalidationResult(
-                success=False,
+                success=True,
                 skipped=False,
-                status_code=response.status_code,
-                error=body_excerpt,
-                error_kind="http",
+                status_code=200,
+                error="",
+                error_kind="",
                 duration_ms=duration_ms,
                 url=revalidate_url,
             )
+
+        body_excerpt = response.text[:500]
+        logger.warning(
+            "[revalidation] ISR revalidation returned %s in %dms: %s",
+            response.status_code, duration_ms, body_excerpt[:200],
+            extra={
+                "revalidate_url": revalidate_url,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+                "paths": paths,
+                "tags": tags,
+            },
+        )
+        return RevalidationResult(
+            success=False,
+            skipped=False,
+            status_code=response.status_code,
+            error=body_excerpt,
+            error_kind="http",
+            duration_ms=duration_ms,
+            url=revalidate_url,
+        )
 
     except httpx.TimeoutException:
         duration_ms = int((time.monotonic() - started) * 1000)
