@@ -549,6 +549,15 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 exc_info=True,
             )
 
+        # Close URLValidator's shared httpx client. Same rationale as
+        # gpu_scheduler — the singleton pools connections across all
+        # batch validations and needs to release them at shutdown.
+        try:
+            from services.url_validator import get_url_validator
+            await get_url_validator().aclose()
+        except Exception as e:
+            logger.error(f"[STOP] Error closing url_validator httpx client: {e}", exc_info=True)
+
         await startup_manager.shutdown()
 
 

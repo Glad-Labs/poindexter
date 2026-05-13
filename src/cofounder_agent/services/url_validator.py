@@ -75,6 +75,37 @@ class URLValidator:
         self._timeout = timeout
         self._cache_ttl = cache_ttl
         self._cache: dict[str, _CacheEntry] = {}
+        # Shared httpx client — opened lazily on first use, closed via
+        # aclose() at app shutdown. Previously each validate_url() call
+        # opened a fresh AsyncClient: a 20-link article paid 20 TLS
+        # handshakes when most URLs targeted the same host (vendor docs,
+        # GitHub, etc.). Pooling the client lets keep-alive + connection
+        # reuse kick in across the gather batch.
+        self._http_client: httpx.AsyncClient | None = None
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        """Lazy-build the shared client. Headers (User-Agent) are passed
+        per-request because site_name can change post-lifespan and we
+        don't want a stale client locking in the original value."""
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(
+                timeout=self._timeout,
+                follow_redirects=True,
+            )
+        return self._http_client
+
+    async def aclose(self) -> None:
+        """Close the shared httpx client. Idempotent — safe to call
+        from a lifespan shutdown handler even if the client never ran."""
+        if self._http_client is not None:
+            try:
+                await self._http_client.aclose()
+            except Exception as exc:
+                logger.debug(
+                    "[url_validator] aclose raised: %s: %s",
+                    type(exc).__name__, exc,
+                )
+            self._http_client = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -127,22 +158,22 @@ class URLValidator:
 
         is_valid = False
         status_code = None
+        ua = f"{_sc().get('site_name', 'ContentPipeline')}-LinkChecker/1.0"
 
         try:
-            async with httpx.AsyncClient(
-                timeout=self._timeout,
-                follow_redirects=True,
-                headers={"User-Agent": f"{_sc().get('site_name', 'ContentPipeline')}-LinkChecker/1.0"},
-            ) as client:
-                resp = await client.head(url)
+            client = self._get_http_client()
+            resp = await client.head(url, headers={"User-Agent": ua})
+            status_code = resp.status_code
+
+            # Some servers reject HEAD; fall back to GET with stream
+            if status_code == 405:
+                resp = await client.get(
+                    url,
+                    headers={"User-Agent": ua, "Range": "bytes=0-0"},
+                )
                 status_code = resp.status_code
 
-                # Some servers reject HEAD; fall back to GET with stream
-                if status_code == 405:
-                    resp = await client.get(url, headers={"Range": "bytes=0-0"})
-                    status_code = resp.status_code
-
-                is_valid = status_code < 400
+            is_valid = status_code < 400
 
         except httpx.TimeoutException:
             logger.debug("URL validation timed out: %s", url)
