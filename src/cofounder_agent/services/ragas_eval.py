@@ -245,11 +245,21 @@ def is_enabled(site_config: Any) -> bool:
         return False
     try:
         return bool(site_config.get_bool("ragas_enabled", False))
-    except Exception:
+    except Exception as exc_primary:
         try:
             v = site_config.get("ragas_enabled", "")
             return str(v).strip().lower() in ("true", "1", "yes", "on")
-        except Exception:
+        except Exception as exc_fallback:
+            # poindexter#455 — symmetric to guardrails / deepeval
+            # is_enabled fixes. Silent fallback masked broken
+            # SiteConfig wrappers as "ragas disabled".
+            logger.warning(
+                "[ragas_eval] is_enabled: both get_bool and get raised while "
+                "reading ragas_enabled — treating as disabled. "
+                "Primary: %s: %s. Fallback: %s: %s",
+                type(exc_primary).__name__, exc_primary,
+                type(exc_fallback).__name__, exc_fallback,
+            )
             return False
 
 

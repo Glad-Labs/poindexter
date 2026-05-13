@@ -366,11 +366,23 @@ def is_enabled(site_config: Any) -> bool:
         return False
     try:
         return bool(site_config.get_bool("deepeval_enabled", False))
-    except Exception:
+    except Exception as exc_primary:
         try:
             v = site_config.get("deepeval_enabled", "")
             return str(v).strip().lower() in ("true", "1", "yes", "on")
-        except Exception:
+        except Exception as exc_fallback:
+            # poindexter#455 — symmetric to guardrails_rails.is_enabled.
+            # Both fallback paths silently returned False, masking broken
+            # SiteConfig wrappers as "rail turned off". Now logs both
+            # exception types so the operator can see why deepeval went
+            # dark.
+            logger.warning(
+                "[deepeval] is_enabled: both get_bool and get raised while "
+                "reading deepeval_enabled — treating as disabled. "
+                "Primary: %s: %s. Fallback: %s: %s",
+                type(exc_primary).__name__, exc_primary,
+                type(exc_fallback).__name__, exc_fallback,
+            )
             return False
 
 

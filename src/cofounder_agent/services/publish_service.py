@@ -314,7 +314,17 @@ async def _embed_published_post(db_service, post_dict: dict) -> None:
                 dedup_key=f"rag_embed_failed_{type(e).__name__}",
             )
         except Exception:
-            pass
+            # poindexter#455 — same pattern as the devto_service /
+            # category_resolver fixes earlier in the sweep. emit_finding
+            # itself can fail (DB pool exhausted, audit table missing,
+            # etc.); never let an observability failure poison the
+            # publish path. Log at debug so it's still inspectable in
+            # trace logs.
+            logger.debug(
+                "[publish_service] emit_finding for rag_embed_failed raised — "
+                "skipping observability write",
+                exc_info=True,
+            )
 
 
 def _parse_json_field(value, field_name: str = "field", task_id: str = "") -> dict:

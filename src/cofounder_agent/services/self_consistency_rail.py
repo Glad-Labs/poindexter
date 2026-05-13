@@ -71,11 +71,22 @@ def is_enabled(site_config: Any) -> bool:
         return False
     try:
         return bool(site_config.get_bool("self_consistency_enabled", False))
-    except Exception:
+    except Exception as exc_primary:
         try:
             v = site_config.get("self_consistency_enabled", "")
             return str(v).strip().lower() in ("true", "1", "yes", "on")
-        except Exception:
+        except Exception as exc_fallback:
+            # poindexter#455 — symmetric to guardrails / deepeval / ragas
+            # is_enabled fixes. Silent fallback masked broken SiteConfig
+            # wrappers as "self-consistency disabled".
+            from services.logger_config import get_logger
+            get_logger(__name__).warning(
+                "[self_consistency] is_enabled: both get_bool and get raised "
+                "while reading self_consistency_enabled — treating as disabled. "
+                "Primary: %s: %s. Fallback: %s: %s",
+                type(exc_primary).__name__, exc_primary,
+                type(exc_fallback).__name__, exc_fallback,
+            )
             return False
 
 
