@@ -28,12 +28,23 @@ def is_audio_gen_enabled(site_config: Any) -> bool:
     """Return True iff ``app_settings.audio_gen_engine`` names a non-empty
     engine. Cheap check callers run before any real work to short-circuit
     the default-off case without going through plugin discovery.
+
+    poindexter#455 — used to silently return False on any exception,
+    which masks a broken SiteConfig wrapper as "audio gen disabled".
+    Now logs a warning so the operator hears about config-read failures
+    instead of wondering why audio never generates.
     """
     if site_config is None:
         return False
     try:
         engine = str(site_config.get("audio_gen_engine", "") or "").strip()
-    except Exception:
+    except Exception as exc:
+        from services.logger_config import get_logger
+        get_logger(__name__).warning(
+            "[audio_gen] is_audio_gen_enabled failed to read audio_gen_engine "
+            "from site_config: %s: %s — treating audio gen as disabled",
+            type(exc).__name__, exc,
+        )
         return False
     return bool(engine)
 

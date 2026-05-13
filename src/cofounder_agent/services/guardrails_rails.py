@@ -186,16 +186,28 @@ def run_brand_guard(content: str) -> tuple[bool, str | None]:
 
 
 def is_enabled(site_config: Any) -> bool:
-    """Operator gate. ``app_settings.guardrails_enabled = true`` to run."""
+    """Operator gate. ``app_settings.guardrails_enabled = true`` to run.
+
+    poindexter#455 — both fallback excepts used to be silent. Now they
+    log a warning so a broken SiteConfig wrapper surfaces as a visible
+    problem instead of masquerading as "guardrails turned off".
+    """
     if site_config is None:
         return False
     try:
         return bool(site_config.get_bool("guardrails_enabled", False))
-    except Exception:
+    except Exception as exc_primary:
         try:
             v = site_config.get("guardrails_enabled", "")
             return str(v).strip().lower() in ("true", "1", "yes", "on")
-        except Exception:
+        except Exception as exc_fallback:
+            logger.warning(
+                "[guardrails] is_enabled: both get_bool and get raised "
+                "while reading guardrails_enabled — treating as disabled. "
+                "Primary error: %s: %s. Fallback error: %s: %s",
+                type(exc_primary).__name__, exc_primary,
+                type(exc_fallback).__name__, exc_fallback,
+            )
             return False
 
 

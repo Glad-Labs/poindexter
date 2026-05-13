@@ -240,17 +240,66 @@ class GPUScheduler:
             if conn is not None:
                 await conn.close()
 
+    async def _emit_exporter_finding(self, metric: str, detail: str) -> None:
+        """Surface an nvidia-smi-exporter unreachability finding so the
+        operator hears about persistently-broken telemetry instead of
+        the scheduler silently treating it as "GPU idle".
+
+        Dedup key folds repeated identical failures into one alert per
+        operator cycle; the brain dispatcher applies its own dedup on
+        top so this is upper-bound noise control.
+        """
+        try:
+            from utils.findings import emit_finding
+            emit_finding(
+                source="gpu_scheduler",
+                kind="nvidia_exporter_unreachable",
+                severity="warning",
+                title=(
+                    f"GPU scheduler cannot read {metric} from nvidia-smi exporter"
+                ),
+                body=(
+                    f"GET {_nvidia_exporter_url()} failed: {detail}. "
+                    "The pipeline will treat the missing reading as 'idle' "
+                    "and proceed (poindexter#455 sweep — fail-loud rather "
+                    "than silent). If gaming is in progress, jobs will "
+                    "run on top of it. Investigate the gpu-exporter "
+                    "container + Tailscale connectivity."
+                ),
+                dedup_key=f"nvidia_exporter_unreachable_{metric}",
+            )
+        except Exception:
+            # findings emission is observability — never gate the scheduler
+            # path on a failed alert write. Log + move on.
+            logger.debug(
+                "emit_finding unavailable in gpu_scheduler", exc_info=True,
+            )
+
     async def _get_gpu_power_watts(self) -> float | None:
         """Query nvidia-smi exporter for current GPU power draw (watts)."""
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
                 resp = await client.get(_nvidia_exporter_url(), timeout=5)
                 if resp.status_code != 200:
+                    logger.warning(
+                        "[GPU] nvidia exporter returned HTTP %s — power reading unavailable",
+                        resp.status_code,
+                    )
+                    await self._emit_exporter_finding(
+                        "power_watts", f"HTTP {resp.status_code}",
+                    )
                     return None
                 for line in resp.text.splitlines():
                     if line.startswith("nvidia_gpu_power_usage_watts{"):
                         return float(line.split("}")[1].strip())
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[GPU] nvidia exporter unreachable for power reading: %s: %s",
+                type(exc).__name__, exc,
+            )
+            await self._emit_exporter_finding(
+                "power_watts", f"{type(exc).__name__}: {exc}",
+            )
             return None
         return None
 
@@ -260,11 +309,25 @@ class GPUScheduler:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
                 resp = await client.get(_nvidia_exporter_url(), timeout=5)
                 if resp.status_code != 200:
+                    logger.warning(
+                        "[GPU] nvidia exporter returned HTTP %s — utilization unavailable",
+                        resp.status_code,
+                    )
+                    await self._emit_exporter_finding(
+                        "utilization_percent", f"HTTP {resp.status_code}",
+                    )
                     return None
                 for line in resp.text.splitlines():
                     if line.startswith("nvidia_gpu_utilization_percent{"):
                         return float(line.split("}")[1].strip())
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[GPU] nvidia exporter unreachable for utilization: %s: %s",
+                type(exc).__name__, exc,
+            )
+            await self._emit_exporter_finding(
+                "utilization_percent", f"{type(exc).__name__}: {exc}",
+            )
             return None
         return None
 
