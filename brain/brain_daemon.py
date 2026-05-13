@@ -1454,8 +1454,16 @@ async def generate_daily_digest(pool):
                 today = now.strftime("%Y-%m-%d")
                 if last_date == today:
                     return  # Already sent today
-            except Exception:
-                pass
+            except Exception as exc:
+                # poindexter#455 — used to be silent. If last_sent is
+                # malformed (e.g. operator manually edited app_settings),
+                # we fall through to "may send today" — log the malformed
+                # value so the operator can clean it up.
+                logger.warning(
+                    "[BRAIN] daily summary last-sent timestamp malformed "
+                    "(%r): %s: %s — will resend",
+                    last_sent, type(exc).__name__, exc,
+                )
 
         # Only send between 13:00-14:00 UTC (~9 AM ET)
         if not (13 <= now.hour < 14):
@@ -1595,8 +1603,16 @@ async def log_electricity_cost(pool):
             )
             if row:
                 rate_per_kwh = float(row["value"])
-        except Exception:
-            pass
+        except Exception as exc:
+            # poindexter#455 — used to be silent. If the operator pinned
+            # a non-default electricity rate, a DB blip would silently
+            # fall back to the compiled default and the cost dashboard
+            # would silently underreport / overreport the per-cycle cost.
+            logger.warning(
+                "[BRAIN] electricity_rate_kwh read failed (%s: %s) — using "
+                "compiled default $%.4f/kWh for this cycle",
+                type(exc).__name__, exc, rate_per_kwh,
+            )
 
         # Calculate cost for this 5-minute interval
         hours = CYCLE_SECONDS / 3600.0
