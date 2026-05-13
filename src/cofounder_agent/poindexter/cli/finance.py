@@ -25,7 +25,7 @@ from datetime import date, timedelta
 import asyncpg
 import click
 
-from ._bootstrap import resolve_dsn
+from ._bootstrap import ensure_secret_key, resolve_dsn
 
 
 def _run(coro):
@@ -33,15 +33,21 @@ def _run(coro):
 
 
 async def _read_token(dsn: str) -> str:
+    """Pull the Mercury token via the project's secrets helper —
+    handles the ``enc:v1:`` pgcrypto decryption for is_secret=true
+    rows transparently. ``ensure_secret_key`` loads
+    ``POINDEXTER_SECRET_KEY`` from bootstrap.toml if it's not
+    already in the CLI shell's env (the worker has it; bare
+    ``poindexter`` invocations don't by default)."""
+    from plugins.secrets import get_secret
+
+    ensure_secret_key()
     conn = await asyncpg.connect(dsn)
     try:
-        row = await conn.fetchrow(
-            "SELECT value FROM app_settings WHERE key = 'mercury_api_token'"
-        )
+        token = await get_secret(conn, "mercury_api_token")
     finally:
         await conn.close()
-    token = (row["value"] if row else "") or ""
-    return token.strip()
+    return (token or "").strip()
 
 
 @click.group(name="finance", help="Mercury bank balances + transactions.")
