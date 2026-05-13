@@ -578,8 +578,17 @@ class TaskExecutor:
             try:
                 _tts = await self._get_setting("task_timeout_seconds", "900")
                 TASK_TIMEOUT_SECONDS = int(_tts)
-            except Exception:
-                pass
+            except Exception as exc:
+                # poindexter#455 — used to be silent. If task_timeout_seconds
+                # is set in DB but unreadable / non-numeric, the worker
+                # would silently fall back to the 15-min compiled default,
+                # potentially killing big-model writer runs mid-flight.
+                logger.warning(
+                    "[task_executor] task_timeout_seconds read failed (%s: %s) "
+                    "— using compiled default %ds. If you set a larger value "
+                    "in app_settings, the row may be malformed.",
+                    type(exc).__name__, exc, TASK_TIMEOUT_SECONDS,
+                )
 
             # 1. Update task status to 'in_progress'
             logger.info("[TASK_SINGLE] Marking task as in_progress...")
@@ -947,8 +956,15 @@ class TaskExecutor:
                     )
                     if row and row["slug"]:
                         slug = row["slug"]
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # poindexter#455 — used to be silent. Pool/query
+                    # failure here just means the dedup-rejection
+                    # message will reference the post by id instead of
+                    # slug; log at debug so it's still inspectable.
+                    logger.debug(
+                        "[task_executor] dedup-match slug lookup failed for %s: %s: %s",
+                        lookup_id, type(exc).__name__, exc,
+                    )
             url = f"/posts/{slug}" if slug else f"(post id: {source_id})"
             match_lines.append(f"  - {sim:.3f}  {title[:80]}  {url}")
 
@@ -963,7 +979,13 @@ class TaskExecutor:
         return reason, matches
 
     async def _get_model_selections(self, task_id: str) -> dict:
-        """Read model_selections directly from DB (bypasses TaskResponse serialization)."""
+        """Read model_selections directly from DB (bypasses TaskResponse serialization).
+
+        poindexter#455 — used to silently swallow any DB / JSON parse
+        error and return ``{}``, leaving the caller with no signal that
+        the operator-pinned model selection wasn't loaded. Now logs a
+        warning so the operator hears about it.
+        """
         if not self.database_service or not self.database_service.pool:
             return {}
         try:
@@ -974,8 +996,12 @@ class TaskExecutor:
             if row and row["model_selections"]:
                 ms = row["model_selections"]
                 return _json.loads(ms) if isinstance(ms, str) else ms
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[task_executor] _get_model_selections failed for task %s: %s: %s "
+                "— falling back to empty dict (default model picks will apply)",
+                task_id, type(exc).__name__, exc,
+            )
         return {}
 
     async def _heartbeat_loop(self, task_id: str) -> None:
