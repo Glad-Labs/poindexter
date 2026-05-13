@@ -1,25 +1,29 @@
 """
 Unified AI Content Generator Service
 
-Handles blog post generation on local Ollama with a fallback template
-when the model is unreachable. This is the legacy Ollama-native
-orchestrator — the stages-based pipeline in services/stages/* is the
-plugin-aware replacement and will eventually delete this file
-wholesale.
+Handles blog post generation by routing every LLM call through the
+LLMProvider dispatcher (``services/llm_providers/dispatcher.py``) so
+LiteLLM is the single trip point for cost tracking + Langfuse OTLP
+spans + provider routing.
 
 Features:
-- Ollama model discovery + retry across installed models
+- Cost-tier-aware writer-model resolution (operator pins via
+  ``app_settings.cost_tier.standard.model``; per-task override via
+  ``models_by_phase`` still honored)
 - Self-checking and validation throughout generation
 - Quality assurance with refinement loops
 - Content metrics and performance tracking
-- Electricity cost tracking from the Ollama result dict
+- Cost / token attribution surfaced from the dispatcher's Completion
 
 ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 
-v2.5 deliberate non-migration: this file uses OllamaClient-specific
-features (resolve_model, list_models, result["cost"]) that don't fit
-cleanly behind the LLMProvider Protocol without lossy adaptation.
-Same precedent as services/multi_model_qa.py.
+v2.9 (Glad-Labs/poindexter#407): the writer pipeline now routes through
+``dispatch_complete`` instead of constructing ``OllamaClient`` directly.
+Migration 0160 flipped every cost tier's provider to ``litellm``, so
+each call now passes through ``litellm.acompletion`` — which fires the
+``langfuse_otel`` success/failure callback registered at lifespan
+startup (``main.py``). Net effect: every writer call lands a Langfuse
+trace with prompt + cost + model attribution.
 
 HuggingFace fallback path removed in v2.8 per the no-paid-APIs policy —
 the HF gate was always returning False via ProviderChecker in
@@ -29,7 +33,6 @@ production, so the ~70 LOC of HF retry plumbing was dead weight.
 import asyncio
 import re
 import time
-from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
 
@@ -571,12 +574,18 @@ class AIContentGenerator:
         return generated_content
 
     async def _refine_ollama_content(
-        self, ollama, model_name: str, generated_content: str, validation, ctx: dict[str, Any]
+        self, pool: Any, model_name: str, generated_content: str, validation, ctx: dict[str, Any]
     ) -> tuple[str, str, dict[str, Any]] | None:
-        """Attempt to refine Ollama-generated content that failed QA.
+        """Attempt to refine generated content that failed QA.
 
-        Returns result tuple if refinement produces acceptable content, or None.
-        Also updates generated_content in the caller via the return value.
+        Routes the refinement call through the dispatcher (#407) so the
+        retry pass also fires Langfuse traces and benefits from the
+        configured per-tier provider. ``pool`` is the asyncpg pool the
+        dispatcher needs to look up the tier→provider mapping.
+
+        Returns result tuple if refinement produces acceptable content,
+        or None. Also updates generated_content in the caller via the
+        return value.
         """
         metrics = ctx["metrics"]
         system_prompt = ctx["system_prompt"]
@@ -600,9 +609,9 @@ class AIContentGenerator:
             content=generated_content,
         )
 
-        # Try to refine with same model
         # Calculate max tokens for refinement pass — extra headroom for thinking models.
         # Token multipliers are tunable via app_settings (#198).
+        from services.llm_providers.dispatcher import dispatch_complete
         from services.llm_providers.thinking_models import (
             is_thinking_model,
             resolve_thinking_substrings,
@@ -614,26 +623,21 @@ class AIContentGenerator:
         _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 7.0)
         _standard_mult = _sc.get_float("content_gen_token_mult_standard", 4.5)
         max_tokens_refinement = int(target_length * (_thinking_mult if _is_thinking_refine else _standard_mult))
-        response = await ollama.generate(
-            prompt=refinement_prompt,
-            system=system_prompt,
+        completion = await dispatch_complete(
+            pool=pool,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": refinement_prompt},
+            ],
             model=model_name,
-            stream=False,
-            max_tokens=max_tokens_refinement,  # 4.5x multiplier for complete refinement with better word count
+            tier="standard",
+            max_tokens=max_tokens_refinement,
         )
 
-        # Extract text from response dict
-        refined_content = ""
-        if isinstance(response, dict):
-            refined_content = response.get("response", "")
-            logger.debug(
-                "      Refined response type: dict | Content: %d chars", len(refined_content)
-            )
-        elif isinstance(response, str):
-            refined_content = response
-            logger.debug(
-                "      Refined response type: str | Content: %d chars", len(refined_content)
-            )
+        refined_content = (getattr(completion, "text", "") or "").strip()
+        logger.debug(
+            "      Refined response: %d chars", len(refined_content),
+        )
 
         if refined_content and len(refined_content) > 100:
             logger.info("      [OK] Refined content generated: %d characters", len(refined_content))
@@ -679,8 +683,147 @@ class AIContentGenerator:
             ctx["_refined_content"] = refined_content
         return None
 
+    async def _resolve_writer_models(
+        self, preferred_model: str | None, pool: Any,
+    ) -> list[str]:
+        """Build the ordered writer-model fallback list.
+
+        Order (Glad-Labs/poindexter#407):
+        1. ``preferred_model`` (task-row override from ``models_by_phase``)
+        2. ``app_settings.cost_tier.standard.model`` via the dispatcher's
+           ``resolve_tier_model`` — the canonical operator-tunable knob.
+        3. Legacy ``pipeline_writer_model`` row (per-call-site backstop).
+        4. Legacy ``pipeline_fallback_model`` row.
+
+        Returns the bare model identifiers (``ollama/`` prefix stripped)
+        so logs / metrics stay backwards-compatible. The dispatcher's
+        provider is responsible for re-applying any namespacing it needs
+        (e.g. LiteLLM auto-prepends ``ollama/`` for bare names).
+        """
+        from services.llm_providers.dispatcher import resolve_tier_model
+
+        ordered: list[str] = []
+
+        def _push(candidate: str | None) -> None:
+            if not candidate:
+                return
+            clean = candidate.removeprefix("ollama/")
+            if clean and clean not in ordered:
+                ordered.append(clean)
+
+        # 1. Task-row override
+        _push(preferred_model)
+
+        # 2. Cost-tier resolution via dispatcher (operator-tunable).
+        if pool is not None:
+            try:
+                tier_model = await resolve_tier_model(pool, "standard")
+                _push(tier_model)
+            except (RuntimeError, ValueError) as exc:
+                logger.warning(
+                    "   cost_tier.standard resolution failed (%s); "
+                    "falling back to legacy pipeline_writer_model row",
+                    exc,
+                )
+
+        # 3. Legacy per-call-site writer model
+        try:
+            _push(site_config.get("pipeline_writer_model", ""))
+        except Exception as e:
+            logger.debug(
+                "   pipeline_writer_model read failed: %s — relying on tier "
+                "+ pipeline_fallback_model", e,
+            )
+
+        # 4. Legacy fallback model
+        try:
+            _push(site_config.get("pipeline_fallback_model", ""))
+        except Exception as e:
+            logger.debug(
+                "   pipeline_fallback_model read failed: %s", e,
+            )
+
+        return ordered
+
+    def _build_cost_log(
+        self,
+        completion: Any,
+        model_name: str,
+        generated_content: str,
+    ) -> dict[str, Any]:
+        """Construct a cost-log row from a dispatcher Completion.
+
+        LiteLLM provider exposes ``response_cost`` in ``Completion.raw``;
+        OllamaNative provider exposes the original Ollama dict (with
+        ``cost`` / ``duration_seconds`` fields). Try both shapes so the
+        cost_logs table stays populated regardless of which provider
+        served the request. The Langfuse trace itself remains the
+        canonical UI; cost_logs is the parallel record per the issue's
+        out-of-scope clause.
+        """
+        raw = getattr(completion, "raw", {}) or {}
+        cost_usd = 0.0
+        if "response_cost" in raw and raw["response_cost"] is not None:
+            try:
+                cost_usd = float(raw["response_cost"])
+            except (TypeError, ValueError):
+                cost_usd = 0.0
+        elif "cost" in raw:
+            try:
+                cost_usd = float(raw["cost"] or 0.0)
+            except (TypeError, ValueError):
+                cost_usd = 0.0
+
+        duration_s = 0.0
+        if "duration_seconds" in raw:
+            try:
+                duration_s = float(raw["duration_seconds"] or 0.0)
+            except (TypeError, ValueError):
+                duration_s = 0.0
+        elif "_response_ms" in raw:
+            try:
+                duration_s = float(raw["_response_ms"] or 0.0) / 1000.0
+            except (TypeError, ValueError):
+                duration_s = 0.0
+
+        input_tokens = int(getattr(completion, "prompt_tokens", 0) or 0)
+        output_tokens = int(getattr(completion, "completion_tokens", 0) or 0)
+        if not output_tokens:
+            output_tokens = int(len(generated_content.split()) * 1.3)
+
+        # Provider attribution: prefer the real model identifier on the
+        # Completion (which LiteLLM stamps with the provider prefix
+        # e.g. ``ollama/glm-4.7-5090:latest``); fall back to a literal
+        # ``dispatcher`` tag so cost_logs is never empty on this column.
+        completion_model = getattr(completion, "model", "") or model_name
+        provider_prefix = (
+            completion_model.split("/", 1)[0]
+            if "/" in completion_model else "dispatcher"
+        )
+
+        return {
+            "provider": provider_prefix,
+            "model": model_name,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_usd": round(cost_usd, 6),
+            "phase": "content_generation",
+            "duration_seconds": round(duration_s, 2),
+        }
+
     async def _try_ollama(self, ctx: dict[str, Any]) -> tuple[str, str, dict[str, Any]] | None:
-        """Try Ollama local provider with refinement loop. Returns result tuple or None."""
+        """Run the writer pipeline via the LLMProvider dispatcher.
+
+        Renamed semantically to "dispatcher route" but the public method
+        name is preserved for callers + tests. The dispatcher resolves
+        the configured provider per cost tier
+        (``plugin.llm_provider.primary.standard``), so on default
+        installs every call lands in LiteLLM and fires the registered
+        ``langfuse_otel`` callback. See Glad-Labs/poindexter#407.
+
+        Returns result tuple ``(content, model_used, metrics)`` or None
+        when the dispatcher path produces no usable content.
+        """
         use_ollama = ctx["use_ollama"]
         skip_ollama = ctx["skip_ollama"]
         effective_provider = ctx["effective_provider"]
@@ -693,274 +836,195 @@ class AIContentGenerator:
         attempts = ctx["attempts"]
         start_time = ctx["start_time"]
 
-        # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
+        # ``use_ollama`` keeps its semantics for back-compat with tests:
+        # when the operator explicitly disables Ollama by setting a
+        # non-ollama provider in the request OR when the local reachability
+        # probe in ``_check_ollama_async`` fails, fall through to the
+        # template. The probe checks the legacy ``ollama_base_url``
+        # endpoint regardless of which provider the dispatcher is set to,
+        # so it stays useful as a fast-fail signal on default installs.
         if not use_ollama:
             logger.info(
-                "SKIPPING Ollama (skip_ollama=%s, effective_provider=%s)",
+                "SKIPPING dispatcher path (skip_ollama=%s, effective_provider=%s)",
                 skip_ollama, effective_provider,
             )
             return None
 
-        logger.info("[ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
-        _sc = site_config
-        ollama_endpoint = _sc.get("ollama_base_url") or _sc.get("ollama_host", "http://host.docker.internal:11434")
-        logger.info("   ├─ Endpoint: %s", ollama_endpoint)
-        logger.info("   └─ Status: Connecting...\n")
-        ollama = None
-        try:
-            from .ollama_client import OllamaClient
+        from services.llm_providers.dispatcher import dispatch_complete
+        from services.llm_providers.thinking_models import (
+            is_thinking_model as _is_thinking_model,
+            resolve_thinking_substrings as _resolve_thinking_substrings,
+        )
 
-            ollama = OllamaClient()
-            logger.info("   [OK] OllamaClient initialized")
+        # Pool needed for dispatcher tier→provider lookup. The lifespan-bound
+        # SiteConfig holds it via ``_pool``; tests that pass a pool-less
+        # SiteConfig fall back to the no-pool path in resolve_tier_model
+        # and the dispatcher's get_provider_name swallows the read error
+        # and uses the registered defaults.
+        pool = getattr(site_config, "_pool", None)
+        logger.info("[ATTEMPT 1/3] Dispatching via LLMProvider (cost_tier=standard)...")
 
-            # Model selection priority:
-            # 1. UI-selected model (preferred_model from task request)
-            # 2. OllamaClient's configured model (from app_settings.default_ollama_model)
-            # 3. Dynamic discovery from installed models (sorted by size)
-            # No hardcoded model names — if nothing works, falls through to cloud providers.
-            if preferred_model:
-                model_list = [preferred_model]
-                logger.info("   ├─ Using UI-selected model: %s", preferred_model)
-            else:
-                # Read pipeline_writer_model from DB first (DB-first config).
-                # 2026-05-12 fail-loud sweep: previously this swallowed
-                # the read failure silently and the writer fell back to
-                # auto-resolve. Per the writer-model-canary feedback,
-                # an unintended writer swap is exactly what breaks
-                # approval rates — operators MUST see this.
-                try:
-                    db_model = site_config.get("pipeline_writer_model", "")
-                    if db_model:
-                        # Strip "ollama/" prefix if present
-                        db_model = db_model.removeprefix("ollama/")
-                except Exception as e:
-                    logger.warning(
-                        "Failed to read pipeline_writer_model from site_config; "
-                        "falling back to auto-resolve. This may flip the writer "
-                        "model and tank approval rates: %s",
-                        e, exc_info=True,
-                    )
-                    try:
-                        from utils.findings import emit_finding
-                        emit_finding(
-                            source="ai_content_generator.resolve_writer_model",
-                            kind="pipeline_writer_model_read_failed",
-                            severity="warning",
-                            title="pipeline_writer_model read failed — auto-resolve fallback engaged",
-                            body=(
-                                f"site_config.get('pipeline_writer_model') raised "
-                                f"{type(e).__name__}: {e}. Writer model will be "
-                                "chosen by ollama.resolve_model() instead. "
-                                "Content quality may shift until this is fixed."
-                            ),
-                            dedup_key=f"pipeline_writer_model_read_failed_{type(e).__name__}",
-                        )
-                    except Exception:
-                        logger.debug("emit_finding unavailable", exc_info=True)
-                    db_model = ""
+        model_list = await self._resolve_writer_models(preferred_model, pool)
+        if not model_list:
+            logger.warning(
+                "   No writer model resolvable (preferred=%r, cost_tier.standard "
+                "unset, pipeline_writer_model unset) — skipping dispatcher path",
+                preferred_model,
+            )
+            attempts.append(("dispatcher", "no writer model configured"))
+            return None
 
-                if db_model:
-                    resolved = db_model
-                    logger.info("   ├─ Primary model (from DB): %s", resolved)
-                else:
-                    resolved = await ollama.resolve_model()
-                    logger.info("   ├─ Primary model (auto): %s", resolved)
-                model_list = [resolved]
+        logger.info(
+            "   ├─ Will try %d model(s): %s",
+            len(model_list), [m.split(":")[0] for m in model_list[:5]],
+        )
 
-                # Read fallback model from DB. Less critical than the
-                # primary read above — if this fails, model discovery
-                # below still adds installed-model fallbacks, so the
-                # pipeline keeps working. Still log so operators can
-                # spot a pattern of SiteConfig reads failing.
-                try:
-                    db_fallback = site_config.get("pipeline_fallback_model", "")
-                    if db_fallback:
-                        db_fallback = db_fallback.removeprefix("ollama/")
-                        if db_fallback != resolved:
-                            model_list.append(db_fallback)
-                except Exception as e:
-                    logger.warning(
-                        "Failed to read pipeline_fallback_model; relying on "
-                        "auto-discovered fallbacks only: %s", e, exc_info=True,
-                    )
+        for model_idx, model_name in enumerate(model_list, 1):
+            try:
+                logger.info(
+                    "   └─ Testing model %d/%d: %s",
+                    model_idx, len(model_list), model_name,
+                )
+                metrics["generation_attempts"] += 1
 
-                # Add other installed models as fallbacks (smaller first for speed)
-                try:
-                    available = await ollama.list_models()
-                    fallbacks = [
-                        m["name"]
-                        for m in sorted(
-                            available,
-                            key=lambda x: x.get("size", 0),
-                        )
-                        if "embed" not in m.get("name", "").lower() and m["name"] not in model_list
-                    ]
-                    model_list.extend(fallbacks)
-                except Exception as e:
-                    logger.warning("   Could not discover fallback models: %s", e)
+                # Calculate max tokens: thinking models (qwen3, glm-4.7) split
+                # output between reasoning + answer; give them extra headroom.
+                _is_thinking = _is_thinking_model(
+                    model_name,
+                    substrings=_resolve_thinking_substrings(site_config),
+                )
+                _multiplier = 6.0 if _is_thinking else 4.0
+                max_tokens = int(target_length * _multiplier)
+                logger.debug(
+                    "      Max tokens: %d (target_length: %d, thinking=%s)",
+                    max_tokens, target_length, _is_thinking,
+                )
+
+                logger.info("      Generating content via dispatcher...")
+                completion = await dispatch_complete(
+                    pool=pool,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": generation_prompt},
+                    ],
+                    model=model_name,
+                    tier="standard",
+                    max_tokens=max_tokens,
+                )
+                generated_content = (getattr(completion, "text", "") or "").strip()
 
                 logger.info(
-                    "   ├─ Will try %d model(s): %s",
-                    len(model_list), [m.split(":")[0] for m in model_list[:5]],
+                    "      Final check: bool(content)=%s, len=%d, threshold=100",
+                    bool(generated_content), len(generated_content),
                 )
-            for model_idx, model_name in enumerate(model_list, 1):
-                try:
-                    logger.info("   └─ Testing model %d/%d: %s", model_idx, len(model_list), model_name)
-                    metrics["generation_attempts"] += 1
-
-                    logger.info("      Generating content...")
-
-                    # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
-                    # Using 4x multiplier to prevent truncation mid-sentence.
-                    # Thinking models (qwen3, qwen3.5, glm-4.7) use part of the budget for
-                    # internal reasoning, so we give them extra headroom.
-                    from services.llm_providers.thinking_models import (
-                        is_thinking_model as _is_thinking_model,
-                        resolve_thinking_substrings as _resolve_thinking_substrings,
-                    )
-                    _is_thinking = _is_thinking_model(
-                        model_name,
-                        substrings=_resolve_thinking_substrings(site_config),
-                    )
-                    _multiplier = 6.0 if _is_thinking else 4.0
-                    max_tokens = int(target_length * _multiplier)
-                    logger.debug("      Max tokens: %d (target_length: %d, thinking=%s)", max_tokens, target_length, _is_thinking)
-
-                    response = await ollama.generate(
-                        prompt=generation_prompt,
-                        system=system_prompt,
-                        model=model_name,
-                        stream=False,
-                        max_tokens=max_tokens,  # Set explicit token limit for proper word count control
-                    )
-
-                    generated_content = self._extract_ollama_response(response)
-
+                if generated_content and len(generated_content) > 100:
                     logger.info(
-                        "      Final check: bool(content)=%s, len=%d, threshold=100",
-                        bool(generated_content), len(generated_content),
+                        "      [OK] Content generated: %d characters",
+                        len(generated_content),
                     )
-                    if generated_content and len(generated_content) > 100:
-                        logger.info(
-                            "      [OK] Content generated: %d characters", len(generated_content)
-                        )
 
-                        # Self-check: Validate content quality
-                        logger.info("      Validating content quality...")
-                        validation = self._validate_content(generated_content, topic, target_length)
-                        metrics["validation_results"].append(
-                            {
-                                "attempt": metrics["generation_attempts"],
-                                "score": validation.quality_score,
-                                "issues": validation.issues,
-                                "passed": validation.is_valid,
-                            }
-                        )
-
-                        word_count = len(generated_content.split())
-                        logger.info(
-                            "      Quality Score: %.1f/%s | Words: %d | Issues: %d",
-                            validation.quality_score, self.quality_threshold, word_count, len(validation.issues),
-                        )
-
-                        if validation.issues:
-                            for issue in validation.issues:
-                                logger.debug("         %s", issue)
-
-                        # If content passes QA, return it
-                        if validation.is_valid:
-                            logger.info("      [OK] Content APPROVED by QA")
-                            metrics["model_used"] = model_name
-                            metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
-                            metrics["final_quality_score"] = validation.quality_score
-                            metrics["generation_time_seconds"] = time.time() - start_time
-                            # Track Ollama usage — NOT free, electricity costs money
-                            # Cost is calculated from GPU power draw * duration by the Ollama client
-                            electricity_cost = response.get("cost", 0.0)
-                            duration_s = response.get("duration_seconds", 0.0)
-                            input_tokens = response.get("prompt_tokens", 0)
-                            est_tokens = response.get("tokens", 0) or int(len(generated_content.split()) * 1.3)
-                            metrics["cost_log"] = {
-                                "provider": "ollama", "model": model_name,
-                                "input_tokens": input_tokens,
-                                "output_tokens": est_tokens,
-                                "cost_usd": round(electricity_cost, 6), "phase": "content_generation",
-                                "duration_seconds": round(duration_s, 2),
-                            }
-                            logger.info("\n%s", "=" * 80)
-                            logger.info("[OK] GENERATION COMPLETE")
-                            logger.info("   Model: %s", metrics["model_used"])
-                            logger.info(
-                                "   Quality: %.1f/%s", validation.quality_score, self.quality_threshold
-                            )
-                            logger.info("   Time: %.1fs", metrics["generation_time_seconds"])
-                            logger.info("%s\n", "=" * 80)
-                            return generated_content, metrics["model_used"], metrics
-
-                        # If content fails QA but we have refinement attempts left, try to improve
-                        refinement_result = await self._refine_ollama_content(
-                            ollama, model_name, generated_content, validation, ctx
-                        )
-                        if refinement_result:
-                            return refinement_result
-
-                        # Check if refinement produced updated content
-                        if "_refined_content" in ctx:
-                            generated_content = ctx.pop("_refined_content")
-
-                        # If still not passing after refinement, return best attempt
-                        if metrics["generation_attempts"] == len(model_list):
-                            logger.warning(
-                                "      Content below quality threshold but no more refinements available"
-                            )
-                            metrics["model_used"] = model_name
-                            metrics["models_used_by_phase"]["draft"] = metrics[
-                                "model_used"
-                            ]  # Track phase
-                            metrics["final_quality_score"] = validation.quality_score
-                            metrics["generation_time_seconds"] = time.time() - start_time
-                            logger.info("\n%s", "=" * 80)
-                            logger.warning("GENERATION COMPLETE (below quality threshold)")
-                            logger.info("   Model: %s", metrics["model_used"])
-                            logger.info(
-                                "   Quality: %.1f/%s", validation.quality_score, self.quality_threshold
-                            )
-                            logger.info("   Time: %.1fs", metrics["generation_time_seconds"])
-                            logger.info("%s\n", "=" * 80)
-                            return generated_content, metrics["model_used"], metrics
-                    else:
-                        logger.warning("      [FAIL] Generated content too short or empty")
-
-                except asyncio.TimeoutError:
-                    # Explicitly catch timeout - model too slow or server unresponsive
-                    error_msg = f"Timeout exceeded with {model_name}"
-                    logger.warning(
-                        "Ollama model %s timed out: %s", model_name, error_msg, exc_info=True
+                    # Self-check: validate content quality.
+                    logger.info("      Validating content quality...")
+                    validation = self._validate_content(
+                        generated_content, topic, target_length,
                     )
-                    attempts.append(("Ollama", error_msg))
-                    continue
-                except Exception as e:
-                    # Catch other errors (500 errors, connection issues, etc.)
-                    error_msg = str(e)[:150]  # Truncate long error messages
-                    logger.warning("Ollama model %s failed: %s", model_name, error_msg, exc_info=True)
-                    attempts.append(("Ollama", f"{model_name}: {error_msg}"))
-                    continue
+                    metrics["validation_results"].append(
+                        {
+                            "attempt": metrics["generation_attempts"],
+                            "score": validation.quality_score,
+                            "issues": validation.issues,
+                            "passed": validation.is_valid,
+                        }
+                    )
 
-        except Exception as e:
-            logger.warning("Ollama generation failed: %s", e, exc_info=True)
-            if not attempts:  # Only append if attempts list is still empty
-                attempts.append(("Ollama", str(e)[:150]))
-        finally:
-            # Close the httpx connection pool held by OllamaClient. Without
-            # this, every content-generation attempt leaked an AsyncClient
-            # (the client was only closed inside the success-return path).
-            if ollama is not None:
-                with suppress(Exception):
-                    # Teardown path: raising here would mask whatever put
-                    # us in finally. Leaked sockets are worse than silenced
-                    # close errors only if close() genuinely does work,
-                    # and in practice httpx.aclose is already best-effort.
-                    await ollama.close()
+                    word_count = len(generated_content.split())
+                    logger.info(
+                        "      Quality Score: %.1f/%s | Words: %d | Issues: %d",
+                        validation.quality_score, self.quality_threshold,
+                        word_count, len(validation.issues),
+                    )
+
+                    if validation.issues:
+                        for issue in validation.issues:
+                            logger.debug("         %s", issue)
+
+                    # If content passes QA, return it
+                    if validation.is_valid:
+                        logger.info("      [OK] Content APPROVED by QA")
+                        metrics["model_used"] = model_name
+                        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
+                        metrics["final_quality_score"] = validation.quality_score
+                        metrics["generation_time_seconds"] = time.time() - start_time
+                        metrics["cost_log"] = self._build_cost_log(
+                            completion, model_name, generated_content,
+                        )
+                        logger.info("\n%s", "=" * 80)
+                        logger.info("[OK] GENERATION COMPLETE")
+                        logger.info("   Model: %s", metrics["model_used"])
+                        logger.info(
+                            "   Quality: %.1f/%s",
+                            validation.quality_score, self.quality_threshold,
+                        )
+                        logger.info(
+                            "   Time: %.1fs", metrics["generation_time_seconds"],
+                        )
+                        logger.info("%s\n", "=" * 80)
+                        return generated_content, metrics["model_used"], metrics
+
+                    # If content fails QA but we have refinement attempts left, try to improve.
+                    refinement_result = await self._refine_ollama_content(
+                        pool, model_name, generated_content, validation, ctx,
+                    )
+                    if refinement_result:
+                        return refinement_result
+
+                    # Check if refinement produced updated content.
+                    if "_refined_content" in ctx:
+                        generated_content = ctx.pop("_refined_content")
+
+                    # If still not passing after refinement, return best attempt.
+                    if metrics["generation_attempts"] == len(model_list):
+                        logger.warning(
+                            "      Content below quality threshold but no more refinements available",
+                        )
+                        metrics["model_used"] = model_name
+                        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
+                        metrics["final_quality_score"] = validation.quality_score
+                        metrics["generation_time_seconds"] = time.time() - start_time
+                        metrics["cost_log"] = self._build_cost_log(
+                            completion, model_name, generated_content,
+                        )
+                        logger.info("\n%s", "=" * 80)
+                        logger.warning("GENERATION COMPLETE (below quality threshold)")
+                        logger.info("   Model: %s", metrics["model_used"])
+                        logger.info(
+                            "   Quality: %.1f/%s",
+                            validation.quality_score, self.quality_threshold,
+                        )
+                        logger.info(
+                            "   Time: %.1fs", metrics["generation_time_seconds"],
+                        )
+                        logger.info("%s\n", "=" * 80)
+                        return generated_content, metrics["model_used"], metrics
+                else:
+                    logger.warning("      [FAIL] Generated content too short or empty")
+
+            except asyncio.TimeoutError:
+                error_msg = f"Timeout exceeded with {model_name}"
+                logger.warning(
+                    "Dispatcher call for model %s timed out: %s",
+                    model_name, error_msg, exc_info=True,
+                )
+                attempts.append(("dispatcher", error_msg))
+                continue
+            except Exception as e:
+                error_msg = str(e)[:150]
+                logger.warning(
+                    "Dispatcher call for model %s failed: %s",
+                    model_name, error_msg, exc_info=True,
+                )
+                attempts.append(("dispatcher", f"{model_name}: {error_msg}"))
+                continue
 
         return None
 

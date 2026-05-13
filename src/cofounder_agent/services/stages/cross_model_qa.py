@@ -322,6 +322,7 @@ class CrossModelQAStage:
                 task_id=task_id,
                 attempt=rewrite_attempts + 1,
                 site_config=context.get("site_config"),
+                pool=pool,
             )
             if revised is None:
                 break
@@ -605,16 +606,20 @@ async def _rewrite_draft(
     attempt: int,
     *,
     site_config: Any = None,
+    pool: Any = None,
 ) -> str | None:
     """Call the writer to fix flagged issues. Returns the new draft or None.
 
-    Writer-fallback semantics: if the primary writer returns <50% of the
-    original length (thinking-mode model pattern — token budget eaten by
-    <think> tags), retry with ``qa_fallback_writer_model``. If the
-    fallback is also too short, give up.
+    Routes via ``dispatch_complete`` (Glad-Labs/poindexter#407) so the
+    rewrite call lands a Langfuse trace via litellm's ``langfuse_otel``
+    callback. Writer-fallback semantics preserved: if the primary
+    writer returns <50% of the original length (thinking-mode model
+    pattern — token budget eaten by <think> tags), retry with
+    ``qa_fallback_writer_model``. If the fallback is also too short,
+    give up.
     """
-    from plugins.registry import get_all_llm_providers
     from services.audit_log import audit_log_bg
+    from services.llm_providers.dispatcher import dispatch_complete
 
     prompt = get_prompt_manager().get_prompt(
         "qa.aggregate_rewrite",
@@ -623,20 +628,12 @@ async def _rewrite_draft(
         content=content_text,
     )
 
-    # v2.3: Provider Protocol instead of concrete OllamaClient. Per-call
-    # timeout rides on the timeout_s kwarg added in v2.1.
+    # Per-call timeout (v2.1) — passed through dispatch_complete as
+    # timeout_s kwarg which provider.complete recognizes.
     timeout_s = (
         site_config.get_int("content_router_qa_rewrite_timeout_seconds", 240)
         if site_config is not None else 240
     )
-    providers = {p.name: p for p in get_all_llm_providers()}
-    provider = providers.get("ollama_native")
-    if provider is None:
-        logger.warning(
-            "[QA_REWRITE] Task %s: ollama_native provider not registered; skipping",
-            task_id[:8],
-        )
-        return None
 
     try:
         primary = (
@@ -649,14 +646,16 @@ async def _rewrite_draft(
             if site_config is not None else 8000
         )
 
-        result = await provider.complete(
+        result = await dispatch_complete(
+            pool=pool,
             messages=[{"role": "user", "content": prompt}],
             model=primary,
+            tier="standard",
             temperature=0.4,
             max_tokens=max_tokens,
             timeout_s=timeout_s,
         )
-        revised = (result.text or "").strip()
+        revised = (getattr(result, "text", "") or "").strip()
 
         min_chars = int(0.5 * len(content_text))
         if len(revised) < min_chars:
@@ -682,14 +681,16 @@ async def _rewrite_draft(
                 site_config.get("qa_fallback_writer_model", "gemma3:27b")
                 if site_config is not None else "gemma3:27b"
             )
-            fb_result = await provider.complete(
+            fb_result = await dispatch_complete(
+                pool=pool,
                 messages=[{"role": "user", "content": prompt}],
                 model=fallback_model,
+                tier="standard",
                 temperature=0.4,
                 max_tokens=max_tokens,
                 timeout_s=timeout_s,
             )
-            revised = (fb_result.text or "").strip()
+            revised = (getattr(fb_result, "text", "") or "").strip()
     except Exception as e:
         logger.warning(
             "[QA_REWRITE] Task %s: rewrite failed (non-fatal): %s",

@@ -262,24 +262,42 @@ class ScriptForVideoStage:
                 metrics={"skipped": True},
             )
 
-        # Lazy imports — the gpu lock + ollama client both pull large
+        # Lazy imports — the gpu lock + dispatcher both pull large
         # transitive deps that we don't want during pytest collection
         # of unrelated stages.
         from services.gpu_scheduler import gpu
-        from services.ollama_client import OllamaClient
-
-        # Writer model preference (per Matt's memory): pipeline_writer_model
-        # is the right setting; default_ollama_model is the legacy
-        # fallback. Both go through resolve_model so "auto" works.
-        model = (
-            site_config.get("pipeline_writer_model", "")
-            or site_config.get("default_ollama_model", "auto")
+        from services.llm_providers.dispatcher import (
+            dispatch_complete,
+            resolve_tier_model,
         )
+
+        # Writer model preference (Glad-Labs/poindexter#407):
+        # 1. Operator-pinned model via app_settings.cost_tier.standard.model
+        #    — resolved through the cost-tier API so the writer pipeline
+        #    routes through the dispatcher (litellm → Langfuse).
+        # 2. Legacy per-call-site backstop: pipeline_writer_model or
+        #    default_ollama_model. We honor these so existing operator
+        #    overrides keep working.
+        pool = getattr(site_config, "_pool", None)
+        model = ""
+        if pool is not None:
+            try:
+                model = await resolve_tier_model(pool, "standard")
+            except (RuntimeError, ValueError) as tier_exc:
+                logger.debug(
+                    "[video.script] cost_tier.standard resolution failed "
+                    "(%s); falling back to pipeline_writer_model",
+                    tier_exc,
+                )
+        if not model:
+            model = (
+                site_config.get("pipeline_writer_model", "")
+                or site_config.get("default_ollama_model", "auto")
+            )
         if isinstance(model, str) and model.startswith("ollama/"):
             model = model.removeprefix("ollama/")
 
         clean_body = _strip_markdown(content_text)
-        client = OllamaClient(site_config=site_config)
 
         script = _default_script()
         long_form_ok = False
@@ -294,14 +312,17 @@ class ScriptForVideoStage:
                 task_id=context.get("task_id"),
                 phase="video.script.long",
             ):
-                resp = await client.generate_with_retry(
-                    prompt=_build_long_form_prompt(title, clean_body),
+                completion = await dispatch_complete(
+                    pool=pool,
+                    messages=[
+                        {"role": "user", "content": _build_long_form_prompt(title, clean_body)},
+                    ],
                     model=model,
+                    tier="standard",
                     temperature=0.6,
                     max_tokens=2400,
-                    max_retries=2,
                 )
-            payload = _extract_json(resp.get("text") or resp.get("response") or "")
+            payload = _extract_json(getattr(completion, "text", "") or "")
             if isinstance(payload, dict):
                 script["long_form"]["intro_hook"] = str(payload.get("intro_hook") or "").strip()
                 script["long_form"]["outro_cta"] = str(payload.get("outro_cta") or "").strip()
@@ -326,14 +347,17 @@ class ScriptForVideoStage:
                 task_id=context.get("task_id"),
                 phase="video.script.short",
             ):
-                resp = await client.generate_with_retry(
-                    prompt=_build_short_form_prompt(title, clean_body),
+                completion = await dispatch_complete(
+                    pool=pool,
+                    messages=[
+                        {"role": "user", "content": _build_short_form_prompt(title, clean_body)},
+                    ],
                     model=model,
+                    tier="standard",
                     temperature=0.7,  # slightly higher — hooks reward variety
                     max_tokens=1200,
-                    max_retries=2,
                 )
-            payload = _extract_json(resp.get("text") or resp.get("response") or "")
+            payload = _extract_json(getattr(completion, "text", "") or "")
             if isinstance(payload, dict):
                 script["short_form"]["intro_hook"] = str(payload.get("intro_hook") or "").strip()
                 script["short_form"]["scenes"] = _normalize_scenes(

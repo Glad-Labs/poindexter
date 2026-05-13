@@ -17,6 +17,7 @@ Covers:
 - AIContentGenerator._check_ollama_async: sets ollama_available / ollama_checked
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1079,3 +1080,286 @@ class TestPrepareGenerationContext:
         assert ctx["tone"] == "expert"
         assert ctx["target_length"] == 2500
         assert ctx["tags"] == ["k8s", "containers", "devops"]
+
+
+# ---------------------------------------------------------------------------
+# Glad-Labs/poindexter#407 — dispatcher-routed writer path
+# ---------------------------------------------------------------------------
+
+
+def _make_completion(text: str, **raw_extras: object) -> object:
+    """Build a fake dispatcher Completion (mimics plugins.llm_provider.Completion).
+
+    Tests don't import the real dataclass to keep collection light.
+    """
+    return SimpleNamespace(
+        text=text,
+        model="ollama/test-model",
+        prompt_tokens=10,
+        completion_tokens=20,
+        total_tokens=30,
+        finish_reason="stop",
+        raw=dict(raw_extras),
+    )
+
+
+@pytest.mark.unit
+class TestResolveWriterModels:
+    """``_resolve_writer_models`` is the new in-process writer-model
+    fallback list. Pins the priority order so accidental reshuffles
+    surface in code review."""
+
+    @pytest.mark.asyncio
+    async def test_preferred_model_wins(self):
+        gen = _make_generator()
+        async def _no_tier(_pool, _tier):
+            raise RuntimeError("not set")
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            side_effect=_no_tier,
+        ):
+            ordered = await gen._resolve_writer_models("ui-model", pool=object())
+        assert ordered[0] == "ui-model"
+
+    @pytest.mark.asyncio
+    async def test_tier_model_resolves_via_dispatcher(self):
+        gen = _make_generator()
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            return_value="ollama/tier-model",
+        ):
+            ordered = await gen._resolve_writer_models(None, pool=object())
+        assert "tier-model" in ordered  # ollama/ prefix stripped
+
+    @pytest.mark.asyncio
+    async def test_falls_through_to_pipeline_writer_model_when_tier_unset(self):
+        gen = _make_generator()
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            side_effect=RuntimeError("no tier mapping"),
+        ), patch(
+            "services.ai_content_generator.site_config",
+        ) as sc:
+            sc.get.side_effect = lambda k, _d="": {
+                "pipeline_writer_model": "legacy-writer",
+                "pipeline_fallback_model": "legacy-fallback",
+            }.get(k, _d)
+            ordered = await gen._resolve_writer_models(None, pool=object())
+        assert ordered == ["legacy-writer", "legacy-fallback"]
+
+    @pytest.mark.asyncio
+    async def test_no_pool_skips_tier_lookup(self):
+        gen = _make_generator()
+        with patch(
+            "services.ai_content_generator.site_config",
+        ) as sc:
+            sc.get.side_effect = lambda k, _d="": (
+                "legacy" if k == "pipeline_writer_model" else _d
+            )
+            ordered = await gen._resolve_writer_models(None, pool=None)
+        assert ordered == ["legacy"]
+
+    @pytest.mark.asyncio
+    async def test_duplicates_dropped(self):
+        gen = _make_generator()
+        with patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            return_value="duplicate",
+        ), patch(
+            "services.ai_content_generator.site_config",
+        ) as sc:
+            sc.get.side_effect = lambda k, _d="": "duplicate" if k in (
+                "pipeline_writer_model", "pipeline_fallback_model",
+            ) else _d
+            ordered = await gen._resolve_writer_models("duplicate", pool=object())
+        assert ordered == ["duplicate"]
+
+
+@pytest.mark.unit
+class TestBuildCostLog:
+    """``_build_cost_log`` is the dispatcher-Completion → cost_logs row
+    adapter. Pins both LiteLLM (``response_cost``) and OllamaNative
+    (``cost`` + ``duration_seconds``) raw shapes."""
+
+    def test_litellm_shape(self):
+        gen = _make_generator()
+        completion = _make_completion(
+            "hello world this is content",
+            response_cost=0.001234,
+            _response_ms=1500.0,
+        )
+        log = gen._build_cost_log(completion, "gemma3:27b", "content body words")
+        assert log["provider"] == "ollama"  # from completion.model "ollama/test-model"
+        assert log["model"] == "gemma3:27b"
+        assert log["cost_usd"] == round(0.001234, 6)
+        assert log["duration_seconds"] == round(1500.0 / 1000.0, 2)
+        assert log["phase"] == "content_generation"
+
+    def test_ollama_native_shape(self):
+        gen = _make_generator()
+        completion = _make_completion(
+            "x",
+            cost=0.000456,
+            duration_seconds=42.7,
+        )
+        log = gen._build_cost_log(completion, "gemma3:27b", "body")
+        assert log["cost_usd"] == round(0.000456, 6)
+        assert log["duration_seconds"] == round(42.7, 2)
+
+    def test_token_fallback_when_provider_omits(self):
+        """If completion_tokens is 0, fall back to a word-count estimate."""
+        gen = _make_generator()
+        completion = SimpleNamespace(
+            text="x",
+            model="ollama/x",
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            finish_reason="stop",
+            raw={},
+        )
+        log = gen._build_cost_log(completion, "model", "one two three four five")
+        # 5 words * 1.3 = 6 (int)
+        assert log["output_tokens"] == 6
+
+    def test_dispatcher_fallback_tag_when_no_provider_prefix(self):
+        """Completion with a non-namespaced model gets ``dispatcher`` as
+        the provider attribution so cost_logs.provider is never empty."""
+        gen = _make_generator()
+        completion = SimpleNamespace(
+            text="x", model="bare-model", prompt_tokens=0, completion_tokens=0,
+            total_tokens=0, finish_reason="", raw={},
+        )
+        log = gen._build_cost_log(completion, "bare-model", "x")
+        assert log["provider"] == "dispatcher"
+
+
+@pytest.mark.unit
+class TestTryOllamaDispatcherRouting:
+    """The core #407 contract: ``_try_ollama`` routes via
+    ``dispatch_complete`` with ``tier='standard'`` — not OllamaClient.
+    """
+
+    @pytest.mark.asyncio
+    async def test_calls_dispatch_complete_with_tier_standard(self):
+        gen = _make_generator()
+        gen._validate_content = MagicMock(return_value=ContentValidationResult(
+            is_valid=True, quality_score=9.0, issues=[], feedback="ok",
+        ))
+        gen._resolve_writer_models = AsyncMock(return_value=["model-1"])
+        # Long enough content for the >100 chars gate.
+        body = "Topic phrase. " + ("Lorem ipsum dolor sit amet. " * 20)
+        dispatch_mock = AsyncMock(return_value=_make_completion(body))
+        ctx = {
+            "use_ollama": True,
+            "skip_ollama": False,
+            "effective_provider": "auto",
+            "preferred_model": None,
+            "metrics": {
+                "generation_attempts": 0,
+                "refinement_attempts": 0,
+                "validation_results": [],
+                "model_used": None,
+                "final_quality_score": 0.0,
+                "generation_time_seconds": 0,
+                "models_used_by_phase": {},
+                "model_selection_log": {},
+            },
+            "system_prompt": "sys",
+            "generation_prompt": "gen",
+            "target_length": 100,
+            "topic": "Topic phrase",
+            "attempts": [],
+            "start_time": 0.0,
+        }
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
+        ):
+            result = await gen._try_ollama(ctx)
+        assert result is not None
+        content, model_used, _metrics = result
+        assert model_used == "model-1"
+        dispatch_mock.assert_awaited()
+        for call in dispatch_mock.await_args_list:
+            assert call.kwargs.get("tier") == "standard"
+            assert call.kwargs.get("model") == "model-1"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_writer_model_resolvable(self):
+        gen = _make_generator()
+        gen._resolve_writer_models = AsyncMock(return_value=[])
+        ctx = {
+            "use_ollama": True,
+            "skip_ollama": False,
+            "effective_provider": "auto",
+            "preferred_model": None,
+            "metrics": {"generation_attempts": 0, "validation_results": []},
+            "system_prompt": "s",
+            "generation_prompt": "g",
+            "target_length": 100,
+            "topic": "t",
+            "attempts": [],
+            "start_time": 0.0,
+        }
+        result = await gen._try_ollama(ctx)
+        assert result is None
+        assert ctx["attempts"] == [("dispatcher", "no writer model configured")]
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_use_ollama_false(self):
+        """Test back-compat: ``use_ollama=False`` short-circuits before
+        any dispatcher call so test fixtures that set this flag don't
+        leak into the dispatcher mock."""
+        gen = _make_generator()
+        dispatch_mock = AsyncMock()
+        ctx = {
+            "use_ollama": False,
+            "skip_ollama": True,
+            "effective_provider": "disabled",
+            "preferred_model": None,
+            "metrics": {"generation_attempts": 0},
+            "system_prompt": "s", "generation_prompt": "g",
+            "target_length": 100, "topic": "t", "attempts": [], "start_time": 0.0,
+        }
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
+        ):
+            result = await gen._try_ollama(ctx)
+        assert result is None
+        dispatch_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cost_log_built_from_completion(self):
+        """The success path stamps a cost_log derived from Completion.raw,
+        not from OllamaClient's response dict — the migration's #1
+        observable side effect besides Langfuse spans."""
+        gen = _make_generator()
+        gen._validate_content = MagicMock(return_value=ContentValidationResult(
+            is_valid=True, quality_score=9.0, issues=[], feedback="ok",
+        ))
+        gen._resolve_writer_models = AsyncMock(return_value=["m1"])
+        body = "x " * 200  # > 100 chars
+        completion = _make_completion(body, response_cost=0.0042)
+        dispatch_mock = AsyncMock(return_value=completion)
+        ctx = {
+            "use_ollama": True, "skip_ollama": False,
+            "effective_provider": "auto", "preferred_model": None,
+            "metrics": {
+                "generation_attempts": 0, "refinement_attempts": 0,
+                "validation_results": [], "model_used": None,
+                "final_quality_score": 0.0, "generation_time_seconds": 0,
+                "models_used_by_phase": {}, "model_selection_log": {},
+            },
+            "system_prompt": "s", "generation_prompt": "g",
+            "target_length": 100, "topic": "t", "attempts": [], "start_time": 0.0,
+        }
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
+        ):
+            _, _, metrics = await gen._try_ollama(ctx)
+        assert "cost_log" in metrics
+        assert metrics["cost_log"]["cost_usd"] == round(0.0042, 6)
+        assert metrics["cost_log"]["model"] == "m1"

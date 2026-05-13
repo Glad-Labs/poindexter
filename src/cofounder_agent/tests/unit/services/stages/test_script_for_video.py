@@ -1,9 +1,15 @@
 """Unit tests for ``services/stages/script_for_video.py``.
 
 ScriptForVideoStage drives two LLM calls (long-form + short-form). We
-patch the ollama client + GPU lock at the stage's import sites so the
+patch the dispatcher + GPU lock at the stage's import sites so the
 tests exercise the stage's own control flow — JSON extraction, scene
 normalization, fallback handling — not the writer model itself.
+
+Glad-Labs/poindexter#407: the stage now routes through
+``services.llm_providers.dispatcher.dispatch_complete`` instead of
+constructing OllamaClient directly. Tests mock ``dispatch_complete``
+to return a ``Completion``-shaped object (we use SimpleNamespace with
+a ``text`` attribute for cheap fidelity).
 """
 
 from __future__ import annotations
@@ -30,7 +36,13 @@ _FAKE_SITE_CONFIG = SimpleNamespace(
     get_int=lambda _k, _d=0: _d,
     get_float=lambda _k, _d=0.0: _d,
     get_bool=lambda _k, _d=False: _d,
+    _pool=None,
 )
+
+
+def _completion(text: str) -> SimpleNamespace:
+    """Build a fake dispatcher Completion that only exposes .text."""
+    return SimpleNamespace(text=text)
 
 
 @asynccontextmanager
@@ -218,17 +230,17 @@ class TestExecute:
             ' "duration_s_hint": 13}]}'
         )
         # First call returns long, second returns short.
-        client = SimpleNamespace(generate_with_retry=AsyncMock(side_effect=[
-            {"text": long_form_json},
-            {"text": short_form_json},
-        ]))
+        dispatch_mock = AsyncMock(side_effect=[
+            _completion(long_form_json),
+            _completion(short_form_json),
+        ])
         ctx: dict[str, Any] = {
             "task_id": "t1", "title": "T", "content": "Body content here.",
             "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
-            "services.ollama_client.OllamaClient",
-            return_value=client,
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
         ), patch(
             "services.gpu_scheduler.gpu",
             SimpleNamespace(lock=_no_gpu_lock),
@@ -247,6 +259,10 @@ class TestExecute:
         assert result.metrics["short_form_ok"] is True
         assert result.metrics["long_form_scenes"] == 1
         assert result.metrics["short_form_scenes"] == 1
+        # #407 contract: dispatcher MUST be invoked with tier=standard so
+        # the litellm provider fires the langfuse_otel callback.
+        for call in dispatch_mock.await_args_list:
+            assert call.kwargs.get("tier") == "standard"
 
     async def test_one_pass_fails_other_succeeds(self):
         # Long-form raises, short-form returns parseable JSON. Stage
@@ -256,21 +272,21 @@ class TestExecute:
             ' "visual_prompt": "v", "duration_s_hint": 10}]}'
         )
 
-        async def _generate(*_a, **_kw):
+        calls: list[int] = []
+
+        async def _dispatch(*_a, **_kw):
             calls.append(1)
             if len(calls) == 1:
-                raise RuntimeError("ollama down")
-            return {"text": short_form_json}
+                raise RuntimeError("dispatcher down")
+            return _completion(short_form_json)
 
-        calls: list[int] = []
-        client = SimpleNamespace(generate_with_retry=AsyncMock(side_effect=_generate))
         ctx = {
             "task_id": "t", "title": "T", "content": "B",
             "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
-            "services.ollama_client.OllamaClient",
-            return_value=client,
+            "services.llm_providers.dispatcher.dispatch_complete",
+            new=_dispatch,
         ), patch(
             "services.gpu_scheduler.gpu",
             SimpleNamespace(lock=_no_gpu_lock),
@@ -282,16 +298,14 @@ class TestExecute:
         assert result.metrics["short_form_ok"] is True
 
     async def test_both_passes_fail_returns_not_ok(self):
-        client = SimpleNamespace(generate_with_retry=AsyncMock(
-            side_effect=RuntimeError("ollama unreachable"),
-        ))
+        dispatch_mock = AsyncMock(side_effect=RuntimeError("dispatcher unreachable"))
         ctx = {
             "task_id": "t", "title": "T", "content": "B",
             "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
-            "services.ollama_client.OllamaClient",
-            return_value=client,
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
         ), patch(
             "services.gpu_scheduler.gpu",
             SimpleNamespace(lock=_no_gpu_lock),
@@ -302,16 +316,16 @@ class TestExecute:
         assert result.metrics["short_form_ok"] is False
 
     async def test_unparseable_json_marks_pass_failed(self):
-        client = SimpleNamespace(generate_with_retry=AsyncMock(
-            return_value={"text": "this is not JSON at all"},
-        ))
+        dispatch_mock = AsyncMock(
+            return_value=_completion("this is not JSON at all"),
+        )
         ctx = {
             "task_id": "t", "title": "T", "content": "B",
             "site_config": _FAKE_SITE_CONFIG,
         }
         with patch(
-            "services.ollama_client.OllamaClient",
-            return_value=client,
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
         ), patch(
             "services.gpu_scheduler.gpu",
             SimpleNamespace(lock=_no_gpu_lock),
@@ -322,26 +336,109 @@ class TestExecute:
 
     async def test_strips_ollama_prefix_from_model(self):
         """``pipeline_writer_model`` may be set to ``ollama/<model>``;
-        the stage strips that prefix before passing to the client."""
+        the stage strips that prefix before passing to the dispatcher.
+
+        With ``_pool=None`` the tier-resolution path is skipped, so the
+        stage falls through to the ``pipeline_writer_model`` site_config
+        key (preserves the legacy escape hatch from before #407)."""
         cfg = SimpleNamespace(
             get=lambda k, d="": "ollama/glm-4.7-5090" if k == "pipeline_writer_model" else d,
             get_int=lambda _k, _d=0: _d,
             get_float=lambda _k, _d=0.0: _d,
             get_bool=lambda _k, _d=False: _d,
+            _pool=None,
         )
-        client = SimpleNamespace(generate_with_retry=AsyncMock(
-            return_value={"text": '{"scenes": []}'},
-        ))
+        dispatch_mock = AsyncMock(return_value=_completion('{"scenes": []}'))
         ctx = {
             "task_id": "t", "title": "T", "content": "B",
             "site_config": cfg,
         }
         with patch(
-            "services.ollama_client.OllamaClient",
-            return_value=client,
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
         ), patch(
             "services.gpu_scheduler.gpu",
             SimpleNamespace(lock=_no_gpu_lock),
         ):
             result = await ScriptForVideoStage().execute(ctx, {})
         assert result.metrics["writer_model"] == "glm-4.7-5090"
+        # Each dispatcher call should have used the resolved model name.
+        for call in dispatch_mock.await_args_list:
+            assert call.kwargs.get("model") == "glm-4.7-5090"
+
+
+@pytest.mark.asyncio
+class TestDispatcherWiring:
+    """Glad-Labs/poindexter#407 contract tests.
+
+    These tests pin the migration's central guarantee: the stage routes
+    every LLM call through ``dispatch_complete`` with ``tier='standard'``.
+    Without this the litellm ``langfuse_otel`` callback never fires and
+    Langfuse stays empty.
+    """
+
+    async def test_uses_cost_tier_standard_model_when_pool_present(self):
+        """When site_config has a pool, the stage resolves the tier model
+        and never falls back to pipeline_writer_model."""
+        cfg = SimpleNamespace(
+            get=lambda k, d="": "pipeline-writer-not-used" if k == "pipeline_writer_model" else d,
+            get_int=lambda _k, _d=0: _d,
+            get_float=lambda _k, _d=0.0: _d,
+            get_bool=lambda _k, _d=False: _d,
+            _pool=object(),  # truthy sentinel — patched resolve_tier_model
+        )
+        dispatch_mock = AsyncMock(return_value=_completion('{"scenes": []}'))
+        resolve_mock = AsyncMock(return_value="ollama/tier-model")
+        ctx = {
+            "task_id": "t", "title": "T", "content": "B",
+            "site_config": cfg,
+        }
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
+        ), patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            resolve_mock,
+        ), patch(
+            "services.gpu_scheduler.gpu",
+            SimpleNamespace(lock=_no_gpu_lock),
+        ):
+            result = await ScriptForVideoStage().execute(ctx, {})
+
+        # tier model wins over pipeline_writer_model
+        assert result.metrics["writer_model"] == "tier-model"
+        # both passes used the tier-resolved model
+        for call in dispatch_mock.await_args_list:
+            assert call.kwargs.get("model") == "tier-model"
+            assert call.kwargs.get("tier") == "standard"
+
+    async def test_falls_back_to_pipeline_writer_model_when_tier_unset(self):
+        """If ``resolve_tier_model`` raises (no row), stage falls through
+        to ``pipeline_writer_model`` site_config key — preserves operator
+        backstop pre-#407 behaviour."""
+        cfg = SimpleNamespace(
+            get=lambda k, d="": "legacy-writer" if k == "pipeline_writer_model" else d,
+            get_int=lambda _k, _d=0: _d,
+            get_float=lambda _k, _d=0.0: _d,
+            get_bool=lambda _k, _d=False: _d,
+            _pool=object(),
+        )
+        dispatch_mock = AsyncMock(return_value=_completion('{"scenes": []}'))
+        resolve_mock = AsyncMock(side_effect=RuntimeError("no tier mapping"))
+        ctx = {
+            "task_id": "t", "title": "T", "content": "B",
+            "site_config": cfg,
+        }
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            dispatch_mock,
+        ), patch(
+            "services.llm_providers.dispatcher.resolve_tier_model",
+            resolve_mock,
+        ), patch(
+            "services.gpu_scheduler.gpu",
+            SimpleNamespace(lock=_no_gpu_lock),
+        ):
+            result = await ScriptForVideoStage().execute(ctx, {})
+
+        assert result.metrics["writer_model"] == "legacy-writer"
