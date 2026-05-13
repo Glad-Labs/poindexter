@@ -83,7 +83,7 @@ class MercuryTransaction:
 class MercuryClient:
     """Read-only Mercury API client. Construct with an explicit token
     (do NOT pull from env vars — the caller passes whatever
-    ``site_config.get_secret('finance_mercury_api_token')`` returned).
+    ``site_config.get_secret('mercury_api_key')`` returned).
 
     Usage::
 
@@ -105,7 +105,7 @@ class MercuryClient:
             # crash here than silently call Mercury with no auth.
             raise MercuryAuthError(
                 "MercuryClient requires a non-empty API token — "
-                "set app_settings.finance_mercury_api_token first "
+                "set app_settings.mercury_api_key first "
                 "(Mercury dashboard → Settings → API → Read-Only)"
             )
         self._token = token

@@ -7,11 +7,14 @@ Mercury's read-only API token (scope: read-only, no money-movement).
 
 What ships in F1:
 - ``FinanceModule`` class — manifest + migrate() pointing at this
-  package's migrations/ directory (currently empty)
+  package's migrations/ directory
 - ``MercuryClient`` — async HTTP client for the Mercury Banking API
 - CLI: ``poindexter finance balance`` — pulls live account balances
-- App-settings seam: ``finance_mercury_api_token`` (secret),
-  ``finance_mercury_enabled`` (boolean, default false)
+- App-settings seam: ``mercury_api_key`` (secret),
+  ``mercury_enabled`` (boolean, default false). Names match the
+  existing unprefixed convention (``sentry_dsn``,
+  ``telegram_bot_token``, etc.) and Matt's hand-seeded
+  ``mercury_api_key`` row.
 
 What's deferred to F2:
 - DB tables (``finance_accounts``, ``finance_transactions``)
