@@ -523,8 +523,16 @@ def _bump_metric(name: str, **labels: str) -> None:
             counter.labels(**labels).inc()
         else:
             counter.inc()
-    except Exception:
-        pass  # metrics are best-effort — never break posting
+    except Exception as exc:
+        # poindexter#455 — used to be silent. metrics are best-effort
+        # (we never want broken metrics to break posting) but a debug
+        # log surfaces "prometheus_client missing" or "Counter labels
+        # mismatch" without it being a visible-only-by-grep symptom.
+        logger.debug(
+            "[social_poster] metric increment failed for %s (%s: %s) — "
+            "post outcome already logged, observability degrades only",
+            name, type(exc).__name__, exc,
+        )
 
 
 # Counter singletons — prometheus_client refuses duplicate registration.

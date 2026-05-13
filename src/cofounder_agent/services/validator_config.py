@@ -120,8 +120,18 @@ def _resolve_dsn() -> str:
         url = resolve_database_url()
         if url:
             return url
-    except Exception:
-        pass
+    except Exception as exc:
+        # poindexter#455 — used to be silent. If brain.bootstrap is
+        # legitimately unimportable (test env, partial install), the
+        # env-var fallback below is the documented secondary path —
+        # but a silent fall-through hides whether the resolver path
+        # ever ran in production. Debug-log so the resolver chain
+        # picked at boot is traceable.
+        logger.debug(
+            "[validator_config] brain.bootstrap.resolve_database_url() "
+            "failed (%s: %s) — falling through to env-var resolution",
+            type(exc).__name__, exc,
+        )
     return (
         os.getenv("DATABASE_URL")
         or os.getenv("LOCAL_DATABASE_URL")
