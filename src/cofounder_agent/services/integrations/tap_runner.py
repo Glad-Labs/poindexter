@@ -138,8 +138,20 @@ async def _load_enabled_taps(
             if isinstance(v, str) and v:
                 try:
                     d[k] = json.loads(v)
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as exc:
+                    # poindexter#455 — used to be silent. A malformed
+                    # JSONB cell silently kept the string and tap
+                    # handlers (which expect d["config"]["enabled"]
+                    # etc) then either crashed with TypeError or quietly
+                    # treated absent keys as defaults. Log so the bad
+                    # row is identifiable; let handlers continue to
+                    # raise downstream so the failure stays loud.
+                    logger.warning(
+                        "[tap-runner] tap %r has malformed JSONB in %r "
+                        "(%s) — leaving raw string; handler will likely "
+                        "raise downstream",
+                        d.get("name"), k, exc,
+                    )
         out.append(d)
     return out
 

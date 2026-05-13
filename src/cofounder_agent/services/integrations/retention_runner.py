@@ -158,8 +158,18 @@ async def _load_enabled_policies(
             if isinstance(v, str) and v:
                 try:
                     d[k] = json.loads(v)
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as exc:
+                    # poindexter#455 — used to be silent. Same rationale
+                    # as tap_runner: a malformed JSONB cell hands a string
+                    # to handlers that index into the dict, so the loud
+                    # error appears in the handler, not here — log here
+                    # to make the bad row identifiable.
+                    logger.warning(
+                        "[retention-runner] policy %r has malformed JSONB "
+                        "in %r (%s) — leaving raw string; handler will "
+                        "likely raise downstream",
+                        d.get("name"), k, exc,
+                    )
         out.append(d)
     return out
 
