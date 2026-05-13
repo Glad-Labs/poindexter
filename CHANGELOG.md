@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+## [0.9.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.8.0...v0.9.0) (2026-05-13)
+
+
+### Features
+
+* **brain:** Discord bot reachability probe (poindexter[#435](https://github.com/Glad-Labs/glad-labs-stack/issues/435)) ([#409](https://github.com/Glad-Labs/glad-labs-stack/issues/409)) ([31c160a](https://github.com/Glad-Labs/glad-labs-stack/commit/31c160af20680d0cc1f03e4fd69c9828fdc93f79))
+* **brain:** MCP HTTP server (:8004) liveness probe (poindexter[#434](https://github.com/Glad-Labs/glad-labs-stack/issues/434)) ([#410](https://github.com/Glad-Labs/glad-labs-stack/issues/410)) ([b435eba](https://github.com/Glad-Labs/glad-labs-stack/commit/b435eba6f8e00f85a91ab75291e3c6233a8f78c6))
+* **cli:** tasks reject-batch / approve-batch (bulk operations) ([#367](https://github.com/Glad-Labs/glad-labs-stack/issues/367)) ([a09d7ac](https://github.com/Glad-Labs/glad-labs-stack/commit/a09d7ac9a6a5504c9b971f9e13b7a771093efcef))
+* **content_validator:** catch unresolved [posts/...] link placeholders ([#406](https://github.com/Glad-Labs/glad-labs-stack/issues/406)) ([16afeca](https://github.com/Glad-Labs/glad-labs-stack/commit/16afecafd7cb807c8a5f969ba193ecae1157abfd))
+* **observability:** expand Langfuse [@observe](https://github.com/observe) to all major Ollama paths ([#401](https://github.com/Glad-Labs/glad-labs-stack/issues/401)) ([101656d](https://github.com/Glad-Labs/glad-labs-stack/commit/101656d59655e2ab5e5b19ed921b24660c41ac44))
+* **observability:** instrument ollama_chat_text with Langfuse [@observe](https://github.com/observe) ([#385](https://github.com/Glad-Labs/glad-labs-stack/issues/385)) ([8ef9dc6](https://github.com/Glad-Labs/glad-labs-stack/commit/8ef9dc610fe26263821b4998858b279d1f2570f7))
+* **observability:** wrap OllamaClient hot path with [@traced](https://github.com/traced)_method spans ([#412](https://github.com/Glad-Labs/glad-labs-stack/issues/412)) ([3388fd5](https://github.com/Glad-Labs/glad-labs-stack/commit/3388fd5969c4add0903e15283d270757f0e051ca))
+* **prefect:** Stage 3 — default use_prefect_orchestration to 'true' for fresh installs ([#410](https://github.com/Glad-Labs/glad-labs-stack/issues/410)) ([6d8c80a](https://github.com/Glad-Labs/glad-labs-stack/commit/6d8c80ad995ab09cb85a9467d22786e08525f1b5))
+* **prompts:** migrate writer_rag_modes inline f-strings to UnifiedPromptManager ([#400](https://github.com/Glad-Labs/glad-labs-stack/issues/400)) ([ab5f70a](https://github.com/Glad-Labs/glad-labs-stack/commit/ab5f70a385eba435464f52973e219e60fa216b43))
+* **tap.corsair_csv:** auto-derive operator TZ from CSV file mtime ([#413](https://github.com/Glad-Labs/glad-labs-stack/issues/413)) ([70f9cc6](https://github.com/Glad-Labs/glad-labs-stack/commit/70f9cc650b8dc24a8f7bd8b34e4762af58b73a8a))
+* **taps:** tap.corsair_csv — ingest Corsair iCUE LINK sensor CSVs ([#46](https://github.com/Glad-Labs/glad-labs-stack/issues/46)) ([#384](https://github.com/Glad-Labs/glad-labs-stack/issues/384)) ([eeca3d0](https://github.com/Glad-Labs/glad-labs-stack/commit/eeca3d0ec61616939e9c1873ad28f0f61a5ab7d7))
+* **topic_sources:** IGDB indie-games source ([#399](https://github.com/Glad-Labs/glad-labs-stack/issues/399)) ([34925e8](https://github.com/Glad-Labs/glad-labs-stack/commit/34925e891fe4e9bb96eb6c9af8b4c59a9bf9d426))
+
+
+### Bug Fixes
+
+* add banned-transition opener content_validator rule (refs Glad-Labs/poindexter[#232](https://github.com/Glad-Labs/glad-labs-stack/issues/232)) ([#431](https://github.com/Glad-Labs/glad-labs-stack/issues/431)) ([392ae6c](https://github.com/Glad-Labs/glad-labs-stack/commit/392ae6c04c7c0d9a472782e295dfcc73b9ee16cb))
+* **brain-daemon:** remove decorative /brain bind-mount ([#411](https://github.com/Glad-Labs/glad-labs-stack/issues/411)) ([148c940](https://github.com/Glad-Labs/glad-labs-stack/commit/148c940f1ca289c7ba9f89c6d46a57c9bb981ed1))
+* **cli:** prefix-resolve task_id + redirect to tasks approve when no gate (closes poindexter[#480](https://github.com/Glad-Labs/glad-labs-stack/issues/480)) ([#372](https://github.com/Glad-Labs/glad-labs-stack/issues/372)) ([40ed834](https://github.com/Glad-Labs/glad-labs-stack/commit/40ed8344f7d0f3860e67a54a78e4ce6811a608e5))
+* **di_wiring:** wire SiteConfig in Prefect subprocesses (closes poindexter[#477](https://github.com/Glad-Labs/glad-labs-stack/issues/477)) ([#365](https://github.com/Glad-Labs/glad-labs-stack/issues/365)) ([19aef60](https://github.com/Glad-Labs/glad-labs-stack/commit/19aef60089ac271562112694bd54ef2e04da437c))
+* emit finding on devto_publish_immediately read failure ([#389](https://github.com/Glad-Labs/glad-labs-stack/issues/389)) ([306c5e1](https://github.com/Glad-Labs/glad-labs-stack/commit/306c5e190ea6a0c65add56a92907fe16e62ffee4))
+* emit finding when guardrails competitor-list read fails ([#390](https://github.com/Glad-Labs/glad-labs-stack/issues/390)) ([d38d7fe](https://github.com/Glad-Labs/glad-labs-stack/commit/d38d7feadcdbb01d521cbc40297104bca4187976))
+* emit findings on publish-service silent failures + category-resolver bare except ([#388](https://github.com/Glad-Labs/glad-labs-stack/issues/388)) ([8d7e462](https://github.com/Glad-Labs/glad-labs-stack/commit/8d7e462fb3755aa7cadf27552702470a9fb4cd87))
+* **experiment_hook:** three P3 cleanups (closes Glad-Labs/poindexter[#479](https://github.com/Glad-Labs/glad-labs-stack/issues/479)) ([#383](https://github.com/Glad-Labs/glad-labs-stack/issues/383)) ([2662d66](https://github.com/Glad-Labs/glad-labs-stack/commit/2662d66928b8ed7ad44ca6c7dea51da2734458fc))
+* **finalize_task:** generate preview_token in stage so Grafana title-links survive Prefect ([#368](https://github.com/Glad-Labs/glad-labs-stack/issues/368)) ([8cae473](https://github.com/Glad-Labs/glad-labs-stack/commit/8cae473330a76364b7560a321efd0495b6739a22))
+* **prefect:** extract post-pipeline actions for both orchestrators (closes poindexter[#478](https://github.com/Glad-Labs/glad-labs-stack/issues/478)) ([#371](https://github.com/Glad-Labs/glad-labs-stack/issues/371)) ([b2859c9](https://github.com/Glad-Labs/glad-labs-stack/commit/b2859c9af32115f873f7bc9ae2a72b490b76748c))
+* **publish:** make R2 static export synchronous + reconciliation watchdog ([#374](https://github.com/Glad-Labs/glad-labs-stack/issues/374)) ([057d74d](https://github.com/Glad-Labs/glad-labs-stack/commit/057d74d5b73d1fdddf9271afee6e8f522beaff8f))
+* remove hardcoded glm-4.7-5090 writer fallback from llm_text ([#392](https://github.com/Glad-Labs/glad-labs-stack/issues/392)) ([6530c7f](https://github.com/Glad-Labs/glad-labs-stack/commit/6530c7f57bd6ec7b09d707e29786b50a35b7614a))
+* remove hardcoded R2 bucket URLs from reconciliation jobs ([#393](https://github.com/Glad-Labs/glad-labs-stack/issues/393)) ([dee0b19](https://github.com/Glad-Labs/glad-labs-stack/commit/dee0b19b9ebef46453a0069217f25344f3e44a9e))
+* replace glm-4.7-5090 hardcodes in atoms + generate_content ([#396](https://github.com/Glad-Labs/glad-labs-stack/issues/396)) ([027b9b2](https://github.com/Glad-Labs/glad-labs-stack/commit/027b9b268996ee0a190023c142e725ed2e453011))
+* replace glm-4.7-5090 hardcodes in writer_rag_modes ([#397](https://github.com/Glad-Labs/glad-labs-stack/issues/397)) ([e41af81](https://github.com/Glad-Labs/glad-labs-stack/commit/e41af8178e040b3c5f59e44f31ef78859b5b9bb2))
+* **revalidate-cache:** surface upstream failure cause in route response ([#408](https://github.com/Glad-Labs/glad-labs-stack/issues/408)) ([cbd4cca](https://github.com/Glad-Labs/glad-labs-stack/commit/cbd4cca073f25212f193278eafb7cb91ba60eb88))
+* scrub glm-4.7-5090 from deepeval kwarg defaults ([#394](https://github.com/Glad-Labs/glad-labs-stack/issues/394)) ([f22f351](https://github.com/Glad-Labs/glad-labs-stack/commit/f22f3513d9c2ba6405e18977f5124c41a006e337))
+* scrub hardcoded R2 bucket URL from public-facing routes + seed ([#395](https://github.com/Glad-Labs/glad-labs-stack/issues/395)) ([1e701d4](https://github.com/Glad-Labs/glad-labs-stack/commit/1e701d427906b280dbdb6cef14aa19c984d3b28f))
+* **silent-alerter:** close blind spot + re-page persistent compose drift ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([85eb809](https://github.com/Glad-Labs/glad-labs-stack/commit/85eb809dc9c584fc8557bb3c06608e0dd5719cd1))
+* **silent-failures:** batch 1 — fail-loud on image_service imports + deepeval judge model ([#387](https://github.com/Glad-Labs/glad-labs-stack/issues/387)) ([ddf5c07](https://github.com/Glad-Labs/glad-labs-stack/commit/ddf5c07fbe1e2c20a714bfab944978744ad40361))
+* surface SiteConfig read failures in writer-model resolution ([#391](https://github.com/Glad-Labs/glad-labs-stack/issues/391)) ([73f6e0d](https://github.com/Glad-Labs/glad-labs-stack/commit/73f6e0d8d35be9538730f0f68e76ced1496dfddd))
+
+
+### Performance Improvements
+
+* **gpu_scheduler:** share one httpx.AsyncClient across all hot-path calls ([#417](https://github.com/Glad-Labs/glad-labs-stack/issues/417)) ([adadbca](https://github.com/Glad-Labs/glad-labs-stack/commit/adadbcafa09d933632b6066424956256550b550f))
+* **revalidation:** share one httpx.AsyncClient across publish bursts ([#419](https://github.com/Glad-Labs/glad-labs-stack/issues/419)) ([9c6b2c4](https://github.com/Glad-Labs/glad-labs-stack/commit/9c6b2c4221ae05e19af4729e88b032854fea900c))
+* **url_validator:** share one httpx.AsyncClient across batch validations ([#424](https://github.com/Glad-Labs/glad-labs-stack/issues/424)) ([9994b63](https://github.com/Glad-Labs/glad-labs-stack/commit/9994b6394e20c37858f102377833bcbc226d85a9))
+
 ## [0.8.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.7.0...v0.8.0) (2026-05-11)
 
 
