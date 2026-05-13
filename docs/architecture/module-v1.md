@@ -3,7 +3,7 @@
 **Status:** Spec / proposed. Not yet implemented.
 **Date:** 2026-05-13
 **Author:** brainstormed with Matt 2026-05-13 16:48 UTC
-**Tracker:** _umbrella issue to be filed in Glad-Labs/poindexter_
+**Tracker:** [Glad-Labs/poindexter#490](https://github.com/Glad-Labs/poindexter/issues/490) (umbrella)
 **Supersedes (when implemented):** the informal "module = collection of contributions across 19 entry-point groups" pattern.
 
 ## Why
