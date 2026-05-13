@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from services import revalidation_service
 from services.revalidation_service import (
     _CANONICAL_PATHS,
     _CANONICAL_TAGS,
@@ -37,6 +38,21 @@ from services.revalidation_service import (
     trigger_nextjs_revalidation,
     trigger_nextjs_revalidation_detailed,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_shared_http_client():
+    """Reset the module-level shared httpx client before/after each test.
+
+    revalidation_service caches an httpx.AsyncClient at module scope for
+    connection-pool reuse across publish bursts. When earlier tests in
+    the full suite warm that pool with a real client, the patches in
+    this file (which only intercept fresh httpx.AsyncClient construction)
+    silently no-op and the tests hit www.gladlabs.io for real.
+    """
+    revalidation_service._shared_http_client = None
+    yield
+    revalidation_service._shared_http_client = None
 
 
 # ---------------------------------------------------------------------------
