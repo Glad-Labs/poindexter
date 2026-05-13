@@ -1307,14 +1307,25 @@ class MultiModelQA:
                 raw = await self.settings.get("deepeval_threshold_g_eval")
                 if raw is not None:
                     threshold = float(raw)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as exc:
+                # poindexter#455 — bad value in DB; log it so the operator
+                # can fix the row instead of wondering why the threshold
+                # silently stayed at the default.
+                logger.warning(
+                    "[deepeval_g_eval] deepeval_threshold_g_eval=%r is not "
+                    "numeric (%s) — using default %.3f",
+                    raw, exc, threshold,
+                )
             try:
                 raw_c = await self.settings.get("deepeval_g_eval_criterion")
                 if raw_c is not None and str(raw_c).strip():
                     criterion = str(raw_c).strip()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[deepeval_g_eval] deepeval_g_eval_criterion read failed: "
+                    "%s: %s — using default criterion",
+                    type(exc).__name__, exc,
+                )
 
         try:
             passed, score_unit, reason = await asyncio.to_thread(
@@ -1745,8 +1756,18 @@ class MultiModelQA:
                 pass_threshold = int(
                     await self.settings.get("qa_vision_pass_threshold") or 60
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # poindexter#455 — used to silently swallow this. If
+                # qa_vision_check_enabled was set to true in DB but the
+                # read raised, vision QA was disabled with no signal.
+                # Now log loud so the operator knows their config-read
+                # is broken; values stay at the safe-default trio.
+                logger.warning(
+                    "[multi_model_qa] qa_vision config read failed: %s: %s — "
+                    "vision check stays disabled with defaults "
+                    "(model=%s, max_images=%d, pass_threshold=%d)",
+                    type(exc).__name__, exc, model, max_images, pass_threshold,
+                )
 
         if not enabled:
             return None

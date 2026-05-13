@@ -471,15 +471,25 @@ class IdleWorker:
             return {"error": str(e)}
 
     async def _get_setting(self, key: str, default: str) -> str:
-        """Read an app_setting with fallback. Used by _should_trigger_discovery."""
+        """Read an app_setting with fallback. Used by _should_trigger_discovery.
+
+        poindexter#455 — used to silently swallow pool-fetch errors, so a
+        DB blip silently flipped every idle-worker decision to its default.
+        Now logs a warning so the operator hears about the pool problem
+        instead of guessing why idle discovery isn't running.
+        """
         try:
             row = await self.pool.fetchrow(
                 "SELECT value FROM app_settings WHERE key = $1", key,
             )
             if row and row["value"]:
                 return row["value"]
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[idle_worker] failed to read app_setting %s: %s: %s — "
+                "falling back to default %r",
+                key, type(exc).__name__, exc, default,
+            )
         return default
 
 
