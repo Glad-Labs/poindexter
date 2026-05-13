@@ -344,6 +344,26 @@ PLACEHOLDER_MARKER_PATTERNS = [
     r"\[POSTS?[_\s\-]?ID[:\-=]\s*[^\]]{1,80}\]",
 ]
 
+# Stock-LLM transition words used at sentence start (poindexter#232).
+# Local LLMs (gemma3, glm, qwen) over-use these as paragraph openers,
+# which both reads as AI-generated and chews into EEAT trust signals.
+# The writer prompt already discourages them; this list is the
+# deterministic catch when models ignore the rule. Patterns are
+# matched only at sentence start so a mid-sentence "moreover" inside
+# a quoted argument doesn't trip the rule. Case-sensitive on purpose
+# — we're catching the sentence-opener form, not every casing.
+BANNED_TRANSITION_OPENERS = (
+    "Furthermore",
+    "Moreover",
+    "Additionally",
+    "Notably",
+    "In conclusion",
+    "In summary",
+    r"It is important to note that",
+    r"It['’]s worth noting that",
+    "As mentioned earlier",
+)
+
 
 @dataclass
 class ValidationIssue:
@@ -1201,6 +1221,39 @@ def validate_content(
                     matched_text=m.group(0)[:80],
                 ))
                 break
+
+    # 8d. Banned-transition openers (poindexter#232). Counts sentences that
+    # start with a stock-LLM transition phrase ("Furthermore", "Moreover",
+    # "In conclusion", etc.). The prompt already bans them; this is the
+    # deterministic catch when models ignore that rule. Emits one warning
+    # per post once the count crosses ``banned_transition_opener_threshold``
+    # (default 2 — three or more occurrences fires the warning), so the
+    # score penalty applies once even if the writer over-used several
+    # different openers. Tunable via app_settings.
+    if _enabled("banned_transition_opener"):
+        _bto_threshold = site_config.get_int("banned_transition_opener_threshold", 2)
+        # Match either at the start of a line (paragraph break / heading
+        # break) or right after a sentence terminator + whitespace. Both
+        # lookbehinds are fixed length, which Python's re module requires.
+        _bto_opener_alt = "|".join(BANNED_TRANSITION_OPENERS)
+        _bto_pattern = (
+            r"(?:^|(?<=[.!?]\s)|(?<=[.!?]\n))"
+            r"(" + _bto_opener_alt + r")\b"
+        )
+        _bto_matches = list(re.finditer(_bto_pattern, content, re.MULTILINE))
+        if len(_bto_matches) > _bto_threshold:
+            _bto_used = sorted({m.group(1) for m in _bto_matches})
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="banned_transition_opener",
+                description=(
+                    f"Stock-LLM sentence openers used {len(_bto_matches)}× "
+                    f"(threshold {_bto_threshold}): "
+                    f"{', '.join(_bto_used)} — vary openers or restructure "
+                    "paragraphs so the writing doesn't read as machine-templated."
+                ),
+                matched_text=_bto_matches[0].group(0)[:80],
+            ))
 
     # 9. Check for late acronym expansions — e.g. "CRM (Customer Relationship Management)"
     #    when the acronym was already used earlier without expansion

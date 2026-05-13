@@ -556,6 +556,62 @@ class TestFillerIntros:
 
 
 # ============================================================================
+# Banned-transition openers (poindexter#232)
+# ============================================================================
+
+
+class TestBannedTransitionOpeners:
+    """Stock-LLM transition words at sentence start are linguistic tells.
+
+    Rule fires once when the post crosses the threshold (default >2 — i.e.
+    three or more occurrences). Below the threshold is allowed because one
+    or two of these openers is normal English.
+    """
+
+    def test_over_threshold_emits_one_warning(self):
+        content = (
+            "Caching changes the math of expensive queries. "
+            "Furthermore, it reduces tail latency for cold reads. "
+            "Moreover, it shrinks the blast radius of a stuck upstream. "
+            "Additionally, the operator can tune the TTL per route. "
+            "In conclusion, the trade-off lands on the side of caching.\n"
+        )
+        result = validate_content("Caching post", content, "infra")
+        warnings = [i for i in result.issues if i.category == "banned_transition_opener"]
+        assert len(warnings) == 1
+        assert "4" in warnings[0].description or "4×" in warnings[0].description
+
+    def test_under_threshold_is_silent(self):
+        """Two or fewer banned openers stay below the threshold."""
+        content = (
+            "Caching is a real lever. "
+            "Furthermore, it reduces tail latency for cold reads. "
+            "Moreover, it shrinks the blast radius of a stuck upstream.\n"
+        )
+        result = validate_content("Caching post", content, "infra")
+        assert not any(i.category == "banned_transition_opener" for i in result.issues)
+
+    def test_midsentence_match_is_ignored(self):
+        """A banned word inside a sentence (not at sentence start) is fine."""
+        content = (
+            "There is, furthermore, no obvious win in moreover-style writing. "
+            "The team would, additionally, prefer concrete examples. "
+            "Notably-named patterns aside, prose carries the post.\n"
+        )
+        result = validate_content("Style post", content, "writing")
+        assert not any(i.category == "banned_transition_opener" for i in result.issues)
+
+    def test_clean_post_passes(self):
+        content = (
+            "Postgres connection pooling deserves a real budget. "
+            "Without it, a burst of cold-cache reads will queue behind every "
+            "long write. PgBouncer in transaction mode is the default we reach for.\n"
+        )
+        result = validate_content("Pooling", content, "infra")
+        assert not any(i.category == "banned_transition_opener" for i in result.issues)
+
+
+# ============================================================================
 # Known-Wrong Hardware Facts (added 2026-04-11, Gitea #192)
 # ============================================================================
 
