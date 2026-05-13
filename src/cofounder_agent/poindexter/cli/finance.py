@@ -3,7 +3,7 @@
 F1 (2026-05-13). Goes direct to the Mercury API rather than round-
 tripping through the worker — Mercury is external + the worker
 doesn't yet have a finance route surface. Pulls the API token from
-``app_settings.mercury_api_key`` so the operator never
+``app_settings.mercury_api_token`` so the operator never
 has to type it on the command line.
 
 Subcommands:
@@ -36,7 +36,7 @@ async def _read_token(dsn: str) -> str:
     conn = await asyncpg.connect(dsn)
     try:
         row = await conn.fetchrow(
-            "SELECT value FROM app_settings WHERE key = 'mercury_api_key'"
+            "SELECT value FROM app_settings WHERE key = 'mercury_api_token'"
         )
     finally:
         await conn.close()
@@ -63,10 +63,10 @@ def finance_balance(json_output: bool) -> None:
         token = await _read_token(dsn)
         if not token:
             raise click.ClickException(
-                "app_settings.mercury_api_key is empty. "
+                "app_settings.mercury_api_token is empty. "
                 "Generate a Read-Only token at "
                 "Mercury dashboard → Settings → API, then:\n\n"
-                "  poindexter settings set mercury_api_key <token> "
+                "  poindexter settings set mercury_api_token <token> "
                 "--secret\n"
             )
         async with MercuryClient(token=token) as m:
@@ -137,7 +137,7 @@ def finance_transactions(
         token = await _read_token(dsn)
         if not token:
             raise click.ClickException(
-                "app_settings.mercury_api_key is empty — "
+                "app_settings.mercury_api_token is empty — "
                 "see `poindexter finance balance` for setup instructions."
             )
         start_d = date.today() - timedelta(days=days)

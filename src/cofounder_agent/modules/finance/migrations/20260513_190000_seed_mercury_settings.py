@@ -12,7 +12,7 @@ keys can be torn down by ``down()`` without affecting substrate.
 
 Seeds (ON CONFLICT DO NOTHING — does NOT overwrite an existing key
 that the operator already populated by hand):
-- ``mercury_api_key`` — secret, empty default. Operator fills via
+- ``mercury_api_token`` — secret, empty default. Operator fills via
   ``poindexter settings set ... --secret`` once they've minted a
   Read-Only token at Mercury dashboard → Settings → API.
 - ``mercury_enabled`` — public, 'false'. Gates the future polling
@@ -20,7 +20,7 @@ that the operator already populated by hand):
   Mercury without the operator's go-ahead.
 
 Naming note: keys are ``mercury_*`` (no module prefix), matching
-the existing ``mercury_api_key`` row Matt seeded by hand. The
+the existing ``mercury_api_token`` row Matt seeded by hand. The
 codebase already uses unprefixed integration keys (``sentry_dsn``,
 ``telegram_bot_token``, ``discord_ops_webhook_url``), so no
 ``finance_`` prefix needed here.
@@ -37,13 +37,13 @@ _UP_SQL = """
 INSERT INTO app_settings
     (key, value, category, description, is_secret, is_active, updated_at)
 VALUES
-    ('mercury_api_key', '', 'finance',
+    ('mercury_api_token', '', 'finance',
      'Mercury Banking API token (Read-Only scope). Mint at Mercury '
      'dashboard → Settings → API. FinanceModule F1, #490 module v1.',
      TRUE, TRUE, NOW()),
     ('mercury_enabled', 'false', 'finance',
      'Master switch for Mercury integration. Set to true once '
-     'mercury_api_key is populated so F2''s polling job starts '
+     'mercury_api_token is populated so F2''s polling job starts '
      'fetching balance + transactions.',
      FALSE, TRUE, NOW())
 ON CONFLICT (key) DO NOTHING;
@@ -51,7 +51,7 @@ ON CONFLICT (key) DO NOTHING;
 
 _DOWN_SQL = """
 DELETE FROM app_settings WHERE key IN (
-    'mercury_api_key',
+    'mercury_api_token',
     'mercury_enabled'
 );
 """

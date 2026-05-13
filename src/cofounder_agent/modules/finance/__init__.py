@@ -10,11 +10,11 @@ What ships in F1:
   package's migrations/ directory
 - ``MercuryClient`` — async HTTP client for the Mercury Banking API
 - CLI: ``poindexter finance balance`` — pulls live account balances
-- App-settings seam: ``mercury_api_key`` (secret),
+- App-settings seam: ``mercury_api_token`` (secret),
   ``mercury_enabled`` (boolean, default false). Names match the
   existing unprefixed convention (``sentry_dsn``,
   ``telegram_bot_token``, etc.) and Matt's hand-seeded
-  ``mercury_api_key`` row.
+  ``mercury_api_token`` row.
 
 What's deferred to F2:
 - DB tables (``finance_accounts``, ``finance_transactions``)
