@@ -32,12 +32,21 @@ need to re-discover.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterable
 from functools import cache
 from importlib.metadata import EntryPoint, entry_points
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+_MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+"""Module names must be a lowercase slug — used as a Grafana folder
+name, MCP namespace prefix, DB-migration prefix, and HTTP route
+prefix. Same constraints as Python package names but stricter
+(no uppercase, no dashes).
+"""
 
 
 # Canonical entry_point group names. Kept as module-level constants so
@@ -60,6 +69,10 @@ ENTRY_POINT_GROUPS: dict[str, str] = {
     "caption_providers": "poindexter.caption_providers",
     "publish_adapters": "poindexter.publish_adapters",
     "media_compositors": "poindexter.media_compositors",
+    # Module v1 (Glad-Labs/poindexter#490) — bundles the lower-level
+    # plugin contributions into installable, versioned business
+    # functions. See docs/architecture/module-v1.md.
+    "modules": "poindexter.modules",
 }
 
 
@@ -255,6 +268,79 @@ def get_media_compositors() -> list[Any]:
     return _merge_with_core_samples(
         "media_compositors", ENTRY_POINT_GROUPS["media_compositors"],
     )
+
+
+def _validate_modules(modules: list[Any]) -> list[Any]:
+    """Drop modules whose manifest is malformed. Logs a warning per
+    drop so a typo in a downstream package's manifest doesn't silently
+    disappear from ``poindexter modules list``.
+
+    Validation rules (Phase 1):
+    - ``manifest()`` callable + returns a ``ModuleManifest``
+    - ``manifest().name`` matches ``_MODULE_NAME_RE``
+    - No two surviving modules share a name (first-discovered wins;
+      collisions log a warning)
+    """
+    from plugins.module import ModuleManifest
+
+    valid: list[Any] = []
+    seen_names: set[str] = set()
+    for mod in modules:
+        manifest_fn = getattr(mod, "manifest", None)
+        if not callable(manifest_fn):
+            logger.warning(
+                "plugins.registry: dropping module %r — no callable "
+                "manifest() method",
+                mod,
+            )
+            continue
+        try:
+            m = manifest_fn()
+        except Exception as exc:
+            logger.warning(
+                "plugins.registry: dropping module %r — manifest() "
+                "raised %s: %s",
+                mod, type(exc).__name__, exc,
+            )
+            continue
+        if not isinstance(m, ModuleManifest):
+            logger.warning(
+                "plugins.registry: dropping module %r — manifest() "
+                "returned %s, expected ModuleManifest",
+                mod, type(m).__name__,
+            )
+            continue
+        if not _MODULE_NAME_RE.match(m.name):
+            logger.warning(
+                "plugins.registry: dropping module %r — manifest name "
+                "%r does not match %s",
+                mod, m.name, _MODULE_NAME_RE.pattern,
+            )
+            continue
+        if m.name in seen_names:
+            logger.warning(
+                "plugins.registry: dropping duplicate module %r — "
+                "name %r already registered (first-discovered wins)",
+                mod, m.name,
+            )
+            continue
+        seen_names.add(m.name)
+        valid.append(mod)
+    return valid
+
+
+def get_modules() -> list[Any]:
+    """Return all ``Module`` instances discovered via the
+    ``poindexter.modules`` entry-point group, filtered to those with
+    valid manifests.
+
+    Results are cached for the process lifetime (same caching layer as
+    every other ``get_*`` accessor here). Call ``clear_registry_cache``
+    after a ``pip install`` if you need to re-discover.
+
+    See ``docs/architecture/module-v1.md``.
+    """
+    return _validate_modules(list(_cached("modules")))
 
 
 # ---------------------------------------------------------------------------
