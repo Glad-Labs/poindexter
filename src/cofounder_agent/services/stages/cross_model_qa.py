@@ -134,8 +134,17 @@ def aggregate_issues_to_fix(qa_result: Any) -> tuple[str, bool]:
                 lines.append(f"[{issue.severity}] {issue.category}: {issue.description}")
                 if issue.severity == "critical":
                     has_blocking = True
-    except Exception:
-        pass
+    except Exception as exc:
+        # poindexter#455 — used to be silent. Validator issues never
+        # made it into the rewrite prompt if the shape unexpectedly
+        # shifted (e.g. schema change), so the rewriter would loop
+        # producing the same draft. Debug-log so a schema drift shows
+        # up in traces.
+        logger.debug(
+            "[cross_model_qa] failed to flatten validator issues "
+            "(%s: %s) — rewrite prompt may miss validator findings",
+            type(exc).__name__, exc,
+        )
 
     # Reviewers — a non-approving reviewer blocks; borderline approvals
     # (score < 75) are advisory.
@@ -575,8 +584,15 @@ async def _resolve_max_rewrites(settings_service: Any, default: int) -> int:
         )
         if raw is not None:
             return int(raw)
-    except Exception:
-        pass
+    except Exception as exc:
+        # poindexter#455 — used to be silent. An operator pinning a
+        # non-default qa_max_rewrites that failed to parse silently
+        # reverted to the compiled default, masking the misconfiguration.
+        logger.warning(
+            "[cross_model_qa] failed to read qa_max_rewrites/"
+            "qa_consistency_max_rewrites (%s: %s) — using default %d",
+            type(exc).__name__, exc, default,
+        )
     return default
 
 

@@ -252,8 +252,19 @@ class GenerateContentStage:
                     slug = link_line.split("/posts/")[-1].strip().strip('"')
                     if slug:
                         real_slug_set.add(slug)
-        except Exception:
-            pass
+        except Exception as exc:
+            # poindexter#455 — used to be silent. An empty real-slug
+            # allowlist makes scrub_fabricated_links() more aggressive
+            # (anything not on the list is a candidate to scrub),
+            # which can quietly remove legitimate internal links if
+            # the cache layout shifts. Debug-log so the scrub behavior
+            # change is traceable.
+            logger.debug(
+                "[generate_content] failed to build real-slug allowlist "
+                "from _internal_links_cache (%s: %s) — scrub_fabricated_links "
+                "will run with empty allowlist",
+                type(exc).__name__, exc,
+            )
         content_text = scrub_fabricated_links(content_text, known_slugs=real_slug_set)
 
         # Strip leaked image prompts / descriptions. LLMs sometimes emit
