@@ -1979,8 +1979,18 @@ class MultiModelQA:
                 viewport_height = int(
                     await self.settings.get("qa_preview_viewport_height") or 1024
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # poindexter#455 — symmetric to the qa_vision config-read
+                # warning. Operator may have set
+                # qa_preview_screenshot_enabled=true in DB but the read
+                # raised — preview QA would silently stay disabled.
+                logger.warning(
+                    "[multi_model_qa] qa_preview config read failed: %s: %s — "
+                    "preview screenshot QA stays disabled with defaults "
+                    "(model=%s, pass_threshold=%d, viewport=%dx%d)",
+                    type(exc).__name__, exc, model, pass_threshold,
+                    viewport_width, viewport_height,
+                )
 
         if not enabled or not preview_url:
             return None

@@ -101,8 +101,18 @@ async def _resolve_judge_model(site_config: Any = None) -> str:
             critical=True,
             site_config=site_config,
         )
-    except Exception:
-        pass
+    except Exception as notify_exc:
+        # poindexter#455 — used to be silent. The notify path failing
+        # means the operator wouldn't hear the critical "ragas can't
+        # find a judge model" alert AND wouldn't see why the notify
+        # failed. Log it so the alternate stderr/log channels at least
+        # carry the picture.
+        logger.warning(
+            "[ragas_eval] notify_operator failed while reporting missing "
+            "judge model — operator will only see the alert in logs: "
+            "%s: %s",
+            type(notify_exc).__name__, notify_exc,
+        )
     raise RuntimeError(
         "ragas_eval: no judge model resolvable via tier or "
         "ragas_judge_model setting"
@@ -138,8 +148,17 @@ async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
             embed_model = (
                 site_config.get("embedding_model", "") or embed_model
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            # poindexter#455 — used to be silent. If the operator pinned
+            # a non-default embedding model in app_settings but the read
+            # raised, the rail would silently fall back to nomic-embed-text
+            # and the operator would scratch their head why their pinned
+            # model wasn't being used.
+            logger.warning(
+                "[ragas_eval] embedding_model read failed (%s: %s) — "
+                "using default %r",
+                type(exc).__name__, exc, embed_model,
+            )
 
     llm = LangchainLLMWrapper(
         ChatOllama(model=judge_model, base_url=base_url, temperature=0.0)
