@@ -334,13 +334,25 @@ def get_modules() -> list[Any]:
     ``poindexter.modules`` entry-point group, filtered to those with
     valid manifests.
 
-    Results are cached for the process lifetime (same caching layer as
-    every other ``get_*`` accessor here). Call ``clear_registry_cache``
-    after a ``pip install`` if you need to re-discover.
+    Merges entry_points-discovered modules with core-sample modules
+    (registered imperatively in ``get_core_samples()``). The merge
+    matches the pattern every other ``get_*`` accessor uses — see
+    ``_merge_with_core_samples``. Without the merge, in-tree modules
+    that haven't gone through ``pip install`` are invisible to the
+    boot loader.
+
+    Validation drops modules whose manifest is malformed; see
+    ``_validate_modules`` for the rules.
+
+    Results are cached for the process lifetime. Call
+    ``clear_registry_cache`` after a ``pip install`` if you need to
+    re-discover.
 
     See ``docs/architecture/module-v1.md``.
     """
-    return _validate_modules(list(_cached("modules")))
+    return _validate_modules(
+        _merge_with_core_samples("modules", ENTRY_POINT_GROUPS["modules"])
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +378,11 @@ def get_core_samples() -> dict[str, list[Any]]:
 
     _SAMPLES: list[tuple[str, str, str]] = [
         # (plugin_type, module_path, class_name)
+        # Module v1 Phase 3-lite — ContentModule is the first concrete
+        # business module. Lives in-tree at cofounder_agent.modules.content
+        # while we prove the shape; extracts to its own top-level package
+        # when 2+ modules give us a comparison point (see Phase 3.5).
+        ("modules", "modules.content", "ContentModule"),
         ("taps", "plugins.samples.hello_tap", "HelloTap"),
         ("probes", "plugins.samples.database_probe", "DatabaseProbe"),
         ("jobs", "plugins.samples.noop_job", "NoopJob"),

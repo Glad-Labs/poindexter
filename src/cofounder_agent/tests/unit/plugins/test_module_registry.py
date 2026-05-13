@@ -74,7 +74,7 @@ def test_get_modules_empty_when_no_entry_points():
     """A fresh install with no module packages installed returns
     an empty list, not an error. Critical because this is the
     base case for the substrate-without-modules deployment."""
-    with patch("plugins.registry._cached", return_value=()):
+    with patch("plugins.registry._merge_with_core_samples", return_value=()):
         result = get_modules()
     assert result == []
 
@@ -85,7 +85,7 @@ def test_get_modules_returns_valid_module():
     through as-is. Also checks isinstance(mod, Module) since the
     Protocol is runtime_checkable."""
     mod = _make_module(name="content", version="0.1.0", visibility="public")
-    with patch("plugins.registry._cached", return_value=(mod,)):
+    with patch("plugins.registry._merge_with_core_samples", return_value=(mod,)):
         result = get_modules()
     assert len(result) == 1
     assert result[0] is mod
@@ -108,7 +108,7 @@ def test_get_modules_drops_module_with_invalid_name(caplog):
     bad_dash = _make_module(name="my-module")  # dash rejected
     bad_leading_digit = _make_module(name="1content")  # leading digit rejected
     with patch(
-        "plugins.registry._cached",
+        "plugins.registry._merge_with_core_samples",
         return_value=(bad_uppercase, bad_dash, bad_leading_digit),
     ):
         with caplog.at_level("WARNING", logger="plugins.registry"):
@@ -137,7 +137,7 @@ def test_get_modules_drops_duplicate_names(caplog):
     Phase 1."""
     first = _make_module(name="content", version="1.0.0")
     second = _make_module(name="content", version="2.0.0")
-    with patch("plugins.registry._cached", return_value=(first, second)):
+    with patch("plugins.registry._merge_with_core_samples", return_value=(first, second)):
         with caplog.at_level("WARNING", logger="plugins.registry"):
             result = get_modules()
     assert len(result) == 1
@@ -149,6 +149,27 @@ def test_get_modules_drops_duplicate_names(caplog):
         if r.name == "plugins.registry" and "duplicate module" in r.message
     ]
     assert len(dup_warnings) == 1
+
+
+@pytest.mark.unit
+def test_get_modules_includes_in_tree_content_module():
+    """Phase 3-lite contract — ``ContentModule`` (registered as a
+    core sample in ``plugins/registry.py:_SAMPLES``) shows up in
+    ``get_modules()`` at boot without any mocking. This is the
+    smoke test that proves Phase 1's registry, Phase 2's migration
+    wiring, and Phase 3-lite's first concrete Module compose
+    correctly."""
+    mods = get_modules()
+    names = [m.manifest().name for m in mods]
+    assert "content" in names, (
+        f"expected 'content' module to be discovered; got {names}"
+    )
+    content = next(m for m in mods if m.manifest().name == "content")
+    manifest = content.manifest()
+    assert manifest.version == "0.1.0"
+    assert manifest.visibility == "public"
+    # The runtime_checkable Protocol contract holds on the real module.
+    assert isinstance(content, Module)
 
 
 @pytest.mark.unit
@@ -182,7 +203,7 @@ def test_get_modules_drops_module_whose_manifest_raises(caplog):
 
     exploding = _ExplodingModule()
     healthy = _make_module(name="content")
-    with patch("plugins.registry._cached", return_value=(exploding, healthy)):
+    with patch("plugins.registry._merge_with_core_samples", return_value=(exploding, healthy)):
         with caplog.at_level("WARNING", logger="plugins.registry"):
             result = get_modules()
     # Healthy module survives
