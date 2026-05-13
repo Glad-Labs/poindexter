@@ -228,8 +228,16 @@ async def _generate_narrative(
                         if isinstance(v, str) and v.strip():
                             prose = v.strip()
                             break
-            except Exception:
-                pass
+            except Exception as exc:
+                # poindexter#455 — used to be silent. The prose started
+                # with `{` and ended with `}` but didn't parse as JSON,
+                # so we keep it as-is. Worth a debug crumb so a model
+                # consistently emitting almost-JSON shows up in logs.
+                logger.debug(
+                    "[DETERMINISTIC_COMPOSITOR] prose looked like JSON "
+                    "but failed to parse (%s: %s) — keeping raw output",
+                    type(exc).__name__, exc,
+                )
         return prose
     except Exception as exc:
         logger.warning(

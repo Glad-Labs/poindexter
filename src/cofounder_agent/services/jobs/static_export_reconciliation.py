@@ -106,7 +106,16 @@ class StaticExportReconciliationJob:
                     dedup_key="static_export_manifest_url_unresolved",
                 )
             except Exception:
-                pass
+                # poindexter#455 — symmetric fix with media_reconciliation.
+                # emit_finding is the operator-visible signal for
+                # "this job is dormant"; debug-log on failure since the
+                # warning above already covers the log channel.
+                logger.debug(
+                    "[static_export_reconciliation] emit_finding for "
+                    "manifest_url_unresolved raised — operator visibility "
+                    "degrades to log channel only",
+                    exc_info=True,
+                )
             return JobResult(
                 ok=True,
                 detail="skipped — no R2 manifest URL configured",

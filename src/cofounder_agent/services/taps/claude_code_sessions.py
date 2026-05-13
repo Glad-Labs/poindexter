@@ -270,8 +270,16 @@ def _resolve_projects_dir(config: dict[str, Any]) -> Path:
             sc_val = sc.get("claude_projects_dir", "")
             if sc_val:
                 return Path(sc_val)
-        except Exception:
-            pass
+        except Exception as exc:
+            # poindexter#455 — used to be silent. If the operator pinned
+            # a non-default claude_projects_dir, a site_config read
+            # failure silently fell back to ~/.claude/projects and the
+            # tap quietly ingested the wrong scope.
+            logger.warning(
+                "[claude_code_sessions] site_config.get('claude_projects_dir') "
+                "failed (%s: %s) — falling back to ~/.claude/projects",
+                type(exc).__name__, exc,
+            )
     return Path.home() / ".claude" / "projects"
 
 

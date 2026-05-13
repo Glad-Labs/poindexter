@@ -131,7 +131,17 @@ class MediaReconciliationJob:
                     dedup_key="media_reconciliation_r2_public_base_unresolved",
                 )
             except Exception:
-                pass
+                # poindexter#455 — used to be silent. emit_finding is the
+                # operator-visible signal for "this job is dormant" —
+                # losing it silently means R2 stays unconfigured forever
+                # with no breadcrumb. Debug-level: the warning above
+                # already covers the log channel.
+                logger.debug(
+                    "[media_reconciliation] emit_finding for "
+                    "r2_public_base_unresolved raised — operator visibility "
+                    "degrades to log channel only",
+                    exc_info=True,
+                )
             return JobResult(
                 ok=True,
                 detail="skipped — no R2 public base configured",

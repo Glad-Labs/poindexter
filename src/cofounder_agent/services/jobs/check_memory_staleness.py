@@ -46,8 +46,16 @@ async def _get_setting(pool: Any, key: str, default: str) -> str:
         )
         if row and row["value"]:
             return str(row["value"])
-    except Exception:
-        pass
+    except Exception as exc:
+        # poindexter#455 — used to be silent. A DB blip used to look
+        # identical to "operator never set this key", which made stale-
+        # threshold tuning impossible to diagnose. Log the failure so
+        # the fallback to `default` is traceable.
+        logger.warning(
+            "[check_memory_staleness] failed to read app_setting %s "
+            "(%s: %s) — falling back to default %r",
+            key, type(exc).__name__, exc, default,
+        )
     return default
 
 
