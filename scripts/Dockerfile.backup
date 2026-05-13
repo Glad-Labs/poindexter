@@ -31,4 +31,22 @@ RUN chmod +x /app/run.sh
 # and reads further config from app_settings via psql.
 ENV BACKUP_TIER=hourly
 
+# Drop privileges (Trivy DS-0002 / poindexter#488). The script only needs
+# to read the postgres-local container's TCP listener (via psql/pg_dump)
+# and write pg_dump output into the bind-mounted /backups directory.
+# On Windows-Docker-Desktop (Matt's host) the gRPC-FUSE / virtiofs layer
+# maps the container UID loosely back to the host operator's user, so
+# bind-mount writes still land cleanly. On Linux hosts the operator
+# rebuilds with `--build-arg HOST_UID=$(id -u)` to match.
+#
+# The default `backups` mount in compose is a docker named volume, not a
+# host bind — those have container-side ownership anyway, so root vs
+# non-root doesn't matter there.
+ARG HOST_UID=1001
+ARG HOST_GID=1001
+RUN addgroup --system --gid "${HOST_GID}" backup \
+ && adduser  --system --uid "${HOST_UID}" --ingroup backup --no-create-home backup \
+ && chown -R backup:backup /app
+USER backup
+
 ENTRYPOINT ["/app/run.sh"]

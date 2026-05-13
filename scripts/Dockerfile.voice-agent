@@ -60,10 +60,11 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
 # src/cofounder_agent/Dockerfile.worker. Closes Glad-Labs/poindexter#418.
 RUN python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')"
 
-# Pre-create the cache directory the model loaders write into. Bind-mounted
-# to a host volume in compose so first-boot model downloads (Silero ~2 MB,
-# Whisper base ~140 MB, Kokoro ~325 MB) survive container rebuilds.
-RUN mkdir -p /root/.cache/huggingface /root/.cache/pipecat
+# Cache directories for first-boot model downloads (Silero ~2 MB,
+# Whisper base ~140 MB, Kokoro ~325 MB). Bind-mounted to a host volume
+# in compose so they survive container rebuilds. Created with the
+# non-root user's HOME below; HF_HOME and the pipecat path live under
+# /home/voiceagent.
 
 # Claude Code CLI — the voice agent bridges to Claude Code by spawning
 # `claude -p --output-format json --permission-mode dontAsk ...` as a
@@ -74,13 +75,14 @@ RUN mkdir -p /root/.cache/huggingface /root/.cache/pipecat
 # survives release-channel changes that an install-script URL can't.
 # Pin a Node major to avoid surprise breakage on rebuilds.
 #
-# Auth: container runs as root, so `claude` reads ~/.claude == /root/.claude,
-# which is bind-mounted READ-WRITE from the host in docker-compose.local.yml.
-# RW is required so per-call session JSONL files (--session-id <uuid>)
-# can be written; --resume on subsequent turns needs them on disk.
-# Trade-off: voice agent shares the host's MEMORY.md, so memory updates
-# can race with the host Claude session. See Glad-Labs/poindexter#432
-# for a future per-component split (creds RO, projects/ container-only).
+# Auth: claude reads $HOME/.claude. The compose service mounts the
+# host's ~/.claude RW at /home/voiceagent/.claude (the non-root user's
+# HOME — see the USER directive below). RW is required so per-call
+# session JSONL files (--session-id <uuid>) can be written;
+# --resume on subsequent turns needs them on disk. Trade-off: voice
+# agent shares the host's MEMORY.md, so memory updates can race with
+# the host Claude session. See Glad-Labs/poindexter#432 for a future
+# per-component split (creds RO, projects/ container-only).
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
@@ -97,6 +99,37 @@ ENV PYTHONPATH="/app:/opt/poindexter" \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
+
+# Drop privileges before running the agent. Trivy DS-0002 / CIS Docker
+# 4.1 — running as root broadens the blast radius of any RCE in pipecat
+# / faster-whisper / kokoro / the claude CLI subprocess. Same pattern as
+# Dockerfile.voice-bot (uid 1001).
+#
+# poindexter#488 — the prior trivyignore exemption warned that
+# switching users would break host-side ownership of the
+# ~/.claude/projects/-app/<uuid>.jsonl files written by the claude CLI
+# subprocess. The fix shipped in this PR:
+#
+#   1. Run as `voiceagent` (uid 1001 by default; build-arg
+#      `HOST_UID` lets Linux operators override to match `id -u`).
+#   2. Set HOME=/home/voiceagent. The claude CLI reads $HOME/.claude
+#      so all auth + session state goes there.
+#   3. docker-compose.local.yml mounts the host's ~/.claude at
+#      /home/voiceagent/.claude (instead of the old /root/.claude
+#      path). On Windows-Docker-Desktop the gRPC-FUSE / virtiofs
+#      layer maps the container UID loosely back to the host
+#      operator's user, so reads + writes still cross the boundary
+#      cleanly. On Linux hosts the operator rebuilds with
+#      `--build-arg HOST_UID=$(id -u)` to match.
+ARG HOST_UID=1001
+ARG HOST_GID=1001
+RUN groupadd --system --gid "${HOST_GID}" voiceagent \
+ && useradd  --system --uid "${HOST_UID}" --gid voiceagent --home-dir /home/voiceagent --create-home voiceagent \
+ && mkdir -p /home/voiceagent/.cache/huggingface /home/voiceagent/.cache/pipecat /home/voiceagent/.claude \
+ && chown -R voiceagent:voiceagent /app /opt /home/voiceagent
+ENV HOME=/home/voiceagent \
+    HF_HOME=/home/voiceagent/.cache/huggingface
+USER voiceagent
 
 # Default command — overridden by each compose service. Setting one here
 # so an interactive `docker run` of the image at least surfaces help text

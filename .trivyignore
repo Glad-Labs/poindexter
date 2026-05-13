@@ -2,30 +2,14 @@
 #
 # Each entry must include a rationale comment. CI policy: suppression
 # without explanation is grounds for revert.
-
-# DS-0002 — "Specify at least 1 USER command in Dockerfile with non-root user"
 #
-# Container images that legitimately run as root in this stack:
+# DS-0002 ("Specify at least 1 USER command in Dockerfile with non-root
+# user") used to be suppressed for scripts/Dockerfile.voice-agent and
+# scripts/Dockerfile.backup — both now run non-root after #488. The
+# remaining 5 Dockerfiles (voice-bot, sdxl, wan, gpu-exporter,
+# auto-embed) already had USER directives. No suppression is currently
+# needed.
 #
-#   scripts/Dockerfile.voice-agent
-#     Spawns `claude` (Claude Code CLI) as a subprocess, which reads
-#     ~/.claude bind-mounted READ-WRITE from the host. Switching the
-#     in-container user breaks host-side ownership of the cached
-#     session JSONLs and the per-call --session-id resume flow.
-#     Hardening tracked separately as a per-component split
-#     (Glad-Labs/poindexter#432).
-#
-#   scripts/Dockerfile.backup
-#     Alpine + postgresql-client running pg_dump against the brain
-#     volume. The dump writes into a bind-mounted host directory; the
-#     host UID alignment is messy on Windows-Docker-Desktop, and
-#     dropping privileges makes the bind-mount unwritable. The image
-#     surface is tiny (no Python, no app code), which limits the
-#     blast radius.
-#
-# scripts/Dockerfile.voice-bot, scripts/Dockerfile.sdxl,
-# scripts/Dockerfile.wan, scripts/Dockerfile.gpu-exporter, and
-# scripts/Dockerfile.auto-embed already have USER directives and DO
-# NOT rely on this suppression. The two entries above are the
-# remaining root-only images.
-DS-0002
+# Leave this file in place so the trivy-config CI step (which expects
+# .trivyignore to exist) keeps working, and so future suppressions
+# inherit the rationale-comment convention.

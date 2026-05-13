@@ -38,4 +38,17 @@ exec act_runner daemon\n\
 
 VOLUME /data
 WORKDIR /data
+
+# Drop privileges (Trivy DS-0002 / poindexter#488). act_runner does
+# not need root to register or run jobs — it talks to the Gitea API
+# over HTTP and shells out to Docker as the runner user when a job
+# specifies a container backend. Note: Gitea was retired in this
+# stack on 2026-04-30 (see CLAUDE.md). This Dockerfile is preserved
+# alongside the historical compose entry but is not built in current
+# CI; the USER directive future-proofs it in case it ever comes back.
+RUN groupadd --system --gid 1001 runner \
+ && useradd  --system --uid 1001 --gid runner --home-dir /data runner \
+ && chown -R runner:runner /data
+USER runner
+
 ENTRYPOINT ["/entrypoint.sh"]

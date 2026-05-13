@@ -1263,7 +1263,9 @@ services:
       - ./brain:/opt/poindexter/brain:ro
       # Persist Whisper / Silero / Kokoro model weights across rebuilds.
       # First boot downloads ~470 MB total; cached after that.
-      - voice-agent-cache:/root/.cache
+      # poindexter#488 — container now runs as the non-root `voiceagent`
+      # user (uid 1001), so the cache lives under that user's HOME.
+      - voice-agent-cache:/home/voiceagent/.cache
       # Bind-mount the host's ~/.claude READ-WRITE so the in-container
       # `claude` subprocess (spawned by voice_agent_claude_code.py)
       # picks up the host operator's OAuth tokens, skills, plugins,
@@ -1273,12 +1275,17 @@ services:
       # design uses fresh-uuid-per-call so each voice session creates
       # its own JSONL).
       #
+      # poindexter#488 — target moved from /root/.claude to
+      # /home/voiceagent/.claude after the Dockerfile dropped privileges.
+      # The container's HOME=/home/voiceagent so the claude CLI's
+      # default $HOME/.claude lookup lands on the bind-mount.
+      #
       # Race risk: voice agent and host's terminal Claude both write
       # to MEMORY.md (auto-memory). Writes are rare (only on memory
       # save events) and atomic-style replacement, so the practical
       # collision window is small. Session JSONLs are per-uuid so
       # don't conflict.
-      - ${USERPROFILE:-${HOME}}/.claude:/root/.claude
+      - ${USERPROFILE:-${HOME}}/.claude:/home/voiceagent/.claude
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:
