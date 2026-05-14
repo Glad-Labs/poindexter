@@ -42,6 +42,8 @@ from typing import Any
 
 import asyncpg
 
+from brain.secret_reader import read_app_setting
+
 logger = logging.getLogger("brain.alert_sync")
 
 # Folder under which Grafana groups these rules in the UI. Operators can
@@ -190,18 +192,26 @@ def rule_to_grafana_payload(row: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _get_setting(pool, key: str, default: str = "") -> str:
-    """Read a string value from app_settings. Returns default if missing."""
+    """Read a string value from app_settings, decrypting if ``is_secret=true``.
+
+    Routes through ``brain.secret_reader.read_app_setting`` so the
+    encrypted ``enc:v1:<base64>`` envelope used by
+    ``services.plugins.secrets`` gets pgp_sym_decrypt'd transparently.
+    The previous direct ``SELECT value`` returned the ciphertext for
+    secret rows (notably ``grafana_api_token`` once it was promoted to
+    is_secret=true), which then went into the Bearer header verbatim
+    and failed every alert sync with "Invalid header value b'Bearer
+    enc:v1:...'". One-liner fix; same bug class as the FinanceModule
+    CLI token-decryption fix (2026-05-13).
+    """
     try:
-        val = await pool.fetchval(
-            "SELECT value FROM app_settings WHERE key = $1", key
-        )
+        return await read_app_setting(pool, key, default=default)
     except Exception as e:
         logger.warning(
             "alert_sync: app_settings read failed for %s (%s) — using default",
             key, e,
         )
         return default
-    return val if val is not None else default
 
 
 async def _load_rule_hashes(pool) -> dict[str, str]:
@@ -287,7 +297,7 @@ async def _push_rule(
     put_url = f"{base_url}/api/v1/provisioning/alert-rules/{uid}"
     try:
         status, body = _http_request("PUT", put_url, token, payload)
-    except urllib.error.URLError as e:
+    except urllib.error.URLError:
         # Grafana unreachable — bubble up so caller can stop the whole
         # cycle (no point trying the other rules if the server's down).
         raise

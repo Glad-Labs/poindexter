@@ -70,12 +70,17 @@ def _mock_pool(
 ) -> MagicMock:
     """Build a pool that mimics the query order in sync_alert_rules:
 
-    1. _get_setting('grafana_alert_sync_enabled')  → fetchval
-    2. _get_setting('grafana_api_token')           → fetchval
-    3. _get_setting('grafana_api_base_url')        → fetchval
+    1. _get_setting('grafana_alert_sync_enabled')  → fetchrow (via secret_reader)
+    2. _get_setting('grafana_api_token')           → fetchrow (via secret_reader)
+    3. _get_setting('grafana_api_base_url')        → fetchrow (via secret_reader)
     4. SELECT ... FROM alert_rules WHERE enabled   → fetch
     5. SELECT ... FROM brain_knowledge (hash cache)→ fetch
     6. per-rule hash upsert                        → execute
+
+    _get_setting routes through brain.secret_reader.read_app_setting, which
+    calls ``pool.fetchrow("SELECT value, is_secret FROM app_settings ...")``.
+    We mock with ``is_secret=False`` so the secret_reader skips the
+    pgcrypto decrypt branch and returns the value verbatim.
     """
     settings = settings or {}
     rows = rows or []
@@ -83,11 +88,15 @@ def _mock_pool(
 
     pool = MagicMock()
 
-    # fetchval — _get_setting. Order: enabled, token, base_url.
-    pool.fetchval = AsyncMock(side_effect=[
-        settings.get("grafana_alert_sync_enabled", "true"),
-        settings.get("grafana_api_token", "tok-abc123"),
-        settings.get("grafana_api_base_url", "http://grafana.test:3000"),
+    # fetchrow — read_app_setting. Order: enabled, token, base_url.
+    pool.fetchrow = AsyncMock(side_effect=[
+        {"value": settings.get("grafana_alert_sync_enabled", "true"),
+         "is_secret": False},
+        {"value": settings.get("grafana_api_token", "tok-abc123"),
+         "is_secret": False},
+        {"value": settings.get("grafana_api_base_url",
+                               "http://grafana.test:3000"),
+         "is_secret": False},
     ])
 
     # fetch — alert_rules, then hash cache.
@@ -424,7 +433,12 @@ class TestSyncAlertRulesErrorHandling:
         """Rerunning before migration 0073 has applied must not crash."""
         import asyncpg
         pool = MagicMock()
-        pool.fetchval = AsyncMock(side_effect=["true", "tok", "http://g"])
+        # Settings read via brain.secret_reader.read_app_setting → fetchrow
+        pool.fetchrow = AsyncMock(side_effect=[
+            {"value": "true", "is_secret": False},
+            {"value": "tok",  "is_secret": False},
+            {"value": "http://g", "is_secret": False},
+        ])
         pool.fetch = AsyncMock(side_effect=asyncpg.exceptions.UndefinedTableError(
             "relation alert_rules does not exist"
         ))
