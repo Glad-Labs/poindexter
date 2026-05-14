@@ -154,11 +154,17 @@ class MorningBriefJob:
 
 
 async def _read_setting(pool: Any, key: str, default: str) -> str:
+    """Read ``app_settings[key]``, decrypting when ``is_secret=true``.
+
+    Routes through ``plugins.secrets.get_secret`` so callers reading
+    encrypted rows (e.g. ``discord_ops_webhook_url``) get plaintext
+    instead of ``enc:v1:`` ciphertext. Mirrors the brain-side fix in
+    ``brain/alert_dispatcher.py`` for the same bug class.
+    """
+    from plugins.secrets import get_secret
     try:
-        val = await pool.fetchval(
-            "SELECT value FROM app_settings WHERE key = $1", key,
-        )
-    except Exception as exc:  # noqa: BLE001
+        val = await get_secret(pool, key)
+    except Exception as exc:  # noqa: BLE001 — best-effort; degrade to default
         logger.debug("[morning_brief] setting %s fetch failed: %s", key, exc)
         return default
     return str(val) if val not in (None, "") else default
