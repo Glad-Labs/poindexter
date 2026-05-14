@@ -45,7 +45,7 @@ updates:
     # Group updates by type for easier review
     groups:
       development:
-        dependency-type: 'dev'
+        dependency-type: 'development'
       production:
         dependency-type: 'production'
 
