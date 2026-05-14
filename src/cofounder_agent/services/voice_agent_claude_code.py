@@ -78,6 +78,15 @@ logger = logging.getLogger(__name__)
 _TURN_TIMEOUT_SECONDS = 90.0
 
 
+# Matches claude CLI's stderr when --session-id targets a UUID whose
+# JSONL already exists on disk: "Error: Session ID <uuid> is already in
+# use." Whatever spawned the session (pipecat warmup probe, healthcheck,
+# crash-recovery from a prior bot) wrote the JSONL before the user's
+# first audio turn — at this point claude refuses --session-id but
+# happily accepts --resume on the same UUID. See poindexter#431.
+_SESSION_ALREADY_IN_USE = re.compile(r"already in use", re.IGNORECASE)
+
+
 class ClaudeCodeBridgeLLMService(LLMService):
     """Replaces the model-API LLM stage with a subprocess to the Claude CLI.
 
@@ -202,6 +211,19 @@ class ClaudeCodeBridgeLLMService(LLMService):
         return argv
 
     async def _run_claude(self, user_text: str) -> str:
+        stdout_bytes = await self._spawn_claude(user_text)
+        # First turn establishes the session — every subsequent turn
+        # must use --resume.
+        self._first_turn = False
+        return self._extract_text(stdout_bytes)
+
+    async def _spawn_claude(self, user_text: str) -> bytes:
+        """Run `claude -p` once; recover from a first-turn session collision.
+
+        Split off of :meth:`_run_claude` so the session-collision recovery
+        path can re-enter the same exec without re-decoding the prior
+        call's stdout.
+        """
         argv = self._build_argv()
         logger.info(
             "claude turn (first=%s session=%s) cmd=%s",
@@ -228,15 +250,26 @@ class ClaudeCodeBridgeLLMService(LLMService):
 
         if proc.returncode != 0:
             stderr_txt = stderr_bytes.decode("utf-8", errors="replace").strip()
+            if self._first_turn and _SESSION_ALREADY_IN_USE.search(stderr_txt):
+                # poindexter#431 — something spawned claude with this
+                # UUID before the user's first turn (pipecat warmup,
+                # healthcheck, restarted bot reusing a UUID). Flip to
+                # --resume and retry once; the JSONL on disk IS the
+                # session we want to continue.
+                logger.warning(
+                    "voice-agent: session %s already exists on disk "
+                    "before first user turn; retrying with --resume "
+                    "(poindexter#431). claude stderr=%r",
+                    self._session_id, stderr_txt[:200],
+                )
+                self._first_turn = False
+                self._resumed = True
+                return await self._spawn_claude(user_text)
             raise RuntimeError(
                 f"claude -p exited {proc.returncode}: {stderr_txt[:300]}",
             )
 
-        # First turn establishes the session — every subsequent turn
-        # must use --resume.
-        self._first_turn = False
-
-        return self._extract_text(stdout_bytes)
+        return stdout_bytes
 
     @staticmethod
     def _extract_text(stdout_bytes: bytes) -> str:
