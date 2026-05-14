@@ -144,6 +144,7 @@ git rm --cached --quiet scripts/migrate-poindexter-rename.sh 2>/dev/null || true
 git rm --cached --quiet scripts/sync-to-github.sh 2>/dev/null || true        # the sync script itself — internal-only, exposes strip logic
 git rm --cached --quiet scripts/push-everywhere.sh 2>/dev/null || true       # local-dev-only, two-remote push helper
 git rm --cached --quiet scripts/install-git-hooks.sh 2>/dev/null || true     # local-dev-only, sets up the pushe alias
+git rm -r --cached --quiet .githooks/ 2>/dev/null || true                    # the hooks themselves only fire after install-git-hooks.sh runs — paired stripping
 git rm --cached --quiet scripts/system-health-check.sh 2>/dev/null || true   # operator-specific health probes (Matt's install)
 git rm --cached --quiet scripts/claude-sessions.ps1 2>/dev/null || true       # Windows scheduled-task setup for autonomous Claude sessions (Matt's install)
 git rm --cached --quiet scripts/run-claude-session.cmd 2>/dev/null || true    # cmd wrapper for above
@@ -222,7 +223,13 @@ for rel in tracked:
     if not p.is_file():
         continue
     # Skip binary types — only rewrite text we know we wrote.
-    if p.suffix.lower() not in {".py", ".md", ".json", ".yml", ".yaml", ".toml", ".sh", ".sql", ".txt"}:
+    # Allowlist: known text extensions PLUS Dockerfile* and dotfiles
+    # (.gitignore, .githooks/*) which don't have a regular suffix.
+    text_exts = {".py", ".md", ".json", ".yml", ".yaml", ".toml", ".sh", ".sql", ".txt", ".cfg", ".ini"}
+    name = p.name
+    is_dockerfile = name.startswith("Dockerfile")
+    is_dotfile = name.startswith(".") and "." not in name[1:]  # .gitignore etc.
+    if p.suffix.lower() not in text_exts and not is_dockerfile and not is_dotfile:
         continue
     try:
         txt = p.read_text(encoding="utf-8")

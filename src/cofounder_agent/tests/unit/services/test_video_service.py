@@ -584,26 +584,19 @@ class TestToHostPath:
     """Path conversion from container to host (tested via integration)."""
 
     @pytest.mark.asyncio
-    async def test_default_host_home(self, tmp_path):
-        """Without HOST_HOME env var, uses default C:/Users/mattm."""
+    async def test_unset_host_home_fails_loud(self, tmp_path):
+        """An unset host_home must return an explicit error instead of
+        silently translating to a hardcoded operator default — per
+        feedback_no_silent_defaults. Pins the post-2026-05-14 contract:
+        public OSS installs must seed host_home themselves."""
         video_dir = tmp_path / "video"
         video_dir.mkdir()
         podcast = tmp_path / "podcast.mp3"
         podcast.write_bytes(b"audio")
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.headers = {
-            "content-type": "video/mp4",
-            "X-Duration-Seconds": "10",
-            "X-Elapsed-Seconds": "1",
-        }
-        mock_resp.content = b"vid"
-
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_resp)
 
         env = {k: v for k, v in os.environ.items() if k != "HOST_HOME"}
 
@@ -613,14 +606,16 @@ class TestToHostPath:
              patch.dict(os.environ, env, clear=True), \
              patch("services.video_service.os.path.exists", return_value=True):
             mock_gen.return_value = ["/root/.poindexter/video/frames/f.png"]
-            await generate_video_for_post(
+            result = await generate_video_for_post(
                 post_id="p1",
                 title="T",
                 podcast_path="/root/.poindexter/podcast/p1.mp3",
             )
 
-        payload = mock_client.post.call_args.kwargs.get("json") or mock_client.post.call_args[1]["json"]
-        assert payload["audio_path"] == "C:/Users/mattm/.poindexter/podcast/p1.mp3"
+        assert result.success is False
+        assert "host_home" in (result.error or "")
+        # The video server should NOT have been called.
+        mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_non_gladlabs_paths_unchanged(self, tmp_path):

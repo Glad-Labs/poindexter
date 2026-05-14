@@ -391,9 +391,19 @@ async def generate_video_for_post(
     if not image_paths:
         return VideoResult(success=False, error="No images could be generated")
 
-    # Convert container paths to host paths for the video server
-    # Container mount: /root/.poindexter → C:/Users/mattm/.poindexter (bind mount)
-    host_home = site_config.get("host_home", "C:/Users/mattm")
+    # Convert container paths to host paths for the video server.
+    # Container mount: /root/.poindexter -> $host_home/.poindexter (bind mount).
+    host_home = site_config.get("host_home", "")
+    if not host_home:
+        return VideoResult(
+            success=False,
+            error=(
+                "host_home is unset — set app_settings.host_home to your "
+                "host's home directory (e.g. C:/Users/<you> on Windows or "
+                "/home/<you> on Linux) so video paths can be translated "
+                "from the container mount."
+            ),
+        )
     def _to_host_path(container_path: str) -> str:
         return container_path.replace("/root/.poindexter", f"{host_home}/.poindexter")
 
@@ -656,7 +666,17 @@ async def generate_short_video_for_post(
     if not image_paths:
         return VideoResult(success=False, error="No images could be generated")
 
-    host_home = site_config.get("host_home", "C:/Users/mattm")
+    host_home = site_config.get("host_home", "")
+    if not host_home:
+        return VideoResult(
+            success=False,
+            error=(
+                "host_home is unset — set app_settings.host_home to your "
+                "host's home directory (e.g. C:/Users/<you> on Windows or "
+                "/home/<you> on Linux) so video paths can be translated "
+                "from the container mount."
+            ),
+        )
     def _to_host_path(container_path: str) -> str:
         return container_path.replace("/root/.poindexter", f"{host_home}/.poindexter")
 
