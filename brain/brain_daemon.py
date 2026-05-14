@@ -999,12 +999,33 @@ async def restart_service(name: str, *, pool=None):
         if sys.platform == "win32":
             kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
         if name == "worker":
+            # The host-side worker restart script lives at
+            # ``<repo-root>/scripts/start-worker.ps1``. The brain runs
+            # inside its own container and doesn't know the host repo
+            # path — operators set ``app_settings.worker_restart_script``
+            # (Windows absolute path) once at install time.
+            restart_script = await _read_app_setting(
+                pool, "worker_restart_script", default="",
+            )
+            if not restart_script:
+                logger.warning(
+                    "[BRAIN] worker restart requested but "
+                    "app_settings.worker_restart_script is unset — "
+                    "operator must seed it with the absolute path to "
+                    "scripts/start-worker.ps1 on the host",
+                )
+                await notify(
+                    "Service worker is down. Set "
+                    "app_settings.worker_restart_script to enable "
+                    "auto-restart.", pool=pool,
+                )
+                return
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                 "-File", r"C:\Users\mattm\glad-labs-website\scripts\start-worker.ps1"],
+                 "-File", restart_script],
                 **kwargs,
             )
-            logger.info("[BRAIN] Restarted worker")
+            logger.info("[BRAIN] Restarted worker via %s", restart_script)
         elif name == "openclaw":
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-Command", "openclaw gateway restart"],

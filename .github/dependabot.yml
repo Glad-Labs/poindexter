@@ -14,10 +14,6 @@ updates:
     open-pull-requests-limit: 5
     pull-request-branch-name:
       separator: '/'
-    reviewers:
-      - 'mattg-stack'
-    assignees:
-      - 'mattg-stack'
     labels:
       - 'dependencies'
       - 'github-actions'
@@ -39,10 +35,6 @@ updates:
     open-pull-requests-limit: 5
     pull-request-branch-name:
       separator: '/'
-    reviewers:
-      - 'mattg-stack'
-    assignees:
-      - 'mattg-stack'
     labels:
       - 'dependencies'
       - 'npm'
@@ -70,10 +62,6 @@ updates:
     open-pull-requests-limit: 5
     pull-request-branch-name:
       separator: '/'
-    reviewers:
-      - 'mattg-stack'
-    assignees:
-      - 'mattg-stack'
     labels:
       - 'dependencies'
       - 'python'

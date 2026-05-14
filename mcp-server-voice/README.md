@@ -73,7 +73,7 @@ open-source side and an absolute path for Matt's local Windows install.
       "args": [
         "run",
         "--directory",
-        "C:/Users/mattm/glad-labs-website/mcp-server-voice",
+        "<path-to-your-poindexter-checkout>/mcp-server-voice",
         "python",
         "-m",
         "server"

@@ -57,7 +57,7 @@ _NOTABLE_COMMIT_PREFIXES = ("feat", "fix", "refactor", "perf", "security")
 _DEFAULT_BRAIN_CONFIDENCE_FLOOR = 0.7
 
 # Default GitHub repo when no app_setting / SiteConfig override is provided.
-_DEFAULT_GH_REPO = "Glad-Labs/glad-labs-stack"
+_DEFAULT_GH_REPO = "Glad-Labs/poindexter"
 
 # GitHub REST API base URL.
 _GITHUB_API_BASE = "https://api.github.com"

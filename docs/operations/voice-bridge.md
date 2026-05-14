@@ -53,8 +53,8 @@ Pipe layout under `~/.poindexter/voice/<session_id>.{in,out,lock}`:
 ```text
 > voice-on
 voice on, talk to me. session_id=vb-1a2b3c4d
-  in_pipe:  C:\Users\mattm\.poindexter\voice\vb-1a2b3c4d.in
-  out_pipe: C:\Users\mattm\.poindexter\voice\vb-1a2b3c4d.out
+  in_pipe:  <USERPROFILE>\.poindexter\voice\vb-1a2b3c4d.in
+  out_pipe: <USERPROFILE>\.poindexter\voice\vb-1a2b3c4d.out
   room:     claude-bridge
   watchdog: 1800s
 

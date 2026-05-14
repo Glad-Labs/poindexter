@@ -596,7 +596,7 @@ This is a single-operator system. There is no on-call rotation.
 
 - **Critical bugs in product code (Poindexter):** file a GitHub issue at https://github.com/Glad-Labs/poindexter/issues
 - **Glad Labs business / operator issues:** file in the private tracker at https://github.com/Glad-Labs/glad-labs-stack/issues
-- **Hardware issues:** Matt's PC build details are in `~/.claude/projects/C--Users-mattm/memory/user_hardware.md` for reference
+- **Hardware issues:** consult the operator's own hardware notes (`~/.claude/projects/<your-project>/memory/` if using Claude Code memory, or wherever you keep your install spec)
 
 ---
 

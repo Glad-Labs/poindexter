@@ -36,7 +36,7 @@ The runner lives at `services/module_migrations.py` (not under `services/migrati
 
 - [ ] **Step 1: Generate the migration filename**
 
-Run: `python C:/Users/mattm/glad-labs-website/scripts/new-migration.py "create module_schema_migrations table for Module v1 phase 2"`
+Run: `python scripts/new-migration.py "create module_schema_migrations table for Module v1 phase 2"`
 
 Expected: script prints the new migration filename, e.g. `20260513_180000_create_module_schema_migrations.py`. Note the actual filename for the subsequent steps.
 

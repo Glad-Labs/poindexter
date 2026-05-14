@@ -16,7 +16,7 @@
       "title": "Anti-Hallucination doc",
       "tooltip": "Open the docs/architecture/anti-hallucination.md reviewer table",
       "type": "link",
-      "url": "https://github.com/Glad-Labs/glad-labs-stack/blob/main/docs/architecture/anti-hallucination.md"
+      "url": "https://github.com/Glad-Labs/poindexter/blob/main/docs/architecture/anti-hallucination.md"
     },
     {
       "asDropdown": false,
@@ -28,7 +28,7 @@
       "title": "RAG Retrieval Stack doc",
       "tooltip": "Path A vs Path B — LlamaIndex retriever activation runbook",
       "type": "link",
-      "url": "https://github.com/Glad-Labs/glad-labs-stack/blob/main/docs/architecture/rag-retrieval-stack.md"
+      "url": "https://github.com/Glad-Labs/poindexter/blob/main/docs/architecture/rag-retrieval-stack.md"
     },
     {
       "asDropdown": false,
