@@ -219,12 +219,22 @@ LEAK_PATTERNS=(
   '362\.75'                         # Mercury balance literal
   'mercury_'                        # any mercury_* key name (catches the whole family)
 )
+# Files that legitimately contain the patterns above because they DEFINE
+# what to strip (sync filter, regen-script blocklists). The leak guard
+# would self-report on these without this exclude list.
+LEAK_GUARD_ALLOW=(
+  'scripts/regen-app-settings-doc.py'   # the redaction blocklist itself
+)
 LEAK_FOUND=0
 for pat in "${LEAK_PATTERNS[@]}"; do
   # `git ls-files | xargs grep` reads only what's tracked in the temp
   # branch (the stripped tree), so a pattern in a private-only file
   # already removed from index won't trip the guard.
   hits=$(git ls-files | xargs grep -l -E "$pat" 2>/dev/null || true)
+  # Drop allowlisted self-referential files from the hit list.
+  for allow in "${LEAK_GUARD_ALLOW[@]}"; do
+    hits=$(echo "$hits" | grep -v -F "$allow" || true)
+  done
   if [[ -n "$hits" ]]; then
     echo "[sync] LEAK DETECTED — pattern: $pat"
     echo "$hits" | sed 's/^/    /'
