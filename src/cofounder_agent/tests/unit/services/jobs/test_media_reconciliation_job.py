@@ -151,11 +151,23 @@ class TestMediaReconciliation:
         assert result.metrics["regen_podcast_fail"] == 0
         gen_mock.assert_awaited_once()
         upload_mock.assert_awaited_once_with("p1")
-        # DB stamp executed once with the upload URL.
-        assert conn.execute.await_count == 1
-        executed_args = conn.execute.await_args.args
-        assert executed_args[0].startswith("UPDATE posts SET podcast_url")
-        assert executed_args[1] == "https://r2.test/podcast/v2/p1.mp3"
+        # 2026-05-14: media URLs are recorded in ``media_assets`` (one row
+        # per (post_id, type)), not on the posts table. The recorder does
+        # UPDATE-then-INSERT — the mock's ``execute`` returns None so the
+        # UPDATE branch is treated as "no rows matched" and the INSERT
+        # fires too, yielding 2 calls.
+        assert conn.execute.await_count == 2
+        update_call, insert_call = conn.execute.await_args_list
+        assert "UPDATE media_assets" in update_call.args[0]
+        assert update_call.args[0:1][0].startswith("\n                    UPDATE media_assets") \
+            or "UPDATE media_assets" in update_call.args[0]
+        assert update_call.args[1] == "https://r2.test/podcast/v2/p1.mp3"
+        assert update_call.args[2] == "p1"
+        assert update_call.args[3] == "podcast"
+        assert "INSERT INTO media_assets" in insert_call.args[0]
+        assert insert_call.args[1] == "p1"
+        assert insert_call.args[2] == "podcast"
+        assert insert_call.args[3] == "https://r2.test/podcast/v2/p1.mp3"
         # Finding emitted with warning severity (regen succeeded).
         emit_mock.assert_called_once()
         kwargs = emit_mock.call_args.kwargs
@@ -188,7 +200,10 @@ class TestMediaReconciliation:
         assert result.metrics["regen_video_ok"] == 1
         gen_mock.assert_awaited_once_with("p2", "A title", "Body markdown.")
         upload_mock.assert_awaited_once_with("p2")
-        assert conn.execute.await_count == 1
+        # UPDATE-then-INSERT recorder in _record_media_asset; mock's
+        # execute() returns None so UPDATE is treated as "no match"
+        # and the INSERT fires. See test_missing_podcast_* for shape.
+        assert conn.execute.await_count == 2
 
     @pytest.mark.asyncio
     async def test_regen_upload_failure_escalates_to_critical(self):

@@ -907,8 +907,10 @@ class TestGatherContextWiring:
 
         # Empty string from _fetch_gh_token's pool-None short-circuit.
         assert captured["gh_token"] == ""
-        # Default repo when no overrides + no pool.
-        assert captured["repo"] == "Glad-Labs/glad-labs-stack"
+        # Default repo when no overrides + no pool. Pinned to the public
+        # OSS repo so the dev_diary source is honest about its origin on
+        # fresh installs (was glad-labs-stack pre-2026-05-14).
+        assert captured["repo"] == "Glad-Labs/poindexter"
 
     async def test_site_config_supplies_gh_repo(self):
         captured: dict = {}

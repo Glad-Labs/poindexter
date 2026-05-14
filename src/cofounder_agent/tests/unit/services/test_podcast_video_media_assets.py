@@ -201,6 +201,11 @@ class TestVideoServiceRecordsAsset:
 
         sc = _fake_site_config(pool=MagicMock(), host_home="/host")
         recorder = AsyncMock(return_value="asset-uuid")
+        # video_service reads ``host_home`` from its module-level
+        # site_config singleton (loud-fail post-2026-05-14 if unset).
+        # Wire the test's fake in via monkeypatch so the path-translation
+        # step sees ``/host`` instead of the empty install-time default.
+        monkeypatch.setattr("services.video_service.site_config", sc)
 
         with patch(
             "services.video_service._extract_images_from_content",

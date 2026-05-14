@@ -21,33 +21,51 @@ logger = logging.getLogger(__name__)
 async def get_or_create_default_author(
     database_service: DatabaseService,
 ) -> str | None:
-    """Return the Poindexter AI author UUID; create the row if needed."""
+    """Return the Poindexter AI author UUID; create the row if needed.
+
+    Dedup is by ``name`` — the live ``authors`` schema is intentionally
+    minimal (id / name / bio / avatar_url / created_at). An earlier
+    version of this helper referenced ``slug`` + ``email`` columns
+    that never existed in the squashed baseline; every publish path
+    fell back to "no author" because the SELECT raised. The lookup is
+    case-sensitive on a literal name string, which is sufficient for
+    the single Poindexter AI row.
+    """
     try:
         async with database_service.pool.acquire() as conn:
             author_id = await conn.fetchval(
-                "SELECT id FROM authors WHERE slug = 'poindexter-ai' LIMIT 1"
+                "SELECT id FROM authors WHERE name = 'Poindexter AI' LIMIT 1"
             )
             if author_id:
                 return author_id
 
+            # First-run insert. No ON CONFLICT needed — ``authors`` has
+            # no UNIQUE constraint on name, and the SELECT above already
+            # handled the steady-state case. Race window is one row's
+            # width, then the SELECT-fallback below resolves any
+            # accidental duplicate.
             author_id = await conn.fetchval(
                 """
-                INSERT INTO authors (name, slug, email, bio, avatar_url)
-                VALUES ('Poindexter AI', 'poindexter-ai',
-                        'poindexter@glad-labs.ai',
+                INSERT INTO authors (name, bio, avatar_url)
+                VALUES ('Poindexter AI',
                         'AI Content Generation Engine', NULL)
-                ON CONFLICT (slug) DO NOTHING
                 RETURNING id
                 """
             )
             if author_id:
-                logger.info("Created default author: Poindexter AI (%s)", author_id)
+                logger.info(
+                    "Created default author: Poindexter AI (%s)", author_id,
+                )
                 return author_id
 
-            # Fallback: return any author row if the INSERT raced with a
-            # concurrent insert and we missed the RETURNING value.
-            return await conn.fetchval("SELECT id FROM authors LIMIT 1")
+            # Fallback for the (vanishingly rare) case where the INSERT
+            # raced with a concurrent insert and lost the RETURNING.
+            return await conn.fetchval(
+                "SELECT id FROM authors WHERE name = 'Poindexter AI' LIMIT 1"
+            )
 
     except Exception as e:
-        logger.error("Error getting/creating default author: %s", e, exc_info=True)
+        logger.error(
+            "Error getting/creating default author: %s", e, exc_info=True,
+        )
         return None

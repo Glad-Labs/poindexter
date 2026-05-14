@@ -75,6 +75,21 @@ async def resolve_secret(row: dict[str, Any], site_config: Any) -> str | None:
     if ref is None:
         return None
 
+    # Callers passing ``site_config=None`` (e.g. ``notify_operator`` from
+    # a module-level startup check that doesn't have one in scope) get a
+    # clean None instead of an AttributeError. The handler raises a
+    # tidy "secret not configured" error, the dispatcher records the
+    # failure on the row, and the operator sees one log line instead of
+    # a stack trace.
+    if site_config is None:
+        logger.warning(
+            "resolve_secret: row %r references %r but no site_config in scope — "
+            "treating as unconfigured",
+            row.get("name"),
+            ref,
+        )
+        return None
+
     secret = await site_config.get_secret(ref)
     if secret is None:
         logger.warning(

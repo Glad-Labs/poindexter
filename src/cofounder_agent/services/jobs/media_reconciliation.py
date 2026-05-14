@@ -152,13 +152,17 @@ class MediaReconciliationJob:
 
         try:
             async with pool.acquire() as conn:
+                # Media URLs are computed deterministically from r2_base +
+                # cdn_ver + post_id (see _check_post_media). The DB lookup
+                # is just for the regen path's content + title; the URLs
+                # live in ``media_assets`` (one row per (post_id, type))
+                # and are recorded by ``_record_media_asset`` after a
+                # successful regen + upload.
                 rows = await conn.fetch(
                     """
                     SELECT id::text AS id,
                            COALESCE(title, '(untitled)') AS title,
                            COALESCE(content, '') AS content,
-                           podcast_url,
-                           video_url,
                            published_at
                       FROM posts
                      WHERE status = 'published'
@@ -360,8 +364,60 @@ class MediaReconciliationJob:
         row["video_missing"] = not video_exists
         return row
 
+    async def _record_media_asset(
+        self, pool: Any, *, post_id: str, asset_type: str, url: str,
+    ) -> None:
+        """Record a regenerated media URL in ``media_assets``.
+
+        ``media_assets`` has no natural-key unique index, so this does
+        a SELECT-then-UPDATE-or-INSERT instead of ON CONFLICT. The
+        regen path is rare (only fires on a missing R2 object) so the
+        extra round-trip is fine; the alternative (INSERT-only) would
+        accumulate duplicate rows per regen.
+
+        Non-load-bearing: if this fails, the file is already on R2 and
+        the post is reachable via the deterministic URL pattern in
+        ``_check_post_media``. We log and continue.
+        """
+        try:
+            async with pool.acquire() as conn:
+                updated = await conn.execute(
+                    """
+                    UPDATE media_assets
+                       SET url = $1,
+                           storage_provider = 'cloudflare_r2',
+                           source = 'reconciliation',
+                           updated_at = NOW()
+                     WHERE post_id::text = $2 AND type = $3
+                    """,
+                    url, post_id, asset_type,
+                )
+                # asyncpg returns "UPDATE N" — N==0 means no row matched
+                # and we should INSERT. Non-string returns (test mocks,
+                # cursors that don't propagate the tag) get treated the
+                # same as "no rows updated" so the INSERT still runs.
+                rows_updated = (
+                    isinstance(updated, str)
+                    and not updated.endswith(" 0")
+                )
+                if not rows_updated:
+                    await conn.execute(
+                        """
+                        INSERT INTO media_assets
+                            (post_id, type, source, storage_provider, url)
+                        VALUES ($1::uuid, $2, 'reconciliation',
+                                'cloudflare_r2', $3)
+                        """,
+                        post_id, asset_type, url,
+                    )
+        except Exception as e:
+            logger.warning(
+                "media_reconciliation: media_assets stamp failed for "
+                "post=%s type=%s: %s", post_id, asset_type, e,
+            )
+
     async def _regen_podcast(self, pool: Any, row: dict[str, Any]) -> bool:
-        """Regenerate one missing podcast + upload to R2 + stamp posts.podcast_url.
+        """Regenerate one missing podcast + upload to R2 + stamp media_assets.
 
         Returns True when both the gen and upload succeeded (signalled
         by a non-None upload URL).
@@ -381,24 +437,13 @@ class MediaReconciliationJob:
                 row["id"],
             )
             return False
-
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE posts SET podcast_url = $1 WHERE id::text = $2",
-                    url, row["id"],
-                )
-        except Exception as e:
-            # Upload succeeded but DB stamping failed. Surface but
-            # consider the regen successful — the file is on R2.
-            logger.warning(
-                "media_reconciliation: stamped URL upload but DB update "
-                "failed for %s: %s", row["id"], e,
-            )
+        await self._record_media_asset(
+            pool, post_id=row["id"], asset_type="podcast", url=url,
+        )
         return True
 
     async def _regen_video(self, pool: Any, row: dict[str, Any]) -> bool:
-        """Regenerate one missing video + upload + stamp posts.video_url."""
+        """Regenerate one missing video + upload + stamp media_assets."""
         from services.r2_upload_service import upload_video_episode
         from services.video_service import generate_video_for_post
 
@@ -419,16 +464,7 @@ class MediaReconciliationJob:
                 row["id"],
             )
             return False
-
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE posts SET video_url = $1 WHERE id::text = $2",
-                    url, row["id"],
-                )
-        except Exception as e:
-            logger.warning(
-                "media_reconciliation: video URL upload but DB update "
-                "failed for %s: %s", row["id"], e,
-            )
+        await self._record_media_asset(
+            pool, post_id=row["id"], asset_type="video", url=url,
+        )
         return True

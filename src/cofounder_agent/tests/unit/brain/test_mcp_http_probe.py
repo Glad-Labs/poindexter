@@ -105,7 +105,11 @@ class TestMcpHttpProbe:
         assert result["status_code"] == 503
         rows = _alert_rows(pool)
         assert len(rows) == 1
-        assert rows[0][3] == "discord"  # channel_hint
+        # New schema: (sql, alertname, labels_json, annotations_json, fingerprint).
+        # Discord routing isn't picked here — the dispatcher derives it from
+        # severity (warning -> Discord per feedback_telegram_vs_discord).
+        assert rows[0][1] == "mcp_http_server_unreachable"
+        assert "mcp_http_probe:http_503" in rows[0][4]
 
     @pytest.mark.asyncio
     async def test_network_error_writes_alert(self):

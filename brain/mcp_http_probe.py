@@ -130,21 +130,38 @@ async def _write_alert(
     title: str,
     body: str,
 ) -> None:
+    """Insert one row into ``alert_events`` for the brain dispatcher to pick up.
+
+    The schema is the AlertManager-derived shape: ``alertname``, ``status``,
+    ``severity``, ``category``, ``labels`` + ``annotations`` (jsonb),
+    ``fingerprint`` for dedup. An earlier version of this writer used a
+    different column layout (``event_type`` / ``channel_hint`` / ``title``
+    / ``body``) that never existed in the live schema — every call
+    silently caught the asyncpg error, so the probe never actually
+    paged when the MCP server was unreachable.
+
+    Discord-only routing is owned by the dispatcher's severity matrix
+    (``warning`` -> Discord, per feedback_telegram_vs_discord); this
+    writer doesn't pick a channel.
+    """
+    import json
+    labels = json.dumps({"probe": "mcp_http_probe"})
+    annotations = json.dumps({"summary": title, "description": body})
     try:
         await pool.execute(
             """
             INSERT INTO alert_events (
-                event_type, severity, channel_hint, fingerprint,
-                title, body, details
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                alertname, status, severity, category,
+                labels, annotations, fingerprint
+            ) VALUES (
+                $1, 'firing', 'warning', 'infrastructure',
+                $2::jsonb, $3::jsonb, $4
+            )
             """,
             "mcp_http_server_unreachable",
-            "warning",
-            "discord",
+            labels,
+            annotations,
             f"mcp_http_probe:{fingerprint_suffix}",
-            title,
-            body,
-            '{"probe": "mcp_http_probe"}',
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[MCP_HTTP_PROBE] alert_events write failed: %s", exc)
