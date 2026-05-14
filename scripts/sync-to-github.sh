@@ -275,7 +275,8 @@ LEAK_PATTERNS=(
 # what to strip (sync filter, regen-script blocklists). The leak guard
 # would self-report on these without this exclude list.
 LEAK_GUARD_ALLOW=(
-  'scripts/regen-app-settings-doc.py'   # the redaction blocklist itself
+  'scripts/regen-app-settings-doc.py'         # the redaction blocklist itself
+  'scripts/ci/check_public_mirror_safety.py'  # parallel pre-merge lint with the same pattern list
 )
 LEAK_FOUND=0
 for pat in "${LEAK_PATTERNS[@]}"; do
