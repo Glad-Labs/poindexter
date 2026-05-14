@@ -39,6 +39,24 @@ def _autopatch_resolve_slideshow_prompt_model():
     ):
         yield
 
+
+@pytest.fixture
+def _seed_host_home(monkeypatch):
+    """Seed app_settings.host_home in the module-level site_config so the
+    path-translation tests can run without tripping the new no-silent-
+    defaults guard added 2026-05-14. Use this fixture in tests that
+    exercise the host-path conversion logic; ``test_unset_host_home_
+    fails_loud`` deliberately does NOT use it to pin the unset path."""
+    monkeypatch.setattr(
+        "services.video_service.site_config",
+        type("StubSC", (), {"get": staticmethod(lambda key, default=None: {
+            "host_home": "/host/home",
+            "video_server_url": "http://video:9837",
+            "sdxl_server_url": "http://sdxl:9836",
+            "ollama_base_url": "http://ollama:11434",
+        }.get(key, default))}),
+    )
+
 # ---------------------------------------------------------------------------
 # VideoResult dataclass
 # ---------------------------------------------------------------------------
@@ -100,7 +118,7 @@ class TestGenerateVideoForPost:
         assert result.file_size_bytes == len(b"fake video content")
 
     @pytest.mark.asyncio
-    async def test_force_regenerates_existing(self, tmp_path):
+    async def test_force_regenerates_existing(self, _seed_host_home, tmp_path):
         """With force=True, should not skip even if file exists."""
         video_dir = tmp_path / "video"
         video_dir.mkdir()
@@ -181,7 +199,7 @@ class TestGenerateVideoForPost:
         assert "No images" in result.error
 
     @pytest.mark.asyncio
-    async def test_successful_generation(self, tmp_path):
+    async def test_successful_generation(self, _seed_host_home, tmp_path):
         """Full happy path: podcast exists, images generated, video rendered."""
         video_dir = tmp_path / "video"
         video_dir.mkdir()
@@ -224,7 +242,7 @@ class TestGenerateVideoForPost:
         assert (video_dir / "post123.mp4").exists()
 
     @pytest.mark.asyncio
-    async def test_video_server_error_status(self, tmp_path):
+    async def test_video_server_error_status(self, _seed_host_home, tmp_path):
         """Non-200 from the video server returns failure result."""
         video_dir = tmp_path / "video"
         video_dir.mkdir()
@@ -255,7 +273,7 @@ class TestGenerateVideoForPost:
         assert "GPU OOM" in result.error
 
     @pytest.mark.asyncio
-    async def test_video_server_exception(self, tmp_path):
+    async def test_video_server_exception(self, _seed_host_home, tmp_path):
         """Network error to video server returns failure result."""
         video_dir = tmp_path / "video"
         video_dir.mkdir()
@@ -618,7 +636,7 @@ class TestToHostPath:
         mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_non_gladlabs_paths_unchanged(self, tmp_path):
+    async def test_non_gladlabs_paths_unchanged(self, _seed_host_home, tmp_path):
         """Paths that don't contain /root/.poindexter remain unchanged."""
         video_dir = tmp_path / "video"
         video_dir.mkdir()
@@ -1053,7 +1071,7 @@ class TestGenerateShortVideoForPost:
         assert "images" in (result.error or "").lower()
 
     @pytest.mark.asyncio
-    async def test_happy_path_renders_short(self, tmp_path):
+    async def test_happy_path_renders_short(self, _seed_host_home, tmp_path):
         video_dir = tmp_path / "video"
         video_dir.mkdir()
         audio_path = tmp_path / "audio.mp3"
@@ -1096,7 +1114,7 @@ class TestGenerateShortVideoForPost:
         assert "generate-short" in call_url
 
     @pytest.mark.asyncio
-    async def test_video_server_error_returns_failure(self, tmp_path):
+    async def test_video_server_error_returns_failure(self, _seed_host_home, tmp_path):
         video_dir = tmp_path / "video"
         video_dir.mkdir()
         audio_path = tmp_path / "audio.mp3"
@@ -1172,7 +1190,7 @@ class TestGenerateShortVideoForPost:
         mock_gen.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_full_podcast_when_summary_audio_fails(self, tmp_path):
+    async def test_falls_back_to_full_podcast_when_summary_audio_fails(self, _seed_host_home, tmp_path):
         video_dir = tmp_path / "video"
         video_dir.mkdir()
         # Pre-existing podcast file at the default location
