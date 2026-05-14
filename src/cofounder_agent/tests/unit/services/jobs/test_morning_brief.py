@@ -51,8 +51,21 @@ def _make_pool(
             return settings.get(args[0])
         return None
 
+    async def _settings_fetchrow(query: str, *args: Any) -> Any:
+        # _read_setting now routes through plugins.secrets.get_secret which
+        # does `SELECT value, is_secret FROM app_settings WHERE key = $1`.
+        # Tests stay agnostic to encryption — non-secret rows behave the
+        # same.
+        if "FROM app_settings" in query and args:
+            val = settings.get(args[0])
+            if val is None:
+                return None
+            return {"value": val, "is_secret": False}
+        return None
+
     pool = MagicMock()
     pool.fetchval = AsyncMock(side_effect=_settings_fetchval)
+    pool.fetchrow = AsyncMock(side_effect=_settings_fetchrow)
 
     async def _conn_fetch(query: str, *args: Any) -> list[dict]:
         if "FROM posts" in query:
@@ -269,17 +282,23 @@ class TestDisabled:
     async def test_disabled_returns_early_without_querying_postgres(self):
         # Track whether anything beyond the master-switch read touches
         # the pool. The job must short-circuit on master switch alone.
-        fetchval_calls: list[Any] = []
+        fetchrow_calls: list[Any] = []
 
-        async def _fetchval(query: str, *args: Any) -> Any:
-            fetchval_calls.append(args)
+        async def _fetchrow(query: str, *args: Any) -> Any:
+            fetchrow_calls.append(args)
             if args and args[0] == "morning_brief_enabled":
-                return "false"
+                return {"value": "false", "is_secret": False}
             # Anything else means we've leaked past the short-circuit.
             return None
 
         pool = MagicMock()
-        pool.fetchval = AsyncMock(side_effect=_fetchval)
+        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+        # fetchval shouldn't be called at all post-fix — get_secret only
+        # uses fetchrow + (for encrypted decrypt) fetchval. Disabled flag
+        # is non-secret so the decrypt branch never fires.
+        pool.fetchval = AsyncMock(
+            side_effect=AssertionError("fetchval called when job is disabled"),
+        )
         pool.acquire = MagicMock(
             side_effect=AssertionError("acquire() called when job is disabled"),
         )
@@ -303,7 +322,7 @@ class TestDisabled:
         notify_mock.assert_not_called()
         # Only the master-switch read should have happened.
         assert all(
-            args and args[0] == "morning_brief_enabled" for args in fetchval_calls
+            args and args[0] == "morning_brief_enabled" for args in fetchrow_calls
         )
 
 

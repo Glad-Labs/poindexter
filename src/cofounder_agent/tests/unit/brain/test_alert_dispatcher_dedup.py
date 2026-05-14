@@ -126,6 +126,17 @@ class _StatePool:
         if "FROM alert_dedup_state" in sql:
             fingerprint = args[0]
             return self.dedup_state.get(fingerprint)
+        if "FROM app_settings" in sql:
+            # _read_app_setting_str now routes through
+            # brain.secret_reader.read_app_setting, which does
+            # `SELECT value, is_secret FROM app_settings WHERE key = $1`.
+            # Mirror the same dict shape so the helper can decide
+            # plain vs encrypted (test fixtures are always plain).
+            key = args[0]
+            val = self._app_settings.get(key)
+            if val is None:
+                return None
+            return {"value": val, "is_secret": False}
         return None
 
     async def _fetchval(self, sql: str, *args):
