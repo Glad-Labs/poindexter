@@ -17,12 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 from typing import Any
 
 import click
-
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn  # noqa: E402
 
@@ -37,6 +35,14 @@ async def _open_pool():
     on idle connections.
     """
     import asyncpg
+
+    from ._bootstrap import ensure_secret_key
+
+    # Load POINDEXTER_SECRET_KEY from bootstrap.toml into env so the
+    # langfuse_secret_key decrypt path inside _make_service can succeed.
+    # Worker processes inherit it at container start; bare CLI shells
+    # don't. Same fix pattern as the finance + dev-diary CLIs.
+    ensure_secret_key()
     return await asyncpg.create_pool(_dsn(), min_size=1, max_size=1)
 
 
@@ -50,16 +56,19 @@ async def _make_service(pool):
     dict-backed shim so the CLI doesn't import the full SiteConfig
     module (heavy + async-only).
     """
+    from plugins.secrets import get_secret
     from services.langfuse_experiments import LangfuseExperimentService
 
+    # langfuse_public_key + langfuse_secret_key are is_secret=true with
+    # enc:v1: ciphertext on a real install. Direct ``SELECT value`` returns
+    # the ciphertext, which then breaks the Langfuse client's HMAC sig.
+    # Route through plugins.secrets.get_secret which pgp_sym_decrypts
+    # transparently. Same bug class as the alert_sync + finance CLI
+    # decryption fixes (2026-05-13).
     creds: dict[str, str] = {}
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT key, value FROM app_settings "
-            "WHERE key IN ('langfuse_host', 'langfuse_public_key', 'langfuse_secret_key')"
-        )
-        for r in rows:
-            creds[r["key"]] = r["value"] or ""
+        for key in ("langfuse_host", "langfuse_public_key", "langfuse_secret_key"):
+            creds[key] = (await get_secret(conn, key)) or ""
 
     class _StubSiteConfig:
         def get(self, key: str, default: Any = None) -> Any:

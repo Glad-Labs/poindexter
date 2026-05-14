@@ -301,16 +301,27 @@ async def _check_http_endpoint(
 
 
 async def _setting_value(dsn: str, key: str) -> str:
-    """Read one app_settings value. Returns '' on any error."""
+    """Read one app_settings value, decrypting if marked secret. Returns
+    ``''`` on any error.
+
+    Routes through ``plugins.secrets.get_secret`` so encrypted secrets
+    (``enc:v1:...`` ciphertext on ``is_secret=true`` rows like
+    ``telegram_bot_token`` + ``discord_ops_webhook_url``) come back as
+    plaintext. Caller relies on ``ensure_secret_key`` having loaded
+    ``POINDEXTER_SECRET_KEY`` into env first; if it's missing the
+    decryption silently fails and we fall back to ``''`` — same
+    "configured but not actually usable" failure mode the operator
+    sees today, so no behavior change for that path.
+    """
     try:
         import asyncpg
 
+        from plugins.secrets import get_secret
+
         conn = await asyncpg.connect(dsn, timeout=5)
         try:
-            row = await conn.fetchrow(
-                "SELECT value FROM app_settings WHERE key = $1", key
-            )
-            return str(row["value"]) if row and row["value"] is not None else ""
+            val = await get_secret(conn, key)
+            return val or ""
         finally:
             await conn.close()
     except Exception:
@@ -748,15 +759,15 @@ async def _provision_initial_oauth_client(dsn: str) -> tuple[str, str]:
     which the operator runs once per consumer.
     """
     import asyncpg
-
     from mcp.shared.auth import OAuthClientInformationFull
     from pydantic import AnyUrl
+
+    from plugins.secrets import set_secret
     from services.auth.oauth_issuer import (
         generate_client_id,
         generate_client_secret,
     )
     from services.auth.oauth_provider import PoindexterOAuthProvider
-    from plugins.secrets import set_secret
 
     client_id = generate_client_id()
     client_secret = generate_client_secret()
@@ -820,6 +831,13 @@ def _run_check(bootstrap) -> None:
     """Run the full system check: DB + migrations + services + notifications."""
     click.secho("Poindexter system check", fg="cyan", bold=True)
     click.echo()
+
+    # Load POINDEXTER_SECRET_KEY into env so _setting_value's get_secret
+    # path can decrypt is_secret=true rows (telegram_bot_token,
+    # discord_ops_webhook_url, etc.). Without this every secret check
+    # silently appears as "unset" and the check report misleads.
+    from ._bootstrap import ensure_secret_key
+    ensure_secret_key()
 
     if not bootstrap.bootstrap_file_exists():
         click.secho(
