@@ -1358,10 +1358,17 @@ services:
     volumes:
       # Bind mount (NOT named volume) so backups survive `docker volume
       # prune` and Docker Desktop reinstalls. Tilde doesn't expand in
-      # compose env-var defaults; ${HOME} does. Operators can override
-      # POINDEXTER_BACKUP_DIR (e.g. to a second drive) without editing
-      # compose.
-      - ${POINDEXTER_BACKUP_DIR:-${HOME}/.poindexter/backups/auto}:/backups
+      # compose env-var defaults; ${USERPROFILE:-${HOME}} does — and
+      # this is the SAME expansion the brain uses for its read-only
+      # /host-backups mount above. Earlier the backup tier used bare
+      # ${HOME}, which is empty in the Compose env on Windows Docker
+      # Desktop. That silently bound the volume to a Docker-internal
+      # /.poindexter/backups/auto path invisible to the brain —
+      # backups wrote fine but the brain's freshness probe read stale
+      # dumps and paged "33h stale" continuously. Operators can
+      # override POINDEXTER_BACKUP_DIR (e.g. to a second drive)
+      # without editing compose.
+      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups
     depends_on:
       postgres-local:
         condition: service_healthy
@@ -1395,10 +1402,17 @@ services:
     volumes:
       # Bind mount (NOT named volume) so backups survive `docker volume
       # prune` and Docker Desktop reinstalls. Tilde doesn't expand in
-      # compose env-var defaults; ${HOME} does. Operators can override
-      # POINDEXTER_BACKUP_DIR (e.g. to a second drive) without editing
-      # compose.
-      - ${POINDEXTER_BACKUP_DIR:-${HOME}/.poindexter/backups/auto}:/backups
+      # compose env-var defaults; ${USERPROFILE:-${HOME}} does — and
+      # this is the SAME expansion the brain uses for its read-only
+      # /host-backups mount above. Earlier the backup tier used bare
+      # ${HOME}, which is empty in the Compose env on Windows Docker
+      # Desktop. That silently bound the volume to a Docker-internal
+      # /.poindexter/backups/auto path invisible to the brain —
+      # backups wrote fine but the brain's freshness probe read stale
+      # dumps and paged "33h stale" continuously. Operators can
+      # override POINDEXTER_BACKUP_DIR (e.g. to a second drive)
+      # without editing compose.
+      - ${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}:/backups
     depends_on:
       postgres-local:
         condition: service_healthy

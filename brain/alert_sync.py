@@ -46,10 +46,20 @@ from brain.secret_reader import read_app_setting
 
 logger = logging.getLogger("brain.alert_sync")
 
-# Folder under which Grafana groups these rules in the UI. Operators can
-# rename via the Grafana UI without breaking the sync — we key by rule
-# UID, not folder/name pair.
-GRAFANA_FOLDER_UID = "glad-labs"
+# Folder under which Grafana groups these rules in the UI. Grafana
+# generates folder UIDs per-install (operator's UI says "Glad Labs Alerts"
+# but the UID is install-specific — sha-like hash, not the title), so a
+# hardcoded constant fails on every fresh install. Pulled from
+# app_settings.grafana_alert_folder_uid at sync time; default empty means
+# "no folder configured — skip the sync with a loud log line", per
+# feedback_no_silent_defaults.
+#
+# Operators set it once at install:
+#   1. Create / locate the alerting folder in Grafana UI.
+#   2. Copy the UID from the folder's URL (`/dashboards/f/<UID>/...`).
+#   3. `poindexter set grafana_alert_folder_uid <UID>` (no --secret;
+#      this isn't sensitive).
+GRAFANA_FOLDER_UID_KEY = "grafana_alert_folder_uid"
 GRAFANA_RULE_GROUP = "poindexter-db-alerts"
 
 # Per-rule sync timeout. Grafana is local so responses are fast; 10s is
@@ -113,7 +123,9 @@ def _hash_rule(row: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def rule_to_grafana_payload(row: dict[str, Any]) -> dict[str, Any]:
+def rule_to_grafana_payload(
+    row: dict[str, Any], *, folder_uid: str,
+) -> dict[str, Any]:
     """Convert a DB row to Grafana's /api/v1/provisioning/alert-rules
     POST body.
 
@@ -146,7 +158,7 @@ def rule_to_grafana_payload(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "uid": _rule_uid(row["name"]),
         "title": row["name"],
-        "folderUID": GRAFANA_FOLDER_UID,
+        "folderUID": folder_uid,
         "ruleGroup": GRAFANA_RULE_GROUP,
         "condition": "B",
         "noDataState": "OK",
@@ -370,6 +382,19 @@ async def sync_alert_rules(pool) -> dict[str, Any]:
         pool, "grafana_api_base_url", "http://poindexter-grafana:3000"
     )).rstrip("/")
 
+    folder_uid = (await _get_setting(pool, GRAFANA_FOLDER_UID_KEY, "")).strip()
+    if not folder_uid:
+        summary["error"] = (
+            f"{GRAFANA_FOLDER_UID_KEY} not set — set it to the Grafana "
+            "folder UID under which alert rules should appear "
+            f"(`poindexter set {GRAFANA_FOLDER_UID_KEY} <uid>`)"
+        )
+        logger.warning(
+            "alert_sync: %s is empty — alert push needs a folder UID. "
+            "Skipping cycle.", GRAFANA_FOLDER_UID_KEY,
+        )
+        return summary
+
     summary["enabled"] = True
 
     try:
@@ -407,7 +432,7 @@ async def sync_alert_rules(pool) -> dict[str, Any]:
             logger.debug("alert_sync: %s unchanged (hash %s)", name, new_hash[:8])
             continue
 
-        payload = rule_to_grafana_payload(r)
+        payload = rule_to_grafana_payload(r, folder_uid=folder_uid)
         try:
             ok, detail = await _push_rule(base_url, token, payload)
         except urllib.error.URLError as e:

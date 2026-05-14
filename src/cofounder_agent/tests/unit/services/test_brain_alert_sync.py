@@ -88,7 +88,9 @@ def _mock_pool(
 
     pool = MagicMock()
 
-    # fetchrow — read_app_setting. Order: enabled, token, base_url.
+    # fetchrow — read_app_setting. Order: enabled, token, base_url,
+    # folder_uid (added 2026-05-14 — folder UID is now a DB-backed
+    # setting because Grafana generates install-specific UIDs).
     pool.fetchrow = AsyncMock(side_effect=[
         {"value": settings.get("grafana_alert_sync_enabled", "true"),
          "is_secret": False},
@@ -96,6 +98,8 @@ def _mock_pool(
          "is_secret": False},
         {"value": settings.get("grafana_api_base_url",
                                "http://grafana.test:3000"),
+         "is_secret": False},
+        {"value": settings.get("grafana_alert_folder_uid", "test-folder"),
          "is_secret": False},
     ])
 
@@ -154,7 +158,7 @@ def _http_4xx(status: int = 400, body: bytes = b'{"error":"bad"}'):
 @pytest.mark.unit
 class TestRuleToGrafanaPayload:
     def test_returns_expected_top_level_shape(self):
-        payload = asx.rule_to_grafana_payload(_sample_row())
+        payload = asx.rule_to_grafana_payload(_sample_row(), folder_uid="test-folder")
         # Required Grafana provisioning fields:
         for key in ("uid", "title", "folderUID", "ruleGroup", "condition",
                     "noDataState", "execErrState", "for", "labels",
@@ -164,27 +168,27 @@ class TestRuleToGrafanaPayload:
     def test_uid_is_stable_for_same_name(self):
         row = _sample_row(name="Stable Rule")
         assert (
-            asx.rule_to_grafana_payload(row)["uid"]
-            == asx.rule_to_grafana_payload(row)["uid"]
+            asx.rule_to_grafana_payload(row, folder_uid="test-folder")["uid"]
+            == asx.rule_to_grafana_payload(row, folder_uid="test-folder")["uid"]
         )
 
     def test_uid_differs_for_different_names(self):
-        a = asx.rule_to_grafana_payload(_sample_row(name="Rule A"))["uid"]
-        b = asx.rule_to_grafana_payload(_sample_row(name="Rule B"))["uid"]
+        a = asx.rule_to_grafana_payload(_sample_row(name="Rule A"), folder_uid="test-folder")["uid"]
+        b = asx.rule_to_grafana_payload(_sample_row(name="Rule B"), folder_uid="test-folder")["uid"]
         assert a != b
 
     def test_severity_is_promoted_to_label(self):
-        payload = asx.rule_to_grafana_payload(_sample_row(severity="critical"))
+        payload = asx.rule_to_grafana_payload(_sample_row(severity="critical"), folder_uid="test-folder")
         assert payload["labels"]["severity"] == "critical"
 
     def test_query_is_embedded_as_refId_A_expr(self):
         row = _sample_row(promql_query="up{job='worker'}")
-        payload = asx.rule_to_grafana_payload(row)
+        payload = asx.rule_to_grafana_payload(row, folder_uid="test-folder")
         stage_a = next(d for d in payload["data"] if d["refId"] == "A")
         assert stage_a["model"]["expr"] == "up{job='worker'}"
 
     def test_threshold_lands_in_refId_B_evaluator(self):
-        payload = asx.rule_to_grafana_payload(_sample_row(threshold=42.5))
+        payload = asx.rule_to_grafana_payload(_sample_row(threshold=42.5), folder_uid="test-folder")
         stage_b = next(d for d in payload["data"] if d["refId"] == "B")
         params = stage_b["model"]["conditions"][0]["evaluator"]["params"]
         assert params == [42.5]
@@ -196,7 +200,7 @@ class TestRuleToGrafanaPayload:
             labels_json='{"team":"x"}',
             annotations_json='{"summary":"y"}',
         )
-        payload = asx.rule_to_grafana_payload(row)
+        payload = asx.rule_to_grafana_payload(row, folder_uid="test-folder")
         assert payload["labels"]["team"] == "x"
         assert payload["annotations"]["summary"] == "y"
 
@@ -433,11 +437,13 @@ class TestSyncAlertRulesErrorHandling:
         """Rerunning before migration 0073 has applied must not crash."""
         import asyncpg
         pool = MagicMock()
-        # Settings read via brain.secret_reader.read_app_setting → fetchrow
+        # Settings read via brain.secret_reader.read_app_setting → fetchrow.
+        # Order: enabled, token, base_url, folder_uid (added 2026-05-14).
         pool.fetchrow = AsyncMock(side_effect=[
             {"value": "true", "is_secret": False},
             {"value": "tok",  "is_secret": False},
             {"value": "http://g", "is_secret": False},
+            {"value": "test-folder", "is_secret": False},
         ])
         pool.fetch = AsyncMock(side_effect=asyncpg.exceptions.UndefinedTableError(
             "relation alert_rules does not exist"
