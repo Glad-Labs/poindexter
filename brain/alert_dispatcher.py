@@ -214,25 +214,27 @@ def _compute_fingerprint(
 async def _read_app_setting_str(pool: Any, key: str, default: str) -> str:
     """Pool-agnostic helper — returns the string value or the default.
 
-    Mirrors brain/alert_sync.py::_get_setting so callers don't need to
-    import each module's helper. Treats both missing rows and missing
-    tables as "use the default" — the dispatcher gracefully degrades to
-    pre-#420 behaviour if the migration hasn't run yet.
+    Routes through ``brain.secret_reader.read_app_setting`` so
+    ``is_secret=true`` rows (e.g. ``discord_ops_webhook_url``) come back
+    decrypted instead of as ``enc:v1:...`` ciphertext — the same bug
+    class as Glad-Labs/poindexter#342 (which fixed it for the notify
+    path). Plain rows pass through unchanged, so existing callers that
+    read ``ops_triage_enabled`` / ``api_base_url`` / etc. are
+    unaffected.
     """
     try:
-        value = await pool.fetchval(
-            "SELECT value FROM app_settings WHERE key = $1", key
-        )
-    except Exception as e:  # noqa: BLE001
+        from brain.secret_reader import read_app_setting
+    except ImportError:
+        from secret_reader import read_app_setting  # type: ignore[no-redef]
+    try:
+        return await read_app_setting(pool, key, default)
+    except Exception as e:  # noqa: BLE001 — best-effort, mirror old shape
         logger.debug(
             "[alert_dispatcher] app_settings read failed for %s (%s) -- "
             "using default",
             key, e,
         )
         return default
-    if value is None:
-        return default
-    return str(value)
 
 
 async def _read_app_setting_int(pool: Any, key: str, default: int) -> int:
