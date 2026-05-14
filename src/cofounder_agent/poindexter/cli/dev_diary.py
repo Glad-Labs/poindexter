@@ -38,7 +38,15 @@ logger = logging.getLogger(__name__)
 
 async def _open_pool() -> Any:
     import asyncpg
-    from ._bootstrap import resolve_dsn
+
+    from ._bootstrap import ensure_secret_key, resolve_dsn
+
+    # Load POINDEXTER_SECRET_KEY from bootstrap.toml into env so any
+    # downstream ``plugins.secrets.get_secret`` calls (DevDiarySource
+    # decrypting gh_token, etc.) can succeed. Worker processes have
+    # this set at container start; bare ``poindexter <cmd>`` shells
+    # don't — same fix as the finance CLI's _read_token helper.
+    ensure_secret_key()
     return await asyncpg.create_pool(resolve_dsn(), min_size=1, max_size=2)
 
 
@@ -184,15 +192,13 @@ def cmd_trigger(lookback_hours: int) -> None:
 async def _run_trigger(lookback_hours: int) -> None:
     pool = await _open_pool()
     try:
-        from services import site_config as sc_mod
-        if hasattr(sc_mod.site_config, "load_from_db"):
-            try:
-                await sc_mod.site_config.load_from_db(pool)
-            except Exception:
-                pass
+        # Note: the module-level ``services.site_config.site_config``
+        # singleton was retired in glad-labs-stack#330 (2026-05-09 sweep).
+        # The dev_diary source + creator handle their own SiteConfig
+        # construction inline — no preloading needed from the CLI side.
 
-        from services.topic_sources.dev_diary_source import DevDiarySource
         from services.jobs.run_dev_diary_post import _create_dev_diary_task
+        from services.topic_sources.dev_diary_source import DevDiarySource
 
         source = DevDiarySource()
         ctx = await source.gather_context(
