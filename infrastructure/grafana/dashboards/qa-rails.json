@@ -40,7 +40,7 @@
       "title": "Langfuse UI",
       "tooltip": "LLM trace explorer — drill into specific reviewer LLM calls",
       "type": "link",
-      "url": "http://100.81.93.12:3010"
+      "url": "http://localhost:3010"
     },
     {
       "asDropdown": false,

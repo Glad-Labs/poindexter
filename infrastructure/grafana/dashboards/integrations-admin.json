@@ -1038,7 +1038,7 @@
           "language": "plaintext",
           "showLineNumbers": false
         },
-        "content": "| Dashboard | Description |\n|---|---|\n| [Mission Control](http://100.81.93.12:3000/d/mission-control) | Service status grid + ops drilldowns |\n| [Pipeline](http://100.81.93.12:3000/d/pipeline-merged) | Task status, throughput, stuck task detection, quality trends |\n| [System Health](http://100.81.93.12:3000/d/system-health-merged) | Core services up/down, hardware, validator + reject signals |\n| [Observability](http://100.81.93.12:3000/d/observability-merged) | Logs (Loki), traces (Tempo), profiles (Pyroscope), uptime |\n| [Cost Analytics](http://100.81.93.12:3000/d/cost-analytics) | LLM spend, electricity costs, budget tracking |",
+        "content": "| Dashboard | Description |\n|---|---|\n| [Mission Control](http://localhost:3000/d/mission-control) | Service status grid + ops drilldowns |\n| [Pipeline](http://localhost:3000/d/pipeline-merged) | Task status, throughput, stuck task detection, quality trends |\n| [System Health](http://localhost:3000/d/system-health-merged) | Core services up/down, hardware, validator + reject signals |\n| [Observability](http://localhost:3000/d/observability-merged) | Logs (Loki), traces (Tempo), profiles (Pyroscope), uptime |\n| [Cost Analytics](http://localhost:3000/d/cost-analytics) | LLM spend, electricity costs, budget tracking |",
         "mode": "markdown"
       },
       "type": "text",
@@ -1076,7 +1076,7 @@
           "language": "plaintext",
           "showLineNumbers": false
         },
-        "content": "| Service | URL | Purpose |\n|---|---|---|\n| Grafana | [localhost:3000](http://100.81.93.12:3000) | Dashboards, alerts, monitoring |\n| Prometheus | [localhost:9091](http://100.81.93.12:9091) | Metrics scraping (GPU, system, worker) |\n| pgAdmin | [localhost:18443](http://100.81.93.12:18443) | PostgreSQL web UI |\n| Prefect | [localhost:4200](http://100.81.93.12:4200) | Flow-runs UI |\n| Langfuse | [localhost:3010](http://100.81.93.12:3010) | LLM traces / prompts / experiments |\n| Worker API | [localhost:8002](http://100.81.93.12:8002/api/health) | Pipeline backend (FastAPI) |",
+        "content": "| Service | URL | Purpose |\n|---|---|---|\n| Grafana | [localhost:3000](http://localhost:3000) | Dashboards, alerts, monitoring |\n| Prometheus | [localhost:9091](http://localhost:9091) | Metrics scraping (GPU, system, worker) |\n| pgAdmin | [localhost:18443](http://localhost:18443) | PostgreSQL web UI |\n| Prefect | [localhost:4200](http://localhost:4200) | Flow-runs UI |\n| Langfuse | [localhost:3010](http://localhost:3010) | LLM traces / prompts / experiments |\n| Worker API | [localhost:8002](http://localhost:8002/api/health) | Pipeline backend (FastAPI) |",
         "mode": "markdown"
       },
       "type": "text",
@@ -1114,7 +1114,7 @@
           "language": "plaintext",
           "showLineNumbers": false
         },
-        "content": "| Endpoint | URL | Auth | Purpose |\n|---|---|---|---|\n| Health | [/api/health](http://100.81.93.12:8002/api/health) | No | Full service status |\n| Metrics | [/api/metrics](http://100.81.93.12:8002/api/metrics) | No | Task counts, success rate, avg time |\n| Operational | [/api/metrics/operational](http://100.81.93.12:8002/api/metrics/operational) | Token | Queue depth, executor stats, uptime |\n| Budget | [/api/metrics/costs/budget](http://100.81.93.12:8002/api/metrics/costs/budget) | Token | Monthly spend vs budget |\n| Prometheus | [/api/prometheus](http://100.81.93.12:8002/api/prometheus) | No | Prometheus-format metrics |\n| Settings | [/api/settings](http://100.81.93.12:8002/api/settings) | Token | All pipeline settings |\n| Pipeline Events | [/api/pipeline/events](http://100.81.93.12:8002/api/pipeline/events) | Token | Pipeline event log |\n| Pipeline Dashboard | [/pipeline](http://100.81.93.12:8002/pipeline) | No | HTML pipeline overview |\n| Memory Dashboard | [/memory](http://100.81.93.12:8002/memory) | No | HTML memory/knowledge overview |",
+        "content": "| Endpoint | URL | Auth | Purpose |\n|---|---|---|---|\n| Health | [/api/health](http://localhost:8002/api/health) | No | Full service status |\n| Metrics | [/api/metrics](http://localhost:8002/api/metrics) | No | Task counts, success rate, avg time |\n| Operational | [/api/metrics/operational](http://localhost:8002/api/metrics/operational) | Token | Queue depth, executor stats, uptime |\n| Budget | [/api/metrics/costs/budget](http://localhost:8002/api/metrics/costs/budget) | Token | Monthly spend vs budget |\n| Prometheus | [/api/prometheus](http://localhost:8002/api/prometheus) | No | Prometheus-format metrics |\n| Settings | [/api/settings](http://localhost:8002/api/settings) | Token | All pipeline settings |\n| Pipeline Events | [/api/pipeline/events](http://localhost:8002/api/pipeline/events) | Token | Pipeline event log |\n| Pipeline Dashboard | [/pipeline](http://localhost:8002/pipeline) | No | HTML pipeline overview |\n| Memory Dashboard | [/memory](http://localhost:8002/memory) | No | HTML memory/knowledge overview |",
         "mode": "markdown"
       },
       "type": "text",

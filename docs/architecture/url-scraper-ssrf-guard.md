@@ -22,7 +22,7 @@ host or its tailnet:
 | `http://127.0.0.1:9091/metrics`      | Prometheus internals + label cardinality     |
 | `http://localhost:18443/`            | pgAdmin (auth-gated, but title leaks)        |
 | `http://169.254.169.254/`            | Cloud-instance metadata (AWS/GCP/Azure IMDS) |
-| `http://100.81.93.12:<port>`         | Any tailnet service Matt runs                |
+| `http://<tailnet-ip>:<port>`         | Any tailnet service the operator runs        |
 | `http://10.0.0.0/8`, `192.168.x.x`   | LAN devices                                  |
 | `http://[::1]:<port>`, `[fe80::]:..` | IPv6 equivalents of the above                |
 

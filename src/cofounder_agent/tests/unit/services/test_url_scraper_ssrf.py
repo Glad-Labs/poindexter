@@ -225,8 +225,8 @@ class TestResolveAndCheck:
 
     def test_rejects_tailscale_via_dns(self, monkeypatch):
         _patch_site_config(monkeypatch, {})
-        _mock_getaddrinfo(monkeypatch, {"node.tail.ts.net": ["100.81.93.12"]})
-        with pytest.raises(SSRFBlockedError, match="100.81.93.12"):
+        _mock_getaddrinfo(monkeypatch, {"node.tail.ts.net": ["100.64.0.42"]})
+        with pytest.raises(SSRFBlockedError, match="100.64.0.42"):
             _resolve_and_check("https://node.tail.ts.net/")
 
     def test_allows_public_dns_result(self, monkeypatch):
@@ -407,7 +407,7 @@ class TestScrapeUrlSSRF:
     async def test_blocks_tailscale_cgnat_at_entry(self, monkeypatch):
         _patch_site_config(monkeypatch, {})
         with pytest.raises(SSRFBlockedError):
-            await url_scraper.scrape_url("http://100.81.93.12:3000/")
+            await url_scraper.scrape_url("http://100.64.0.42:3000/")
 
     async def test_override_flag_unblocks_loopback_end_to_end(self, monkeypatch):
         """With url_scraper_allow_internal_ips=true the call proceeds.

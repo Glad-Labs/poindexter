@@ -34,9 +34,9 @@ You need:
 
 Optional but recommended:
 
-- **`tailscale`** for `100.81.93.12:3000` Grafana access from your
-  phone (Glad Labs operator overlay only — public Poindexter ships
-  Grafana on `localhost:3000`).
+- **`tailscale`** for Grafana access from your phone (use your own
+  tailnet IP, e.g. `<your-tailnet-ip>:3000`). Public Poindexter
+  ships Grafana on `localhost:3000`; tailnet is operator-overlay only.
 - **`gh`** CLI authenticated to `Glad-Labs/poindexter` if you want
   to file bug reports inline.
 

@@ -76,7 +76,7 @@ def fake_pool(monkeypatch: pytest.MonkeyPatch) -> _FakePool:
     pool = _FakePool(
         fetchrow_result={
             "brain_mode": "ollama",
-            "join_url": "https://nightrider.taild4f626.ts.net/voice/join",
+            "join_url": "https://example.test/voice/join",
         },
     )
 
@@ -127,7 +127,7 @@ async def test_start_voice_call_happy_path_no_brain_flip(fake_pool):
     payload = json.loads(raw)
 
     # Response shape — exactly the four fields the assistant relies on.
-    assert payload["join_url"] == "https://nightrider.taild4f626.ts.net/voice/join"
+    assert payload["join_url"] == "https://example.test/voice/join"
     assert payload["brain_mode"] == "ollama"
     assert payload["note"] is None
     assert "Tap the join_url" in payload["instructions"]
@@ -150,7 +150,7 @@ async def test_start_voice_call_flips_brain_to_claude_code(fake_pool):
     # the flip.
     fake_pool.fetchrow_result = {
         "brain_mode": "claude-code",
-        "join_url": "https://nightrider.taild4f626.ts.net/voice/join",
+        "join_url": "https://example.test/voice/join",
     }
 
     raw = await _start_voice_call(brain="claude-code", note="got a draft to review")
@@ -158,7 +158,7 @@ async def test_start_voice_call_flips_brain_to_claude_code(fake_pool):
 
     assert payload["brain_mode"] == "claude-code"
     assert payload["note"] == "got a draft to review"
-    assert payload["join_url"] == "https://nightrider.taild4f626.ts.net/voice/join"
+    assert payload["join_url"] == "https://example.test/voice/join"
 
     # Exactly one write, targeting the canonical _mode key with the
     # normalised value. (The legacy voice_agent_brain key is
@@ -177,7 +177,7 @@ async def test_start_voice_call_normalises_brain_value_before_persisting(fake_po
     """
     fake_pool.fetchrow_result = {
         "brain_mode": "claude-code",
-        "join_url": "https://nightrider.taild4f626.ts.net/voice/join",
+        "join_url": "https://example.test/voice/join",
     }
 
     raw = await _start_voice_call(brain=" Claude-Code ")
@@ -246,7 +246,7 @@ async def test_start_voice_call_falls_back_to_legacy_brain_for_read(fake_pool):
     """
     fake_pool.fetchrow_result = {
         "brain_mode": "claude-code",  # legacy row would land here via COALESCE
-        "join_url": "https://nightrider.taild4f626.ts.net/voice/join",
+        "join_url": "https://example.test/voice/join",
     }
 
     raw = await _start_voice_call()

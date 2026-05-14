@@ -79,7 +79,7 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MIN_CURATION_SCORE = "70"
 _DEFAULT_REQUIRE_HUMAN_APPROVAL = "true"
 _DEFAULT_AUTO_PUBLISH_THRESHOLD = "0"
-_DEFAULT_PREVIEW_BASE_URL = "http://100.81.93.12:8002"
+_DEFAULT_PREVIEW_BASE_URL = "http://localhost:8002"
 
 
 async def _get_setting(

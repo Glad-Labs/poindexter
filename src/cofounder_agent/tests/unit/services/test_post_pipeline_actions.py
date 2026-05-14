@@ -497,7 +497,7 @@ class TestOperatorNotification:
         pool, _ = _make_pool(fetchval_return="abcd1234efgh5678")
         db = _make_db_service(pool=pool)
         site = _make_site_config(
-            values={"preview_base_url": "http://100.81.93.12:8002"},
+            values={"preview_base_url": "http://100.64.0.42:8002"},
         )
         settings = _make_settings_service(
             values={
@@ -526,7 +526,7 @@ class TestOperatorNotification:
 
         notify_mock.assert_awaited_once()
         sent_message = notify_mock.call_args.args[0]
-        assert "http://100.81.93.12:8002/preview/abcd1234efgh5678" in sent_message
+        assert "http://100.64.0.42:8002/preview/abcd1234efgh5678" in sent_message
         assert "Awaiting approval" in sent_message
         # Score line surfaces too.
         assert "88/100" in sent_message
@@ -541,7 +541,7 @@ class TestOperatorNotification:
         pool, _ = _make_pool(fetchval_return=None)
         db = _make_db_service(pool=pool)
         site = _make_site_config(
-            values={"preview_base_url": "http://100.81.93.12:8002"},
+            values={"preview_base_url": "http://100.64.0.42:8002"},
         )
         settings = _make_settings_service(
             values={

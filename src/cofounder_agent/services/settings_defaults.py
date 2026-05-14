@@ -257,7 +257,7 @@ DEFAULTS: dict[str, str] = {
     'voice_agent_livekit_url': '',
     'voice_agent_llm_model': 'glm-4.7-5090:latest',
     'voice_agent_ollama_url': 'http://localhost:11434/v1',
-    'voice_agent_public_join_url': 'https://nightrider.taild4f626.ts.net/voice/join',
+    'voice_agent_public_join_url': '',
     'voice_agent_recall_k': '3',
     'voice_agent_recall_min_similarity': '0.5',
     'voice_agent_room_name': 'poindexter',

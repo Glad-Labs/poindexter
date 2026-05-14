@@ -574,8 +574,9 @@ adding a new _business function_ with its own DB tables, jobs, HTTP routes,
 and operator surface — finance, customer support, ops/security, HR. For one
 new pipeline step, one new image provider, one new probe — just use the
 capability-plugin patterns above. The reference Module is `content` at
-[`src/cofounder_agent/modules/content/`](../../src/cofounder_agent/modules/content/);
-the first private operator-overlay Module is `finance` (Mercury banking).
+[`src/cofounder_agent/modules/content/`](../../src/cofounder_agent/modules/content/).
+Private operator-overlay Modules (`visibility="private"`) live only in
+forks/operator overlays; the public mirror's sync filter strips them.
 
 ### Step 1 — Scaffold the package
 
@@ -589,8 +590,8 @@ src/cofounder_agent/modules/<name>/
     └── __init__.py
 ```
 
-Copy the layout of `modules/content/` or `modules/finance/`. Public modules
-use `visibility="public"`; operator-overlay modules use `visibility="private"`
+Copy the layout of `modules/content/`. Public modules use
+`visibility="public"`; operator-overlay modules use `visibility="private"`
 (those get filtered out of the public OSS mirror — see the sync script).
 
 ### Step 2 — Define the Module class

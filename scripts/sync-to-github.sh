@@ -145,6 +145,7 @@ git rm --cached --quiet scripts/system-health-check.sh 2>/dev/null || true   # o
 git rm --cached --quiet scripts/claude-sessions.ps1 2>/dev/null || true       # Windows scheduled-task setup for autonomous Claude sessions (Matt's install)
 git rm --cached --quiet scripts/run-claude-session.cmd 2>/dev/null || true    # cmd wrapper for above
 git rm --cached --quiet scripts/sync-premium-prompts.py 2>/dev/null || true   # syncs premium prompts from Glad Labs operator stash, no-op for public users
+git rm --cached --quiet scripts/kuma_bootstrap.py 2>/dev/null || true         # operator-specific Kuma monitor list (gladlabs.io / Tailscale Funnel), not a reusable template
 
 # === Operator-specific taps (read from Matt's local Claude / OpenClaw state) ===
 git rm --cached --quiet src/cofounder_agent/services/taps/claude_code_sessions.py 2>/dev/null || true  # taps ~/.claude/projects/*.jsonl — Matt's actual conversations
@@ -198,6 +199,44 @@ git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2
 
 # Commit the removal (temporary — only pushed to github, never to origin/glad-labs-stack)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
+
+# === Leak guard — abort sync if forbidden patterns made it through ===
+#
+# Even after all the path strips above, content-level leaks can slip in
+# (e.g. a new release-please CHANGELOG entry mentioning a private module,
+# or a hand-written doc adding the operator's Tailnet IP). This guard
+# greps the staged tree for known operator-private patterns and aborts
+# the push if it finds any — better to fail loudly than to ship the leak.
+#
+# Add new patterns when a new private module / personal value is found.
+# See 2026-05-14 audit which seeded this list: bank balance, hardware
+# cost, Tailnet IP, Tailscale Funnel, operator-overlay module names.
+echo "[sync] Running leak guard..."
+LEAK_PATTERNS=(
+  '100\.81\.93\.12'                # Tailnet IP
+  'taild4f626\.ts\.net'            # Tailscale Funnel hostname
+  '7877\.14'                        # Hardware cost total
+  'mercury_api_token'              # operator-overlay module key name
+)
+LEAK_FOUND=0
+for pat in "${LEAK_PATTERNS[@]}"; do
+  # `git ls-files | xargs grep` reads only what's tracked in the temp
+  # branch (the stripped tree), so a pattern in a private-only file
+  # already removed from index won't trip the guard.
+  hits=$(git ls-files | xargs grep -l -E "$pat" 2>/dev/null || true)
+  if [[ -n "$hits" ]]; then
+    echo "[sync] LEAK DETECTED — pattern: $pat"
+    echo "$hits" | sed 's/^/    /'
+    LEAK_FOUND=1
+  fi
+done
+if [[ "$LEAK_FOUND" -ne 0 ]]; then
+  echo "[sync] Aborting push — fix leaks in source or add to strip filter."
+  git checkout -f "$BRANCH"
+  git branch -D "$TEMP_BRANCH"
+  exit 1
+fi
+echo "[sync] Leak guard passed."
 
 # Force-push this clean branch to GitHub as main, but with a LEASE.
 #

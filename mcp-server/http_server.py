@@ -54,8 +54,9 @@ Env vars:
 
 ## Reaching it from a phone
 
-The worker is already fronted by Tailscale Funnel
-(``https://nightrider.taild4f626.ts.net`` → ``localhost:8002``). Add a
+Front the worker with Tailscale Funnel (or any reverse proxy giving
+you a stable public hostname) — e.g.
+``https://<your-funnel-host>.ts.net`` → ``localhost:8002``. Add a
 sub-path rule that routes ``/mcp`` to this server's port:
 
     tailscale serve --bg --https=443 --set-path=/mcp \\
@@ -63,10 +64,10 @@ sub-path rule that routes ``/mcp`` to this server's port:
 
 Then register at https://claude.ai/settings/connectors with:
 
-- URL:                ``https://nightrider.taild4f626.ts.net/mcp``
+- URL:                ``https://<your-funnel-host>.ts.net/mcp``
 - Auth:               OAuth 2.1
 - Authorization URL:  (none — Client Credentials Grant)
-- Token URL:          ``https://nightrider.taild4f626.ts.net/oauth/token``
+- Token URL:          ``https://<your-funnel-host>.ts.net/oauth/token``
 - Client ID:          ``pdx_…`` from ``poindexter auth register-client``
 - Client Secret:      shown by the same command (capture it once)
 
@@ -257,9 +258,9 @@ def _oauth_jwt_wrapper(
     def _resource_metadata_url(scope: MutableMapping[str, Any]) -> str:
         """Build the public ``/.well-known/oauth-protected-resource`` URL.
 
-        Reads the Host header (Tailscale Funnel sets this to the public
-        ``nightrider.taild4f626.ts.net`` hostname) and the forwarded
-        scheme so the URL is what the *client* should fetch, not what
+        Reads the Host header (Tailscale Funnel / reverse proxy sets
+        this to the public hostname clients connect to) and the
+        forwarded scheme so the URL is what the *client* should fetch, not what
         we'd see internally on 127.0.0.1:8004.
         """
         host = ""
@@ -373,7 +374,7 @@ def build_app():
     # FastMCP auto-enables DNS-rebinding protection when bound to
     # localhost, with an empty allowed_hosts list. Behind a reverse
     # proxy / Tailscale Funnel the Host header is the public hostname
-    # (e.g. ``nightrider.taild4f626.ts.net``) which the empty allowlist
+    # (e.g. ``<your-funnel-host>.ts.net``) which the empty allowlist
     # rejects with HTTP 421 "Invalid Host header". The OAuth-JWT
     # wrapper above already gates access; turning off the (redundant)
     # rebinding check lets the proxy work without per-deployment

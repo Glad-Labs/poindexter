@@ -93,7 +93,6 @@ Pulled from `app_settings WHERE is_secret = TRUE` plus the two bootstrap secrets
 | `mastodon_access_token`                        | `app_settings` (encrypted)                          | Mastodon cross-post                   | [§ mastodon_access_token](#mastodon_access_token)               |
 | `devto_api_key`                                | `app_settings` (encrypted)                          | Dev.to cross-post                     | [§ devto_api_key](#devto_api_key)                               |
 | `notion_api_key`                               | `app_settings` (encrypted)                          | Notion integration                    | [§ notion_api_key](#notion_api_key)                             |
-| `mercury_api_token`                            | `app_settings` (encrypted)                          | Mercury banking                       | [§ mercury_api_token](#mercury_api_token)                       |
 | `grafana_api_key` + `grafana_api_token`        | `app_settings` (encrypted)                          | Self-hosted Grafana HTTP API          | [§ grafana keys](#grafana-keys)                                 |
 | `google_api_key`                               | `app_settings` (encrypted)                          | Google APIs                           | [§ google_api_key](#google_api_key)                             |
 | `elevenlabs_api_key`                           | `app_settings` (encrypted)                          | TTS provider                          | [§ elevenlabs_api_key](#elevenlabs_api_key)                     |
@@ -710,12 +709,6 @@ Keys: `bluesky_app_password` + `bluesky_identifier` (both encrypted).
 
 ---
 
-### `mercury_api_token`
-
-**Procedure.** Mercury dashboard → Settings → API Tokens → Revoke + create. Generic flow.
-
----
-
 ### Grafana keys
 
 Keys: `grafana_api_key` + `grafana_api_token` (both encrypted; some duplication for legacy reasons).
@@ -723,7 +716,7 @@ Keys: `grafana_api_key` + `grafana_api_token` (both encrypted; some duplication 
 **Procedure.**
 
 ```bash
-# 1. http://localhost:3000 (or http://100.81.93.12:3000 via tailnet) ->
+# 1. http://localhost:3000 (or http://<your-tailnet-ip>:3000 via tailnet) ->
 #    Administration -> Service accounts -> Add service account ->
 #    "alert-sync" with Editor role -> Add token
 # 2. poindexter set grafana_api_key "<new-key>"

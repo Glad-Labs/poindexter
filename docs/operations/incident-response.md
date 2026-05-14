@@ -543,7 +543,7 @@ If an alert fired with a name that's not in the index above:
 xdg-open http://localhost:3000/alerting/list
 # Or on Windows
 start http://localhost:3000/alerting/list
-# From phone via tailnet: http://100.81.93.12:3000/alerting/list
+# From phone via tailnet: http://<your-tailnet-ip>:3000/alerting/list
 ```
 
 Find the firing rule. Read its `summary` and `description` annotations.

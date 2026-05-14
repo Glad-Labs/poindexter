@@ -58,7 +58,6 @@ this file):
       "mcp__claude_ai_Google_Drive__*",
       "mcp__claude_ai_Google_Calendar__*",
       "mcp__claude_ai_Gmail__*",
-      "mcp__claude_ai_Mercury__*",
       "mcp__claude_ai_Stripe__*",
       "Read",
       "Glob",

@@ -201,8 +201,8 @@ async def _get_setting(pool, key: str, default: str = "") -> str:
     secret rows (notably ``grafana_api_token`` once it was promoted to
     is_secret=true), which then went into the Bearer header verbatim
     and failed every alert sync with "Invalid header value b'Bearer
-    enc:v1:...'". One-liner fix; same bug class as the FinanceModule
-    CLI token-decryption fix (2026-05-13).
+    enc:v1:...'". One-liner fix; same bug class as the
+    operator-overlay CLI token-decryption fix (2026-05-13).
     """
     try:
         return await read_app_setting(pool, key, default=default)

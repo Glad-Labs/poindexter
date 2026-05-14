@@ -161,7 +161,7 @@ def mcp_server_with_fake_pool(monkeypatch):
     pool = _FakePool(
         fetchrow_result={
             "brain_mode": "ollama",
-            "join_url": "https://nightrider.taild4f626.ts.net/voice/join",
+            "join_url": "https://example.test/voice/join",
         },
     )
 
@@ -191,13 +191,13 @@ async def test_mcp_start_voice_call_happy_path_with_brain_flip(
     # Readback reflects the post-write state.
     pool.fetchrow_result = {
         "brain_mode": "claude-code",
-        "join_url": "https://nightrider.taild4f626.ts.net/voice/join",
+        "join_url": "https://example.test/voice/join",
     }
 
     raw = await start_voice_call(brain="claude-code", note="got a draft to review")
     payload = json.loads(raw)
 
-    assert payload["join_url"] == "https://nightrider.taild4f626.ts.net/voice/join"
+    assert payload["join_url"] == "https://example.test/voice/join"
     assert payload["brain_mode"] == "claude-code"
     assert payload["note"] == "got a draft to review"
     assert "Tap the join_url" in payload["instructions"]

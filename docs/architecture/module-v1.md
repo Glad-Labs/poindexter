@@ -8,8 +8,9 @@
 
 ## What shipped 2026-05-13
 
-End-to-end validated against a real second module (FinanceModule + Mercury
-banking integration in the Glad Labs operator overlay).
+End-to-end validated against a real second module in the operator-overlay
+slot (a private business module — see [Visibility](#visibility) below for
+how `visibility="private"` modules are filtered from the public mirror).
 
 | Phase   | Status      | What landed                                                                                                                                                                                                                                                                                                                                                                          |
 | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -19,10 +20,11 @@ banking integration in the Glad Labs operator overlay).
 | Phase 4 | ⚠️ Lite     | Route auto-discovery wired in `utils/route_registration.register_all_routes` — iterates `get_modules()` after substrate routes mount, calls each module's `register_routes(app)`. Grafana dashboard registration, CLI subparser registration, brain-probe registration deferred to **Phase 4.5**.                                                                                    |
 | Phase 5 | ⏭ Deferred | `visibility` flag drives `scripts/sync-to-github.sh` — currently the sync filter strips private modules via an explicit pattern list (works for n=1 module; will refactor when n≥3).                                                                                                                                                                                                 |
 
-**Concrete second module shipped under this pattern:** `src/cofounder_agent/modules/finance/`
-(FinanceModule, `visibility="private"`) implements Mercury read-only
-banking — Module v1 was validated by writing FinanceModule against
-the freshly-shipped scaffolding, not by retrofitting old content code.
+**Concrete second module shipped under this pattern:** a
+`visibility="private"` business module in the operator overlay,
+filtered from the public mirror by `scripts/sync-to-github.sh`. The
+substrate landed by writing the second module against the
+freshly-shipped scaffolding, not by retrofitting old content code.
 
 **The cost-benefit takeaway from shipping all four phases in one day:** the
 Module v1 scaffolding (Phases 1 + 2) is small and high-leverage (~250 LOC). The

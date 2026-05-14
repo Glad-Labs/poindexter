@@ -10,7 +10,7 @@ Probes:
     (Glad-Labs/poindexter#27 follow-up — webhooks were wired with test
     rows on Apr 25 but no real provider deliveries since)
   - (future) email_triage: Gmail inbox scan, flag actionable items
-  - (future) revenue_monitor: Lemon Squeezy sales + Mercury balance
+  - (future) revenue_monitor: storefront sales + bank balance
 """
 
 import inspect

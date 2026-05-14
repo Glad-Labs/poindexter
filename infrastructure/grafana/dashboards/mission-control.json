@@ -17,7 +17,7 @@
       "title": "Prefect UI",
       "tooltip": "Open Prefect 3 flow-runs UI (tailscale workstation IP, port 4200)",
       "type": "link",
-      "url": "http://100.81.93.12:4200"
+      "url": "http://localhost:4200"
     },
     {
       "asDropdown": false,
@@ -29,7 +29,7 @@
       "title": "Langfuse UI",
       "tooltip": "Open Langfuse 3 — LLM traces, prompts, experiments (tailscale workstation IP, port 3010)",
       "type": "link",
-      "url": "http://100.81.93.12:3010"
+      "url": "http://localhost:3010"
     },
     {
       "asDropdown": false,
@@ -41,7 +41,7 @@
       "title": "Pyroscope UI",
       "tooltip": "Continuous profiling — CPU + memory flamegraphs (tailscale workstation IP, port 4040)",
       "type": "link",
-      "url": "http://100.81.93.12:4040"
+      "url": "http://localhost:4040"
     },
     {
       "asDropdown": false,
@@ -53,7 +53,7 @@
       "title": "GlitchTip UI",
       "tooltip": "Error tracking + Sentry-compatible event viewer (tailscale workstation IP, port 8080)",
       "type": "link",
-      "url": "http://100.81.93.12:8080"
+      "url": "http://localhost:8080"
     },
     {
       "asDropdown": false,
@@ -65,7 +65,7 @@
       "title": "Alertmanager",
       "tooltip": "Prometheus alert routing + silencing (tailscale workstation IP, port 9093)",
       "type": "link",
-      "url": "http://100.81.93.12:9093"
+      "url": "http://localhost:9093"
     },
     {
       "asDropdown": false,
@@ -77,7 +77,7 @@
       "title": "Uptime Kuma",
       "tooltip": "External-service uptime monitor (tailscale workstation IP, port 3002)",
       "type": "link",
-      "url": "http://100.81.93.12:3002"
+      "url": "http://localhost:3002"
     },
     {
       "asDropdown": false,
@@ -89,7 +89,7 @@
       "title": "Prometheus",
       "tooltip": "Raw PromQL UI (Grafana usually wraps this) (tailscale workstation IP, port 9091)",
       "type": "link",
-      "url": "http://100.81.93.12:9091"
+      "url": "http://localhost:9091"
     },
     {
       "asDropdown": false,
@@ -125,7 +125,7 @@
       "title": "pgAdmin",
       "tooltip": "Postgres admin UI (databases, queries, schema) (tailscale workstation IP, port 18443)",
       "type": "link",
-      "url": "http://100.81.93.12:18443"
+      "url": "http://localhost:18443"
     },
     {
       "asDropdown": false,
@@ -137,7 +137,7 @@
       "title": "Worker API",
       "tooltip": "FastAPI backend health + status endpoints (tailscale workstation IP, port 8002)",
       "type": "link",
-      "url": "http://100.81.93.12:8002"
+      "url": "http://localhost:8002"
     },
     {
       "asDropdown": false,
@@ -149,7 +149,7 @@
       "title": "✏ Talk to Poindexter (Pipecat)",
       "tooltip": "Browser-direct WebRTC voice chat with the always-on bot. Whisper STT → Ollama → Kokoro TTS. Plain HTTP, tailnet-only — click Connect, allow mic.",
       "type": "link",
-      "url": "http://100.81.93.12:8003/client/"
+      "url": "http://localhost:8003/client/"
     },
     {
       "asDropdown": false,
@@ -161,7 +161,7 @@
       "title": "✏ Talk to Poindexter (LiveKit)",
       "tooltip": "Self-hosted LiveKit web client (poindexter#389). Same-origin wss via Tailscale Funnel — no mixed-content. 7-day token minted server-side; tap Connect, allow mic. Multi-party-capable: voice-agent-livekit + you in the same ‘poindexter’ room.",
       "type": "link",
-      "url": "https://nightrider.taild4f626.ts.net/voice/join"
+      "url": "/voice/join"
     }
   ],
   "panels": [

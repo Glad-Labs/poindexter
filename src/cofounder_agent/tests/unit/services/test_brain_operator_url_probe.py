@@ -50,7 +50,7 @@ class TestExtractDashboardLinks:
         dash = {
             "title": "Mission Control",
             "links": [
-                {"title": "Prefect UI", "url": "http://100.81.93.12:4200"},
+                {"title": "Prefect UI", "url": "http://100.64.0.42:4200"},
                 {"title": "Grafana", "url": "http://localhost:3000"},
             ],
             "panels": [],
@@ -58,7 +58,7 @@ class TestExtractDashboardLinks:
         (tmp_path / "mission.json").write_text(json.dumps(dash))
         out = oup.extract_dashboard_links(tmp_path)
         urls = {item["url"] for item in out}
-        assert "http://100.81.93.12:4200" in urls
+        assert "http://100.64.0.42:4200" in urls
         assert "http://localhost:3000" in urls
         # Surface includes dashboard title + link title.
         assert any("Mission Control :: Prefect UI" == i["surface"] for i in out)
@@ -281,9 +281,9 @@ class TestTailscaleDrift:
     @pytest.mark.asyncio
     async def test_no_drift_returns_empty(self):
         pool = _make_pool([
-            {"name": "workstation", "tailscale_ip": "100.81.93.12"},
+            {"name": "workstation", "tailscale_ip": "100.64.0.42"},
         ])
-        live = {"workstation": "100.81.93.12"}
+        live = {"workstation": "100.64.0.42"}
         with patch.object(oup, "_run_tailscale_status", return_value=live):
             out = await oup.detect_tailscale_drift(pool)
         assert out == []
@@ -294,14 +294,14 @@ class TestTailscaleDrift:
             {"name": "workstation", "tailscale_ip": "100.64.0.1"},  # stale
             {"name": "pixel-9", "tailscale_ip": "100.42.0.1"},
         ])
-        live = {"workstation": "100.81.93.12", "pixel-9": "100.42.0.1"}
+        live = {"workstation": "100.64.0.42", "pixel-9": "100.42.0.1"}
         with patch.object(oup, "_run_tailscale_status", return_value=live):
             out = await oup.detect_tailscale_drift(pool)
         assert len(out) == 1
         d = out[0]
         assert d["name"] == "workstation"
         assert d["db_ip"] == "100.64.0.1"
-        assert d["live_ip"] == "100.81.93.12"
+        assert d["live_ip"] == "100.64.0.42"
         assert "UPDATE system_devices" in d["fix"]
 
     @pytest.mark.asyncio
@@ -409,7 +409,7 @@ class TestRunOperatorUrlProbe:
 
         with patch.object(oup, "probe_urls", side_effect=fake_probe), \
              patch.object(oup, "_run_tailscale_status",
-                          return_value={"workstation": "100.81.93.12"}):
+                          return_value={"workstation": "100.64.0.42"}):
             summary = await oup.run_operator_url_probe(
                 pool, dashboards_dir=tmp_path,
                 notify_fn=lambda **k: notifies.append(k),

@@ -95,7 +95,7 @@ DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 60
 DEFAULT_MIN_HOURS = 24
 DEFAULT_DEDUP_HOURS = 12
-DEFAULT_REPO = "Glad-Labs/glad-labs-stack"
+DEFAULT_REPO = "Glad-Labs/poindexter"
 DEFAULT_MAX_PRS_PER_ALERT = 5
 
 # Brain default cycle is ~5 min; the registry-driven probe path runs

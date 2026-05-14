@@ -22,12 +22,12 @@ add a build step. The LiveKit JS SDK is the only "framework" needed.
 Auth: gated behind ``Depends(verify_api_token)`` since 2026-05-12.
 
 Pre-2026-05-12 this route was unauthenticated on the assumption that
-the worker was Tailscale-only. The actual deployment exposes the
-worker via Tailscale **Funnel** (public internet) at
-``https://nightrider.taild4f626.ts.net/voice/join``, so any internet
-visitor could mint a 7-day LiveKit JWT with room-join + publish +
-subscribe + publish-data permissions for Matt's voice room. Security
-audit caught it; this route now requires a valid OAuth JWT before
+the worker was Tailscale-only. Operators exposing the worker over a
+Tailscale **Funnel** (or any public hostname) discovered that any
+internet visitor could mint a 7-day LiveKit JWT with room-join +
+publish + subscribe + publish-data permissions for the operator's
+voice room. Security audit caught it; this route now requires a
+valid OAuth JWT before
 minting the LiveKit token, AND refuses to mint when
 ``LIVEKIT_API_SECRET`` is unset or equal to the dev placeholder
 (fail-loud per the no-silent-defaults rule).
@@ -139,13 +139,13 @@ async def voice_join(
         )
 
     room = os.environ.get("LIVEKIT_ROOM", "poindexter")
-    identity = os.environ.get("LIVEKIT_DEFAULT_IDENTITY", "matt")
-    # Default to the same-origin tailscale-funneled path. Operators can
-    # override with the public-internet wss URL if running behind a
-    # different reverse proxy.
+    identity = os.environ.get("LIVEKIT_DEFAULT_IDENTITY", "operator")
+    # Default to the local LiveKit signal endpoint. Operators exposing
+    # voice over a Tailscale Funnel or other public hostname override
+    # with their wss URL via the ``LIVEKIT_PUBLIC_WSS_URL`` env var.
     wss_url = os.environ.get(
         "LIVEKIT_PUBLIC_WSS_URL",
-        "wss://nightrider.taild4f626.ts.net/livekit-signal/",
+        "ws://localhost:7880",
     )
 
     secret_warn = ""
