@@ -216,7 +216,8 @@ LEAK_PATTERNS=(
   '100\.81\.93\.12'                # Tailnet IP
   'taild4f626\.ts\.net'            # Tailscale Funnel hostname
   '7877\.14'                        # Hardware cost total
-  'mercury_api_token'              # operator-overlay module key name
+  '362\.75'                         # Mercury balance literal
+  'mercury_'                        # any mercury_* key name (catches the whole family)
 )
 LEAK_FOUND=0
 for pat in "${LEAK_PATTERNS[@]}"; do
