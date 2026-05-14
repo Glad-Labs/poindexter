@@ -150,7 +150,20 @@ async def probe_status_digest(pool, notify_fn) -> dict:
         # --- Grafana alert states ---
         alert_lines = []
         try:
-            grafana_token = await pool.fetchval("SELECT value FROM app_settings WHERE key = 'grafana_api_key'")
+            # Route through secret_reader so the enc:v1: ciphertext on
+            # grafana_api_token gets pgp_sym_decrypt'd transparently. The
+            # legacy grafana_api_key row is empty on Matt's install; the
+            # canonical token now lives under grafana_api_token (same key
+            # that alert_sync uses). Same fix class as the alert_sync bug
+            # 2026-05-13 — direct ``SELECT value`` returned ciphertext for
+            # is_secret=true rows + httpx-style Bearer header rejected
+            # the embedded newlines.
+            from secret_reader import read_app_setting
+            grafana_token = await read_app_setting(pool, "grafana_api_token", "")
+            if not grafana_token:
+                # Fall back to legacy key name in case an operator pinned
+                # their token under the old name.
+                grafana_token = await read_app_setting(pool, "grafana_api_key", "")
             grafana_url = (await resolve_url(
                 pool, "grafana_url", default="http://localhost:3000",
             )).rstrip("/")

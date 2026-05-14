@@ -107,8 +107,18 @@ async def _upsert_account(conn: Any, acc) -> None:
 
 
 async def _upsert_transaction(conn: Any, t) -> bool:
-    """Return True if this was a brand-new row (first_seen_at = NOW())."""
-    status = await conn.execute(
+    """Return True if this was a brand-new row (first_seen_at = NOW()).
+
+    Uses ``RETURNING (xmax = 0) AS was_new`` to distinguish fresh INSERT
+    from ON CONFLICT DO UPDATE — the asyncpg command-tag trick
+    (``status.endswith(" 1")``) returns 1 for BOTH branches in a single
+    INSERT..ON CONFLICT DO UPDATE statement, so it over-counts new rows
+    by including every conflict-update. Postgres's hidden ``xmax``
+    column is 0 only for rows just inserted in the current transaction;
+    an ON CONFLICT DO UPDATE bumps xmax to the deleting transaction
+    ID — so ``xmax = 0`` cleanly partitions the two branches.
+    """
+    return await conn.fetchval(
         """
         INSERT INTO finance_transactions
             (id, account_id, amount, posted_at, counterparty, status,
@@ -120,13 +130,11 @@ async def _upsert_transaction(conn: Any, t) -> bool:
             counterparty      = EXCLUDED.counterparty,
             status            = EXCLUDED.status,
             last_refreshed_at = NOW()
+        RETURNING (xmax = 0) AS was_new
         """,
         t.id, t.account_id, t.amount, t.posted_at or "",
         t.counterparty, t.status,
     )
-    # asyncpg execute returns "INSERT 0 1" for a fresh insert, "INSERT 0 0"
-    # if ON CONFLICT path fired. So endswith(" 1") tells us new vs updated.
-    return status.endswith(" 1")
 
 
 class PollMercuryJob:
