@@ -608,8 +608,8 @@ def _write_sentinel(
     *,
     rc: int = 1,
     ts: str = "2026-05-09T03:00:00Z",
-    host: Optional[str] = "nightrider",
-    log_path: str = "/c/Users/mattm/.poindexter/logs/dr-backup.log",
+    host: Optional[str] = "test-host",
+    log_path: str = "/var/log/dr-backup/dr-backup.log",
     tail: str = "restic: error\nwhich tier: hourly",
 ) -> None:
     """Write a sentinel matching the dr-backup script format."""
@@ -631,14 +631,14 @@ class TestParseSentinel:
             sentinel,
             rc=2,
             ts="2026-05-09T03:00:00Z",
-            host="nightrider",
+            host="test-host",
             log_path="/var/log/dr-backup.log",
             tail="boom\nbang",
         )
         parsed = bw._parse_sentinel_file(sentinel)
         assert parsed["rc"] == "2"
         assert parsed["ts"] == "2026-05-09T03:00:00Z"
-        assert parsed["host"] == "nightrider"
+        assert parsed["host"] == "test-host"
         assert parsed["log"] == "/var/log/dr-backup.log"
         assert parsed["tail"] == "boom\nbang"
         assert parsed["_path"] == str(sentinel)
@@ -833,7 +833,7 @@ class TestSentinelAlertEmission:
         sentinel_dir = tmp_path / "logs"
         sentinel_dir.mkdir()
         sentinel = sentinel_dir / "dr-backup-failed.sentinel"
-        sentinel.write_text("rc=99\nhost=nightrider\n", encoding="utf-8")
+        sentinel.write_text("rc=99\nhost=test-host\n", encoding="utf-8")
         # Pin the mtime so the generated fingerprint is predictable.
         import os as _os
         _os.utime(sentinel, (1_700_000_000.0, 1_700_000_000.0))

@@ -261,10 +261,12 @@ echo "[sync] Running leak guard..."
 LEAK_PATTERNS=(
   '100\.81\.93\.12'                # Tailnet IP
   'taild4f626\.ts\.net'            # Tailscale Funnel hostname
+  '\bnightrider\b'                  # Tailscale Funnel hostname fragment (also a test-fixture leak)
   '7877\.14'                        # Hardware cost total
   '362\.75'                         # Mercury balance literal
   'mercury_'                        # any mercury_* key name (catches the whole family)
   'C:[\\/]Users[\\/]mattm'          # operator's Windows home path
+  '/c/Users/mattm'                  # bash-style operator home path
   'mattg-stack'                     # operator's GitHub username
   'Glad-Labs/glad-labs-stack'       # internal repo name (cosmetic sub above should fix all)
 )
