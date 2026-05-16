@@ -207,7 +207,7 @@ pytest-cov = "^4.0"
 pytest-timeout = "^2.0"
 pytest-xdist = "^3.0"
 pytest-forked = "^1.6"
-pytest-benchmark = "^4.0"
+pytest-benchmark = ">=4,<6"
 
 # Code Quality
 black = "^26.3.1"
