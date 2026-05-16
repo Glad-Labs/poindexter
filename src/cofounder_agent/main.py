@@ -458,6 +458,84 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                     exc_info=True,
                 )
 
+        # Module v1 Phase 4 lifecycle (Glad-Labs/poindexter#490) —
+        # `register_routes` is already wired at module-load time inside
+        # `register_all_routes` (see utils/route_registration.py). The
+        # other three lifecycle methods (`register_cli`,
+        # `register_dashboards`, `register_probes`) ship as safe no-ops
+        # today: the worker process owns none of the three host
+        # subsystems they target (CLI subparser lives in the
+        # `poindexter` command, Grafana is its own container, brain is
+        # a separate daemon). We call them anyway so:
+        #   1) Modules can be wired up incrementally without revisiting
+        #      this file every time a new subsystem becomes hosted.
+        #   2) The Protocol contract is exercised end-to-end at boot —
+        #      a misnamed method on a module surfaces here, not the
+        #      first time someone tries to wire it later.
+        # Per ``feedback_no_silent_defaults`` each call is logged and
+        # failures are caught + logged loudly rather than silently
+        # swallowed. The module stubs accept ``None`` (each method's
+        # body is just ``del arg``), so a `None` is the canonical
+        # "subsystem not present" sentinel.
+        try:
+            from plugins.registry import get_modules as _get_modules
+
+            _modules_for_lifecycle = _get_modules()
+            if _modules_for_lifecycle:
+                logger.info(
+                    "[LIFESPAN] Module v1: invoking lifecycle no-op hooks "
+                    "for %d module(s)",
+                    len(_modules_for_lifecycle),
+                )
+                for _mod in _modules_for_lifecycle:
+                    _mod_name = "<unknown>"
+                    try:
+                        _mod_name = _mod.manifest().name
+                    except Exception:
+                        # Already validated by get_modules(), but be
+                        # defensive — we don't want a manifest read to
+                        # break the iteration.
+                        pass
+                    # CLI subparser — worker process has none; pass None
+                    # so the module's del-arg stub accepts it.
+                    try:
+                        _mod.register_cli(None)
+                    except Exception as _cli_err:
+                        logger.warning(
+                            "[LIFESPAN] Module v1: %s.register_cli "
+                            "failed: %s",
+                            _mod_name, _cli_err, exc_info=True,
+                        )
+                    # Grafana panels — handler is its own container.
+                    try:
+                        _mod.register_dashboards(None)
+                    except Exception as _dash_err:
+                        logger.warning(
+                            "[LIFESPAN] Module v1: %s.register_dashboards "
+                            "failed: %s",
+                            _mod_name, _dash_err, exc_info=True,
+                        )
+                    # Brain probes — daemon runs in a different process.
+                    try:
+                        _mod.register_probes(None)
+                    except Exception as _probe_err:
+                        logger.warning(
+                            "[LIFESPAN] Module v1: %s.register_probes "
+                            "failed: %s",
+                            _mod_name, _probe_err, exc_info=True,
+                        )
+                    logger.info(
+                        "[LIFESPAN] Module v1: %s lifecycle hooks "
+                        "complete (cli/dashboards/probes)",
+                        _mod_name,
+                    )
+        except Exception as e:
+            logger.warning(
+                "[LIFESPAN] Module v1 lifecycle iteration failed "
+                "(non-critical): %s",
+                e, exc_info=True,
+            )
+
         # Cross-encoder warmup (#210 Phase C). Pre-load the rerank
         # model at boot so the first query that hits hybrid+rerank
         # doesn't pay the 3-5s lazy-load latency. Skipped silently
