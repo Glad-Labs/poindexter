@@ -179,6 +179,20 @@ ragas = ">=0.2,<0.4"
 langchain-ollama = "^1.1.0"
 llama-index-core = "^0.14.21"
 llama-index-embeddings-ollama = "^0.9.0"
+# Cross-encoder reranker for the LlamaIndex rag_engine Phase C wrapper
+# (services/rag_engine.py::_build_rerank_retriever_class). The warmup
+# task in main.py's lifespan imports CrossEncoder when
+# rag_rerank_enabled=true; without this dep declared, every worker
+# boot logs `Cross-encoder warmup failed (non-critical): No module
+# named 'sentence_transformers'` and rerank silently degrades to
+# passthrough. 3.x is the current line; floor at 3.4 lands the
+# ``onnx`` optional acceleration path that the MiniLM models we use
+# (``cross-encoder/ms-marco-MiniLM-L-6-v2``) benefit from. The rerank
+# wrapper calls the upstream ``sentence_transformers.CrossEncoder``
+# API directly, so we do NOT pull in a separate
+# ``llama-index-postprocessor-sbert-rerank`` adapter — that would only
+# add version-skew tax.
+sentence-transformers = "^3.4"
 prefect = "^3.7.0"
 
 [tool.poetry.extras]

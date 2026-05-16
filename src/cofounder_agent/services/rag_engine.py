@@ -527,6 +527,14 @@ def _build_rerank_retriever_class():
             name = self._model_name()
             if name in _RERANKER_CACHE:
                 return _RERANKER_CACHE[name]
+            # ImportError is intentionally left to bubble — when the
+            # operator has flipped ``rag_rerank_enabled=true`` and the
+            # dep is missing, silently dropping back to the inner
+            # retriever would let the operator believe rerank was live
+            # when it isn't. Per ``feedback_no_silent_defaults``: an
+            # enabled rail must fail loud, not degrade quietly. The
+            # caller in ``_aretrieve`` catches the failure once and
+            # logs a clearly-actionable hint about the dep + setting.
             from sentence_transformers import CrossEncoder
             logger.info(
                 "[rag/rerank] Loading cross-encoder %s (first call)", name,
@@ -540,6 +548,21 @@ def _build_rerank_retriever_class():
                 return []
             try:
                 model = self._get_model()
+            except ImportError as e:
+                # Most common failure mode in the field — operator
+                # flipped rag_rerank_enabled=true but the worker image
+                # doesn't have sentence-transformers installed.
+                # Loud-but-non-fatal: surface the actionable hint
+                # without breaking the chain (the inner retriever's
+                # results are still useful, just not re-ordered).
+                logger.warning(
+                    "[rag/rerank] sentence-transformers not installed "
+                    "(%s) — rerank silently degrading to passthrough. "
+                    "Either `poetry install` in src/cofounder_agent or "
+                    "set app_settings.rag_rerank_enabled=false to "
+                    "silence this warning.", e,
+                )
+                return candidates[: self._top_k]
             except Exception as e:
                 logger.warning(
                     "[rag/rerank] cross-encoder unavailable, returning "
