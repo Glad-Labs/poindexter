@@ -50,6 +50,19 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. Fallback to a fresh per-call client
+# below preserves behaviour for early boot / tests / CLI one-shots
+# that run before the lifespan has fired.
+http_client: httpx.AsyncClient | None = None
+
+
+def set_http_client(client: httpx.AsyncClient | None) -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
+
+
 async def _legacy_discord_webhook(message: str) -> None:
     """Direct-post fallback to the ``discord_ops_webhook_url`` secret row.
 
@@ -77,9 +90,17 @@ async def _legacy_discord_webhook(message: str) -> None:
                 "[NOTIFY:discord] No discord_ops_webhook_url configured — skipping"
             )
             return
-        async with httpx.AsyncClient(timeout=10) as client:
-            logger.info("[NOTIFY:discord] %s", message[:80])
-            await client.post(webhook_url, json={"content": message})
+        # Prefer the lifespan-bound shared client; fall back to a
+        # per-call client only when nothing has been wired yet (early
+        # boot, tests, CLI one-shots before lifespan startup).
+        logger.info("[NOTIFY:discord] %s", message[:80])
+        if http_client is not None:
+            await http_client.post(
+                webhook_url, json={"content": message}, timeout=10.0,
+            )
+        else:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(webhook_url, json={"content": message})
     except Exception as exc:  # noqa: BLE001 — defensive: never raise
         logger.warning("[NOTIFY:discord] Failed: %s", exc)
 

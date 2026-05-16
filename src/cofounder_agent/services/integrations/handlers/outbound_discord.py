@@ -32,6 +32,18 @@ from services.integrations.registry import register_handler
 logger = logging.getLogger(__name__)
 
 
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. Fallback to a per-call client below
+# preserves behaviour for tests that import the handler directly.
+http_client: httpx.AsyncClient | None = None
+
+
+def set_http_client(client: httpx.AsyncClient | None) -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
+
+
 @register_handler("outbound", "discord_post")
 async def discord_post(
     payload: Any,
@@ -57,8 +69,11 @@ async def discord_post(
             f"discord_post: payload must be str or dict, got {type(payload).__name__}"
         )
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(url, json=body)
+    if http_client is not None:
+        response = await http_client.post(url, json=body, timeout=10.0)
+    else:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, json=body)
 
     # 204 No Content is Discord's success for webhook posts.
     if response.status_code not in (200, 204):

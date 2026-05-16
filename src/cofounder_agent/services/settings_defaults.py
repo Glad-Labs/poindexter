@@ -335,6 +335,16 @@ DEFAULTS: dict[str, str] = {
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
 
+    # ----- Shared httpx.AsyncClient (lifespan-bound, services/http_client.py) -----
+    # The whole worker / coordinator process shares ONE httpx.AsyncClient
+    # so the connection pool stays warm across 100+ per-task HTTP calls
+    # (Ollama / SDXL / Pexels / Discord / Vercel). Per-call timeouts at
+    # the request site override these defaults when a specific caller
+    # needs aggressive cutoffs (health checks) or generous ones (LLM gen).
+    'shared_http_client_timeout_seconds': '30.0',
+    'shared_http_client_max_connections': '100',
+    'shared_http_client_max_keepalive': '20',
+
 }
 
 

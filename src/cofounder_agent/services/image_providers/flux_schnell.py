@@ -48,6 +48,20 @@ import httpx
 
 from plugins.image_provider import ImageResult
 
+
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. ``_generate`` prefers it so the
+# connection pool to the FLUX inference server stays warm across
+# per-task inline-image generations.
+http_client: httpx.AsyncClient | None = None
+
+
+def set_http_client(client: httpx.AsyncClient | None) -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -264,18 +278,22 @@ async def _generate_to_path(
     another provider.
     """
     try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-            resp = await client.post(
-                f"{server_url}/generate",
-                json={
-                    "prompt": prompt,
-                    "negative_prompt": negative,
-                    "steps": steps,
-                    "guidance_scale": guidance,
-                    "model": "flux_schnell",
-                },
-                timeout=90,
+        _body = {
+            "prompt": prompt,
+            "negative_prompt": negative,
+            "steps": steps,
+            "guidance_scale": guidance,
+            "model": "flux_schnell",
+        }
+        if http_client is not None:
+            resp = await http_client.post(
+                f"{server_url}/generate", json=_body, timeout=90,
             )
+        else:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                resp = await client.post(
+                    f"{server_url}/generate", json=_body, timeout=90,
+                )
     except Exception as e:
         # Server unreachable / connection refused / DNS / TLS — log a
         # clear error so operators know to bring up the inference

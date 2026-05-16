@@ -23,6 +23,7 @@ import asyncio
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from services.content_validator import ValidationResult, validate_content
 from services.integrations.operator_notify import notify_operator
@@ -32,6 +33,9 @@ from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.qa_gates_db import load_qa_gate_chain
 from services.site_config import SiteConfig
+
+if TYPE_CHECKING:
+    import httpx
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
 # Defaults to a fresh env-fallback instance until the lifespan setter
@@ -44,6 +48,19 @@ def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
     global site_config
     site_config = sc
+
+
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. The vision-QA paths prefer it so the
+# image-download + Ollama-vision connections reuse the same pool
+# across the 1-3 multi-model_qa calls per task.
+http_client: "httpx.AsyncClient | None" = None
+
+
+def set_http_client(client: "httpx.AsyncClient | None") -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
 
 
 logger = get_logger(__name__)
@@ -1794,26 +1811,35 @@ class MultiModelQA:
 
         # Download each image and base64-encode it for the Ollama chat API.
         encoded_images: list[tuple[str, str]] = []
+
+        async def _download_loop(client: "httpx.AsyncClient") -> None:
+            for url in urls:
+                try:
+                    resp = await client.get(
+                        url, timeout=httpx.Timeout(15.0, connect=5.0),
+                    )
+                    if resp.status_code != 200:
+                        continue
+                    img_bytes = resp.content
+                    if not img_bytes or len(img_bytes) > 8 * 1024 * 1024:
+                        continue  # skip empty or oversized (>8MB)
+                    encoded_images.append(
+                        (url, base64.b64encode(img_bytes).decode("ascii"))
+                    )
+                except Exception as e:
+                    logger.debug(
+                        "[VISION_QA] image download failed for %s: %s",
+                        url[:60], e,
+                    )
+
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(15.0, connect=5.0)
-            ) as client:
-                for url in urls:
-                    try:
-                        resp = await client.get(url)
-                        if resp.status_code != 200:
-                            continue
-                        img_bytes = resp.content
-                        if not img_bytes or len(img_bytes) > 8 * 1024 * 1024:
-                            continue  # skip empty or oversized (>8MB)
-                        encoded_images.append(
-                            (url, base64.b64encode(img_bytes).decode("ascii"))
-                        )
-                    except Exception as e:
-                        logger.debug(
-                            "[VISION_QA] image download failed for %s: %s",
-                            url[:60], e,
-                        )
+            if http_client is not None:
+                await _download_loop(http_client)
+            else:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(15.0, connect=5.0)
+                ) as client:
+                    await _download_loop(client)
         except Exception as e:
             logger.debug("[VISION_QA] httpx client error: %s", e)
             return None
@@ -1837,37 +1863,43 @@ class MultiModelQA:
         )
 
         # Ollama /api/chat with images — single message, images array.
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(120.0, connect=5.0)
-            ) as client:
-                payload = {
-                    "model": model,
-                    "stream": False,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": prompt,
-                            "images": [b64 for _u, b64 in encoded_images],
-                        }
-                    ],
-                    "options": {"temperature": 0.2, "num_predict": 400},
+        payload = {
+            "model": model,
+            "stream": False,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [b64 for _u, b64 in encoded_images],
                 }
-                resp = await asyncio.wait_for(
-                    client.post(
-                        site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
-                        json=payload,
-                    ),
-                    timeout=150,
+            ],
+            "options": {"temperature": 0.2, "num_predict": 400},
+        }
+        _ollama_url = site_config.get(
+            "ollama_base_url", "http://host.docker.internal:11434",
+        ) + "/api/chat"
+        _vision_timeout = httpx.Timeout(120.0, connect=5.0)
+
+        async def _call_ollama(client: "httpx.AsyncClient"):
+            return await asyncio.wait_for(
+                client.post(_ollama_url, json=payload, timeout=_vision_timeout),
+                timeout=150,
+            )
+
+        try:
+            if http_client is not None:
+                resp = await _call_ollama(http_client)
+            else:
+                async with httpx.AsyncClient(timeout=_vision_timeout) as client:
+                    resp = await _call_ollama(client)
+            if resp.status_code != 200:
+                logger.warning(
+                    "[VISION_QA] ollama returned HTTP %d: %s",
+                    resp.status_code, resp.text[:200],
                 )
-                if resp.status_code != 200:
-                    logger.warning(
-                        "[VISION_QA] ollama returned HTTP %d: %s",
-                        resp.status_code, resp.text[:200],
-                    )
-                    return None
-                data = resp.json()
-                text = data.get("message", {}).get("content", "")
+                return None
+            data = resp.json()
+            text = data.get("message", {}).get("content", "")
         except Exception as e:
             logger.warning("[VISION_QA] ollama call failed (non-critical): %s", e)
             return None
@@ -2037,37 +2069,43 @@ class MultiModelQA:
         except Exception:
             return None
 
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(180.0, connect=5.0)
-            ) as client:
-                payload = {
-                    "model": model,
-                    "stream": False,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": prompt,
-                            "images": [b64],
-                        }
-                    ],
-                    "options": {"temperature": 0.2, "num_predict": 500},
+        payload = {
+            "model": model,
+            "stream": False,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [b64],
                 }
-                resp = await asyncio.wait_for(
-                    client.post(
-                        site_config.get("ollama_base_url", "http://host.docker.internal:11434") + "/api/chat",
-                        json=payload,
-                    ),
-                    timeout=200,
+            ],
+            "options": {"temperature": 0.2, "num_predict": 500},
+        }
+        _ollama_url = site_config.get(
+            "ollama_base_url", "http://host.docker.internal:11434",
+        ) + "/api/chat"
+        _preview_timeout = httpx.Timeout(180.0, connect=5.0)
+
+        async def _call_preview(client: "httpx.AsyncClient"):
+            return await asyncio.wait_for(
+                client.post(_ollama_url, json=payload, timeout=_preview_timeout),
+                timeout=200,
+            )
+
+        try:
+            if http_client is not None:
+                resp = await _call_preview(http_client)
+            else:
+                async with httpx.AsyncClient(timeout=_preview_timeout) as client:
+                    resp = await _call_preview(client)
+            if resp.status_code != 200:
+                logger.warning(
+                    "[PREVIEW_QA] ollama returned HTTP %d: %s",
+                    resp.status_code, resp.text[:200],
                 )
-                if resp.status_code != 200:
-                    logger.warning(
-                        "[PREVIEW_QA] ollama returned HTTP %d: %s",
-                        resp.status_code, resp.text[:200],
-                    )
-                    return None
-                data = resp.json()
-                text = data.get("message", {}).get("content", "")
+                return None
+            data = resp.json()
+            text = data.get("message", {}).get("content", "")
         except Exception as e:
             logger.warning("[PREVIEW_QA] ollama call failed (non-critical): %s", e)
             return None

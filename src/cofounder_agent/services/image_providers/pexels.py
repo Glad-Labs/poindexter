@@ -36,6 +36,18 @@ logger = logging.getLogger(__name__)
 _PEXELS_API_BASE = "https://api.pexels.com/v1"
 
 
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. ``fetch`` prefers it so the Pexels
+# TLS session is reused across per-task inline-image searches.
+http_client: httpx.AsyncClient | None = None
+
+
+def set_http_client(client: httpx.AsyncClient | None) -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
+
+
 class PexelsProvider:
     """Search Pexels for stock photos matching a free-text query."""
 
@@ -78,14 +90,22 @@ class PexelsProvider:
         }
         headers = {"Authorization": api_key}
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
+        if http_client is not None:
+            resp = await http_client.get(
                 f"{_PEXELS_API_BASE}/search",
                 headers=headers,
                 params=params,
+                timeout=10.0,
             )
-            resp.raise_for_status()
-            data = resp.json()
+        else:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{_PEXELS_API_BASE}/search",
+                    headers=headers,
+                    params=params,
+                )
+        resp.raise_for_status()
+        data = resp.json()
 
         photos = data.get("photos", []) if isinstance(data, dict) else []
         logger.info(
