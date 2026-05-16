@@ -288,3 +288,17 @@ class TestModuleV1RouteIteration:
             f"{[k for k in result if k.startswith('module:')]}"
         )
         assert result["module:content"] is True
+
+    def test_iteration_calls_register_routes_on_finance_module(self):
+        """FinanceModule (also registered via _SAMPLES) appears in the
+        result dict as ``module:finance`` after register_all_routes runs.
+        Pins the Phase 4 wiring added 2026-05-16 (route auto-discovery
+        actually mounts ``/api/finance/*``)."""
+        app = _make_app()
+        result = register_all_routes(app)
+
+        assert "module:finance" in result, (
+            f"expected 'module:finance' in result, got module keys: "
+            f"{[k for k in result if k.startswith('module:')]}"
+        )
+        assert result["module:finance"] is True

@@ -46,9 +46,37 @@ class FinanceModule:
         await run_module_migrations(pool, _MANIFEST.name, self.migrations_dir)
 
     def register_routes(self, app: object) -> None:
-        """Phase 4 — finance HTTP routes (account balance, transactions
-        endpoints) will mount here. Not wired in F1."""
-        del app
+        """Mount the FinanceModule operator routes under
+        ``/api/finance/*`` (balances / transactions / healthcheck).
+
+        Called by ``utils/route_registration.register_all_routes`` after
+        substrate routes mount — the module routes can therefore shadow
+        substrate paths if a name collision ever shows up (none today;
+        the ``/api/finance`` prefix is exclusively module-owned).
+
+        ``app`` is the host FastAPI application. We type it as
+        ``object`` to match the Protocol shape (cheap import for
+        tooling that doesn't have fastapi installed) and only assert
+        the ``include_router`` shape at the call site.
+        """
+        # Lazy import — routes.py imports MercuryClient + middleware,
+        # both of which pull httpx + the OAuth issuer. Keeping the import
+        # inside register_routes() means a Module-discovery pass that
+        # doesn't ultimately mount the routes (e.g. a unit test that
+        # only exercises manifest()) never pays the import cost.
+        from modules.finance.routes import router as finance_router
+
+        if not hasattr(app, "include_router"):
+            # Per ``feedback_no_silent_defaults`` — fail loud if the host
+            # passed something that isn't a FastAPI app. A silent no-op
+            # here would leave /api/finance/* missing in production with
+            # no log trail; the loud RuntimeError gets caught by the
+            # caller's try/except and logged with full traceback.
+            raise RuntimeError(
+                f"FinanceModule.register_routes: expected a FastAPI app "
+                f"with .include_router, got {type(app).__name__}"
+            )
+        app.include_router(finance_router)
 
     def register_cli(self, parser: object) -> None:
         """Phase 4 — ``poindexter finance <subcommand>`` subparsers

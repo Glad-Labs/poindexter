@@ -319,6 +319,19 @@ openai_compat = "cofounder_agent.services.llm_providers.openai_compat:OpenAIComp
 # since this entry was added).
 litellm = "cofounder_agent.services.llm_providers.litellm_provider:LiteLLMProvider"
 
+# Module v1 (Glad-Labs/poindexter#490) — business-function modules
+# discovered via the ``poindexter.modules`` entry-point group. Each
+# Module bundles capability-plugin contributions plus DB migrations,
+# jobs, HTTP routes, and Grafana panels into an installable, versioned
+# unit. Both entries are ALSO registered imperatively in
+# ``plugins/registry.py::get_core_samples`` so they remain discoverable
+# in dev/worker images where ``poetry install`` of this package itself
+# hasn't been re-run since the entry was added — see the merge contract
+# in ``plugins.registry._merge_with_core_samples``.
+[tool.poetry.plugins."poindexter.modules"]
+content = "cofounder_agent.modules.content.content_module:ContentModule"
+finance = "cofounder_agent.modules.finance.finance_module:FinanceModule"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
