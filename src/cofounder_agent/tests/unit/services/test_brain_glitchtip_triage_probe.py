@@ -177,9 +177,21 @@ async def test_missing_token_returns_unconfigured():
 
 
 def _issue(
-    id_, title, count, level="error", last_seen="2026-05-01T20:00:00Z",
+    id_, title, count, level="error", last_seen=None,
     permalink="http://glitchtip/issues/x"
 ):
+    """Build a fake GlitchTip issue.
+
+    2026-05-16: ``last_seen`` defaults to "1 hour ago" (always fresh
+    under the default 24h freshness gate) so existing tests that don't
+    care about the gate keep passing. Tests that exercise the gate
+    pass a specific timestamp.
+    """
+    if last_seen is None:
+        from datetime import datetime, timezone, timedelta
+        last_seen = (
+            datetime.now(timezone.utc) - timedelta(hours=1)
+        ).isoformat().replace("+00:00", "Z")
     return {
         "id": id_,
         "title": title,
@@ -630,3 +642,152 @@ def test_parse_next_cursor_extracts_real_cursor():
         '<http://x?cursor=NEXT>; rel="next"; results="true"; cursor="NEXT"'
     )
     assert gt._parse_next_cursor(link) == "NEXT"
+
+
+# ---------------------------------------------------------------------------
+# Freshness gate — 2026-05-16
+# ---------------------------------------------------------------------------
+#
+# Captured 2026-05-16: a brain restart re-paged a 2-day-stale unresolved
+# issue (id=71, ``UndefinedColumnError: column "podcast_url" does not
+# exist``) as "novel high-count" because the in-memory ``_alerted_ids``
+# dedup set was empty and the threshold check ignored freshness. The
+# bug had already been fixed in code but the GlitchTip issue wasn't
+# marked resolved. The freshness gate prevents this class of false page
+# going forward — stale unresolved issues are operator-housekeeping
+# (close in the UI), not on-call signal.
+
+
+@pytest.mark.unit
+class TestIsFresh:
+    def test_recent_iso_is_fresh(self):
+        from datetime import datetime, timezone, timedelta
+        recent = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        assert gt._is_fresh(recent, max_age_hours=24) is True
+
+    def test_stale_iso_is_not_fresh(self):
+        from datetime import datetime, timezone, timedelta
+        stale = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        assert gt._is_fresh(stale, max_age_hours=24) is False
+
+    def test_z_suffix_iso_parses(self):
+        """GlitchTip emits ``lastSeen`` ending in ``Z`` — must parse."""
+        from datetime import datetime, timezone, timedelta
+        recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        z_form = recent.replace("+00:00", "Z")
+        assert gt._is_fresh(z_form, max_age_hours=24) is True
+
+    def test_naive_iso_treated_as_utc(self):
+        """A naive (no-tzinfo) ISO string is treated as UTC so we don't
+        accidentally flag fresh issues as stale because of local time."""
+        from datetime import datetime, timezone, timedelta
+        recent_naive = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).replace(tzinfo=None).isoformat()
+        assert gt._is_fresh(recent_naive, max_age_hours=24) is True
+
+    def test_none_is_treated_as_fresh(self):
+        """No timestamp = don't suppress a real signal on a parser quirk."""
+        assert gt._is_fresh(None, max_age_hours=24) is True
+
+    def test_garbage_iso_is_treated_as_fresh(self):
+        """Unparseable input = also fresh (fail-open, don't lose signal)."""
+        assert gt._is_fresh("not-an-iso-string", max_age_hours=24) is True
+
+    def test_zero_max_age_disables_gate(self):
+        """Operators who want every restart to re-page everything can
+        set freshness=0 — gate degrades to always-fresh."""
+        from datetime import datetime, timezone, timedelta
+        ancient = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+        assert gt._is_fresh(ancient, max_age_hours=0) is True
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_stale_unresolved_issue_is_not_alerted():
+    """End-to-end pin: an unresolved issue above the threshold but
+    stale (``lastSeen`` older than 24h) does NOT page the operator.
+    Captured 2026-05-16: a brain restart turned the empty in-memory
+    ``_alerted_ids`` set into a "re-page every stale issue" loop."""
+    from datetime import datetime, timezone, timedelta
+    stale_iso = (
+        datetime.now(timezone.utc) - timedelta(hours=48)
+    ).isoformat().replace("+00:00", "Z")
+    stale_issue = _issue("999", "Stale unresolved boom", 250, last_seen=stale_iso)
+
+    pool = _make_pool(
+        settings={
+            "glitchtip_triage_enabled": "true",
+            "glitchtip_base_url": "http://gt:8000",
+            "glitchtip_triage_org_slug": "glad-labs",
+            "glitchtip_triage_alert_threshold_count": "100",
+            "glitchtip_triage_alert_freshness_hours": "24",
+            "glitchtip_triage_auto_resolve_patterns": "[]",
+        },
+        secrets={"glitchtip_triage_api_token": "tok-abc"},
+    )
+    client = _FakeClient(
+        get_responses=[_FakeResponse(status_code=200, json_data=[stale_issue])],
+    )
+
+    notifies: list[dict] = []
+    gt._alerted_ids.clear()
+    try:
+        summary = await gt.run_glitchtip_triage_probe(
+            pool,
+            notify_fn=lambda **kw: notifies.append(kw),
+            http_client_factory=_factory(client),
+        )
+    finally:
+        gt._alerted_ids.clear()
+
+    assert summary["ok"] is True
+    # Issue was seen, but freshness gate prevented the page.
+    assert summary["issues_seen"] == 1
+    assert summary["alerted_count"] == 0
+    assert notifies == [], (
+        f"Stale issue paged operator despite freshness gate: {notifies}"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_fresh_issue_still_alerted_when_threshold_crossed():
+    """Mirror test — a fresh issue above the threshold DOES page.
+    Confirms the gate isn't accidentally silencing real signal."""
+    from datetime import datetime, timezone, timedelta
+    fresh_iso = (
+        datetime.now(timezone.utc) - timedelta(hours=2)
+    ).isoformat().replace("+00:00", "Z")
+    fresh_issue = _issue("888", "Fresh unresolved boom", 250, last_seen=fresh_iso)
+
+    pool = _make_pool(
+        settings={
+            "glitchtip_triage_enabled": "true",
+            "glitchtip_base_url": "http://gt:8000",
+            "glitchtip_triage_org_slug": "glad-labs",
+            "glitchtip_triage_alert_threshold_count": "100",
+            "glitchtip_triage_alert_freshness_hours": "24",
+            "glitchtip_triage_auto_resolve_patterns": "[]",
+        },
+        secrets={"glitchtip_triage_api_token": "tok-abc"},
+    )
+    client = _FakeClient(
+        get_responses=[_FakeResponse(status_code=200, json_data=[fresh_issue])],
+    )
+
+    notifies: list[dict] = []
+    gt._alerted_ids.clear()
+    try:
+        summary = await gt.run_glitchtip_triage_probe(
+            pool,
+            notify_fn=lambda **kw: notifies.append(kw),
+            http_client_factory=_factory(client),
+        )
+    finally:
+        gt._alerted_ids.clear()
+
+    assert summary["ok"] is True
+    assert summary["alerted_count"] == 1
+    assert len(notifies) == 1
+    assert "Fresh unresolved boom" in notifies[0]["title"]

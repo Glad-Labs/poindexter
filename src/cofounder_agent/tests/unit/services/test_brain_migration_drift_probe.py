@@ -527,6 +527,40 @@ class TestDriftFromHealth:
         out = mdp._drift_from_health(health)
         assert out["ok"] is False
         assert "pending" in out["error"]
+        # 2026-05-16: distinct from the "component absent" case below
+        assert "present but" in out["error"]
+
+    def test_returns_not_ok_when_migrations_component_absent(self):
+        """Captured 2026-05-16: the worker's /api/health was returning
+        ``components.migrations = None``. Pre-fix the probe reported
+        "missing 'pending' field" which read like a contract bug; in
+        reality the migrations component wasn't wired into the
+        endpoint at all. Different cause → different message so the
+        operator stops chasing pending-field ghosts.
+        """
+        # Case 1: components dict has no migrations key
+        out = mdp._drift_from_health({"status": "healthy", "components": {}})
+        assert out["ok"] is False
+        assert "absent" in out["error"]
+
+        # Case 2: components.migrations is explicitly None
+        out = mdp._drift_from_health(
+            {"status": "healthy", "components": {"migrations": None}}
+        )
+        assert out["ok"] is False
+        assert "absent" in out["error"]
+
+    def test_returns_not_ok_when_migrations_is_wrong_type(self):
+        """A non-dict value at ``components.migrations`` is treated as
+        an absent component for our purposes (the probe can't extract
+        ``pending`` from a string/list). Better than crashing."""
+        out = mdp._drift_from_health(
+            {"status": "healthy", "components": {"migrations": "n/a"}}
+        )
+        assert out["ok"] is False
+        # Non-dict falls through to "missing 'pending' field" — still
+        # reports correctly, just via the post-coerce path
+        assert "pending" in out["error"]
 
 
 # ---------------------------------------------------------------------------

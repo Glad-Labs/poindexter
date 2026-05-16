@@ -72,17 +72,25 @@ from typing import Any, Iterable
 # the rarer `:?error` and `:+replacement` forms aren't expanded —
 # they degrade to empty string, which manifests as missing-mount drift
 # the operator can fix by setting the var.
-_ENV_VAR_RE = re.compile(
+#
+# 2026-05-16: ``_INNERMOST_BRACED_RE`` only matches braced expressions
+# whose contents contain no ``${`` — i.e. the innermost ones. We iterate
+# outward so nested forms expand correctly. Captured 2026-05-16: the
+# previous ``[^}]*`` default pattern bailed on the first ``}`` in
+# ``${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/...}``
+# and emitted ``-${HOME}/.poindexter/...}`` (note stray leading dash and
+# trailing ``}``), which paged compose_drift_detected continuously for
+# backup-daily / backup-hourly.
+_INNERMOST_BRACED_RE = re.compile(
     r"""
     \$\{
-        (?P<name1>[A-Za-z_][A-Za-z0-9_]*)
-        (?: :- (?P<default>[^}]*) )?
+        (?P<name>[A-Za-z_][A-Za-z0-9_]*)
+        (?: :- (?P<default>(?:[^${}]|\$(?!\{))*) )?
     \}
-    |
-    \$ (?P<name2>[A-Za-z_][A-Za-z0-9_]*)
     """,
     re.VERBOSE,
 )
+_BARE_VAR_RE = re.compile(r"\$(?P<name>[A-Za-z_][A-Za-z0-9_]*)")
 
 
 def _expand_compose_value(s: str) -> str:
@@ -93,18 +101,31 @@ def _expand_compose_value(s: str) -> str:
     running container's docker-inspect output has the resolved value.
     Without expansion, the per-service diff sees `${HOME` and `/cache` as
     separate colon-split parts and reports false drift.
+
+    Handles nested defaults like ``${A:-${B:-${C}}/suffix}`` by repeatedly
+    substituting the innermost ``${...}`` until none remain. Bare ``$VAR``
+    (no braces) is handled in a final non-recursive pass.
     """
-    def _replace(m: re.Match) -> str:
-        name = m.group("name1") or m.group("name2")
-        if not name:  # pragma: no cover — re shouldn't match nothing
-            return m.group(0)
+    def _replace_braced(m: re.Match) -> str:
+        name = m.group("name")
         val = os.environ.get(name, "")
         if val:
             return val
         default = m.group("default")
         return default if default is not None else ""
 
-    return _ENV_VAR_RE.sub(_replace, s)
+    def _replace_bare(m: re.Match) -> str:
+        return os.environ.get(m.group("name"), "")
+
+    # Cap iterations defensively in case of pathological input — compose
+    # supports up to a few nesting levels in practice; 16 covers any real
+    # case while preventing an unbounded loop.
+    for _ in range(16):
+        new = _INNERMOST_BRACED_RE.sub(_replace_braced, s)
+        if new == s:
+            break
+        s = new
+    return _BARE_VAR_RE.sub(_replace_bare, s)
 
 try:  # PyYAML is the only new dep (#213).
     import yaml as _yaml

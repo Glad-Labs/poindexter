@@ -79,7 +79,13 @@ async def test_no_external_needed_returns_pass1_draft(monkeypatch):
 
 
 async def test_external_needed_triggers_research_and_revise(monkeypatch):
-    """One marker → research → revise → done in 1 loop."""
+    """One marker → research → revise → done in 1 loop.
+
+    2026-05-16: ``_revise_node`` now calls
+    :func:`services.llm_text.ollama_chat_text` (plain-text chat) instead
+    of the JSON-format helper that wrapped prose in
+    ``{"content": "..."}``. Patch path updated accordingly.
+    """
     drafts = iter([
         "First draft with [EXTERNAL_NEEDED: a fact] inside.",
         "Revised draft with the actual fact inside.",
@@ -87,9 +93,9 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
     async def fake_pass1(topic, angle, snippets, extra_instructions=None):
         return next(drafts)
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", fake_pass1, raising=False)
-    async def fake_revise(prompt, *, model):
+    async def fake_revise(prompt, **kwargs):
         return next(drafts)
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_revise)
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
     async def fake_research(query, max_sources=2):
         return f"External research result for: {query}"
     monkeypatch.setattr("services.research_service.research_topic", fake_research, raising=False)
@@ -113,10 +119,10 @@ async def test_loop_caps_at_max_revisions(monkeypatch):
         counter["n"] += 1
         return f"Draft with [EXTERNAL_NEEDED: thing {counter['n']}] inside."
     monkeypatch.setattr("services.ai_content_generator.generate_with_context", always_needs_more, raising=False)
-    async def fake_revise(prompt, *, model):
+    async def fake_revise(prompt, **kwargs):
         counter["n"] += 1
         return f"Revised with [EXTERNAL_NEEDED: another thing {counter['n']}]."
-    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_revise)
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
     async def fake_research(query, max_sources=2):
         return "fact"
     monkeypatch.setattr("services.research_service.research_topic", fake_research, raising=False)
@@ -130,3 +136,58 @@ async def test_loop_caps_at_max_revisions(monkeypatch):
     )
     assert result["revision_loops"] == 3
     assert result["loop_capped"] is True
+
+
+async def test_revise_uses_plain_text_helper_not_json_helper(monkeypatch):
+    """Pins the 2026-05-16 fix: ``_revise_node`` must NOT route through
+    ``services.topic_ranking._ollama_chat_json`` (which forces
+    ``format=json`` on Ollama and produces ``{"content": "..."}`` blobs).
+    Captured 2026-05-15: ``pipeline_versions.id=1851`` shipped a literal
+    ``}`` as the final line because the wrong helper was wired in here.
+    """
+    # If two_pass regresses to the JSON helper, this stub will be
+    # invoked. We mark that as a hard failure.
+    async def forbidden_json_helper(prompt, **kwargs):
+        raise AssertionError(
+            "_revise_node regressed back to topic_ranking._ollama_chat_json — "
+            "must use services.llm_text.ollama_chat_text (plain text) to "
+            "avoid the JSON envelope leak pattern. See "
+            "tests/unit/services/test_content_validator.py "
+            "::TestJsonEnvelopeLeakDetection for the failure mode."
+        )
+    monkeypatch.setattr(
+        "services.topic_ranking._ollama_chat_json", forbidden_json_helper,
+    )
+
+    drafts = iter([
+        "First draft with [EXTERNAL_NEEDED: a fact] inside.",
+        "Revised draft — clean prose, no JSON wrapper.",
+    ])
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None):
+        return next(drafts)
+    monkeypatch.setattr(
+        "services.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+    async def fake_revise(prompt, **kwargs):
+        return next(drafts)
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+    async def fake_research(query, max_sources=2):
+        return "ok"
+    monkeypatch.setattr(
+        "services.research_service.research_topic",
+        fake_research, raising=False,
+    )
+    async def fake_embed(text):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+    # Output is the plain-text revise result — no JSON wrapper, no
+    # trailing brace.
+    assert result["draft"] == "Revised draft — clean prose, no JSON wrapper."
+    assert not result["draft"].rstrip().endswith("}")

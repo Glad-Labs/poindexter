@@ -155,7 +155,15 @@ litellm = ">=1.83.7,<2.0"
 # try/except ImportError guards but the dep was never declared, so both
 # integrations have been silently no-opping in production. Adding here
 # so the worker image rebuild picks both up alongside litellm.
-langfuse = ">=3.0,<4.0"
+#
+# Bumped 3.x → 4.x (2026-05-15). The shim's API surface (``observe`` /
+# ``get_client`` / ``update_current_generation`` / ``update_current_trace``)
+# is unchanged across the major; 3.x is EOL. Note: the
+# ``EventSerializer`` cycle-detection bug at ``_utils/serializer.py:134/137/145``
+# exists in EVERY published 3.x and 4.x version — we work around it in
+# ``services/langfuse_shim.py`` via ``_install_cycle_safe_serializer_patch``.
+# Remove that patch once upstream merges a fix.
+langfuse = "^4.6"
 deepeval = "^4.0.0"
 # guardrails-ai dropped 2026-05-12 — PyPI quarantined the package after
 # a suspect 0.10.1 release published that day. Our installed 0.7.3 wheel

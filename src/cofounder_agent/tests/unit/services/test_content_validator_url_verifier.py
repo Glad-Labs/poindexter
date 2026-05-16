@@ -303,6 +303,120 @@ class TestFindHallucinatedReferences:
 
 
 # ---------------------------------------------------------------------------
+# Expanded hallucination whitelist — 2026-05-15 audit categories
+# ---------------------------------------------------------------------------
+#
+# Captured 2026-05-15: the validator was critical-flagging ~90% of
+# common tech proper-nouns ('Steam', 'Vulkan', 'git', 'npm',
+# 'JavaScript', 'JWT', 'LoRA', 'OWASP', etc.) as hallucinated library
+# references. The base whitelist was rebuilt around Matt's brand niches
+# (ai/ml, gaming, hardware per ``feedback_brand_niches``) plus the
+# common-tech long tail. These tests pin the categories so a future
+# refactor can't silently re-introduce the noise.
+
+
+class TestExpandedHallucinationWhitelist:
+    """Each category gets one representative term — adding terms back
+    later is a one-line whitelist edit; deleting one shouldn't be silent."""
+
+    @pytest.mark.parametrize("term", [
+        # AI/ML — first-class niche
+        "langchain", "langfuse", "litellm", "huggingface", "lora",
+        # Gaming + hardware — first-class niche
+        "steam", "vulkan", "opengl", "directx",
+        "ryzen", "rtx", "geforce", "radeon", "corsair",
+        # Web / cloud
+        "vercel", "cloudflare", "github", "aws", "gcp",
+        # Browsers + runtimes
+        "node", "deno", "bun", "chromium",
+        # Languages + frameworks
+        "javascript", "typescript", "python", "rust",
+        "react", "fastapi", "django", "htmx", "tailwind",
+        # Databases + infra
+        "postgres", "redis", "kafka", "docker", "kubernetes",
+        "prometheus", "grafana", "loki",
+        # Dev tools — the ones that triggered the 2026-05-15 audit
+        "git", "npm", "pip", "uv", "poetry", "cargo",
+        "kubectl", "ffmpeg", "openssl",
+        # Security / governance
+        "owasp", "nist", "mitre",
+        # Common acronyms
+        "rest", "grpc", "jwt", "oauth", "oauth2",
+    ])
+    def test_term_is_not_flagged(self, term):
+        """Backtick-wrapped lowercase term must NOT produce a candidate."""
+        text = f"Use `{term}` to do the thing."
+        result = _extract_library_candidates(text)
+        norms = [norm for _raw, norm in result]
+        assert term not in norms, (
+            f"{term!r} regressed out of the hallucination whitelist — "
+            f"adding it back is the fix. See _HALLUCINATION_WHITELIST_BASE."
+        )
+
+    def test_obvious_hallucination_still_flagged(self):
+        """The whitelist expansion mustn't blanket-allow everything —
+        a plausibly-fabricated lib name should still come through."""
+        text = "Install `xenoflux-quantum-orm` from PyPI for fast queries."
+        result = _extract_library_candidates(text)
+        norms = [norm for _raw, norm in result]
+        assert "xenoflux-quantum-orm" in norms
+
+
+class TestHallucinationWhitelistAdditions:
+    """``app_settings.hallucination_whitelist_additions`` lets the
+    operator drop in newly-flagged terms without a code change. Mirrors
+    the ``fact_overrides`` pattern."""
+
+    def setup_method(self):
+        # Clear the 5-minute cache between tests
+        cv._whitelist_additions_cache = set()
+        cv._whitelist_additions_ts = 0.0
+
+    def teardown_method(self):
+        cv._whitelist_additions_cache = set()
+        cv._whitelist_additions_ts = 0.0
+
+    def test_get_whitelist_includes_db_additions(self):
+        """``_get_hallucination_whitelist()`` merges base + additions."""
+        with patch.object(
+            cv, "_load_hallucination_whitelist_additions_sync",
+            return_value={"acmecorp", "fooframework"},
+        ):
+            effective = cv._get_hallucination_whitelist()
+        assert "acmecorp" in effective
+        assert "fooframework" in effective
+        # Base entries still present
+        assert "git" in effective
+
+    def test_db_additions_skip_candidate_extraction(self):
+        """A term added via app_settings is NOT flagged as a hallucination."""
+        with patch.object(
+            cv, "_load_hallucination_whitelist_additions_sync",
+            return_value={"madeupframework"},
+        ):
+            result = _extract_library_candidates(
+                "Try `madeupframework` for your next project."
+            )
+        norms = [norm for _raw, norm in result]
+        assert "madeupframework" not in norms
+
+    def test_db_load_failure_falls_back_to_cache(self):
+        """If the DB read raises, the cached set is returned — base
+        whitelist still functional, no exception crosses the boundary."""
+        # Seed the cache so we can verify fallback
+        cv._whitelist_additions_cache = {"cachedterm"}
+        cv._whitelist_additions_ts = 0.0  # force re-fetch
+        # Sabotage the DB-URL resolver to simulate failure
+        with patch.object(
+            cv, "_load_hallucination_whitelist_additions_sync",
+            side_effect=lambda: cv._whitelist_additions_cache,
+        ):
+            effective = cv._get_hallucination_whitelist()
+        assert "cachedterm" in effective
+        assert "git" in effective  # base intact
+
+
+# ---------------------------------------------------------------------------
 # Title diversity (lines 1187-1196) — sanity-check via the public entry
 # ---------------------------------------------------------------------------
 

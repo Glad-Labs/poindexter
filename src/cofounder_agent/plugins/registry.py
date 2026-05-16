@@ -482,6 +482,23 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Telegram when overnight criticals appear, so the operator wakes
         # up to one summary instead of 50+ individual Captain Hook pings.
         ("jobs", "services.jobs.morning_brief", "MorningBriefJob"),
+        # Topic auto-resolve (every 2h). Closes the gap when the operator
+        # is not running ``poindexter topics rank-batch / resolve-batch``
+        # manually. Scans open topic_batches, applies LLM-rank as
+        # operator-rank, promotes the rank-1 candidate to a
+        # canonical_blog content_task. Master switch is
+        # ``topic_auto_resolve_enabled`` (default false). See
+        # services/jobs/topic_auto_resolve.py docstring for rails.
+        ("jobs", "services.jobs.topic_auto_resolve", "TopicAutoResolveJob"),
+        # Bridge: ``audit_log`` findings -> ``alert_events`` so the brain's
+        # existing alert_dispatcher (with its dedup matrix) actually pages
+        # operators on severity>=warn findings. Closes the "audit_log row
+        # IS the finding" silent-route gap noted in utils/findings.py's
+        # docstring. Captured 2026-05-15: 108 critical findings written
+        # to audit_log in 7 days, zero reached the operator. Runs every
+        # 60s; uses ``app_settings.findings_alert_route_watermark`` to
+        # track progress.
+        ("jobs", "services.jobs.findings_alert_router", "FindingsAlertRouterJob"),
         # Integrations runners — wrap tap_runner / retention_runner as
         # scheduled Jobs. Pre-2026-05-09 these only ran via the
         # poindexter CLI, so external_taps + retention_policies had been
@@ -555,6 +572,18 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("stages", "services.stages.verify_task", "VerifyTaskStage"),
         ("stages", "services.stages.generate_content", "GenerateContentStage"),
         ("stages", "services.stages.writer_self_review", "WriterSelfReviewStage"),
+        # Resolve ``[posts/<slug>]`` placeholders before validation. The
+        # writer LLM emits these as hints to internal posts but NO code
+        # ever resolved them; the validator (added 2026-05-12) catches
+        # them as ``critical`` and vetoes the multi_model_qa gate. ~95%
+        # canonical_blog rejection rate traced to this leak on 2026-05-15.
+        # Stage looks slugs/ids up in ``posts`` and rewrites to real
+        # markdown links, or strips unknown placeholders.
+        (
+            "stages",
+            "services.stages.resolve_internal_link_placeholders",
+            "ResolveInternalLinkPlaceholdersStage",
+        ),
         ("stages", "services.stages.quality_evaluation", "QualityEvaluationStage"),
         ("stages", "services.stages.url_validation", "UrlValidationStage"),
         ("stages", "services.stages.replace_inline_images", "ReplaceInlineImagesStage"),

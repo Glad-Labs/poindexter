@@ -896,6 +896,52 @@ class TestExpandComposeValue:
         # which is correct (operator config bug, not drift).
         assert cdp._expand_compose_value("${UNSET}/x") == "/x"
 
+    def test_nested_defaults_outer_set(self, monkeypatch):
+        """Captured 2026-05-16: the backup-daily / backup-hourly mount uses
+        ``${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}``.
+        Pre-fix the regex bailed on the first ``}`` and the probe paged
+        ``mounts missing: -${HOME}/.poindexter/backups/auto}`` every cycle.
+        """
+        monkeypatch.setenv("POINDEXTER_BACKUP_DIR", "/mnt/drive-2/backups")
+        monkeypatch.delenv("USERPROFILE", raising=False)
+        monkeypatch.setenv("HOME", "/home/matt")
+        result = cdp._expand_compose_value(
+            "${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}"
+        )
+        assert result == "/mnt/drive-2/backups"
+
+    def test_nested_defaults_fall_through_to_innermost(self, monkeypatch):
+        """All outer vars unset → the innermost default wins."""
+        monkeypatch.delenv("POINDEXTER_BACKUP_DIR", raising=False)
+        monkeypatch.delenv("USERPROFILE", raising=False)
+        monkeypatch.setenv("HOME", "/home/matt")
+        result = cdp._expand_compose_value(
+            "${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}"
+        )
+        assert result == "/home/matt/.poindexter/backups/auto"
+        # And specifically — no stray ``}`` survives anywhere
+        assert "}" not in result
+        assert "${" not in result
+
+    def test_nested_defaults_middle_var_wins(self, monkeypatch):
+        """The middle var is set → it wins over the innermost fallback."""
+        monkeypatch.delenv("POINDEXTER_BACKUP_DIR", raising=False)
+        monkeypatch.setenv("USERPROFILE", "C:/Users/matt")
+        monkeypatch.setenv("HOME", "/home/matt")
+        result = cdp._expand_compose_value(
+            "${POINDEXTER_BACKUP_DIR:-${USERPROFILE:-${HOME}}/.poindexter/backups/auto}"
+        )
+        assert result == "C:/Users/matt/.poindexter/backups/auto"
+        assert "}" not in result
+
+    def test_nested_with_literal_dollar_in_default(self, monkeypatch):
+        """A literal ``$`` followed by a non-brace character must survive
+        the inner-pass without being treated as a variable opener."""
+        monkeypatch.delenv("UNSET", raising=False)
+        # ``$5`` is a literal in the default — should not match a var name
+        result = cdp._expand_compose_value("${UNSET:-/cost/$5/widget}")
+        assert result == "/cost/$5/widget"
+
 
 @pytest.mark.unit
 class TestVolumeEnvVarExpansion:

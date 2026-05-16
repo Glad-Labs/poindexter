@@ -64,6 +64,13 @@ _CANONICAL_BLOG_ORDER: tuple[str, ...] = (
     "verify_task",
     "generate_content",
     "writer_self_review",
+    # Resolve ``[posts/<slug>]`` placeholders that the writer emits.
+    # Must run BEFORE quality_evaluation / cross_model_qa whose
+    # programmatic_validator critical-flags any unresolved placeholder
+    # (see migration 20260512_213806_seed_unresolved_placeholder_validator_rule.py).
+    # Captured 2026-05-15: ~95% canonical_blog rejection rate traced
+    # to leaked placeholders. New stage shipped same day.
+    "resolve_internal_link_placeholders",
     "quality_evaluation",
     "url_validation",
     "replace_inline_images",
