@@ -93,6 +93,12 @@ decorators in `test_database_service.py` and
   subset.
 - `.github/workflows/release-please.yml` — Release Please on the
   public poindexter repo. Versioning only.
+- `.github/workflows/regen-app-settings-doc.yml` — nightly regen of
+  `docs/reference/app-settings.md` against a clean Postgres seeded
+  by the baseline migration. Opens a single PR on
+  `chore/regen-app-settings-doc` when the file drifts; the branch
+  is force-pushed every run so the PR always reflects the latest
+  regen. Per [poindexter#439](https://github.com/Glad-Labs/poindexter/issues/439).
 - `src/cofounder_agent/tests/` — Python unit tests (pytest), 7,900+
   cases across 329 test files.
 - `web/public-site/next.config.js` — has a `validateEnv` check that

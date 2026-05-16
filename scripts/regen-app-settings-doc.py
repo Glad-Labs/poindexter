@@ -31,9 +31,11 @@ actual values.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 from collections import OrderedDict
+from datetime import datetime, timezone
 from pathlib import Path
 
 # brain/ lives at the repo root (not under src/cofounder_agent). Prepend the
@@ -123,6 +125,30 @@ def is_private_key(key: str) -> bool:
     return any(p.search(key) for p in _PRIVATE_KEY_PATTERNS)
 
 
+_STAMP_OVERRIDE_ENV = "REGEN_DATE_OVERRIDE"
+
+
+def resolved_stamp(environ: dict[str, str] | None = None) -> str:
+    """Resolve the ``YYYY-MM-DD`` stamp embedded in the doc's banner.
+
+    CI pins this via ``REGEN_DATE_OVERRIDE`` so the regenerated file is
+    byte-stable across runs of the same source state — otherwise the
+    "Auto-generated on {today}" line moves every nightly run and the
+    drift-check workflow opens a new PR for what is essentially the
+    same content. The override is a plain string (no parsing) so callers
+    can pass anything human-readable; ``main()`` writes it through.
+
+    Falls back to today's UTC date when the env var is unset, matching
+    the original behavior for interactive `python scripts/regen-app-settings-doc.py`
+    runs at Matt's terminal.
+    """
+    env = environ if environ is not None else os.environ
+    override = env.get(_STAMP_OVERRIDE_ENV)
+    if override:
+        return override
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
 def looks_secret(key: str, value: str) -> bool:
     if not value:
         return False
@@ -175,8 +201,7 @@ async def main() -> None:
     finally:
         await conn.close()
 
-    from datetime import datetime, timezone
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    stamp = resolved_stamp()
     out: list[str] = [
         "# App settings reference",
         "",
