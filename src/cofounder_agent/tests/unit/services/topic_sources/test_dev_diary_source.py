@@ -262,7 +262,7 @@ def _gh_pull_payload(
     merged_at: str | None,
     author_login: str = "matty",
     body: str = "",
-    repo: str = "Glad-Labs/glad-labs-stack",
+    repo: str = "Glad-Labs/poindexter",
 ) -> dict:
     """Shape of an item in the GitHub ``GET /repos/.../pulls`` response."""
     return {
@@ -310,7 +310,7 @@ class TestCollectMergedPRs:
         transport = httpx.MockTransport(boom)
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_merged_prs(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert result == []
 
@@ -320,7 +320,7 @@ class TestCollectMergedPRs:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_merged_prs(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert result == []
 
@@ -346,14 +346,14 @@ class TestCollectMergedPRs:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_merged_prs(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert len(result) == 2
         assert result[0]["number"] == 156
         assert result[0]["title"] == "feat(gates): per-medium approval gate engine"
         assert result[0]["author"] == "matty"
         assert result[0]["body"] == "A long PR description that explains the change."
-        assert "Glad-Labs/glad-labs-stack/pull/156" in result[0]["url"]
+        assert "Glad-Labs/poindexter/pull/156" in result[0]["url"]
 
     async def test_filters_closed_unmerged_prs(self):
         recent = (
@@ -369,7 +369,7 @@ class TestCollectMergedPRs:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_merged_prs(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert [pr["number"] for pr in result] == [1]
 
@@ -391,7 +391,7 @@ class TestCollectMergedPRs:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_merged_prs(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert [pr["number"] for pr in result] == [1]
 
@@ -404,7 +404,7 @@ class TestCollectMergedPRs:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_merged_prs(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert result == []
 
@@ -421,7 +421,7 @@ class TestCollectMergedPRs:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_merged_prs(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert result[0]["author"] == ""
 
@@ -432,7 +432,7 @@ class TestCollectMergedPRs:
         with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
             async with httpx.AsyncClient(transport=transport) as client:
                 result = await _collect_merged_prs(
-                    hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                    hours=24, repo="Glad-Labs/poindexter", client=client,
                 )
         assert result == []
         assert any(
@@ -447,7 +447,7 @@ class TestCollectMergedPRs:
         with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
             async with httpx.AsyncClient(transport=transport) as client:
                 result = await _collect_merged_prs(
-                    hours=24, repo="Glad-Labs/glad-labs-stack",
+                    hours=24, repo="Glad-Labs/poindexter",
                     gh_token="bad_token", client=client,
                 )
         assert result == []
@@ -463,7 +463,7 @@ class TestCollectMergedPRs:
         )
         async with httpx.AsyncClient(transport=transport) as client:
             await _collect_merged_prs(
-                hours=24, repo="Glad-Labs/glad-labs-stack",
+                hours=24, repo="Glad-Labs/poindexter",
                 gh_token="ghp_secret_123", client=client,
             )
         assert len(captured) == 1
@@ -478,7 +478,7 @@ class TestCollectMergedPRs:
         with caplog.at_level(logging.DEBUG, logger="services.topic_sources.dev_diary_source"):
             async with httpx.AsyncClient(transport=transport) as client:
                 await _collect_merged_prs(
-                    hours=24, repo="Glad-Labs/glad-labs-stack",
+                    hours=24, repo="Glad-Labs/poindexter",
                     gh_token=None, client=client,
                 )
         assert "Authorization" not in captured[0].headers
@@ -514,7 +514,7 @@ class TestCollectNotableCommits:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_notable_commits(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         prefixes = [c["prefix"] for c in result]
         assert prefixes == ["feat", "fix", "refactor"]
@@ -535,7 +535,7 @@ class TestCollectNotableCommits:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_notable_commits(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert [c["sha"] for c in result] == ["kept0000"]
 
@@ -545,7 +545,7 @@ class TestCollectNotableCommits:
         })
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_notable_commits(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert result == []
 
@@ -556,7 +556,7 @@ class TestCollectNotableCommits:
         transport = httpx.MockTransport(boom)
         async with httpx.AsyncClient(transport=transport) as client:
             result = await _collect_notable_commits(
-                hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                hours=24, repo="Glad-Labs/poindexter", client=client,
             )
         assert result == []
 
@@ -567,7 +567,7 @@ class TestCollectNotableCommits:
         with caplog.at_level(logging.WARNING, logger="services.topic_sources.dev_diary_source"):
             async with httpx.AsyncClient(transport=transport) as client:
                 result = await _collect_notable_commits(
-                    hours=24, repo="Glad-Labs/glad-labs-stack", client=client,
+                    hours=24, repo="Glad-Labs/poindexter", client=client,
                 )
         assert result == []
         assert any(
@@ -872,12 +872,12 @@ class TestGatherContextWiring:
                 pool=None,
                 hours_lookback=12,
                 gh_token="explicit_test_token",
-                gh_repo="Glad-Labs/glad-labs-stack",
+                gh_repo="Glad-Labs/poindexter",
             )
 
         assert captured["gh_token"] == "explicit_test_token"
         assert captured["hours"] == 12
-        assert captured["repo"] == "Glad-Labs/glad-labs-stack"
+        assert captured["repo"] == "Glad-Labs/poindexter"
         assert ctx.merged_prs == []
 
     async def test_pool_none_means_no_token_fetch_attempt(self):

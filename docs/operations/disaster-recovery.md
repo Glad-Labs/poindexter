@@ -288,7 +288,7 @@ curl -s http://localhost:8002/api/health | python -m json.tool
 ### Step 2 — Clone the repo
 
 ```bash
-git clone git@github.com:Glad-Labs/glad-labs-stack.git ~/glad-labs-stack
+git clone git@github.com:Glad-Labs/poindexter.git ~/glad-labs-stack
 cd ~/glad-labs-stack
 ```
 
@@ -547,8 +547,8 @@ docker restart poindexter-sdxl-server
 
 ```bash
 curl -sf https://www.gladlabs.io
-gh run list --repo Glad-Labs/glad-labs-stack --limit 3
-gh run rerun <run_id> --repo Glad-Labs/glad-labs-stack
+gh run list --repo Glad-Labs/poindexter --limit 3
+gh run rerun <run_id> --repo Glad-Labs/poindexter
 ```
 
 ### Grafana — dashboards down

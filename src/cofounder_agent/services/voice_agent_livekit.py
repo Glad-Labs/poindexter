@@ -493,7 +493,7 @@ async def get_recent_pull_requests(params: Any) -> None:
 # here without app_settings churn; if the list ever grows past four it
 # should migrate to a setting per feedback_no_silent_defaults.
 _VOICE_AGENT_PR_REPOS: tuple[str, ...] = (
-    "Glad-Labs/glad-labs-stack",
+    "Glad-Labs/poindexter",
     "Glad-Labs/poindexter",
 )
 

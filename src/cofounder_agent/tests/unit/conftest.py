@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
-# Glad-Labs/glad-labs-stack#410 follow-up. ``services.flows.content_generation``
+# Glad-Labs/poindexter#410 follow-up. ``services.flows.content_generation``
 # is the Prefect flow that owns dispatch (the legacy
 # ``services.task_executor`` polling daemon was deleted in Stage 4,
 # 2026-05-16). The flow module's ``@flow`` / ``@task`` decorators trigger
