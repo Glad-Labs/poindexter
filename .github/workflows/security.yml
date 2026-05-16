@@ -188,7 +188,7 @@ jobs:
           artifact-name: sbom-cyclonedx
 
       - name: Scan SBOM with grype (HIGH/CRITICAL gate)
-        uses: anchore/scan-action@869c549e657a088dc0441b08ce4fc0ecdac2bb65  # v5.3.0 as of 2026-05-12
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2  # v5.3.0 as of 2026-05-12
         id: grype-scan
         with:
           sbom: sbom.cdx.json
