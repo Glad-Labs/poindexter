@@ -1,14 +1,93 @@
-"""Unified Content Router Service — centralized blog post generation pipeline."""
+"""Unified Content Router Service — LangGraph TemplateRunner dispatcher.
+
+What this file is
+-----------------
+
+The single public entry point :func:`process_content_generation_task` is
+called by the Prefect flow (``services/flows/content_generation.py``) to
+run one ``pipeline_tasks`` row through the content pipeline. It is a
+thin dispatcher: it builds the shared pipeline context dict (image
+service, settings, style tracker, site_config, models_by_phase,
+experiment assignment) and hands it to
+:class:`services.template_runner.TemplateRunner` keyed on the task's
+``template_slug`` column.
+
+History (why the file is now this small)
+----------------------------------------
+
+Until 2026-05-16 this module ALSO contained the legacy chunked
+``StageRunner.run_all`` orchestration — five sequential calls to
+``_runner.run_all([...])`` that drove the 12-stage pipeline in-process.
+That path was the production default until the Lane C cutover
+(``Glad-Labs/poindexter#355`` / ``#450``) shipped the
+``canonical_blog`` LangGraph template and prod flipped
+``app_settings.default_template_slug='canonical_blog'`` on 2026-05-10.
+
+After 7+ clean days on TemplateRunner with zero ``template_slug IS
+NULL`` tasks rolling through, the legacy chunked block was deleted in
+the cleanup sweep (Stage 4 of the Lane C runbook in
+``docs/architecture/langgraph-cutover.md``). What remains is the
+shared-context construction + the TemplateRunner dispatch + the
+post-run experiment outcome attribution. The 12-stage flow itself
+lives in ``services/pipeline_templates/__init__.py:_CANONICAL_BLOG_ORDER``;
+new stages go there, NOT here.
+
+Dependencies
+------------
+
+Reads:
+    - ``services.container.get_service("settings")`` — DI seam, may be None outside lifespan
+    - ``services.image_style_rotation.ImageStyleTracker``
+    - ``services.image_service.get_image_service``
+    - ``services.site_config.site_config`` (per-module SiteConfig attr)
+    - ``services.pipeline_experiment_hook`` (best-effort)
+    - ``services.template_runner.TemplateRunner``
+    - ``pipeline_tasks.template_slug`` (per-row, set at task creation)
+
+Writes (via TemplateRunner → stages):
+    - ``content_tasks`` (status, error_message, task_metadata) via the
+      ``finalize_task`` stage and the failure branch below
+    - ``audit_log`` — ``task_started`` here, plus per-stage events
+      emitted from inside TemplateRunner / the stages themselves
+    - ``webhook_events`` indirectly via ``emit_webhook_event`` on the
+      failure path
+
+Failure modes
+-------------
+
+- **Missing ``template_slug`` on the task row** — per
+  ``feedback_no_silent_defaults`` we fail loud rather than running an
+  implicit legacy path. ``tasks_db.add_task`` consults
+  ``app_settings.default_template_slug`` at task creation, so a NULL
+  here means either the setting was empty when the task was queued
+  (stale config) or the row was inserted by a foreign writer that
+  bypassed ``tasks_db``. Both deserve operator attention; we mark the
+  task ``failed`` with a diagnostic ``error_message`` and return.
+- **TemplateRunner raises** — caught, task marked ``failed``, partial
+  context preserved in ``task_metadata`` so the operator can review
+  whatever generated before the crash.
+
+See also
+--------
+
+- ``docs/architecture/langgraph-cutover.md`` — Lane C runbook (this
+  is the file that file's Stage 4 deletes from)
+- ``docs/architecture/prefect-cutover.md`` — who calls this function
+- ``services/template_runner.py`` — the LangGraph engine
+- ``services/pipeline_templates/__init__.py`` — where new stages go
+"""
+
+from __future__ import annotations
 
 from typing import Any
 
 from services.logger_config import get_logger
+from services.site_config import SiteConfig
 
 from .audit_log import audit_log_bg
 from .database_service import DatabaseService
 from .image_service import get_image_service
 from .webhook_delivery_service import emit_webhook_event
-from services.site_config import SiteConfig
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
 # Defaults to a fresh env-fallback instance until the lifespan setter
@@ -26,51 +105,33 @@ def set_site_config(sc: SiteConfig) -> None:
 logger = get_logger(__name__)
 
 
+async def _load_template_slug(database_service: DatabaseService, task_id: str) -> str | None:
+    """Read ``pipeline_tasks.template_slug`` for ``task_id``.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ============================================================================
-# WRITER SELF-REVIEW PASS
-# ============================================================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    Returns the trimmed slug, or ``None`` if the row has no slug / the
+    lookup fails. The caller treats ``None`` as a hard error — see the
+    module docstring "Missing template_slug" note.
+    """
+    try:
+        async with database_service.pool.acquire() as conn:
+            raw = await conn.fetchval(
+                "SELECT template_slug FROM pipeline_tasks WHERE task_id = $1",
+                str(task_id),
+            )
+    except Exception as exc:
+        logger.warning(
+            "[BG-TASK] template_slug lookup failed for task %s: %s",
+            task_id, exc,
+        )
+        return None
+    # Tight isinstance check — test fixtures bind ``db.pool`` as a
+    # MagicMock that auto-generates AsyncMocks for attribute access,
+    # so ``fetchval`` can return a truthy AsyncMock object rather than
+    # a string. Without the isinstance gate, a non-string slug flows
+    # into TemplateRunner.run and KeyErrors out.
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
 
 
 async def process_content_generation_task(
@@ -82,16 +143,28 @@ async def process_content_generation_task(
     generate_featured_image: bool = True,
     database_service: DatabaseService | None = None,
     task_id: str | None = None,
-    # NEW: Model selection parameters (Week 1)
     models_by_phase: dict[str, str] | None = None,
     quality_preference: str | None = None,
     category: str | None = None,
     target_audience: str | None = None,
 ) -> dict[str, Any]:
-    """Run the full content generation pipeline (verify, generate, QA, images, SEO, finalize)."""
+    """Dispatch one ``pipeline_tasks`` row through its LangGraph template.
+
+    Builds the shared pipeline context (service handles + per-task
+    inputs + experiment assignment) and hands it to
+    :class:`services.template_runner.TemplateRunner` keyed on
+    ``pipeline_tasks.template_slug``. The TemplateRunner drives the
+    12-node ``canonical_blog`` graph (or whichever template the row
+    declares) to completion; this function returns the final state
+    dict.
+
+    Per ``feedback_no_silent_defaults``: a row without a
+    ``template_slug`` is a configuration bug, not a fallback case. We
+    mark the task ``failed`` with a diagnostic message instead of
+    silently running an undefined pipeline.
+    """
     from uuid import uuid4
 
-    # Generate task_id if not provided
     if not task_id:
         task_id = str(uuid4())
 
@@ -100,7 +173,7 @@ async def process_content_generation_task(
         raise ValueError("DatabaseService is required for content_tasks persistence")
 
     logger.info("=" * 80)
-    logger.info("COMPLETE CONTENT GENERATION PIPELINE")
+    logger.info("CONTENT GENERATION PIPELINE")
     logger.info("=" * 80)
     logger.info("   Task ID: %s", task_id)
     logger.info("   Topic: %s", topic)
@@ -110,20 +183,24 @@ async def process_content_generation_task(
     logger.info("   Image Search: %s", generate_featured_image)
     logger.info("=" * 80)
 
-    # `result` doubles as the shared pipeline context consumed by Stage
-    # plugins. Stages read/write via context.get() / StageResult.context_updates.
-    # Populating the orchestrator's inputs here means every stage can pull
-    # what it needs without a separate adapter layer.
+    # Build the shared pipeline context.
     #
-    # Pull the lifespan-loaded SiteConfig instance and thread it into
-    # the ImageService ctor so the Pexels secret lookup goes through
-    # the canonical Phase H DI seam (poindexter#381). Falling back to
-    # the module singleton matches what main.py rebinds, so legacy
-    # paths still work.
+    # TemplateRunner extracts service handles from this dict via
+    # ``_KNOWN_SERVICE_KEYS`` ({database_service, image_service,
+    # settings_service, image_style_tracker, site_config}). Stages
+    # read inputs (topic / style / tone / target_length / tags /
+    # generate_featured_image / models_by_phase / category /
+    # target_audience) and accumulate outputs (content, quality_result,
+    # featured_image_url, seo_*, status, ...) on the same dict.
+    #
+    # Pull the lifespan-loaded SiteConfig and thread it into the
+    # ImageService ctor so the Pexels secret lookup goes through the
+    # canonical Phase H DI seam (poindexter#381).
     image_service = get_image_service(site_config=site_config)
-    # Settings + style tracker — pulled from the container/app.state during
-    # transition to full DI (#242). Falls back to fresh instances when a
-    # stage is invoked outside the lifespan-wired context (e.g. tests).
+
+    # Settings + style tracker — pulled from the container/app.state
+    # during DI transition (#242). Falls back to fresh instances when
+    # invoked outside the lifespan-wired context (tests, ad-hoc CLI).
     try:
         from services.container import get_service as _get_service
         _settings_service = _get_service("settings")
@@ -133,14 +210,16 @@ async def process_content_generation_task(
     _style_tracker = _IST()
 
     # Mutable copy — the experiment hook may set ``models_by_phase["writer"]``
-    # below if an A/B experiment is active. Always seed the dict before the
-    # hook runs so the merge is in-place + observable to downstream stages.
+    # below if an A/B experiment is active. Always seed the dict before
+    # the hook runs so the merge is in-place + observable to downstream
+    # stages.
     _models_by_phase: dict[str, str] = dict(models_by_phase or {})
 
-    # Glad-Labs/poindexter#27: assign this task to a variant of the active
-    # pipeline experiment (if any). Best-effort — failure returns no-op
-    # and the pipeline runs with default config. The assignment dict is
-    # threaded through so finalize can record_outcome on the same row.
+    # Glad-Labs/poindexter#27: assign this task to a variant of the
+    # active pipeline experiment (if any). Best-effort — failure
+    # returns a no-op assignment and the pipeline runs with default
+    # config. The assignment dict is threaded through so finalize can
+    # ``record_outcome`` on the same row.
     try:
         from services.pipeline_experiment_hook import assign_pipeline_variant
         _experiment_assignment = await assign_pipeline_variant(
@@ -150,9 +229,9 @@ async def process_content_generation_task(
             models_by_phase=_models_by_phase,
         )
     except Exception as _exc:
-        # Truly defensive — assign_pipeline_variant is itself wrapped in
-        # try/except, but if the import fails for some bizarre reason we
-        # still want the pipeline to run.
+        # assign_pipeline_variant is itself wrapped in try/except, but
+        # if the import fails for some bizarre reason we still want
+        # the pipeline to run.
         logger.debug("[BG-TASK] experiment hook unavailable: %s", _exc)
         _experiment_assignment = {"experiment_key": None, "variant_key": None}
 
@@ -170,7 +249,7 @@ async def process_content_generation_task(
         "generate_featured_image": generate_featured_image,
         "database_service": database_service,
         "image_service": image_service,
-        # Phase H DI seam — every stage can pull `site_config` from
+        # Phase H DI seam — every stage can pull ``site_config`` from
         # context.get('site_config') and forward it into services that
         # need DB-backed settings or secrets (poindexter#381).
         "site_config": site_config,
@@ -181,222 +260,83 @@ async def process_content_generation_task(
         "settings_service": _settings_service,
         "image_style_tracker": _style_tracker,
         # Experiment context — present for the duration of the run so
-        # finalize can call record_outcome on the same assignment row.
+        # finalize can ``record_outcome`` on the same assignment row.
         "experiment_assignment": _experiment_assignment,
     }
 
-    # Build the Stage runner. Stages are loaded imperatively via
-    # plugins.registry.get_core_samples since the poetry entry_points
-    # packaging fix is tracked separately (#78).
-    from plugins.registry import get_core_samples
-    from plugins.stage_runner import StageRunner
-    _runner = StageRunner(database_service.pool, get_core_samples().get("stages", []))
+    # Resolve the template slug for this task. Per Lane C cutover
+    # (poindexter#355), ``tasks_db.add_task`` reads
+    # ``app_settings.default_template_slug`` at task creation and stores
+    # the resolved slug on the ``pipeline_tasks`` row. Reading it back
+    # here gives us per-task pipeline selection (e.g. ``dev_diary`` cron
+    # tasks pass their own slug; everything else gets the operator's
+    # global default).
+    template_slug = await _load_template_slug(database_service, task_id)
 
-    # ------------------------------------------------------------------
-    # Dynamic-pipeline-composition dispatch (v1 POC, Glad-Labs/poindexter#359).
-    # When the task carries ``template_slug``, route to the LangGraph-based
-    # TemplateRunner instead of the legacy StageRunner. Tasks without a
-    # template_slug continue through the canonical chunked flow below —
-    # no behaviour change for the existing default path.
-    # ------------------------------------------------------------------
-    _template_slug: str | None = None
-    try:
-        async with database_service.pool.acquire() as _conn:
-            _raw = await _conn.fetchval(
-                "SELECT template_slug FROM pipeline_tasks WHERE task_id = $1",
-                str(task_id),
-            )
-        # Tight isinstance check — test fixtures bind ``db.pool`` as a
-        # MagicMock that auto-generates AsyncMocks for attribute access,
-        # so ``fetchval`` returns a truthy AsyncMock object rather than
-        # a string. Without the isinstance gate, the legacy-StageRunner
-        # tests get routed into TemplateRunner.run with a non-string
-        # slug and KeyError out.
-        if isinstance(_raw, str) and _raw.strip():
-            _template_slug = _raw.strip()
-    except Exception as _exc:
-        logger.debug("[BG-TASK] template_slug lookup failed: %s", _exc)
-
-    if _template_slug:
-        logger.info(
-            "[BG-TASK] template_slug=%r — routing to TemplateRunner (LangGraph)",
-            _template_slug,
+    # Per ``feedback_no_silent_defaults``: a missing slug is a config
+    # error, not a fallback. The legacy chunked StageRunner flow was
+    # deleted in the 2026-05-16 sweep (see module docstring); there is
+    # no implicit pipeline to run. Mark the task failed with a
+    # diagnostic so the operator notices the misconfiguration instead
+    # of silently dropping the task on the floor.
+    if not template_slug:
+        msg = (
+            f"pipeline_tasks.template_slug is NULL for task {task_id} — "
+            "set app_settings.default_template_slug or pass template_slug "
+            "at task creation. The legacy chunked StageRunner path was "
+            "deleted 2026-05-16 (see docs/architecture/langgraph-cutover.md)."
         )
+        logger.error("[BG-TASK] %s", msg)
+        audit_log_bg(
+            "missing_template_slug", "content_router",
+            {"task_id": task_id, "topic": topic[:100]},
+            task_id=task_id, severity="error",
+        )
+        try:
+            await database_service.update_task(
+                task_id, {"status": "failed", "error_message": msg[:500]},
+            )
+        except Exception as _exc:
+            logger.error("[BG-TASK] failed to mark task failed: %s", _exc)
+        result["status"] = "failed"
+        result["error"] = msg
+        return result
+
+    logger.info(
+        "[BG-TASK] template_slug=%r — dispatching via TemplateRunner (LangGraph)",
+        template_slug,
+    )
+    audit_log_bg(
+        "task_started", "content_router",
+        {"topic": topic[:100], "template_slug": template_slug},
+        task_id=task_id,
+    )
+
+    try:
         from services.template_runner import TemplateRunner
         _tmpl_runner = TemplateRunner(database_service.pool)
-        try:
-            _tmpl_summary = await _tmpl_runner.run(
-                _template_slug, result, thread_id=str(task_id),
-            )
-            # Mirror the stage-summary shape expected by callers — task
-            # routes through finalize_task inside the template, which
-            # already updates the row to awaiting_approval.
-            result.update(_tmpl_summary.final_state)
-            audit_log_bg(
-                "template_completed", "content_router",
-                {
-                    "template": _template_slug,
-                    "ok": _tmpl_summary.ok,
-                    "halted_at": _tmpl_summary.halted_at,
-                    "records": [r.name for r in _tmpl_summary.records],
-                },
-                task_id=task_id,
-            )
-            return result
-        except Exception as _exc:
-            logger.exception(
-                "[BG-TASK] TemplateRunner raised for task %s template=%r: %s",
-                task_id, _template_slug, _exc,
-            )
-            await database_service.update_task(
-                task_id,
-                {
-                    "status": "failed",
-                    "error_message": (
-                        f"TemplateRunner failed for template={_template_slug}: {_exc}"
-                    )[:500],
-                },
-            )
-            result["status"] = "failed"
-            return result
-
-    try:
-        logger.info("[BG-TASK] Starting content generation for task %s...", task_id[:8])
-        logger.debug("[BG-TASK] database_service = %s", database_service)
-
-        # ---------------------------------------------------------------
-        # Chunk 1: verify_task → generate_content
-        # ---------------------------------------------------------------
-        audit_log_bg("task_started", "content_router", {"topic": topic[:100]}, task_id=task_id)
-        _summary1 = await _runner.run_all(result, order=["verify_task", "generate_content"])
-        if _summary1.halted_at == "generate_content":
-            raise RuntimeError(
-                f"Stage 'generate_content' halted — cannot continue without content "
-                f"(detail: {_summary1.records[-1].detail})"
-            )
-
-        content_text = result.get("content", "")
-        model_used = result.get("model_used", "")
-
-        audit_log_bg("generation_complete", "content_router", {
-            "model": model_used, "word_count": len(content_text.split()) if content_text else 0,
-        }, task_id=task_id)
-
-        # Observability: detect silent writer fallback. If the DB configured
-        # pipeline_writer_model (e.g. qwen2.5:72b) differs from the model
-        # that actually produced the draft (e.g. gemma3:27b), fire a LOUD
-        # audit event. Without this, a timed-out 72B silently degrades to
-        # a 27B and nobody notices — which cost us task 033803c9 on 2026-04-11.
-        try:
-            _configured_writer = (site_config.get("pipeline_writer_model", "") or "").removeprefix("ollama/")
-            _actual_writer = (model_used or "").removeprefix("ollama/")
-            if _configured_writer and _actual_writer and _configured_writer != _actual_writer:
-                logger.warning(
-                    "[WRITER_FALLBACK] Configured %s but actually generated with %s for task %s",
-                    _configured_writer, _actual_writer, task_id[:8],
-                )
-                audit_log_bg(
-                    "writer_fallback", "content_router",
-                    {
-                        "configured_writer": _configured_writer,
-                        "actual_writer": _actual_writer,
-                        "reason": "primary_model_failed_or_timed_out",
-                        "stage": "generate_content",
-                    },
-                    task_id=task_id, severity="warning",
-                )
-        except Exception as _exc:
-            logger.debug("writer_fallback check failed: %s", _exc)
-
-        # ---------------------------------------------------------------
-        # Chunk 2: writer_self_review → quality_evaluation → url_validation
-        #          → replace_inline_images (image-decision PLANNING pass,
-        #          still in ollama GPU mode)
-        # ---------------------------------------------------------------
-        _summary2 = await _runner.run_all(result, order=[
-            "writer_self_review",
-            "quality_evaluation",
-            "url_validation",
-            "replace_inline_images",
-        ])
-        if _summary2.halted_at == "quality_evaluation":
-            raise RuntimeError(
-                f"Stage 'quality_evaluation' halted — cannot continue without QA score "
-                f"(detail: {_summary2.records[-1].detail})"
-            )
-
-        # Post-QA audit. The stages populate result["quality_result"] +
-        # result["quality_score"]; surface the pass/fail into the audit log.
-        content_text = result.get("content", "")
-        quality_result = result.get("quality_result")
-        if quality_result is not None:
-            audit_log_bg(
-                "qa_passed" if quality_result.overall_score >= 50 else "qa_failed",
-                "content_router",
-                {"score": quality_result.overall_score, "stage": "early_eval"},
-                task_id=task_id,
-            )
-
-        # ---------------------------------------------------------------
-        # Chunk 3: GPU switch → featured image → GPU switch back
-        # ---------------------------------------------------------------
-        try:
-            from services.gpu_scheduler import gpu as _gpu_sched
-            await _gpu_sched.prepare_mode("sdxl")
-        except Exception:
-            logger.debug("GPU mode switch to SDXL failed (non-fatal)")
-
-        # StageRunner honors plugin.stage.source_featured_image.enabled
-        # via PluginConfig; and the stage itself short-circuits when
-        # context["generate_featured_image"] is False.
-        await _runner.run_all(result, order=["source_featured_image"])
-
-        try:
-            await _gpu_sched.prepare_mode("ollama")
-        except Exception:
-            logger.debug("GPU mode switch to Ollama failed (non-fatal)")
-
-        # ---------------------------------------------------------------
-        # Chunk 4: Multi-model QA + rewrite loop → CrossModelQAStage
-        # ---------------------------------------------------------------
-        # The stage handles the entire rewrite loop + gate check + reject
-        # short-circuit. If QA rejects the content, the stage returns
-        # continue_workflow=False and sets status=rejected; we detect that
-        # via the runner's halted_at and early-return.
-        _summary4 = await _runner.run_all(result, order=["cross_model_qa"])
-        if _summary4.halted_at == "cross_model_qa" and result.get("status") == "rejected":
-            return result
-
-        # ---------------------------------------------------------------
-        # Chunk 5: SEO → media scripts → training data → finalize
-        # ---------------------------------------------------------------
-        # The previous inline orchestrator read stage-specific fallbacks
-        # (e.g. topic[:60] for seo_title on timeout) — now lives inside
-        # the stages themselves or in finalize_task's graceful defaults.
-        _summary5 = await _runner.run_all(result, order=[
-            "generate_seo_metadata",
-            "generate_media_scripts",
-            "capture_training_data",
-            "finalize_task",
-        ])
-        if _summary5.halted_at:
-            raise RuntimeError(
-                f"Post-QA pipeline halted at {_summary5.halted_at} "
-                f"(detail: {_summary5.records[-1].detail})"
-            )
-
-        audit_log_bg("pipeline_complete", "content_router", {
-            # quality_score is the promoted score that downstream gates read
-            # (matches content_tasks.quality_score). early_eval_score is kept
-            # alongside for diagnostic visibility.
-            "quality_score": result.get("quality_score", quality_result.overall_score),
-            "qa_final_score": result.get("qa_final_score"),
-            "early_eval_score": quality_result.overall_score,
-            "status": result["status"],
-        }, task_id=task_id)
+        _tmpl_summary = await _tmpl_runner.run(
+            template_slug, result, thread_id=str(task_id),
+        )
+        # Mirror the stage-summary shape expected by callers — task
+        # routes through ``finalize_task`` inside the template, which
+        # already updates the row to ``awaiting_approval`` (or auto-
+        # publishes when the score clears the gate).
+        result.update(_tmpl_summary.final_state)
+        audit_log_bg(
+            "template_completed", "content_router",
+            {
+                "template": template_slug,
+                "ok": _tmpl_summary.ok,
+                "halted_at": _tmpl_summary.halted_at,
+                "records": [r.name for r in _tmpl_summary.records],
+            },
+            task_id=task_id,
+        )
 
         # Glad-Labs/poindexter#27: attribute pipeline outcome to the
         # experiment assignment row (no-op when no experiment active).
+        # Best-effort — failure here must not poison a successful run.
         try:
             from services.pipeline_experiment_hook import record_pipeline_outcome
             await record_pipeline_outcome(
@@ -405,54 +345,49 @@ async def process_content_generation_task(
                 database_service=database_service,
                 site_config=site_config,
                 metrics={
-                    "quality_score": float(
-                        result.get("quality_score", quality_result.overall_score) or 0.0
-                    ),
+                    "quality_score": float(result.get("quality_score") or 0.0),
                     "qa_final_score": float(result.get("qa_final_score") or 0.0),
-                    "status": str(result["status"]),
+                    "status": str(result.get("status", "unknown")),
                     "model_used": str(result.get("model_used", "")),
-                    "outcome": "success",
+                    "outcome": "success" if _tmpl_summary.ok else "halted",
                 },
             )
         except Exception as _exc:
             logger.debug("[BG-TASK] experiment record_outcome failed: %s", _exc)
 
         logger.info("=" * 80)
-        logger.info("COMPLETE CONTENT GENERATION PIPELINE FINISHED")
+        logger.info("CONTENT GENERATION PIPELINE FINISHED")
         logger.info("=" * 80)
         logger.info("   Task ID: %s", task_id)
         logger.info("   Post ID: %s", result.get('post_id', 'NOT_YET_CREATED'))
-        logger.info(
-            "   Featured Image: %s",
-            result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE',
-        )
-        logger.info("   Quality Score: %.1f/100", quality_result.overall_score)
-        logger.info("   Status: %s", result['status'])
-        logger.info("   Next: Human review & approval")
+        logger.info("   Status: %s", result.get('status', 'unknown'))
+        logger.info("   Template: %s", template_slug)
         logger.info("=" * 80)
-
         return result
 
-    except Exception as e:
-        logger.error("[BG-TASK] Pipeline error for task %s...: %s", task_id[:8], e, exc_info=True)
-        logger.error("[BG-TASK] Detailed traceback:", exc_info=True)
+    except Exception as exc:
+        # TemplateRunner raised. Log loud, preserve partial context in
+        # task_metadata so the operator can still review what generated
+        # before the crash, and emit a task.failed webhook so OpenClaw
+        # / Discord notifies downstream consumers.
+        logger.exception(
+            "[BG-TASK] TemplateRunner raised for task %s template=%r: %s",
+            task_id, template_slug, exc,
+        )
 
-        # Glad-Labs/poindexter#260: when pipeline_dry_run_mode is on, the
+        # Per poindexter#260: when pipeline_dry_run_mode is on, the
         # writer chain short-circuits with AllModelsFailedError ("no
         # attempts recorded") because dry-run intentionally suppresses
-        # model calls. That's expected behavior, NOT a real failure —
+        # model calls. That's expected behaviour, NOT a real failure —
         # logging it as severity='error' was drowning the 24h error
         # count (277/277 in one window were dry-run noise) and hiding
         # actual ollama/db errors. Demote to severity='info' with a
         # filterable event_type so dashboards/alerts can ignore it.
-        # The task's own status (set below to 'failed', or 'dry_run' by
-        # finalize_task) remains the authoritative state — only the
-        # audit_log row severity changes here.
         _is_dry_run_halt = False
         try:
             _dry_raw = site_config.get("pipeline_dry_run_mode", "")
             _is_dry_run = str(_dry_raw).strip().lower() in ("true", "1", "yes", "on")
-            _err_text = str(e)
+            _err_text = str(exc)
             _is_dry_run_halt = _is_dry_run and (
                 "no attempts recorded" in _err_text
                 or "AllModelsFailedError" in _err_text
@@ -461,24 +396,29 @@ async def process_content_generation_task(
             logger.debug("[BG-TASK] dry-run severity-demote check failed: %s", _dry_exc)
 
         if _is_dry_run_halt:
-            audit_log_bg("dry_run_halt", "content_router", {
-                "error": str(e)[:500],
-                "stages_completed": list(result.get("stages", {}).keys()),
-                "reason": "pipeline_dry_run_mode short-circuited the writer chain",
-            }, task_id=task_id, severity="info")
+            audit_log_bg(
+                "dry_run_halt", "content_router",
+                {
+                    "error": str(exc)[:500],
+                    "stages_completed": list(result.get("stages", {}).keys()),
+                    "reason": "pipeline_dry_run_mode short-circuited the writer chain",
+                },
+                task_id=task_id, severity="info",
+            )
         else:
-            audit_log_bg("error", "content_router", {
-                "error": str(e)[:500], "stages_completed": list(result.get("stages", {}).keys()),
-            }, task_id=task_id, severity="error")
+            audit_log_bg(
+                "error", "content_router",
+                {
+                    "error": str(exc)[:500],
+                    "stages_completed": list(result.get("stages", {}).keys()),
+                    "template": template_slug,
+                },
+                task_id=task_id, severity="error",
+            )
 
-        # Update content_task with failure status
-        # 🔑 CRITICAL: Preserve all partially-generated data (content, image, metadata)
-        # so it's available for review/approval workflow
+        # Preserve all partially-generated data (content, image,
+        # metadata) so it's available for review/approval workflow.
         try:
-            logger.debug("[BG-TASK] Attempting to update task status to 'failed'...")
-            logger.debug("[BG-TASK] Preserving partial results: %s", list(result.keys()))
-
-            # Build task_metadata with whatever we successfully generated
             failure_metadata = {
                 "content": result.get("content"),
                 "featured_image_url": result.get("featured_image_url"),
@@ -494,38 +434,36 @@ async def process_content_generation_task(
                 "style": style,
                 "tone": tone,
                 "quality_score": result.get("quality_score"),
-                "error_stage": str(e)[:200],  # Which stage failed
-                "error_message": str(e),  # Full error for debugging
+                "error_stage": str(exc)[:200],
+                "error_message": str(exc),
                 "stages_completed": result.get("stages", {}),
+                "template_slug": template_slug,
             }
-
-            # Remove None values from metadata
             failure_metadata = {k: v for k, v in failure_metadata.items() if v is not None}
 
             await database_service.update_task(
                 task_id=task_id,
                 updates={
                     "status": "failed",
-                    "error_message": str(e),
-                    "task_metadata": failure_metadata,  # ✅ Preserve all data
+                    "error_message": str(exc),
+                    "task_metadata": failure_metadata,
                 },
             )
-            logger.debug("[BG-TASK] Task status updated to 'failed' with preserved data")
 
-            # Emit webhook so OpenClaw is notified of pipeline failure
             try:
                 await emit_webhook_event(database_service.pool, "task.failed", {
-                    "task_id": task_id, "topic": topic, "error": str(e)[:200],
+                    "task_id": task_id, "topic": topic, "error": str(exc)[:200],
                 })
             except Exception:
-                logger.warning("[WEBHOOK] Failed to emit task.failed event from pipeline", exc_info=True)
+                logger.warning(
+                    "[WEBHOOK] Failed to emit task.failed event from pipeline",
+                    exc_info=True,
+                )
         except Exception as db_error:
-            logger.error("[BG-TASK] Failed to update task status: %s", db_error, exc_info=True)
+            logger.error(
+                "[BG-TASK] Failed to update task status: %s", db_error, exc_info=True,
+            )
 
         result["status"] = "failed"
-        result["error"] = str(e)
+        result["error"] = str(exc)
         return result
-
-
-
-

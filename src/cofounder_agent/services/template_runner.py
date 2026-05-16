@@ -29,9 +29,10 @@ What this is NOT in v1 (deferred to Phase 2-5):
 - No LLM-architect composition (templates are hand-coded Python).
 - No outcome-feedback loop on the router (Phase 2).
 
-Coexists with the legacy :class:`plugins.stage_runner.StageRunner`. Tasks
-opt into the LangGraph path by setting ``pipeline_tasks.template_slug``
-(non-NULL); tasks without that field continue to flow through StageRunner.
+Sole pipeline orchestrator as of the 2026-05-16 Lane C Stage 4 cleanup. The
+legacy chunked ``StageRunner`` flow that ``content_router_service`` ran when
+``template_slug`` was NULL was deleted in the same sweep; a NULL slug now
+fails loud at dispatch time (see ``feedback_no_silent_defaults``).
 
 Implements: Glad-Labs/poindexter#356, Glad-Labs/poindexter#371.
 """
