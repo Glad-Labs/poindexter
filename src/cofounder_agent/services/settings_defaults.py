@@ -222,11 +222,14 @@ DEFAULTS: dict[str, str] = {
     'content_router_qa_rewrite_max_tokens': '8000',
     'content_router_qa_rewrite_timeout_seconds': '240',
     'content_router_seo_title_max_tokens': '4000',
-    'deepeval_enabled': 'false',
+    # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
+    'deepeval_enabled': 'true',
     'enable_training_capture': 'true',
     'enable_writer_self_review': 'false',
-    'guardrails_enabled': 'false',
-    'ragas_enabled': 'false',
+    # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
+    'guardrails_enabled': 'true',
+    # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
+    'ragas_enabled': 'true',
     'ragas_judge_model': '',
     'self_consistency_enabled': 'false',
 

@@ -6,8 +6,8 @@ posts table — when new posts land or existing ones change, the embed
 script picks them up and writes the vector to ``embeddings``.
 
 Wraps the shared ``_subprocess_runner.run_python_script`` helper so
-spawn / timeout / exit-code handling stays consistent with
-``SyncSharedContextJob`` and other script-driven jobs.
+spawn / timeout / exit-code handling stays consistent with other
+script-driven jobs.
 
 ## Config (``plugin.job.auto_embed_posts``)
 

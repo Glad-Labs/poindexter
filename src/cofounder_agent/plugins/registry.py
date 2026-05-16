@@ -451,11 +451,6 @@ def get_core_samples() -> dict[str, list[Any]]:
         ),
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
         ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
-        # ("jobs", "services.jobs.sync_shared_context", "SyncSharedContextJob"),
-        # ^ Disabled 2026-04-21: scripts/sync-shared-context.py doesn't exist
-        # in the tree. Job was failing every 30 min with ENOENT. The shared-
-        # context export path was never ported after IdleWorker removal.
-        # Re-enable when (and if) the script lands.
         ("jobs", "services.jobs.auto_embed_posts", "AutoEmbedPostsJob"),
         ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing

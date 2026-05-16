@@ -244,7 +244,6 @@ tune_publish_threshold = "cofounder_agent.services.jobs.tune_publish_threshold:T
 verify_published_posts = "cofounder_agent.services.jobs.verify_published_posts:VerifyPublishedPostsJob"
 crosspost_to_devto = "cofounder_agent.services.jobs.crosspost_to_devto:CrosspostToDevtoJob"
 update_utility_rates = "cofounder_agent.services.jobs.update_utility_rates:UpdateUtilityRatesJob"
-sync_shared_context = "cofounder_agent.services.jobs.sync_shared_context:SyncSharedContextJob"
 auto_embed_posts = "cofounder_agent.services.jobs.auto_embed_posts:AutoEmbedPostsJob"
 analyze_topic_gaps = "cofounder_agent.services.jobs.analyze_topic_gaps:AnalyzeTopicGapsJob"
 sync_newsletter_subscribers = "cofounder_agent.services.jobs.sync_newsletter_subscribers:SyncNewsletterSubscribersJob"
@@ -432,8 +431,8 @@ ignore = [
 # so every stage can be dispatched uniformly.
 "services/stages/*" = ["ARG002"]
 # Job Protocol: run(pool, config). Subprocess jobs (db_backup,
-# auto_embed_posts, sync_shared_context) don't need the pool — they
-# shell out to a CLI that reads DATABASE_URL itself.
+# auto_embed_posts) don't need the pool — they shell out to a CLI
+# that reads DATABASE_URL itself.
 "services/jobs/*" = ["ARG002"]
 # Plugin sample implementations are Protocol-contract reference stubs.
 # The whole point is to show the minimum shape, not to use every arg.

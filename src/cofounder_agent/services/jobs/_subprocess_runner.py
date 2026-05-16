@@ -1,7 +1,7 @@
 """Shared helper for Jobs that wrap a subprocess invocation.
 
-``SyncSharedContextJob``, ``AutoEmbedPostsJob``, and future script-
-driven jobs all need the same pattern:
+``AutoEmbedPostsJob`` and future script-driven jobs all need the same
+pattern:
     spawn → wait-with-timeout → check returncode → surface stderr.
 
 Centralising it here keeps the spawn-failure / timeout / stderr
