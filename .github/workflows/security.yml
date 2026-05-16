@@ -28,7 +28,7 @@ jobs:
     name: gitleaks — secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
         # No fetch-depth: 0 — we scan with --no-git so git history isn't
         # needed and a shallow checkout is enough.
       # Use the gitleaks CLI directly instead of gitleaks/gitleaks-action@v2,
@@ -71,7 +71,7 @@ jobs:
     name: Trivy — filesystem vuln scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
       - name: Trivy filesystem scan (HIGH/CRITICAL gate)
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
@@ -121,7 +121,7 @@ jobs:
     name: Trivy — Dockerfile + IaC config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
       - name: Scan Dockerfiles / compose for misconfig
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
@@ -148,7 +148,7 @@ jobs:
     # tag/branch instead of a 40-char commit SHA. Pure-stdlib script —
     # no pip install needed.
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
       - name: Run check-action-pins
         run: python scripts/ci/check-action-pins.py
 
@@ -161,7 +161,7 @@ jobs:
     # GitHub mirror in case a contributor opens a PR without pre-commit
     # installed and without going through Gitea CI first.
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
         with:
@@ -177,7 +177,7 @@ jobs:
     name: SBOM + grype scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4.3.1 as of 2026-05-12
 
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0 as of 2026-05-12
