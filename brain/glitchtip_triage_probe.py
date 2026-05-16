@@ -97,6 +97,15 @@ ORG_SLUG_DEFAULT = "glad-labs"
 ALERT_THRESHOLD_SETTING_KEY = "glitchtip_triage_alert_threshold_count"
 ALERT_THRESHOLD_DEFAULT = 100
 
+# Don't re-page issues whose ``lastSeen`` is older than this. Captured
+# 2026-05-16: a brain restart re-paged a 2-day-stale unresolved issue as
+# "novel high-count" because the in-memory dedup set was empty and the
+# raw count check ignored freshness. The right fix is to alert only on
+# issues that have fired in the recent window — stale issues are
+# operator-housekeeping (close them in the UI), not on-call pages.
+ALERT_FRESHNESS_HOURS_SETTING_KEY = "glitchtip_triage_alert_freshness_hours"
+ALERT_FRESHNESS_HOURS_DEFAULT = 24
+
 # JSONB array of triage rules. Each entry shape:
 #   {
 #     "title_pattern": "<regex>",       # python re, evaluated against title
@@ -235,6 +244,45 @@ async def _read_threshold(pool) -> int:
         return v if v > 0 else ALERT_THRESHOLD_DEFAULT
     except ValueError:
         return ALERT_THRESHOLD_DEFAULT
+
+
+async def _read_freshness_hours(pool) -> int:
+    """Issues whose ``lastSeen`` is older than this are not re-paged.
+    Set to 0 via app_settings to disable the freshness gate entirely
+    (operators who DO want every restart to re-page everything)."""
+    raw = await _read_setting(
+        pool,
+        ALERT_FRESHNESS_HOURS_SETTING_KEY,
+        str(ALERT_FRESHNESS_HOURS_DEFAULT),
+    )
+    try:
+        v = int(raw)
+        return max(0, v)
+    except ValueError:
+        return ALERT_FRESHNESS_HOURS_DEFAULT
+
+
+def _is_fresh(last_seen_iso: str | None, max_age_hours: int) -> bool:
+    """``True`` when ``last_seen_iso`` is within ``max_age_hours`` of now.
+    Missing/unparseable timestamps are treated as fresh (don't suppress
+    a real signal on parser quirks). ``max_age_hours == 0`` disables
+    the gate (always fresh)."""
+    if max_age_hours <= 0:
+        return True
+    if not last_seen_iso:
+        return True
+    try:
+        from datetime import datetime, timezone, timedelta
+        # GlitchTip returns ISO 8601 with "Z" or "+00:00"; Python 3.11+
+        # handles both via fromisoformat. Older Pythons need a Z→+00:00
+        # swap; the brain image is 3.13 so fromisoformat alone is fine.
+        ts = datetime.fromisoformat(last_seen_iso.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - ts
+        return age <= timedelta(hours=max_age_hours)
+    except (ValueError, TypeError):
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +561,7 @@ async def run_glitchtip_triage_probe(
     base_url = localize_url(base_url).rstrip("/")
     org_slug = (await _read_setting(pool, ORG_SLUG_SETTING_KEY, ORG_SLUG_DEFAULT)).strip() or ORG_SLUG_DEFAULT
     threshold = await _read_threshold(pool)
+    freshness_hours = await _read_freshness_hours(pool)
     rules = await _read_rules(pool)
 
     if httpx is None:  # pragma: no cover — only when dep is uninstalled
@@ -584,9 +633,17 @@ async def run_glitchtip_triage_probe(
                     })
                     continue
 
-                # No matching rule. Page if above threshold and not yet
-                # alerted in this process lifetime.
-                if count >= threshold and issue_id not in _alerted_ids:
+                # No matching rule. Page if above threshold AND fresh
+                # AND not yet alerted in this process lifetime.
+                # Freshness gate (2026-05-16): stops a brain restart from
+                # re-paging stale unresolved issues that haven't fired
+                # since. Operator-housekeeping (close in the UI) instead
+                # of an on-call ping.
+                if (
+                    count >= threshold
+                    and _is_fresh(issue.get("lastSeen"), freshness_hours)
+                    and issue_id not in _alerted_ids
+                ):
                     permalink = issue.get("permalink") or ""
                     detail_msg = (
                         f"Title: {title[:300]}\n"

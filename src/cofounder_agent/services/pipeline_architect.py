@@ -190,6 +190,7 @@ async def compose(
     *,
     context: dict[str, Any] | None = None,
     max_attempts: int = 3,
+    pool: Any = None,
 ) -> ArchitectResult:
     """Ask the local writer LLM to compose a graph for the given intent.
 
@@ -199,6 +200,12 @@ async def compose(
     — error messages are the LLM's primary repair signal). Returns the
     last :class:`ArchitectResult`; ok=True on success, ok=False with
     accumulated errors on persistent failure.
+
+    ``pool`` is the asyncpg pool to use for dispatcher routing. When
+    provided, the LLM call goes through ``dispatch_complete`` and
+    honors ``plugin.llm_provider.primary.standard`` (LiteLLM / Ollama /
+    OpenAI-compat per app_settings). When ``None``, the call falls
+    back to direct httpx → local Ollama (tests / bootstrap only).
     """
     catalog_text = to_catalog_text()
     if not catalog_text.strip():
@@ -246,7 +253,13 @@ async def compose(
             f"the last character is `}}`."
         )
 
-        raw = await _ollama_chat_text(full_prompt, model=model)
+        raw = await _ollama_chat_text(
+            full_prompt,
+            model=model,
+            site_config=site_config,
+            pool=pool,
+            timeout_setting="pipeline_architect_timeout_seconds",
+        )
         last_raw = raw
         spec, parse_errors = _parse_json_spec(raw)
         if parse_errors:
@@ -659,30 +672,15 @@ def _wrap_atom(
 
 
 # ---------------------------------------------------------------------------
-# Local-LLM transport (mirrors atoms.narrate_bundle._ollama_chat_text)
+# Local-LLM transport
 # ---------------------------------------------------------------------------
-
-
-async def _ollama_chat_text(prompt: str, model: str) -> str:
-    """Plain-text Ollama call. Matches the helper in
-    ``atoms.narrate_bundle`` — they should converge into a shared
-    ``capability_router`` resolver in Phase 2.
-    """
-    import httpx
-    base_url = (
-        site_config.get("local_llm_api_url", "http://localhost:11434").rstrip("/")
-    )
-    timeout = site_config.get_float("pipeline_architect_timeout_seconds", 120.0)
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-    }
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{base_url}/api/chat", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-    return (data.get("message") or {}).get("content", "")
+# 2026-05-16: the private ``_ollama_chat_text`` was deleted in favor of
+# :func:`services.llm_text.ollama_chat_text`. Architect calls now route
+# through the LLM provider dispatcher so they honor
+# ``plugin.llm_provider.primary.standard='litellm'`` like the rest of
+# the writer paths. The module-level alias keeps test patches at the
+# historical name working.
+from services.llm_text import ollama_chat_text as _ollama_chat_text  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

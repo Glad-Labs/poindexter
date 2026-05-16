@@ -183,11 +183,31 @@ def _drift_from_health(health: dict[str, Any]) -> dict[str, Any]:
         }
 
     components = health.get("components") or {}
-    migrations = components.get("migrations") or {}
+    migrations_raw = components.get("migrations")
+
+    # 2026-05-16: distinguish "component absent" from "component
+    # present-but-malformed". Pre-fix both paths fell through to
+    # "missing 'pending' field" which read like a contract bug but
+    # was actually the worker's health endpoint not wiring the
+    # migrations component at all (#270/#313 work removed).
+    if migrations_raw is None:
+        return {
+            "ok": False,
+            "pending": None,
+            "applied": None,
+            "latest_applied": None,
+            "error": (
+                "migrations component absent from /api/health "
+                "(worker pre-#270/#313 build, or the component was "
+                "unwired)"
+            ),
+        }
+
+    migrations = migrations_raw if isinstance(migrations_raw, dict) else {}
 
     # The worker reports an "unknown" status when it can't read the
     # schema_migrations table — treat as can't-tell, not as drift.
-    if isinstance(migrations, dict) and "error" in migrations:
+    if "error" in migrations:
         return {
             "ok": False,
             "pending": None,
@@ -206,7 +226,7 @@ def _drift_from_health(health: dict[str, Any]) -> dict[str, Any]:
             "pending": None,
             "applied": applied,
             "latest_applied": latest,
-            "error": "migrations block missing 'pending' field",
+            "error": "migrations block present but missing 'pending' field",
         }
 
     return {

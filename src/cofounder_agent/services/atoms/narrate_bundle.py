@@ -311,61 +311,16 @@ def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
     return text[:12000]
 
 
-async def _ollama_chat_text(
-    prompt: str, model: str, *, site_config: Any = None,
-) -> str:
-    """Plain-text Ollama chat call (no JSON envelope).
-
-    The codebase's ``services.topic_ranking._ollama_chat_json`` helper
-    sets ``format=json`` and wraps prose in ``{"thought": "..."}``
-    envelopes. This is a minimal text-mode equivalent that returns the
-    raw assistant content.
-    """
-    import httpx
-
-    base_url = (
-        (site_config.get("local_llm_api_url", "http://localhost:11434")
-            if site_config is not None else "http://localhost:11434").rstrip("/")
-    )
-    timeout = (
-        site_config.get_float("niche_ollama_chat_timeout_seconds", 120.0)
-        if site_config is not None else 120.0
-    )
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-    }
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{base_url}/api/chat", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-    return (data.get("message") or {}).get("content", "")
-
-
-def _maybe_unwrap_json(prose: str) -> str:
-    """Defensive: if the model wrapped its output in JSON, unwrap it.
-
-    Even with no ``format=json`` arg, some models still produce
-    ``{"thought": "..."}`` envelopes when asked for prose. Walk the
-    common envelope keys and extract the inner string.
-    """
-    prose = (prose or "").strip()
-    if not (prose.startswith("{") and prose.endswith("}")):
-        return prose
-    import json as _json
-    try:
-        parsed = _json.loads(prose)
-    except Exception:
-        return prose
-    if not isinstance(parsed, dict):
-        return prose
-    for k in ("thought", "response", "content", "text",
-              "output", "answer", "summary", "narrative"):
-        v = parsed.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return prose
+# 2026-05-16: the private ``_ollama_chat_text`` + ``_maybe_unwrap_json``
+# duplicates were deleted in favor of the shared
+# :mod:`services.llm_text` helpers. The shared helper routes through
+# the LLM provider dispatcher (so this writer path honors
+# ``plugin.llm_provider.primary.standard='litellm'``) AND keeps the
+# maybe-unwrap-json defense at the result boundary. The module-level
+# aliases keep test patches at the historical name working
+# (tests patch ``services.atoms.narrate_bundle._ollama_chat_text``).
+from services.llm_text import maybe_unwrap_json as _maybe_unwrap_json
+from services.llm_text import ollama_chat_text as _ollama_chat_text
 
 
 def _bundle_is_empty(bundle: dict[str, Any]) -> bool:
@@ -474,8 +429,22 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         f"of the closing paragraph."
     )
 
+    # Route through the shared helper so this atom honors the
+    # ``plugin.llm_provider.primary.standard`` setting (LiteLLM, etc.).
+    # The atom's database_service exposes .pool — pass it through so the
+    # call goes via the dispatcher; when running under bootstrap / tests
+    # where no database_service is in state, the helper falls back to
+    # direct httpx → local Ollama.
+    database_service = state.get("database_service")
+    pool = getattr(database_service, "pool", None) if database_service is not None else None
     try:
-        raw = await _ollama_chat_text(full_prompt, model=model, site_config=site_config)
+        raw = await _ollama_chat_text(
+            full_prompt,
+            model=model,
+            site_config=site_config,
+            pool=pool,
+            timeout_setting="niche_ollama_chat_timeout_seconds",
+        )
     except Exception as exc:
         logger.warning(
             "[atoms.narrate_bundle] LLM call failed: %s — falling back "

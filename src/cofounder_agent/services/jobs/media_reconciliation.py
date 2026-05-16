@@ -97,6 +97,49 @@ async def _resolve_r2_public_base(pool: Any, config: dict[str, Any]) -> str | No
 _HTTP_TIMEOUT = httpx.Timeout(8.0, connect=3.0)
 
 
+# Default exclude list — dev_diary "What we shipped" posts. These are
+# build-in-public status updates that don't need TTS or video. Operator
+# can override via the comma-separated app_settings key below.
+_DEFAULT_EXCLUDE_SLUG_PREFIXES: tuple[str, ...] = (
+    "what-we-shipped-",
+    "daily-dev-diary-",
+)
+
+
+async def _resolve_exclude_slug_prefixes(
+    pool: Any, config: dict[str, Any],
+) -> list[str]:
+    """Read ``media_reconciliation_exclude_slug_prefixes`` from
+    ``app_settings`` (comma-separated). Falls back to PluginConfig
+    ``config.exclude_slug_prefixes`` (list), then to
+    :data:`_DEFAULT_EXCLUDE_SLUG_PREFIXES`.
+
+    Posts whose ``slug`` starts with any prefix are excluded from media
+    reconciliation — they're declared exempt from podcast/video
+    derivatives. Captured 2026-05-15: dev_diary "What we shipped" posts
+    were generating fake media-drift alerts every 15 min because the
+    reconciliation job didn't know they were text-only.
+    """
+    cfg_val = config.get("exclude_slug_prefixes")
+    if isinstance(cfg_val, (list, tuple)) and cfg_val:
+        return [str(p).strip() for p in cfg_val if str(p).strip()]
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value FROM app_settings WHERE key = 'media_reconciliation_exclude_slug_prefixes'",
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "media_reconciliation: exclude-prefix lookup failed: %s — "
+            "falling back to defaults", e,
+        )
+        return list(_DEFAULT_EXCLUDE_SLUG_PREFIXES)
+    if row is None or not row["value"]:
+        return list(_DEFAULT_EXCLUDE_SLUG_PREFIXES)
+    parts = [p.strip() for p in str(row["value"]).split(",")]
+    return [p for p in parts if p]
+
+
 class MediaReconciliationJob:
     name = "media_reconciliation"
     description = (
@@ -110,6 +153,15 @@ class MediaReconciliationJob:
         podcast_cap = max(0, int(config.get("podcast_cap_per_cycle", 3)))
         video_cap = max(0, int(config.get("video_cap_per_cycle", 2)))
         alert_on_drift = bool(config.get("alert_on_drift", True))
+        # Slug prefixes whose posts are EXEMPT from podcast/video drift
+        # detection. dev_diary "What we shipped" build-in-public posts
+        # don't have a podcast/video derivative by design (Matt 2026-05-15:
+        # "the dev blogs don't need podcasts or videos"). Operator can
+        # extend the list via app_settings to exclude any future
+        # text-only post type without a code change.
+        exclude_slug_prefixes = await _resolve_exclude_slug_prefixes(
+            pool, config,
+        )
         r2_base = await _resolve_r2_public_base(pool, config)
         if not r2_base:
             logger.warning(
@@ -158,6 +210,10 @@ class MediaReconciliationJob:
                 # live in ``media_assets`` (one row per (post_id, type))
                 # and are recorded by ``_record_media_asset`` after a
                 # successful regen + upload.
+                # Build a list of LIKE patterns for the exclude-prefix
+                # filter. Pass as a single text[] so the SQL stays
+                # parameterized — no string concatenation into the query.
+                exclude_patterns = [f"{p}%" for p in exclude_slug_prefixes]
                 rows = await conn.fetch(
                     """
                     SELECT id::text AS id,
@@ -168,9 +224,11 @@ class MediaReconciliationJob:
                      WHERE status = 'published'
                        AND published_at IS NOT NULL
                        AND published_at >= $1
+                       AND NOT (slug ILIKE ANY($2::text[]))
                      ORDER BY published_at DESC
                     """,
                     since,
+                    exclude_patterns,
                 )
         except Exception as e:
             logger.exception("media_reconciliation: DB query failed: %s", e)

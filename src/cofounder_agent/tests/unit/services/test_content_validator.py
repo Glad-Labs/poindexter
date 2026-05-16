@@ -1139,3 +1139,78 @@ class TestHallucinatedReferenceDetection:
         # Loose sanity — we expect 100+ stdlib and 400+ PyPI entries.
         assert len(stdlib) > 100, f"stdlib list unexpectedly small: {len(stdlib)}"
         assert len(pypi) > 400, f"pypi list unexpectedly small: {len(pypi)}"
+
+
+# ---------------------------------------------------------------------------
+# JSON envelope leak vs truncation — 2026-05-16 split (rule #10)
+# ---------------------------------------------------------------------------
+#
+# Pins the contract that closed the ``pipeline_versions.id=1851`` failure
+# mode. ``two_pass._revise_node`` was calling ``_ollama_chat_json`` (which
+# forces ``format=json`` on Ollama). When the writer responded with
+# ``{"content": "...the post body..."}`` and nothing un-wrapped it, the
+# validator's truncation rule fired because the last line was ``}``.
+# Same severity — still critical, post still rejected — but the operator
+# now sees ``json_envelope_leak`` in ``qa_feedback`` and can fix the
+# producer instead of chasing a token-budget red herring.
+
+
+class TestJsonEnvelopeLeakDetection:
+    """A lone ``}`` / ``]`` final line is a JSON-envelope leak, not a
+    truncation. The validator splits the diagnostic so operators chase
+    the right root cause."""
+
+    _LONG_BODY = (
+        "FastAPI is a modern Python web framework for building APIs. "
+        "It uses Pydantic for validation and supports async natively. "
+        "Type hints make endpoints self-documenting through OpenAPI. "
+    ) * 4  # ~600 chars — well past the 200-char minimum for rule #10
+
+    def test_lone_brace_terminator_flagged_as_envelope_leak(self):
+        """Final line is just ``}`` → ``json_envelope_leak`` (NOT truncation)."""
+        content = self._LONG_BODY + '"\n}'
+        result = validate_content("FastAPI Intro", content, "FastAPI")
+        cats = [i.category for i in result.issues]
+        assert "json_envelope_leak" in cats
+        assert "truncated_content" not in cats
+        # Severity preserved
+        leak = next(i for i in result.issues if i.category == "json_envelope_leak")
+        assert leak.severity == "critical"
+        # Description points at the producer, not at the LLM token budget
+        assert "envelope" in leak.description.lower()
+        assert "format=json" in leak.description.lower() or "writer" in leak.description.lower()
+
+    def test_lone_bracket_terminator_flagged_as_envelope_leak(self):
+        """``]`` final line — same shape but JSON array wrapper."""
+        content = self._LONG_BODY + '"\n]'
+        result = validate_content("FastAPI Intro", content, "FastAPI")
+        cats = [i.category for i in result.issues]
+        assert "json_envelope_leak" in cats
+
+    def test_quoted_brace_terminator_flagged_as_envelope_leak(self):
+        """``"}`` line — common when the writer dumped a quoted string
+        immediately followed by the envelope close."""
+        content = self._LONG_BODY + '\n"}'
+        result = validate_content("FastAPI Intro", content, "FastAPI")
+        cats = [i.category for i in result.issues]
+        assert "json_envelope_leak" in cats
+
+    def test_real_truncation_still_flagged_separately(self):
+        """Mid-sentence cutoff (no trailing brace) — keep firing
+        ``truncated_content``. The split must not weaken truncation
+        detection."""
+        # Ends mid-sentence with no terminator at all
+        content = self._LONG_BODY + " The team began to investigate when"
+        result = validate_content("FastAPI Intro", content, "FastAPI")
+        cats = [i.category for i in result.issues]
+        assert "truncated_content" in cats
+        assert "json_envelope_leak" not in cats
+
+    def test_clean_prose_passes_both_rules(self):
+        """A complete sentence-terminated body fires neither rule —
+        baseline."""
+        content = self._LONG_BODY + " Conclusion: the framework wins."
+        result = validate_content("FastAPI Intro", content, "FastAPI")
+        cats = [i.category for i in result.issues]
+        assert "truncated_content" not in cats
+        assert "json_envelope_leak" not in cats

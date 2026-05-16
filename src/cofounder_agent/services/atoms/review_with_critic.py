@@ -208,6 +208,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         f"TITLE: {title}\n\n" if title else ""
     ) + f"DRAFT:\n\n{content}"
 
+    # 2026-05-16: thread the asyncpg pool through so the critic call
+    # dispatches via ``plugin.llm_provider.primary.standard`` (LiteLLM /
+    # Ollama / OpenAI-compat per app_settings) instead of hardwiring to
+    # local Ollama. ``database_service`` exposes ``.pool``; when no
+    # pool is reachable (tests / bootstrap), the helper falls back to
+    # direct httpx → local Ollama.
+    database_service = state.get("database_service")
+    pool = getattr(database_service, "pool", None) if database_service is not None else None
     try:
         raw = await ollama_chat_text(
             user_prompt,
@@ -216,6 +224,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             timeout_default=90.0,
             system=_resolve_system_prompt(),
             site_config=site_config,
+            pool=pool,
         )
     except Exception as exc:
         logger.exception("[atoms.review_with_critic] ollama call failed: %s", exc)

@@ -155,7 +155,15 @@ litellm = ">=1.83.7,<2.0"
 # try/except ImportError guards but the dep was never declared, so both
 # integrations have been silently no-opping in production. Adding here
 # so the worker image rebuild picks both up alongside litellm.
-langfuse = ">=3.0,<4.0"
+#
+# Bumped 3.x → 4.x (2026-05-15). The shim's API surface (``observe`` /
+# ``get_client`` / ``update_current_generation`` / ``update_current_trace``)
+# is unchanged across the major; 3.x is EOL. Note: the
+# ``EventSerializer`` cycle-detection bug at ``_utils/serializer.py:134/137/145``
+# exists in EVERY published 3.x and 4.x version — we work around it in
+# ``services/langfuse_shim.py`` via ``_install_cycle_safe_serializer_patch``.
+# Remove that patch once upstream merges a fix.
+langfuse = "^4.6"
 deepeval = "^4.0.0"
 # guardrails-ai dropped 2026-05-12 — PyPI quarantined the package after
 # a suspect 0.10.1 release published that day. Our installed 0.7.3 wheel
@@ -244,7 +252,6 @@ tune_publish_threshold = "cofounder_agent.services.jobs.tune_publish_threshold:T
 verify_published_posts = "cofounder_agent.services.jobs.verify_published_posts:VerifyPublishedPostsJob"
 crosspost_to_devto = "cofounder_agent.services.jobs.crosspost_to_devto:CrosspostToDevtoJob"
 update_utility_rates = "cofounder_agent.services.jobs.update_utility_rates:UpdateUtilityRatesJob"
-sync_shared_context = "cofounder_agent.services.jobs.sync_shared_context:SyncSharedContextJob"
 auto_embed_posts = "cofounder_agent.services.jobs.auto_embed_posts:AutoEmbedPostsJob"
 analyze_topic_gaps = "cofounder_agent.services.jobs.analyze_topic_gaps:AnalyzeTopicGapsJob"
 sync_newsletter_subscribers = "cofounder_agent.services.jobs.sync_newsletter_subscribers:SyncNewsletterSubscribersJob"
@@ -432,8 +439,8 @@ ignore = [
 # so every stage can be dispatched uniformly.
 "services/stages/*" = ["ARG002"]
 # Job Protocol: run(pool, config). Subprocess jobs (db_backup,
-# auto_embed_posts, sync_shared_context) don't need the pool — they
-# shell out to a CLI that reads DATABASE_URL itself.
+# auto_embed_posts) don't need the pool — they shell out to a CLI
+# that reads DATABASE_URL itself.
 "services/jobs/*" = ["ARG002"]
 # Plugin sample implementations are Protocol-contract reference stubs.
 # The whole point is to show the minimum shape, not to use every arg.

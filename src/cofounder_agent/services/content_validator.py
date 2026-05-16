@@ -592,7 +592,17 @@ _HALLUCINATED_REF_PATTERNS = [
 # Identifiers we NEVER flag (pipeline internals, super-common Python builtins,
 # common variable names that happen to look dotted, HTTP verbs, test keywords).
 # Normalized to lowercase + dashes for matching against _normalize_pkg().
-_HALLUCINATION_WHITELIST = {
+#
+# Categorized — the 2026-05-15 audit pulled a sample of ~60 flagged
+# terms from ``pipeline_versions.qa_feedback`` and found ~90% were
+# legitimate references the Python-centric original whitelist missed.
+# Major categories added that day: AI/ML brands, gaming + hardware
+# (Matt's brand niches per ``feedback_brand_niches``), security orgs,
+# common acronyms, dev tools, common English nouns the writer uses
+# narratively. Operator can extend at runtime via
+# ``app_settings.hallucination_whitelist_additions`` — see
+# ``_load_hallucination_whitelist_additions_sync`` below.
+_HALLUCINATION_WHITELIST_BASE = {
     # Ambient project-local / generic names we don't want pattern-matching on
     "glad-labs", "poindexter", "ollama",
     # Python generic builtins and dunders that may show up in backticks
@@ -620,7 +630,180 @@ _HALLUCINATION_WHITELIST = {
     "model", "models", "schema", "schemas", "view", "template",
     # Python style shorthands often used in examples
     "np", "pd", "plt", "tf", "torch",
+    # ---- AI/ML brands and well-known tools (Matt's brand_niches: ai/ml)
+    "chatgpt", "claude", "claude-code", "gemini", "copilot", "llama",
+    "mistral", "gemma", "qwen", "deepseek", "phi", "phi3", "anthropic",
+    "openai", "deepmind", "huggingface", "langchain", "langgraph",
+    "langfuse", "langsmith", "litellm", "deepeval", "ragas", "guardrails",
+    "guardrails-ai", "llamaindex", "pgvector", "weaviate", "pinecone",
+    "chroma", "qdrant", "milvus", "redis", "elasticsearch",
+    "lora", "rag", "llm", "llms", "agi", "asi", "rlhf", "embedding",
+    "embeddings", "transformer", "transformers", "bge-m3", "bge",
+    "sentence-transformers", "hfembedding", "basemodel", "contextgem",
+    "localai", "coderabbit", "codestral", "groq", "perplexity",
+    # ---- Gaming + hardware (brand_niches: gaming + hardware)
+    "steam", "vulkan", "opengl", "directx", "opencl", "metal",
+    "xbox", "playstation", "ps4", "ps5", "switch", "nintendo", "sega",
+    "valve", "epic", "ubisoft", "ea", "activision",
+    "nvidia", "amd", "intel", "apple", "microsoft",
+    "asus", "msi", "gigabyte", "asrock", "evga", "corsair",
+    "lenovo", "dell", "hp", "framework", "razer", "logitech",
+    "keychron", "glorious", "ducky", "wooting",
+    "ryzen", "threadripper", "epyc", "xeon", "core", "snapdragon",
+    "geforce", "rtx", "gtx", "radeon", "rdna", "ada", "blackwell",
+    "nvme", "ssd", "hdd", "ddr", "ddr4", "ddr5", "gddr", "gddr6", "hbm",
+    "cpu", "gpu", "npu", "tpu", "fpga", "asic", "vram", "ram", "rom",
+    "psu", "pcb", "pcie", "usb", "thunderbolt", "hdmi", "displayport",
+    # ---- Web/cloud platforms
+    "aws", "gcp", "azure", "vercel", "cloudflare", "fastly", "netlify",
+    "render", "fly", "railway", "heroku", "digitalocean", "linode",
+    "supabase", "neon", "planetscale",
+    "github", "gitlab", "gitea", "forgejo", "bitbucket",
+    # ---- Browsers + runtimes
+    "chrome", "firefox", "safari", "edge", "brave", "arc", "opera",
+    "chromium", "webkit", "blink", "v8", "node", "nodejs", "deno", "bun",
+    # ---- Languages + frameworks
+    "javascript", "typescript", "python", "rust", "go", "golang",
+    "java", "kotlin", "swift", "ruby", "php", "elixir", "haskell",
+    "scala", "clojure", "dart", "lua", "perl",
+    "react", "vue", "svelte", "angular", "nextjs", "next.js", "nuxt",
+    "remix", "astro", "solidjs", "qwik",
+    "express", "fastify", "fastapi", "django", "flask", "rails",
+    "spring", "laravel", "phoenix", "actix", "rocket", "axum",
+    "htmx", "tailwind", "tailwindcss", "bootstrap", "shadcn",
+    # ---- Databases + infra
+    "postgres", "postgresql", "mysql", "sqlite", "mariadb", "mongodb",
+    "cassandra", "scylla", "clickhouse", "duckdb", "snowflake", "bigquery",
+    "redshift", "kafka", "rabbitmq", "nats",
+    "docker", "kubernetes", "k8s", "helm", "podman", "containerd",
+    "terraform", "pulumi", "ansible", "puppet", "chef",
+    "prometheus", "grafana", "loki", "tempo", "pyroscope",
+    "datadog", "honeycomb", "sentry", "glitchtip",
+    "nginx", "caddy", "haproxy", "traefik", "envoy",
+    # ---- Dev tools / utilities (commonly shown in backticks)
+    "git", "npm", "pip", "uv", "poetry", "pipx", "cargo", "rustup",
+    "yarn", "pnpm", "bundler", "maven", "gradle",
+    "kubectl", "helmfile", "skaffold", "kustomize",
+    "make", "cmake", "ninja", "bazel", "buck",
+    "vim", "nvim", "emacs", "vscode", "cursor", "zed", "sublime",
+    "tmux", "zsh", "bash", "fish", "powershell",
+    "ssh", "scp", "rsync", "curl", "wget", "jq", "yq",
+    "ffmpeg", "imagemagick", "graphviz", "pandoc",
+    "fail2ban", "ufw", "iptables", "nftables", "wireguard", "tailscale",
+    "openssl", "letsencrypt", "certbot",
+    "pip-audit", "cargo-audit", "cargo-hack", "kicad-cli", "coreutils",
+    # ---- Security / governance / standards orgs
+    "owasp", "nist", "cisa", "iso", "ieee", "ietf", "w3c", "rfc",
+    "ccpa", "gdpr", "hipaa", "soc2", "pci-dss", "pci",
+    "cve", "cvss", "mitre", "att&ck",
+    # ---- Common acronyms that get flagged
+    "iac", "saas", "paas", "iaas", "faas", "baas",
+    "rest", "grpc", "graphql", "ws", "websocket", "wss", "tcp", "udp",
+    "tls", "ssl", "https", "http", "mqtt", "smtp", "imap",
+    "json", "xml", "yaml", "toml", "csv", "tsv", "html", "css",
+    "jwt", "jwts", "oauth", "oauth2", "oidc", "saml", "ldap", "rbac", "abac",
+    "ide", "ides", "cli", "tui", "gui", "ssr", "csr", "spa", "pwa",
+    "etl", "elt", "olap", "oltp", "dag", "crud",
+    "ci", "cd", "ci/cd", "cicd", "vcs", "mvp", "kpi", "okr",
+    "ml", "ai", "nlp", "cv", "ar", "vr", "xr",
+    # ---- Common English nouns the writer uses narratively (NOT libraries)
+    "blog", "photo", "reports", "impact", "level", "library",
+    "action", "bridge", "length", "result", "system", "text",
+    "main.py", "requirements.txt", "read_file", "content_status",
+    # ---- File-extensions + common script names
+    "py", "js", "ts", "tsx", "jsx", "go", "rs", "rb", "sh", "ps1",
 }
+
+
+# Mutable view of the whitelist — base set + DB-loaded additions. Code
+# reads through ``_get_hallucination_whitelist()`` which merges base +
+# DB. Direct reads of ``_HALLUCINATION_WHITELIST`` are also supported
+# for back-compat (now an alias of the base set).
+_HALLUCINATION_WHITELIST = _HALLUCINATION_WHITELIST_BASE
+
+
+_whitelist_additions_cache: set[str] = set()
+_whitelist_additions_ts: float = 0.0
+_WHITELIST_ADDITIONS_TTL = 300  # 5-minute cache, mirrors fact_overrides
+
+
+def _load_hallucination_whitelist_additions_sync() -> set[str]:
+    """Load operator-supplied whitelist additions from
+    ``app_settings.hallucination_whitelist_additions`` (comma-separated).
+    Sync, cached 5 minutes. Mirrors ``_load_fact_overrides_sync`` —
+    same async-from-sync bridge, same fallback-to-cache on DB error.
+
+    Operator workflow: insert/update the app_settings row to add new
+    terms when the validator flags something that's legitimately a
+    real name. No code change, no restart required (TTL <= 5 min)."""
+    global _whitelist_additions_cache, _whitelist_additions_ts
+    now = _time.time()
+    if _whitelist_additions_cache and (now - _whitelist_additions_ts) < _WHITELIST_ADDITIONS_TTL:
+        return _whitelist_additions_cache
+
+    try:
+        import asyncio
+        import sys
+        from pathlib import Path
+        try:
+            _proj = Path(__file__).resolve()
+            for _p in _proj.parents:
+                if (_p / "brain" / "bootstrap.py").is_file():
+                    if str(_p) not in sys.path:
+                        sys.path.insert(0, str(_p))
+                    break
+            from brain.bootstrap import resolve_database_url
+            db_url = resolve_database_url() or ""
+        except Exception:
+            db_url = ""
+        if not db_url:
+            return _whitelist_additions_cache
+
+        async def _fetch():
+            import asyncpg
+            conn = await asyncpg.connect(db_url, timeout=5)
+            try:
+                row = await conn.fetchrow(
+                    "SELECT value FROM app_settings "
+                    "WHERE key = 'hallucination_whitelist_additions'",
+                )
+                if row is None or not row["value"]:
+                    return set()
+                parts = [p.strip().lower() for p in str(row["value"]).split(",")]
+                return {p for p in parts if p}
+            finally:
+                await conn.close()
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(asyncio.run, _fetch())
+                result = future.result(timeout=5)
+        else:
+            result = asyncio.run(_fetch())
+
+        _whitelist_additions_cache = result
+        _whitelist_additions_ts = now
+        logger.debug(
+            "[VALIDATOR] Loaded %d hallucination whitelist additions from DB",
+            len(result),
+        )
+    except Exception as e:
+        logger.warning(
+            "[VALIDATOR] hallucination whitelist additions DB load failed "
+            "(using cache): %s", e,
+        )
+    return _whitelist_additions_cache
+
+
+def _get_hallucination_whitelist() -> set[str]:
+    """Effective whitelist = static base + DB-loaded additions. Use this
+    at call sites instead of the raw base set."""
+    return _HALLUCINATION_WHITELIST_BASE | _load_hallucination_whitelist_additions_sync()
 
 
 def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
@@ -635,6 +818,7 @@ def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
     seen: set[tuple[str, str]] = set()
     out: list[tuple[str, str]] = []
     clean = _strip_html(text or "")
+    whitelist = _get_hallucination_whitelist()
     for pattern in _HALLUCINATED_REF_PATTERNS:
         for m in pattern.finditer(clean):
             raw = m.group(1)
@@ -642,7 +826,7 @@ def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
                 continue
             root = raw.split(".", 1)[0]
             norm = _normalize_pkg(root)
-            if not norm or norm in _HALLUCINATION_WHITELIST:
+            if not norm or norm in whitelist:
                 continue
             # Skip tokens that are just a single short letter (likely noise)
             if len(norm) < 3:
@@ -1273,6 +1457,15 @@ def validate_content(
     # 10. Truncation detection — content that ends mid-sentence indicates
     # the LLM hit its token limit. This is critical because it means the
     # reader gets an incomplete article.
+    #
+    # 2026-05-16: split the diagnostic so a leaked JSON envelope (the
+    # writer returned ``{"content": "..."}`` and nothing unwrapped it
+    # before validation) gets its own category. Same severity — still
+    # critical — but the operator sees ``json_envelope_leak`` in
+    # ``qa_feedback`` and knows the fix is upstream in the writer, not
+    # token budget. Captured 2026-05-15: ``pipeline_versions.id=1851``
+    # shipped a literal ``}`` as the final line because
+    # ``two_pass._revise_node`` was calling ``_ollama_chat_json``.
     if _enabled("truncated_content"):
         stripped_content = content.rstrip()
         if stripped_content and len(stripped_content) > 200:
@@ -1284,7 +1477,24 @@ def validate_content(
                 _in_code = last_line.startswith('```') or last_line.startswith('    ')
                 _is_heading = last_line.startswith('#')
                 _is_list_item = re.match(r'^[-*\d]+[.)]\s', last_line) or re.match(r'^[-*]\s', last_line)
-                if not (_in_code or _is_heading or _is_list_item):
+                # Final line is a lone ``}`` / ``]`` — JSON envelope leak,
+                # not truncation. Tag it accordingly so the operator can
+                # tell at a glance which producer to fix.
+                _is_envelope_terminator = last_line in ("}", "]") or last_line in ('"}', '"]')
+                if _is_envelope_terminator:
+                    issues.append(ValidationIssue(
+                        severity="critical",
+                        category="json_envelope_leak",
+                        description=(
+                            f"Content ends with a JSON envelope terminator "
+                            f"({last_line!r}) — a writer/LLM stage emitted "
+                            f"``{{\"content\": \"...\"}}`` and nothing un-wrapped "
+                            f"it before validation. Fix the producer (most "
+                            f"common: a chat helper forcing ``format=json``)."
+                        ),
+                        matched_text=stripped_content[-160:],
+                    ))
+                elif not (_in_code or _is_heading or _is_list_item):
                     issues.append(ValidationIssue(
                         severity="critical",
                         category="truncated_content",

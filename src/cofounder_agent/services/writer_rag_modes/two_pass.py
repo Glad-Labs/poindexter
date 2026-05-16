@@ -336,12 +336,20 @@ async def _research_each(state: _State) -> _State:
 
 
 async def _revise_node(state: _State) -> _State:
-    from services.topic_ranking import _ollama_chat_json
+    # 2026-05-16: switched from ``_ollama_chat_json`` (which forces
+    # ``format=json`` on Ollama and returns a JSON-wrapped string) to
+    # the plain-text ``ollama_chat_text`` helper. Captured 2026-05-15:
+    # ``pipeline_versions.id=1851`` shipped ``{"content": "..."}\n}``
+    # as the post body — the writer produced JSON because Ollama was
+    # told to, then nothing un-wrapped the envelope before validation,
+    # which then critical-flagged "Content appears truncated — ends
+    # with '}'". ``ollama_chat_text`` also runs ``maybe_unwrap_json``
+    # internally as belt-and-suspenders if a model still emits a JSON
+    # envelope unprompted.
+    from services.llm_text import ollama_chat_text, resolve_local_model
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
-    # 2026-05-12 (poindexter#485): replaced 3 hardcoded glm-4.7-5090
-    # fallbacks with the shared resolver. See batch 6 (PR #392).
-    from services.llm_text import resolve_local_model
+    pool = _POOL_REGISTRY.get(state["pool_thread"])
     model = resolve_local_model(site_config=site_config)
     aug_block = "\n\n".join(
         f"[EXTERNAL_NEEDED: {r['need']}] → {r['research']}"
@@ -351,10 +359,19 @@ async def _revise_node(state: _State) -> _State:
     # prompt to UnifiedPromptManager. YAML default at
     # prompts/writer_rag_modes.yaml; Langfuse overrides take effect on
     # the next call.
+    # 2026-05-16: pass ``pool`` so the call dispatches through the
+    # configured LLM provider (LiteLLM / Ollama / etc.) instead of
+    # hardwiring to local Ollama.
     revise_prompt = _resolve_revise_prompt(
         draft=state["draft"], aug_block=aug_block,
     )
-    new_draft = await _ollama_chat_json(revise_prompt, model=model)
+    new_draft = await ollama_chat_text(
+        revise_prompt,
+        model=model,
+        site_config=site_config,
+        pool=pool,
+        timeout_setting="niche_ollama_chat_timeout_seconds",
+    )
     return {**state, "draft": new_draft, "revision_loops": state.get("revision_loops", 0) + 1}
 
 

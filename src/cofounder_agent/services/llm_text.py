@@ -1,30 +1,43 @@
 """``llm_text`` — local-LLM plain-text chat helper, shared by atoms.
 
-A common surface for atoms that need the local Ollama text-completion
-path without going through the model_router. The router is the right
-choice when an atom wants automatic tier resolution + fallbacks; this
-helper is the right choice when the atom already knows which local
-model it wants and just needs to submit a prompt.
+A common surface for atoms / writer modes / the pipeline architect that
+need a single plain-text completion against the configured LLM tier.
+
+Routing behavior (2026-05-16 cleanup — propagates LiteLLM cutover to all
+writer paths):
+
+- When a ``pool`` is reachable (production / worker): route through
+  :func:`services.llm_providers.dispatcher.dispatch_complete` at the
+  requested tier. This is what makes
+  ``plugin.llm_provider.primary.standard='litellm'`` actually take
+  effect for these callers — they were previously hardwired to Ollama
+  via direct ``httpx.post`` calls to ``/api/chat``.
+- When no ``pool`` is available (tests / bootstrap): fall back to a
+  direct ``httpx`` POST to the local Ollama instance. Same behavior as
+  before the dispatcher cutover.
+
+This module is the single source of truth for plain-text LLM chat. The
+three private ``_ollama_chat_text`` helpers that previously lived in
+:mod:`services.atoms.narrate_bundle`,
+:mod:`services.writer_rag_modes.deterministic_compositor`, and
+:mod:`services.pipeline_architect` were deleted in favor of this
+helper. Callers in those modules now import :func:`ollama_chat_text`
+directly.
 
 What this provides:
 
 - :func:`ollama_chat_text` — plain text in, plain text out. No JSON
-  envelope, no schema constraints. Resolves model from arg or from
-  ``site_config['pipeline_writer_model']`` default.
+  envelope, no schema constraints. Routes through the dispatcher when
+  a pool is provided; falls back to direct httpx otherwise.
 - :func:`maybe_unwrap_json` — defensive unwrap for models that emit
   ``{"thought": "..."}`` envelopes even when not asked for JSON.
 - :func:`resolve_local_model` — model-name normalizer (strips
   ``ollama/`` prefix, falls back to the writer-model setting).
 
-All three were originally duplicated in
-:mod:`services.atoms.narrate_bundle` and
-:mod:`services.pipeline_architect`. Centralizing here so the next
-atom that needs them doesn't make a third copy.
-
-Local-only. The no-paid-APIs policy
-(``feedback_no_paid_apis`` memory) restricts atoms to local models
-unless the operator explicitly opts in via the model_router fallback
-chain. This helper has no cloud-API path on purpose.
+Local-by-default. The no-paid-APIs policy
+(``feedback_no_paid_apis`` memory) means the dispatcher picks the
+provider per ``plugin.llm_provider.primary.<tier>``; operators flip to
+cloud providers only via that setting AND the cost_guard.
 """
 
 from __future__ import annotations
@@ -37,10 +50,9 @@ logger = logging.getLogger(__name__)
 
 # Langfuse @observe — wires every ollama_chat_text call into the
 # trace tree so the operator can drill into model/prompt/latency in
-# the Langfuse UI at http://localhost:3010. Shared with the other
-# Ollama-calling modules via services.langfuse_shim (poindexter#485
-# follow-up: previously this module was the only @observe'd entry
-# point — see the shim docstring for the broader rollout context).
+# the Langfuse UI at http://localhost:3010. This is the HIGHER-LEVEL
+# intent span; ``dispatch_complete`` emits its own lower-level
+# transport span via OpenTelemetry. Both are useful — keep both.
 from services.langfuse_shim import langfuse_context, observe
 
 
@@ -108,12 +120,27 @@ async def ollama_chat_text(
     timeout_default: float = 120.0,
     system: str | None = None,
     site_config: Any = None,
+    pool: Any = None,
+    tier: str = "standard",
 ) -> str:
-    """Plain-text Ollama chat call.
+    """Plain-text LLM chat call.
+
+    Routes through :func:`services.llm_providers.dispatcher.dispatch_complete`
+    when ``pool`` is provided (production / worker path — picks up the
+    configured provider per ``plugin.llm_provider.primary.<tier>``).
+    Falls back to a direct httpx POST to local Ollama's ``/api/chat``
+    when no pool is available (tests / bootstrap).
+
+    The function-name retains the historical ``ollama_chat_text``
+    spelling because callers reference it under that name. The dispatch
+    layer hides whether the actual transport is Ollama, LiteLLM, vllm,
+    etc. — picked per app_settings.
 
     Args:
         prompt: The user message body.
-        model: Concrete Ollama model name. ``None`` resolves via
+        model: Concrete model name. When provided, sent to the
+            provider as-is (after stripping ``ollama/`` prefix via
+            :func:`resolve_local_model`). When ``None``, resolves via
             :func:`resolve_local_model`.
         timeout_setting: ``app_settings`` key for the request timeout.
             Default key is generic; per-atom helpers can override
@@ -121,57 +148,98 @@ async def ollama_chat_text(
         timeout_default: Fallback timeout when the setting is unset.
         system: Optional system prompt prepended as a system role
             message.
-        site_config: SiteConfig DI seam (glad-labs-stack#330). When
-            ``None``, falls through to ``localhost:11434`` and the
-            default timeout — matches the behavior the singleton's
-            empty-default-config produced before the lifespan shim.
+        site_config: SiteConfig DI seam (glad-labs-stack#330). Required
+            for model resolution when ``model`` is unset.
+        pool: asyncpg Pool — when provided, routes via the LLM provider
+            dispatcher so the call honors
+            ``plugin.llm_provider.primary.<tier>`` (LiteLLM / Ollama /
+            OpenAI-compat / etc.). When ``None``, falls back to direct
+            httpx → local Ollama. Production paths should always pass a
+            pool; the httpx fallback is for tests + bootstrap only.
+        tier: cost tier passed to the dispatcher when ``pool`` is set
+            (``free`` / ``budget`` / ``standard`` / ``premium`` /
+            ``flagship``). Ignored on the httpx fallback path.
 
     Returns:
         The raw assistant content (post-unwrap, see
         :func:`maybe_unwrap_json`). Empty string on missing content.
     """
-    import httpx
-
     resolved_model = resolve_local_model(model, site_config=site_config)
-    base_url = (
-        (site_config.get("local_llm_api_url", "http://localhost:11434")
-            if site_config is not None else "http://localhost:11434").rstrip("/")
-    )
-    timeout = (
-        site_config.get_float(timeout_setting, timeout_default)
-        if site_config is not None else timeout_default
-    )
     messages: list[dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
-    payload = {
-        "model": resolved_model,
-        "messages": messages,
-        "stream": False,
-    }
+
     # Stamp model + input on the Langfuse generation span before the
-    # call so the trace records latency + model even if Ollama errors.
-    # update_current_observation is a no-op when Langfuse isn't wired.
+    # call so the trace records latency + model even if the dispatch
+    # errors. update_current_observation is a no-op when Langfuse
+    # isn't wired.
     langfuse_context.update_current_observation(
         model=resolved_model,
         input=messages,
-        metadata={"base_url": base_url, "timeout": timeout},
+        metadata={"tier": tier, "via": "dispatcher" if pool is not None else "httpx"},
     )
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{base_url}/api/chat", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-    raw = (data.get("message") or {}).get("content", "") or ""
+
+    if pool is not None:
+        # Production path — dispatch through the configured LLM
+        # provider. Any failure here is a real production issue (not a
+        # transient httpx hiccup that warrants a silent fallback), so
+        # let the exception propagate. Per ``feedback_no_silent_defaults``:
+        # missing-pool / missing-config should fail loud in production.
+        from services.llm_providers.dispatcher import dispatch_complete
+
+        timeout = (
+            site_config.get_float(timeout_setting, timeout_default)
+            if site_config is not None else timeout_default
+        )
+        completion = await dispatch_complete(
+            pool=pool,
+            messages=messages,
+            model=resolved_model,
+            tier=tier,
+            timeout_s=int(timeout),
+        )
+        raw = getattr(completion, "text", "") or ""
+        usage_details = {
+            "input": int(getattr(completion, "prompt_tokens", 0) or 0),
+            "output": int(getattr(completion, "completion_tokens", 0) or 0),
+        }
+    else:
+        # Test / bootstrap fallback — direct httpx → local Ollama. Same
+        # behavior as before the dispatcher cutover. Used when there's
+        # no DB pool to consult (unit tests stub site_config but not a
+        # full asyncpg pool; bootstrap scripts run before any pool is
+        # established).
+        import httpx
+
+        base_url = (
+            (site_config.get("local_llm_api_url", "http://localhost:11434")
+                if site_config is not None else "http://localhost:11434").rstrip("/")
+        )
+        timeout = (
+            site_config.get_float(timeout_setting, timeout_default)
+            if site_config is not None else timeout_default
+        )
+        payload = {
+            "model": resolved_model,
+            "messages": messages,
+            "stream": False,
+        }
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(f"{base_url}/api/chat", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+        raw = (data.get("message") or {}).get("content", "") or ""
+        usage_details = {
+            "input": data.get("prompt_eval_count") or 0,
+            "output": data.get("eval_count") or 0,
+        }
+
     output = maybe_unwrap_json(raw)
-    # Stamp output + ollama's prompt/completion token counts when present
-    # so the trace surfaces tokens in the Langfuse UI (the JSON envelope
-    # is the same shape Anthropic SDK Langfuse-integrations use).
-    usage = {
-        "input": data.get("prompt_eval_count"),
-        "output": data.get("eval_count"),
-    }
-    langfuse_context.update_current_observation(output=output, usage=usage)
+    # Stamp output + token counts so the trace surfaces tokens in the
+    # Langfuse UI. ``usage_details`` is the v3 schema (Dict[str, int]);
+    # "input"/"output" are the canonical Langfuse generic keys.
+    langfuse_context.update_current_observation(output=output, usage_details=usage_details)
     return output
 
 

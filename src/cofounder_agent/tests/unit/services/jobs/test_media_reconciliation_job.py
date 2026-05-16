@@ -314,3 +314,110 @@ class TestMediaReconciliation:
         emit_mock.assert_called_once()
         kwargs = emit_mock.call_args.kwargs
         assert kwargs["dedup_key"] == "media_reconciliation_r2_public_base_unresolved"
+
+    @pytest.mark.asyncio
+    async def test_excludes_dev_diary_slug_prefix_by_default(self):
+        """Captured 2026-05-15 — Matt: "the dev blogs don't need
+        podcasts or videos". Posts whose slug starts with
+        ``what-we-shipped-`` or ``daily-dev-diary-`` must NOT appear in
+        the reconciliation SQL's result set, so they don't generate
+        spurious media-drift alerts every 15 min.
+
+        Pins the SQL filter behaviour by asserting that the
+        ``NOT (slug ILIKE ANY($2::text[]))`` clause is in play AND that
+        the parameter the job passes for ``$2`` includes both default
+        prefixes."""
+        async def _fetchrow_dispatch(sql, *_args, **_kwargs):
+            # Route by SQL text so order-of-call doesn't matter.
+            if "r2_public_url" in sql:
+                return {"value": "https://r2.test"}
+            if "media_reconciliation_exclude_slug_prefixes" in sql:
+                return None  # defaults kick in
+            return None
+
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
+        conn.fetchrow = AsyncMock(side_effect=_fetchrow_dispatch)
+        conn.execute = AsyncMock(return_value=None)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        await MediaReconciliationJob().run(pool, config={})
+
+        posts_calls = [
+            c for c in conn.fetch.await_args_list
+            if "FROM posts" in (c.args[0] if c.args else "")
+        ]
+        assert posts_calls, "expected at least one fetch against posts"
+        prefix_arg = posts_calls[0].args[2]
+        assert "what-we-shipped-%" in prefix_arg
+        assert "daily-dev-diary-%" in prefix_arg
+        sql = posts_calls[0].args[0]
+        assert "NOT (slug ILIKE ANY" in sql
+
+    @pytest.mark.asyncio
+    async def test_exclude_prefixes_can_be_extended_via_app_settings(self):
+        """Operator can extend the exclude list at runtime via the
+        ``media_reconciliation_exclude_slug_prefixes`` app_settings
+        row (comma-separated). Per ``feedback_db_first_config`` — no
+        code change required to add a new exempt post type."""
+        async def _fetchrow_dispatch(sql, *_args, **_kwargs):
+            if "r2_public_url" in sql:
+                return {"value": "https://r2.test"}
+            if "media_reconciliation_exclude_slug_prefixes" in sql:
+                return {"value": "what-we-shipped-, internal-only-, weekly-digest-"}
+            return None
+
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
+        conn.fetchrow = AsyncMock(side_effect=_fetchrow_dispatch)
+        conn.execute = AsyncMock(return_value=None)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        await MediaReconciliationJob().run(pool, config={})
+
+        posts_calls = [
+            c for c in conn.fetch.await_args_list
+            if "FROM posts" in (c.args[0] if c.args else "")
+        ]
+        assert posts_calls
+        prefix_arg = posts_calls[0].args[2]
+        assert "what-we-shipped-%" in prefix_arg
+        assert "internal-only-%" in prefix_arg
+        assert "weekly-digest-%" in prefix_arg
+        # Defaults NOT auto-merged in — operator setting fully replaces them.
+        assert "daily-dev-diary-%" not in prefix_arg
+
+    @pytest.mark.asyncio
+    async def test_config_supplied_prefixes_win_over_app_settings(self):
+        """PluginConfig ``config.exclude_slug_prefixes`` takes precedence
+        over the app_settings row. Allows per-job overrides via the
+        scheduler's config blob without touching global app_settings."""
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[])
+        conn.fetchrow = AsyncMock(return_value={"value": "https://r2.test"})
+        conn.execute = AsyncMock(return_value=None)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        await MediaReconciliationJob().run(
+            pool,
+            config={"exclude_slug_prefixes": ["override-prefix-"]},
+        )
+
+        posts_calls = [
+            c for c in conn.fetch.await_args_list
+            if "FROM posts" in (c.args[0] if c.args else "")
+        ]
+        prefix_arg = posts_calls[0].args[2]
+        assert prefix_arg == ["override-prefix-%"]
