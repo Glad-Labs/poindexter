@@ -3276,26 +3276,25 @@ langchain-core = ">=1.2.31,<2.0.0"
 
 [[package]]
 name = "langfuse"
-version = "3.14.6"
+version = "4.6.1"
 description = "A client library for accessing langfuse"
 optional = false
 python-versions = "<4.0,>=3.10"
 groups = ["main"]
 files = [
-    {file = "langfuse-3.14.6-py3-none-any.whl", hash = "sha256:5eb22a5ea579ac10f050513e3fedccc3c9a981eeefe44f9014273bc229a56f88"},
-    {file = "langfuse-3.14.6.tar.gz", hash = "sha256:058f7b7caa9284b964feaee81c223542d78e9fb4daabf312269b9f903471b9c4"},
+    {file = "langfuse-4.6.1-py3-none-any.whl", hash = "sha256:a696ac3089a0c8431bf7f1b47b7f6417da311f418dd04ce9ef62d63608fd8797"},
+    {file = "langfuse-4.6.1.tar.gz", hash = "sha256:7f256c669e610909c2e93ca3e9e4168dbef344b753b6874f14b0edd673863f17"},
 ]
 
 [package.dependencies]
 backoff = ">=1.10.0"
 httpx = ">=0.15.4,<1.0"
-openai = ">=0.27.8"
-opentelemetry-api = ">=1.33.1,<2.0.0"
-opentelemetry-exporter-otlp-proto-http = ">=1.33.1,<2.0.0"
-opentelemetry-sdk = ">=1.33.1,<2.0.0"
-packaging = ">=23.2,<26.0"
-pydantic = ">=1.10.7,<3.0"
-wrapt = ">=1.14,<2.0"
+opentelemetry-api = ">=1.33.1,<2"
+opentelemetry-exporter-otlp-proto-http = ">=1.33.1,<2"
+opentelemetry-sdk = ">=1.33.1,<2"
+packaging = ">=23.2,<27.0"
+pydantic = ">=2,<3"
+wrapt = ">=1.14,<2"
 
 [[package]]
 name = "langgraph"
@@ -9462,4 +9461,4 @@ profiling = ["pyroscope-io"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "6a5bdac2b5712eebf47c509c5a650996b9e6ecafc42853e8cd6b16ed356035f2"
+content-hash = "babe3268a34eb66ec86eba57ae1663551224754d2078b8ecd4a285a2ea4810a1"
