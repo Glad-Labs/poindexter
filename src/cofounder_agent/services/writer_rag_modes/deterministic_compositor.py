@@ -147,40 +147,17 @@ def _fallback_narrative(bundle: dict[str, Any]) -> str:
     return f"The team shipped {' and '.join(parts)} today. See the full list below."
 
 
-async def _ollama_chat_text(
-    prompt: str, model: str, *, site_config: Any = None,
-) -> str:
-    """Plain-text Ollama chat call — the codebase's standard helper
-    (`services.topic_ranking._ollama_chat_json`) forces ``format=json``
-    which wraps prose responses in a ``{"thought": "..."}`` envelope.
-    Inline a minimal text-mode equivalent here rather than restructure
-    the shared helper.
-    """
-    import httpx
-
-    base_url = (
-        (site_config.get("local_llm_api_url", "http://localhost:11434")
-            if site_config is not None else "http://localhost:11434").rstrip("/")
-    )
-    timeout = (
-        site_config.get_float("niche_ollama_chat_timeout_seconds", 120.0)
-        if site_config is not None else 120.0
-    )
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        # No "format": "json" — we want prose.
-    }
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{base_url}/api/chat", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-    return (data.get("message") or {}).get("content", "")
+# 2026-05-16: the private ``_ollama_chat_text`` was deleted in favor of
+# :func:`services.llm_text.ollama_chat_text`. The shared helper routes
+# through the LLM provider dispatcher when a pool is available — making
+# this writer mode honor ``plugin.llm_provider.primary.standard='litellm'``
+# instead of bypassing the router with a direct httpx call to Ollama.
+# The module-level alias keeps test patches at the historical name working.
+from services.llm_text import ollama_chat_text as _ollama_chat_text
 
 
 async def _generate_narrative(
-    bundle: dict[str, Any], *, site_config: Any = None,
+    bundle: dict[str, Any], *, site_config: Any = None, pool: Any = None,
 ) -> str:
     """Call the writer LLM with a tight bundle-only prompt to produce
     the 2-3 paragraph narrative. Returns "" on failure — caller falls
@@ -210,34 +187,17 @@ async def _generate_narrative(
             f"closing paragraph."
         )
 
-        result = await _ollama_chat_text(full_prompt, model=model, site_config=site_config)
+        # ``ollama_chat_text`` already runs ``maybe_unwrap_json`` on
+        # the result, so the JSON-envelope defense the inline helper
+        # used to do here is now centralized in the shared module.
+        result = await _ollama_chat_text(
+            full_prompt,
+            model=model,
+            site_config=site_config,
+            pool=pool,
+            timeout_setting="niche_ollama_chat_timeout_seconds",
+        )
         prose = (result or "").strip()
-
-        # Defensive: some models still wrap output in JSON when asked
-        # for prose. If the response parses as JSON with a single-string
-        # value, unwrap it to the inner string. Common envelope keys:
-        # thought, response, content, text, output.
-        if prose.startswith("{") and prose.endswith("}"):
-            try:
-                import json as _json
-                parsed = _json.loads(prose)
-                if isinstance(parsed, dict):
-                    for k in ("thought", "response", "content", "text",
-                              "output", "answer", "summary"):
-                        v = parsed.get(k)
-                        if isinstance(v, str) and v.strip():
-                            prose = v.strip()
-                            break
-            except Exception as exc:
-                # poindexter#455 — used to be silent. The prose started
-                # with `{` and ended with `}` but didn't parse as JSON,
-                # so we keep it as-is. Worth a debug crumb so a model
-                # consistently emitting almost-JSON shows up in logs.
-                logger.debug(
-                    "[DETERMINISTIC_COMPOSITOR] prose looked like JSON "
-                    "but failed to parse (%s: %s) — keeping raw output",
-                    type(exc).__name__, exc,
-                )
         return prose
     except Exception as exc:
         logger.warning(
@@ -249,12 +209,17 @@ async def _generate_narrative(
 
 
 async def compose_post(
-    bundle: dict[str, Any], *, site_config: Any = None,
+    bundle: dict[str, Any], *, site_config: Any = None, pool: Any = None,
 ) -> str:
     """Render the dev_diary bundle as a Markdown post.
 
     Hybrid: deterministic header + LLM narrative + deterministic links
     list + deterministic footer. The LLM call sees only the bundle.
+
+    ``pool`` is threaded through so the inner ``ollama_chat_text`` call
+    routes via the dispatcher (LiteLLM / Ollama / OpenAI-compat per
+    ``plugin.llm_provider.primary.standard``). When called without a
+    pool (tests / bootstrap), the helper falls back to direct httpx.
     """
     date = (bundle.get("date") or "").strip() or "today"
     prs = bundle.get("merged_prs") or []
@@ -267,7 +232,7 @@ async def compose_post(
             f"{_FOOTER}\n"
         )
 
-    narrative = await _generate_narrative(bundle, site_config=site_config)
+    narrative = await _generate_narrative(bundle, site_config=site_config, pool=pool)
     if not narrative:
         narrative = _fallback_narrative(bundle)
 
@@ -311,7 +276,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str, pool, **kw: Any) 
         )
         bundle = {"date": "today", "merged_prs": [], "notable_commits": []}
 
-    draft = await compose_post(bundle, site_config=kw.get("site_config"))
+    # Thread pool through so the inner LLM call goes via the
+    # dispatcher (LiteLLM / Ollama / OpenAI-compat per app_settings).
+    draft = await compose_post(
+        bundle, site_config=kw.get("site_config"), pool=pool,
+    )
     return {
         "draft": draft,
         "mode": "DETERMINISTIC_COMPOSITOR",

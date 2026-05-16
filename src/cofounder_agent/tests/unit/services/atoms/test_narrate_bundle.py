@@ -148,7 +148,7 @@ class TestRunPromptConstruction:
         bundle = _bundle_repro_pr_221()
         captured: list[str] = []
 
-        async def _capture_chat(prompt, model, *, site_config=None):
+        async def _capture_chat(prompt, *, model=None, **kwargs):
             captured.append(prompt)
             return "Stub LLM output."
 
@@ -191,7 +191,7 @@ class TestRunPromptConstruction:
         bundle = _bundle_repro_pr_221()
         captured: list[str] = []
 
-        async def _capture_chat(prompt, model, *, site_config=None):
+        async def _capture_chat(prompt, *, model=None, **kwargs):
             captured.append(prompt)
             return "Stub LLM output."
 
@@ -232,7 +232,7 @@ class TestRunPromptConstruction:
         bundle = _bundle_repro_pr_221()
         captured: list[str] = []
 
-        async def _capture_chat(prompt, model, *, site_config=None):
+        async def _capture_chat(prompt, *, model=None, **kwargs):
             captured.append(prompt)
             return "Stub LLM output."
 
@@ -262,7 +262,7 @@ class TestRunPromptConstruction:
         """When the bundle is empty, no LLM call — no risk of riff."""
         captured: list[str] = []
 
-        async def _capture_chat(prompt, model):
+        async def _capture_chat(prompt, *, model=None, **kwargs):
             captured.append(prompt)
             return "Stub."
 
