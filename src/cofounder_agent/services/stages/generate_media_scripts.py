@@ -25,8 +25,6 @@ import logging
 import re
 from typing import Any
 
-import httpx
-
 from plugins.stage import StageResult
 
 logger = logging.getLogger(__name__)
@@ -66,10 +64,6 @@ class GenerateMediaScriptsStage:
         # DI seam (glad-labs-stack#330) — stages read site_config from
         # context per content_router_service.process_content_generation_task.
         sc = context.get("site_config")
-        ollama_url = (
-            sc.get("ollama_base_url", "http://host.docker.internal:11434")
-            if sc is not None else "http://host.docker.internal:11434"
-        )
         model = (
             (sc.get("video_scene_model") if sc is not None else None)
             or (sc.get("default_ollama_model") if sc is not None else None)
@@ -77,6 +71,11 @@ class GenerateMediaScriptsStage:
         )
         if model == "auto":
             model = "llama3:latest"
+
+        # Resolve the asyncpg pool from the database_service in context —
+        # stages run inside the pipeline runner which seeds this for us.
+        database_service = context.get("database_service")
+        pool = getattr(database_service, "pool", None) if database_service else None
 
         clean_content = _strip_markdown(content_text)
 
@@ -104,22 +103,31 @@ class GenerateMediaScriptsStage:
                 sc.get("site_name", "our site") if sc is not None else "our site",
             )
 
-            async with gpu.lock("ollama", model=model, task_id=context.get("task_id"), phase="media_scripts"):
-                async with httpx.AsyncClient(
-                    timeout=httpx.Timeout(120.0, connect=5.0)
-                ) as client:
-                    resp = await client.post(
-                        f"{ollama_url}/api/generate",
-                        json={
-                            "model": model,
-                            "prompt": scene_prompt,
-                            "stream": False,
-                            "options": {"num_predict": 2048, "temperature": 0.7},
-                        },
-                        timeout=120,
+            scene_output = ""
+            if pool is None:
+                # Tests / bootstrap path — skip the LLM call gracefully.
+                # The stage is marked non-critical (halts_on_failure=False),
+                # so an empty scenes payload is fine for non-prod runs.
+                logger.warning(
+                    "[MEDIA] no DB pool in context — skipping video-scenes LLM call",
+                )
+            else:
+                from services.llm_providers.dispatcher import dispatch_complete
+
+                async with gpu.lock(
+                    "ollama", model=model,
+                    task_id=context.get("task_id"), phase="media_scripts",
+                ):
+                    result = await dispatch_complete(
+                        pool=pool,
+                        messages=[{"role": "user", "content": scene_prompt}],
+                        model=model,
+                        tier="standard",
+                        timeout_s=120,
+                        temperature=0.7,
+                        max_tokens=2048,
                     )
-                    resp.raise_for_status()
-                    scene_output = resp.json().get("response", "").strip()
+                    scene_output = (getattr(result, "text", "") or "").strip()
 
             if scene_output:
                 video_scenes, short_summary = _parse_scene_output(

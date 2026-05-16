@@ -131,8 +131,22 @@ async def _sample_summaries(
     window. The summaries are deliberately short — we're testing the
     model's CONSISTENCY about the article, not asking for original
     output, so a tight prompt + low max_tokens keeps cost flat.
+
+    Routes through ``dispatch_complete`` so the call honors the
+    configured LLM provider per
+    ``plugin.llm_provider.primary.standard``. Returns an empty list
+    when no DB pool is available (tests / bootstrap) — the caller's
+    ``len(samples) < 2`` check then degrades gracefully to
+    "self-consistency-skipped".
     """
-    from services.ollama_client import OllamaClient
+    pool = getattr(site_config, "_pool", None) if site_config is not None else None
+    if pool is None:
+        logger.debug(
+            "[self_consistency] no DB pool on site_config — skipping samples",
+        )
+        return []
+
+    from services.llm_providers.dispatcher import dispatch_complete
 
     truncated = content[:4000]
     prompt = _DEFAULT_SUMMARY_PROMPT.format(
@@ -141,19 +155,20 @@ async def _sample_summaries(
     writer_model = _site_str(
         site_config, "pipeline_writer_model", "ollama/glm-4.7-5090:latest",
     )
-    # Strip the ollama/ prefix; OllamaClient expects bare model names.
+    # Strip the ollama/ prefix so the provider gets a bare model name.
     writer_model = writer_model.removeprefix("ollama/")
 
     async def _one_sample(idx: int) -> str:
-        client = OllamaClient()
         try:
-            resp = await client.generate(
-                prompt=prompt,
+            result = await dispatch_complete(
+                pool=pool,
+                messages=[{"role": "user", "content": prompt}],
                 model=writer_model,
+                tier="standard",
                 temperature=temperature,
                 max_tokens=250,
             )
-            return (resp or {}).get("response", "").strip() if isinstance(resp, dict) else str(resp).strip()
+            return (getattr(result, "text", "") or "").strip()
         except Exception as e:
             logger.debug("[self_consistency] sample %d failed: %s", idx, e)
             return ""
@@ -162,24 +177,35 @@ async def _sample_summaries(
     return [s for s in samples if s]
 
 
-async def _pairwise_mean_cosine(samples: list[str]) -> float:
+async def _pairwise_mean_cosine(
+    samples: list[str], *, site_config: Any = None,
+) -> float:
     """Embed each sample, return mean pairwise cosine similarity.
 
     sentence-transformers normalizes by default; dot product == cosine.
     Returns 1.0 when N<2 (degenerate — treat single sample as
-    perfectly consistent with itself).
+    perfectly consistent with itself). Returns -1.0 when no pool
+    is available OR any embed call fails.
     """
     if len(samples) < 2:
         return 1.0
 
-    from services.ollama_client import OllamaClient
+    pool = getattr(site_config, "_pool", None) if site_config is not None else None
+    if pool is None:
+        logger.debug(
+            "[self_consistency] no DB pool — cannot embed; signal failure",
+        )
+        return -1.0
+
+    from services.llm_providers.dispatcher import dispatch_embed
     import numpy as np
 
-    client = OllamaClient()
     embeddings: list[list[float]] = []
     for s in samples:
         try:
-            v = await client.embed(s, model="nomic-embed-text")
+            v = await dispatch_embed(
+                pool=pool, text=s, model="nomic-embed-text", tier="free",
+            )
             embeddings.append(v)
         except Exception as e:
             logger.debug("[self_consistency] embed failed: %s", e)
@@ -237,7 +263,7 @@ async def evaluate(
                 f"(needed 2+, target N={n})",
             )
 
-        score = await _pairwise_mean_cosine(samples)
+        score = await _pairwise_mean_cosine(samples, site_config=site_config)
         if score < 0:
             return True, 1.0, "self-consistency-skipped: embedding step failed"
 

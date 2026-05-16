@@ -312,15 +312,14 @@ def _strip_markdown(text: str) -> str:
 
 
 async def _build_script_with_llm(title: str, content: str) -> str:
-    """Use Ollama to rewrite a blog post as a natural podcast script.
+    """Use the configured LLM provider to rewrite a blog post as a natural podcast script.
 
-    The LLM handles all nuances: removing visual references, URLs, image credits,
-    converting written style to conversational spoken English, restructuring for
-    audio flow, etc. Falls back to regex stripping if Ollama is unavailable.
+    Routes through :func:`services.llm_providers.dispatcher.dispatch_complete`
+    so the call honors ``plugin.llm_provider.primary.standard`` (LiteLLM
+    on prod). Falls back to regex stripping if the LLM call fails OR if
+    no pool is available (tests / bootstrap).
     """
-    import httpx
-
-    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
+    from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
 
     # Cost-tier API (Lane B sweep). Operators tune the standard tier via
     # app_settings.cost_tier.standard.model — no code edit per niche.
@@ -328,22 +327,27 @@ async def _build_script_with_llm(title: str, content: str) -> str:
     # mapping, (3) legacy default_ollama_model fallback. Per
     # feedback_no_silent_defaults.md, if all three miss we page the
     # operator and let the caller fall back to regex script.
-    from services.llm_providers.dispatcher import resolve_tier_model
+    pool = getattr(site_config, "_pool", None)
+    if pool is None:
+        # No DB pool — tests / bootstrap path. Skip the LLM call entirely
+        # and use the regex fallback so the episode still renders.
+        logger.debug(
+            "[PODCAST] no DB pool on site_config; falling back to regex script",
+        )
+        return _build_script_fallback(title, content)
 
     model = (site_config.get("podcast_script_model") or "").removeprefix("ollama/")
     if not model:
-        pool = getattr(site_config, "_pool", None)
-        if pool is not None:
-            try:
-                model = (
-                    await resolve_tier_model(pool, "standard")
-                ).removeprefix("ollama/")
-            except (RuntimeError, ValueError) as tier_err:
-                logger.debug(
-                    "[PODCAST] cost_tier.standard.model unresolved (%s); "
-                    "trying default_ollama_model fallback",
-                    tier_err,
-                )
+        try:
+            model = (
+                await resolve_tier_model(pool, "standard")
+            ).removeprefix("ollama/")
+        except (RuntimeError, ValueError) as tier_err:
+            logger.debug(
+                "[PODCAST] cost_tier.standard.model unresolved (%s); "
+                "trying default_ollama_model fallback",
+                tier_err,
+            )
     if not model:
         fallback = site_config.get("default_ollama_model") or ""
         if not fallback:
@@ -400,34 +404,37 @@ ARTICLE CONTENT:
 PODCAST SCRIPT:"""
 
     try:
-        # Podcast script generation is a long-form Ollama call (up to 8k
+        # Podcast script generation is a long-form completion (up to 8k
         # tokens). 180s is generous for local qwen3:30b/glm-4.7 on a 5090
         # while keeping the pipeline from ever stalling on a stuck model.
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(180.0, connect=5.0)
-        ) as client:
-            resp = await client.post(
-                f"{ollama_url}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": 8192, "temperature": 0.4, "num_ctx": 16384},
-                },
-                timeout=180,
+        messages = [{"role": "user", "content": prompt}]
+        result = await dispatch_complete(
+            pool=pool,
+            messages=messages,
+            model=model,
+            tier="standard",
+            timeout_s=180,
+            temperature=0.4,
+            max_tokens=8192,
+        )
+        script_body = (getattr(result, "text", "") or "").strip()
+
+        if len(script_body) < 200:
+            logger.warning(
+                "[PODCAST] LLM script too short (%d chars), falling back to regex",
+                len(script_body),
             )
-            resp.raise_for_status()
-            data = resp.json()
-            script_body = data.get("response", "").strip()
+            return _build_script_fallback(title, content)
 
-            if len(script_body) < 200:
-                logger.warning("[PODCAST] LLM script too short (%d chars), falling back to regex", len(script_body))
-                return _build_script_fallback(title, content)
-
-            logger.info("[PODCAST] LLM generated %d-char script for '%s'", len(script_body), title[:50])
+        logger.info(
+            "[PODCAST] LLM generated %d-char script for '%s'",
+            len(script_body), title[:50],
+        )
 
     except Exception as e:
-        logger.warning("[PODCAST] Ollama script generation failed (%s), falling back to regex", e)
+        logger.warning(
+            "[PODCAST] LLM script generation failed (%s), falling back to regex", e,
+        )
         return _build_script_fallback(title, content)
 
     # Still apply speech normalization for TTS pronunciation fixes
