@@ -8,7 +8,7 @@ Only DATABASE_URL and PORT remain as env vars (chicken-and-egg).
 Everything else comes from the database.
 
 The module-level ``site_config`` singleton was deleted 2026-05-09
-(Glad-Labs/glad-labs-stack#330). All production callers now receive a
+(Glad-Labs/poindexter#330). All production callers now receive a
 SiteConfig instance through the DI seam:
 
   - Route handlers:    ``site_config: SiteConfig = Depends(get_site_config_dependency)``
@@ -230,7 +230,7 @@ class SiteConfig:
         return dict(self._config)
 
 
-# Module-level singleton DELETED 2026-05-09 (Glad-Labs/glad-labs-stack#330).
+# Module-level singleton DELETED 2026-05-09 (Glad-Labs/poindexter#330).
 # Production code receives the lifespan-bound SiteConfig instance via the
 # DI seam:
 #   - Route handlers:    Depends(get_site_config_dependency)
