@@ -2,20 +2,23 @@
 
 Wraps the existing ``services.content_router_service.process_content_generation_task``
 in a Prefect flow so dispatch / retry / heartbeat / stale-task sweep
-move out of ``services/task_executor.py`` and into the Prefect server
-already running at ``http://localhost:4200``.
+run on the Prefect server at ``http://localhost:4200`` instead of a
+homegrown asyncio polling daemon.
 
 The flow body itself is a thin call into the existing pipeline — Lane C
 already moved orchestration to LangGraph + the ``canonical_blog``
 template. This module only changes WHO calls the pipeline (a Prefect
-deployment instead of a homegrown asyncio polling daemon) and WHEN
-(a Prefect schedule instead of ``_process_loop``'s 5-second poll).
+deployment) and WHEN (a Prefect schedule instead of a 5-second poll).
 
-Phase-0 cutover seam (Glad-Labs/poindexter#410): the flow ships behind
-``app_settings.use_prefect_orchestration`` (default ``'false'``).
-``TaskExecutor`` checks the flag every poll cycle and short-circuits
-when Prefect is active, so both daemons can run side-by-side during
-the dual-write window without double-claiming tasks.
+Cutover history (Glad-Labs/poindexter#410):
+
+- Phase 0 (2026-05-10): flow shipped behind
+  ``app_settings.use_prefect_orchestration`` (default ``'false'``);
+  the legacy ``TaskExecutor`` short-circuited when the flag was true.
+- Stage 3 (2026-05-13): default flipped to ``'true'`` for fresh installs.
+- Stage 4 (2026-05-16): ``services/task_executor.py`` deleted entirely.
+  This module is now the only path through which the content pipeline
+  is dispatched.
 """
 
 from __future__ import annotations
@@ -54,9 +57,10 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
     don't grab the same task. Returns ``None`` when the queue is empty
     so the flow can exit cleanly without raising.
 
-    Mirrors the claim shape from
-    ``services.task_executor.TaskExecutor._process_loop`` so the
-    side-by-side dual-write window observes consistent semantics.
+    The claim shape was originally mirrored from the legacy
+    ``TaskExecutor._process_loop`` so the dual-write cutover window
+    observed consistent semantics; that path was retired in
+    Glad-Labs/poindexter#410 Stage 4 (2026-05-16).
     """
     pool = getattr(database_service, "pool", None)
     if pool is None:
@@ -218,17 +222,14 @@ async def content_generation_flow(
         target_audience=target_audience,
     )
 
-    # Glad-Labs/poindexter#478: the inline post-pipeline-success block
-    # in ``services/task_executor.py::_process_loop`` (webhook + auto-
-    # curator + auto-publish + operator notification) never fires
-    # under Prefect because the loop short-circuits when
-    # ``use_prefect_orchestration=true``. Both orchestrators now
-    # delegate to the same helper so the four behaviours survive
-    # both code paths. We only run the helper on successful pipeline
-    # completions (status != 'failed') — failures are handled by the
-    # task_executor's failure-path block below it, which is not yet
-    # mirrored here (separate scope; failure-path webhooks fire
-    # via the existing FailedTaskHandler stage where it matters).
+    # Glad-Labs/poindexter#478: post-pipeline-success side-effects
+    # (webhook + auto-curator + auto-publish + operator notification)
+    # delegate to ``services.post_pipeline_actions.run_post_pipeline_actions``.
+    # The original inline block lived in ``task_executor._process_loop``;
+    # that file was deleted in Stage 4 (poindexter#410) so this is now
+    # the sole driver. Failure-path webhooks fire via the existing
+    # FailedTaskHandler stage where it matters; we only run the helper
+    # on successful pipeline completions (status != 'failed').
     try:
         final_status = (
             result.get("status", "awaiting_approval")
@@ -244,12 +245,6 @@ async def content_generation_flow(
                 topic=topic,
                 result=result if isinstance(result, dict) else None,
                 site_config=_wired_site_config,
-                # Prefect path doesn't have a TaskExecutor instance —
-                # auto-publish stays disabled here for now. Operators
-                # who need Prefect auto-publish should follow the
-                # tracking issue (poindexter#478 acceptance criteria
-                # explicitly tags this as a follow-up E2E test).
-                task_executor=None,
             )
     except Exception:
         logger.warning(

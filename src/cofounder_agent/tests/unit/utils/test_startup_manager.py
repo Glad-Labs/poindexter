@@ -7,11 +7,15 @@ Covers:
 - _initialize_database(): success, failure (raises SystemExit)
 - _run_migrations(): success (ok=True), success (ok=False), Exception, content store failure
 - _setup_redis_cache(): enabled, disabled, Exception
-- _initialize_task_executor(): success, Exception (non-fatal)
 - _verify_connections(): healthy, unhealthy status, Exception
 - _log_startup_summary(): smoke test (no crash)
-- shutdown(): executor running, executor stopped/None, redis, DB, Exception
+- shutdown(): redis, DB, Exception
 - initialize_all_services(): success path, Exception path, SystemExit re-raise
+
+Task dispatch lives in Prefect (Glad-Labs/poindexter#410); the legacy
+in-process TaskExecutor was deleted in Stage 4 (2026-05-16), so the
+``_initialize_task_executor`` lifecycle hook is gone and the shutdown
+path no longer stops an executor.
 
 All tests are pure — zero DB, LLM, or network calls.
 """
@@ -59,7 +63,6 @@ class TestInit:
         mgr = _make_manager()
         assert mgr.database_service is None
         assert mgr.redis_cache is None
-        assert mgr.task_executor is None
         assert mgr.startup_error is None
 
 
@@ -409,57 +412,9 @@ class TestSetupRedisCache:
 
 
 # ---------------------------------------------------------------------------
-# _initialize_task_executor
+# _initialize_task_executor — deleted in Glad-Labs/poindexter#410 Stage 4
+# (2026-05-16). Prefect owns dispatch; nothing to construct in-process.
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestInitializeTaskExecutor:
-    def test_success_sets_executor(self):
-        mgr = _make_manager()
-        mgr.database_service = MagicMock()
-        mgr.database_service.tasks = MagicMock()
-
-        mock_executor = MagicMock()
-        mock_executor_cls = MagicMock(return_value=mock_executor)
-        mock_module = MagicMock(TaskExecutor=mock_executor_cls)
-
-        with patch.dict("sys.modules", {"services.task_executor": mock_module}):
-            _run(mgr._initialize_task_executor())
-
-        assert mgr.task_executor is mock_executor
-
-    def test_executor_created_with_expected_kwargs(self):
-        """TaskExecutor takes only database_service + poll_interval (#333)."""
-        mgr = _make_manager()
-        mgr.database_service = MagicMock()
-        mgr.database_service.tasks = MagicMock()
-
-        mock_executor = MagicMock()
-        mock_executor_cls = MagicMock(return_value=mock_executor)
-        mock_module = MagicMock(TaskExecutor=mock_executor_cls)
-
-        with patch.dict("sys.modules", {"services.task_executor": mock_module}):
-            _run(mgr._initialize_task_executor())
-
-        call_kwargs = mock_executor_cls.call_args.kwargs
-        assert call_kwargs["database_service"] is mgr.database_service
-        assert call_kwargs["poll_interval"] == 5
-        # `orchestrator` kwarg removed in #333; assert it was not passed.
-        assert "orchestrator" not in call_kwargs
-
-    def test_exception_sets_none_does_not_raise(self):
-        mgr = _make_manager()
-        mgr.database_service = MagicMock()
-        mgr.database_service.tasks = MagicMock()
-
-        mock_executor_cls = MagicMock(side_effect=Exception("executor init failed"))
-        mock_module = MagicMock(TaskExecutor=mock_executor_cls)
-
-        with patch.dict("sys.modules", {"services.task_executor": mock_module}):
-            _run(mgr._initialize_task_executor())
-
-        assert mgr.task_executor is None
 
 
 # ---------------------------------------------------------------------------
@@ -518,8 +473,6 @@ class TestLogStartupSummary:
         mgr.database_service = MagicMock()
         mgr.redis_cache = MagicMock()
         mgr.redis_cache._enabled = True
-        mgr.task_executor = MagicMock()
-        mgr.task_executor.running = True
         mgr._log_startup_summary()  # Must not raise
 
 
@@ -530,35 +483,12 @@ class TestLogStartupSummary:
 
 @pytest.mark.unit
 class TestShutdown:
-    def test_shutdown_running_executor(self):
-        mgr = _make_manager()
-        mock_executor = AsyncMock()
-        mock_executor.running = True
-        mock_executor.stop = AsyncMock()
-        mock_executor.get_stats = MagicMock(
-            return_value={"task_count": 10, "success_count": 8, "error_count": 2}
-        )
-        mgr.task_executor = mock_executor
+    """Shutdown sequence — Redis + DB only.
 
-        _run(mgr.shutdown())
-
-        mock_executor.stop.assert_awaited_once()
-
-    def test_shutdown_stopped_executor_skips_stop(self):
-        mgr = _make_manager()
-        mock_executor = MagicMock()
-        mock_executor.running = False
-        mgr.task_executor = mock_executor
-
-        _run(mgr.shutdown())
-
-        mock_executor.stop.assert_not_called()
-
-    def test_shutdown_no_executor_no_crash(self):
-        mgr = _make_manager()
-        mgr.task_executor = None
-
-        _run(mgr.shutdown())
+    Task dispatch lives in Prefect now (Glad-Labs/poindexter#410); the
+    legacy ``self.task_executor.stop()`` call was removed in Stage 4
+    (2026-05-16) alongside the deletion of ``services/task_executor.py``.
+    """
 
     def test_shutdown_closes_redis(self):
         mgr = _make_manager()
@@ -580,21 +510,9 @@ class TestShutdown:
 
         mock_db.close.assert_awaited_once()
 
-    def test_shutdown_executor_exception_does_not_block_rest(self):
-        """Executor stop failing should not prevent DB / Redis from closing."""
+    def test_shutdown_no_services_no_crash(self):
         mgr = _make_manager()
-        mock_executor = AsyncMock()
-        mock_executor.running = True
-        mock_executor.stop = AsyncMock(side_effect=Exception("stop failed"))
-        mgr.task_executor = mock_executor
-
-        mock_db = AsyncMock()
-        mock_db.close = AsyncMock()
-        mgr.database_service = mock_db
-
-        _run(mgr.shutdown())
-
-        mock_db.close.assert_awaited_once()
+        _run(mgr.shutdown())  # Must not raise when nothing is set
 
 
 # ---------------------------------------------------------------------------
@@ -610,7 +528,6 @@ class TestInitializeAllServices:
         mgr._initialize_database = AsyncMock()
         mgr._run_migrations = AsyncMock()
         mgr._setup_redis_cache = AsyncMock()
-        mgr._initialize_task_executor = AsyncMock()
         mgr._verify_connections = AsyncMock()
         mgr._log_startup_summary = MagicMock()
 
@@ -624,7 +541,6 @@ class TestInitializeAllServices:
         expected_keys = {
             "database",
             "redis_cache",
-            "task_executor",
             "startup_error",
         }
         assert set(result.keys()) == expected_keys
@@ -680,7 +596,6 @@ class TestInitializeAllServices:
         mgr._initialize_database = AsyncMock(side_effect=lambda: call_order.append("db"))
         mgr._run_migrations = AsyncMock(side_effect=lambda: call_order.append("migrations"))
         mgr._setup_redis_cache = AsyncMock(side_effect=lambda: call_order.append("redis"))
-        mgr._initialize_task_executor = AsyncMock(side_effect=lambda: call_order.append("executor"))
         mgr._verify_connections = AsyncMock(side_effect=lambda: call_order.append("verify"))
         mgr._log_startup_summary = MagicMock()
 
@@ -691,6 +606,5 @@ class TestInitializeAllServices:
             "db",
             "migrations",
             "redis",
-            "executor",
             "verify",
         ]

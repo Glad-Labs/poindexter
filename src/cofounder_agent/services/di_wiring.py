@@ -90,7 +90,6 @@ WIRED_MODULES: tuple[str, ...] = (
     "services.prompt_manager",
     "services.retention_janitor",
     "services.ai_content_generator",
-    "services.task_executor",
     "services.image_service",
     "services.content_router_service",
     "services.seo_content_generator",

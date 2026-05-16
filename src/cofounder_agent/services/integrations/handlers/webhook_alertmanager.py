@@ -3,12 +3,18 @@
 Consumes an Alertmanager webhook payload, persists every alert to
 ``alert_events``, runs the should-page filter (severity=critical OR
 category=infrastructure), fans matching alerts out to Discord +
-Telegram via :func:`services.task_executor._notify_alert`, and fires
-the remediation scaffold.
+Telegram via :func:`services.integrations.operator_notify.notify_operator`,
+and fires the remediation scaffold.
 
 Migrated from ``routes/alertmanager_webhook_routes.py``. The dispatch
 logic and the remediation scaffold move wholesale; only the transport
 changes from a bespoke FastAPI route to the declarative dispatcher.
+
+Operator-notify call signature changed during the Prefect Stage 4
+cutover (Glad-Labs/poindexter#410): the previous
+``services.task_executor._notify_alert(msg, site_config, critical=...)``
+helper was deleted along with ``task_executor.py``; this handler now
+calls ``notify_operator(msg, critical=..., site_config=...)`` directly.
 """
 
 from __future__ import annotations
@@ -108,15 +114,17 @@ def _format_alert_message(alert: dict[str, Any]) -> str:
 
 async def _notify_operator(alert: dict[str, Any], site_config: Any) -> None:
     try:
-        from services.task_executor import _notify_alert
+        from services.integrations.operator_notify import notify_operator
     except Exception as exc:
-        logger.warning("alertmanager_dispatch: _notify_alert unavailable: %s", exc)
+        logger.warning("alertmanager_dispatch: notify_operator unavailable: %s", exc)
         return
 
     severity = (alert.get("labels") or {}).get("severity", "info").lower()
     message = _format_alert_message(alert)
     try:
-        await _notify_alert(message, site_config, critical=severity == "critical")
+        await notify_operator(
+            message, critical=severity == "critical", site_config=site_config,
+        )
     except Exception as exc:
         logger.warning("alertmanager_dispatch: operator dispatch failed: %s", exc)
 

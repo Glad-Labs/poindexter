@@ -156,83 +156,14 @@ class TestVideoServiceResolveModel:
 
 
 # ---------------------------------------------------------------------------
-# task_executor first-retry writer (intent-based, not a tier migration)
+# task_executor first-retry writer — deleted with task_executor.py in
+# Glad-Labs/poindexter#410 Stage 4 (2026-05-16). The ``task_retry_max_attempts``
+# default of ``0`` has kept the auto-retry sweeper off in production
+# since #370; operators retry via CLI/UI now. The
+# ``task_executor_first_retry_writer_model`` app_settings row remains in
+# the seed migrations for backwards compat but is no longer read by any
+# production code path.
 # ---------------------------------------------------------------------------
-
-
-class TestTaskExecutorFirstRetryWriter:
-    """The retry-writer literal is intent-based — operators tune
-    ``task_executor_first_retry_writer_model`` directly. NOT routed
-    through ``resolve_tier_model``; per-call-site setting only.
-    """
-
-    @pytest.mark.asyncio
-    async def test_setting_value_is_used_for_retry_writer_swap(self):
-        from services.task_executor import TaskExecutor
-
-        executor = TaskExecutor.__new__(TaskExecutor)
-        executor.database_service = MagicMock()
-        executor.database_service.pool = MagicMock()
-        executor.database_service.pool.fetch = AsyncMock(return_value=[
-            {
-                "task_id": "t1",
-                "status": "failed",
-                "topic": "T",
-                "task_metadata": {},
-                "retry_count": 0,
-                "updated_at": None,
-            },
-        ])
-        executor.database_service.update_task = AsyncMock()
-
-        async def _fake_get_setting(key, default=""):
-            if key == "task_executor_first_retry_writer_model":
-                return "ollama/qwen3-coder:30b"
-            return "3"
-
-        executor._get_setting = AsyncMock(side_effect=_fake_get_setting)
-        await executor._auto_retry_failed_tasks()
-        update_call = executor.database_service.update_task.call_args
-        adjustments = update_call[0][1]["task_metadata"]["retry_adjustments"]
-        # ollama/ prefix stripped.
-        assert adjustments["model_selections"]["draft"] == "qwen3-coder:30b"
-
-    @pytest.mark.asyncio
-    async def test_empty_setting_pages_operator_and_skips_swap(self):
-        from services.task_executor import TaskExecutor
-
-        executor = TaskExecutor.__new__(TaskExecutor)
-        executor.database_service = MagicMock()
-        executor.database_service.pool = MagicMock()
-        executor.database_service.pool.fetch = AsyncMock(return_value=[
-            {
-                "task_id": "t1",
-                "status": "failed",
-                "topic": "T",
-                "task_metadata": {},
-                "retry_count": 0,
-                "updated_at": None,
-            },
-        ])
-        executor.database_service.update_task = AsyncMock()
-
-        async def _fake_get_setting(key, default=""):
-            if key == "task_executor_first_retry_writer_model":
-                return ""
-            return "3"
-
-        executor._get_setting = AsyncMock(side_effect=_fake_get_setting)
-        notify = AsyncMock()
-        with patch(
-            "services.integrations.operator_notify.notify_operator",
-            notify,
-        ):
-            await executor._auto_retry_failed_tasks()
-        update_call = executor.database_service.update_task.call_args
-        adjustments = update_call[0][1]["task_metadata"]["retry_adjustments"]
-        # Empty setting -> no model_selections override (retry uses default writer).
-        assert "model_selections" not in adjustments
-        notify.assert_awaited()
 
 
 # ---------------------------------------------------------------------------

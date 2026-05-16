@@ -249,8 +249,13 @@ async def _notify_publish_gate_tripped(
     artifact: dict[str, Any],
     site_config: Any,
 ) -> dict[str, Any]:
-    """Reuse the same notification path the mid-pipeline gates use."""
-    from services.task_executor import _notify_alert
+    """Reuse the same notification path the mid-pipeline gates use.
+
+    Calls :func:`services.integrations.operator_notify.notify_operator`
+    (was ``services.task_executor._notify_alert`` until the Prefect
+    Stage 4 cutover deleted ``task_executor.py`` — Glad-Labs/poindexter#410).
+    """
+    from services.integrations.operator_notify import notify_operator
 
     title = artifact.get("title") or artifact.get("slug") or "(untitled)"
     preview = artifact.get("preview_url") or artifact.get("permalink") or ""
@@ -269,7 +274,7 @@ async def _notify_publish_gate_tripped(
     msg = "\n".join(msg_lines)
 
     try:
-        await _notify_alert(msg, site_config, critical=False)
+        await notify_operator(msg, critical=False, site_config=site_config)
         return {"sent": True, "reason": "ok"}
     except Exception as exc:
         logger.warning(

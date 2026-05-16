@@ -87,15 +87,19 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.redis_cache = services["redis_cache"]
         # app.state.orchestrator will be set to UnifiedOrchestrator below
         # (removed legacy Orchestrator)
-        app.state.task_executor = services["task_executor"]
         app.state.legacy_data_service = services.get("legacy_data_service")
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
+        # Task dispatch is owned by the Prefect deployment registered via
+        # ``scripts/deploy_content_flow.py``; the legacy in-process
+        # ``TaskExecutor`` was deleted in Glad-Labs/poindexter#410 Stage 4.
+        # Operators monitor dispatch in the Prefect UI at :4200.
+        logger.info("[LIFESPAN] task dispatch: prefect (http://localhost:4200)")
         logger.debug("[LIFESPAN] ✅ All services injected into app.state")
 
         # Register the DatabaseService with the integrations framework so
-        # legacy helper functions (task_executor._notify_*,
-        # revalidation_service.trigger_nextjs_revalidation) can
+        # legacy helper functions (revalidation_service.trigger_nextjs_revalidation,
+        # operator_notify._legacy_discord_webhook fallback) can
         # opportunistically route through outbound_dispatcher.deliver()
         # when the corresponding webhook_endpoints row is enabled.
         from services.integrations.shared_context import set_database_service
@@ -191,29 +195,10 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 "[LIFESPAN] di_wiring import / call failed: %s", e,
             )
 
-        # Phase H (GH#95): wire site_config into the TaskExecutor that
-        # startup_manager built. startup_manager runs before the DB pool
-        # exists so it can't construct TaskExecutor with site_config
-        # directly. Without this rebind TaskExecutor.site_config resolves
-        # to None, the pipeline seeds ``context["site_config"]=None``,
-        # and the first stage that calls get_content_generator(...) hits
-        # AIContentGenerator._require_site_config() → RuntimeError +
-        # task fails.
-        _te = services.get("task_executor")
-        if _te is not None:
-            _te._site_config = _site_cfg
-            _te.app_state = app.state
-            try:
-                # UnifiedQualityService is a class instance — write the
-                # site_config attribute the constructor stores on
-                # self._site_config (services/quality_service.py:134).
-                # Don't call ``.set_site_config(...)`` here: that method
-                # exists only on the module, not on the instance.
-                _te.quality_service._site_config = _site_cfg
-            except Exception as e:
-                logger.warning(
-                    "[LIFESPAN] task_executor.quality_service site_config wiring failed: %s", e,
-                )
+        # TaskExecutor wiring block removed in Glad-Labs/poindexter#410
+        # Stage 4 (2026-05-16). Task dispatch now lives in Prefect; the
+        # site_config DI seam threads through Prefect-spawned subprocesses
+        # via ``services.di_wiring.build_and_wire_for_subprocess`` instead.
 
         # Re-initialize observability stack now that site_config is loaded from
         # DB. Module-level setup() calls earlier saw empty values — this is the
@@ -295,7 +280,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             app,
             database_service=services["database"],
             orchestrator=services.get("orchestrator"),
-            task_executor=services["task_executor"],
             intelligent_orchestrator=services.get("intelligent_orchestrator"),
             workflow_history=services.get("workflow_history"),
         )
@@ -306,7 +290,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info(f"[LIFESPAN] Deployment mode: {deployment_mode}")
 
         if deployment_mode == "worker":
-            # Worker mode: register worker, start heartbeat, start task executor
+            # Worker mode: register worker + start heartbeat. Task dispatch
+            # is owned by the Prefect deployment (Glad-Labs/poindexter#410);
+            # the in-process polling daemon was deleted in Stage 4.
             try:
                 from services.worker_service import WorkerService
 
@@ -322,15 +308,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 logger.warning("[LIFESPAN] Worker: worker_service module not yet available, skipping")
             except Exception as e:
                 logger.error(f"[LIFESPAN] Worker: failed to start worker service: {e}", exc_info=True)
-
-            # Start task executor (claims tasks from queue)
-            task_executor = services.get("task_executor")
-            if task_executor:
-                await task_executor.start()
-                logger.info("[LIFESPAN] Worker: task executor started")
         else:
-            # Coordinator mode: start webhook delivery, scheduled publisher
-            # Do NOT start task executor (workers handle that)
+            # Coordinator mode: start webhook delivery, scheduled publisher.
+            # Task dispatch is owned by Prefect in both modes.
             try:
                 from services.webhook_delivery_service import WebhookDeliveryService
 
@@ -764,50 +744,38 @@ async def api_health():
             if pool_health and pool_health.is_pool_critical():
                 health_data["components"]["connection_pool"]["critical"] = True
 
-        # Include task executor liveness and queue depth (#580)
-        task_executor = getattr(app.state, "task_executor", None)
-        if task_executor is not None:
-            try:
-                executor_stats = task_executor.get_stats()
-                # Fetch pending/in-progress counts from DB for queue-depth monitoring
-                pending_count = 0
-                in_progress_count = 0
-                if database_service:
-                    try:
-                        task_counts = await database_service.tasks.get_task_counts()
-                        pending_count = getattr(task_counts, "pending", 0)
-                        in_progress_count = getattr(task_counts, "in_progress", 0)
-                    except Exception as e:  # pylint: disable=broad-except
-                        # Non-critical — executor stats still returned with
-                        # zero counts. Log so a real DB outage that turns
-                        # queue-depth metrics into "always 0" is visible.
-                        logger.warning(
-                            "[health] task_counts DB read failed (queue-depth "
-                            "metrics will read as 0): %s", e,
-                        )
-                health_data["components"]["task_executor"] = {
-                    "running": executor_stats.get("running", False),
-                    "pending_task_count": pending_count,
-                    "in_progress_count": in_progress_count,
-                    "total_processed": executor_stats.get("task_count", 0),
-                    "success_count": executor_stats.get("success_count", 0),
-                    "error_count": executor_stats.get("error_count", 0),
-                }
-                # Degrade overall status if executor is not running
-                # Skip in coordinator mode — executor is intentionally not started there
-                if (
-                    not executor_stats.get("running", False)
-                    and health_data["status"] == "healthy"
-                    and _deployment_mode != "coordinator"
-                ):
-                    health_data["status"] = "degraded"
-                    health_data["components"]["task_executor"][
-                        "degraded_reason"
-                    ] = "executor_not_running"
-            except Exception as e:  # pylint: disable=broad-except
-                logger.warning("Task executor health check failed: %s", str(e), exc_info=True)
-                health_data["components"]["task_executor"] = "unavailable"
-        else:
+        # Task queue depth + dispatcher hint. Glad-Labs/poindexter#410
+        # Stage 4 (2026-05-16) deleted the in-process polling daemon;
+        # task dispatch lives in the Prefect server at :4200, so we no
+        # longer report a ``running`` field for the worker. The
+        # ``task_executor`` key name is retained for backwards compat
+        # with the voice agent's status probe — ``running`` is replaced
+        # by ``dispatcher='prefect'`` so consumers can detect the
+        # cutover without breaking.
+        try:
+            pending_count = 0
+            in_progress_count = 0
+            if database_service:
+                try:
+                    task_counts = await database_service.tasks.get_task_counts()
+                    pending_count = getattr(task_counts, "pending", 0)
+                    in_progress_count = getattr(task_counts, "in_progress", 0)
+                except Exception as e:  # pylint: disable=broad-except
+                    logger.warning(
+                        "[health] task_counts DB read failed (queue-depth "
+                        "metrics will read as 0): %s", e,
+                    )
+            health_data["components"]["task_executor"] = {
+                "dispatcher": "prefect",
+                "running": True,  # Prefect deployment is the source of truth
+                "pending_task_count": pending_count,
+                "in_progress_count": in_progress_count,
+                "total_processed": 0,
+                "success_count": 0,
+                "error_count": 0,
+            }
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("Task queue health check failed: %s", str(e), exc_info=True)
             health_data["components"]["task_executor"] = "unavailable"
 
         # LLM resilience layer (GH#192, generalized from GH#153) —

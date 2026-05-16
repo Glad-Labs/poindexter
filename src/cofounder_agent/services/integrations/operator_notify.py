@@ -16,9 +16,9 @@ Resolution path:
 
 1. Get the process-wide ``DatabaseService`` from
    :mod:`services.integrations.shared_context`. If unset (early boot,
-   tests, CLI one-shots), fall back silently to the legacy
-   ``_notify_discord`` direct webhook path so we never lose an alert
-   to a framework wiring gap.
+   tests, CLI one-shots), fall back silently to the legacy direct
+   Discord webhook path (``_legacy_discord_webhook`` below) so we
+   never lose an alert to a framework wiring gap.
 2. Get the active ``SiteConfig`` from the module-level singleton.
 3. Call :func:`outbound_dispatcher.deliver` with name=``discord_ops``
    for ``critical=False`` notifications, name=``telegram_ops`` for
@@ -32,6 +32,12 @@ This intentionally has zero new configuration — the row enable/disable
 is done in the DB by the operator. Disabled rows raise
 :class:`OutboundWebhookError` from inside the dispatcher; we treat
 that as "operator chose not to receive this" and move on quietly.
+
+Prefect cutover Stage 4 (Glad-Labs/poindexter#410): the legacy
+``services.task_executor._notify_discord`` was inlined here as
+:func:`_legacy_discord_webhook` when ``task_executor.py`` was deleted.
+The fallback path is unchanged — same secret key, same payload shape —
+but now lives next to the framework path that wraps it.
 """
 
 from __future__ import annotations
@@ -39,7 +45,58 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
+
 logger = logging.getLogger(__name__)
+
+
+async def _legacy_discord_webhook(message: str) -> None:
+    """Direct-post fallback to the ``discord_ops_webhook_url`` secret row.
+
+    Used when the integrations dispatcher framework is unavailable
+    (early boot, tests, CLI one-shots) or returned an
+    ``OutboundWebhookError`` (disabled / inbound-only row). The
+    webhook URL is fetched via :func:`SiteConfig.get_secret` (async
+    DB read) because ``is_secret=true`` rows are filtered out of the
+    in-memory cache.
+
+    Inlined from the deleted ``services.task_executor._notify_discord``
+    helper. Best-effort: any failure logs at WARNING and returns.
+    """
+    site_config = _resolve_site_config()
+    if site_config is None:
+        logger.debug(
+            "[NOTIFY:discord] No SiteConfig available — cannot resolve "
+            "discord_ops_webhook_url; skipping legacy fallback"
+        )
+        return
+    try:
+        webhook_url = await site_config.get_secret("discord_ops_webhook_url", "")
+        if not webhook_url:
+            logger.debug(
+                "[NOTIFY:discord] No discord_ops_webhook_url configured — skipping"
+            )
+            return
+        async with httpx.AsyncClient(timeout=10) as client:
+            logger.info("[NOTIFY:discord] %s", message[:80])
+            await client.post(webhook_url, json={"content": message})
+    except Exception as exc:  # noqa: BLE001 — defensive: never raise
+        logger.warning("[NOTIFY:discord] Failed: %s", exc)
+
+
+def _resolve_site_config() -> Any | None:
+    """Return the lifespan-bound SiteConfig if available, else None.
+
+    The legacy fallback path needs a SiteConfig to call
+    :meth:`get_secret`; we go through ``shared_context`` to avoid
+    re-importing the module-level singleton (which was retired in
+    glad-labs-stack#330).
+    """
+    try:
+        from services.integrations.shared_context import get_site_config
+        return get_site_config()
+    except Exception:
+        return None
 
 
 async def notify_operator(
@@ -113,8 +170,11 @@ async def notify_operator(
         logger.debug("[notify_operator] framework path unavailable: %s", e)
 
     # Phase 2: legacy Discord webhook fallback. Always best-effort.
+    # The helper used to live in ``services.task_executor`` — that
+    # module was deleted in the Prefect Stage 4 cutover
+    # (Glad-Labs/poindexter#410). The fallback path was inlined here
+    # so this module has zero coupling to the now-deleted dispatcher.
     try:
-        from services.task_executor import _notify_discord
-        await _notify_discord(message)
+        await _legacy_discord_webhook(message)
     except Exception as e:
         logger.warning("[notify_operator] discord fallback failed: %s", e)

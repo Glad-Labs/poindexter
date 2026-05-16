@@ -211,86 +211,12 @@ async def test_window_zero_disables_dedup():
 
 
 # ---------------------------------------------------------------------------
-# Acceptance Criterion 3: backoff on re-claim — auto-retry stays off by default,
-# and when enabled it respects the exponential window.
+# Acceptance Criterion 3: auto-retry sweeper was a TaskExecutor concern
+# that was deleted alongside ``services/task_executor.py`` in
+# Glad-Labs/poindexter#410 Stage 4 (2026-05-16). The
+# ``task_retry_max_attempts=0`` default kept it disabled in production
+# the whole time; operators retry via the CLI / approval UI now. Retry
+# semantics on a fundamentally failed flow run are owned by Prefect's
+# native ``retries=`` + ``retry_delay_seconds=`` on the flow definition
+# (see ``services/flows/content_generation.py``).
 # ---------------------------------------------------------------------------
-
-
-def _make_executor_for_retry_test(get_setting_overrides: dict[str, str]):
-    """Build a TaskExecutor with the heavy collaborators stubbed so we can
-    exercise ``_auto_retry_failed_tasks`` in isolation."""
-    from unittest.mock import MagicMock
-
-    db = AsyncMock()
-    db.pool = MagicMock()
-    db.pool.fetch = AsyncMock(return_value=[])
-    db.update_task = AsyncMock(return_value=True)
-
-    with (
-        patch("services.task_executor.UnifiedQualityService"),
-        patch("services.task_executor.AIContentGenerator"),
-    ):
-        from services.task_executor import TaskExecutor
-        executor = TaskExecutor(database_service=db, poll_interval=1)
-
-    async def _fake_get_setting(key: str, default: str = "") -> str:
-        return get_setting_overrides.get(key, default)
-
-    executor._get_setting = _fake_get_setting
-    return executor, db
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_auto_retry_disabled_when_max_attempts_zero():
-    """Default ``task_retry_max_attempts=0`` means the sweeper never queries.
-
-    This is the operator-must-explicitly-retry mode that makes the
-    failure-storm scenario impossible. The DB query is the proof —
-    if we never SELECT failed rows, we can never re-claim them.
-    """
-    executor, db = _make_executor_for_retry_test(
-        {"task_retry_max_attempts": "0"}
-    )
-    await executor._auto_retry_failed_tasks()
-    db.pool.fetch.assert_not_awaited()
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_auto_retry_invalid_value_falls_back_to_disabled():
-    """Garbage value in app_settings → treated as 0, sweeper stays off."""
-    executor, db = _make_executor_for_retry_test(
-        {"task_retry_max_attempts": "abc"}
-    )
-    await executor._auto_retry_failed_tasks()
-    db.pool.fetch.assert_not_awaited()
-
-
-@pytest.mark.unit
-@pytest.mark.asyncio
-async def test_auto_retry_enabled_uses_exponential_backoff_in_query():
-    """When opted in, the SELECT must enforce the backoff window inline.
-
-    The query must reference both ``task_retry_max_attempts`` (the cap)
-    and the ``backoff * 2^retry_count`` exponential window so the
-    database — not Python — gates eligibility. Asserting on the SQL
-    string keeps the regression cheap and deterministic.
-    """
-    executor, db = _make_executor_for_retry_test(
-        {
-            "task_retry_max_attempts": "3",
-            "task_retry_backoff_initial_seconds": "60",
-            "task_retry_window_hours": "24",
-        }
-    )
-    await executor._auto_retry_failed_tasks()
-    db.pool.fetch.assert_awaited_once()
-    sql = db.pool.fetch.call_args[0][0]
-    # Backoff math is enforced in the WHERE clause itself.
-    assert "POWER(2" in sql
-    assert "EXTRACT(EPOCH FROM (NOW() - updated_at))" in sql
-    # Parameters: $1 = max_attempts (cap), $2 = backoff_initial (base).
-    args = db.pool.fetch.call_args[0]
-    assert args[1] == 3  # max_attempts
-    assert args[2] == 60  # backoff_initial

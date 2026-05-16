@@ -13,8 +13,8 @@ fixed sequence of operator-visible side-effects to run:
    ``task.auto_rejected`` webhook. Skip the rest of the chain.
 3. Auto-publish gate — when ``app_settings.require_human_approval``
    is ``false`` AND the QA score crosses
-   ``app_settings.auto_publish_threshold``, call
-   ``TaskExecutor._auto_publish_task`` semantics so trusted niches
+   ``app_settings.auto_publish_threshold``, delegate to
+   :func:`services.auto_publish.auto_publish_task` so trusted niches
    ship without manual approval.
 4. Operator notification — a single Discord-or-Telegram message
    that links to the rendered preview, plus the opt-in
@@ -22,16 +22,12 @@ fixed sequence of operator-visible side-effects to run:
 
 These steps used to live inline in
 ``services/task_executor.py::_process_loop`` (lines 678-810 before
-this PR landed). The Prefect cutover (Glad-Labs/poindexter#410)
-short-circuits ``_process_loop`` when
-``app_settings.use_prefect_orchestration=true``, so the entire
-post-pipeline block silently stopped firing in production once
-Prefect went live. Same architectural class as poindexter#473
-(pipeline_versions writes) and poindexter#477 (subprocess DI wiring).
-
-Both ``TaskExecutor`` and the Prefect ``content_generation_flow``
-now delegate here, so the four behaviours survive both
-orchestrators.
+poindexter#478 landed). The Prefect cutover (Glad-Labs/poindexter#410)
+short-circuited ``_process_loop`` when
+``app_settings.use_prefect_orchestration=true``; Stage 4 of that
+cutover (2026-05-16) deleted ``task_executor.py`` entirely. The
+Prefect ``content_generation_flow`` is the sole caller of this
+module now.
 
 Design notes:
 
@@ -40,8 +36,7 @@ Design notes:
   separate Python interpreter and never see ``main.py``'s lifespan
   rebind, so any caller that wants the right config has to thread
   it explicitly. The Prefect flow gets the wired instance back
-  from ``services.di_wiring.build_and_wire_for_subprocess``;
-  ``TaskExecutor`` uses its module-level wired instance.
+  from ``services.di_wiring.build_and_wire_for_subprocess``.
 - **Failure isolation.** Every side-effect runs inside its own
   ``try/except logged at WARNING``. A failed webhook must not
   block auto-publish; a failed notification must not block the
@@ -73,9 +68,8 @@ logger = logging.getLogger(__name__)
 
 
 # Default thresholds preserved verbatim from the inline block they
-# replace (services/task_executor.py:691 + 1518). Operators tune via
-# app_settings; these defaults match the pre-PR behaviour so the
-# extraction is a pure refactor.
+# replaced. Operators tune via app_settings; these defaults match the
+# pre-extraction behaviour so the refactor is value-preserving.
 _DEFAULT_MIN_CURATION_SCORE = "70"
 _DEFAULT_REQUIRE_HUMAN_APPROVAL = "true"
 _DEFAULT_AUTO_PUBLISH_THRESHOLD = "0"
@@ -89,14 +83,14 @@ async def _get_setting(
     key: str,
     default: str,
 ) -> str:
-    """Read an app_settings value with the same fallback contract as
-    ``TaskExecutor._get_setting``.
+    """Read an app_settings value with the legacy fallback contract.
 
     Prefers the explicit ``settings_service`` (the DI seam) and falls
     back to ``database_service.get_setting_value`` for parity with the
-    pre-extraction inline block. Returns the ``default`` on any
-    exception — operator-visible WARNING when the lookup actually
-    raised vs. silently returning empty.
+    pre-extraction inline block in ``task_executor.py`` (deleted in
+    the Prefect Stage 4 cutover, Glad-Labs/poindexter#410). Returns
+    the ``default`` on any exception — operator-visible WARNING when
+    the lookup actually raised vs. silently returning empty.
     """
     if settings_service is not None:
         try:
@@ -329,7 +323,6 @@ async def _auto_curate(
 
 async def _maybe_auto_publish(
     *,
-    task_executor: Any,
     database_service: Any,
     settings_service: Any | None,
     task_id: str,
@@ -337,24 +330,20 @@ async def _maybe_auto_publish(
 ) -> bool:
     """Auto-publish trusted-niche posts that clear the threshold.
 
-    Returns ``True`` when ``_auto_publish_task`` was invoked (caller
-    should suppress the operator notification; ``publish_service``
-    sends its own published-post message). Returns ``False`` when
-    the task stays in awaiting_approval and the operator
-    notification path should run.
+    Returns ``True`` when :func:`services.auto_publish.auto_publish_task`
+    successfully shipped the post (caller should suppress the
+    operator notification because ``publish_service`` sends its own
+    published-post message). Returns ``False`` when the task stays
+    in awaiting_approval — either the gate didn't fire, or
+    ``auto_publish_task`` bailed (daily limit, missing image,
+    publish error). The task is operator-visible either way; the
+    only difference is whether we send the awaiting-approval ping.
 
-    The actual publishing logic stays in
-    ``TaskExecutor._auto_publish_task`` per the spec — this helper
-    just decides whether to call it. ``task_executor`` is the
-    ``TaskExecutor`` instance (used for both ``_auto_publish_task``
-    and ``_get_auto_publish_threshold``); when called from the
-    Prefect flow path, a small adapter shim is constructed at the
-    call site so the same gate logic runs against the same
-    underlying ``database_service`` / settings backing store.
+    The publishing logic lives in :mod:`services.auto_publish` (ported
+    from the deleted ``TaskExecutor._auto_publish_task`` during the
+    Prefect Stage 4 cutover — Glad-Labs/poindexter#410). This helper
+    only decides whether to call it.
     """
-    if task_executor is None:
-        return False
-
     require_str = await _get_setting(
         settings_service=settings_service,
         database_service=database_service,
@@ -369,11 +358,13 @@ async def _maybe_auto_publish(
         )
         return False
 
+    from services.auto_publish import auto_publish_task, get_auto_publish_threshold
+
     try:
-        auto_threshold = await task_executor._get_auto_publish_threshold()
+        auto_threshold = await get_auto_publish_threshold(database_service)
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[POST_PIPELINE] _get_auto_publish_threshold failed for %s, "
+            "[POST_PIPELINE] get_auto_publish_threshold failed for %s, "
             "task stays in awaiting_approval: %s",
             task_id, exc,
         )
@@ -388,15 +379,18 @@ async def _maybe_auto_publish(
         quality_score, auto_threshold, task_id,
     )
     try:
-        await task_executor._auto_publish_task(task_id, quality_score)
+        return await auto_publish_task(
+            database_service=database_service,
+            task_id=task_id,
+            quality_score=quality_score,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[POST_PIPELINE] _auto_publish_task raised for %s, "
+            "[POST_PIPELINE] auto_publish_task raised for %s, "
             "task stays in awaiting_approval: %s",
             task_id, exc,
         )
         return False
-    return True
 
 
 async def _maybe_run_preview_qa(
@@ -561,7 +555,6 @@ async def run_post_pipeline_actions(
     result: dict[str, Any] | None,
     site_config: Any,
     settings_service: Any | None = None,
-    task_executor: Any = None,
 ) -> None:
     """Run the four post-pipeline-success side-effects in order.
 
@@ -581,19 +574,9 @@ async def run_post_pipeline_actions(
         site_config: The wired SiteConfig instance. Required —
             never imported from a module-level singleton. Prefect
             subprocesses pass the instance returned by
-            ``build_and_wire_for_subprocess``; the FastAPI worker
-            passes its module-level wired instance.
+            ``build_and_wire_for_subprocess``.
         settings_service: Optional explicit settings service. When
             ``None`` falls back to ``database_service.get_setting_value``.
-        task_executor: Optional ``TaskExecutor`` reference, used
-            only for ``_auto_publish_task`` + ``_get_auto_publish_threshold``.
-            When ``None`` the auto-publish branch is a no-op (the
-            task lands in awaiting_approval for human review). The
-            Prefect flow path will construct a lightweight shim at
-            the call site once auto-publish is needed end-to-end
-            through Prefect; for now leaving it as ``None`` matches
-            the inline block's behaviour when no executor was in
-            scope.
 
     Returns: ``None``. Side-effects only.
     """
@@ -644,7 +627,6 @@ async def run_post_pipeline_actions(
 
     # 3. Auto-publish: trusted niches with high scores ship without review.
     auto_published = await _maybe_auto_publish(
-        task_executor=task_executor,
         database_service=database_service,
         settings_service=settings_service,
         task_id=task_id,
