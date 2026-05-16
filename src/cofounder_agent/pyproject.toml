@@ -21,7 +21,7 @@ python = ">=3.13,<3.14"
 
 # Web Framework
 fastapi = ">=0.115.0"
-uvicorn = {version = "^0.43", extras = ["standard"]}
+uvicorn = {version = ">=0.43,<0.48", extras = ["standard"]}
 pydantic = {extras = ["email"], version = "^2.12.5"}
 pydantic-settings = "^2.0"
 
