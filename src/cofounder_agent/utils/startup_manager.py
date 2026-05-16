@@ -4,14 +4,15 @@ Startup Manager - Orchestrates application initialization and shutdown
 Handles all startup and shutdown operations for Poindexter (the AI cofounder pipeline):
 - Database initialization (PostgreSQL + asyncpg)
 - Cache setup (Redis)
-- Model consolidation service
-- Orchestrator initialization
-- Workflow history service
-- Intelligent orchestrator
-- Content critique loop
-- Background task executor
+- Migrations + module migrations
+- Retention janitor + SDXL warmup
 - Route service registration
 - Graceful shutdown
+
+Task dispatch lives in the Prefect server at ``http://localhost:4200``
+(Glad-Labs/poindexter#410). The legacy in-process polling daemon
+(``services/task_executor.py``) was deleted in Stage 4 of that cutover
+(2026-05-16); see ``docs/architecture/prefect-cutover.md``.
 """
 
 import asyncio
@@ -40,7 +41,6 @@ class StartupManager:
         self._site_config = site_config
         self.database_service = None
         self.redis_cache = None
-        self.task_executor = None
         self.startup_error = None
         # Hold strong refs to long-running background tasks so asyncio's
         # weakref tracking doesn't GC them mid-loop. (ruff RUF006)
@@ -80,8 +80,14 @@ class StartupManager:
         Returns dict with all initialized services:
         {
             'database': DatabaseService,
-            'task_executor': TaskExecutor,
+            'redis_cache': RedisCache,
+            'startup_error': str | None,
         }
+
+        Task dispatch is owned by the Prefect server (Glad-Labs/poindexter#410);
+        the legacy in-process ``TaskExecutor`` polling daemon was deleted
+        in Stage 4 of that cutover (2026-05-16), so no executor is
+        constructed or returned here.
         """
         try:
             logger.info("🚀 Starting Poindexter application...")
@@ -106,8 +112,11 @@ class StartupManager:
             # Step 5: Initialize content critique loop
             await self._initialize_content_critique()
 
-            # Step 6: Initialize background task executor
-            await self._initialize_task_executor()
+            # Step 6: (#410) Task dispatch lives in Prefect now — nothing
+            # to start in-process. The Prefect deployment is registered
+            # by ``scripts/deploy_content_flow.py`` against the local
+            # Prefect server at http://localhost:4200.
+            logger.info("  task dispatch: prefect (http://localhost:4200)")
 
             # Step 7: Verify connections
             await self._verify_connections()
@@ -155,7 +164,6 @@ class StartupManager:
             return {
                 "database": self.database_service,
                 "redis_cache": self.redis_cache,
-                "task_executor": self.task_executor,
                 "startup_error": self.startup_error,
             }
 
@@ -418,31 +426,11 @@ class StartupManager:
             )
 
     async def _initialize_content_critique(self) -> None:
-        """DEPRECATED: Content critique is now handled by UnifiedQualityService in TaskExecutor"""
+        """DEPRECATED: Content critique runs as a stage inside the
+        Prefect content_generation_flow via UnifiedQualityService."""
         logger.debug(
             "⏭️  Skipping _initialize_content_critique (now handled by UnifiedQualityService)"
         )
-
-    async def _initialize_task_executor(self) -> None:
-        """Initialize background task executor (WITHOUT starting it yet).
-
-        We create the TaskExecutor but do NOT call .start() here. main.py's
-        lifespan handler starts it once the rest of the app state is wired.
-        """
-        logger.info("  ⏳ Initializing background task executor (start deferred)...")
-        try:
-            from services.task_executor import TaskExecutor
-
-            self.task_executor = TaskExecutor(
-                database_service=self.database_service,
-                poll_interval=5,
-            )
-            logger.info("   Background task executor initialized (not started yet)")
-        except Exception as e:
-            error_msg = f"Task executor initialization failed: {e!s}"
-            logger.error(f"   {error_msg}", exc_info=True)
-            # Don't fail startup - task processing is optional
-            self.task_executor = None
 
     async def _verify_connections(self) -> None:
         """Verify all connections are healthy"""
@@ -555,29 +543,19 @@ class StartupManager:
         logger.info(
             f"  - Redis Cache: {self.redis_cache is not None and self.redis_cache._enabled}"
         )
-        logger.info(
-            f"  - Task Executor: {self.task_executor is not None and self.task_executor.running}"
-        )
+        logger.info("  - Task dispatch: prefect (http://localhost:4200)")
         logger.info(f"  - Startup Error: {self.startup_error}")
 
     async def shutdown(self) -> None:
-        """Gracefully shutdown all services"""
+        """Gracefully shutdown all services.
+
+        Task dispatch lives in Prefect (Glad-Labs/poindexter#410); the
+        in-process polling daemon was deleted in Stage 4 (2026-05-16),
+        so there's nothing to stop here for dispatch. Prefect's own
+        worker subprocess shuts down with its container.
+        """
         try:
             logger.info("[STOP] Shutting down Poindexter application...")
-
-            # Stop background task executor
-            try:
-                if self.task_executor and self.task_executor.running:
-                    logger.info("  Stopping background task executor...")
-                    await self.task_executor.stop()
-                    logger.info("   Task executor stopped")
-                    stats = self.task_executor.get_stats()
-                    logger.info(
-                        f"     Tasks processed: {stats.get('task_count', 0)}, "
-                        f"Success: {stats.get('success_count', 0)}, Failed: {stats.get('error_count', 0)}"
-                    )
-            except Exception as e:
-                logger.error(f"   Error stopping task executor: {e}", exc_info=True)
 
             # Close Redis connection
             if self.redis_cache:

@@ -372,14 +372,17 @@ class TestAutoPublish:
             },
         )
 
-        executor = MagicMock()
-        executor._get_auto_publish_threshold = AsyncMock(return_value=80.0)
-        executor._auto_publish_task = AsyncMock()
-
+        auto_pub_mock = AsyncMock(return_value=True)
         notify_mock = AsyncMock()
         with patch(
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
+        ), patch(
+            "services.auto_publish.get_auto_publish_threshold",
+            AsyncMock(return_value=80.0),
+        ), patch(
+            "services.auto_publish.auto_publish_task",
+            auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
             notify_mock,
@@ -391,10 +394,11 @@ class TestAutoPublish:
                 result=_result(score=90),
                 site_config=site,
                 settings_service=settings,
-                task_executor=executor,
             )
 
-        executor._auto_publish_task.assert_awaited_once_with("t-auto-pub", 90.0)
+        auto_pub_mock.assert_awaited_once_with(
+            database_service=db, task_id="t-auto-pub", quality_score=90.0,
+        )
         # publish_service handles its own notification; the post-pipeline
         # helper does NOT also fire one.
         notify_mock.assert_not_awaited()
@@ -413,14 +417,14 @@ class TestAutoPublish:
             },
         )
 
-        executor = MagicMock()
-        executor._get_auto_publish_threshold = AsyncMock(return_value=80.0)
-        executor._auto_publish_task = AsyncMock()
-
+        auto_pub_mock = AsyncMock(return_value=True)
         notify_mock = AsyncMock()
         with patch(
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
+        ), patch(
+            "services.auto_publish.auto_publish_task",
+            auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
             notify_mock,
@@ -432,10 +436,9 @@ class TestAutoPublish:
                 result=_result(score=95),  # high score, still gated
                 site_config=site,
                 settings_service=settings,
-                task_executor=executor,
             )
 
-        executor._auto_publish_task.assert_not_awaited()
+        auto_pub_mock.assert_not_awaited()
         # Operator gets pinged — that's the whole point.
         notify_mock.assert_awaited_once()
 
@@ -453,13 +456,16 @@ class TestAutoPublish:
             },
         )
 
-        executor = MagicMock()
-        executor._get_auto_publish_threshold = AsyncMock(return_value=80.0)
-        executor._auto_publish_task = AsyncMock()
-
+        auto_pub_mock = AsyncMock(return_value=True)
         with patch(
             "services.post_pipeline_actions.emit_webhook_event",
             new_callable=AsyncMock,
+        ), patch(
+            "services.auto_publish.get_auto_publish_threshold",
+            AsyncMock(return_value=80.0),
+        ), patch(
+            "services.auto_publish.auto_publish_task",
+            auto_pub_mock,
         ), patch(
             "services.integrations.operator_notify.notify_operator",
             new_callable=AsyncMock,
@@ -471,10 +477,9 @@ class TestAutoPublish:
                 result=_result(score=75),  # above curate, below auto-pub
                 site_config=site,
                 settings_service=settings,
-                task_executor=executor,
             )
 
-        executor._auto_publish_task.assert_not_awaited()
+        auto_pub_mock.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -631,24 +636,19 @@ class TestFailureIsolation:
 
 @pytest.mark.unit
 class TestProductionCallsiteGuards:
-    """Lock the bug shut: a future refactor must NOT sever either call site.
+    """Lock the bug shut: a future refactor must NOT sever the Prefect
+    flow's call to the post-pipeline helper.
 
     Mirrors the pattern from poindexter#473 + #477 tests. If a future
     edit silently removes the ``run_post_pipeline_actions`` call from
-    either orchestrator, this suite breaks at unit-test time instead
-    of at the next overnight batch.
+    the flow, this suite breaks at unit-test time instead of at the
+    next overnight batch.
+
+    Glad-Labs/poindexter#410 Stage 4 (2026-05-16) deleted
+    ``services/task_executor.py``; Prefect's
+    ``content_generation_flow`` is now the sole caller, so we only
+    guard that one site.
     """
-
-    def test_task_executor_calls_run_post_pipeline_actions(self):
-        from services import task_executor
-
-        source = inspect.getsource(task_executor)
-        assert "run_post_pipeline_actions" in source, (
-            "services/task_executor.py must delegate to "
-            "run_post_pipeline_actions for the post-pipeline success "
-            "block (webhook + auto-curator + auto-publish + "
-            "notification). See Glad-Labs/poindexter#478."
-        )
 
     def test_content_generation_flow_calls_run_post_pipeline_actions(self):
         from services.flows import content_generation
@@ -657,9 +657,9 @@ class TestProductionCallsiteGuards:
         assert "run_post_pipeline_actions" in source, (
             "services/flows/content_generation.py must call "
             "run_post_pipeline_actions after the pipeline returns so "
-            "Prefect-orchestrated tasks fire the same post-pipeline "
-            "side-effects as the legacy task_executor. See "
-            "Glad-Labs/poindexter#478."
+            "Prefect-orchestrated tasks fire the post-pipeline "
+            "side-effects (webhook + auto-curator + auto-publish + "
+            "operator notification). See Glad-Labs/poindexter#478."
         )
 
     def test_post_pipeline_actions_module_has_docstring(self):

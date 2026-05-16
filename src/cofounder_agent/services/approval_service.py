@@ -283,14 +283,20 @@ async def _notify_gate_tripped(
 ) -> dict[str, Any]:
     """Fire a Discord+Telegram notification through the existing path.
 
-    Reuses ``services.task_executor._notify_alert`` — the path the
-    final-media awaiting_approval flow already uses. Routes through
-    the declarative outbound dispatcher when ``discord_ops`` /
-    ``telegram_ops`` rows are enabled in ``webhook_endpoints``, falls
-    back to the direct API otherwise. Failures are swallowed — never
-    raises.
+    Routes through the declarative outbound dispatcher
+    (``discord_ops`` / ``telegram_ops`` rows in ``webhook_endpoints``),
+    falling back to the legacy direct Discord webhook when the row
+    is disabled or the dispatcher framework is unavailable. Failures
+    are swallowed — never raises.
+
+    The notification helper used to live in
+    ``services.task_executor._notify_alert``; with the Prefect Stage 4
+    cutover (Glad-Labs/poindexter#410) the dispatch daemon was
+    deleted and the helper moved into
+    :mod:`services.integrations.operator_notify`. The call signature
+    is now ``notify_operator(msg, critical=..., site_config=...)``.
     """
-    from services.task_executor import _notify_alert
+    from services.integrations.operator_notify import notify_operator
 
     artifact_summary = _summarize_artifact(artifact)
     msg = (
@@ -300,7 +306,7 @@ async def _notify_gate_tripped(
         f"Reject:  poindexter reject  {task_id} --gate {gate_name} --reason '...'"
     )
     try:
-        await _notify_alert(msg, site_config, critical=False)
+        await notify_operator(msg, critical=False, site_config=site_config)
         return {"sent": True, "reason": "ok"}
     except Exception as exc:
         logger.warning(
