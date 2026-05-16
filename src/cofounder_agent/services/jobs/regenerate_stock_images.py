@@ -131,8 +131,17 @@ class RegenerateStockImagesJob:
                         )
                         image_url = result.get("secure_url", "")
                         if image_url:
+                            # Keep both image columns in sync — mirrors
+                            # publish_service.publish_post_from_task, which
+                            # writes the same URL to both. Without this,
+                            # pages that read cover_image_url first (e.g.
+                            # /category, /tag) keep showing the stale
+                            # Pexels URL while /posts/[slug] (which falls
+                            # back featured → cover) shows the new SDXL.
                             await cloud.execute(
-                                "UPDATE posts SET featured_image_url = $1, updated_at = NOW() WHERE id = $2",
+                                "UPDATE posts SET featured_image_url = $1, "
+                                "cover_image_url = $1, updated_at = NOW() "
+                                "WHERE id = $2",
                                 image_url, post["id"],
                             )
                             regenerated += 1

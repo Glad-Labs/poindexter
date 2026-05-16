@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { OrganizationSchema } from '../components/StructuredData';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { postFeaturedImage } from '@/lib/posts';
 
 // SEO Metadata
 export const metadata = {
@@ -61,6 +62,7 @@ async function getPosts() {
 export default async function HomePage() {
   const { posts, error } = await getPosts();
   const currentPost = posts[0];
+  const heroImage = currentPost ? postFeaturedImage(currentPost) : null;
 
   // WebSite structured data for Google sitelinks search box
   const websiteSchema = {
@@ -145,9 +147,9 @@ export default async function HomePage() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
                   {/* Featured Image */}
                   <div className="relative aspect-video lg:aspect-auto h-full min-h-96 bg-slate-800 overflow-hidden">
-                    {currentPost?.featured_image_url ? (
+                    {heroImage ? (
                       <Image
-                        src={currentPost.featured_image_url}
+                        src={heroImage}
                         alt={currentPost.title || 'Featured Post'}
                         fill
                         sizes="(min-width: 1024px) 50vw, 100vw"
@@ -224,15 +226,17 @@ export default async function HomePage() {
                   <Eyebrow>GLAD LABS · RECENT</Eyebrow>
                   <h2 className="gl-h2 mt-1 mb-6">Recent posts.</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {posts.slice(1, 7).map((post) => (
+                    {posts.slice(1, 7).map((post) => {
+                      const cardImage = postFeaturedImage(post);
+                      return (
                       <Card
                         key={post.id || post.slug}
                         className="group flex flex-col h-full overflow-hidden p-0"
                       >
-                        {post.featured_image_url && (
+                        {cardImage && (
                           <div className="relative aspect-video overflow-hidden bg-slate-800">
                             <Image
-                              src={post.featured_image_url}
+                              src={cardImage}
                               alt={post.title}
                               fill
                               sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
@@ -289,7 +293,8 @@ export default async function HomePage() {
                           </div>
                         </div>
                       </Card>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

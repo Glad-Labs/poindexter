@@ -41,6 +41,23 @@ export interface PostsResponse {
 const POSTS_PER_PAGE = 10;
 
 /**
+ * Canonical featured-image resolver. Same priority on list pages and
+ * detail pages so the thumbnail a reader clicks matches the hero they
+ * land on. Pages previously inlined this and drifted four different
+ * ways (featured-only, cover-only, cover→featured, featured→cover);
+ * import this helper instead.
+ *
+ * Returns `null` (not a placeholder URL) so callers decide whether to
+ * render an <img> or omit the slot — matches the pre-existing
+ * `{post.featured_image_url && ...}` conditional pattern.
+ */
+export function postFeaturedImage(
+  post: Pick<Post, 'featured_image_url' | 'cover_image_url'>,
+): string | null {
+  return post.featured_image_url || post.cover_image_url || null;
+}
+
+/**
  * Fetch the full post index from static JSON.
  * Cached and reused by all listing functions.
  */

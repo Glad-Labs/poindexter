@@ -4,7 +4,12 @@
  * Tests the static JSON integration for fetching posts from R2/CDN.
  * Verifies: fetch calls, error handling, pagination, data transformation
  */
-import { getPosts, getPostBySlug, getPostsByCategory } from '../lib/posts';
+import {
+  getPosts,
+  getPostBySlug,
+  getPostsByCategory,
+  postFeaturedImage,
+} from '../lib/posts';
 
 // Mock logger to avoid noise
 jest.mock('./logger', () => ({
@@ -186,6 +191,47 @@ describe('Posts API (lib/posts.ts)', () => {
       const result = await getPostBySlug('test-post');
 
       expect(result?.content).toBeDefined();
+    });
+  });
+
+  describe('postFeaturedImage', () => {
+    // Pins the canonical fallback chain. Every list page and the detail
+    // page route through this — drift here is the bug the user reported
+    // 2026-05-16 (paginated thumbnail and detail-page hero differing).
+    it('prefers featured_image_url when both are set', () => {
+      expect(
+        postFeaturedImage({
+          featured_image_url: 'https://cdn/featured.jpg',
+          cover_image_url: 'https://cdn/cover.jpg',
+        }),
+      ).toBe('https://cdn/featured.jpg');
+    });
+
+    it('falls back to cover_image_url when featured is missing', () => {
+      expect(
+        postFeaturedImage({
+          featured_image_url: undefined,
+          cover_image_url: 'https://cdn/cover.jpg',
+        }),
+      ).toBe('https://cdn/cover.jpg');
+    });
+
+    it('falls back to cover_image_url when featured is empty string', () => {
+      expect(
+        postFeaturedImage({
+          featured_image_url: '',
+          cover_image_url: 'https://cdn/cover.jpg',
+        }),
+      ).toBe('https://cdn/cover.jpg');
+    });
+
+    it('returns null when both columns are missing', () => {
+      expect(
+        postFeaturedImage({
+          featured_image_url: undefined,
+          cover_image_url: undefined,
+        }),
+      ).toBeNull();
     });
   });
 

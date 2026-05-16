@@ -21,6 +21,7 @@ import {
   getPostBySlug,
   getRelatedPosts,
   getAllPublishedPosts,
+  postFeaturedImage,
   type Post,
 } from '../../../lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
@@ -131,7 +132,7 @@ export default async function PostPage({
     ? await getRelatedPosts(post.category_id, post.id, 3)
     : [];
 
-  const imageUrl = post.featured_image_url || post.cover_image_url;
+  const imageUrl = postFeaturedImage(post);
   const publishDate = post.published_at || post.created_at;
 
   const breadcrumbs = [
@@ -415,17 +416,17 @@ export default async function PostPage({
             <div className="container mx-auto max-w-5xl">
               <h2 className="gl-h2 mb-6">More from {SITE_NAME}</h2>
               <div className="grid gap-6 md:grid-cols-3">
-                {relatedPosts.map((rp) => (
+                {relatedPosts.map((rp) => {
+                  const rpImage = postFeaturedImage(rp);
+                  return (
                   <Card
                     key={rp.slug}
                     className="group flex flex-col h-full overflow-hidden p-0"
                   >
-                    {(rp.featured_image_url || rp.cover_image_url) && (
+                    {rpImage && (
                       <div className="relative h-36 overflow-hidden bg-slate-800">
                         <Image
-                          src={
-                            rp.featured_image_url || rp.cover_image_url || ''
-                          }
+                          src={rpImage}
                           alt=""
                           fill
                           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
@@ -444,7 +445,8 @@ export default async function PostPage({
                       </Card.Title>
                     </div>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

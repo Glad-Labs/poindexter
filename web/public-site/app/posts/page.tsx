@@ -2,7 +2,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import type { Metadata } from 'next';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
-import { getPosts } from '@/lib/posts';
+import { getPosts, postFeaturedImage } from '@/lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 
 const POSTS_PER_PAGE = 12;
@@ -66,15 +66,17 @@ export default async function PostsPage() {
           ) : posts.length > 0 ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-                {posts.map((post) => (
+                {posts.map((post) => {
+                  const imageUrl = postFeaturedImage(post);
+                  return (
                   <Card
                     key={post.id}
                     className="group flex flex-col h-full overflow-hidden p-0"
                   >
-                    {post.featured_image_url && (
+                    {imageUrl && (
                       <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
                         <Image
-                          src={post.featured_image_url}
+                          src={imageUrl}
                           alt={post.title}
                           fill
                           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
@@ -131,7 +133,8 @@ export default async function PostsPage() {
                       </div>
                     </div>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
 
               {totalPages > 1 && (

@@ -4,7 +4,7 @@ import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import logger from '@/lib/logger';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
-import { getAllPublishedPosts } from '@/lib/posts';
+import { getAllPublishedPosts, postFeaturedImage } from '@/lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
 
 const STATIC_URL =
@@ -170,8 +170,7 @@ export default async function CategoryPage({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {posts.map((post) => {
-                const imageUrl =
-                  post.cover_image_url || post.featured_image_url;
+                const imageUrl = postFeaturedImage(post);
                 const publishDate = post.published_at || post.created_at;
                 return (
                   <Card

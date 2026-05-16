@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
+import { postFeaturedImage } from '@/lib/posts';
 
 // Fetch through /api/posts — server-side proxies R2 same-origin, avoids
 // CORS/CSP gaps from hitting the R2 bucket directly from the browser
@@ -124,15 +125,17 @@ function SearchContent() {
             </Card>
           ) : results.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {results.map((post) => (
+              {results.map((post) => {
+                const imageUrl = postFeaturedImage(post);
+                return (
                 <Card
                   key={post.id || post.slug}
                   className="group flex flex-col h-full overflow-hidden p-0"
                 >
-                  {post.cover_image_url && (
+                  {imageUrl && (
                     <div className="relative w-full aspect-video overflow-hidden bg-slate-800">
                       <Image
-                        src={post.cover_image_url}
+                        src={imageUrl}
                         alt={post.title}
                         fill
                         className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
@@ -183,7 +186,8 @@ function SearchContent() {
                     </div>
                   </div>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           ) : !query ? (
             <Card accent="cyan" className="text-center py-12">

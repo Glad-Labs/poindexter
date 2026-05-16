@@ -115,6 +115,14 @@ class TestRegenerateStockImagesJobRun:
         cloud.execute.assert_awaited_once()
         assert fake_cloudinary.uploader.upload.call_count == 1
 
+        # Both image columns must be updated to the same URL — keeps the
+        # listing pages that read cover_image_url first (category / tag)
+        # from showing the stale Pexels URL after regen. Mirrors
+        # publish_service.publish_post_from_task which writes both.
+        update_sql = cloud.execute.await_args.args[0]
+        assert "featured_image_url = $1" in update_sql
+        assert "cover_image_url = $1" in update_sql
+
     async def test_generation_failure_moves_to_next_post(self):
         job = RegenerateStockImagesJob()
         rows = [
