@@ -20,11 +20,15 @@ Usage:
 import json
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from services.langfuse_shim import observe
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
+
+if TYPE_CHECKING:
+    import httpx
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
 # Defaults to a fresh env-fallback instance until the lifespan setter
@@ -37,6 +41,19 @@ def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
     global site_config
     site_config = sc
+
+
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. ``plan_images`` prefers it when wired
+# so the connection pool to Ollama stays warm across the per-task
+# image-planning calls.
+http_client: "httpx.AsyncClient | None" = None
+
+
+def set_http_client(client: "httpx.AsyncClient | None") -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
 
 
 logger = get_logger(__name__)
@@ -137,10 +154,20 @@ async def plan_images(
         max_images=max_images,
     )
 
+    # Prefer the lifespan-bound shared client; fall back to a per-call
+    # client when nothing has been wired (tests, CLI). Use ``contextlib.
+    # AsyncExitStack`` so both branches end in an ``async with``-style
+    # acquisition and the original block structure stays intact.
+    from contextlib import AsyncExitStack
+
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(90.0, connect=5.0)
-        ) as client:
+        async with AsyncExitStack() as _stack:
+            if http_client is not None:
+                client = http_client
+            else:
+                client = await _stack.enter_async_context(
+                    httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=5.0))
+                )
             # Verify Ollama is reachable AND the model exists
             try:
                 health = await client.get(f"{ollama_url}/api/tags", timeout=5)
@@ -177,6 +204,11 @@ async def plan_images(
             )
             actual_prompt = f"/nothink\n{prompt}" if _is_thinking else prompt
 
+            # Per-request timeout overrides the (shared or per-call)
+            # client default so an LLM call can run up to 90s even
+            # though the shared client's default is shorter.
+            _llm_timeout = httpx.Timeout(90.0, connect=5.0)
+
             raw = ""
             for _attempt in range(3):
                 # Use /api/chat for thinking models (better thinking token handling)
@@ -186,14 +218,14 @@ async def plan_images(
                         "messages": [{"role": "user", "content": actual_prompt}],
                         "stream": False,
                         "options": {"num_predict": 800, "temperature": 0.7},
-                    })
+                    }, timeout=_llm_timeout)
                 else:
                     resp = await client.post(f"{ollama_url}/api/generate", json={
                         "model": model,
                         "prompt": actual_prompt,
                         "stream": False,
                         "options": {"num_predict": 800, "temperature": 0.7},
-                    })
+                    }, timeout=_llm_timeout)
                 if resp.status_code == 404 and _attempt < 2:
                     import asyncio
                     wait_s = 3 * (_attempt + 1)

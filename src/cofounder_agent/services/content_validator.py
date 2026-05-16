@@ -18,9 +18,13 @@ Usage:
 import re
 import time as _time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+
+if TYPE_CHECKING:
+    import httpx
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
 # Defaults to a fresh env-fallback instance until the lifespan setter
@@ -33,6 +37,19 @@ def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
     global site_config
     site_config = sc
+
+
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. ``verify_content_urls`` prefers it
+# when wired so the connection pool stays warm across the per-task
+# URL-validation stage (5-50 URLs per content task).
+http_client: "httpx.AsyncClient | None" = None
+
+
+def set_http_client(client: "httpx.AsyncClient | None") -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
 
 
 logger = get_logger(__name__)
@@ -1708,19 +1725,26 @@ async def verify_content_urls(content: str) -> list[ValidationIssue]:
     skip_domains = {d.strip().lower() for d in _raw.split(",") if d.strip()}
     skip_domains.add("localhost")
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(10.0, connect=5.0),
-        follow_redirects=True,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; Poindexter-LinkChecker/1.0)"},
-    ) as client:
+    # Per-request headers (the lifespan client doesn't carry these as
+    # defaults — every caller passes its own UA/Accept). Inline-defined
+    # to keep this helper self-contained.
+    link_check_headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; Poindexter-LinkChecker/1.0)",
+    }
+
+    from urllib.parse import urlparse
+
+    async def _verify_loop(client: httpx.AsyncClient) -> None:
         for display_text, url in urls_found:
             try:
-                from urllib.parse import urlparse
                 domain = urlparse(url).netloc.lower()
                 if domain in skip_domains or domain.endswith(".localhost"):
                     continue
 
-                resp = await client.head(url, timeout=10)
+                resp = await client.head(
+                    url, timeout=10, headers=link_check_headers,
+                    follow_redirects=True,
+                )
                 # Accept 2xx and 3xx as valid
                 if resp.status_code >= 400:
                     issues.append(ValidationIssue(
@@ -1743,6 +1767,18 @@ async def verify_content_urls(content: str) -> list[ValidationIssue]:
                     description=f"Cannot resolve URL: {url[:60]} ({type(e).__name__})",
                     matched_text=url[:100],
                 ))
+
+    # Prefer the lifespan-bound shared client (warm pool); fall back to
+    # a per-call client only when nothing has been wired (tests, CLI).
+    if http_client is not None:
+        await _verify_loop(http_client)
+    else:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=5.0),
+            follow_redirects=True,
+            headers=link_check_headers,
+        ) as client:
+            await _verify_loop(client)
 
     # Citation count check
     external_citations = [

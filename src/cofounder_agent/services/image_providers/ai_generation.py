@@ -23,11 +23,27 @@ Kind: ``"generate"``.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from plugins.image_provider import ImageResult
 
+if TYPE_CHECKING:
+    import httpx
+
 logger = logging.getLogger(__name__)
+
+
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. ``_build_sdxl_prompt`` prefers it so
+# the Ollama connection pool stays warm across per-task image
+# generations.
+http_client: "httpx.AsyncClient | None" = None
+
+
+def set_http_client(client: "httpx.AsyncClient | None") -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
 
 
 class AIGenerationProvider:
@@ -110,25 +126,30 @@ async def _build_sdxl_prompt(
             if site_config is not None
             else "http://host.docker.internal:11434"
         )
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{ollama}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": (
-                        f"Write a Stable Diffusion XL prompt for a blog featured "
-                        f"image about: {topic[:80]}\n"
-                        f"Requirements: photorealistic scene, cinematic lighting, "
-                        f"no people, no text. 1 sentence only. Output ONLY the prompt."
-                    ),
-                    "stream": False,
-                    "options": {"num_predict": 100, "temperature": 0.7},
-                },
+        _body = {
+            "model": model,
+            "prompt": (
+                f"Write a Stable Diffusion XL prompt for a blog featured "
+                f"image about: {topic[:80]}\n"
+                f"Requirements: photorealistic scene, cinematic lighting, "
+                f"no people, no text. 1 sentence only. Output ONLY the prompt."
+            ),
+            "stream": False,
+            "options": {"num_predict": 100, "temperature": 0.7},
+        }
+        if http_client is not None:
+            resp = await http_client.post(
+                f"{ollama}/api/generate", json=_body, timeout=30,
             )
-            resp.raise_for_status()
-            generated = resp.json().get("response", "").strip().strip('"')
-            if len(generated) > 20:
-                return generated
+        else:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{ollama}/api/generate", json=_body,
+                )
+        resp.raise_for_status()
+        generated = resp.json().get("response", "").strip().strip('"')
+        if len(generated) > 20:
+            return generated
     except Exception as e:
         logger.debug("[AIGeneration] prompt synth failed (using fallback): %s", e)
     return fallback

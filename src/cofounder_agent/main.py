@@ -195,6 +195,52 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 "[LIFESPAN] di_wiring import / call failed: %s", e,
             )
 
+        # Shared httpx.AsyncClient — process-wide connection-pool reuse.
+        # Pre-2026-05-16 the codebase had 102 per-call instantiations
+        # across 58 files; each ``async with httpx.AsyncClient(...)`` paid
+        # the TCP + TLS handshake for a single request. A single shared
+        # client keeps the underlying connection pool warm across the
+        # whole pipeline run (Ollama / SDXL / Pexels / Discord / Vercel).
+        # See ``services/http_client.py`` for the wiring contract.
+        try:
+            import httpx as _httpx
+            from services.http_client import wire_http_client_modules
+
+            _shared_http_timeout = _site_cfg.get_float(
+                "shared_http_client_timeout_seconds", 30.0,
+            )
+            _shared_http_limits = _httpx.Limits(
+                max_connections=_site_cfg.get_int(
+                    "shared_http_client_max_connections", 100,
+                ),
+                max_keepalive_connections=_site_cfg.get_int(
+                    "shared_http_client_max_keepalive", 20,
+                ),
+            )
+            app.state.http_client = _httpx.AsyncClient(
+                timeout=_shared_http_timeout,
+                limits=_shared_http_limits,
+            )
+            _http_wired = wire_http_client_modules(app.state.http_client)
+            logger.info(
+                "[LIFESPAN] Shared httpx.AsyncClient initialized "
+                "(timeout=%.1fs, max_connections=%d, max_keepalive=%d) — "
+                "wired into %d modules",
+                _shared_http_timeout,
+                _shared_http_limits.max_connections,
+                _shared_http_limits.max_keepalive_connections,
+                _http_wired,
+            )
+        except Exception as e:
+            logger.warning(
+                "[LIFESPAN] Shared httpx.AsyncClient init failed: %s — "
+                "per-call clients will continue to work but pool reuse "
+                "is disabled until this is fixed",
+                e,
+                exc_info=True,
+            )
+            app.state.http_client = None
+
         # TaskExecutor wiring block removed in Glad-Labs/poindexter#410
         # Stage 4 (2026-05-16). Task dispatch now lives in Prefect; the
         # site_config DI seam threads through Prefect-spawned subprocesses
@@ -537,6 +583,22 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             await get_url_validator().aclose()
         except Exception as e:
             logger.error(f"[STOP] Error closing url_validator httpx client: {e}", exc_info=True)
+
+        # Close the process-wide shared httpx client last — every
+        # migrated caller stops dereferencing it via the
+        # ``set_http_client(None)`` fan-out, then we close the pool.
+        try:
+            from services.http_client import wire_http_client_modules
+            wire_http_client_modules(None)
+            shared_client = getattr(app.state, "http_client", None)
+            if shared_client is not None:
+                await shared_client.aclose()
+                logger.info("[STOP] Shared httpx.AsyncClient closed")
+        except Exception as e:
+            logger.error(
+                f"[STOP] Error closing shared httpx client: {e}",
+                exc_info=True,
+            )
 
         await startup_manager.shutdown()
 

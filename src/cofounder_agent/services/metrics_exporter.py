@@ -67,6 +67,18 @@ from prometheus_client import (
 logger = logging.getLogger(__name__)
 
 
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. Fallback to a per-call client below
+# preserves /metrics scrapes that fire before the lifespan completes.
+http_client: httpx.AsyncClient | None = None
+
+
+def set_http_client(client: httpx.AsyncClient | None) -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
+
+
 # ---------------------------------------------------------------------------
 # Metric definitions (module-level singletons — Prometheus convention)
 # ---------------------------------------------------------------------------
@@ -338,8 +350,13 @@ async def refresh_metrics(
     # Ollama reachability + model count (Gitea #238 — "up but no models"
     # passed the old gauge; OLLAMA_MODEL_COUNT catches that case).
     try:
-        async with httpx.AsyncClient(timeout=3.0) as http:
-            resp = await http.get(f"{ollama_url.rstrip('/')}/api/tags")
+        if http_client is not None:
+            resp = await http_client.get(
+                f"{ollama_url.rstrip('/')}/api/tags", timeout=3.0,
+            )
+        else:
+            async with httpx.AsyncClient(timeout=3.0) as http:
+                resp = await http.get(f"{ollama_url.rstrip('/')}/api/tags")
         OLLAMA_REACHABLE.set(1 if resp.status_code == 200 else 0)
         if resp.status_code == 200:
             try:

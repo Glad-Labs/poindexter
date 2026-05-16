@@ -33,6 +33,19 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. ``verify_citations`` prefers it when
+# wired so the connection pool stays warm across the per-task
+# fan-out (5-50 URLs per content task).
+http_client: httpx.AsyncClient | None = None
+
+
+def set_http_client(client: httpx.AsyncClient | None) -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
+
+
 # Match markdown link [text](url) — capture url only. We also catch
 # bare-URL autolinks <https://...> and plain-paste https://... outside
 # markdown link syntax, since the writer occasionally emits either form.
@@ -114,19 +127,36 @@ def extract_urls(content: str, site_url: str | None = None) -> list[str]:
     return out
 
 
+_CITATION_HEADERS: dict[str, str] = {
+    # Some servers block the default httpx UA. Claim to be a
+    # modern browser-ish client so we get realistic reachability signals.
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; "
+        "+https://gladlabs.io)"
+    ),
+    "Accept": "*/*",
+}
+
+
 async def _head_one(
     client: httpx.AsyncClient, url: str, timeout_s: float
 ) -> tuple[str, CitationIssue | None]:
     """HEAD a single URL. Returns (url, None) on alive, (url, issue) on dead."""
     try:
         resp = await client.head(
-            url, timeout=timeout_s, follow_redirects=True,
+            url,
+            timeout=timeout_s,
+            follow_redirects=True,
+            headers=_CITATION_HEADERS,
         )
         status = resp.status_code
         # Some servers 405 on HEAD but 200 on GET. Fall back to a lightweight GET.
         if status == 405:
             resp = await client.get(
-                url, timeout=timeout_s, follow_redirects=True,
+                url,
+                timeout=timeout_s,
+                follow_redirects=True,
+                headers=_CITATION_HEADERS,
             )
             status = resp.status_code
         if 200 <= status < 400:
@@ -175,22 +205,23 @@ async def verify_citations(
             return await _head_one(client, url, timeout_s)
 
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_s, connect=min(3.0, timeout_s)),
-            headers={
-                # Some servers block the default httpx UA. Claim to be a
-                # modern browser so we get realistic reachability signals.
-                "User-Agent": (
-                    "Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; "
-                    "+https://gladlabs.io)"
-                ),
-                "Accept": "*/*",
-            },
-        ) as client:
+        # Prefer the lifespan-bound shared client (warm connection pool
+        # across the per-task fan-out); fall back to a per-call client
+        # only when nothing has been wired (tests, CLI one-shots).
+        if http_client is not None:
             results = await asyncio.gather(
-                *(_bound(client, u) for u in urls),
+                *(_bound(http_client, u) for u in urls),
                 return_exceptions=False,
             )
+        else:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout_s, connect=min(3.0, timeout_s)),
+                headers=_CITATION_HEADERS,
+            ) as client:
+                results = await asyncio.gather(
+                    *(_bound(client, u) for u in urls),
+                    return_exceptions=False,
+                )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[citation_verifier] bulk verification failed: %s — returning empty report",

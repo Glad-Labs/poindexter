@@ -29,10 +29,13 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+
+if TYPE_CHECKING:
+    import httpx
 
 # Lifespan-bound SiteConfig; main.py wires this via set_site_config().
 # Defaults to a fresh env-fallback instance until the lifespan setter
@@ -45,6 +48,18 @@ def set_site_config(sc: SiteConfig) -> None:
     """Wire the lifespan-bound SiteConfig instance for this module."""
     global site_config
     site_config = sc
+
+
+# Lifespan-bound shared httpx.AsyncClient — main.py wires this via
+# set_http_client() at startup. The Pexels search + SDXL generation
+# paths prefer it so the per-task connection pool is reused.
+http_client: "httpx.AsyncClient | None" = None
+
+
+def set_http_client(client: "httpx.AsyncClient | None") -> None:
+    """Wire the lifespan-bound shared httpx.AsyncClient."""
+    global http_client
+    http_client = client
 
 # Module-level logger (unified across the codebase). Used once at import
 # time below for the diffusers-missing warning — the rest of the file
@@ -927,35 +942,43 @@ class ImageService:
                 "page": page,
             }
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
+            if http_client is not None:
+                response = await http_client.get(
                     f"{self.pexels_base_url}/search",
                     headers=self.pexels_headers,
                     params=params,
+                    timeout=10.0,
                 )
-                response.raise_for_status()
-                data = response.json()
-
-                photos = data.get("photos", [])
-                logger.info(
-                    "Pexels search for '%s' (page %s) returned %s results",
-                    query, page, len(photos),
-                )
-
-                return [
-                    FeaturedImageMetadata(
-                        url=photo["src"]["large"],
-                        thumbnail=photo["src"]["small"],
-                        photographer=photo.get("photographer", "Unknown"),
-                        photographer_url=photo.get("photographer_url", ""),
-                        width=photo.get("width"),
-                        height=photo.get("height"),
-                        alt_text=photo.get("alt", ""),
-                        search_query=query,
-                        source="pexels",
+            else:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.get(
+                        f"{self.pexels_base_url}/search",
+                        headers=self.pexels_headers,
+                        params=params,
                     )
-                    for photo in photos
-                ]
+            response.raise_for_status()
+            data = response.json()
+
+            photos = data.get("photos", [])
+            logger.info(
+                "Pexels search for '%s' (page %s) returned %s results",
+                query, page, len(photos),
+            )
+
+            return [
+                FeaturedImageMetadata(
+                    url=photo["src"]["large"],
+                    thumbnail=photo["src"]["small"],
+                    photographer=photo.get("photographer", "Unknown"),
+                    photographer_url=photo.get("photographer_url", ""),
+                    width=photo.get("width"),
+                    height=photo.get("height"),
+                    alt_text=photo.get("alt", ""),
+                    search_query=query,
+                    source="pexels",
+                )
+                for photo in photos
+            ]
 
         except Exception as e:
             logger.error("Pexels search error: %s", e, exc_info=True)
@@ -995,9 +1018,21 @@ class ImageService:
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
         try:
             import httpx
+            from contextlib import AsyncExitStack
+
             # 60s per-call cap — Lightning generates in ~1-2s, cold-load
             # takes ~10s, allow headroom for network latency and retries.
-            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
+            # Prefer the lifespan-bound shared client (warm pool); fall
+            # back to a per-call client when nothing has been wired.
+            async with AsyncExitStack() as _stack:
+                if http_client is not None:
+                    client = http_client
+                else:
+                    client = await _stack.enter_async_context(
+                        httpx.AsyncClient(
+                            timeout=httpx.Timeout(60.0, connect=5.0),
+                        )
+                    )
                 resp = await client.post(
                     f"{sdxl_server_url}/generate",
                     json={
@@ -1024,7 +1059,10 @@ class ImageService:
                             "SDXL server response missing filename: %s", body,
                         )
                         return False
-                    img_resp = await client.get(f"{sdxl_server_url}/images/{filename}")
+                    img_resp = await client.get(
+                        f"{sdxl_server_url}/images/{filename}",
+                        timeout=60,
+                    )
                     if img_resp.status_code != 200:
                         logger.warning(
                             "SDXL /images/%s returned %s",
