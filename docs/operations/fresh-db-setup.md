@@ -99,7 +99,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:15432/poindexter_brain \
 
 The exact count moves with every PR — verify against
 `ls src/cofounder_agent/services/migrations/*.py | wc -l` (minus the
-`__init__.py` exclusion). On Glad-Labs/glad-labs-stack
+`__init__.py` exclusion). On Glad-Labs/poindexter
 @ d227056a + this PR (`#378`) the count is **144** files /
 **144** rows.
 

@@ -276,7 +276,7 @@ _LEAK_PATTERNS = (
         "operator GitHub username",
         "Don't hardcode the operator's GitHub handle in OSS files.",
     ),
-    # Note: ``Glad-Labs/glad-labs-stack`` is intentionally NOT a CI-time
+    # Note: ``Glad-Labs/poindexter`` is intentionally NOT a CI-time
     # leak pattern. The sync filter rewrites it to ``Glad-Labs/poindexter``
     # at push time across every text file (see the Python substitution
     # block in ``sync-to-github.sh``), so the public mirror never sees
