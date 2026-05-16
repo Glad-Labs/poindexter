@@ -109,7 +109,9 @@ class RegenerateStockImagesJob:
             regenerated = 0
             for post in posts:
                 cat = (post["category"] or "technology").lower()
-                prompt = await _build_sdxl_prompt(post["title"], prompt_model, sc)
+                prompt = await _build_sdxl_prompt(
+                    post["title"], prompt_model, sc, pool=pool,
+                )
 
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                     output_path = tmp.name
@@ -166,34 +168,51 @@ class RegenerateStockImagesJob:
         )
 
 
-async def _build_sdxl_prompt(title: str, model: str, site_config: Any) -> str:
-    """Ask Ollama to write a tailored SDXL prompt. Fall back to a
-    generic photorealistic template when Ollama is unreachable."""
+async def _build_sdxl_prompt(
+    title: str,
+    model: str,
+    site_config: Any,
+    *,
+    pool: Any = None,
+) -> str:
+    """Ask the configured LLM provider for a tailored SDXL prompt. Fall
+    back to a generic photorealistic template when the LLM call fails
+    OR when no DB pool is available (tests / bootstrap)."""
     fallback = (
         f"photorealistic scene related to {title[:50]}, cinematic lighting, "
         f"4k, detailed, no people, no text"
     )
+    if pool is None:
+        logger.debug(
+            "[REGEN_IMG] no DB pool — using generic fallback SDXL prompt",
+        )
+        return fallback
     try:
-        import httpx
-        ollama = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{ollama}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": (
+        from services.llm_providers.dispatcher import dispatch_complete
+
+        result = await dispatch_complete(
+            pool=pool,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
                         f"Write a Stable Diffusion XL prompt for a blog featured image about: {title[:80]}\n"
                         f"Requirements: photorealistic scene, cinematic lighting, no people, no text. "
                         f"1 sentence only. Output ONLY the prompt."
                     ),
-                    "stream": False,
-                    "options": {"num_predict": 100, "temperature": 0.7},
                 },
-            )
-            resp.raise_for_status()
-            generated = resp.json().get("response", "").strip().strip('"')
-            if len(generated) > 20:
-                return generated
+            ],
+            model=model,
+            tier="standard",
+            timeout_s=30,
+            temperature=0.7,
+            max_tokens=100,
+        )
+        generated = (getattr(result, "text", "") or "").strip().strip('"')
+        if len(generated) > 20:
+            return generated
     except Exception as e:
-        logger.debug("[REGEN_IMG] Ollama prompt synthesis failed (using fallback): %s", e)
+        logger.debug(
+            "[REGEN_IMG] LLM prompt synthesis failed (using fallback): %s", e,
+        )
     return fallback

@@ -57,21 +57,17 @@ class _LockRecorder:
 async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
     """Both ``gpu.lock`` calls inside ``_try_sdxl`` carry task_id+phase.
 
-    The function takes the GPU twice (Ollama prompt → SDXL render).
+    The function takes the GPU twice (LLM prompt → SDXL render).
     Cost attribution in ``gpu_task_sessions`` / cost_logs needs both
     sessions tagged with the pipeline task UUID.
     """
     recorder = _LockRecorder()
 
-    # The Ollama POST returns a usable SDXL prompt (>20 chars). The
-    # SDXL POST returns 200 so the path proceeds to R2 upload, which
-    # we short-circuit with a stub ``_resolve_sdxl_response``.
-    ollama_resp = MagicMock()
-    ollama_resp.status_code = 200
-    ollama_resp.raise_for_status = MagicMock()
-    ollama_resp.json = MagicMock(
-        return_value={"response": "a serene server room with cyan accents"},
-    )
+    # dispatcher returns a usable SDXL prompt (>20 chars). The SDXL
+    # POST returns 200 so the path proceeds to R2 upload, which we
+    # short-circuit with a stub ``_resolve_sdxl_response``.
+    completion = MagicMock()
+    completion.text = "a serene server room with cyan accents"
 
     sdxl_resp = MagicMock()
     sdxl_resp.status_code = 200
@@ -79,13 +75,23 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    # First .post(...) is Ollama, second is SDXL.
-    mock_client.post = AsyncMock(side_effect=[ollama_resp, sdxl_resp])
+    mock_client.post = AsyncMock(return_value=sdxl_resp)
+
+    site_config = SimpleNamespace(
+        get=lambda _k, _d=None: _d if _d is not None else "",
+        get_int=lambda _k, _d=0: _d,
+        get_float=lambda _k, _d=0.0: _d,
+        get_bool=lambda _k, _d=False: _d,
+        _pool=MagicMock(),
+    )
 
     with patch(
         "services.stages.replace_inline_images.gpu", recorder, create=True,
     ), patch(
         "services.gpu_scheduler.gpu", recorder,
+    ), patch(
+        "services.llm_providers.dispatcher.dispatch_complete",
+        new=AsyncMock(return_value=completion),
     ), patch(
         "services.stages.replace_inline_images.httpx.AsyncClient",
         return_value=mock_client,
@@ -100,7 +106,7 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
             num="1",
             search_query="server racks",
             topic="Database performance",
-            site_config=_FAKE_SITE_CONFIG,
+            site_config=site_config,
             task_id="task-abc-123",
         )
 

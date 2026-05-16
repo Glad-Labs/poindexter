@@ -148,45 +148,56 @@ class TestRegenerateStockImagesJobRun:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestBuildSDXLPrompt:
-    async def test_ollama_success_returns_generated(self):
+    async def test_dispatch_success_returns_generated(self):
         site_config = MagicMock()
-        site_config.get = MagicMock(return_value="http://ollama")
+        site_config.get = MagicMock(return_value="")
 
-        resp = MagicMock()
-        resp.raise_for_status = MagicMock()
-        resp.json = MagicMock(return_value={"response": '"a detailed photoreal landscape scene"'})
+        # dispatch_complete returns an object exposing .text
+        completion = MagicMock()
+        completion.text = '"a detailed photoreal landscape scene"'
 
-        client = MagicMock()
-        client.post = AsyncMock(return_value=resp)
-        ctx = MagicMock()
-        ctx.__aenter__ = AsyncMock(return_value=client)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("httpx.AsyncClient", return_value=ctx):
-            result = await _build_sdxl_prompt("A post title", "llama3:latest", site_config)
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            new=AsyncMock(return_value=completion),
+        ):
+            result = await _build_sdxl_prompt(
+                "A post title", "llama3:latest", site_config, pool=MagicMock(),
+            )
         assert "photoreal" in result
 
-    async def test_ollama_failure_returns_fallback(self):
+    async def test_dispatch_failure_returns_fallback(self):
         site_config = MagicMock()
-        site_config.get = MagicMock(return_value="http://ollama")
-        with patch("httpx.AsyncClient", side_effect=RuntimeError("boom")):
-            result = await _build_sdxl_prompt("X", "llama3:latest", site_config)
+        site_config.get = MagicMock(return_value="")
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            result = await _build_sdxl_prompt(
+                "X", "llama3:latest", site_config, pool=MagicMock(),
+            )
         assert "photorealistic scene related to X" in result
 
-    async def test_short_ollama_response_returns_fallback(self):
+    async def test_short_dispatch_response_returns_fallback(self):
         site_config = MagicMock()
-        site_config.get = MagicMock(return_value="http://ollama")
+        site_config.get = MagicMock(return_value="")
 
-        resp = MagicMock()
-        resp.raise_for_status = MagicMock()
-        resp.json = MagicMock(return_value={"response": '"short"'})
+        completion = MagicMock()
+        completion.text = '"short"'
 
-        client = MagicMock()
-        client.post = AsyncMock(return_value=resp)
-        ctx = MagicMock()
-        ctx.__aenter__ = AsyncMock(return_value=client)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("httpx.AsyncClient", return_value=ctx):
-            result = await _build_sdxl_prompt("My blog post", "llama3:latest", site_config)
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            new=AsyncMock(return_value=completion),
+        ):
+            result = await _build_sdxl_prompt(
+                "My blog post", "llama3:latest", site_config, pool=MagicMock(),
+            )
         assert "photorealistic scene" in result  # fell back
+
+    async def test_no_pool_returns_fallback(self):
+        """When pool is None (tests / bootstrap), use the generic fallback."""
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value="")
+        result = await _build_sdxl_prompt(
+            "Some post", "llama3:latest", site_config, pool=None,
+        )
+        assert "photorealistic scene related to Some post" in result

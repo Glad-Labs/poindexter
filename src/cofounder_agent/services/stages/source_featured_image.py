@@ -380,11 +380,6 @@ async def _build_sdxl_prompt(
     style_tracker.record(chosen_style)
     on_style_picked(chosen_style)
 
-    ollama_url = (
-        site_config.get("ollama_base_url", "http://host.docker.internal:11434")
-        if site_config is not None
-        else "http://host.docker.internal:11434"
-    )
     prompt_model = (
         site_config.get("inline_image_prompt_model", "llama3:latest")
         if site_config is not None else "llama3:latest"
@@ -400,20 +395,28 @@ async def _build_sdxl_prompt(
         "1-2 sentences only. Output ONLY the prompt, nothing else."
     )
 
+    pool = getattr(site_config, "_pool", None) if site_config is not None else None
+    if pool is None:
+        # Tests / bootstrap — use the deterministic style+tags fallback so
+        # the pipeline can still source a featured image without DB access.
+        logger.debug(
+            "[IMAGE] no DB pool on site_config; using fallback prompt",
+        )
+        return f"{chosen_style}, {style_tags}, no text, no faces"
+
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=3.0)
-        ) as client:
-            resp = await client.post(
-                f"{ollama_url}/api/generate",
-                json={
-                    "model": prompt_model, "prompt": img_prompt, "stream": False,
-                    "options": {"num_predict": 150, "temperature": 0.7, "num_ctx": 4096},
-                },
-                timeout=30,
-            )
-            resp.raise_for_status()
-            prompt_text = resp.json().get("response", "").strip().strip('"')
+        from services.llm_providers.dispatcher import dispatch_complete
+
+        result = await dispatch_complete(
+            pool=pool,
+            messages=[{"role": "user", "content": img_prompt}],
+            model=prompt_model,
+            tier="standard",
+            timeout_s=30,
+            temperature=0.7,
+            max_tokens=150,
+        )
+        prompt_text = (getattr(result, "text", "") or "").strip().strip('"')
         logger.info(
             "[IMAGE] Style: %s | SDXL prompt: %s", chosen_style, prompt_text[:80],
         )

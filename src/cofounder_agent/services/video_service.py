@@ -144,7 +144,6 @@ async def _generate_images_for_video(
     Uses Ollama to create topic-specific prompts, then SDXL to generate images.
     Returns list of local file paths to generated images.
     """
-    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     # Cost-tier API (Lane B sweep). The standard tier resolves to a
     # non-thinking model (gemma3:27b by default) — deliberate, since
     # qwen3/glm-4 thinking variants return empty completions on the
@@ -157,7 +156,7 @@ async def _generate_images_for_video(
     except RuntimeError:
         model = ""
 
-    # Ask Ollama to generate multiple distinct image prompts
+    # Ask the LLM to generate multiple distinct image prompts
     prompt_request = (
         f"Generate exactly {num_images} Stable Diffusion XL image prompts for a video slideshow "
         f"about: {title}\n\n"
@@ -167,35 +166,49 @@ async def _generate_images_for_video(
         "Output ONLY the prompts, one per line, numbered 1-{num_images}. No other text."
     )
 
-    image_paths = []
-    prompts = []
+    image_paths: list[str] = []
+    prompts: list[str] = []
 
-    if model:
+    pool = getattr(site_config, "_pool", None)
+    if model and pool is not None:
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
-                logger.info("[VIDEO] Requesting %d image prompts from Ollama (%s)", num_images, model)
-                resp = await client.post(f"{ollama_url}/api/generate", json={
-                    "model": model, "prompt": prompt_request, "stream": False,
-                    "options": {"num_predict": 500, "temperature": 0.8},
-                })
-                resp.raise_for_status()
-                raw = resp.json().get("response", "")
-                logger.info("[VIDEO] Ollama returned %d chars of prompts", len(raw))
+            from services.llm_providers.dispatcher import dispatch_complete
 
-                # Parse numbered prompts
-                for line in raw.strip().split("\n"):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    # Strip numbering like "1.", "1)", "1:"
-                    import re
-                    cleaned = re.sub(r"^\d+[.):\-]\s*", "", line).strip().strip('"')
-                    if len(cleaned) > 20:
-                        prompts.append(cleaned)
-                    if len(prompts) >= num_images:
-                        break
+            logger.info(
+                "[VIDEO] Requesting %d image prompts via dispatcher (%s)",
+                num_images, model,
+            )
+            result = await dispatch_complete(
+                pool=pool,
+                messages=[{"role": "user", "content": prompt_request}],
+                model=model,
+                tier="standard",
+                timeout_s=120,
+                temperature=0.8,
+                max_tokens=500,
+            )
+            raw = getattr(result, "text", "") or ""
+            logger.info("[VIDEO] LLM returned %d chars of prompts", len(raw))
+
+            # Parse numbered prompts
+            for line in raw.strip().split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                # Strip numbering like "1.", "1)", "1:"
+                import re
+                cleaned = re.sub(r"^\d+[.):\-]\s*", "", line).strip().strip('"')
+                if len(cleaned) > 20:
+                    prompts.append(cleaned)
+                if len(prompts) >= num_images:
+                    break
         except Exception as e:
-            logger.warning("[VIDEO] Failed to generate image prompts via Ollama: %s", e)
+            logger.warning("[VIDEO] Failed to generate image prompts via dispatcher: %s", e)
+    elif model and pool is None:
+        logger.debug(
+            "[VIDEO] no DB pool — skipping LLM prompt generation, "
+            "using fallback prompts",
+        )
 
     if not prompts:
         # Fallback prompts — fires when the LLM call fails OR the cost-tier
@@ -530,7 +543,6 @@ async def _generate_short_summary_audio(
     Uses Ollama to write a tight ~150-word hook + key takeaways,
     then Edge TTS to convert to speech.
     """
-    ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
     # Cost-tier API (Lane B sweep). Same non-thinking-model rationale as
     # _generate_images_for_video — the structured-narration prompt below
     # returns empty on qwen3/glm-4 thinking variants, so the standard
@@ -541,6 +553,15 @@ async def _generate_short_summary_audio(
         resolved = await _resolve_slideshow_prompt_model()
         model = resolved.removeprefix("ollama/")
     except RuntimeError:
+        return None
+
+    pool = getattr(site_config, "_pool", None)
+    if pool is None:
+        # No DB pool (tests / bootstrap). Bail like the resolver-failure
+        # path — caller falls back to the full podcast audio.
+        logger.debug(
+            "[SHORT] no DB pool on site_config; skipping summary audio LLM",
+        )
         return None
 
     # Strip markdown for cleaner input
@@ -564,13 +585,18 @@ ARTICLE CONTENT:
 NARRATION:"""
 
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(f"{ollama_url}/api/generate", json={
-                "model": model, "prompt": prompt, "stream": False,
-                "options": {"num_predict": 300, "temperature": 0.6},
-            })
-            resp.raise_for_status()
-            summary_script = resp.json().get("response", "").strip()
+        from services.llm_providers.dispatcher import dispatch_complete
+
+        result = await dispatch_complete(
+            pool=pool,
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            tier="standard",
+            timeout_s=120,
+            temperature=0.6,
+            max_tokens=300,
+        )
+        summary_script = (getattr(result, "text", "") or "").strip()
 
         if len(summary_script) < 50:
             logger.warning("[SHORT] Summary script too short (%d chars)", len(summary_script))

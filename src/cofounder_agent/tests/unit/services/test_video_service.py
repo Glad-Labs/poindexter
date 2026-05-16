@@ -375,62 +375,62 @@ class TestGenerateVideoForPost:
 # _generate_images_for_video
 # ---------------------------------------------------------------------------
 
+def _stub_site_config_with_pool():
+    """Patch ``services.video_service.site_config._pool`` so the
+    dispatcher branch fires in tests. Returns a MagicMock pool."""
+    sc = MagicMock()
+    sc.get = MagicMock(side_effect=lambda k, d=None: d)
+    pool = MagicMock()
+    sc._pool = pool
+    return sc, pool
+
+
 class TestGenerateImagesForVideo:
-    """Image generation pipeline (Ollama prompts + SDXL rendering)."""
+    """Image generation pipeline (LLM prompts via dispatcher + SDXL rendering)."""
 
     @pytest.mark.asyncio
-    async def test_ollama_prompt_generation_and_sdxl(self, tmp_path):
-        """Ollama generates prompts, SDXL generates images from them."""
-        ollama_resp = MagicMock()
-        ollama_resp.status_code = 200
-        ollama_resp.raise_for_status = MagicMock()
-        ollama_resp.json.return_value = {
-            "response": (
-                "1. A futuristic server room with blue neon lights and rows of GPUs\n"
-                "2. Cinematic landscape of data flowing through fiber optic cables\n"
-            )
-        }
+    async def test_dispatcher_prompt_generation_and_sdxl(self, tmp_path):
+        """Dispatcher generates prompts, SDXL renders the images."""
+        completion = MagicMock()
+        completion.text = (
+            "1. A futuristic server room with blue neon lights and rows of GPUs\n"
+            "2. Cinematic landscape of data flowing through fiber optic cables\n"
+        )
 
         sdxl_resp = MagicMock()
         sdxl_resp.status_code = 200
         sdxl_resp.headers = {"content-type": "image/png"}
         sdxl_resp.content = b"\x89PNG fake image data"
 
-        # We need two separate client instances (two `async with` blocks)
-        mock_client_ollama = AsyncMock()
-        mock_client_ollama.__aenter__ = AsyncMock(return_value=mock_client_ollama)
-        mock_client_ollama.__aexit__ = AsyncMock(return_value=False)
-        mock_client_ollama.post = AsyncMock(return_value=ollama_resp)
-
         mock_client_sdxl = AsyncMock()
         mock_client_sdxl.__aenter__ = AsyncMock(return_value=mock_client_sdxl)
         mock_client_sdxl.__aexit__ = AsyncMock(return_value=False)
         mock_client_sdxl.post = AsyncMock(return_value=sdxl_resp)
 
-        tmp_path / "video" / "frames"
+        sc, _ = _stub_site_config_with_pool()
+        dispatch_mock = AsyncMock(return_value=completion)
 
         with patch("services.video_service.VIDEO_DIR", tmp_path / "video"), \
-             patch("services.video_service.httpx.AsyncClient", side_effect=[
-                 mock_client_ollama, mock_client_sdxl,
-             ]):
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 dispatch_mock,
+             ), \
+             patch(
+                 "services.video_service.httpx.AsyncClient",
+                 return_value=mock_client_sdxl,
+             ):
             paths = await _generate_images_for_video("GPU Computing", "content", num_images=2)
 
         assert len(paths) == 2
-        # Ollama was called once, SDXL called twice (one per prompt)
-        mock_client_ollama.post.assert_called_once()
+        dispatch_mock.assert_awaited_once()
         assert mock_client_sdxl.post.call_count == 2
-        # Files should exist
         for p in paths:
             assert Path(p).exists()
 
     @pytest.mark.asyncio
-    async def test_fallback_prompts_on_ollama_failure(self, tmp_path):
-        """When Ollama fails, uses hardcoded fallback prompts for SDXL."""
-        mock_client_ollama = AsyncMock()
-        mock_client_ollama.__aenter__ = AsyncMock(return_value=mock_client_ollama)
-        mock_client_ollama.__aexit__ = AsyncMock(return_value=False)
-        mock_client_ollama.post = AsyncMock(side_effect=Exception("Ollama down"))
-
+    async def test_fallback_prompts_on_dispatcher_failure(self, tmp_path):
+        """When dispatch_complete fails, uses hardcoded fallback prompts for SDXL."""
         sdxl_resp = MagicMock()
         sdxl_resp.status_code = 200
         sdxl_resp.headers = {"content-type": "image/png"}
@@ -441,10 +441,18 @@ class TestGenerateImagesForVideo:
         mock_client_sdxl.__aexit__ = AsyncMock(return_value=False)
         mock_client_sdxl.post = AsyncMock(return_value=sdxl_resp)
 
+        sc, _ = _stub_site_config_with_pool()
+
         with patch("services.video_service.VIDEO_DIR", tmp_path / "video"), \
-             patch("services.video_service.httpx.AsyncClient", side_effect=[
-                 mock_client_ollama, mock_client_sdxl,
-             ]):
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 AsyncMock(side_effect=Exception("LLM down")),
+             ), \
+             patch(
+                 "services.video_service.httpx.AsyncClient",
+                 return_value=mock_client_sdxl,
+             ):
             paths = await _generate_images_for_video("AI Tools", "content about AI", num_images=3)
 
         # Should get 3 images from fallback prompts
@@ -454,15 +462,11 @@ class TestGenerateImagesForVideo:
     @pytest.mark.asyncio
     async def test_sdxl_failure_skips_frame(self, tmp_path):
         """When SDXL fails for one frame, that frame is skipped."""
-        ollama_resp = MagicMock()
-        ollama_resp.status_code = 200
-        ollama_resp.raise_for_status = MagicMock()
-        ollama_resp.json.return_value = {
-            "response": (
-                "1. A cinematic scene of a modern AI research laboratory\n"
-                "2. Futuristic quantum computing hardware with glowing circuits\n"
-            )
-        }
+        completion = MagicMock()
+        completion.text = (
+            "1. A cinematic scene of a modern AI research laboratory\n"
+            "2. Futuristic quantum computing hardware with glowing circuits\n"
+        )
 
         success_resp = MagicMock()
         success_resp.status_code = 200
@@ -474,21 +478,24 @@ class TestGenerateImagesForVideo:
         fail_resp.headers = {"content-type": "application/json"}
         fail_resp.text = "Internal Server Error"
 
-        mock_client_ollama = AsyncMock()
-        mock_client_ollama.__aenter__ = AsyncMock(return_value=mock_client_ollama)
-        mock_client_ollama.__aexit__ = AsyncMock(return_value=False)
-        mock_client_ollama.post = AsyncMock(return_value=ollama_resp)
-
         mock_client_sdxl = AsyncMock()
         mock_client_sdxl.__aenter__ = AsyncMock(return_value=mock_client_sdxl)
         mock_client_sdxl.__aexit__ = AsyncMock(return_value=False)
         # First SDXL call succeeds, second fails
         mock_client_sdxl.post = AsyncMock(side_effect=[success_resp, fail_resp])
 
+        sc, _ = _stub_site_config_with_pool()
+
         with patch("services.video_service.VIDEO_DIR", tmp_path / "video"), \
-             patch("services.video_service.httpx.AsyncClient", side_effect=[
-                 mock_client_ollama, mock_client_sdxl,
-             ]):
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 AsyncMock(return_value=completion),
+             ), \
+             patch(
+                 "services.video_service.httpx.AsyncClient",
+                 return_value=mock_client_sdxl,
+             ):
             paths = await _generate_images_for_video("Quantum AI", "content", num_images=2)
 
         # Only the first image should be in the list
@@ -497,63 +504,61 @@ class TestGenerateImagesForVideo:
     @pytest.mark.asyncio
     async def test_sdxl_exception_skips_frame(self, tmp_path):
         """Network exception during SDXL call skips that frame gracefully."""
-        ollama_resp = MagicMock()
-        ollama_resp.status_code = 200
-        ollama_resp.raise_for_status = MagicMock()
-        ollama_resp.json.return_value = {
-            "response": "1. A beautiful cinematic scene of neural network visualization\n"
-        }
-
-        mock_client_ollama = AsyncMock()
-        mock_client_ollama.__aenter__ = AsyncMock(return_value=mock_client_ollama)
-        mock_client_ollama.__aexit__ = AsyncMock(return_value=False)
-        mock_client_ollama.post = AsyncMock(return_value=ollama_resp)
+        completion = MagicMock()
+        completion.text = "1. A beautiful cinematic scene of neural network visualization\n"
 
         mock_client_sdxl = AsyncMock()
         mock_client_sdxl.__aenter__ = AsyncMock(return_value=mock_client_sdxl)
         mock_client_sdxl.__aexit__ = AsyncMock(return_value=False)
         mock_client_sdxl.post = AsyncMock(side_effect=Exception("SDXL timeout"))
 
+        sc, _ = _stub_site_config_with_pool()
+
         with patch("services.video_service.VIDEO_DIR", tmp_path / "video"), \
-             patch("services.video_service.httpx.AsyncClient", side_effect=[
-                 mock_client_ollama, mock_client_sdxl,
-             ]):
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 AsyncMock(return_value=completion),
+             ), \
+             patch(
+                 "services.video_service.httpx.AsyncClient",
+                 return_value=mock_client_sdxl,
+             ):
             paths = await _generate_images_for_video("Test", "content", num_images=1)
 
         assert len(paths) == 0
 
     @pytest.mark.asyncio
     async def test_short_prompts_filtered_out(self, tmp_path):
-        """Ollama lines shorter than 20 chars are ignored."""
-        ollama_resp = MagicMock()
-        ollama_resp.status_code = 200
-        ollama_resp.raise_for_status = MagicMock()
-        ollama_resp.json.return_value = {
-            "response": (
-                "1. short\n"
-                "2. A very detailed cinematic photorealistic scene of neural networks\n"
-            )
-        }
+        """Lines shorter than 20 chars are ignored."""
+        completion = MagicMock()
+        completion.text = (
+            "1. short\n"
+            "2. A very detailed cinematic photorealistic scene of neural networks\n"
+        )
 
         sdxl_resp = MagicMock()
         sdxl_resp.status_code = 200
         sdxl_resp.headers = {"content-type": "image/png"}
         sdxl_resp.content = b"\x89PNG image"
 
-        mock_client_ollama = AsyncMock()
-        mock_client_ollama.__aenter__ = AsyncMock(return_value=mock_client_ollama)
-        mock_client_ollama.__aexit__ = AsyncMock(return_value=False)
-        mock_client_ollama.post = AsyncMock(return_value=ollama_resp)
-
         mock_client_sdxl = AsyncMock()
         mock_client_sdxl.__aenter__ = AsyncMock(return_value=mock_client_sdxl)
         mock_client_sdxl.__aexit__ = AsyncMock(return_value=False)
         mock_client_sdxl.post = AsyncMock(return_value=sdxl_resp)
 
+        sc, _ = _stub_site_config_with_pool()
+
         with patch("services.video_service.VIDEO_DIR", tmp_path / "video"), \
-             patch("services.video_service.httpx.AsyncClient", side_effect=[
-                 mock_client_ollama, mock_client_sdxl,
-             ]):
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 AsyncMock(return_value=completion),
+             ), \
+             patch(
+                 "services.video_service.httpx.AsyncClient",
+                 return_value=mock_client_sdxl,
+             ):
             paths = await _generate_images_for_video("Test", "content", num_images=2)
 
         # Only 1 prompt passes the 20-char filter
@@ -919,34 +924,34 @@ class TestGenerateImagesFromScenes:
 # ---------------------------------------------------------------------------
 
 class TestGenerateShortSummaryAudio:
-    """Ollama summary script + edge_tts narration generation."""
+    """LLM summary script + edge_tts narration generation."""
 
     @pytest.mark.asyncio
     async def test_too_short_returns_none(self, tmp_path):
-        ollama_resp = MagicMock()
-        ollama_resp.json.return_value = {"response": "tiny."}
-        ollama_resp.raise_for_status = MagicMock()
+        completion = MagicMock()
+        completion.text = "tiny."
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=ollama_resp)
+        sc, _ = _stub_site_config_with_pool()
 
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
-             patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 AsyncMock(return_value=completion),
+             ):
             result = await _generate_short_summary_audio("p1", "Title", "Some content body here")
 
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_ollama_failure_returns_none(self, tmp_path):
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(side_effect=RuntimeError("ollama down"))
-
+    async def test_dispatcher_failure_returns_none(self, tmp_path):
+        sc, _ = _stub_site_config_with_pool()
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
-             patch("services.video_service.httpx.AsyncClient", return_value=mock_client):
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 AsyncMock(side_effect=RuntimeError("LLM down")),
+             ):
             result = await _generate_short_summary_audio("p1", "Title", "Body")
 
         assert result is None
@@ -954,14 +959,8 @@ class TestGenerateShortSummaryAudio:
     @pytest.mark.asyncio
     async def test_happy_path_returns_audio_path(self, tmp_path):
         long_script = "x" * 200  # >50 chars to pass the gate
-        ollama_resp = MagicMock()
-        ollama_resp.json.return_value = {"response": long_script}
-        ollama_resp.raise_for_status = MagicMock()
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=ollama_resp)
+        completion = MagicMock()
+        completion.text = long_script
 
         # Fake edge_tts.Communicate that writes the file when .save() is called
         fake_communicate = MagicMock()
@@ -970,8 +969,14 @@ class TestGenerateShortSummaryAudio:
         fake_edge_tts = MagicMock()
         fake_edge_tts.Communicate = MagicMock(return_value=fake_communicate)
 
+        sc, _ = _stub_site_config_with_pool()
+
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
-             patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 AsyncMock(return_value=completion),
+             ), \
              patch.dict("sys.modules", {"edge_tts": fake_edge_tts}):
             result = await _generate_short_summary_audio("p1", "Title", "Body" * 100)
 
@@ -982,14 +987,8 @@ class TestGenerateShortSummaryAudio:
     @pytest.mark.asyncio
     async def test_audio_file_too_small_returns_none(self, tmp_path):
         long_script = "x" * 200
-        ollama_resp = MagicMock()
-        ollama_resp.json.return_value = {"response": long_script}
-        ollama_resp.raise_for_status = MagicMock()
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=ollama_resp)
+        completion = MagicMock()
+        completion.text = long_script
 
         # Edge TTS produces a tiny (<=1000 byte) file
         fake_communicate = MagicMock()
@@ -998,8 +997,14 @@ class TestGenerateShortSummaryAudio:
         fake_edge_tts = MagicMock()
         fake_edge_tts.Communicate = MagicMock(return_value=fake_communicate)
 
+        sc, _ = _stub_site_config_with_pool()
+
         with patch("services.video_service.VIDEO_DIR", tmp_path), \
-             patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
+             patch("services.video_service.site_config", sc), \
+             patch(
+                 "services.llm_providers.dispatcher.dispatch_complete",
+                 AsyncMock(return_value=completion),
+             ), \
              patch.dict("sys.modules", {"edge_tts": fake_edge_tts}):
             result = await _generate_short_summary_audio("p1", "T", "Body" * 100)
 

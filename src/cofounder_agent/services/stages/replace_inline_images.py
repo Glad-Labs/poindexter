@@ -454,7 +454,6 @@ async def _try_sdxl(
 
     try:
         sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
-        ollama_url = site_config.get("ollama_base_url", "http://host.docker.internal:11434")
         model = site_config.get("inline_image_prompt_model", "llama3:latest")
         inline_style = random.choice(INLINE_STYLES)
         img_prompt_req = (
@@ -464,17 +463,31 @@ async def _try_sdxl(
             "Describe a specific scene. 1 sentence only. Output ONLY the prompt."
         )
 
-        # Step 1: ollama generates the SDXL prompt
+        # Step 1: dispatcher generates the SDXL prompt. When no pool is
+        # reachable (tests / bootstrap), bail to Pexels fallback by
+        # returning None — the caller treats it as "no SDXL image".
+        pool = getattr(site_config, "_pool", None) if site_config is not None else None
+        if pool is None:
+            logger.debug(
+                "  [IMAGE-%s] no DB pool — skipping SDXL prompt generation", num,
+            )
+            return None
+
+        from services.llm_providers.dispatcher import dispatch_complete
+
         async with gpu.lock(
             "ollama", model=model, task_id=task_id, phase="inline_image_prompt",
         ):
-            async with httpx.AsyncClient(timeout=90) as client:
-                resp = await client.post(f"{ollama_url}/api/generate", json={
-                    "model": model, "prompt": img_prompt_req, "stream": False,
-                    "options": {"num_predict": 100, "temperature": 0.8, "num_ctx": 4096},
-                })
-                resp.raise_for_status()
-                sdxl_prompt = resp.json().get("response", "").strip().strip('"')
+            result = await dispatch_complete(
+                pool=pool,
+                messages=[{"role": "user", "content": img_prompt_req}],
+                model=model,
+                tier="standard",
+                timeout_s=90,
+                temperature=0.8,
+                max_tokens=100,
+            )
+            sdxl_prompt = (getattr(result, "text", "") or "").strip().strip('"')
 
         if not sdxl_prompt or len(sdxl_prompt) <= 20:
             return None
