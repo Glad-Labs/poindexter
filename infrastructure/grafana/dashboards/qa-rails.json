@@ -681,6 +681,291 @@
       ],
       "title": "Latest 20 QA Passes",
       "type": "table"
+    },
+    {
+      "type": "row",
+      "title": "Ragas Eval (RAG Quality)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 },
+      "panels": [],
+      "id": 13
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Averaged Ragas score (mean of non-sentinel faithfulness + answer_relevancy + context_precision) over the dashboard time range. Each point is one ragas_eval call emitted from services/ragas_eval.py::evaluate_sample. Trend down = retrieval quality regressing; correlate with rag_engine_enabled / rag_hybrid_enabled / rag_rerank_enabled toggles in app_settings.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "yellow", "value": 0.65 },
+              { "color": "green", "value": 0.8 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 34 },
+      "id": 14,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "lastNotNull"],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS time,\n       'ragas_score' AS metric,\n       (details->>'score')::float AS value\nFROM audit_log\nWHERE event_type = 'ragas_score'\n  AND $__timeFilter(timestamp)\nORDER BY timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Ragas Score Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Most recent Ragas score (averaged across the three component metrics). Green ≥ 0.8 — retrieval is feeding the writer well. Red < 0.5 — the RAG layer is hurting more than helping; investigate which component dropped via the per-row table below.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "yellow", "value": 0.65 },
+              { "color": "green", "value": 0.8 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 34 },
+      "id": 15,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (details->>'score')::float AS \"Latest Ragas Score\"\nFROM audit_log\nWHERE event_type = 'ragas_score'\nORDER BY timestamp DESC\nLIMIT 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest Ragas Score",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Count of ragas_eval calls in the dashboard time range. Zero with ragas_enabled=true → ragas_eval is broken; investigate Reviewer Skips panel above. High count = every QA pass is paying the ~6K-token judge cost — consider sampling.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 38 },
+      "id": 16,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Ragas Evals\"\nFROM audit_log\nWHERE event_type = 'ragas_score'\n  AND $__timeFilter(timestamp);",
+          "refId": "A"
+        }
+      ],
+      "title": "Ragas Evals (window)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Last 10 Ragas evaluations with task linkage and component breakdown. Component scores below 0 are sentinels — that metric's judge-LLM call failed on that pass (other components still feed the average). Click into a row to read the raw JSONB and correlate with the originating task.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Score" },
+            "properties": [
+              { "id": "unit", "value": "percentunit" },
+              { "id": "max", "value": 1 },
+              { "id": "min", "value": 0 },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "orange", "value": 0.5 },
+                    { "color": "yellow", "value": 0.65 },
+                    { "color": "green", "value": 0.8 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Faithfulness|Answer Relevancy|Context Precision"
+            },
+            "properties": [
+              { "id": "unit", "value": "percentunit" },
+              { "id": "max", "value": 1 },
+              { "id": "min", "value": -1 },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-text", "mode": "basic" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "orange", "value": 0 },
+                    { "color": "yellow", "value": 0.6 },
+                    { "color": "green", "value": 0.8 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 42 },
+      "id": 17,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS \"Time\",\n       task_id AS \"Task ID\",\n       (details->>'score')::float AS \"Score\",\n       (details->>'faithfulness')::float AS \"Faithfulness\",\n       (details->>'answer_relevancy')::float AS \"Answer Relevancy\",\n       (details->>'context_precision')::float AS \"Context Precision\",\n       details->>'topic' AS \"Topic\"\nFROM audit_log\nWHERE event_type = 'ragas_score'\nORDER BY timestamp DESC\nLIMIT 10;",
+          "refId": "A"
+        }
+      ],
+      "title": "Last 10 Ragas Evaluations",
+      "type": "table"
     }
   ]
 }

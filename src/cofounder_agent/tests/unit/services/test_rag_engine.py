@@ -326,3 +326,182 @@ class TestHybridRRF:
         assert ids[0] == "posts:V2"  # appears in both lists
         assert "posts:V1" in ids
         assert "posts:V3" in ids
+
+
+# ---------------------------------------------------------------------------
+# Phase C — Cross-encoder rerank
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCrossEncoderRerank:
+    """Stub the cross-encoder model so the tests don't touch
+    sentence-transformers (which downloads ~80MB on first call and is
+    too heavy for unit tests). Verifies:
+
+    - the rerank wrapper reorders the inner retriever's candidates
+      according to the cross-encoder's pair scores
+    - missing sentence-transformers (the prod hot-path warning we just
+      fixed in pyproject) degrades gracefully to passthrough rather
+      than raising
+    - top_k slicing is applied after rerank
+    """
+
+    @pytest.mark.asyncio
+    async def test_rerank_reorders_candidates_by_pair_scores(self):
+        from llama_index.core.schema import (
+            NodeWithScore,
+            QueryBundle,
+            TextNode,
+        )
+
+        # Inner retriever returns 3 nodes in initial order A, B, C.
+        candidates = [
+            NodeWithScore(
+                node=TextNode(text="alpha doc", id_="posts:A"),
+                score=0.9,
+            ),
+            NodeWithScore(
+                node=TextNode(text="beta doc", id_="posts:B"),
+                score=0.8,
+            ),
+            NodeWithScore(
+                node=TextNode(text="gamma doc", id_="posts:C"),
+                score=0.7,
+            ),
+        ]
+        inner = MagicMock()
+        inner._aretrieve = AsyncMock(return_value=candidates)
+
+        # Cross-encoder will score (query, A)=0.1, (query, B)=0.9,
+        # (query, C)=0.5 — so expected post-rerank order is B, C, A.
+        fake_model = MagicMock()
+        fake_model.predict = MagicMock(return_value=[0.1, 0.9, 0.5])
+
+        from services.rag_engine import (
+            _RERANKER_CACHE,
+            _build_rerank_retriever_class,
+        )
+        _RERANKER_CACHE.clear()  # don't bleed across tests
+        cls = _build_rerank_retriever_class()
+        r = cls(inner=inner, top_k=3, site_config=None)
+        # Pre-populate cache so _get_model returns our stub without
+        # importing sentence-transformers.
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2"] = fake_model
+
+        results = await r._aretrieve(QueryBundle(query_str="query text"))
+
+        ids = [n.node.node_id for n in results]
+        assert ids == ["posts:B", "posts:C", "posts:A"]
+        # Scores are the cross-encoder's raw outputs, not the original
+        # vector scores — caller can correlate trends if needed.
+        assert results[0].score == pytest.approx(0.9)
+        assert results[2].score == pytest.approx(0.1)
+
+    @pytest.mark.asyncio
+    async def test_rerank_top_k_truncates_after_reorder(self):
+        from llama_index.core.schema import (
+            NodeWithScore,
+            QueryBundle,
+            TextNode,
+        )
+
+        candidates = [
+            NodeWithScore(node=TextNode(text="a", id_="X:1"), score=0.9),
+            NodeWithScore(node=TextNode(text="b", id_="X:2"), score=0.8),
+            NodeWithScore(node=TextNode(text="c", id_="X:3"), score=0.7),
+        ]
+        inner = MagicMock()
+        inner._aretrieve = AsyncMock(return_value=candidates)
+
+        fake_model = MagicMock()
+        # Last candidate scores highest after rerank.
+        fake_model.predict = MagicMock(return_value=[0.1, 0.2, 0.99])
+
+        from services.rag_engine import (
+            _RERANKER_CACHE,
+            _build_rerank_retriever_class,
+        )
+        _RERANKER_CACHE.clear()
+        cls = _build_rerank_retriever_class()
+        r = cls(inner=inner, top_k=1, site_config=None)
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2"] = fake_model
+
+        results = await r._aretrieve(QueryBundle(query_str="q"))
+        assert len(results) == 1
+        assert results[0].node.node_id == "X:3"
+
+    @pytest.mark.asyncio
+    async def test_rerank_passthrough_on_missing_sentence_transformers(self):
+        """When the operator has flipped rag_rerank_enabled=true but
+        the worker image lacks sentence-transformers, the rerank
+        wrapper must degrade to passthrough (return the inner
+        candidates truncated to top_k) without raising. This is the
+        prod regression we fixed by pinning sentence-transformers in
+        pyproject — the test pins the contract.
+        """
+        from llama_index.core.schema import (
+            NodeWithScore,
+            QueryBundle,
+            TextNode,
+        )
+
+        candidates = [
+            NodeWithScore(node=TextNode(text="a", id_="P:1"), score=0.9),
+            NodeWithScore(node=TextNode(text="b", id_="P:2"), score=0.7),
+        ]
+        inner = MagicMock()
+        inner._aretrieve = AsyncMock(return_value=candidates)
+
+        from services.rag_engine import (
+            _RERANKER_CACHE,
+            _build_rerank_retriever_class,
+        )
+        _RERANKER_CACHE.clear()
+        cls = _build_rerank_retriever_class()
+        r = cls(inner=inner, top_k=2, site_config=None)
+
+        # Force _get_model to raise ImportError exactly like the
+        # missing-dep prod failure.
+        def _raise_import(*_a, **_kw):
+            raise ImportError("No module named 'sentence_transformers'")
+
+        with patch.object(r, "_get_model", side_effect=_raise_import):
+            results = await r._aretrieve(QueryBundle(query_str="q"))
+
+        # Passthrough preserves inner ordering.
+        ids = [n.node.node_id for n in results]
+        assert ids == ["P:1", "P:2"]
+
+
+# ---------------------------------------------------------------------------
+# Gate-setting wiring — explicit/site_config/None
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRerankGate:
+    @pytest.mark.asyncio
+    async def test_rerank_site_config_default_false_no_wrap(self):
+        """A bare site_config (no rag_rerank_enabled key) must NOT
+        wrap the retriever in rerank. Otherwise the cross-encoder
+        would warmup on every operator who hasn't opted in."""
+        sc = _site_config({})  # no rag_rerank_enabled value
+        retriever = await get_rag_retriever(pool=MagicMock(), site_config=sc)
+        assert "Rerank" not in type(retriever).__name__
+
+    @pytest.mark.asyncio
+    async def test_rerank_explicit_kwarg_wins_over_site_config(self):
+        sc = _site_config({"rag_rerank_enabled": True})
+        retriever = await get_rag_retriever(
+            pool=MagicMock(), site_config=sc, rerank=False,
+        )
+        assert "Rerank" not in type(retriever).__name__
+
+    @pytest.mark.asyncio
+    async def test_hybrid_explicit_kwarg_wins_over_site_config(self):
+        sc = _site_config({"rag_hybrid_enabled": True})
+        retriever = await get_rag_retriever(
+            pool=MagicMock(), site_config=sc, hybrid=False,
+        )
+        assert "Hybrid" not in type(retriever).__name__

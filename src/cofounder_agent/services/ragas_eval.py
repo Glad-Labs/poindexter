@@ -191,12 +191,60 @@ async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _emit_ragas_score_audit(
+    scores: dict[str, float],
+    topic: str,
+    task_id: str | None,
+) -> None:
+    """Fire-and-forget audit_log write powering the Grafana ragas panel.
+
+    Schema: ``event_type='ragas_score'`` in ``audit_log``, with
+    ``details`` containing the averaged ``score`` (0-1) plus the
+    three component scores. The Grafana QA-rails dashboard queries
+    these rows for the time-series + latest-stat + last-10-table
+    panels.
+
+    Only non-sentinel metrics (score >= 0) feed the average — a
+    Ragas judge-LLM hiccup on a single metric shouldn't tank the
+    aggregate trend line. Skipped entirely when ALL metrics returned
+    -1.0 (full Ragas failure — already surfaced through the warning
+    log path above).
+    """
+    valid = {k: v for k, v in scores.items() if v >= 0}
+    if not valid:
+        return  # full Ragas failure — nothing useful to record
+
+    avg = sum(valid.values()) / len(valid)
+    try:
+        from services.audit_log import audit_log_bg
+        audit_log_bg(
+            "ragas_score",
+            "ragas_eval",
+            {
+                "score": round(float(avg), 4),
+                "faithfulness": round(float(scores.get("faithfulness", -1.0)), 4),
+                "answer_relevancy": round(float(scores.get("answer_relevancy", -1.0)), 4),
+                "context_precision": round(float(scores.get("context_precision", -1.0)), 4),
+                "topic": (topic or "")[:200],
+                "metric_count": len(valid),
+            },
+            task_id=task_id,
+            severity="info",
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Telemetry write must never fail the Ragas caller — log and
+        # carry on. Symmetric to multi_model_qa.py's qa_pass_completed
+        # write pattern.
+        logger.debug("[ragas] ragas_score audit_log_bg skipped: %s", exc)
+
+
 async def evaluate_sample(
     *,
     topic: str,
     generated_content: str,
     retrieved_contexts: list[str] | None = None,
     site_config: Any = None,
+    task_id: str | None = None,
 ) -> dict[str, float]:
     """Run Ragas faithfulness + answer_relevancy + context_precision
     against a single (topic, content, contexts) tuple.
@@ -206,6 +254,11 @@ async def evaluate_sample(
     Never raises — Ragas errors (Ollama down, judge model not pulled,
     etc) are caught and surfaced as ``-1.0`` for the affected metric.
     Caller correlates scores with audit_log for trend analysis.
+
+    Side effect: on a successful run (>=1 non-sentinel metric) writes
+    one ``event_type='ragas_score'`` row to ``audit_log`` for the
+    Grafana QA-rails dashboard's Ragas panel block. Best-effort — the
+    write failing never affects the returned scores.
     """
     if not topic or not generated_content:
         return {
@@ -241,12 +294,14 @@ async def evaluate_sample(
             embeddings=embeddings,
             raise_exceptions=False,
         )
-        scores = result.scores[0] if result.scores else {}
-        return {
-            "faithfulness": float(scores.get("faithfulness", -1.0) or -1.0),
-            "answer_relevancy": float(scores.get("answer_relevancy", -1.0) or -1.0),
-            "context_precision": float(scores.get("context_precision", -1.0) or -1.0),
+        scores_raw = result.scores[0] if result.scores else {}
+        scores = {
+            "faithfulness": float(scores_raw.get("faithfulness", -1.0) or -1.0),
+            "answer_relevancy": float(scores_raw.get("answer_relevancy", -1.0) or -1.0),
+            "context_precision": float(scores_raw.get("context_precision", -1.0) or -1.0),
         }
+        _emit_ragas_score_audit(scores, topic, task_id)
+        return scores
     except Exception as e:
         logger.warning("[ragas] evaluate_sample failed: %s", e, exc_info=True)
         return {
