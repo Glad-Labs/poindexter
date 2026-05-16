@@ -6,6 +6,7 @@ and category filtering.
 """
 
 import asyncio
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -79,6 +80,78 @@ class TestGet:
         with patch.dict("os.environ", {"API_KEY": "from-env"}):
             result = _run(svc.get("api_key"))
         assert result == "from-db"
+
+    def test_env_var_fallback_emits_warning(self, caplog):
+        """Operators must see in worker logs whenever env-var override
+        is silently winning over an empty DB row — that visibility is
+        the whole point of the warning. Regression guard for the
+        settings-discipline cleanup."""
+        import logging
+
+        pool = _make_pool([_row("api_key", "")])  # empty DB value
+        svc = SettingsService(pool)
+        with patch.dict("os.environ", {"API_KEY": "from-env"}), caplog.at_level(
+            logging.WARNING, logger="services.settings_service",
+        ):
+            result = _run(svc.get("api_key"))
+
+        assert result == "from-env"
+        # One warning, and it must name both the key and the env-var
+        # value found so the operator can match it back to the
+        # offending shell config.
+        warnings = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING
+            and "env-var fallback" in r.getMessage()
+        ]
+        assert len(warnings) == 1, (
+            f"Expected exactly 1 env-var-fallback warning, got "
+            f"{[r.getMessage() for r in warnings]}"
+        )
+        msg = warnings[0].getMessage()
+        assert "api_key" in msg
+        assert "API_KEY" in msg
+        assert "from-env" in msg
+
+    def test_no_warning_when_db_value_present(self, caplog):
+        """The warning must NOT fire on the happy path — DB row found,
+        no env-var read. Otherwise every settings lookup would flood
+        worker logs."""
+        import logging
+
+        pool = _make_pool([_row("api_key", "from-db")])
+        svc = SettingsService(pool)
+        with patch.dict("os.environ", {"API_KEY": "from-env"}), caplog.at_level(
+            logging.WARNING, logger="services.settings_service",
+        ):
+            _run(svc.get("api_key"))
+
+        env_warnings = [
+            r for r in caplog.records
+            if "env-var fallback" in r.getMessage()
+        ]
+        assert env_warnings == []
+
+    def test_no_warning_when_key_missing_and_env_absent(self, caplog):
+        """Missing-key + missing-env = silent default path. No warning
+        because no override happened — just absent config."""
+        import logging
+
+        pool = _make_pool([])
+        svc = SettingsService(pool)
+        # Clear the env var if it happens to leak from the host
+        with patch.dict("os.environ", {}, clear=False), caplog.at_level(
+            logging.WARNING, logger="services.settings_service",
+        ):
+            os.environ.pop("UNUSED_KEY", None)
+            result = _run(svc.get("unused_key", default="fallback-default"))
+
+        assert result == "fallback-default"
+        env_warnings = [
+            r for r in caplog.records
+            if "env-var fallback" in r.getMessage()
+        ]
+        assert env_warnings == []
 
 
 # ---------------------------------------------------------------------------

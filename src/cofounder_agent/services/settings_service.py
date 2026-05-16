@@ -37,6 +37,14 @@ class SettingsService:
 
         Falls back to the matching environment variable (upper-cased key) when
         the DB value is empty, so services keep working during migration.
+
+        Whenever the env-var fallback fires the call emits a ``logger.warning``
+        naming the key. Per `feedback_no_silent_defaults` an operator must
+        be able to see in worker logs when an env-var is silently overriding
+        DB state — env-var override is exactly the misconfiguration trap
+        DB-first config was meant to prevent. The warning preserves
+        bootstrap viability for tests/CI that don't seed the DB while
+        surfacing the override in prod.
         """
         await self._ensure_cache()
 
@@ -45,8 +53,18 @@ class SettingsService:
             return entry["value"]
 
         # Fallback: try env var (e.g. key "anthropic_api_key" -> "ANTHROPIC_API_KEY")
-        env_val = os.getenv(key.upper())
+        env_key = key.upper()
+        env_val = os.getenv(env_key)
         if env_val:
+            logger.warning(
+                "[SETTINGS] env-var fallback fired for key=%r — using "
+                "%s=%r from environment because the DB value is empty or "
+                "missing. DB-first config means env overrides should be "
+                "rare; verify this is intentional.",
+                key,
+                env_key,
+                env_val,
+            )
             return env_val
 
         return default

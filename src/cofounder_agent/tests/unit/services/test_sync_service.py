@@ -94,10 +94,46 @@ class TestSyncServiceInit:
         assert svc.local_url == "postgres://local"
 
     def test_defaults_from_env(self):
-        with patch.dict("os.environ", {"CLOUD_DATABASE_URL": "postgres://env-cloud", "LOCAL_DATABASE_URL": "postgres://env-local"}):
+        # CLOUD_DATABASE_URL still wins for cloud (it's the explicit
+        # marker). LOCAL_DATABASE_URL routes through
+        # brain.bootstrap.resolve_database_url — which prefers
+        # bootstrap.toml > DATABASE_URL > LOCAL_DATABASE_URL >
+        # POINDEXTER_MEMORY_DSN. Clear DATABASE_URL so the test reaches
+        # the LOCAL_DATABASE_URL leg and is hermetic on machines whose
+        # ambient DATABASE_URL points elsewhere.
+        env_patch = {
+            "CLOUD_DATABASE_URL": "postgres://env-cloud",
+            "LOCAL_DATABASE_URL": "postgres://env-local",
+        }
+        with patch.dict("os.environ", env_patch), patch.dict(
+            "os.environ", {"DATABASE_URL": "", "POINDEXTER_MEMORY_DSN": ""},
+        ), patch("brain.bootstrap._read_bootstrap_toml", return_value={}):
             svc = SyncService()
             assert svc.cloud_url == "postgres://env-cloud"
             assert svc.local_url == "postgres://env-local"
+
+    def test_falls_back_to_database_url_for_cloud(self):
+        """CLOUD_DATABASE_URL absent — DATABASE_URL is the cloud fallback."""
+        env_patch = {"DATABASE_URL": "postgres://env-database-url"}
+        with patch.dict("os.environ", env_patch), patch.dict(
+            "os.environ", {"CLOUD_DATABASE_URL": ""},
+        ), patch("brain.bootstrap._read_bootstrap_toml", return_value={}):
+            svc = SyncService(local_url="postgres://local-explicit")
+            assert svc.cloud_url == "postgres://env-database-url"
+
+    def test_local_url_resolved_via_bootstrap_toml(self):
+        """When bootstrap.toml has a database_url, it wins over env vars
+        for the LOCAL leg — confirms we route through the canonical
+        bootstrap resolver."""
+        with patch.dict(
+            "os.environ",
+            {"LOCAL_DATABASE_URL": "postgres://env-loses", "DATABASE_URL": ""},
+        ), patch(
+            "brain.bootstrap._read_bootstrap_toml",
+            return_value={"database_url": "postgres://bootstrap-wins"},
+        ):
+            svc = SyncService(cloud_url="postgres://cloud-explicit")
+            assert svc.local_url == "postgres://bootstrap-wins"
 
     def test_pools_initially_none(self):
         svc = SyncService(cloud_url="x", local_url="y")

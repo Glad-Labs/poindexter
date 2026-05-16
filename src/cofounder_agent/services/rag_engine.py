@@ -37,7 +37,6 @@ Each ``NodeWithScore`` has ``node.text`` (preview / chunk),
 
 from __future__ import annotations
 
-import os
 from typing import Any, Iterable
 
 from services.logger_config import get_logger
@@ -50,30 +49,43 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
+# Cache key is "<model_name>@<base_url>" so a single process with multiple
+# Ollama backends (rare, but supported in tests + future multi-tenant
+# fleets) doesn't conflate adapters.
 _EMBED_MODEL_CACHE: dict[str, Any] = {}
 
 
-def _get_embed_model(model_name: str = "nomic-embed-text") -> Any:
+def _get_embed_model(
+    model_name: str = "nomic-embed-text",
+    base_url: str = "http://localhost:11434",
+) -> Any:
     """Lazy-load + cache the Ollama embedding adapter.
 
     Mirrors the model used to populate the embeddings table — without
     matching, queries land in a different vector space and get poor
-    similarity scores. The cache keys on model name so multiple models
-    coexist (e.g. the embedding model used by ``embeddings.embedding_model``
-    is the canonical one; future migrations to a different model would
-    write to a new column / new index).
+    similarity scores. The cache keys on (model name, base_url) so
+    multiple models or backends coexist (e.g. the embedding model used
+    by ``embeddings.embedding_model`` is the canonical one; future
+    migrations to a different model would write to a new column / new
+    index).
+
+    ``base_url`` is the Ollama HTTP endpoint and comes from
+    ``app_settings.local_llm_api_url`` via the retriever — see
+    ``get_rag_retriever``. Callers should never read ``OLLAMA_BASE_URL``
+    directly; that env var bypasses DB-first config (per
+    `feedback_no_silent_defaults` + `feedback_no_env_vars`).
     """
-    if model_name in _EMBED_MODEL_CACHE:
-        return _EMBED_MODEL_CACHE[model_name]
+    cache_key = f"{model_name}@{base_url}"
+    if cache_key in _EMBED_MODEL_CACHE:
+        return _EMBED_MODEL_CACHE[cache_key]
 
     from llama_index.embeddings.ollama import OllamaEmbedding
 
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
     embed = OllamaEmbedding(
         model_name=model_name,
         base_url=base_url,
     )
-    _EMBED_MODEL_CACHE[model_name] = embed
+    _EMBED_MODEL_CACHE[cache_key] = embed
     return embed
 
 
@@ -122,6 +134,7 @@ def _build_retriever_class():
             min_similarity: float = 0.3,
             source_filter: list[str] | None = None,
             model_name: str = "nomic-embed-text",
+            base_url: str = "http://localhost:11434",
         ) -> None:
             super().__init__()
             self._pool = pool
@@ -129,13 +142,14 @@ def _build_retriever_class():
             self._min_similarity = min_similarity
             self._source_filter = source_filter
             self._model_name = model_name
+            self._base_url = base_url
 
         async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
             text = query_bundle.query_str
             if not text or not text.strip():
                 return []
 
-            embed = _get_embed_model(self._model_name)
+            embed = _get_embed_model(self._model_name, self._base_url)
             try:
                 vec = await embed.aget_query_embedding(text)
             except Exception as e:
@@ -255,14 +269,30 @@ async def get_rag_retriever(
         model_name = (
             site_config.get("embedding_model", "") or "nomic-embed-text"
         )
+        # local_llm_api_url is the canonical Ollama base-URL setting
+        # (the same key topic_ranking.py / llm_text.py use). Reading
+        # OLLAMA_BASE_URL directly was the legacy env-var bypass we're
+        # retiring with this sweep — see `feedback_no_silent_defaults`
+        # and `feedback_no_env_vars`.
+        base_url = (
+            site_config.get("local_llm_api_url", "") or "http://localhost:11434"
+        )
         if hybrid is None:
             hybrid = bool(site_config.get_bool("rag_hybrid_enabled", False))
         if rerank is None:
             rerank = bool(site_config.get_bool("rag_rerank_enabled", False))
     else:
+        # No site_config means tests / minimal bootstrap path — defaults
+        # only. Production callers MUST pass site_config (the lifespan
+        # in main.py constructs and threads it); failing loud here would
+        # break the existing CI suite that exercises the retriever
+        # without a SiteConfig fixture, so we keep the safe-default but
+        # fall back to a localhost loopback that won't accidentally hit
+        # a co-tenant's Ollama on host.docker.internal.
         top_k = top_k if top_k is not None else 5
         min_similarity = min_similarity if min_similarity is not None else 0.3
         model_name = "nomic-embed-text"
+        base_url = "http://localhost:11434"
         if hybrid is None:
             hybrid = False
         if rerank is None:
@@ -275,6 +305,7 @@ async def get_rag_retriever(
         min_similarity=min_similarity,
         source_filter=source_filter,
         model_name=model_name,
+        base_url=base_url,
     )
 
     retriever = base

@@ -23,13 +23,50 @@ from services.logger_config import get_logger
 
 logger = get_logger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Connection strings (env-only — #198: no hardcoded DSNs)
-# Empty strings mean "not configured"; the caller / constructor raises
-# before using them.
+# Connection-string resolvers (call-time, not import-time)
+#
+# The previous module-level ``CLOUD_DATABASE_URL = os.getenv(...)`` /
+# ``LOCAL_DATABASE_URL = os.getenv(...)`` baked env vars into the module
+# at import. That bypassed ``brain.bootstrap.resolve_database_url`` —
+# the canonical resolver every other module uses, which checks
+# bootstrap.toml first and falls back through DATABASE_URL /
+# LOCAL_DATABASE_URL / POINDEXTER_MEMORY_DSN in order. Resolving at
+# call time lets tests + ``poindexter setup`` mutate the environment
+# (or bootstrap.toml) after import without restarting the worker.
 # ---------------------------------------------------------------------------
-CLOUD_DATABASE_URL = os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")
-LOCAL_DATABASE_URL = os.getenv("LOCAL_DATABASE_URL", "")
+
+
+def _resolve_cloud_database_url() -> str:
+    """Resolve the cloud (production / hosted) DB URL.
+
+    Cloud is the exceptional case: it lives somewhere other than where
+    ``resolve_database_url()`` points (which is the local brain DB).
+    ``CLOUD_DATABASE_URL`` is the explicit cloud env var; ``DATABASE_URL``
+    is the historical fallback for deployments where the single DB is
+    the cloud one. Empty string means "not configured" — ``connect()``
+    logs and skips rather than raising.
+    """
+    return (os.getenv("CLOUD_DATABASE_URL") or os.getenv("DATABASE_URL", "")).strip()
+
+
+def _resolve_local_database_url() -> str:
+    """Resolve the local brain DB URL via the canonical bootstrap chain.
+
+    Delegates to ``brain.bootstrap.resolve_database_url`` so callers
+    get the bootstrap.toml → DATABASE_URL → LOCAL_DATABASE_URL →
+    POINDEXTER_MEMORY_DSN chain that every other service uses. Empty
+    string means "not configured" so the existing skip path in
+    ``connect()`` still applies.
+    """
+    # Local import — brain.bootstrap is stdlib-only and cheap, but
+    # importing at module top would couple sync_service's import order
+    # to brain's package layout. Call-time import is fine for the
+    # constructor-only use.
+    from brain.bootstrap import resolve_database_url
+
+    return (resolve_database_url() or "").strip()
 
 
 class SyncService:
@@ -52,10 +89,12 @@ class SyncService:
         cloud_url: str | None = None,
         local_url: str | None = None,
     ):
-        import os
-
-        self.cloud_url = cloud_url or os.getenv("CLOUD_DATABASE_URL", CLOUD_DATABASE_URL)
-        self.local_url = local_url or os.getenv("LOCAL_DATABASE_URL", LOCAL_DATABASE_URL)
+        # Resolve at construction time, not import time, so tests +
+        # ``poindexter setup`` can mutate env / bootstrap.toml between
+        # process start and ``SyncService()``. Explicit kwargs still
+        # override (CLI overrides, tests).
+        self.cloud_url = cloud_url if cloud_url is not None else _resolve_cloud_database_url()
+        self.local_url = local_url if local_url is not None else _resolve_local_database_url()
         self._cloud_pool: asyncpg.Pool | None = None
         self._local_pool: asyncpg.Pool | None = None
 

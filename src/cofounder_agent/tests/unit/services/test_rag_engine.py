@@ -91,6 +91,54 @@ class TestFactoryDefaults:
         )
         assert retriever._top_k == 3
 
+    @pytest.mark.asyncio
+    async def test_base_url_pulled_from_site_config(self):
+        """`local_llm_api_url` is the canonical Ollama-base-URL setting
+        (same key topic_ranking / llm_text use). The retriever stores
+        it so `_get_embed_model` no longer reads OLLAMA_BASE_URL from
+        env. Regression guard for the settings-discipline cleanup."""
+        sc = _site_config({"local_llm_api_url": "http://my-ollama:11434"})
+        retriever = await get_rag_retriever(pool=MagicMock(), site_config=sc)
+        assert retriever._base_url == "http://my-ollama:11434"
+
+    @pytest.mark.asyncio
+    async def test_base_url_defaults_to_localhost_when_unset(self):
+        """No site_config + no value = localhost loopback. Critically
+        the retriever must NOT read OLLAMA_BASE_URL — that env-var path
+        is what we just retired."""
+        retriever = await get_rag_retriever(pool=MagicMock())
+        assert retriever._base_url == "http://localhost:11434"
+
+    @pytest.mark.asyncio
+    async def test_base_url_passed_into_embed_model(self, monkeypatch):
+        """Retriever's stored base_url flows through to `_get_embed_model`
+        with no env-var read involved. Smoke-test the wiring."""
+        from llama_index.core.schema import QueryBundle
+
+        # Trip the test if anything reads OLLAMA_BASE_URL from env —
+        # that's the legacy path the cleanup retired.
+        monkeypatch.setenv("OLLAMA_BASE_URL", "http://should-never-be-read:9999")
+
+        captured: dict = {}
+
+        def _capture_embed(model_name, base_url):
+            captured["model_name"] = model_name
+            captured["base_url"] = base_url
+            return _stub_embed_model()
+
+        sc = _site_config({"local_llm_api_url": "http://from-db:11434"})
+        pool = MagicMock()
+        pool.fetch = AsyncMock(return_value=[])
+
+        retriever = await get_rag_retriever(pool=pool, site_config=sc)
+        with patch(
+            "services.rag_engine._get_embed_model", side_effect=_capture_embed,
+        ):
+            await retriever._aretrieve(QueryBundle(query_str="x"))
+
+        assert captured["base_url"] == "http://from-db:11434"
+        assert "should-never-be-read" not in captured["base_url"]
+
 
 # ---------------------------------------------------------------------------
 # Retrieval behavior

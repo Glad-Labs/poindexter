@@ -412,66 +412,66 @@ _TG_CHAT_ID_CACHE: str | None = None
 
 
 async def _telegram_creds() -> tuple[str, str] | None:
+    """Load + cache the Telegram transcript-push credentials.
+
+    Reads ``telegram_bot_token`` (encrypted) and ``telegram_chat_id``
+    (plaintext) from app_settings via the centralized
+    ``SiteConfig.get_secret`` path. That delegates decryption to
+    ``plugins.secrets.get_secret``, which is the single owner of the
+    ``enc:v1:`` Fernet handling — inlined decryption here was a sharp
+    edge that could drift from the canonical scheme. The voice agent's
+    bot-startup path can absorb the extra ~5ms of the get_secret call
+    (one DB round-trip per cred, after which both are cached on this
+    module).
+    """
     global _TG_BOT_TOKEN_CACHE, _TG_CHAT_ID_CACHE
     if _TG_BOT_TOKEN_CACHE and _TG_CHAT_ID_CACHE:
         return _TG_BOT_TOKEN_CACHE, _TG_CHAT_ID_CACHE
-    import asyncpg
-    from brain.bootstrap import resolve_database_url, get_bootstrap_value
 
-    # Encryption key — env var first (matches the OAuth issuer), then
-    # bootstrap.toml (matches what the worker / brain do). Bot process
-    # doesn't always inherit the env so the bootstrap fallback matters.
-    key = (
-        os.environ.get("POINDEXTER_SECRET_KEY", "")
-        or get_bootstrap_value("poindexter_secret_key", "")
-    )
-    if not key:
+    import asyncpg
+    from brain.bootstrap import resolve_database_url
+    from services.site_config import SiteConfig
+
+    db_url = resolve_database_url()
+    if not db_url:
         logger.warning(
-            "Telegram transcript: POINDEXTER_SECRET_KEY not in env or bootstrap.toml; "
-            "can't decrypt bot token. Transcript push disabled.",
+            "Telegram transcript: no DATABASE_URL resolvable; "
+            "transcript push disabled.",
         )
         return None
-    conn = await asyncpg.connect(resolve_database_url(), timeout=2.0)
+
+    # Pool sized at min=1/max=1 because get_secret runs at most twice on
+    # this path and the bot never re-uses the pool elsewhere.
+    pool = await asyncpg.create_pool(
+        db_url, min_size=1, max_size=1, timeout=2.0, command_timeout=5.0,
+    )
     try:
-        token_row = await conn.fetchrow(
-            "SELECT value FROM app_settings WHERE key = $1", "telegram_bot_token",
+        site_config = SiteConfig(pool=pool)
+        telegram_bot_token = await site_config.get_secret(
+            "telegram_bot_token", "",
         )
-        chat_row = await conn.fetchrow(
-            "SELECT value FROM app_settings WHERE key = $1", "telegram_chat_id",
+        telegram_chat_id = await site_config.get_secret(
+            "telegram_chat_id", "",
         )
-        if token_row is None or chat_row is None:
+
+        if not telegram_bot_token or not telegram_chat_id:
             logger.warning(
-                "Telegram transcript: missing app_settings row "
-                "(token_row=%s, chat_row=%s).",
-                bool(token_row), bool(chat_row),
+                "Telegram transcript: missing creds "
+                "(token_present=%s, chat_id_present=%s). "
+                "Transcript push disabled.",
+                bool(telegram_bot_token), bool(telegram_chat_id),
             )
             return None
-        raw = token_row["value"]
-        if isinstance(raw, str) and raw.startswith("enc:v1:"):
-            try:
-                token = await conn.fetchval(
-                    "SELECT pgp_sym_decrypt(decode($1, 'base64'), $2)::text",
-                    raw[len("enc:v1:"):], key,
-                )
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    "Telegram transcript: bot-token decrypt failed (%s). "
-                    "Wrong POINDEXTER_SECRET_KEY?", e,
-                )
-                return None
-        else:
-            token = raw
-        if not token or not chat_row["value"]:
-            return None
-        _TG_BOT_TOKEN_CACHE = str(token)
-        _TG_CHAT_ID_CACHE = str(chat_row["value"])
+
+        _TG_BOT_TOKEN_CACHE = str(telegram_bot_token)
+        _TG_CHAT_ID_CACHE = str(telegram_chat_id)
         logger.info(
             "Telegram transcript: creds loaded for chat_id=%s",
             _TG_CHAT_ID_CACHE,
         )
         return _TG_BOT_TOKEN_CACHE, _TG_CHAT_ID_CACHE
     finally:
-        await conn.close()
+        await pool.close()
 
 
 async def _push_transcript_to_telegram(user_text: str, reply: str) -> None:

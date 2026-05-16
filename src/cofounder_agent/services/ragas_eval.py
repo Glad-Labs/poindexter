@@ -31,7 +31,6 @@ automatically. No new table.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from services.logger_config import get_logger
@@ -139,7 +138,25 @@ async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
     from ragas.llms import LangchainLLMWrapper
     from ragas.embeddings import LangchainEmbeddingsWrapper
 
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+    # local_llm_api_url is the canonical Ollama base-URL setting (same
+    # key topic_ranking.py / llm_text.py use). Reading OLLAMA_BASE_URL
+    # directly was the legacy env-var bypass we're retiring — see
+    # `feedback_no_silent_defaults` and `feedback_no_env_vars`.
+    base_url = "http://localhost:11434"
+    if site_config is not None:
+        try:
+            base_url = (
+                site_config.get("local_llm_api_url", "") or base_url
+            )
+        except Exception as exc:
+            # Symmetric to the embedding_model read below — surface the
+            # read failure so a wrapper bug doesn't silently route Ragas
+            # at the wrong backend.
+            logger.warning(
+                "[ragas_eval] local_llm_api_url read failed (%s: %s) — "
+                "using default %r",
+                type(exc).__name__, exc, base_url,
+            )
 
     judge_model = (await _resolve_judge_model(site_config)).removeprefix("ollama/")
     embed_model = "nomic-embed-text"
