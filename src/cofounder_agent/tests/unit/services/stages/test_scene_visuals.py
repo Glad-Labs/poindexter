@@ -8,6 +8,7 @@ _suffix_from_url, _adapt_prompt_for_wan) get edge-case coverage.
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -729,3 +730,187 @@ class TestTryPexelsSeenUrls:
             )
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Bounded-concurrency fan-out (poindexter#164)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestBoundedConcurrency:
+    """Verify the asyncio.Semaphore-bounded scene resolution.
+
+    Default cap=1 preserves the original sequential behavior; raising
+    the cap lets compatible scenes overlap. The semaphore is the gate;
+    these tests prove (a) the cap is honored, (b) results stay scene-
+    indexed regardless of completion order, and (c) per-scene timing
+    audit rows fire.
+    """
+
+    async def test_default_cap_serializes_resolutions(self):
+        # Default cap=1 means only one scene resolves at a time. We
+        # observe that by counting the max-in-flight inside a patched
+        # _try_pexels that holds the semaphore for a real awaitable.
+        cfg = _make_site_config({"video_scene_visuals_strategy": "pexels"})
+        ctx: dict[str, Any] = {
+            "site_config": cfg,
+            "video_script": _video_script(long_form_count=3, short_form_count=0),
+        }
+
+        in_flight = {"current": 0, "peak": 0}
+
+        async def _slow_pexels(*_a, **_kw):
+            in_flight["current"] += 1
+            in_flight["peak"] = max(in_flight["peak"], in_flight["current"])
+            await asyncio.sleep(0)  # yield so siblings get a chance
+            in_flight["current"] -= 1
+            return {"clip_path": "/tmp/x.jpg", "url": "u", "metadata": {}}
+
+        with patch(
+            "services.stages.scene_visuals._try_pexels",
+            side_effect=_slow_pexels,
+        ):
+            await SceneVisualsStage().execute(ctx, {})
+
+        # Default cap=1 means the peak in-flight count for the body
+        # scenes is exactly 1. Bookend pexels calls happen AFTER the
+        # gather completes, so they don't push the counter.
+        assert in_flight["peak"] == 1
+
+    async def test_higher_cap_allows_parallel_resolutions(self):
+        cfg = _make_site_config({
+            "video_scene_visuals_strategy": "pexels",
+            "video_scene_visuals_max_concurrent": 3,
+        })
+        ctx: dict[str, Any] = {
+            "site_config": cfg,
+            "video_script": _video_script(long_form_count=3, short_form_count=0),
+        }
+
+        in_flight = {"current": 0, "peak": 0}
+        release_all = asyncio.Event()
+
+        async def _gate(*_a, **_kw):
+            in_flight["current"] += 1
+            in_flight["peak"] = max(in_flight["peak"], in_flight["current"])
+            # Wait until every other in-flight task has incremented the
+            # counter — proves they truly ran concurrently. The first
+            # task that sees current==3 releases the gate for everyone.
+            if in_flight["current"] >= 3:
+                release_all.set()
+            await release_all.wait()
+            in_flight["current"] -= 1
+            return {"clip_path": "/tmp/x.jpg", "url": "u", "metadata": {}}
+
+        with patch(
+            "services.stages.scene_visuals._try_pexels",
+            side_effect=_gate,
+        ):
+            await SceneVisualsStage().execute(ctx, {})
+
+        # All 3 body scenes resolved concurrently under cap=3.
+        assert in_flight["peak"] == 3
+
+    async def test_results_stay_scene_indexed_under_concurrency(self):
+        # Even when scene resolution finishes out of order, the result
+        # list must remain scene-indexed (gather preserves input order).
+        cfg = _make_site_config({
+            "video_scene_visuals_strategy": "pexels",
+            "video_scene_visuals_max_concurrent": 3,
+        })
+        ctx: dict[str, Any] = {
+            "site_config": cfg,
+            "video_script": _video_script(long_form_count=3, short_form_count=0),
+        }
+
+        # Index-keyed sleep timings (longest first → it finishes last)
+        # so completion order is the reverse of scene order.
+        sleeps_remaining = [0.01, 0.005, 0.001]
+
+        async def _slow_pexels(*_a, **_kw):
+            # Pop in call order. asyncio.gather schedules all three
+            # tasks; the longest-sleep one is the body scene at idx=0,
+            # which therefore returns last.
+            await asyncio.sleep(sleeps_remaining.pop(0) if sleeps_remaining else 0)
+            return {"clip_path": f"/tmp/x.jpg", "url": "u", "metadata": {}}
+
+        with patch(
+            "services.stages.scene_visuals._try_pexels",
+            side_effect=_slow_pexels,
+        ):
+            result = await SceneVisualsStage().execute(ctx, {})
+
+        long_visuals = result.context_updates["video_scene_visuals"]["long_form"]
+        # Each entry retains its scene_idx; the list itself stays in
+        # scene order 0..N-1.
+        assert [v["scene_idx"] for v in long_visuals] == [0, 1, 2]
+
+    async def test_zero_or_negative_cap_clamps_to_one(self):
+        # A misconfigured 0/-1 must not deadlock the stage.
+        cfg = _make_site_config({
+            "video_scene_visuals_strategy": "pexels",
+            "video_scene_visuals_max_concurrent": 0,
+        })
+        ctx: dict[str, Any] = {
+            "site_config": cfg,
+            "video_script": _video_script(long_form_count=1, short_form_count=0),
+        }
+        with patch(
+            "services.stages.scene_visuals._try_pexels",
+            AsyncMock(return_value={"clip_path": "/tmp/x.jpg", "url": "u", "metadata": {}}),
+        ):
+            result = await SceneVisualsStage().execute(ctx, {})
+
+        # Stage still completes — clamp prevents Semaphore(0) deadlock.
+        long_visuals = result.context_updates["video_scene_visuals"]["long_form"]
+        assert long_visuals[0]["source"] == "pexels"
+
+    async def test_per_scene_elapsed_recorded_on_metadata(self):
+        cfg = _make_site_config({"video_scene_visuals_strategy": "pexels"})
+        ctx: dict[str, Any] = {
+            "site_config": cfg,
+            "video_script": _video_script(long_form_count=1, short_form_count=0),
+        }
+        with patch(
+            "services.stages.scene_visuals._try_pexels",
+            AsyncMock(return_value={"clip_path": "/tmp/x.jpg", "url": "u", "metadata": {}}),
+        ):
+            result = await SceneVisualsStage().execute(ctx, {})
+
+        long_visuals = result.context_updates["video_scene_visuals"]["long_form"]
+        # Per-scene wall-clock surfaces on metadata for downstream
+        # observability (poindexter#164 acceptance: real timing data).
+        assert "elapsed_s" in long_visuals[0]["metadata"]
+        assert isinstance(long_visuals[0]["metadata"]["elapsed_s"], (int, float))
+        assert long_visuals[0]["metadata"]["elapsed_s"] >= 0
+
+    async def test_emits_audit_log_per_resolved_scene(self):
+        cfg = _make_site_config({"video_scene_visuals_strategy": "pexels"})
+        ctx: dict[str, Any] = {
+            "site_config": cfg,
+            "task_id": "task-abc",
+            "video_script": _video_script(long_form_count=2, short_form_count=1),
+        }
+        with patch(
+            "services.stages.scene_visuals._try_pexels",
+            AsyncMock(return_value={"clip_path": "/tmp/x.jpg", "url": "u", "metadata": {}}),
+        ), patch(
+            "services.audit_log.audit_log_bg",
+        ) as audit_mock:
+            await SceneVisualsStage().execute(ctx, {})
+
+        # 2 long_form + 1 short_form = 3 audit rows for body scenes.
+        # Bookend pexels calls don't audit.
+        body_calls = [
+            c for c in audit_mock.call_args_list
+            if c.args and c.args[0] == "video.scene_visual_resolved"
+        ]
+        assert len(body_calls) == 3
+        # Each call carries scene_idx, kind, source, elapsed_s.
+        sample = body_calls[0]
+        details = sample.args[2]
+        assert "scene_idx" in details
+        assert "kind" in details
+        assert "elapsed_s" in details
+        assert details["source"] == "pexels"

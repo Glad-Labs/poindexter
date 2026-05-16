@@ -51,10 +51,12 @@ Each per-scene resolution is::
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
 import tempfile
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -68,6 +70,11 @@ logger = logging.getLogger(__name__)
 _DEFAULT_STRATEGY = "reuse_first"
 _DEFAULT_REUSE_THRESHOLD = 0.20  # fraction of unique visual_prompt tokens that must match
 _DEFAULT_DOWNLOAD_TIMEOUT_S = 30.0
+# Default cap of 1 preserves the original sequential behavior — bumping the
+# knob is the operator's explicit opt-in. SDXL is the bottleneck; on a 5090
+# with VRAM headroom two parallel generations is the natural next step. See
+# Glad-Labs/poindexter#164 for the timing-driven rollout plan.
+_DEFAULT_MAX_CONCURRENT = 1
 _TMP_PREFIX = "poindexter_scene_"
 
 # Stop-words excluded from the keyword overlap score. Kept tiny to
@@ -171,19 +178,40 @@ class SceneVisualsStage:
         post_id = context.get("post_id")
         pool = getattr(site_config, "_pool", None)
 
+        # poindexter#164: SDXL fan-out used to be strictly sequential. A
+        # semaphore lets operators with VRAM headroom resolve scenes in
+        # parallel without risking OOM. Default 1 preserves the prior
+        # one-at-a-time behavior; raising it requires an explicit
+        # app_settings flip. Clamp to >=1 so a misconfigured 0/-1 doesn't
+        # deadlock the stage.
+        max_concurrent = max(
+            1,
+            site_config.get_int(
+                "video_scene_visuals_max_concurrent",
+                _DEFAULT_MAX_CONCURRENT,
+            ),
+        )
+        sem = asyncio.Semaphore(max_concurrent)
+        task_id_for_audit = context.get("task_id") or context.get("post_id")
+
         visuals: dict[str, Any] = _default_visuals()
         counts: dict[str, int] = {
             "media_assets": 0, "pexels": 0, "sdxl": 0, "wan": 0, "miss": 0,
         }
 
-        # Process long-form, then short-form. Sequential to bound
-        # SDXL VRAM contention; batchable later.
+        # Long-form, then short-form. Within each kind, scenes resolve
+        # concurrently (bounded by ``max_concurrent``); ``asyncio.gather``
+        # preserves input order in the returned list so visuals[kind] stays
+        # scene-indexed regardless of completion order.
         for kind, scenes in (
             ("long_form", long_form_scenes),
             ("short_form", short_form_scenes),
         ):
-            for idx, scene in enumerate(scenes):
-                resolution = await self._resolve_scene(
+            if not scenes:
+                continue
+            tasks = [
+                self._resolve_scene_bounded(
+                    sem=sem,
                     scene_idx=idx,
                     scene=scene,
                     strategy=strategy,
@@ -193,7 +221,13 @@ class SceneVisualsStage:
                     site_config=site_config,
                     is_short=(kind == "short_form"),
                     rotation_idx=idx,
+                    kind=kind,
+                    task_id_for_audit=task_id_for_audit,
                 )
+                for idx, scene in enumerate(scenes)
+            ]
+            resolutions = await asyncio.gather(*tasks)
+            for resolution in resolutions:
                 visuals[kind].append(resolution)
                 source = resolution.get("source") or "miss"
                 counts[source] = counts.get(source, 0) + 1
@@ -271,6 +305,79 @@ class SceneVisualsStage:
                 "by_source": dict(counts),
             },
         )
+
+    async def _resolve_scene_bounded(
+        self,
+        *,
+        sem: asyncio.Semaphore,
+        scene_idx: int,
+        scene: dict[str, Any],
+        strategy: str,
+        threshold: float,
+        post_id: Any,
+        pool: Any,
+        site_config: Any,
+        is_short: bool,
+        rotation_idx: int,
+        kind: str,
+        task_id_for_audit: Any,
+    ) -> dict[str, Any]:
+        """Resolve one scene under the shared concurrency semaphore.
+
+        Wraps ``_resolve_scene`` so the outer ``asyncio.gather`` can fan
+        every scene out at once while only ``sem._value`` of them run
+        body-work concurrently. Also captures per-scene wall-clock and
+        emits one ``video.scene_visual_resolved`` audit_log row per scene
+        — the timing data is what makes Glad-Labs/poindexter#164's
+        "increase the cap if VRAM headroom permits" decision possible.
+        """
+        async with sem:
+            started_at = time.monotonic()
+            resolution = await self._resolve_scene(
+                scene_idx=scene_idx,
+                scene=scene,
+                strategy=strategy,
+                threshold=threshold,
+                post_id=post_id,
+                pool=pool,
+                site_config=site_config,
+                is_short=is_short,
+                rotation_idx=rotation_idx,
+            )
+            elapsed_s = time.monotonic() - started_at
+
+        # Surface timing on the per-scene record so callers (and tests)
+        # can see what just happened without grepping logs.
+        metadata = resolution.setdefault("metadata", {})
+        if isinstance(metadata, dict):
+            metadata["elapsed_s"] = round(elapsed_s, 3)
+
+        # Fire-and-forget audit. ``audit_log_bg`` is a no-op until the
+        # global logger is initialised, so this is safe to call from
+        # unit tests where no DB pool exists.
+        try:
+            from services.audit_log import audit_log_bg
+
+            audit_log_bg(
+                "video.scene_visual_resolved",
+                "stages.scene_visuals",
+                {
+                    "scene_idx": scene_idx,
+                    "kind": kind,
+                    "source": resolution.get("source"),
+                    "strategy": strategy,
+                    "is_short": is_short,
+                    "elapsed_s": round(elapsed_s, 3),
+                    "reused": bool(resolution.get("reused")),
+                },
+                task_id=str(task_id_for_audit) if task_id_for_audit else None,
+            )
+        except Exception as exc:  # pragma: no cover — audit must never break the stage
+            logger.debug(
+                "[video.scene_visuals] audit_log_bg failed (non-fatal): %s", exc,
+            )
+
+        return resolution
 
     async def _resolve_scene(
         self,
