@@ -11,10 +11,10 @@ implementation seam is small (one app_setting + one INSERT change),
 the risk profile is high (touches 99% of production traffic), so the
 rollout is staged.
 
-## How dispatch works today
+## How dispatch works today (post Stage 4)
 
 ```
-poll loop (TaskExecutor)
+Prefect content_generation_flow (services/flows/content_generation.py)
    │
    ▼
 content_router_service.process_content_generation_task
@@ -22,8 +22,9 @@ content_router_service.process_content_generation_task
    ├─ template_slug IS NOT NULL ──► TemplateRunner.run(slug, state)
    │                                  └─► pipeline_templates[slug] graph
    │
-   └─ template_slug IS NULL    ──► legacy chunked StageRunner flow
-                                     (inline in content_router_service)
+   └─ template_slug IS NULL    ──► FAIL LOUD (no silent fallback)
+                                     status='failed' + audit
+                                     event 'missing_template_slug'
 ```
 
 `dev_diary` cron tasks already pass `template_slug='dev_diary'`
@@ -103,25 +104,30 @@ UPDATE app_settings SET value = '' WHERE key = 'default_template_slug';
 Leave `default_template_slug='canonical_blog'` indefinitely. Every
 new task routes through TemplateRunner.
 
-### Stage 4 — legacy code removal (~7 days post-Stage 3)
+### Stage 4 — legacy code removal (✅ complete 2026-05-16)
 
-Once no NULL-slug tasks have rolled through in a week (verify via
-audit_log: `SELECT COUNT(*) FROM pipeline_tasks WHERE template_slug
-IS NULL AND created_at > NOW() - INTERVAL '7 days'` → 0):
+Verified zero NULL-slug tasks for 7+ days post-Stage 3, then:
 
-- Delete the legacy chunked StageRunner block in
-  `content_router_service.process_content_generation_task` (the
-  `if _template_slug` short-circuit returns become the only path)
-- Delete the `try`-block fallback chunks (`_summary1`, `_summary2`,
-  `_summary3`, etc.)
-- Eventually shrink `task_executor.py` itself once
-  `process_content_generation_task` becomes a thin wrapper around
-  `TemplateRunner.run`
+- ✅ Deleted the legacy chunked StageRunner block in
+  `content_router_service.process_content_generation_task`. The
+  function is now a thin TemplateRunner dispatcher (resolve slug
+  from the row → call `TemplateRunner.run(slug, context)` →
+  merge final_state into result).
+- ✅ Deleted `plugins/stage_runner.py` itself (no remaining
+  production caller after the dispatch site was rewritten).
+- ✅ Deleted `tests/unit/plugins/test_stage_runner.py` and
+  rewrote `tests/unit/services/test_content_router_pipeline.py`
+  to pin the TemplateRunner-dispatcher shape.
 
-`task_executor.py` still does pipeline-task polling + heartbeat +
-stale-task sweeps + retry logic — none of that goes away in Lane C.
-Only the legacy stage-chain dispatch inside
-`process_content_generation_task` is replaced.
+NULL `template_slug` now fails loud per
+`feedback_no_silent_defaults` — the task is marked `failed` with a
+diagnostic `error_message` and a `missing_template_slug` audit event
+fires at `severity='error'`. There is no implicit pipeline to fall
+back on.
+
+`task_executor.py` was deleted in Stage 4 of the parallel
+poindexter#410 Prefect cutover; dispatch is owned by
+`services/flows/content_generation.py`.
 
 ## Why the dual-write window matters
 
