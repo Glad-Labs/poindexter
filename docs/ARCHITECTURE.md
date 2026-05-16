@@ -85,8 +85,9 @@ content with human oversight**, not "AI content factory" and not
 │         POINDEXTER WORKER (Central Brain)                        │
 │                     FastAPI + Python                             │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │  TaskExecutor  →  ContentRouterService                     │ │
-│  │     → StageRunner (12 sequential Stage plugins)            │ │
+│  │  Prefect flow  →  ContentRouterService                     │ │
+│  │     → TemplateRunner (LangGraph canonical_blog template,   │ │
+│  │       12 nodes; dev_diary template, 4 nodes)               │ │
 │  │  Provider Protocol (Ollama primary, cloud providers        │ │
 │  │     pluggable for fallback — GH-104)                       │ │
 │  │  Semantic Memory (pgvector, writer-segregated)             │ │
@@ -103,16 +104,19 @@ execution and multi-agent orchestration.
   `POST /api/tasks` with a `task_type` discriminator.
 - **Async DB driver.** The worker uses **asyncpg** directly — no
   SQLAlchemy ORM. Pool lifecycle is managed by the FastAPI lifespan.
-- **Polling executor.** The `TaskExecutor` service runs a background
-  polling loop (every 5 seconds) that uses `SELECT ... FOR UPDATE
-  SKIP LOCKED` to atomically claim pending tasks. Multiple workers
-  can share one database without stepping on each other.
+- **Prefect dispatch.** `services/flows/content_generation.py` is the
+  sole task dispatch path as of 2026-05-16 (Stage 4 of the Prefect
+  cutover deleted the legacy `task_executor.py`). The flow claims
+  pending `pipeline_tasks` rows via `SELECT ... FOR UPDATE SKIP
+  LOCKED` and hands them to `content_router_service`. Retry /
+  heartbeat / stale-run sweep are Prefect-native; operator UI at
+  http://localhost:4200.
 
 **Request Flow:**
 1. **POST `/api/tasks`**: User creates a task (e.g., `task_type="blog_post"`).
 2. **PostgreSQL**: Task is stored as `pending`.
-3. **TaskExecutor**: Background polling picks up the task and dispatches by `task_type`.
-4. **ContentRouterService**: For blog posts, runs the 12-stage `StageRunner` chain. Other task types route to their own service.
+3. **Prefect flow**: `content_generation_flow` claims the row and dispatches by `task_type`.
+4. **ContentRouterService**: Thin TemplateRunner dispatcher — looks up the row's `template_slug` and runs the matching LangGraph template (`canonical_blog` for blog posts, `dev_diary` for the build-in-public stream).
 
 ### Data Architecture
 
@@ -133,11 +137,11 @@ execution and multi-agent orchestration.
    ↓
 2. FastAPI route handler validates payload, writes task row (status=pending)
    ↓
-3. TaskExecutor polling loop claims the row (SELECT ... FOR UPDATE SKIP LOCKED)
+3. Prefect content_generation_flow claims the row (SELECT ... FOR UPDATE SKIP LOCKED)
    ↓
-4. TaskExecutor dispatches by task_type → ContentRouterService
+4. Flow dispatches by task_type → ContentRouterService
    ↓
-5. StageRunner runs the 12-stage pipeline (generate → self-review → QA → ...)
+5. TemplateRunner runs the canonical_blog LangGraph template (verify → generate → self-review → resolve-links → QA → ...)
    ↓
 6. Each stage picks its own model via app_settings (writer, critic, research)
    ↓
@@ -345,14 +349,14 @@ GET  /api/tags                     # List tags
 
 A lightweight `registry.py` wires agent instances into the pipeline. No `BaseAgent` inheritance; agents are composed, not sub-classed.
 
-**Stage-driven pipeline (not agent-driven):**
+**Template-driven pipeline (not agent-driven):**
 
-As of the Phase F+G refactor, the pipeline runs through `StageRunner` and 12 sequential stages (see `services/stages/`, catalogued in [`reference/services.md`](../reference/services)). Agents are called _by stages_ when an LLM invocation is needed — they don't orchestrate each other. The self-critiquing loop happens inside `services/stages/cross_model_qa.py`, not via agent-to-agent messaging.
+The pipeline runs through `TemplateRunner` (a LangGraph state machine) executing the `canonical_blog` template's 12 nodes. Templates are registered in `services/pipeline_templates/__init__.py`; per-task selection happens via the `pipeline_tasks.template_slug` column. Stages live in `services/stages/`; agents are called _by stages_ when an LLM invocation is needed — they don't orchestrate each other. The self-critiquing loop happens inside `services/stages/cross_model_qa.py`, not via agent-to-agent messaging. See [`architecture/langgraph-cutover.md`](architecture/langgraph-cutover.md) for the cutover history and current state.
 
 **Usage patterns:**
 
-- **End-to-end content:** `POST /api/tasks` → `TaskExecutor` claims the row → `ContentRouterService` runs the stage chain
-- **Ad-hoc agent use:** Not exposed via the public API. Operators call stages directly in tests and scripts.
+- **End-to-end content:** `POST /api/tasks` → Prefect `content_generation_flow` claims the row → `ContentRouterService` dispatches to TemplateRunner
+- **Ad-hoc stage use:** Not exposed via the public API. Operators call stages directly in tests and scripts.
 
 ### 4. Poindexter Worker (FastAPI Backend)
 
@@ -370,18 +374,18 @@ As of the Phase F+G refactor, the pipeline runs through `StageRunner` and 12 seq
 - CORS middleware
 - Request/response validation via Pydantic models
 
-#### Model Router (`services/model_router.py`)
+#### LLM Router (`services/llm_providers/litellm_provider.py` via dispatcher)
 
-- Ollama-only orchestration with cost-tier routing (free/budget/standard/premium)
-- Automatic fallback chain on Ollama: `pipeline_writer_model` → `pipeline_fallback_model` → HuggingFace transformers (CPU emergency)
-- Electricity cost tracking (per-call, based on GPU wattage × inference time × `electricity_rate_kwh`)
-- Token counting per task type (`model_token_limits_by_task` JSON in app_settings)
-- Future refactor: extracts into `LLMProvider` plugin family (GitHub [#64 Phase J](https://github.com/Glad-Labs/poindexter/issues/64))
+- LiteLLM-backed `LLMProvider` plugin — primary router as of 2026-05-16 (`plugin.llm_provider.primary.{free,budget,standard,premium}='litellm'` on prod)
+- Cost-tier API: `await resolve_tier_model(pool, "standard")` from `services/llm_providers/dispatcher.py`; operators tune per-tier model via `app_settings.cost_tier.<tier>.model` rows
+- Automatic provider routing + cost tracking + retries via mature OSS (LiteLLM)
+- Langfuse callback auto-traces every call
+- The hand-rolled `model_router.py` / `usage_tracker.py` / `model_constants.py` trio was deleted in Phase 2 cleanup (2026-05-08)
 
 #### Stage Plugin System (`plugins/stage.py` + `services/stages/*`)
 
 - `Stage` protocol: `name: str`, `async def run(context) -> context`
-- `StageRunner` calls each stage in `DEFAULT_STAGE_ORDER` and short-circuits if a stage returns `halt=True` (e.g. `cross_model_qa` on an unrecoverable reject)
+- `TemplateRunner` (LangGraph) orchestrates stages via the `canonical_blog` / `dev_diary` template definitions in `services/pipeline_templates/__init__.py`. Halts naturally when a node returns a terminal state (e.g. `cross_model_qa` rejecting beyond retry budget)
 - Context dict threads through every stage — the pipeline's shared memory
 - Adding a new stage = drop a file in `services/stages/`, register in `DEFAULT_STAGE_ORDER`, no other code changes
 

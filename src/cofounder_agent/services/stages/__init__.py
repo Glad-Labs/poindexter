@@ -1,11 +1,13 @@
 """Core pipeline Stages — one file per Stage, discovered via entry_points.
 
-Phase E decomposition of the content_router_service.py god-file. Each
-``_stage_X`` function in the old file moves here as a standalone class
-implementing the :class:`plugins.stage.Stage` Protocol. The runner in
-``plugins.stage_runner`` walks the DB-configured order list to invoke
-them.
+Each ``Stage`` class implements the :class:`plugins.stage.Stage`
+Protocol. As of 2026-05-16, stages are orchestrated by
+``services/template_runner.py`` (LangGraph state machine) via the
+template definitions in ``services/pipeline_templates/__init__.py``;
+``canonical_blog`` is the prod default. The legacy ``StageRunner``
+chunked flow (and ``plugins/stage_runner.py`` itself) was deleted in
+Lane C Stage 4 of the pipeline cutover.
 
-See ``plugins/stage_runner.py`` for the order source-of-truth and per-
-stage config conventions.
+See ``docs/architecture/langgraph-cutover.md`` for the cutover history
+and template-authoring conventions.
 """

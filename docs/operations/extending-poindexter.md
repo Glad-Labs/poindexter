@@ -44,8 +44,10 @@ Each column below describes the full "how" per extension type.
 ## 1. Adding a Stage
 
 A **Stage** is a pipeline step that runs on a single content task.
-Stages chain via `StageRunner`; order lives in the
-`pipeline.stages.order` app_setting.
+Stages are wired into LangGraph templates in
+`services/pipeline_templates/__init__.py`; `TemplateRunner` orchestrates
+them via the template's edge list (the `canonical_blog` template lists
+its 12 nodes in `_CANONICAL_BLOG_ORDER`).
 
 ### 1a. Minimum viable Stage
 
@@ -87,7 +89,7 @@ class MyStage:
 
 Add to `src/cofounder_agent/plugins/registry.py` — the stage must be
 importable by name. The registry is the gateway; stages not registered
-are invisible to StageRunner.
+are invisible to TemplateRunner.
 
 ### 1c. Slot it into the pipeline order
 

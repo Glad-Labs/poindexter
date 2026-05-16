@@ -27,9 +27,6 @@ class TestServiceContainerInit:
     def test_all_named_attrs_start_as_none(self):
         c = self.container
         assert c.get_database() is None
-        assert c.get_task_executor() is None
-        assert c.get_workflow_history() is None
-        assert c.get_workflow_engine() is None
         assert c.get_redis_cache() is None
 
     def test_additional_services_start_empty(self):
@@ -49,21 +46,6 @@ class TestServiceContainerSetGet:
         self.container.set_database(mock)
         assert self.container.get_database() is mock
 
-    def test_set_and_get_task_executor(self):
-        mock = MagicMock(name="executor")
-        self.container.set_task_executor(mock)
-        assert self.container.get_task_executor() is mock
-
-    def test_set_and_get_workflow_history(self):
-        mock = MagicMock(name="wh")
-        self.container.set_workflow_history(mock)
-        assert self.container.get_workflow_history() is mock
-
-    def test_set_and_get_workflow_engine(self):
-        mock = MagicMock(name="we")
-        self.container.set_workflow_engine(mock)
-        assert self.container.get_workflow_engine() is mock
-
     def test_set_and_get_redis_cache(self):
         mock = MagicMock(name="cache")
         self.container.set_redis_cache(mock)
@@ -79,13 +61,7 @@ class TestServiceContainerSetGet:
 
     def test_get_all_services_includes_all_keys(self):
         all_svcs = self.container.get_all_services()
-        expected_keys = {
-            "database",
-            "task_executor",
-            "workflow_history",
-            "workflow_engine",
-            "redis_cache",
-        }
+        expected_keys = {"database", "redis_cache"}
         for key in expected_keys:
             assert key in all_svcs
 
@@ -159,75 +135,6 @@ class TestDependencyFunctions:
         try:
             with pytest.raises(RuntimeError, match="Database service not initialized"):
                 get_database_dependency()
-        finally:
-            self._restore_services(orig)
-
-    def test_get_task_executor_dependency_returns_executor(self):
-        from utils.route_utils import get_task_executor_dependency
-
-        c = self._fresh_container()
-        mock_e = MagicMock()
-        c.set_task_executor(mock_e)
-        orig = self._patch_services(c)
-        try:
-            assert get_task_executor_dependency() is mock_e
-        finally:
-            self._restore_services(orig)
-
-    def test_get_task_executor_dependency_raises_when_none(self):
-        from utils.route_utils import get_task_executor_dependency
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            with pytest.raises(RuntimeError, match="Task executor not initialized"):
-                get_task_executor_dependency()
-        finally:
-            self._restore_services(orig)
-
-    def test_get_workflow_history_dependency_returns_wh(self):
-        from utils.route_utils import get_workflow_history_dependency
-
-        c = self._fresh_container()
-        mock_wh = MagicMock()
-        c.set_workflow_history(mock_wh)
-        orig = self._patch_services(c)
-        try:
-            assert get_workflow_history_dependency() is mock_wh
-        finally:
-            self._restore_services(orig)
-
-    def test_get_workflow_history_dependency_raises_when_none(self):
-        from utils.route_utils import get_workflow_history_dependency
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            with pytest.raises(RuntimeError, match="Workflow history service not initialized"):
-                get_workflow_history_dependency()
-        finally:
-            self._restore_services(orig)
-
-    def test_get_workflow_engine_dependency_returns_engine(self):
-        from utils.route_utils import get_workflow_engine_dependency
-
-        c = self._fresh_container()
-        mock_eng = MagicMock()
-        c.set_workflow_engine(mock_eng)
-        orig = self._patch_services(c)
-        try:
-            assert get_workflow_engine_dependency() is mock_eng
-        finally:
-            self._restore_services(orig)
-
-    def test_get_workflow_engine_dependency_raises_when_none(self):
-        from utils.route_utils import get_workflow_engine_dependency
-
-        c = self._fresh_container()
-        orig = self._patch_services(c)
-        try:
-            with pytest.raises(RuntimeError, match="Workflow engine service not initialized"):
-                get_workflow_engine_dependency()
         finally:
             self._restore_services(orig)
 
@@ -344,9 +251,8 @@ class TestInitializeServices:
         mod._services = c
         try:
             app = MagicMock()
-            initialize_services(app, database_service=None, task_executor=None)
+            initialize_services(app, database_service=None)
             assert c.get_database() is None
-            assert c.get_task_executor() is None
         finally:
             mod._services = orig
 
@@ -375,18 +281,11 @@ class TestInitializeServices:
         try:
             app = MagicMock()
             svcs = {
-                name: MagicMock(name=name)
-                for name in [
-                    "database_service",
-                    "task_executor",
-                    "workflow_history",
-                    "redis_cache",
-                ]
+                "database_service": MagicMock(name="database_service"),
+                "redis_cache": MagicMock(name="redis_cache"),
             }
             initialize_services(app, **svcs)
             assert c.get_database() is svcs["database_service"]
-            assert c.get_task_executor() is svcs["task_executor"]
-            assert c.get_workflow_history() is svcs["workflow_history"]
             assert c.get_redis_cache() is svcs["redis_cache"]
         finally:
             mod._services = orig

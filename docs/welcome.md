@@ -23,14 +23,14 @@ in 30 minutes without any of the reading below.
 
 ## Architecture
 
-- **[Content pipeline](architecture/content-pipeline)** — the
-  12-stage `Stage` plugin chain, how `StageRunner` orders and
-  times them, and how cross-model QA short-circuits the pipeline
-  when content is rejected.
-- **[Multi-model QA](architecture/content-pipeline#stage-chain)** —
+- **[LangGraph cutover](architecture/langgraph-cutover)** — the
+  12-node `canonical_blog` template (and the 4-node `dev_diary` template),
+  how `TemplateRunner` orders them, and the cutover history that
+  retired the legacy chunked `StageRunner` flow.
+- **[Anti-hallucination layers](architecture/anti-hallucination)** —
   writer / critic / gate-reviewer orchestration and the veto flow.
-  Same document as the pipeline above; the QA stages (`cross_model_qa`
-  with its rewrite loop) live in the middle of the chain.
+  Covers the QA stages (`cross_model_qa` with its rewrite loop) plus
+  the six OSS rails (DeepEval ×3, guardrails-ai ×2, Ragas).
 - **[Plugin architecture](architecture/plugin-architecture)** —
   the six plugin Protocols (Tap, Probe, Job, Stage, Pack,
   LLMProvider) and the phased refactor that's consolidating

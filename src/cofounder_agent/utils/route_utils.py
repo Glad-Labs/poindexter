@@ -56,7 +56,6 @@ class ServiceContainer:
         # In main.py during startup
         services = ServiceContainer()
         services.set_database(db_service)
-        services.set_task_executor(task_executor)
 
         # In route files
         @app.get("/tasks")
@@ -69,9 +68,6 @@ class ServiceContainer:
     def __init__(self):
         """Initialize service container with None values"""
         self._database_service = None
-        self._task_executor = None
-        self._workflow_history = None
-        self._workflow_engine = None
         self._redis_cache = None
         self._additional_services = {}
 
@@ -79,21 +75,6 @@ class ServiceContainer:
         """Set the database service"""
         self._database_service = service
         logger.info("Database service registered with ServiceContainer")
-
-    def set_task_executor(self, service: Any) -> None:
-        """Set the task executor service"""
-        self._task_executor = service
-        logger.info("Task executor service registered with ServiceContainer")
-
-    def set_workflow_history(self, service: Any) -> None:
-        """Set the workflow history service"""
-        self._workflow_history = service
-        logger.info("Workflow history service registered with ServiceContainer")
-
-    def set_workflow_engine(self, service: Any) -> None:
-        """Set the workflow engine service"""
-        self._workflow_engine = service
-        logger.info("Workflow engine service registered with ServiceContainer")
 
     def set_redis_cache(self, service: Any) -> None:
         """Set the Redis cache service"""
@@ -109,18 +90,6 @@ class ServiceContainer:
         """Get the database service"""
         return self._database_service
 
-    def get_task_executor(self) -> Any | None:
-        """Get the task executor service"""
-        return self._task_executor
-
-    def get_workflow_history(self) -> Any | None:
-        """Get the workflow history service"""
-        return self._workflow_history
-
-    def get_workflow_engine(self) -> Any | None:
-        """Get the workflow engine service"""
-        return self._workflow_engine
-
     def get_redis_cache(self) -> Any | None:
         """Get the Redis cache service"""
         return self._redis_cache
@@ -133,9 +102,6 @@ class ServiceContainer:
         """Get all registered services"""
         return {
             "database": self._database_service,
-            "task_executor": self._task_executor,
-            "workflow_history": self._workflow_history,
-            "workflow_engine": self._workflow_engine,
             "redis_cache": self._redis_cache,
             **self._additional_services,
         }
@@ -220,14 +186,6 @@ def get_site_config_dependency(request: Request) -> Any:
     return sc
 
 
-def get_task_executor_dependency() -> Any:
-    """FastAPI dependency for task executor service"""
-    executor = _services.get_task_executor()
-    if executor is None:
-        raise RuntimeError("Task executor not initialized")
-    return executor
-
-
 def get_enhanced_status_change_service() -> Any:
     """FastAPI dependency for enhanced status change service."""
     from services.enhanced_status_change_service import EnhancedStatusChangeService
@@ -243,22 +201,6 @@ def get_enhanced_status_change_service() -> Any:
 
     # Create and return EnhancedStatusChangeService
     return EnhancedStatusChangeService(task_db)
-
-
-def get_workflow_history_dependency() -> Any:
-    """FastAPI dependency for workflow history service"""
-    wh = _services.get_workflow_history()
-    if wh is None:
-        raise RuntimeError("Workflow history service not initialized")
-    return wh
-
-
-def get_workflow_engine_dependency() -> Any:
-    """FastAPI dependency for workflow engine service"""
-    engine = _services.get_workflow_engine()
-    if engine is None:
-        raise RuntimeError("Workflow engine service not initialized")
-    return engine
 
 
 def get_redis_cache_dependency() -> Any:
@@ -312,8 +254,6 @@ def register_legacy_db_service(service: Any) -> None:
 def initialize_services(
     app: FastAPI,
     database_service: Any = None,
-    task_executor: Any = None,
-    workflow_history: Any = None,
     redis_cache: Any = None,
     **additional_services,
 ) -> ServiceContainer:
@@ -325,8 +265,6 @@ def initialize_services(
     Args:
         app: FastAPI application instance
         database_service: Database service instance
-        task_executor: Task executor instance
-        workflow_history: Workflow history service instance
         redis_cache: Redis cache service instance
         **additional_services: Any additional services to register
 
@@ -341,19 +279,11 @@ def initialize_services(
         initialize_services(
             app,
             database_service=services['database'],
-            task_executor=services['task_executor'],
-            workflow_history=services['workflow_history'],
             redis_cache=services['redis_cache'],
         )
     """
     if database_service:
         _services.set_database(database_service)
-
-    if task_executor:
-        _services.set_task_executor(task_executor)
-
-    if workflow_history:
-        _services.set_workflow_history(workflow_history)
 
     if redis_cache:
         _services.set_redis_cache(redis_cache)
@@ -413,7 +343,6 @@ In main.py:
     initialize_services(
         app,
         database_service=services['database'],
-        task_executor=services['task_executor']
     )
 
 In task_routes.py:

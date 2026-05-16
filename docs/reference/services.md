@@ -1,6 +1,6 @@
 # Poindexter Services Reference
 
-**Last Updated:** 2026-04-23
+**Last Updated:** 2026-05-16
 
 A skimmable catalog of every service in `src/cofounder_agent/services/`.
 Use this when you want to know "what's responsible for X" without
@@ -44,10 +44,13 @@ these directly.
 
 The pipeline glue — who runs what when.
 
-- **`content_router_service.py`** — Unified blog-post pipeline orchestration. Runs the 12-stage `StageRunner` chain. `ContentRouterService`. ~500 lines.
-- **`task_executor.py`** — Background polling loop that claims pending tasks via `SELECT ... FOR UPDATE SKIP LOCKED`. Calls `ContentRouterService`.
+- **`flows/content_generation.py`** — Prefect-orchestrated content pipeline. **Sole task dispatch path as of 2026-05-16** (Stage 4 of #410 deleted the legacy `task_executor.py`). Claims a pending `pipeline_tasks` row, runs it through `content_router_service.process_content_generation_task`, then fires post-pipeline side-effects. Cron / retry / heartbeat / stale-run sweep are Prefect-native. Operator UI at http://localhost:4200.
+- **`template_runner.py`** — LangGraph-backed dynamic-pipeline orchestrator. **Primary pipeline path** (`canonical_blog` template is the prod default; `default_template_slug=canonical_blog` on prod). Drives `canonical_blog` (12 nodes) + `dev_diary` (4 nodes) + future architect-composed pipelines. Postgres checkpointer enabled via `template_runner_use_postgres_checkpointer=true`. Templates registered in `services/pipeline_templates/__init__.py`.
+- **`content_router_service.py`** — Thin TemplateRunner dispatcher. Builds the shared pipeline context (image_service, settings, style tracker, site_config, models_by_phase, experiment assignment) and hands it to `TemplateRunner.run(template_slug, context)` keyed on `pipeline_tasks.template_slug`. The legacy chunked `StageRunner` flow + `plugins/stage_runner.py` were deleted 2026-05-16 (Lane C Stage 4); a NULL `template_slug` now fails loud.
 - **`enhanced_status_change_service.py`** — Validates state transitions and logs status changes. `EnhancedStatusChangeService`. ~180 lines.
-- **`handle_task_status_change.py`** — Async handler for status-change events emitted by the executor. ~120 lines.
+- **`handle_task_status_change.py`** — Async handler for status-change events emitted by the dispatcher. ~120 lines.
+- **`auto_publish.py`** — Auto-publish helpers (`auto_publish_task` + `get_auto_publish_threshold`). Ported from the deleted `task_executor.py` during Stage 4. Called by `post_pipeline_actions._maybe_auto_publish`.
+- **`integrations/operator_notify.py`** — `_notify_discord` / `_notify_alert` helpers, also ported from `task_executor.py`.
 
 ## LLM & inference
 
@@ -124,7 +127,7 @@ The pipeline glue — who runs what when.
 
 ## Pipeline stages (12)
 
-Stages live under `services/stages/` and are plugged into `StageRunner`.
+Stages live under `services/stages/` and are wired into the LangGraph templates in `services/pipeline_templates/__init__.py`. `TemplateRunner` orchestrates them.
 Each implements the `Stage` protocol (`name`, `run(context)`).
 
 | #       | File                        | Purpose                                                                                        |
@@ -157,7 +160,7 @@ for the `Stage` protocol itself.
 - **Errors are typed** via `error_handler.py`. Services raise domain exceptions;
   routes translate them to HTTP status codes.
 - **Decisions are logged** via `decision_service.log_decision()` for the ML loop.
-- **Never import from `stages/*`**. Stages are plugged into `StageRunner`; they
+- **Never import from `stages/*`**. Stages are wired into LangGraph templates; they
   don't call each other. Cross-stage data flows through the pipeline context dict.
 
 <!-- DOC-SYNC 2026-04-25: stale references — many *_database.py modules listed here have been renamed to *_db.py (admin_db.py, content_db.py, tasks_db.py, users_db.py, etc.); html_sanitizer.py / vector_similarity_search.py / quality_checker.py / rag_embeddings_service.py / image_generation_runner.py / stateless_decision_handler.py / transcription_service.py / writing_style_database.py / embeddings_database.py not found in src/cofounder_agent/services/. Catalog needs regeneration. -->

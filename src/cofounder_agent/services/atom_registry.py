@@ -116,7 +116,7 @@ def _surface_stages_as_atoms() -> None:
     can compose them just like real atoms. The make_stage_node path
     in :mod:`services.template_runner` is the canonical executor —
     we route through it so virtual atoms get the same plugin-config
-    + timeout treatment as native StageRunner runs.
+    + timeout treatment as a stage embedded in a LangGraph template.
     """
     try:
         from plugins.registry import get_core_samples, get_stages

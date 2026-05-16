@@ -13,7 +13,7 @@ Usage:
     await audit.log("task_created", "content_router", {"topic": "AI trends"}, task_id=tid)
 
     # Fire-and-forget helper (uses the global singleton):
-    audit_log_bg("generation_complete", "task_executor", {"model": "ollama/qwen3.5:35b"})
+    audit_log_bg("generation_complete", "content_generation_flow", {"model": "ollama/qwen3.5:35b"})
 """
 
 import asyncio

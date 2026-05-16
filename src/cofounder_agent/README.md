@@ -34,19 +34,21 @@ src/cofounder_agent/
 ├── main.py                    # FastAPI app entry point
 ├── config/                    # Configuration loading
 ├── routes/                    # 31 REST endpoint modules
-├── services/                  # ~400 service modules
+├── services/                  # ~298 substantive service modules
 │   ├── database_service.py    # Coordinates 5 DB domain modules
-│   ├── model_router.py        # LLM provider selection + fallback (legacy — LiteLLM is the next-gen replacement; see llm_providers/litellm_provider.py)
-│   ├── llm_providers/         # LLMProvider plugins (Ollama-native, OpenAI-compat, LiteLLM)
+│   ├── llm_providers/         # LLMProvider plugins (LiteLLM primary, OpenAI-compat, Ollama-native)
+│   │   ├── litellm_provider.py    # PRIMARY LLM router as of 2026-05-16
+│   │   └── dispatcher.py          # `dispatch_complete` — every LLM call routes through this
 │   ├── prompt_manager.py      # UnifiedPromptManager — Langfuse → DB → YAML resolution
-│   ├── unified_orchestrator.py # Master agent choreography
-│   ├── workflow_executor.py   # Legacy phase-based execution; being replaced by template_runner.py (LangGraph)
-│   ├── template_runner.py     # LangGraph-backed dynamic-pipeline runner
+│   ├── template_runner.py     # LangGraph-backed pipeline orchestrator (PRIMARY path)
+│   ├── pipeline_templates/    # canonical_blog + dev_diary template definitions
+│   ├── flows/                 # Prefect flows — content_generation.py is the sole dispatcher
+│   ├── stages/                # Stage Protocol implementations (12 nodes in canonical_blog)
+│   ├── modules/               # Module v1 business modules (content, finance)
 │   ├── capability_registry.py # Intent-based task routing
-│   ├── migrations/            # Python migration modules (raw SQL inside)
-│   └── phases/                # Workflow phase implementations
+│   └── migrations/            # Python migration modules (raw SQL inside)
 ├── agents/                    # AI agent implementations
-│   ├── content_agent/         # 6-stage content pipeline
+│   ├── content_agent/         # Research + sub-agents called by stages
 │   ├── financial_agent/       # Cost tracking + analysis
 │   ├── market_insight_agent/  # Market research
 │   └── compliance_agent/      # Compliance checks
@@ -54,20 +56,18 @@ src/cofounder_agent/
 ├── middleware/                 # 5 middleware modules (auth, validation, etc.)
 ├── utils/                     # 20 utility modules
 └── tests/                     # pytest suite
-    └── unit/                  # Unit tests (~5,097 passing)
+    └── unit/                  # 8,400+ unit tests
 ```
 
 ## Key Architecture
 
-**Model Router** (`services/model_router.py`): Routes LLM calls by cost tier (`free`/`budget`/`standard`/`premium`/`flagship`). Automatic fallback: Ollama → Anthropic → OpenAI → Google → echo/mock. Never hardcode model names. **Migration in flight (poindexter#199):** the LiteLLM-backed `LLMProvider` plugin (`services/llm_providers/litellm_provider.py`) is the next-gen replacement; activate via `plugin.llm_provider.primary.standard='litellm'`.
+**LLM Router** (`services/llm_providers/litellm_provider.py` via `services/llm_providers/dispatcher.py`): LiteLLM-backed `LLMProvider` plugin is the primary router as of 2026-05-16. Operators tune per-tier model via `app_settings.cost_tier.<tier>.model` rows. Callers do `await resolve_tier_model(pool, "standard")` then `await dispatch_complete(pool=pool, messages=..., tier="standard")`. The hand-rolled `model_router.py` / `usage_tracker.py` / `model_constants.py` trio was deleted in Phase 2 cleanup (2026-05-08).
 
 **Prompt Manager** (`services/prompt_manager.py`): `UnifiedPromptManager` — Langfuse-first, then DB overrides, then YAML defaults. Operator edits land in the Langfuse UI; takes effect on next `get_prompt` call (60s SDK cache). Activate via the three `langfuse_*` settings in `app_settings`.
 
 **Database** (`services/database_service.py`): asyncpg connection pool with 5 domain modules (Users, Tasks, Content, Admin, WritingStyle). All queries are raw SQL. Migrations in `services/migrations/`.
 
-**Content Pipeline**: 6-stage self-critiquing pipeline: Research → Creative Draft → QA Critique → Creative Refinement → Image Selection → Publishing Prep.
-
-**Workflow Engine** (`services/workflow_executor.py`): Legacy phase-based execution with real-time WebSocket progress events. Phases defined in `services/phases/`. **Migration in flight (poindexter#356):** `template_runner.py` is the LangGraph-backed replacement, already driving the dev_diary template + future architect-composed pipelines.
+**Content Pipeline**: The `canonical_blog` LangGraph template (12 nodes) orchestrated by `TemplateRunner`. Dispatch happens via the Prefect `content_generation_flow`. See [`docs/architecture/langgraph-cutover.md`](../../docs/architecture/langgraph-cutover.md) and [`docs/architecture/prefect-cutover.md`](../../docs/architecture/prefect-cutover.md).
 
 **Gate History** (`pipeline_gate_history` table): Typed history of HITL gate approvals + regen retries (poindexter#366 phase 1 — replaces the dropped `pipeline_events` event-bus table). Approval service writes; `atoms.approval_gate` + `rejection_handlers` read.
 

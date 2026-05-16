@@ -56,7 +56,7 @@ DEFAULT_PUBLIC_SITE_URL = "http://localhost:3000"
 
 DEFAULT_OPENCLAW_URL = "http://localhost:18789"
 """OpenClaw gateway default. Fallback for `openclaw_gateway_url` used
-by task_executor + social_poster to queue outbound webhooks."""
+by ``post_pipeline_actions`` + ``social_poster`` to queue outbound webhooks."""
 
 # DEFAULT_GITEA_URL retired 2026-05-08 along with GiteaIssuesTap —
 # Gitea decommissioned 2026-04-30, no consumers remain.

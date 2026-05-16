@@ -546,7 +546,7 @@ class MemoryClient:
         self, topic: str, *, limit: int = 5, min_similarity: float = 0.75
     ) -> list[MemoryHit]:
         """Find published posts similar to a topic. Powers the pre-generation
-        semantic dedup check in task_executor.
+        semantic dedup check in the canonical_blog template's verify_task stage.
 
         Note: source_table is 'posts' (plural). Passing 'post' silently
         returns zero matches — that bug already burned us twice, so this

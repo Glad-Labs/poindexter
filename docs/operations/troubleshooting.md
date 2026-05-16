@@ -34,7 +34,7 @@ Entries are ordered by frequency of occurrence, not severity.
 
 ## Pipeline task stuck "in_progress" for more than 10 minutes
 
-**Symptom.** You queued a content task, it shows `status='in_progress'` in `content_tasks`, but there's no progress in the logs. The 15-minute `TASK_TIMEOUT_SECONDS` in `task_executor.py` doesn't fire. The per-stage timeouts in `STAGE_TIMEOUTS` don't fire either.
+**Symptom.** You queued a content task, it shows `status='in_progress'` in `pipeline_tasks`, but there's no progress in the logs. The Prefect stale-task sweep hasn't reclaimed it, and the per-stage timeouts in the LangGraph template haven't fired either.
 
 **Root cause (historical).** Before the timeout hygiene pass on 2026-04-10, several external call sites (`OllamaClient`, SDXL server, nvidia-smi exporter, `DuckDuckGo` via `run_in_executor`) had either no per-call timeout or a very long one (up to 3600s). When the underlying connection hung in a state that didn't yield to asyncio, `asyncio.wait_for` at the stage level couldn't cancel it. One test task this session hung 20+ minutes in multi_model_qa because of this.
 
@@ -123,7 +123,7 @@ The cap is read fresh on each executor poll, so no restart needed.
 
 **Symptom.** You reject a task via the `/reject` endpoint with `allow_revisions: false`. The task's status flips to `rejected`. A few minutes later, the same `task_id` comes back in `awaiting_approval` with regenerated content. The original rejection feedback is ignored.
 
-**Root cause (historical).** The reject endpoint at `approval_routes.py::reject_task` sets `status='failed'` when `allow_revisions=false` and `status='failed_revisions_requested'` when true. The `_auto_retry_failed_tasks` sweep in `task_executor.py` queried `WHERE status='failed'` — which matched both legitimate execution failures AND deliberate `allow_revisions=false` rejections. So "don't retry this" got retried anyway.
+**Root cause (historical, pre-2026-05-16).** Before the Prefect cutover Stage 4 deleted `task_executor.py` outright, the reject endpoint at `approval_routes.py::reject_task` set `status='failed'` when `allow_revisions=false` and `status='failed_revisions_requested'` when true. The `_auto_retry_failed_tasks` sweep in `task_executor.py` queried `WHERE status='failed'` — which matched both legitimate execution failures AND deliberate `allow_revisions=false` rejections.
 
 **Fix (current).** Two commits shipped 2026-04-10:
 
