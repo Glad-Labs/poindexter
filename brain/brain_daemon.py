@@ -289,6 +289,128 @@ except ImportError:  # pragma: no cover — package-qualified path
     except ImportError:
         _HAS_MCP_HTTP_PROBE = False
 
+
+# --- Boot-time import audit (poindexter#504) ---------------------------------
+#
+# Each _HAS_* flag above is set by a try/except ImportError block. Every
+# one of those modules SHIPS with the brain container (see
+# brain/pyproject.toml + brain/Dockerfile COPY). If any flag is False at
+# boot, that's a packaging regression — the brain image was built
+# against a broken file copy or someone deleted a module without
+# updating the import list. Loud-fail per feedback_no_silent_defaults
+# so the operator notices instead of running with degraded probe
+# coverage indefinitely.
+#
+# Called from main() AFTER config load so notify_operator's Telegram +
+# Discord paths can read their credentials.
+
+# Tuple shape: (flag_name, module_filename, what_breaks_when_missing).
+# The module_filename is informational — used in the notify body so the
+# operator knows which file to chase. Keep this list in sync with the
+# _HAS_* try/except blocks above; the boot audit is only useful if it
+# reflects current expectations.
+_BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
+    ("_HAS_BUSINESS_PROBES", "brain/business_probes.py",
+     "Mercury balance / GitHub PR / Discord webhook probes silently skip"),
+    ("_HAS_OAUTH_CLIENT", "brain/oauth_client.py",
+     "Authenticated worker-API calls skip — every probe that hits a protected endpoint is dark"),
+    ("_HAS_OPERATOR_URL_PROBE", "brain/operator_url_probe.py",
+     "Operator-facing URL/IP drift detection disabled"),
+    ("_HAS_MIGRATION_DRIFT_PROBE", "brain/migration_drift_probe.py",
+     "Worker migration-state drift goes unmonitored — schema regressions stay invisible"),
+    ("_HAS_COMPOSE_DRIFT_PROBE", "brain/compose_drift_probe.py",
+     "docker-compose vs running-container drift goes unmonitored"),
+    ("_HAS_PROMETHEUS_SECRET_WRITER", "brain/prometheus_secret_writer.py",
+     "Prometheus scrape secrets stop refreshing — Uptime-Kuma / GitHub / etc. scrapes start 401-ing"),
+    ("_HAS_GLITCHTIP_TRIAGE_PROBE", "brain/glitchtip_triage_probe.py",
+     "GlitchTip noise triage stops — known-issue auto-resolve dies, novel-issue paging dies"),
+    ("_HAS_ALERT_DISPATCHER", "brain/alert_dispatcher.py",
+     "alert_events rows pile up undispatched — Telegram/Discord stop receiving pages"),
+    ("_HAS_BACKUP_WATCHER", "brain/backup_watcher.py",
+     "Backup-staleness alerts go dark — 33h stale dumps go unnoticed (#388 redux)"),
+    ("_HAS_SMART_MONITOR", "brain/smart_monitor.py",
+     "SMART drive-health monitoring offline — failing drives detected only by total loss"),
+    ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
+     "Windows wslrelay stuck-state auto-recovery offline (#222)"),
+    ("_HAS_GATE_AUTO_EXPIRE_PROBE", "brain/gate_auto_expire_probe.py",
+     "Stale pending approval gates stop auto-expiring — queue grows unboundedly"),
+    ("_HAS_GATE_PENDING_SUMMARY_PROBE", "brain/gate_pending_summary_probe.py",
+     "Pending-queue daily summary Telegram pages stop"),
+    ("_HAS_PR_STALENESS_PROBE", "brain/pr_staleness_probe.py",
+     "Stale PR detection offline — agent PRs sit unmerged forever"),
+    ("_HAS_DISCORD_BOT_PROBE", "brain/discord_bot_probe.py",
+     "Discord bot uptime monitor offline"),
+    ("_HAS_MCP_HTTP_PROBE", "brain/mcp_http_probe.py",
+     "MCP HTTP server reachability monitor offline"),
+)
+
+
+def _audit_brain_module_imports() -> None:
+    """Inspect every _HAS_* flag; notify_operator on any packaging
+    regression. Called from main() after config + Pyroscope are up.
+
+    Best-effort: never raises, never blocks boot. Per
+    feedback_no_silent_defaults: WARN logs are silent in practice, so
+    this routes through notify_operator (Telegram + Discord +
+    alerts.log) when something IS broken.
+    """
+    missing: list[tuple[str, str, str]] = []
+    for flag_name, module_file, breaks_when_missing in _BRAIN_REQUIRED_MODULES:
+        # Read from this module's globals so we don't have to thread
+        # every flag through the function signature.
+        flag_value = globals().get(flag_name)
+        if flag_value is False:
+            missing.append((flag_name, module_file, breaks_when_missing))
+
+    if not missing:
+        logger.info(
+            "[BRAIN] Boot import audit clean (%d expected-present modules importable)",
+            len(_BRAIN_REQUIRED_MODULES),
+        )
+        return
+
+    for flag_name, module_file, breaks in missing:
+        logger.error(
+            "[BRAIN] PACKAGING REGRESSION: %s is False (%s missing) — %s",
+            flag_name, module_file, breaks,
+        )
+    detail_lines = [
+        f"• {module_file}: {breaks} (flag {flag_name})"
+        for flag_name, module_file, breaks in missing
+    ]
+    try:
+        from operator_notifier import notify_operator
+    except ImportError:
+        try:
+            from brain.operator_notifier import notify_operator  # type: ignore[no-redef]
+        except ImportError:
+            logger.warning(
+                "[BRAIN] operator_notifier unavailable — %d packaging "
+                "regressions logged but NOT paged", len(missing),
+            )
+            return
+    try:
+        notify_operator(
+            title=(
+                f"Brain daemon boot audit failed — "
+                f"{len(missing)} probe{'s' if len(missing) != 1 else ''} dark"
+            ),
+            detail=(
+                "Brain daemon started but expected-present modules failed "
+                "to import. These ship in the brain container and missing "
+                "ones indicate a packaging regression.\n\n"
+                + "\n".join(detail_lines)
+                + "\n\nFix: pull latest, rebuild brain image: "
+                "`docker compose build brain-daemon && docker compose "
+                "up -d brain-daemon`."
+            ),
+            source="brain:boot-audit",
+            severity="error",
+        )
+    except Exception as exc:  # noqa: BLE001 — notify is best-effort
+        logger.warning("[BRAIN] notify_operator raised: %s", exc)
+
+
 LOG_DIR = os.path.join(os.path.expanduser("~"), os.getenv("APP_LOG_DIR", ".content-pipeline"))
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "brain.log")
@@ -480,8 +602,23 @@ EXTERNAL_SERVICES = {
         "url": "https://www.vercel-status.com/api/v2/status.json",
         "type": "statuspage",
     },
+    "anthropic": {
+        # Re-added 2026-05-16 after a partial outage (claude.ai + API +
+        # Console + Code + Cowork all Partial Outage simultaneously)
+        # killed two cleanup-sweep agents mid-work and was only visible
+        # via Matt manually checking status.anthropic.com on his phone.
+        # The pipeline now relies on Claude for: dispatched cleanup
+        # agents, MCP server consumers, and the dev_diary narrative
+        # atom when premium tier is enabled. Outage awareness is no
+        # longer optional.
+        #
+        # Status page uses Atlassian Statuspage v2 API at both
+        # status.anthropic.com and status.claude.com (they share an
+        # underlying page).
+        "url": "https://status.anthropic.com/api/v2/status.json",
+        "type": "statuspage",
+    },
     # grafana_cloud removed — using local Grafana now (localhost:3000)
-    # anthropic removed — no longer used in pipeline (session 55)
 }
 
 # Track previous external status to detect transitions
@@ -2115,6 +2252,15 @@ async def main():
 
     # Load config from DB (site URLs, Telegram tokens, etc.)
     await _load_config_from_db(pool)
+
+    # Boot-time import audit (poindexter#504). Every _HAS_* flag in this
+    # module is set at import time by a try/except ImportError block. If
+    # any are False at this point, a brain-side module that SHIPS with
+    # the brain container failed to import — that's a packaging
+    # regression, not "optional feature missing." Loud-fail per
+    # feedback_no_silent_defaults so the operator notices instead of
+    # silently running with degraded probe coverage for weeks.
+    _audit_brain_module_imports()
 
     # Pyroscope continuous profiling (Glad-Labs/poindexter#406). Opt-in
     # via app_settings.enable_pyroscope; ships CPU samples to Pyroscope
