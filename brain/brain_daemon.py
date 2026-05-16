@@ -1112,6 +1112,29 @@ async def restart_service(name: str, *, pool=None):
         container = _container_map.get(name)
         if container:
             try:
+                # Pre-check container existence. ``docker compose up
+                # --force-recreate`` runs stop → rm → run sequentially and
+                # leaves the container name unbound for ~1-2 seconds; a
+                # health probe firing in that window would otherwise
+                # ``docker restart`` against a missing container, the
+                # operator gets a noisy "No such container" notification,
+                # and the next cycle (≤5 min later) sees the recreated
+                # container as healthy. Treat absence as transient and
+                # skip the alert — if the container is genuinely gone the
+                # next cycle will see the same state and the upstream
+                # health probe (not this restart helper) is the right
+                # surface to escalate it.
+                inspect = subprocess.run(
+                    ["docker", "inspect", "--format", "{{.State.Status}}", container],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if inspect.returncode != 0:
+                    logger.info(
+                        "[BRAIN] container %s not found (likely mid-recreate) — "
+                        "skipping auto-restart this cycle", container,
+                    )
+                    return
+
                 result = subprocess.run(
                     ["docker", "restart", container],
                     capture_output=True, text=True, timeout=30,
