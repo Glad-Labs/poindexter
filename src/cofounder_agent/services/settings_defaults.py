@@ -292,9 +292,16 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Observability / monitoring -----
     'enable_pyroscope': 'false',
-    'enable_tracing': 'false',
+    # Defaulted true 2026-05-17 (Glad-Labs/poindexter#409) — the
+    # OTLP gRPC exporter + Tempo container + per-probe instrumentation
+    # have been live on prod since 2026-05-13. Baseline seed already
+    # ships true; the in-code default was the last spot where a fresh
+    # ``SiteConfig`` or missing DB row silently produced a NoopTracer
+    # (spans dropped, Tempo panels empty).
+    'enable_tracing': 'true',
     'langfuse_host': '',
     'langfuse_tracing_enabled': 'true',
+    'otel_exporter_otlp_endpoint': 'http://tempo:4317',
     'pyroscope_server_url': 'http://pyroscope:4040',
     'sentry_enabled': 'true',
     'template_runner_progress_streaming': 'true',
