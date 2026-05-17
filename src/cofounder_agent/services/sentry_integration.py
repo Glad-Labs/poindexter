@@ -1,8 +1,20 @@
 """
-Sentry Error Tracking Integration Service
+Error Tracking Integration — GlitchTip (Sentry-API-compatible)
 
-Provides enterprise-grade error tracking, performance monitoring, and issue management
-for Poindexter (the AI cofounder pipeline).
+Provides error tracking, performance monitoring, and issue management for
+Poindexter (the AI cofounder pipeline).
+
+The error sink for Glad-Labs/Poindexter is **GlitchTip** — the self-hosted,
+open-source Sentry-API-compatible alternative. Locked in 2026-05-17 per
+Glad-Labs/poindexter#414 to match ``feedback_no_paid_apis``. The
+``sentry-sdk`` Python package is still the client library because GlitchTip
+intentionally speaks the Sentry wire protocol; the "Sentry" naming in
+identifiers below is therefore the SDK's nomenclature, NOT a reference to
+sentry.io SaaS.
+
+Local GlitchTip URL: http://localhost:8080 (org ``glad-labs``, project
+``poindexter``). Dashboard at the local URL replaces the Sentry SaaS
+dashboard wherever the SDK docs reference it.
 
 Features:
 - Automatic exception capturing and reporting
@@ -14,10 +26,12 @@ Features:
 - Environment-specific configuration
 
 Configuration:
-Set SENTRY_DSN environment variable to enable:
-    export SENTRY_DSN="https://key@sentry.io/project-id"
+Set ``app_settings.sentry_dsn`` to a GlitchTip DSN to enable:
+    poindexter settings set sentry_dsn "http://<key>@localhost:8080/<project_id>"
 
-For local development, set SENTRY_ENABLED=false to disable reporting.
+Set ``sentry_enabled=false`` to disable reporting (e.g. local dev without
+GlitchTip running). The legacy ``SENTRY_DSN`` env var is also honoured for
+bootstrap paths that run before app_settings is reachable.
 """
 
 import logging
@@ -59,10 +73,14 @@ logger = get_logger(__name__)
 
 class SentryIntegration:
     """
-    Sentry error tracking and performance monitoring integration.
+    GlitchTip error tracking + performance monitoring integration.
 
-    Handles initialization, configuration, and usage of Sentry SDK for the FastAPI application.
-    Provides convenience methods for manual error/event reporting.
+    Handles initialization, configuration, and usage of the Sentry SDK
+    against GlitchTip (the local Sentry-API-compatible sink) for the
+    FastAPI application. Provides convenience methods for manual
+    error/event reporting. Class name is retained from the SDK
+    nomenclature for grep-ability with sentry-sdk docs; the underlying
+    sink is GlitchTip per Glad-Labs/poindexter#414.
     """
 
     _initialized = False
