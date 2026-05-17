@@ -298,7 +298,15 @@ DEFAULTS: dict[str, str] = {
     'pyroscope_server_url': 'http://pyroscope:4040',
     'sentry_enabled': 'true',
     'template_runner_progress_streaming': 'true',
-    'template_runner_use_postgres_checkpointer': 'false',
+    # Defaulted true 2026-05-17 (Glad-Labs/poindexter#412) — the
+    # AsyncPostgresSaver wiring has been live on prod since 2026-05-13
+    # without incident, smoke test at
+    # ``scripts/smoke_371_postgres_checkpointer.py`` stays green, and the
+    # baseline seeds row matches. The pre-flip default of 'false' meant
+    # any fresh install or test SiteConfig without a DB row silently
+    # used MemorySaver (no durability across runs) — exactly the kind of
+    # silent fallback ``feedback_no_silent_defaults`` calls out.
+    'template_runner_use_postgres_checkpointer': 'true',
 
     # ----- Security / auth -----
     'max_approval_queue': '3',

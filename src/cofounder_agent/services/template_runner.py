@@ -11,15 +11,17 @@ What this is in v1 (POC):
 - Lookup of named template factories from
   ``services.pipeline_templates.TEMPLATES`` (stub for now; templates
   land in their own module).
-- Optional Postgres-backed checkpointer (Phase 1.5,
+- Postgres-backed checkpointer (Phase 1.5,
   Glad-Labs/poindexter#371). Gated by app_setting
-  ``template_runner_use_postgres_checkpointer`` (default false). When
-  on, ``run()`` constructs an ``AsyncPostgresSaver.from_conn_string``
-  per invocation, calls ``setup()``, and passes it to
-  ``StateGraph.compile(checkpointer=...)`` so LangGraph state survives
-  worker restarts and can be resumed by ``thread_id``. Falls back to
-  ``MemorySaver`` on construction or setup failure (warning logged).
-  Default off pending operator review of the durability cutover.
+  ``template_runner_use_postgres_checkpointer`` (default **true** as
+  of 2026-05-17 — Glad-Labs/poindexter#412). When on, ``run()``
+  constructs an ``AsyncPostgresSaver.from_conn_string`` per
+  invocation, calls ``setup()``, and passes it to
+  ``StateGraph.compile(checkpointer=...)`` so LangGraph state
+  survives worker restarts and can be resumed by ``thread_id``.
+  Falls back to ``MemorySaver`` on construction or setup failure
+  (warning logged) — the pipeline still runs, just without
+  cross-restart durability.
 
 What this is NOT in v1 (deferred to Phase 2-5):
 
@@ -845,9 +847,10 @@ class TemplateRunner:
 
         Resolution order:
 
-        1. If ``template_runner_use_postgres_checkpointer`` is false (the
-           default in this PR — see Glad-Labs/poindexter#371), yield a
-           transient ``MemorySaver``. Identical to pre-#371 behavior.
+        1. If ``template_runner_use_postgres_checkpointer`` is false
+           (operator-overridden — true by default since 2026-05-17,
+           Glad-Labs/poindexter#412), yield a transient ``MemorySaver``.
+           Identical to pre-#371 behavior; useful for opt-out testing.
         2. If true, attempt ``AsyncPostgresSaver.from_conn_string(dsn)``
            + ``setup()``. On success, yield it (the async-context-
            manager scope owns the underlying psycopg connection).
