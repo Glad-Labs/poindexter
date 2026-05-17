@@ -64,7 +64,13 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # Business / cost guards
     "daily_spend_warning_usd": "4.0",
     "daily_spend_critical_usd": "5.0",
-    "monthly_spend_warning_usd": "15.0",
+    # $35/mo covers the ~$30 baseline of local-Ollama GPU electricity
+    # (which IS counted in cost_logs alongside paid-API spend) plus a
+    # ~$5 buffer. The alert is intended to detect RUNAWAY cloud LLM
+    # spend — abnormal, not background — so the threshold sits just
+    # above the steady-state operating cost. Tunable per-operator;
+    # raise as cloud-API use ramps up.
+    "monthly_spend_warning_usd": "35.0",
 }
 
 

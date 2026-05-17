@@ -221,10 +221,13 @@ class TestBuildCurrent:
                       "DailySpendApproachingLimit", "DailySpendOverBudget",
                       "MonthlySpendHigh"):
             assert f"alert: {alert}" in out
-        # Default thresholds substituted
+        # Default thresholds substituted. monthly_spend at $35 covers
+        # the ~$30 baseline of local Ollama GPU electricity tracked in
+        # cost_logs + a ~$5 buffer; the alert fires only on runaway
+        # cloud LLM spend, not on steady-state operation.
         assert "> 4.0" in out
         assert "> 5.0" in out
-        assert "> 15.0" in out
+        assert "> 35.0" in out
         # EmbeddingsStale uses the seconds threshold as a Prometheus
         # duration literal (``[21600s]``), not a bare comparison.
         assert "[21600s]" in out
