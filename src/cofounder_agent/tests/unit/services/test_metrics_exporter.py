@@ -200,12 +200,9 @@ class TestRefreshMetrics:
         queries stay useful."""
         from services import metrics_exporter as mx
 
-        # fetchval queue (8 values — heartbeat-age slot inserted between
-        # queue and cancelled when the worker_heartbeat_age_seconds query
-        # was added to refresh_metrics):
-        #   SELECT 1, pg_used, pg_max, embeddings-gap, queue, heartbeat=0,
-        #   cancelled=42, applied-migrations=0.
-        pool, _ = _make_pool([1, 0, 100, 0, 0, 0, 42, 0], [[], []])
+        # 7-value fetchval queue: SELECT 1, pg_used, pg_max,
+        # embeddings-gap, queue, cancelled=42, applied-migrations=0.
+        pool, _ = _make_pool([1, 0, 100, 0, 0, 42, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
@@ -314,9 +311,9 @@ class TestRefreshMetrics:
         # files on disk.
         applied = max(on_disk - 3, 0)
 
-        # 8-value queue — heartbeat-age slot (0) inserted between queue
-        # and cancelled to match the current refresh_metrics fetchval order.
-        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, 0, applied], [[], []])
+        # 7-value queue: SELECT 1, pg_used, pg_max, gap, queue,
+        # cancelled, applied (3 short of on_disk).
+        pool, _ = _make_pool([1, 50, 300, 0, 0, 0, applied], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
             await mx.refresh_metrics(pool, "http://localhost:11434")
