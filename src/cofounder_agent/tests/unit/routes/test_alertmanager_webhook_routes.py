@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from routes.alertmanager_webhook_routes import (
     _format_alert_message,
+    _parse_iso,
     _should_page_operator,
     router,
     verify_alertmanager_token,
@@ -135,6 +136,133 @@ class TestFormatAlertMessage:
             "annotations": {"summary": "s", "description": "long desc"},
         })
         assert "long desc" in msg
+
+
+class TestParseIso:
+    """Pins the 2026-05-17 fix that closed a silent-failure mode where
+    Alertmanager's ISO-8601 string timestamps caused every webhook
+    insert to raise ``invalid input for query argument $7`` (asyncpg
+    rejects strings for ``::timestamptz`` casts). The route's
+    try/except swallowed the error and returned 200, so Alertmanager
+    treated the call as successful, hit its 4h ``repeat_interval`` for
+    retries, and the operator never heard about the alert.
+    """
+
+    def test_coerces_alertmanager_iso_string_to_datetime(self):
+        result = _parse_iso("2026-05-16T20:12:46.108Z")
+        import datetime as _dt
+        assert isinstance(result, _dt.datetime)
+        assert result.tzinfo is not None  # asyncpg needs tz-aware
+
+    def test_passes_through_existing_datetime(self):
+        import datetime as _dt
+        original = _dt.datetime(2026, 5, 16, tzinfo=_dt.timezone.utc)
+        assert _parse_iso(original) is original
+
+    def test_returns_none_for_alertmanager_never_ended_sentinel(self):
+        # Alertmanager sends `endsAt = "0001-01-01T00:00:00Z"` for
+        # still-firing alerts; we want NULL in the DB, not year 0001.
+        assert _parse_iso("0001-01-01T00:00:00Z") is None
+
+    def test_returns_none_for_empty_string(self):
+        assert _parse_iso("") is None
+        assert _parse_iso(None) is None
+
+    def test_returns_none_for_garbage(self):
+        assert _parse_iso("not-a-date") is None
+
+
+class TestInsertFailureReturns503:
+    """Pre-2026-05-17 the route logged + returned 200 on insert failure
+    so Alertmanager treated transient/buggy inserts as successful and
+    didn't retry. Now it raises 503 so Alertmanager's exponential
+    backoff + retry loop kicks in.
+    """
+
+    def test_insert_failure_returns_503(self):
+        # Build a pool whose execute() raises on the INSERT but
+        # succeeds on the CREATE TABLE (so the route gets past the
+        # _ensure_table step and into the loop).
+        class _FailingConn:
+            async def execute(self, sql: str, *args):
+                if "INSERT INTO alert_events" in sql:
+                    raise RuntimeError(
+                        "invalid input for query argument $7: expected datetime, got 'str'"
+                    )
+                return "OK"
+
+            async def fetchval(self, *a, **kw):
+                return None
+
+        class _FailingCtx:
+            async def __aenter__(self):
+                return _FailingConn()
+            async def __aexit__(self, *_):
+                return None
+
+        class _FailingPool:
+            def acquire(self):
+                return _FailingCtx()
+
+        pool = _FailingPool()
+        client = TestClient(_build_app(pool))
+        resp = client.post(
+            "/api/webhooks/alertmanager",
+            json={
+                "status": "firing",
+                "alerts": [{
+                    "status": "firing",
+                    "labels": {"alertname": "MonthlySpendHigh", "severity": "warning"},
+                    "annotations": {},
+                    "startsAt": "2026-05-16T20:12:46.108Z",
+                }],
+            },
+        )
+        assert resp.status_code == 503
+        body = resp.json()
+        assert "MonthlySpendHigh" in body["detail"]
+
+
+class TestRealTimestampCoercion:
+    """End-to-end: a real Alertmanager-shaped payload (ISO strings)
+    must reach asyncpg as ``datetime`` objects — not strings.
+    """
+
+    def test_iso_strings_become_datetime_in_insert_args(self):
+        import datetime as _dt
+        pool = _FakePool()
+        client = TestClient(_build_app(pool))
+        resp = client.post(
+            "/api/webhooks/alertmanager",
+            json={
+                "status": "firing",
+                "alerts": [{
+                    "status": "firing",
+                    "labels": {"alertname": "MonthlySpendHigh", "severity": "warning"},
+                    "annotations": {"summary": "spend high"},
+                    "startsAt": "2026-05-16T20:12:46.108Z",
+                    "endsAt": "0001-01-01T00:00:00Z",
+                    "fingerprint": "fp123",
+                }],
+            },
+        )
+        assert resp.status_code == 200
+
+        # Find the INSERT call args and verify timestamps are datetimes.
+        insert_calls = [
+            args for sql, args in pool.executes
+            if "INSERT INTO alert_events" in sql
+        ]
+        assert len(insert_calls) == 1
+        # Args order matches the INSERT VALUES: $1=alertname, $2=status,
+        # $3=severity, $4=category, $5=labels_json, $6=annotations_json,
+        # $7=starts_at, $8=ends_at, $9=fingerprint
+        starts_at_arg = insert_calls[0][6]
+        ends_at_arg = insert_calls[0][7]
+        assert isinstance(starts_at_arg, _dt.datetime)
+        # endsAt is the "never ended" sentinel → must be None, NOT
+        # year-0001 datetime (which would corrupt downstream queries).
+        assert ends_at_arg is None
 
 
 # ---------------------------------------------------------------------------

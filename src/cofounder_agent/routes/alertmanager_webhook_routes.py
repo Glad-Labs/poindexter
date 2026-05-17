@@ -60,6 +60,7 @@ dependency.
 
 from __future__ import annotations
 
+import datetime as _dt
 import hmac
 import json
 import logging
@@ -219,6 +220,39 @@ async def _ensure_table(pool: Any) -> None:
         await conn.execute(_ENSURE_TABLE_SQL)
 
 
+def _parse_iso(val: Any) -> _dt.datetime | None:
+    """Coerce an Alertmanager ISO-8601 string to a ``datetime``.
+
+    Alertmanager v2 payloads send ``startsAt`` / ``endsAt`` as JSON
+    strings; asyncpg's typed ``$N::timestamptz`` cast refuses string
+    input (raises ``invalid input for query argument``). Without
+    coercion every webhook insert fails with that message, the
+    route's try/except swallows it, and the operator never hears
+    about the alert — exactly the silent-failure mode
+    ``feedback_no_silent_defaults`` calls out.
+
+    Mirrors the parser in
+    ``services/integrations/handlers/webhook_alertmanager.py`` —
+    consolidated copy because that module's import depth would create
+    a circular path for this route file.
+    """
+    if not val:
+        return None
+    if hasattr(val, "isoformat"):
+        return val
+    if isinstance(val, str):
+        if val.startswith("0001-01-01"):  # Alertmanager "never ended" sentinel
+            return None
+        s = val.rstrip("Z")
+        if not any(c in s[10:] for c in ("+", "-")):
+            s = s + "+00:00"
+        try:
+            return _dt.datetime.fromisoformat(s)
+        except ValueError:
+            return None
+    return None
+
+
 async def _insert_alert(pool: Any, alert: dict[str, Any]) -> None:
     """Persist one alert from the Alertmanager payload."""
     labels = alert.get("labels") or {}
@@ -238,8 +272,8 @@ async def _insert_alert(pool: Any, alert: dict[str, Any]) -> None:
             labels.get("category"),
             json.dumps(labels),
             json.dumps(annotations),
-            alert.get("startsAt"),
-            alert.get("endsAt"),
+            _parse_iso(alert.get("startsAt")),
+            _parse_iso(alert.get("endsAt")),
             alert.get("fingerprint"),
         )
 
@@ -369,6 +403,7 @@ async def alertmanager_webhook(
     persisted = 0
     pageable = 0
     remediated = 0
+    insert_errors: list[str] = []
     for alert in alerts:
         if not isinstance(alert, dict):
             continue
@@ -377,7 +412,19 @@ async def alertmanager_webhook(
             await _insert_alert(pool, alert)
             persisted += 1
         except Exception as e:
-            logger.warning("alertmanager webhook: insert failed: %s", e)
+            # Per ``feedback_no_silent_defaults``: don't swallow.
+            # Track the failure; if ANY alert failed to persist we
+            # return 5xx so Alertmanager's webhook retry kicks in.
+            # Pre-2026-05-17 this just logged a warning and returned
+            # 200 — Alertmanager treated the call as successful, hit
+            # its 4h ``repeat_interval`` for re-tries, and the
+            # operator never heard about the missing alert.
+            alertname = (alert.get("labels") or {}).get("alertname", "?")
+            insert_errors.append(f"{alertname}: {e}")
+            logger.warning(
+                "alertmanager webhook: insert failed for %s: %s",
+                alertname, e,
+            )
 
         # Dispatch is owned by the brain daemon (brain/alert_dispatcher.py)
         # which polls undispatched alert_events rows on a 30s cadence.
@@ -395,9 +442,22 @@ async def alertmanager_webhook(
             logger.warning("alertmanager webhook: remediation lookup failed: %s", e)
 
     logger.info(
-        "alertmanager webhook: received=%d persisted=%d pageable=%d remediated=%d",
-        len(alerts), persisted, pageable, remediated,
+        "alertmanager webhook: received=%d persisted=%d pageable=%d remediated=%d errors=%d",
+        len(alerts), persisted, pageable, remediated, len(insert_errors),
     )
+    if insert_errors:
+        # Alertmanager retries on 5xx but treats 4xx as "client bug,
+        # give up". Insert-failures are server-side so 503 is the
+        # right shape: persistent failure should still page the
+        # operator (Alertmanager surfaces failed notifications in its
+        # own UI) but a transient blip will resolve on retry.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"alert_events insert failed for {len(insert_errors)} of "
+                f"{len(alerts)} alerts: {insert_errors[0]}"
+            ),
+        )
     return {
         "ok": True,
         "count": len(alerts),
