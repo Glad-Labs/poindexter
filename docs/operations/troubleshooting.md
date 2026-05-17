@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Runbook for issues that have bitten us in production. Each entry has a symptom, a root cause, a fix, and a link to the GitHub issue or commit where it was addressed. When you hit something new, add it here instead of just fixing it — the next person (or next-you) will thank you. Use the public `Glad-Labs/poindexter` tracker for product bugs and the private `Glad-Labs/glad-labs-stack` tracker for operator-specific items.
+Runbook for issues that have bitten us in production. Each entry has a symptom, a root cause, a fix, and a link to the GitHub issue or commit where it was addressed. When you hit something new, add it here instead of just fixing it — the next person (or next-you) will thank you. Use the public `Glad-Labs/poindexter` tracker for product bugs and the private `Glad-Labs/poindexter` tracker for operator-specific items.
 
 Entries are ordered by frequency of occurrence, not severity.
 

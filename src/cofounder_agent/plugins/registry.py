@@ -390,12 +390,6 @@ def get_core_samples() -> dict[str, list[Any]]:
         # while we prove the shape; extracts to its own top-level package
         # when 2+ modules give us a comparison point (see Phase 3.5).
         ("modules", "modules.content", "ContentModule"),
-        # FinanceModule F1 (2026-05-13) — Mercury read-only banking
-        # integration. visibility=private (Matt's operator overlay).
-        ("modules", "modules.finance", "FinanceModule"),
-        # FinanceModule F2 polling job — pulls accounts + transactions
-        # from Mercury hourly. Gated by mercury_enabled in app_settings.
-        ("jobs", "modules.finance.jobs.poll_mercury", "PollMercuryJob"),
         ("taps", "plugins.samples.hello_tap", "HelloTap"),
         ("probes", "plugins.samples.database_probe", "DatabaseProbe"),
         ("jobs", "plugins.samples.noop_job", "NoopJob"),
