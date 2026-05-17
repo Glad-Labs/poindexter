@@ -68,6 +68,8 @@ class PromptCategory(str, Enum):
     MARKET_ANALYSIS = "market_analysis"
     IMAGE_GENERATION = "image_generation"
     UTILITY = "utility"
+    VIDEO = "video"
+    PODCAST = "podcast"
 
 
 @dataclass
@@ -107,6 +109,8 @@ class UnifiedPromptManager:
         "market_analysis": PromptCategory.MARKET_ANALYSIS,
         "image_generation": PromptCategory.IMAGE_GENERATION,
         "utility": PromptCategory.UTILITY,
+        "video": PromptCategory.VIDEO,
+        "podcast": PromptCategory.PODCAST,
     }
 
     def __init__(self):

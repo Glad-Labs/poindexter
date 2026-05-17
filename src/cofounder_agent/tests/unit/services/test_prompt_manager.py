@@ -290,11 +290,6 @@ class TestGetPromptManager:
 @pytest.mark.unit
 class TestPromptCategoryEnum:
     def test_all_expected_categories_exist(self):
-        # FIXME: VIDEO and PODCAST prompt YAMLs exist in src/cofounder_agent/prompts/
-        # but the PromptCategory enum hasn't been extended yet — add them back
-        # to `expected` once services/prompt_manager.py's PromptCategory grows
-        # VIDEO/PODCAST members (and the `_CATEGORY_LOOKUP` mapping is updated
-        # alongside it).
         expected = {
             "BLOG_GENERATION",
             "CONTENT_QA",
@@ -305,6 +300,8 @@ class TestPromptCategoryEnum:
             "MARKET_ANALYSIS",
             "IMAGE_GENERATION",
             "UTILITY",
+            "VIDEO",
+            "PODCAST",
         }
         actual = {c.name for c in PromptCategory}
         assert expected == actual

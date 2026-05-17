@@ -200,8 +200,12 @@ class TestRefreshMetrics:
         queries stay useful."""
         from services import metrics_exporter as mx
 
-        # 7-value fetchval queue: SELECT 1, pg_used, pg_max,
-        # embeddings-gap, queue, cancelled=42, applied-migrations=0.
+        # fetchval queue (7 values, current refresh_metrics order):
+        #   SELECT 1, pg_used, pg_max, embeddings-gap, queue,
+        #   cancelled=42, applied-migrations=0.
+        # The worker_heartbeat_age_seconds slot was removed when the
+        # query was retired; the test queue had drifted to 8 values
+        # against a 7-fetchval consumer (closes Glad-Labs/poindexter#509).
         pool, _ = _make_pool([1, 0, 100, 0, 0, 42, 0], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
@@ -311,8 +315,9 @@ class TestRefreshMetrics:
         # files on disk.
         applied = max(on_disk - 3, 0)
 
-        # 7-value queue: SELECT 1, pg_used, pg_max, gap, queue,
-        # cancelled, applied (3 short of on_disk).
+        # 7-value queue matching the current refresh_metrics fetchval
+        # order (SELECT 1, pg_used, pg_max, gap, queue, cancelled,
+        # applied). Closes Glad-Labs/poindexter#509.
         pool, _ = _make_pool([1, 50, 300, 0, 0, 0, applied], [[], []])
         with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
             mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")

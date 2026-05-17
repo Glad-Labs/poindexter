@@ -58,17 +58,60 @@ import re
 import uuid as _uuid
 from typing import Any
 
-from pipecat.frames.frames import (
-    Frame,
-    LLMFullResponseEndFrame,
-    LLMFullResponseStartFrame,
-    LLMTextFrame,
-)
-from pipecat.processors.aggregators.llm_context import LLMContext
-from pipecat.processors.frame_processor import FrameDirection
-from pipecat.services.llm_service import LLMService
-
 logger = logging.getLogger(__name__)
+
+
+# Pipecat imports gated so this module is collectable even on hosts that
+# don't ship the runtime voice deps. Without the gate, the unit suite's
+# collection phase crashed on every clean checkout where pipecat isn't
+# installed (closes Glad-Labs/poindexter#509). At construction time
+# (``ClaudeCodeBridgeLLMService.__init__``) the missing-pipecat case
+# fails loud — voice-bridge needs pipecat to actually do anything.
+try:
+    from pipecat.frames.frames import (  # type: ignore[import-not-found]
+        Frame,
+        LLMFullResponseEndFrame,
+        LLMFullResponseStartFrame,
+        LLMTextFrame,
+    )
+    from pipecat.processors.aggregators.llm_context import (  # type: ignore[import-not-found]
+        LLMContext,
+    )
+    from pipecat.processors.frame_processor import (  # type: ignore[import-not-found]
+        FrameDirection,
+    )
+    from pipecat.services.llm_service import LLMService  # type: ignore[import-not-found]
+
+    _PIPECAT_AVAILABLE = True
+    _PIPECAT_IMPORT_ERROR: ImportError | None = None
+except ImportError as _exc:  # noqa: BLE001
+    _PIPECAT_AVAILABLE = False
+    _PIPECAT_IMPORT_ERROR = _exc
+
+    # Provide a usable base class so the ``class
+    # ClaudeCodeBridgeLLMService(LLMService)`` declaration below parses.
+    # Any attempt to actually instantiate the service will fail loud in
+    # ``__init__`` — collection-time imports succeed, runtime use does
+    # NOT silently degrade.
+    class LLMService:  # type: ignore[no-redef]
+        """Placeholder used only when pipecat isn't installed."""
+
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            raise ImportError(
+                "pipecat is required to instantiate the Claude-Code voice "
+                "bridge. Install poindexter with the [voice] extra or set "
+                "voice_bridge_enabled=false in app_settings."
+            ) from _PIPECAT_IMPORT_ERROR
+
+    # Stub the symbols referenced at module scope so ``from
+    # voice_agent_claude_code import X`` doesn't NameError before
+    # __init__ has a chance to raise.
+    Frame = None  # type: ignore[assignment,misc]
+    LLMFullResponseEndFrame = None  # type: ignore[assignment,misc]
+    LLMFullResponseStartFrame = None  # type: ignore[assignment,misc]
+    LLMTextFrame = None  # type: ignore[assignment,misc]
+    LLMContext = None  # type: ignore[assignment,misc]
+    FrameDirection = None  # type: ignore[assignment,misc]
 
 
 # Cap how long we'll wait for `claude -p` to return before declaring a

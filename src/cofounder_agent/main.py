@@ -195,6 +195,30 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 "[LIFESPAN] di_wiring import / call failed: %s", e,
             )
 
+        # Boot-time import audit (Glad-Labs/poindexter#504).
+        # Closes the silent-degradation gap that caused the 2026-05-14
+        # Langfuse v2→v3 incident: an optional-SDK ImportError was
+        # caught, ``AVAILABLE = False`` got set, and traces stopped
+        # flowing for weeks with no operator signal. The audit probes
+        # every always-required module + the conditional-required
+        # opentelemetry-when-tracing-on case; missing modules trigger
+        # ``notify_operator`` (Telegram + Discord) so a packaging
+        # regression pages loudly instead of silently degrading.
+        # Runs AFTER site_config so the audit can read feature flags.
+        try:
+            from utils.import_audit import audit_worker_imports
+            _audit_failures = audit_worker_imports(_site_cfg)
+            if _audit_failures:
+                logger.error(
+                    "[LIFESPAN] boot import audit: %d missing module(s) — "
+                    "operator notified", len(_audit_failures),
+                )
+            # When clean, audit_worker_imports already logs at INFO.
+        except Exception as e:
+            logger.warning(
+                "[LIFESPAN] import_audit unavailable (non-blocking): %s", e,
+            )
+
         # Shared httpx.AsyncClient — process-wide connection-pool reuse.
         # Pre-2026-05-16 the codebase had 102 per-call instantiations
         # across 58 files; each ``async with httpx.AsyncClient(...)`` paid
