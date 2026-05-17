@@ -47,7 +47,7 @@ from services.prompt_manager import get_prompt_manager
 logger = logging.getLogger(__name__)
 
 
-_REPO_BASE = "https://github.com/Glad-Labs/glad-labs-stack"
+_REPO_BASE = "https://github.com/Glad-Labs/poindexter"
 _FOOTER = "_Auto-compiled by Poindexter from today's commits and PRs._"
 
 

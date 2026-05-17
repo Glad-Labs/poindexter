@@ -23,7 +23,7 @@ opencv-python-headless = "^4.8.0"
 # the [[tool.poetry.source]] block at the bottom of this file) so the
 # 5090 (Blackwell, sm_120) gets the right CUDA kernels — the default
 # PyPI wheel is CPU-only and SDXL silently fails on it. See
-# Glad-Labs/glad-labs-stack#334. >=2.7 ensures Blackwell support.
+# Glad-Labs/poindexter#334. >=2.7 ensures Blackwell support.
 torch = { version = ">=2.7", source = "pytorch-cu128", optional = true }
 diffusers = { version = ">=0.30.0", optional = true }
 transformers = { version = ">=4.40.0", optional = true }
@@ -58,7 +58,7 @@ build-backend = "poetry.core.masonry.api"
 # Explicit-priority source for the CUDA-built torch wheels.
 # priority="explicit" means poetry only consults this index for
 # packages that pin source = "pytorch-cu128"; everything else still
-# resolves from PyPI. See Glad-Labs/glad-labs-stack#334 for the bug
+# resolves from PyPI. See Glad-Labs/poindexter#334 for the bug
 # this fixes (CPU torch broke SDXL on Matt's RTX 5090).
 [[tool.poetry.source]]
 name = "pytorch-cu128"
