@@ -135,22 +135,37 @@ def audit_worker_imports(site_config: Any) -> dict[str, str]:
         site_config.get("enable_tracing", "false") or "false"
     ).lower() == "true"
     if enable_tracing:
-        ok, detail = _check_module(
-            "opentelemetry",
-            why_required=(
-                "app_settings.enable_tracing=true means the operator "
-                "expects spans to flow to the OTLP collector — without "
-                "opentelemetry, plugins/tracing.py:125 returns a NoopTracer "
-                "and every span is silently dropped."
+        # Check the SPECIFIC submodules that ``services.telemetry``
+        # actually imports — not the umbrella ``opentelemetry``
+        # package. ``opentelemetry-api`` + ``opentelemetry-sdk`` ship
+        # the ``opentelemetry`` namespace import, so an audit that
+        # probes just ``opentelemetry`` would silently pass even when
+        # the critical instrumentation + exporter packages are
+        # missing — exactly the regression Glad-Labs/poindexter#505
+        # surfaced 2026-05-17 (Tempo panels empty, audit reported
+        # clean because the umbrella import succeeded).
+        otel_required = [
+            (
+                "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+                "OTLP HTTP exporter (services/telemetry.py imports it "
+                "directly). Without it the TracerProvider has no exporter "
+                "and every span is silently dropped before reaching Tempo.",
+                "Add `opentelemetry-exporter-otlp` to pyproject.toml dependencies.",
             ),
-            docs_hint=(
-                "Add `opentelemetry-api` + `opentelemetry-sdk` + "
-                "`opentelemetry-exporter-otlp` to pyproject.toml, OR "
-                "set app_settings.enable_tracing=false."
+            (
+                "opentelemetry.instrumentation.fastapi",
+                "FastAPIInstrumentor (services/telemetry.py:154) wires "
+                "per-request spans. Missing means /api/* requests produce "
+                "no spans even when the exporter is healthy.",
+                "Add `opentelemetry-instrumentation-fastapi` to pyproject.toml.",
             ),
-        )
-        if not ok and detail is not None:
-            failures["opentelemetry"] = detail
+        ]
+        for mod_path, why, hint in otel_required:
+            ok, detail = _check_module(
+                mod_path, why_required=why, docs_hint=hint,
+            )
+            if not ok and detail is not None:
+                failures[mod_path] = detail
 
     # ---- Notify on any failure --------------------------------------------
     if failures:
@@ -184,7 +199,7 @@ def audit_worker_imports(site_config: Any) -> dict[str, str]:
     else:
         logger.info(
             "[boot-audit] all %d expected-present modules importable",
-            len(always_required) + (1 if enable_tracing else 0),
+            len(always_required) + (len(otel_required) if enable_tracing else 0),
         )
 
     return failures

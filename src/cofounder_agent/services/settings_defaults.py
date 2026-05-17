@@ -301,7 +301,12 @@ DEFAULTS: dict[str, str] = {
     'enable_tracing': 'true',
     'langfuse_host': '',
     'langfuse_tracing_enabled': 'true',
-    'otel_exporter_otlp_endpoint': 'http://tempo:4317',
+    # Tempo's OTLP HTTP receiver on /v1/traces. Matches the exporter
+    # we actually import (``opentelemetry.exporter.otlp.proto.http``).
+    # The gRPC port 4317 is wrong for this exporter — using it produces
+    # no spans in Tempo but no errors loud enough to notice, which is
+    # exactly the silent-failure mode #505 describes.
+    'otel_exporter_otlp_endpoint': 'http://tempo:4318/v1/traces',
     'pyroscope_server_url': 'http://pyroscope:4040',
     'sentry_enabled': 'true',
     'template_runner_progress_streaming': 'true',
