@@ -344,7 +344,7 @@ WHERE key = 'pipeline_writer_model';
 curl -sf https://www.gladlabs.io >/dev/null && echo "site OK" || echo "SITE DOWN"
 
 # Did Vercel deploy something broken in the last 24h?
-gh run list --repo Glad-Labs/glad-labs-stack --limit 5
+gh run list --repo Glad-Labs/poindexter --limit 5
 ```
 
 **Fix.** If site is down → see [§ Site DOWN](#site-down). If site is up but traffic still dropped:
@@ -495,7 +495,7 @@ curl -I https://www.gladlabs.io
 # Note status code.
 
 # Vercel deploy status
-gh run list --repo Glad-Labs/glad-labs-stack --limit 5
+gh run list --repo Glad-Labs/poindexter --limit 5
 ```
 
 **Fix.**
@@ -506,7 +506,7 @@ gh run list --repo Glad-Labs/glad-labs-stack --limit 5
 
 ```bash
 # Force a redeploy of the latest build
-gh run rerun <latest_run_id> --repo Glad-Labs/glad-labs-stack
+gh run rerun <latest_run_id> --repo Glad-Labs/poindexter
 ```
 
 ---
@@ -595,7 +595,7 @@ poindexter settings set pipeline_paused false
 This is a single-operator system. There is no on-call rotation.
 
 - **Critical bugs in product code (Poindexter):** file a GitHub issue at https://github.com/Glad-Labs/poindexter/issues
-- **Glad Labs business / operator issues:** file in the private tracker at https://github.com/Glad-Labs/glad-labs-stack/issues
+- **Glad Labs business / operator issues:** file in the private tracker at https://github.com/Glad-Labs/poindexter/issues
 - **Hardware issues:** consult the operator's own hardware notes (`~/.claude/projects/<your-project>/memory/` if using Claude Code memory, or wherever you keep your install spec)
 
 ---

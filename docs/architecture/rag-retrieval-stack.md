@@ -117,5 +117,5 @@ service directly.
 - Migration: `services/migrations/20260510_040315_seed_rag_engine_master_switch.py`
 - Tests: `tests/unit/services/test_rag_engine.py` (15 cases),
   `tests/unit/poindexter/memory/test_rag_engine_routing.py` (11 cases)
-- Issue: `Glad-Labs/glad-labs-stack#329` sub-issue 4 — third sub-issue
+- Issue: `Glad-Labs/poindexter#329` sub-issue 4 — third sub-issue
   closed in the Lane D push
