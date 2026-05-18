@@ -17,8 +17,11 @@ import json
 import sys
 from pathlib import Path
 
-DASHBOARDS_DIR = Path(
-    r"C:\Users\mattm\glad-labs-website\infrastructure\grafana\dashboards"
+DASHBOARDS_DIR = (
+    Path(__file__).resolve().parent.parent
+    / "infrastructure"
+    / "grafana"
+    / "dashboards"
 )
 POSTGRES_DATASOURCE = {
     "type": "grafana-postgresql-datasource",

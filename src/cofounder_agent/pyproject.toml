@@ -59,6 +59,16 @@ setuptools = "<81"  # Pin to avoid pkg_resources deprecation (see: setuptools#39
 # project. [fastapi] extra wires the ASGI + Starlette middleware.
 sentry-sdk = { version = "^2.18.0", extras = ["fastapi"] }
 
+# OpenTelemetry exporter + FastAPI instrumentation — required when
+# app_settings.enable_tracing=true. The base opentelemetry-api / -sdk
+# packages ship the `opentelemetry` namespace, but the OTLP HTTP
+# exporter and the FastAPIInstrumentor live in separate distributions.
+# Without these the TracerProvider has no exporter and per-request
+# spans never fire, so Tempo shows empty panels even though the
+# worker reports tracing enabled. Closes Glad-Labs/poindexter#505.
+opentelemetry-exporter-otlp = "^1.41"
+opentelemetry-instrumentation-fastapi = "^0.62b0"
+
 # Storage & Files
 python-multipart = ">=0.0.26"
 # pillow removed — never imported in production code (issue #1341)

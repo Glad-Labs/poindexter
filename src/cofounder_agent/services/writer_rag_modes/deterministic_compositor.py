@@ -2,7 +2,7 @@
 
 Renders the dev_diary post as a hybrid:
 
-- **Header** (deterministic): ``# What we shipped — YYYY-MM-DD``
+- **Header** (deterministic): ``# What we shipped on YYYY-MM-DD``
 - **Narrative** (LLM): 2-3 short paragraphs covering what / how / why,
   produced by a tightly-scoped LLM call. The model sees ONLY the bundle
   text as input — no topic title, no angle/tone hints, no embedding
@@ -227,7 +227,7 @@ async def compose_post(
 
     if not prs and not commits:
         return (
-            f"# What we shipped — {date}\n\n"
+            f"# What we shipped on {date}\n\n"
             f"Quiet day — no shipped work to report.\n\n"
             f"{_FOOTER}\n"
         )
@@ -237,7 +237,7 @@ async def compose_post(
         narrative = _fallback_narrative(bundle)
 
     parts: list[str] = []
-    parts.append(f"# What we shipped — {date}")
+    parts.append(f"# What we shipped on {date}")
     parts.append("")
     if narrative:
         parts.append(narrative)

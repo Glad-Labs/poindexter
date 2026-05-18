@@ -327,6 +327,8 @@ async def _maybe_auto_publish(
     settings_service: Any | None,
     task_id: str,
     quality_score: float,
+    site_config: Any = None,
+    auto_publish_gate: dict[str, Any] | None = None,
 ) -> bool:
     """Auto-publish trusted-niche posts that clear the threshold.
 
@@ -343,41 +345,109 @@ async def _maybe_auto_publish(
     from the deleted ``TaskExecutor._auto_publish_task`` during the
     Prefect Stage 4 cutover — Glad-Labs/poindexter#410). This helper
     only decides whether to call it.
+
+    Per-template gate bypass: when the caller passes a
+    ``auto_publish_gate`` dict with ``would_fire=True`` and
+    ``dry_run=False``, the global ``require_human_approval`` flag is
+    bypassed. This is the operator opt-in pattern from
+    :mod:`services.auto_publish_gate` — setting
+    ``dev_diary_auto_publish_threshold > 0`` AND
+    ``dev_diary_auto_publish_dry_run=false`` is the affirmative signal
+    that this niche has been audited and trusted to ship without a
+    review pass. Without this bypass the per-template thresholds
+    were dead code: the global flag forced every post to manual
+    approval regardless of the niche-specific opt-in. The 2026-05-17
+    vacation observation surfaced this — Matt had configured
+    dev_diary to auto-publish weeks ago, but every post still went
+    to awaiting_approval.
     """
+    # If the caller didn't pre-compute the gate decision (the result
+    # dict path is brittle — depends on the LangGraph state graph
+    # plumbing the context_updates back into the top-level result),
+    # compute it here. Same gate code path; just invoked from the
+    # decision site instead of finalize_task's observability path.
+    if auto_publish_gate is None:
+        try:
+            pool = getattr(database_service, "pool", None)
+            if pool is not None and site_config is not None:
+                row = await pool.fetchrow(
+                    "SELECT niche_slug, category FROM pipeline_tasks "
+                    "WHERE task_id = $1",
+                    task_id,
+                )
+                niche_slug = row["niche_slug"] if row else None
+                category = row["category"] if row else None
+                from services.auto_publish_gate import evaluate as _gate_evaluate
+                decision = await _gate_evaluate(
+                    pool,
+                    task_id=task_id,
+                    niche_slug=niche_slug,
+                    category=category,
+                    quality_score=quality_score,
+                    site_config=site_config,
+                )
+                auto_publish_gate = {
+                    "would_fire": decision.would_fire,
+                    "dry_run": decision.dry_run,
+                    "gate_state": decision.gate_state,
+                    "reason": decision.reason,
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "[POST_PIPELINE] inline gate evaluate failed for %s: %s",
+                task_id, exc,
+            )
+            auto_publish_gate = None
+
+    gate_bypass = bool(
+        auto_publish_gate
+        and auto_publish_gate.get("would_fire") is True
+        and auto_publish_gate.get("dry_run") is False
+    )
     require_str = await _get_setting(
         settings_service=settings_service,
         database_service=database_service,
         key="require_human_approval",
         default=_DEFAULT_REQUIRE_HUMAN_APPROVAL,
     )
-    if require_str.lower() in ("true", "1", "yes"):
+    if require_str.lower() in ("true", "1", "yes") and not gate_bypass:
         logger.info(
             "[APPROVAL] Human approval required — task %s (score: %.0f) "
             "queued as awaiting_approval",
             task_id, quality_score,
         )
         return False
+    if gate_bypass:
+        gate = auto_publish_gate or {}
+        logger.info(
+            "[AUTO_PUBLISH] per-template gate (would_fire=True, dry_run=False) "
+            "bypasses require_human_approval AND global "
+            "auto_publish_threshold for task %s (score: %.0f, "
+            "gate_state=%s, gate_reason=%s)",
+            task_id, quality_score, gate.get("gate_state"), gate.get("reason"),
+        )
 
     from services.auto_publish import auto_publish_task, get_auto_publish_threshold
 
-    try:
-        auto_threshold = await get_auto_publish_threshold(database_service)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[POST_PIPELINE] get_auto_publish_threshold failed for %s, "
-            "task stays in awaiting_approval: %s",
-            task_id, exc,
+    if not gate_bypass:
+        try:
+            auto_threshold = await get_auto_publish_threshold(database_service)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[POST_PIPELINE] get_auto_publish_threshold failed for %s, "
+                "task stays in awaiting_approval: %s",
+                task_id, exc,
+            )
+            return False
+
+        if auto_threshold <= 0 or quality_score < auto_threshold:
+            return False
+
+        logger.info(
+            "[AUTO_PUBLISH] Quality score %s >= threshold %s, "
+            "auto-publishing task %s",
+            quality_score, auto_threshold, task_id,
         )
-        return False
-
-    if auto_threshold <= 0 or quality_score < auto_threshold:
-        return False
-
-    logger.info(
-        "[AUTO_PUBLISH] Quality score %s >= threshold %s, "
-        "auto-publishing task %s",
-        quality_score, auto_threshold, task_id,
-    )
     try:
         return await auto_publish_task(
             database_service=database_service,
@@ -626,11 +696,24 @@ async def run_post_pipeline_actions(
         return
 
     # 3. Auto-publish: trusted niches with high scores ship without review.
+    # finalize_task stamps the per-template auto_publish_gate decision
+    # onto the result dict; threading it through lets the per-niche
+    # opt-in (e.g. dev_diary_auto_publish_threshold=70 + dry_run=false)
+    # bypass the global require_human_approval flag. Without this
+    # bypass the niche-specific thresholds were dead code — every
+    # post hit awaiting_approval regardless of the opt-in.
+    auto_publish_gate_decision = None
+    if isinstance(result, dict):
+        gate = result.get("auto_publish_gate")
+        if isinstance(gate, dict):
+            auto_publish_gate_decision = gate
     auto_published = await _maybe_auto_publish(
         database_service=database_service,
         settings_service=settings_service,
         task_id=task_id,
         quality_score=quality_score,
+        site_config=site_config,
+        auto_publish_gate=auto_publish_gate_decision,
     )
 
     # 4. Operator notification — single Discord/Telegram message with

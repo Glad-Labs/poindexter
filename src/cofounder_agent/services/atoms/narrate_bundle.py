@@ -78,7 +78,7 @@ ATOM_META = AtomMeta(
 )
 
 
-_HEADER_PREFIX = "# What we shipped — "
+_HEADER_PREFIX = "# What we shipped on "
 _FOOTER = "_Auto-compiled by Poindexter from today's commits and PRs._"
 
 
@@ -455,20 +455,57 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     prose = _maybe_unwrap_json(raw).strip()
     if not prose:
-        # Graceful fallback so the post still ships.
-        pr_n = len(bundle.get("merged_prs") or [])
-        commit_n = len(bundle.get("notable_commits") or [])
+        # Graceful fallback so the post still ships. Instead of a single
+        # "we shipped N PRs" sentence (which produced visibly thin posts
+        # whenever the LLM call timed out — see the 2026-05-17 vacation
+        # observation), enumerate the actual PR titles and notable
+        # commits as a deterministic list. The reader gets a real
+        # changelog even when the narrative LLM is unavailable; the
+        # quality_score still drops because this isn't founder-voice
+        # prose, but the post is no longer just boilerplate.
+        prs = bundle.get("merged_prs") or []
+        commits = bundle.get("notable_commits") or []
+        pr_n = len(prs)
+        commit_n = len(commits)
         parts: list[str] = []
         if pr_n:
             parts.append(f"{pr_n} PR{'s' if pr_n != 1 else ''}")
         if commit_n:
             parts.append(f"{commit_n} notable commit{'s' if commit_n != 1 else ''}")
-        prose = (
-            f"The team shipped {' and '.join(parts)} today. "
-            f"See the linked PRs for details."
-            if parts
-            else "Quiet day — no shipped work to report."
-        )
+        if not parts:
+            prose = "Quiet day — no shipped work to report."
+        else:
+            header_line = (
+                f"The narrative writer was unavailable this run, so here's the "
+                f"plain changelog. We shipped {' and '.join(parts)} today."
+            )
+            pr_lines: list[str] = []
+            for p in prs[:25]:
+                num = p.get("number") or "?"
+                title = (p.get("title") or "").strip() or f"PR #{num}"
+                url = (p.get("url") or "").strip()
+                if url:
+                    pr_lines.append(f"- [PR #{num}]({url}) {title}")
+                else:
+                    pr_lines.append(f"- PR #{num}: {title}")
+            commit_lines: list[str] = []
+            for c in commits[:15]:
+                sha = (c.get("sha") or "").strip()
+                subject = (c.get("subject") or "").strip()
+                if sha and subject:
+                    commit_lines.append(f"- `{sha[:7]}` {subject}")
+            sections: list[str] = [header_line, ""]
+            if pr_lines:
+                sections.append("**Merged PRs:**")
+                sections.append("")
+                sections.extend(pr_lines)
+                sections.append("")
+            if commit_lines:
+                sections.append("**Other commits:**")
+                sections.append("")
+                sections.extend(commit_lines)
+                sections.append("")
+            prose = "\n".join(sections).rstrip()
 
     body = (
         f"{_HEADER_PREFIX}{date}\n\n"

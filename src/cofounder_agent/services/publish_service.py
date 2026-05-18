@@ -830,7 +830,15 @@ async def publish_post_from_task(
         try:
             from services.devto_service import DevToCrossPostService
 
-            devto_svc = DevToCrossPostService(getattr(db_service, "cloud_pool", None) or db_service.pool)
+            # Thread the lifespan-bound site_config through so the
+            # DevTo crosspost can read site_url for the canonical URL.
+            # Without this kwarg the service falls back to a fresh
+            # empty SiteConfig and crashes on .require("site_url") —
+            # observed during the 2026-05-17 auto-publish stress test.
+            devto_svc = DevToCrossPostService(
+                getattr(db_service, "cloud_pool", None) or db_service.pool,
+                site_config=site_config,
+            )
             if background_tasks:
                 background_tasks.add_task(
                     devto_svc.cross_post_by_post_id, post_id
@@ -1304,7 +1312,7 @@ async def fire_post_distribution_hooks(
     # 2. Dev.to
     try:
         from services.devto_service import DevToCrossPostService
-        devto_svc = DevToCrossPostService(pool)
+        devto_svc = DevToCrossPostService(pool, site_config=site_config)
         _spawn_background(
             devto_svc.cross_post_by_post_id(post_id),
             name=f"devto_crosspost({post_id})",

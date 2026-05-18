@@ -298,6 +298,18 @@ services:
       # "no env-var drift, app_settings is the single source" contract clean.
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8002}
       HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
+      # OpenTelemetry — exposed as env vars so services/telemetry.py's
+      # module-level setup_telemetry() call in main.py:767 can wire the
+      # FastAPIInstrumentor middleware BEFORE the FastAPI stack is
+      # finalized (which happens when sub-apps like SQLAdmin mount).
+      # Without these env vars, the module-load setup_telemetry() reads
+      # the cold SiteConfig (no DB yet, ENABLE_TRACING default 'false')
+      # and early-returns. The later lifespan-time setup_telemetry()
+      # call DOES see enable_tracing=true (DB-loaded by then), but by
+      # then the middleware stack is closed and instrument_app silently
+      # no-ops — leaving Tempo dark. Closes Glad-Labs/poindexter#505.
+      ENABLE_TRACING: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://tempo:4318/v1/traces"
       API_TOKEN: ${API_TOKEN:?Run 'poindexter setup' — API_TOKEN is generated in bootstrap.toml}
       # Symmetric key for decrypting is_secret=true rows in app_settings.
       # Mirrored from ~/.poindexter/bootstrap.toml poindexter_secret_key.
@@ -591,6 +603,17 @@ services:
       LANGFUSE_HOST: "http://langfuse-web:3000"
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_PUBLIC_KEY is generated in bootstrap.toml}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_SECRET_KEY is generated in bootstrap.toml}
+      # Ollama lives on the host (RTX 5090); the flow body's LLM
+      # dispatchers (LiteLLM, direct httpx) need the URL or they
+      # default to localhost — which inside this container is the
+      # prefect-worker process itself, not Ollama. Without this env
+      # var every dev_diary narrate_bundle call fails with
+      # "Connect call failed ('127.0.0.1', 11434)" and falls back
+      # to the deterministic changelog. Verified 2026-05-17 vacation
+      # session: the legacy poindexter-worker has this env, the
+      # prefect-worker didn't — that asymmetry was masking the LLM
+      # outage entirely.
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ./src/cofounder_agent:/app:ro

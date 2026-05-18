@@ -257,8 +257,26 @@ class LiteLLMProvider:
         Mutating instance state on every call is fine — config rarely
         changes within a single process and the cost is one dict lookup.
         Idempotent.
+
+        ``api_base`` resolution order (first non-empty wins):
+        1. ``plugin.llm_provider.litellm.config.api_base`` (DB-first,
+           the canonical source per feedback_db_first_config).
+        2. ``OLLAMA_API_BASE`` env var (LiteLLM's own contract).
+        3. ``OLLAMA_BASE_URL`` env var (Poindexter's docker-compose
+           convention — set on every worker container so flow-body
+           LLM calls reach the host's Ollama instead of the
+           container's localhost). This fallback is the asymmetry-
+           breaker for the 2026-05-16 dispatcher cutover: every legacy
+           direct-httpx caller read OLLAMA_BASE_URL out of the env, so
+           the migration to LiteLLM has to honor the same contract or
+           every dockerized deploy needs a hand-edited
+           app_settings.plugin.llm_provider.litellm row.
         """
-        self._api_base = provider_config.get("api_base") or self._api_base
+        import os
+        env_fallback = os.environ.get("OLLAMA_API_BASE") or os.environ.get("OLLAMA_BASE_URL")
+        self._api_base = (
+            provider_config.get("api_base") or self._api_base or env_fallback
+        )
         self._timeout = float(provider_config.get("timeout_seconds", self._timeout))
         self._drop_params = bool(
             provider_config.get("drop_params", self._drop_params)

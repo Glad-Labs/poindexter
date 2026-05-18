@@ -203,7 +203,7 @@ DEFAULTS: dict[str, str] = {
     'niche_carry_forward_decay_factor': '0.7',
     'niche_embedding_model': 'nomic-embed-text',
     'niche_goal_descriptions': '',
-    'niche_ollama_chat_timeout_seconds': '60.0',
+    'niche_ollama_chat_timeout_seconds': '300.0',
     'niche_top_n_per_pool': '5',
     'topic_dedup_engine': 'word_overlap',
     'topic_dedup_existing_threshold': '0.7',
