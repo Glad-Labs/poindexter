@@ -39,6 +39,14 @@ import pytest
 from tests.unit.services import test_voice_agent_claude_code_session_collision as _sc_stub  # noqa: E402
 # isort: on
 
+# Install the Pipecat stubs at MODULE import time. Autouse fixtures
+# alone are insufficient because the sibling ``_clear_creds_cache``
+# autouse fixture also imports ``services.voice_agent_claude_code``,
+# and pytest orders same-scope autouse fixtures alphabetically — so
+# ``_clear_creds_cache`` would otherwise run before ``_pipecat_stubs``
+# and explode with ModuleNotFoundError: pipecat.
+_sc_stub._ensure_pipecat_stubs()
+
 
 @pytest.fixture(autouse=True)
 def _pipecat_stubs() -> Iterator[None]:
@@ -217,3 +225,268 @@ class TestTelegramCredsCentralizedPath:
         assert creds is None
         # Should never even attempt to open the pool.
         assert create_pool.await_count == 0
+
+
+@pytest.mark.unit
+class TestTelegramCredsEdgeCases:
+    """Edge cases + defensive contracts around ``_telegram_creds`` —
+    pins behaviour the original GH cleanup did not explicitly cover.
+
+    These are not duplicates of the happy/missing-key tests above;
+    they pin coercion, pool lifecycle on failure, cache hygiene on
+    partial reads, and the deliberate pool-sizing kwargs."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_both_creds_missing(self):
+        """Neither token nor chat_id present — both ``not <val>``
+        branches collapse to the same disabled-transcript outcome,
+        no cache write, pool still closed cleanly."""
+        import services.voice_agent_claude_code as vac
+
+        conn_mock = MagicMock()
+        pool = _FakePool(conn_mock)
+        create_pool = AsyncMock(return_value=pool)
+
+        async def _fake_plugin_get_secret(conn, key):
+            return None
+
+        with patch("asyncpg.create_pool", create_pool), patch(
+            "brain.bootstrap.resolve_database_url",
+            return_value="postgresql://stub",
+        ), patch(
+            "plugins.secrets.get_secret", side_effect=_fake_plugin_get_secret,
+        ):
+            creds = await vac._telegram_creds()
+
+        assert creds is None
+        assert pool.closed is True
+        # Cache must remain unset so a later config-fix can repopulate it.
+        assert vac._TG_BOT_TOKEN_CACHE is None
+        assert vac._TG_CHAT_ID_CACHE is None
+
+    @pytest.mark.asyncio
+    async def test_empty_string_creds_treated_as_missing(self):
+        """``get_secret`` returns ``""`` for both keys (the
+        ``SiteConfig.get_secret(key, default="")`` default). The
+        ``if not <val>`` guard must treat empty strings the same as
+        ``None`` — otherwise the bot would push transcripts to
+        chat_id="" with token="" and 401-loop forever."""
+        import services.voice_agent_claude_code as vac
+
+        conn_mock = MagicMock()
+        pool = _FakePool(conn_mock)
+        create_pool = AsyncMock(return_value=pool)
+
+        async def _fake_plugin_get_secret(conn, key):
+            return ""
+
+        with patch("asyncpg.create_pool", create_pool), patch(
+            "brain.bootstrap.resolve_database_url",
+            return_value="postgresql://stub",
+        ), patch(
+            "plugins.secrets.get_secret", side_effect=_fake_plugin_get_secret,
+        ):
+            creds = await vac._telegram_creds()
+
+        assert creds is None
+
+    @pytest.mark.asyncio
+    async def test_chat_id_coerced_to_str_when_returned_as_int(self):
+        """``app_settings.value`` is TEXT, but a misconfigured row /
+        future numeric column would surface chat_id as an int. The
+        ``str(...)`` cast on line 509-510 normalises both to strings
+        so the downstream f-string URL builder doesn't blow up."""
+        import services.voice_agent_claude_code as vac
+
+        conn_mock = MagicMock()
+        pool = _FakePool(conn_mock)
+        create_pool = AsyncMock(return_value=pool)
+
+        async def _fake_plugin_get_secret(conn, key):
+            return {
+                "telegram_bot_token": "bot-token-plaintext",
+                # Deliberately an int — the str() cast must normalise.
+                "telegram_chat_id": 12345,
+            }.get(key)
+
+        with patch("asyncpg.create_pool", create_pool), patch(
+            "brain.bootstrap.resolve_database_url",
+            return_value="postgresql://stub",
+        ), patch(
+            "plugins.secrets.get_secret", side_effect=_fake_plugin_get_secret,
+        ):
+            creds = await vac._telegram_creds()
+
+        assert creds is not None
+        assert creds == ("bot-token-plaintext", "12345")
+        assert isinstance(creds[1], str)
+
+    @pytest.mark.asyncio
+    async def test_partial_read_does_not_poison_cache(self):
+        """First call sees a missing token → returns None. Second
+        call (after the operator fixes the config) sees both creds
+        → must succeed. If the cache were populated on a partial
+        read, the second call would short-circuit with stale data
+        or refuse to retry."""
+        import services.voice_agent_claude_code as vac
+
+        conn_mock = MagicMock()
+        pool = _FakePool(conn_mock)
+        create_pool = AsyncMock(return_value=pool)
+
+        call_state = {"chat_id_only": True}
+
+        async def _fake_plugin_get_secret(conn, key):
+            if call_state["chat_id_only"]:
+                return {"telegram_chat_id": "999"}.get(key)
+            return {
+                "telegram_bot_token": "fixed-token",
+                "telegram_chat_id": "999",
+            }.get(key)
+
+        with patch("asyncpg.create_pool", create_pool), patch(
+            "brain.bootstrap.resolve_database_url",
+            return_value="postgresql://stub",
+        ), patch(
+            "plugins.secrets.get_secret", side_effect=_fake_plugin_get_secret,
+        ):
+            first = await vac._telegram_creds()
+            assert first is None
+            # Operator fixes the missing token — flip the fixture.
+            call_state["chat_id_only"] = False
+            second = await vac._telegram_creds()
+
+        assert second == ("fixed-token", "999")
+        # Pool was opened twice — once per call, no cache short-circuit.
+        assert create_pool.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_internal_get_secret_failure_degrades_to_disabled(self):
+        """``SiteConfig.get_secret`` swallows per-key DB exceptions and
+        logs a warning — it does NOT re-raise. Confirm that contract
+        is inherited by the voice agent: a transient decrypt / DB
+        hiccup makes the transcript go dark (return ``None``) rather
+        than crashing the bot mid-call. The finally block must still
+        close the pool, and the cache must NOT be populated so a
+        later healthy call can repopulate it."""
+        import services.voice_agent_claude_code as vac
+
+        conn_mock = MagicMock()
+        pool = _FakePool(conn_mock)
+        create_pool = AsyncMock(return_value=pool)
+
+        async def _fake_plugin_get_secret(conn, key):
+            raise RuntimeError("simulated decrypt failure")
+
+        with patch("asyncpg.create_pool", create_pool), patch(
+            "brain.bootstrap.resolve_database_url",
+            return_value="postgresql://stub",
+        ), patch(
+            "plugins.secrets.get_secret", side_effect=_fake_plugin_get_secret,
+        ):
+            creds = await vac._telegram_creds()
+
+        assert creds is None
+        # Pool always closed via finally even when SiteConfig logs+swallows.
+        assert pool.closed is True
+        # Cache must remain unset so a later healthy call retries.
+        assert vac._TG_BOT_TOKEN_CACHE is None
+        assert vac._TG_CHAT_ID_CACHE is None
+
+    @pytest.mark.asyncio
+    async def test_create_pool_called_with_tight_sizing(self):
+        """The pool is intentionally sized at min=1/max=1 with short
+        timeouts because get_secret runs at most twice on this path
+        and the bot never reuses the pool. A future PR that widens
+        these defaults (e.g. min_size=5) would leak DB connections
+        for every voice-agent restart — pin the contract."""
+        import services.voice_agent_claude_code as vac
+
+        conn_mock = MagicMock()
+        pool = _FakePool(conn_mock)
+        create_pool = AsyncMock(return_value=pool)
+
+        async def _fake_plugin_get_secret(conn, key):
+            return {
+                "telegram_bot_token": "t",
+                "telegram_chat_id": "1",
+            }.get(key)
+
+        with patch("asyncpg.create_pool", create_pool), patch(
+            "brain.bootstrap.resolve_database_url",
+            return_value="postgresql://stub",
+        ), patch(
+            "plugins.secrets.get_secret", side_effect=_fake_plugin_get_secret,
+        ):
+            await vac._telegram_creds()
+
+        assert create_pool.await_count == 1
+        call = create_pool.await_args
+        assert call is not None
+        # Positional DSN.
+        assert call.args[0] == "postgresql://stub"
+        # Deliberate sizing — keep it tight.
+        assert call.kwargs.get("min_size") == 1
+        assert call.kwargs.get("max_size") == 1
+        assert call.kwargs.get("timeout") == 2.0
+        assert call.kwargs.get("command_timeout") == 5.0
+
+    @pytest.mark.asyncio
+    async def test_get_secret_requested_for_exact_keys(self):
+        """Both ``telegram_bot_token`` and ``telegram_chat_id`` are
+        the canonical app_settings rows. A typo in either key name
+        would silently disable the transcript push — pin the names."""
+        import services.voice_agent_claude_code as vac
+
+        conn_mock = MagicMock()
+        pool = _FakePool(conn_mock)
+        create_pool = AsyncMock(return_value=pool)
+
+        requested_keys: list[str] = []
+
+        async def _fake_plugin_get_secret(conn, key):
+            requested_keys.append(key)
+            return {
+                "telegram_bot_token": "t",
+                "telegram_chat_id": "1",
+            }.get(key)
+
+        with patch("asyncpg.create_pool", create_pool), patch(
+            "brain.bootstrap.resolve_database_url",
+            return_value="postgresql://stub",
+        ), patch(
+            "plugins.secrets.get_secret", side_effect=_fake_plugin_get_secret,
+        ):
+            await vac._telegram_creds()
+
+        assert set(requested_keys) == {
+            "telegram_bot_token",
+            "telegram_chat_id",
+        }
+
+    @pytest.mark.asyncio
+    async def test_resolved_db_url_passed_through_to_create_pool(self):
+        """``resolve_database_url`` is the single source of truth for
+        the DSN (bootstrap.toml → DATABASE_URL → LOCAL_DATABASE_URL
+        → POINDEXTER_MEMORY_DSN). Confirm whatever it returns is the
+        URL handed to ``asyncpg.create_pool`` verbatim, so this code
+        path inherits bootstrap's resolution policy."""
+        import services.voice_agent_claude_code as vac
+
+        conn_mock = MagicMock()
+        pool = _FakePool(conn_mock)
+        create_pool = AsyncMock(return_value=pool)
+
+        async def _fake_plugin_get_secret(conn, key):
+            return {"telegram_bot_token": "t", "telegram_chat_id": "1"}.get(key)
+
+        custom_dsn = "postgresql://custom-user@host:5433/custom_db?sslmode=require"
+        with patch("asyncpg.create_pool", create_pool), patch(
+            "brain.bootstrap.resolve_database_url", return_value=custom_dsn,
+        ), patch(
+            "plugins.secrets.get_secret", side_effect=_fake_plugin_get_secret,
+        ):
+            await vac._telegram_creds()
+
+        assert create_pool.await_args is not None
+        assert create_pool.await_args.args[0] == custom_dsn
