@@ -218,7 +218,7 @@ All operator-configurable via `app_settings`:
 | `prefect_content_flow_work_pool`   | `content-pool` | Work pool name                                           |
 | `prefect_content_flow_concurrency` | `1`            | Max concurrent flow runs (mirrors today's serialization) |
 
-The throttle bug from `Glad-Labs/glad-labs-stack#345` becomes a
+The throttle bug from `Glad-Labs/poindexter#345` becomes a
 work-pool concurrency limit — operator-tunable in the Prefect UI without
 touching `app_settings` or code.
 
