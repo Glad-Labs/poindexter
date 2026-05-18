@@ -175,7 +175,7 @@ Plugin config shape in `app_settings`:
 ```json
 {
   "key": "plugin.tap.github",
-  "value": "{\"enabled\": true, \"interval_seconds\": 3600, \"config\": {\"repo\": \"Glad-Labs/glad-labs-stack\"}}",
+  "value": "{\"enabled\": true, \"interval_seconds\": 3600, \"config\": {\"repo\": \"Glad-Labs/poindexter\"}}",
   "category": "plugins"
 }
 ```
