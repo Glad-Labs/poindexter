@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-05-16.**  
+> **Auto-generated from live `app_settings` table on 2026-05-17.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 695 active rows across 56 categories. 5 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 4 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -775,7 +775,7 @@ The worker re-reads on every poll; no restart needed.
 | `langfuse_public_key` | `*(encrypted)*` | encrypted | Langfuse project public key (pk-lf-...). Paired with langfuse_secret_key (already is_secret=true). Marked is_secret=t... |
 | `langfuse_tracing_enabled` | `true` |  | When true (default), LiteLLMProvider registers Langfuse as a success/failure callback so every LLM call emits a span ... |
 | `operator_url_probe_target_overrides` | `{"google_sitemap_ping_url": {"alive_c...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
-| `otel_exporter_otlp_endpoint` | `http://tempo:4317` |  | OTLP gRPC endpoint that the worker pushes spans to. Default points at the docker-compose tempo service on its OTLP gR... |
+| `otel_exporter_otlp_endpoint` | `http://tempo:4318/v1/traces` |  | OTLP HTTP endpoint the worker pushes spans to. Matches the exporter we import (opentelemetry.exporter.otlp.proto.http... |
 | `pyroscope_server_url` | `http://pyroscope:4040` |  | Pyroscope ingestion URL for worker agent |
 
 ## orchestration
@@ -914,7 +914,7 @@ The worker re-reads on every poll; no restart needed.
 | `prometheus.threshold.daily_spend_critical_usd` | `5.0` |  | Daily LLM spend critical threshold |
 | `prometheus.threshold.daily_spend_warning_usd` | `4.0` |  | Daily LLM spend warning threshold |
 | `prometheus.threshold.embeddings_stale_seconds` | `21600` |  | Seconds without an embeddings_total change before EmbeddingsStale fires |
-| `prometheus.threshold.monthly_spend_warning_usd` | `15.0` |  | Monthly LLM spend warning threshold |
+| `prometheus.threshold.monthly_spend_warning_usd` | `35.0` |  | Monthly spend warning threshold (USD). Includes ALL cost_logs rows — local Ollama electricity (~$30/mo baseline) AND ... |
 
 ## publishing
 
