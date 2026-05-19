@@ -87,8 +87,18 @@ DEFAULTS: dict[str, str] = {
     'local_llm_model_name': 'auto',
     'model_role_image_decision': 'qwen3:8b',
     'pipeline_architect_timeout_seconds': '120.0',
+    # why: VRAM guard against the writer (~20GB) + SDXL (~12GB) overlap
+    # at the stage-5→stage-7 boundary. Default-on fixes the 24GB-card OOM;
+    # operators on 80+GB hardware can flip to 'false' to skip the
+    # ~3-5s reload tax (see services/llm_providers/ollama_unload.py).
+    'pipeline_explicit_writer_unload_before_sdxl': 'true',
     'pipeline_fallback_model': 'gemma3:27b',
     'pipeline_writer_model': 'gemma3:27b',
+    # why: asyncio.sleep() after issuing keep_alive=0 so Ollama actually
+    # releases VRAM before the inline-image /generate lands. 2s is the
+    # sweet spot — long enough for the kernel to free, short enough to
+    # stay invisible in pipeline latency.
+    'pipeline_writer_unload_grace_seconds': '2',
     'qa_fallback_writer_model': 'gemma3:27b',
     'use_ollama': 'false',
 

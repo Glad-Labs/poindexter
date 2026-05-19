@@ -125,6 +125,25 @@ class ReplaceInlineImagesStage:
         stages = context.setdefault("stages", {})
         updates: dict[str, Any] = {}
 
+        # VRAM guard (glad-labs-stack 2026-05-19 jank-audit finding #4):
+        # the writer LLM (~20 GB for gemma3:27b) stays resident from the
+        # preceding LLM stages because Ollama's default keep_alive is 5
+        # min. SDXL Lightning loads ~12 GB on top, which OOMs 24 GB
+        # cards and runs at ~98% VRAM on a 32 GB card. The
+        # gpu_scheduler already unloads on the SDXL lock acquire, but
+        # keep_alive=0 is fire-and-forget — without the grace sleep an
+        # immediate /generate (the inline-image prompt build a few
+        # lines below) can re-load before the writer's VRAM has been
+        # released. This helper makes the unload deterministic +
+        # tunable per ``app_settings.pipeline_explicit_writer_unload_before_sdxl``.
+        from services.llm_providers.ollama_unload import (
+            maybe_unload_writer_before_sdxl,
+        )
+        await maybe_unload_writer_before_sdxl(
+            site_config=site_config,
+            stage_label=self.name,
+        )
+
         # Look for existing placeholders from the writer; otherwise ask
         # the Image Decision Agent to plan + inject them.
         placeholders = _PLACEHOLDER_RE.findall(content_text)

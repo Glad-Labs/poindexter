@@ -315,6 +315,43 @@ docker logs poindexter-worker 2>&1 | grep "Wan21Provider" | tail -20
 
 ---
 
+## Worker OOMs on 24 GB cards at the inline-image stage (writer + SDXL collide)
+
+**Symptom.** On a 24 GB card (RTX 3090 / 4090) the worker crashes with `CUDA out of memory` somewhere between `quality_evaluation` (stage 5) finishing and `replace_inline_images` (stage 7) starting. On a 32 GB card (RTX 5090) the same boundary briefly hits ~98% VRAM (32003 MiB / 32607 MiB, ~604 MB headroom) and survives, but is a single Chrome tab away from OOMing. Discord/Telegram alerts may fire on `nvidia_gpu_memory_used_bytes` between the two stages.
+
+**Root cause.** The writer LLM (~20 GB for `gemma3:27b`) stays resident from the preceding LLM stages because Ollama's default `keep_alive` is 5 minutes. SDXL Lightning then loads ~12 GB on top before the writer has been evicted. `services/gpu_scheduler` already calls `_unload_ollama_models()` when `gpu.lock("sdxl", ...)` acquires, but Ollama treats `keep_alive: 0` as fire-and-forget — the API call returns immediately and the actual VRAM release is asynchronous. A `/generate` request issued seconds later (the inline-image prompt build) can land before the prior unload has finished. See 2026-05-19 jank-audit finding #4.
+
+**Detection.**
+
+```bash
+# Sample VRAM at the transition. Run while a task is in stages 5-7:
+watch -n 0.5 'nvidia-smi --query-gpu=memory.used,memory.free,memory.total --format=csv,noheader'
+
+# Confirm both models were resident at once:
+docker logs poindexter-worker 2>&1 | grep -E "(generate_content|replace_inline_images).*GPU acquired" | tail -10
+```
+
+**Fix.** Default-on as of 2026-05-19: `replace_inline_images.execute()` now calls `services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl()` at stage entry, which:
+
+1. Walks `/api/ps` to find currently-loaded models.
+2. Issues `POST /api/generate` with `keep_alive: 0` for each.
+3. Sleeps `pipeline_writer_unload_grace_seconds` (default `2`) so the kernel actually frees the VRAM before the inline-image `/generate` lands.
+
+The log marker to confirm the guard is active:
+
+```
+[REPLACE_INLINE_IMAGES] Unloaded writer model gemma3:27b before SDXL phase (grace=2.0s)
+```
+
+**Tunables.** Both via `app_settings`:
+
+- `pipeline_explicit_writer_unload_before_sdxl` (bool, default `true`) — flip to `false` on 80+ GB hardware where the ~3-5 s writer-reload tax (when `cross_model_qa` later needs the LLM back) isn't worth the safety margin.
+- `pipeline_writer_unload_grace_seconds` (int, default `2`) — bump on slower hardware if `nvidia-smi` shows VRAM still occupied after the unload returns.
+
+**Prevention.** Don't disable the gate unless you've confirmed your card has enough headroom for writer (~20 GB) + SDXL (~12 GB) + OS overhead in parallel. The default-on path costs one model reload (~3-5 s) per task; the OOM costs the whole task plus a restart.
+
+---
+
 ## Wan-server enters DEGRADED state — `/generate` returns 503 forever
 
 **Symptom.** `curl http://localhost:9840/health` returns:

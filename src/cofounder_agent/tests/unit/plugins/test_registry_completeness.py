@@ -53,6 +53,7 @@ _NON_PROVIDER_MODULES: set[str] = {
     "__init__",
     "dispatcher",  # services/llm_providers/dispatcher.py — dispatch helper
     "thinking_models",  # services/llm_providers/thinking_models.py — model-class detection helpers
+    "ollama_unload",  # services/llm_providers/ollama_unload.py — VRAM-guard helper (no provider class)
 }
 
 
