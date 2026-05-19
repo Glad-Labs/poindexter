@@ -44,17 +44,33 @@ def _make_site_config(values: dict[str, str] | None = None) -> Any:
     return SimpleNamespace(get=_get, get_int=_get_int)
 
 
-def _make_pool(*, pending_count: int = 0) -> Any:
+def _make_pool(*, pending_count: int = 0,
+               app_setting_template_slug: str | None = "canonical_blog") -> Any:
     """Mock asyncpg pool — supports the connection-context-manager dance.
 
     ``async with pool.acquire() as conn:`` uses an async ctx manager.
     ``MagicMock`` doesn't speak that out of the box; we wire it with a
     helper class so both ``conn.execute`` and ``conn.fetchval`` are
     AsyncMocks the test can assert on.
+
+    ``app_setting_template_slug`` feeds the ``template_slug_resolver``
+    integration in ``propose_topic`` — defaults to ``'canonical_blog'``
+    so existing tests keep working without re-asserting on the slug.
     """
     conn = MagicMock()
     conn.execute = AsyncMock(return_value="INSERT 0 1")
     conn.fetchval = AsyncMock(return_value=pending_count)
+
+    async def _fetchrow(sql, *args, **kwargs):
+        # Only the resolver uses fetchrow on this code path; serve the
+        # app_settings row shape it expects.
+        if "FROM app_settings" in sql:
+            if app_setting_template_slug is None:
+                return None
+            return {"value": app_setting_template_slug}
+        return None
+
+    conn.fetchrow = AsyncMock(side_effect=_fetchrow)
 
     class _AcquireCtx:
         async def __aenter__(self_inner):

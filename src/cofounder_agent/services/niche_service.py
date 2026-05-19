@@ -37,6 +37,11 @@ class Niche:
     writer_rag_mode: str
     batch_size: int
     discovery_cadence_minute_floor: int
+    # Per-niche default template_slug — preferred resolution seam
+    # for new pipeline_tasks rows. NULL falls back to
+    # ``app_settings.default_template_slug``. See
+    # ``services/template_slug_resolver.py``.
+    default_template_slug: str | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +146,15 @@ class NicheService:
 
 
 def _row_to_niche(row: Any) -> Niche:
+    # default_template_slug is keyed defensively — tests + older
+    # database snapshots that pre-date the
+    # 20260519_211809_niches_default_template_slug migration won't
+    # have the column. asyncpg.Record raises KeyError on missing
+    # keys (no .get()), so we probe via ``in`` first.
+    try:
+        default_template_slug = row["default_template_slug"]
+    except (KeyError, IndexError):
+        default_template_slug = None
     return Niche(
         id=row["id"], slug=row["slug"], name=row["name"], active=row["active"],
         target_audience_tags=list(row["target_audience_tags"] or []),
@@ -148,4 +162,5 @@ def _row_to_niche(row: Any) -> Niche:
         writer_rag_mode=row["writer_rag_mode"],
         batch_size=row["batch_size"],
         discovery_cadence_minute_floor=row["discovery_cadence_minute_floor"],
+        default_template_slug=default_template_slug,
     )

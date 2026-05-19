@@ -30,7 +30,8 @@ content_router_service.process_content_generation_task
 `dev_diary` cron tasks already pass `template_slug='dev_diary'`
 explicitly. Every other task creator (`tasks_db.add_task`,
 `bulk_add_tasks`, `topic_batch_service`, `topic_proposal_service`,
-`topic_discovery`) historically left the column NULL.
+`topic_discovery`, `brain_daemon._handle_topic_suggestion`)
+historically left the column NULL.
 
 ## What the Lane C migration adds
 
@@ -52,6 +53,34 @@ So the resolution order per task is:
 2. **`app_settings.default_template_slug`** — operator's global
    cutover knob
 3. **NULL** — legacy chunked StageRunner path runs
+
+### 2026-05-19 follow-up — niche tier + non-`tasks_db` inserters
+
+The Lane C seam above only covered tasks created through
+`tasks_db.add_task` / `bulk_add_tasks`. The jank-audit finding #3
+on 2026-05-19 caught a cohort of `niche='glad-labs'` rows that
+went `status='failed' + template_slug=''` because three other
+inserters had never been routed through the seam:
+
+- `topic_batch_service._handoff_to_pipeline` (niche topic-batch winners)
+- `topic_proposal_service.propose_topic` (manual operator proposals)
+- `topic_discovery.queue_topics` (legacy trend-scraping fallback)
+- `brain_daemon._handle_topic_suggestion` (brain reasoning queue)
+
+The fix expands the resolution chain to a structured per-niche
+seam (`niches.default_template_slug`) and ships a shared resolver
+all four call sites use:
+
+1. **Caller-supplied** — explicit `template_slug` arg
+2. **`niches.default_template_slug`** — per-niche control (the
+   structured DB seam per `feedback_filter_on_seams_not_slugs`)
+3. **`app_settings.default_template_slug`** — process-wide fallback
+4. **Hard fail** — `TemplateSlugUnresolvable` per `feedback_no_silent_defaults`
+
+The brain daemon is standalone (no `services/` imports), so it
+inlines the chain (skipping tier 2 since brain-queued topics
+aren't niche-bound). Every other inserter delegates to
+`services.template_slug_resolver.resolve_template_slug`.
 
 ## Cutover stages
 
@@ -140,10 +169,20 @@ catches these before they hit a week's worth of approval throughput.
 
 ## Ground truth
 
-- Cutover seam: `services/tasks_db.py:_resolve_default_template_slug`,
+- Cutover seam (Lane C original): `services/tasks_db.py:_resolve_default_template_slug`,
   `add_task` (line ~287), `bulk_add_tasks` (line ~470)
+- Cutover seam (2026-05-19 follow-up): `services/template_slug_resolver.py`
+  wired into `topic_batch_service._handoff_to_pipeline`,
+  `topic_proposal_service.propose_topic`,
+  `topic_discovery.queue_topics`, and (inlined) `brain/brain_daemon.py::_handle_topic_suggestion`
+- Per-niche seam: `niches.default_template_slug` column
 - Dispatcher: `services/content_router_service.py:202-261`
 - Template: `services/pipeline_templates/__init__.py:79-123`
-- Migration: `services/migrations/20260510_044707_seed_default_template_slug.py`
-- Tests: `tests/unit/services/test_tasks_db.py` (TestAddTaskTemplateSlug, 5 cases)
+- Migrations:
+  - `services/migrations/20260510_044707_seed_default_template_slug.py`
+  - `services/migrations/20260519_211809_niches_default_template_slug.py`
+- Tests: `tests/unit/services/test_tasks_db.py` (TestAddTaskTemplateSlug, 5 cases),
+  `tests/unit/services/test_template_slug_resolver.py` (13 cases),
+  `tests/unit/services/test_topic_batch_service.py::TestHandoffTemplateSlugResolution` (3 cases),
+  `tests/unit/services/test_niches_default_template_slug_migration.py` (4 cases)
 - Issues: `Glad-Labs/poindexter#355` (umbrella), `#450` Lane C, `#356` (closed Phase 1 POC)

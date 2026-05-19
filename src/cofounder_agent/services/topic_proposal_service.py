@@ -273,6 +273,15 @@ async def propose_topic(
         "primary_keyword": primary_keyword_resolved,
     }
 
+    # Resolve template_slug per the shared policy: no niche_slug on
+    # manual proposals (they aren't bound to a niche by default),
+    # so falls through to app_settings.default_template_slug and
+    # then fails loud if that's also empty. Per
+    # feedback_no_silent_defaults — content_router_service fails
+    # the task downstream on a missing slug, so populate it here.
+    from services.template_slug_resolver import resolve_template_slug
+    template_slug = await resolve_template_slug(pool, niche_slug=None)
+
     try:
         async with pool.acquire() as conn:
             await conn.execute(
@@ -281,12 +290,14 @@ async def propose_topic(
                     task_id, task_type, topic, status, stage, site_id,
                     style, tone, target_length, category, primary_keyword,
                     target_audience, percentage, message, model_used,
-                    error_message, created_at, updated_at
+                    error_message, template_slug,
+                    created_at, updated_at
                 ) VALUES (
                     $1, 'blog_post', $2, 'pending', 'pending', NULL,
                     $3, $4, $5, $6, $7,
                     NULL, 0, $8, NULL,
-                    NULL, $9, $9
+                    NULL, $9,
+                    $10, $10
                 )
                 """,
                 task_id,
@@ -297,6 +308,7 @@ async def propose_topic(
                 category_clean or None,
                 primary_keyword_resolved or None,
                 f"manual proposal (source={source})",
+                template_slug,
                 now,
             )
             # Mirror the topic-source metadata into pipeline_versions so

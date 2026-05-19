@@ -392,6 +392,27 @@ class TopicDiscovery:
                     return random.randint(lo, hi)
             return 1200  # fallback
 
+        # Resolve template_slug once per batch — topic_discovery
+        # doesn't bind to a niche, so this falls through directly to
+        # app_settings.default_template_slug per the shared
+        # resolver. Per feedback_no_silent_defaults: missing slug
+        # raises, the discovery sweep aborts cleanly with a queue=0
+        # rather than producing a stack of pre-failed tasks.
+        from services.template_slug_resolver import (
+            TemplateSlugUnresolvable, resolve_template_slug,
+        )
+        try:
+            template_slug = await resolve_template_slug(
+                self.pool, niche_slug=None,
+            )
+        except TemplateSlugUnresolvable as _slug_exc:
+            logger.error(
+                "[TOPIC_DISCOVERY] cannot resolve template_slug — "
+                "skipping queue of %d candidate(s): %s",
+                len(topics), _slug_exc,
+            )
+            return QueueTopicsResult(0, skipped=True, reason="no_template_slug")
+
         queued = 0
         from uuid import uuid4
         for topic in topics:
@@ -419,12 +440,14 @@ class TopicDiscovery:
                             """
                             INSERT INTO pipeline_tasks
                               (task_id, task_type, topic, status, stage,
-                               style, tone, target_length, category)
+                               style, tone, target_length, category,
+                               template_slug)
                             VALUES ($1, 'blog_post', $2::text, 'pending', 'pending',
-                                    $3, $4, $5, $6)
+                                    $3, $4, $5, $6, $7)
                             """,
                             task_id, str(topic.title), style, tone,
                             target_length, str(topic.category or "technology"),
+                            template_slug,
                         )
                         await conn.execute(
                             """

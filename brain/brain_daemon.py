@@ -1464,10 +1464,36 @@ async def _handle_topic_suggestion(pool, item):
 
     # Queue as a content task
     metadata = json.dumps({"source": ctx.get("source", "brain_queue"), "suggested_by": ctx.get("suggested_by", "unknown")})
+
+    # Resolve template_slug inline — brain daemon is standalone and
+    # cannot import services/, so we replicate the resolver chain
+    # (app_settings → fail loud) here for the niche-less brain-queue
+    # path. Without this populated, content_router_service immediately
+    # failed the queued tasks per feedback_no_silent_defaults
+    # (jank-audit finding #3, 2026-05-19). Brain-queued topics aren't
+    # niche-bound, so we go straight to app_settings.
+    template_slug_row = await pool.fetchrow(
+        "SELECT value FROM app_settings "
+        "WHERE key = 'default_template_slug' AND is_active = true "
+        "LIMIT 1"
+    )
+    template_slug = (
+        str(template_slug_row["value"]).strip()
+        if template_slug_row and template_slug_row["value"]
+        else ""
+    )
+    if not template_slug:
+        logger.error(
+            "[BRAIN] Cannot queue topic — app_settings.default_template_slug "
+            "is unset. Set it or queue tasks via a niche-aware path "
+            "(per feedback_no_silent_defaults)."
+        )
+        return {"action": "rejected", "reason": "no_template_slug"}
+
     await pool.execute("""
-        INSERT INTO pipeline_tasks (task_id, task_type, topic, status)
-        VALUES (gen_random_uuid()::text, 'blog_post', $1::text, 'pending')
-    """, topic, metadata)
+        INSERT INTO pipeline_tasks (task_id, task_type, topic, status, template_slug)
+        VALUES (gen_random_uuid()::text, 'blog_post', $1::text, 'pending', $2)
+    """, topic, template_slug)
     logger.info("[BRAIN] Topic accepted and queued: %s", topic[:80])
     return {"action": "queued_as_content_task"}
 

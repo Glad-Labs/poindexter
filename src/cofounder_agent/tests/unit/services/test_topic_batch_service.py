@@ -632,19 +632,43 @@ async def test_discover_external_disabled_sources_skipped(
 # ===========================================================================
 
 
-def _make_mock_pool(execute_side_effect=None):
+def _make_mock_pool(execute_side_effect=None, *,
+                    niche_template_slug=None,
+                    app_setting_template_slug="canonical_blog"):
     """Lightweight pool that supports ``async with pool.acquire()`` +
     ``async with conn.transaction()`` + ``await conn.execute(...)``.
 
     Mirrors the helpers in ``test_tasks_db.py`` and
     ``test_topic_discovery.py`` so all #188 INSERT-target guard tests
     share a uniform shape.
+
+    Also wires ``conn.fetchval`` / ``conn.fetchrow`` for the
+    ``template_slug_resolver`` lookups that ``_handoff_to_pipeline``
+    now makes. Defaults to the app_settings tier returning
+    ``'canonical_blog'`` so the resolver succeeds without explicit
+    test setup — tests that want a different value override the
+    kwargs.
     """
     conn = MagicMock()
     if execute_side_effect:
         conn.execute = AsyncMock(side_effect=execute_side_effect)
     else:
         conn.execute = AsyncMock()
+
+    async def _fetchval(sql, *args, **kwargs):
+        if "FROM niches" in sql:
+            return niche_template_slug
+        return None
+
+    async def _fetchrow(sql, *args, **kwargs):
+        if "FROM app_settings" in sql:
+            if app_setting_template_slug is None:
+                return None
+            return {"value": app_setting_template_slug}
+        return None
+
+    conn.fetchval = AsyncMock(side_effect=_fetchval)
+    conn.fetchrow = AsyncMock(side_effect=_fetchrow)
 
     @asynccontextmanager
     async def _tx_inner():
@@ -772,3 +796,114 @@ class TestHandoffToPipelineSQL:
         )
         _, args = pipeline_call
         assert "Operator-Edited Topic" in args
+
+
+# ===========================================================================
+# _handoff_to_pipeline — template_slug resolution (jank-audit finding #3)
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestHandoffTemplateSlugResolution:
+    """The niche topic-batch path was inserting ``pipeline_tasks`` rows
+    without ``template_slug``, leaving the column NULL and causing
+    ``content_router_service`` to fail every task per
+    ``feedback_no_silent_defaults``. The fix: resolve the slug at
+    insert time via ``services.template_slug_resolver``.
+
+    Resolution priority (verified individually below):
+      1. niches.default_template_slug for this niche
+      2. app_settings.default_template_slug (process-wide fallback)
+      3. raise — no silent default
+    """
+
+    async def test_pipeline_insert_includes_template_slug_column(self):
+        """The INSERT statement must mention the column name +
+        carry the resolved slug in args. Prior to the fix the column
+        was entirely absent from the INSERT (the bug).
+        """
+        captured: list[tuple[str, tuple]] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append((sql, args))
+            return "INSERT 0 1"
+
+        pool, _ = _make_mock_pool(execute_side_effect=_capture)
+        svc = TopicBatchService(pool)
+
+        await svc._handoff_to_pipeline(
+            winner=_make_candidate(),
+            niche=_make_niche("glad-labs"),
+            batch_id=uuid4(),
+        )
+
+        pipeline_sql, pipeline_args = next(
+            (sql, args) for sql, args in captured if "pipeline_tasks" in sql
+        )
+        assert "template_slug" in pipeline_sql
+        # default app_setting slug from the mock pool is 'canonical_blog'.
+        assert "canonical_blog" in pipeline_args
+
+    async def test_niche_default_wins_over_app_setting(self):
+        """When the niche row carries its own
+        default_template_slug, it must beat the app_setting fallback
+        — that's the structured DB seam per
+        ``feedback_filter_on_seams_not_slugs``.
+        """
+        captured: list[tuple[str, tuple]] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append((sql, args))
+            return "INSERT 0 1"
+
+        pool, _ = _make_mock_pool(
+            execute_side_effect=_capture,
+            niche_template_slug="dev_diary",
+            app_setting_template_slug="canonical_blog",
+        )
+        svc = TopicBatchService(pool)
+
+        await svc._handoff_to_pipeline(
+            winner=_make_candidate(),
+            niche=_make_niche("special-niche"),
+            batch_id=uuid4(),
+        )
+
+        _, pipeline_args = next(
+            (sql, args) for sql, args in captured if "pipeline_tasks" in sql
+        )
+        # Niche default beat the app_setting default.
+        assert "dev_diary" in pipeline_args
+        assert "canonical_blog" not in pipeline_args
+
+    async def test_no_resolvable_slug_raises_not_silent_null(self):
+        """When neither tier has a value, the handoff raises rather
+        than writing a NULL row. Per ``feedback_no_silent_defaults``:
+        let the operator see the misconfig instead of a queue of
+        pre-failed tasks (which was finding #3 of the jank audit).
+        """
+        from services.template_slug_resolver import TemplateSlugUnresolvable
+
+        captured: list[str] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append(sql)
+            return "INSERT 0 1"
+
+        pool, _ = _make_mock_pool(
+            execute_side_effect=_capture,
+            niche_template_slug=None,
+            app_setting_template_slug=None,
+        )
+        svc = TopicBatchService(pool)
+
+        with pytest.raises(TemplateSlugUnresolvable):
+            await svc._handoff_to_pipeline(
+                winner=_make_candidate(),
+                niche=_make_niche("glad-labs"),
+                batch_id=uuid4(),
+            )
+
+        # No INSERT into pipeline_tasks happened — we failed before
+        # the write.
+        assert not any("INSERT INTO pipeline_tasks" in s for s in captured)

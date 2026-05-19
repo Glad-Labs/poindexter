@@ -40,7 +40,7 @@ def _make_topic(title: str = "Sample") -> DiscoveredTopic:
     )
 
 
-def _make_pool() -> Any:
+def _make_pool(*, app_setting_template_slug: str | None = "canonical_blog") -> Any:
     """Mock asyncpg pool — supports the connection-context-manager dance.
 
     ``queue_topics`` uses ``async with self.pool.acquire() as conn:`` then
@@ -48,10 +48,23 @@ def _make_pool() -> Any:
     doesn't speak the async ctx-manager protocol out of the box; we wire
     it explicitly so the INSERT path actually runs and ``conn.execute``
     is an ``AsyncMock`` the test can assert on.
+
+    ``app_setting_template_slug`` feeds the ``template_slug_resolver``
+    app_settings tier — defaults to a value so the resolver succeeds
+    and the cap-gate tests can focus on the cap-gate behaviour rather
+    than the new resolver chain.
     """
     conn = MagicMock()
     conn.execute = AsyncMock(return_value="INSERT 0 1")
-    conn.fetchrow = AsyncMock(return_value=None)
+
+    async def _fetchrow(sql, *args, **kwargs):
+        if "FROM app_settings" in sql:
+            if app_setting_template_slug is None:
+                return None
+            return {"value": app_setting_template_slug}
+        return None
+
+    conn.fetchrow = AsyncMock(side_effect=_fetchrow)
     conn.fetchval = AsyncMock(return_value=0)
 
     class _TxnCtx:
@@ -72,7 +85,7 @@ def _make_pool() -> Any:
 
     pool = MagicMock()
     pool.acquire = lambda: _AcquireCtx()
-    pool.fetchrow = AsyncMock(return_value=None)
+    pool.fetchrow = AsyncMock(side_effect=_fetchrow)
     pool.fetchval = AsyncMock(return_value=0)
     pool._conn = conn  # exposed for the test to assert on
     return pool

@@ -833,17 +833,30 @@ class TopicBatchService:
                 "niche_slug": niche.slug,
             }
         }
+        # Resolve template_slug per the shared policy: niche
+        # default → app_settings default → fail loud. Per-niche
+        # default is preferred (the structured DB seam) per
+        # feedback_filter_on_seams_not_slugs. The legacy bug was
+        # that this INSERT omitted template_slug entirely, leaving
+        # it NULL → content_router_service fails the task per
+        # feedback_no_silent_defaults (jank-audit finding #3).
+        from services.template_slug_resolver import resolve_template_slug
+        template_slug = await resolve_template_slug(
+            self._pool, niche_slug=niche.slug,
+        )
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     """
                     INSERT INTO pipeline_tasks
                       (task_id, task_type, topic, status, stage,
-                       niche_slug, writer_rag_mode, topic_batch_id)
+                       niche_slug, writer_rag_mode, topic_batch_id,
+                       template_slug)
                     VALUES ($1, 'blog_post', $2, 'pending', 'pending',
-                            $3, $4, $5)
+                            $3, $4, $5, $6)
                     """,
-                    task_id, topic, niche.slug, niche.writer_rag_mode, batch_id,
+                    task_id, topic, niche.slug, niche.writer_rag_mode,
+                    batch_id, template_slug,
                 )
                 await conn.execute(
                     """

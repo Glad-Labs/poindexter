@@ -207,10 +207,19 @@ class TestDeduplicate:
 # ===========================================================================
 
 
-def _make_qt_pool(execute_side_effect=None):
+def _make_qt_pool(execute_side_effect=None, *,
+                  app_setting_template_slug="canonical_blog"):
     """Build a pool whose acquire() yields a conn with execute +
     transaction support. #188 — queue_topics now writes to
     pipeline_tasks + pipeline_versions inside a transaction.
+
+    Also wires ``conn.fetchrow`` for the ``template_slug_resolver``
+    app_settings tier lookup that ``queue_topics`` now performs
+    once per batch. Defaults to a value so the resolver succeeds
+    without explicit test setup; pass ``None`` to simulate a
+    missing setting (the resolver then raises and queue_topics
+    short-circuits to ``QueueTopicsResult(0, skipped=True,
+    reason="no_template_slug")``).
     """
     from contextlib import asynccontextmanager
 
@@ -219,6 +228,22 @@ def _make_qt_pool(execute_side_effect=None):
         conn.execute = AsyncMock(side_effect=execute_side_effect)
     else:
         conn.execute = AsyncMock()
+
+    async def _fetchrow(sql, *args, **kwargs):
+        if "FROM app_settings" in sql:
+            if app_setting_template_slug is None:
+                return None
+            return {"value": app_setting_template_slug}
+        return None
+
+    async def _fetchval(sql, *args, **kwargs):
+        # queue_at_capacity's pending_topic_count fetchval lands here
+        # when the cap gate fires; tests in this module run with the
+        # gate disabled so this is only defensive.
+        return 0
+
+    conn.fetchrow = AsyncMock(side_effect=_fetchrow)
+    conn.fetchval = AsyncMock(side_effect=_fetchval)
 
     @asynccontextmanager
     async def _tx_inner():
