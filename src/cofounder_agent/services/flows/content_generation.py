@@ -172,6 +172,41 @@ async def content_generation_flow(
             "site_config will fall through to env defaults.",
         )
 
+    # poindexter Phase-5 stress-test finding #6: this prefect-worker
+    # subprocess never runs main.py's lifespan, so neither the OTel
+    # tracer provider nor the Langfuse LiteLLM callback gets wired.
+    # Result: every pipeline stage was invisible to Tempo (only the
+    # FastAPI worker's /health + /metrics spans appeared) and zero
+    # LLM calls landed in Langfuse despite the env vars being set.
+    # Wire both here (idempotent — telemetry.py uses
+    # trace.set_tracer_provider with RuntimeError-swallow on re-set,
+    # configure_langfuse_callback has its own module-level guard).
+    if _wired_site_config is not None:
+        try:
+            from services.telemetry import setup_telemetry as _setup_telemetry
+            _setup_telemetry(
+                app=None,
+                site_config=_wired_site_config,
+                service_name="cofounder-agent-prefect",
+            )
+        except Exception:  # noqa: BLE001 — telemetry must never block work
+            logger.warning(
+                "[CONTENT_FLOW] OpenTelemetry setup failed — "
+                "pipeline spans will not export to Tempo this run",
+                exc_info=True,
+            )
+        try:
+            from services.llm_providers.litellm_provider import (
+                configure_langfuse_callback,
+            )
+            await configure_langfuse_callback(_wired_site_config)
+        except Exception:  # noqa: BLE001 — same fail-soft
+            logger.warning(
+                "[CONTENT_FLOW] Langfuse callback registration failed — "
+                "LLM traces will not land in Langfuse this run",
+                exc_info=True,
+            )
+
     # Schedule-driven: no task_id → claim from queue.
     if task_id is None and topic is None:
         claimed = await claim_pending_task(database_service)

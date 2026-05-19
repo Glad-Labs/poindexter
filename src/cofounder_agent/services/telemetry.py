@@ -51,12 +51,20 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
     Simplified to handle trace exporting only (no logs/events to avoid dependency issues).
 
     Args:
-        app: The FastAPI application instance.
+        app: The FastAPI application instance. Pass ``None`` to skip
+            FastAPI middleware instrumentation — useful for non-HTTP
+            worker processes (e.g. the Prefect worker container that
+            runs ``services/flows/content_generation.py`` without a
+            FastAPI surface). The TracerProvider + OpenAI instrumentation
+            still get set up so manual spans + LLM auto-spans work.
         site_config: SiteConfig instance for app_settings reads. When None,
             falls back to a fresh env-fallback instance.
         service_name: The name of the service to appear in traces.
     """
-    # Skip if OpenTelemetry is not available
+    # Skip if OpenTelemetry is not available. ``FastAPIInstrumentor`` is
+    # only required when an app is being instrumented; tolerate its
+    # absence when ``app is None`` so worker processes still get spans.
+    fastapi_instrumentor_required = app is not None
     if (
         not OPENTELEMETRY_AVAILABLE
         or Resource is None
@@ -64,7 +72,7 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
         or OTLPSpanExporter is None
         or BatchSpanProcessor is None
         or trace is None
-        or FastAPIInstrumentor is None
+        or (fastapi_instrumentor_required and FastAPIInstrumentor is None)
     ):
         logging.warning(
             f"[TELEMETRY] OpenTelemetry not available - tracing disabled for {service_name}"
@@ -149,11 +157,13 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
                 exc_info=True,
             )
 
-        # Instrument the FastAPI app
-        try:
-            FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
-        except Exception as e:
-            logging.error(f"[setup_telemetry] Failed to instrument FastAPI: {e}", exc_info=True)
+        # Instrument the FastAPI app (skipped when app is None — worker
+        # processes that have no FastAPI surface but still want spans).
+        if app is not None and FastAPIInstrumentor is not None:
+            try:
+                FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
+            except Exception as e:
+                logging.error(f"[setup_telemetry] Failed to instrument FastAPI: {e}", exc_info=True)
 
         # Instrument OpenAI SDK (if available)
         if OpenAIInstrumentor is not None:

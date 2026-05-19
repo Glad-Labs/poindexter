@@ -603,6 +603,18 @@ services:
       LANGFUSE_HOST: "http://langfuse-web:3000"
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_PUBLIC_KEY is generated in bootstrap.toml}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?Run 'poindexter setup' — LANGFUSE_INIT_PROJECT_SECRET_KEY is generated in bootstrap.toml}
+      # OpenTelemetry — mirror of the FastAPI worker's setup so pipeline
+      # stages emit spans to Tempo. Without these the prefect-worker
+      # (which actually runs the canonical_blog template) was invisible
+      # to Tempo — only the FastAPI worker's GET /health + /metrics
+      # spans appeared, never any pipeline stage. Finding #6 from the
+      # 2026-05-19 stress test. ``OTEL_SERVICE_NAME`` is distinct from
+      # the FastAPI worker's so Grafana can filter on per-process span
+      # source; the worker's tracing setup uses the OTEL_SERVICE_NAME
+      # env var when set, otherwise defaults to "cofounder-agent".
+      ENABLE_TRACING: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://tempo:4318/v1/traces"
+      OTEL_SERVICE_NAME: "cofounder-agent-prefect"
       # Ollama lives on the host (RTX 5090); the flow body's LLM
       # dispatchers (LiteLLM, direct httpx) need the URL or they
       # default to localhost — which inside this container is the
