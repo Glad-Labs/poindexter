@@ -677,6 +677,35 @@ async def publish_post_from_task(
     _strict_mode_status = (
         "awaiting_gates" if (_planned_gates and not draft_mode) else "published"
     )
+    # Resolve media_to_generate from the niche's configured policy.
+    # ``niches.default_media_to_generate`` is the canonical seam (added
+    # by migration 20260519_134736). Falls back to an empty array when
+    # the niche row is missing or has no policy set — safer to skip
+    # media generation than to silently default to "spawn everything"
+    # for an unknown niche. Closes Glad-Labs/glad-labs-stack#480 and
+    # the post-mortem from #481 (slug-pattern filter Matt rejected
+    # 2026-05-19).
+    niche_slug = task.get("niche_slug") or ""
+    media_to_generate: list[str] = []
+    if niche_slug:
+        try:
+            pool = getattr(db_service, "pool", None)
+            if pool is not None:
+                async with pool.acquire() as _conn:
+                    row = await _conn.fetchrow(
+                        "SELECT default_media_to_generate "
+                        "FROM niches WHERE slug = $1",
+                        niche_slug,
+                    )
+                    if row and row["default_media_to_generate"]:
+                        media_to_generate = list(row["default_media_to_generate"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[publish_service] niche media policy lookup failed for "
+                "niche=%r (defaulting to empty): %s",
+                niche_slug, exc,
+            )
+
     post_data: dict[str, Any] = {
         "title": post_title,
         "slug": slug,
@@ -692,6 +721,7 @@ async def publish_post_from_task(
         "seo_keywords": ", ".join(seo_keywords) if isinstance(seo_keywords, list) else (seo_keywords or ""),
         "metadata": metadata,
         "tag_ids": tag_ids or None,
+        "media_to_generate": media_to_generate,
     }
     if scheduled_at:
         post_data["published_at"] = scheduled_at

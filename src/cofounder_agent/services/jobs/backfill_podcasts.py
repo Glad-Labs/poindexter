@@ -56,24 +56,23 @@ class BackfillPodcastsJob:
 
         cloud = await asyncpg.connect(cloud_url)
         try:
-            # Exclude niches the operator has opted out of podcast
-            # generation. Today the only excluded niche is dev_diary,
-            # identified by its slug pattern ``what-we-shipped-*``.
-            # This is the short-term tactical filter; the long-term
-            # design (Glad-Labs/glad-labs-stack#480) replaces this with
-            # a per-niche job-enable/disable surface. media_to_generate
-            # would have been the cleanest seam, but every post in the
-            # current schema has ``[]`` for that field (it's not
-            # populated by the pipeline path), so filtering on it
-            # would silently kill ALL media generation. Using a slug
-            # NOT LIKE filter so dev_diary is excluded but every other
-            # niche's posts keep being backfilled exactly as before.
+            # Filter on the canonical seam: only spawn podcasts for
+            # posts whose niche policy opted in. ``posts.media_to_generate``
+            # is populated at publish time from
+            # ``niches.default_media_to_generate`` (see
+            # ``publish_service.publish_post_from_task`` and migration
+            # ``20260519_134736_niches_default_media_to_generate.py``).
+            # Operators flip a niche on/off for podcasts by updating that
+            # one array, no code change needed. Anti-pattern called out in
+            # ``feedback_filter_on_seams_not_slugs`` — slug-pattern
+            # exclusions in this query were the hack Matt rejected
+            # 2026-05-19.
             posts = await cloud.fetch(
                 """
                 SELECT id::text, title, content
                 FROM posts
                 WHERE status = 'published'
-                  AND slug NOT LIKE 'what-we-shipped%'
+                  AND 'podcast' = ANY(media_to_generate)
                 ORDER BY published_at DESC LIMIT $1
                 """,
                 post_limit,

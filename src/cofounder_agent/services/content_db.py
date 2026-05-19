@@ -103,6 +103,13 @@ class ContentDatabase(DatabaseServiceMixin):
                 is_published = post_data.get("status") == "published"
                 explicit_published_at = post_data.get("published_at")
 
+                # media_to_generate — the niche's media policy stamped
+                # by publish_service.publish_post_from_task. Defaults
+                # to empty array when omitted so legacy callers don't
+                # silently inherit a "spawn everything" behavior.
+                # Closes the seam gap from Glad-Labs/glad-labs-stack#480.
+                media_to_generate = list(post_data.get("media_to_generate") or [])
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (
@@ -120,12 +127,13 @@ class ContentDatabase(DatabaseServiceMixin):
                         seo_title,
                         seo_description,
                         seo_keywords,
+                        media_to_generate,
                         created_by,
                         updated_by,
                         created_at,
                         updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
                     RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
                               author_id, category_id, status, published_at, created_at, updated_at
                     """,
@@ -144,6 +152,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("seo_title"),
                     post_data.get("seo_description"),
                     seo_keywords,
+                    media_to_generate,
                     post_data.get("created_by"),
                     post_data.get("updated_by"),
                 )

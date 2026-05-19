@@ -50,18 +50,23 @@ class BackfillVideosJob:
 
         cloud = await asyncpg.connect(cloud_url)
         try:
-            # Exclude niches the operator has opted out of video
-            # generation. Mirror of backfill_podcasts.py — same slug
-            # NOT LIKE filter, same rationale. media_to_generate is
-            # the dead seam here because nothing populates it on the
-            # pipeline path. Per-niche job-enable/disable is tracked
-            # in Glad-Labs/glad-labs-stack#480 as the proper fix.
+            # Filter on the canonical seam: only spawn videos for posts
+            # whose niche policy opted in to at least one video flavor.
+            # ``posts.media_to_generate`` is populated at publish time
+            # from ``niches.default_media_to_generate`` (see
+            # ``publish_service.publish_post_from_task`` and migration
+            # ``20260519_134736_niches_default_media_to_generate.py``).
+            # The ``&&`` (array overlap) operator matches a post that
+            # opted in to any of the video media flavors. Anti-pattern
+            # called out in ``feedback_filter_on_seams_not_slugs`` —
+            # slug-pattern exclusions in this query were the hack Matt
+            # rejected 2026-05-19.
             posts = await cloud.fetch(
                 """
                 SELECT id::text, title, content
                 FROM posts
                 WHERE status = 'published'
-                  AND slug NOT LIKE 'what-we-shipped%'
+                  AND media_to_generate && ARRAY['video','video_long','video_short']::text[]
                 ORDER BY published_at DESC LIMIT $1
                 """,
                 post_limit,
