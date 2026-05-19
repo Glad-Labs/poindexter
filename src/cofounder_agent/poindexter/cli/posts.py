@@ -380,9 +380,9 @@ def _compute_idempotency_key(
     same intent). Operator identity is included so two different
     humans both running the same command don't shadow each other's
     posts. Keep this in sync with the strategy name seeded in
-    migration 20260506_131123 (``slug_or_content_hash``) — when a new
-    strategy lands, switch on
-    ``cli_post_create_idempotency_strategy`` here.
+    ``0000_baseline.seeds.sql`` for
+    ``cli_post_create_idempotency_strategy`` (today: ``slug_or_content_hash``)
+    — when a new strategy lands, switch on that setting here.
     """
     import hashlib
 
@@ -478,8 +478,9 @@ def post_create(
             # Compute the key up-front so we can include it in the
             # INSERT below (miss path) or short-circuit to an existing
             # post id (hit path). The lookup runs against the partial
-            # index ``idx_posts_cli_idempotency_key`` from migration
-            # 20260506_131123 — no full table scan even at scale.
+            # index ``idx_posts_cli_idempotency_key`` declared in
+            # ``0000_baseline.schema.sql`` — no full table scan even at
+            # scale.
             operator = _operator_identity()
             idempotency_enabled = (
                 site_cfg.get("cli_post_create_idempotency_enabled", "true")

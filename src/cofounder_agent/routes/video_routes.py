@@ -108,9 +108,12 @@ async def video_feed(
     )
     SubElement(channel, "language").text = "en-us"
 
+    # Atom self-link — points at the public proxy route on the site, not
+    # the worker's internal /api/video/feed.xml (which 404s on the public
+    # origin). Same fix as the podcast feed for the same reason.
     atom_link = SubElement(channel, "{http://www.w3.org/2005/Atom}link")
     _su = site_config.require("site_url")
-    atom_link.set("href", f"{_su}/api/video/feed.xml")
+    atom_link.set("href", f"{_su}/video-feed.xml")
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 

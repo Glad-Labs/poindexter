@@ -35,8 +35,8 @@ implements **auto-reject + notify**:
 Design parity with the rest of the brain:
 
 - DB-configurable through ``app_settings`` (every tunable above is a
-  row, not a constant — see migration
-  ``20260506_132235_seed_gate_auto_expire_app_settings.py``).
+  row, not a constant — seeded in
+  ``services/migrations/0000_baseline.seeds.sql``).
 - Standalone module: only stdlib + asyncpg. No ``SiteConfig`` import —
   brain reads settings via direct ``pool.fetchval`` calls (matches
   ``backup_watcher.py`` posture).
@@ -68,9 +68,10 @@ logger = logging.getLogger("brain.gate_auto_expire")
 
 # ---------------------------------------------------------------------------
 # App_settings keys — every tunable lives in the DB so an operator can
-# adjust without redeploying the brain. Defaults below match the
-# 20260506_132235 migration so the probe behaves consistently whether
-# the seed migration ran or not (degraded-but-safe defaults).
+# adjust without redeploying the brain. Defaults below match the seeds
+# in ``services/migrations/0000_baseline.seeds.sql`` so the probe
+# behaves consistently whether the seed row is present or not
+# (degraded-but-safe defaults).
 # ---------------------------------------------------------------------------
 
 ENABLED_KEY = "gate_auto_expire_enabled"

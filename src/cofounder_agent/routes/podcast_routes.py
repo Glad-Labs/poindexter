@@ -192,9 +192,32 @@ def _build_rss_xml(episodes: list[dict], site_config: Any) -> str:
         channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}explicit"
     ).text = "no"
 
-    # Atom self-link
+    # itunes:image — Spotify + Apple require a square cover (1400-3000px).
+    # Sourced from podcast_cover_url in app_settings so operators can swap
+    # branding without a deploy. When the row is empty we skip the element
+    # entirely rather than emit a broken href — podcast validators are
+    # stricter about a missing href than they are about a missing image.
+    cover_url = (site_config.get("podcast_cover_url", "") or "").strip()
+    if cover_url:
+        img = SubElement(
+            channel, "{http://www.itunes.com/dtds/podcast-1.0.dtd}image"
+        )
+        img.set("href", cover_url)
+        # Apple wants a top-level <image> too — same URL.
+        top_img = SubElement(channel, "image")
+        SubElement(top_img, "url").text = cover_url
+        SubElement(top_img, "title").text = site_config.get(
+            "podcast_name", "Podcast"
+        )
+        SubElement(top_img, "link").text = _site_url(site_config)
+
+    # Atom self-link — points at the public proxy route on the site, not
+    # the worker's internal /api/podcast/feed.xml (which 404s on the
+    # public origin). Spotify's crawler validates this self-reference.
     atom_link = SubElement(channel, "{http://www.w3.org/2005/Atom}link")
-    atom_link.set("href", f"{_site_url(site_config)}/api/podcast/feed.xml")
+    atom_link.set(
+        "href", f"{_site_url(site_config)}/podcast-feed.xml",
+    )
     atom_link.set("rel", "self")
     atom_link.set("type", "application/rss+xml")
 
