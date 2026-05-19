@@ -114,3 +114,82 @@ class TestStartHeartbeat:
         with patch("asyncio.create_task"):
             await service.start_heartbeat()
         assert service._running is True
+
+
+class TestHeartbeatLoopErrorVisibility:
+    """Heartbeat failures MUST log at WARNING, not DEBUG.
+
+    Per feedback_no_silent_defaults: required state changes must fail
+    loud. A silent DEBUG-level swallow in a critical loop hides the
+    root cause indefinitely (see the 2026-05-19 jank-audit finding #1
+    where the worker's last_heartbeat was pinned at register-time for
+    ~85 minutes because the heartbeat UPDATE was raising silently).
+    """
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_failure_logs_warning_not_debug(
+        self, service, mock_pool
+    ):
+        _, conn = mock_pool
+        conn.execute.side_effect = RuntimeError("simulated db blip")
+
+        # Run exactly one iteration, then stop the loop. We patch sleep
+        # so the test doesn't actually wait 30s, and use it as the
+        # cue to flip _running off so the while-loop exits.
+        async def _stop_after_first(_interval):
+            service._running = False
+
+        service._running = True
+        # Spy on the module-level logger so we can assert level + kwargs.
+        # caplog is unreliable here because the project uses structlog,
+        # which renders exc_info into the message string before the stdlib
+        # LogRecord is built — so we check the call directly.
+        mock_logger = MagicMock()
+        with patch("services.worker_service.logger", mock_logger), patch(
+            "services.worker_service.asyncio.sleep", _stop_after_first
+        ):
+            await service._heartbeat_loop()
+
+        # DEBUG must NOT be the level used for this failure.
+        assert not mock_logger.debug.called or all(
+            "Heartbeat failed" not in str(c) for c in mock_logger.debug.mock_calls
+        ), "Heartbeat failure was logged at DEBUG — this is the bug we're fixing."
+
+        # WARNING must be called with the failure message and exc_info=True.
+        assert mock_logger.warning.called, (
+            "Heartbeat failure must log at WARNING level "
+            "(feedback_no_silent_defaults)."
+        )
+        call = mock_logger.warning.call_args
+        assert "Heartbeat failed" in call.args[0], (
+            f"Expected 'Heartbeat failed' in warning message, got: {call.args}"
+        )
+        assert call.kwargs.get("exc_info") is True, (
+            "Heartbeat warning must pass exc_info=True so the actual "
+            "exception type/message reaches the operator."
+        )
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_loop_keeps_running_after_failure(
+        self, service, mock_pool
+    ):
+        """A single DB error must NOT break the loop — it should keep
+        retrying on subsequent ticks (until _running flips off)."""
+        _, conn = mock_pool
+        # First call raises, second call succeeds.
+        conn.execute.side_effect = [RuntimeError("transient"), None]
+
+        call_count = {"n": 0}
+
+        async def _sleep_two_iters(_interval):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                service._running = False
+
+        service._running = True
+        with patch("services.worker_service.asyncio.sleep", _sleep_two_iters):
+            await service._heartbeat_loop()
+
+        # Two execute() calls = the loop survived the first exception and
+        # ran a second iteration.
+        assert conn.execute.call_count == 2

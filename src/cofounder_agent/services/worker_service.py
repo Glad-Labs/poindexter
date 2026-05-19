@@ -122,7 +122,12 @@ class WorkerService:
                         self._current_task_id,
                     )
             except Exception:
-                logger.debug("[WORKER] Heartbeat failed", exc_info=True)
+                # Per feedback_no_silent_defaults: heartbeat failures must
+                # surface — without them the brain can't see worker state.
+                # Log at WARNING (not DEBUG) so the suppressed exception
+                # actually shows up in production logs. Loop keeps running
+                # so a transient DB blip doesn't kill the heartbeat forever.
+                logger.warning("[WORKER] Heartbeat failed", exc_info=True)
             await asyncio.sleep(HEARTBEAT_INTERVAL)
 
     async def _collect_health_metrics(self) -> dict[str, Any]:
