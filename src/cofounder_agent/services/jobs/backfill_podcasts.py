@@ -56,10 +56,24 @@ class BackfillPodcastsJob:
 
         cloud = await asyncpg.connect(cloud_url)
         try:
+            # Exclude niches the operator has opted out of podcast
+            # generation. Today the only excluded niche is dev_diary,
+            # identified by its slug pattern ``what-we-shipped-*``.
+            # This is the short-term tactical filter; the long-term
+            # design (Glad-Labs/glad-labs-stack#480) replaces this with
+            # a per-niche job-enable/disable surface. media_to_generate
+            # would have been the cleanest seam, but every post in the
+            # current schema has ``[]`` for that field (it's not
+            # populated by the pipeline path), so filtering on it
+            # would silently kill ALL media generation. Using a slug
+            # NOT LIKE filter so dev_diary is excluded but every other
+            # niche's posts keep being backfilled exactly as before.
             posts = await cloud.fetch(
                 """
                 SELECT id::text, title, content
-                FROM posts WHERE status = 'published'
+                FROM posts
+                WHERE status = 'published'
+                  AND slug NOT LIKE 'what-we-shipped%'
                 ORDER BY published_at DESC LIMIT $1
                 """,
                 post_limit,
