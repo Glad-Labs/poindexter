@@ -44,8 +44,18 @@ class AuditPublishedQualityJob:
         file_issue = bool(config.get("file_gitea_issue", True))
 
         # posts.id is UUID, audit_log.task_id is VARCHAR — cast on compare.
+        # ``content_preview`` keeps the first 3000 chars (enough to spot
+        # headings cheaply); ``word_count`` is read from the persisted
+        # column so the threshold check counts the FULL post, not the
+        # preview. Previously this job re-derived word_count from the
+        # 3000-char preview, which under-counted any post longer than
+        # ~500 words and caused false-positive quality-regression
+        # findings — fixed alongside Glad-Labs/glad-labs-stack#484
+        # populating posts.word_count at INSERT + backfill.
         query = """
-            SELECT p.id, p.title, p.slug, LEFT(p.content, 3000) as content_preview
+            SELECT p.id, p.title, p.slug,
+                   LEFT(p.content, 3000) as content_preview,
+                   p.word_count
             FROM posts p
             WHERE p.status = 'published'
               AND p.id::text NOT IN (
@@ -75,7 +85,7 @@ class AuditPublishedQualityJob:
         issues: list[str] = []
         for row in rows:
             content = row["content_preview"] or ""
-            word_count = len(content.split())
+            word_count = row["word_count"] or 0
             has_headings = "##" in content or "<h2" in content
             title = (row["title"] or "")[:40]
 

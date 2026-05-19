@@ -110,6 +110,19 @@ class ContentDatabase(DatabaseServiceMixin):
                 # Closes the seam gap from Glad-Labs/glad-labs-stack#480.
                 media_to_generate = list(post_data.get("media_to_generate") or [])
 
+                # word_count + reading_time — both columns exist on the
+                # posts table since the baseline but never got persisted
+                # because they weren't in the INSERT (same dead-seam
+                # class as media_to_generate before #482). Always
+                # compute from the final content so the column matches
+                # what the SEO pipeline computed for its dataclass and
+                # what every other reader would derive. 200 wpm matches
+                # services/seo_content_generator.calculate_reading_time
+                # which is the existing canonical formula.
+                content_for_count = post_data.get("content") or ""
+                word_count = len(content_for_count.split())
+                reading_time = max(1, round(word_count / 200)) if word_count else 0
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (
@@ -128,12 +141,14 @@ class ContentDatabase(DatabaseServiceMixin):
                         seo_description,
                         seo_keywords,
                         media_to_generate,
+                        word_count,
+                        reading_time,
                         created_by,
                         updated_by,
                         created_at,
                         updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
                     RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
                               author_id, category_id, status, published_at, created_at, updated_at
                     """,
@@ -153,6 +168,8 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("seo_description"),
                     seo_keywords,
                     media_to_generate,
+                    word_count,
+                    reading_time,
                     post_data.get("created_by"),
                     post_data.get("updated_by"),
                 )

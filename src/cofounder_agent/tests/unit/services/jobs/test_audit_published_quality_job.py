@@ -63,7 +63,8 @@ class TestRun:
         # 600 words with headings → zero findings.
         content = "## Heading\n\n" + " ".join(["word"] * 600)
         pool, _ = _make_pool([
-            {"id": "p1", "title": "Solid Post", "slug": "solid", "content_preview": content},
+            {"id": "p1", "title": "Solid Post", "slug": "solid",
+             "content_preview": content, "word_count": 600},
         ])
         job = AuditPublishedQualityJob()
         with patch(
@@ -81,7 +82,8 @@ class TestRun:
     async def test_low_word_count_flagged(self):
         content = " ".join(["word"] * 100)  # 100 words < default 500
         pool, _ = _make_pool([
-            {"id": "p1", "title": "Tiny", "slug": "tiny", "content_preview": content},
+            {"id": "p1", "title": "Tiny", "slug": "tiny",
+             "content_preview": content, "word_count": 100},
         ])
         job = AuditPublishedQualityJob()
         with patch(
@@ -99,7 +101,8 @@ class TestRun:
     async def test_no_headings_flagged(self):
         content = " ".join(["word"] * 800)  # enough words, zero headings
         pool, _ = _make_pool([
-            {"id": "p1", "title": "Wall of Text", "slug": "wall", "content_preview": content},
+            {"id": "p1", "title": "Wall of Text", "slug": "wall",
+             "content_preview": content, "word_count": 800},
         ])
         job = AuditPublishedQualityJob()
         with patch(
@@ -115,7 +118,8 @@ class TestRun:
         """Posts rendered to HTML should not be flagged for lack of '##'."""
         content = "<h2>Title</h2>\n" + " ".join(["word"] * 800)
         pool, _ = _make_pool([
-            {"id": "p1", "title": "Rendered", "slug": "rendered", "content_preview": content},
+            {"id": "p1", "title": "Rendered", "slug": "rendered",
+             "content_preview": content, "word_count": 800},
         ])
         job = AuditPublishedQualityJob()
         with patch(
@@ -140,7 +144,8 @@ class TestRun:
     async def test_min_words_config_respected(self):
         content = " ".join(["word"] * 300)  # 300 words
         pool, _ = _make_pool([
-            {"id": "p1", "title": "Medium", "slug": "m", "content_preview": content},
+            {"id": "p1", "title": "Medium", "slug": "m",
+             "content_preview": content, "word_count": 300},
         ])
         job = AuditPublishedQualityJob()
         # min_words=200 → shouldn't flag word-count. But no headings → 1 issue.
@@ -159,7 +164,8 @@ class TestRun:
         """A bad audit_log insert shouldn't lose the entire finding run."""
         content = " ".join(["word"] * 100)
         pool, _ = _make_pool(
-            [{"id": "p1", "title": "Short", "slug": "s", "content_preview": content}],
+            [{"id": "p1", "title": "Short", "slug": "s",
+              "content_preview": content, "word_count": 100}],
             execute_raises=RuntimeError("table missing"),
         )
         job = AuditPublishedQualityJob()
@@ -183,7 +189,8 @@ class TestRun:
     @pytest.mark.asyncio
     async def test_none_content_does_not_crash(self):
         pool, _ = _make_pool([
-            {"id": "p1", "title": "Empty", "slug": "e", "content_preview": None},
+            {"id": "p1", "title": "Empty", "slug": "e",
+             "content_preview": None, "word_count": None},
         ])
         job = AuditPublishedQualityJob()
         with patch(
