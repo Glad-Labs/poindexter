@@ -375,33 +375,12 @@ async def _build_script_with_llm(title: str, content: str) -> str:
             return _build_script_fallback(title, content)
         model = fallback.removeprefix("ollama/")
 
-    prompt = f"""Rewrite the following blog article as a podcast script for a single narrator.
-
-RULES:
-- This is for text-to-speech, so write exactly what should be spoken aloud
-- Convert ALL written/visual conventions to natural spoken English
-- Remove ALL URLs, links, image references, photo credits, and attribution lines
-- Remove any "Suggested Resources", "External Links", or reference sections at the end
-- Replace "this post", "this article", "this blog" with "this episode" or "today's episode"
-- Replace "see below", "shown below", "scroll down" with "coming up next" or "in a moment"
-- Replace "read on" with "stay with us" or "let's continue"
-- Replace "as shown above" with "as we discussed"
-- Don't read section headings as-is — weave transitions naturally ("Let's now turn to..." or "Next, let's explore...")
-- Expand abbreviations: "e.g." → "for example", "i.e." → "that is", "etc." → "and so on"
-- Spell out acronyms on first use if not commonly known
-- Don't include any markdown formatting, asterisks, brackets, or special characters
-- Keep the same depth, arguments, and structure — don't summarize or shorten
-- Write in a warm, conversational but authoritative tone
-- NEVER use first person ("I", "my", "I think", "what I call") — the narrator is presenting facts, not opinions
-- Use "we" sparingly and only when the original article does — prefer impersonal phrasing ("the industry is seeing", "developers are finding")
-- Do NOT add any meta-commentary like "Here's the script:" — just output the script text directly
-
-ARTICLE TITLE: {title}
-
-ARTICLE CONTENT:
-{_strip_markdown(content)}
-
-PODCAST SCRIPT:"""
+    from services.prompt_manager import get_prompt_manager
+    prompt = get_prompt_manager().get_prompt(
+        "podcast.script_rewrite",
+        title=title,
+        content=_strip_markdown(content),
+    )
 
     try:
         # Podcast script generation is a long-form completion (up to 8k

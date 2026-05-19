@@ -26,3 +26,16 @@
 
     The breakdown values per candidate should approximately sum to (score / 100).
     Return ONLY the JSON, no commentary.
+
+- key: research.distill_topic_angle
+  category: research
+  description: "Internal-RAG topic distillation — reads recent rows from a niche's internal-records embedding source and proposes (topic, angle) for a new blog post. Used by internal_rag_source._distill_topic_angle."
+  output_format: json
+  template: |
+    Read the snippets from an AI-operated content business's internal records.
+    Extract a proposed blog post topic and the unique angle (the "why this matters / what we learned").
+
+    Snippets:
+    {joined}
+
+    Return STRICT JSON: {{"topic": "<short title>", "angle": "<one-sentence framing>"}}.

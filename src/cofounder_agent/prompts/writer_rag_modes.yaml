@@ -45,3 +45,33 @@
 
     External facts:
     {aug_block}
+
+- key: writer_rag_modes.generate_with_context
+  category: blog_generation
+  description: "Generic RAG-writer prompt — builds a blog draft from topic, angle, optional extra instructions, and background-snippet context. Used by ai_content_generator.generate_with_context (the writer rag_modes call when no rag-mode supplies its own expand step)."
+  output_format: markdown
+  template: |
+    Write a blog post on the topic: "{topic}" with this angle: "{angle}".
+
+    {instructions}
+
+    Background context (cite where relevant):
+    {snippet_block}
+
+    Return the full post body in Markdown.
+
+- key: writer_rag_modes.story_spine.expand_prompt
+  category: blog_generation
+  description: "STORY_SPINE expand-stage prompt — turns the structured outline (hook / what_happened / why_it_matters / what_we_learned / close) plus background snippets into a full blog draft. Sibling to writer_rag_modes.story_spine.outline_prompt which produces the outline."
+  output_format: markdown
+  template: |
+    Expand the following outline into a full blog post.
+
+    Topic: {topic}
+    Outline:
+    {outline_block}
+
+    Background snippets to draw on:
+    {snippet_block}
+
+    Return the full post body in Markdown.

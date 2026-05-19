@@ -567,22 +567,12 @@ async def _generate_short_summary_audio(
     # Strip markdown for cleaner input
     from services.podcast_service import _normalize_for_speech, _strip_markdown
 
-    prompt = f"""Write a 60-second video narration (about 150 words) summarizing this article.
-
-RULES:
-- Start with a compelling hook that grabs attention in the first 5 seconds
-- Cover the 2-3 most important takeaways
-- End with a call to action: "Full article at glad labs dot io"
-- Conversational, energetic tone — this is for TikTok/YouTube Shorts
-- No URLs, no markdown, no special characters
-- Write ONLY the narration text, nothing else
-
-ARTICLE TITLE: {title}
-
-ARTICLE CONTENT:
-{_strip_markdown(content)[:3000]}
-
-NARRATION:"""
+    from services.prompt_manager import get_prompt_manager
+    prompt = get_prompt_manager().get_prompt(
+        "video.short_form_narration",
+        title=title,
+        content=_strip_markdown(content)[:3000],
+    )
 
     try:
         from services.llm_providers.dispatcher import dispatch_complete

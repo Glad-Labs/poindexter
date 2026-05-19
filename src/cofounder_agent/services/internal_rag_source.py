@@ -147,14 +147,11 @@ class InternalRagSource:
             or "glm-4.7-5090:latest"
         ).removeprefix("ollama/")
         joined = "\n---\n".join(s[:snippet_max] for s in snippets if s)
-        prompt = f"""Read the snippets from an AI-operated content business's internal records.
-Extract a proposed blog post topic and the unique angle (the "why this matters / what we learned").
-
-Snippets:
-{joined}
-
-Return STRICT JSON: {{"topic": "<short title>", "angle": "<one-sentence framing>"}}.
-"""
+        from services.prompt_manager import get_prompt_manager
+        prompt = get_prompt_manager().get_prompt(
+            "research.distill_topic_angle",
+            joined=joined,
+        )
         raw = await _ollama_chat_json(prompt, model=model)
         import json
         parsed = json.loads(raw)

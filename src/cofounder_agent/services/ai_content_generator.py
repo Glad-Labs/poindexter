@@ -1340,15 +1340,13 @@ async def generate_with_context(
         for s in snippets if s.get('snippet')
     )
     instructions = extra_instructions or ""
-    prompt = f"""Write a blog post on the topic: "{topic}" with this angle: "{angle}".
-
-{instructions}
-
-Background context (cite where relevant):
-{snippet_block}
-
-Return the full post body in Markdown.
-"""
+    prompt = get_prompt_manager().get_prompt(
+        "writer_rag_modes.generate_with_context",
+        topic=topic,
+        angle=angle,
+        instructions=instructions,
+        snippet_block=snippet_block,
+    )
     return await _ollama_chat_json(prompt, model=model)
 
 
@@ -1377,17 +1375,12 @@ async def generate_with_outline(
         for s in snippets if s.get('snippet')
     )
     outline_block = "\n".join(f"{k.replace('_',' ').title()}: {v}" for k, v in outline.items())
-    prompt = f"""Expand the following outline into a full blog post.
-
-Topic: {topic}
-Outline:
-{outline_block}
-
-Background snippets to draw on:
-{snippet_block}
-
-Return the full post body in Markdown.
-"""
+    prompt = get_prompt_manager().get_prompt(
+        "writer_rag_modes.story_spine.expand_prompt",
+        topic=topic,
+        outline_block=outline_block,
+        snippet_block=snippet_block,
+    )
     return await _ollama_chat_json(prompt, model=model)
 
 
