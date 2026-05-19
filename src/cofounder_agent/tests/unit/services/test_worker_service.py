@@ -108,6 +108,39 @@ class TestCollectHealthMetrics:
         assert health["current_task"] == "t1"
 
 
+class TestHeartbeatQueryShape:
+    """Regression pin for the asyncpg IndeterminateDatatypeError bug.
+
+    Per `reference_asyncpg_type_cast_quirks`: `CASE WHEN $N IS NOT NULL`
+    raises `asyncpg.exceptions.IndeterminateDatatypeError` unless the
+    parameter is explicitly cast (e.g. `$3::text`). The 2026-05-19
+    jank-audit finding #1 was caused by this exact pattern silently
+    killing every heartbeat UPDATE.
+    """
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_casts_current_task_param_to_text(
+        self, service, mock_pool
+    ):
+        _, conn = mock_pool
+
+        async def _stop_after_first(_interval):
+            service._running = False
+
+        service._running = True
+        with patch("services.worker_service.asyncio.sleep", _stop_after_first):
+            await service._heartbeat_loop()
+
+        assert conn.execute.called
+        sql = conn.execute.call_args[0][0]
+        assert "$3::text IS NOT NULL" in sql, (
+            "Heartbeat UPDATE must cast $3 (current_task_id) to ::text — "
+            "without it asyncpg raises IndeterminateDatatypeError on every "
+            "tick and the heartbeat silently dies. See "
+            "reference_asyncpg_type_cast_quirks."
+        )
+
+
 class TestStartHeartbeat:
     @pytest.mark.asyncio
     async def test_sets_running_flag(self, service):

@@ -111,7 +111,7 @@ class WorkerService:
                         SET last_heartbeat = NOW(),
                             health = $2::jsonb,
                             status = CASE
-                                WHEN $3 IS NOT NULL THEN 'busy'
+                                WHEN $3::text IS NOT NULL THEN 'busy'
                                 ELSE 'online'
                             END,
                             updated_at = NOW()
