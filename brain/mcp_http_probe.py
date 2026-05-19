@@ -96,12 +96,55 @@ def _reset_state() -> None:
 # Tunable readers.
 # ---------------------------------------------------------------------------
 
+# Unique sentinel for `_read_app_setting`. The helper returns its `default`
+# argument verbatim on every silent-default path (missing row, swallowed DB
+# exception, empty value, missing/failed decrypt). Passing a string that
+# cannot legitimately appear in `app_settings.value` lets `_read_bool`
+# distinguish "operator explicitly set this" from "we couldn't read it" —
+# the distinction that was missing when `mcp_http_probe_enabled='false'`
+# was being silently overridden after transient read failures
+# (Glad-Labs/glad-labs-stack#468).
+_UNSET = "\x00brain.mcp_http_probe._UNSET\x00"
 
-async def _read_bool(pool, key: str, default: bool) -> bool:
-    raw = await _read_app_setting(pool, key, "")
-    if not raw:
+
+async def _read_bool(
+    pool, key: str, default: bool, *, fail_closed: bool = False,
+) -> bool:
+    """Read a boolean ``app_settings`` row.
+
+    Args:
+        default: Value used when the row is genuinely missing AND
+            ``fail_closed=False`` — i.e. "operator hasn't configured this,
+            use the code default".
+        fail_closed: When True, any uncertain read (missing row, swallowed
+            DB exception, empty value, unparseable bool) returns ``False``.
+            Use for kill-switches: per ``feedback_no_silent_defaults``, a
+            transient DB hiccup must not silently re-enable a gate the
+            operator explicitly disabled (Glad-Labs/glad-labs-stack#468).
+    """
+    raw = await _read_app_setting(pool, key, _UNSET)
+    if raw == _UNSET:
+        if fail_closed:
+            logger.warning(
+                "[MCP_HTTP_PROBE] %s unreadable (row missing or DB error); "
+                "fail-closed → treating as disabled",
+                key,
+            )
+            return False
         return default
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    raw_norm = str(raw).strip().lower()
+    if raw_norm in {"1", "true", "yes", "on"}:
+        return True
+    if raw_norm in {"0", "false", "no", "off"}:
+        return False
+
+    logger.warning(
+        "[MCP_HTTP_PROBE] %s has unparseable bool value %r; treating as %s",
+        key, raw,
+        "disabled (fail-closed)" if fail_closed else f"default ({default})",
+    )
+    return False if fail_closed else default
 
 
 async def _read_int(pool, key: str, default: int) -> int:
@@ -217,7 +260,10 @@ async def run_mcp_http_probe(
     global _last_real_check_at, _last_alert_at
     clock = now_fn or time.monotonic
 
-    enabled = await _read_bool(pool, ENABLED_KEY, DEFAULT_ENABLED)
+    # Kill-switch: an uncertain read must NOT silently re-enable the probe
+    # (Glad-Labs/glad-labs-stack#468 — 10 hourly false-positive alerts/24h
+    # while `mcp_http_probe_enabled='false'` had been set for five days).
+    enabled = await _read_bool(pool, ENABLED_KEY, DEFAULT_ENABLED, fail_closed=True)
     if not enabled:
         return {"ok": True, "status": "disabled", "detail": "mcp_http_probe disabled"}
 

@@ -178,6 +178,68 @@ class TestMcpHttpProbe:
         assert "dispatched" in result.get("recovery_detail", "")
 
     @pytest.mark.asyncio
+    async def test_kill_switch_fails_closed_on_missing_enabled_row(self):
+        """Glad-Labs/glad-labs-stack#468: an absent `mcp_http_probe_enabled`
+        row must NOT fall back to `DEFAULT_ENABLED=True` — that's the silent
+        fail-open path that caused 10 false-positive alerts/24h after the
+        operator had set the kill-switch to 'false' five days earlier.
+        """
+        pool = MagicMock()
+
+        async def _fetchrow(query, *args):
+            # Mimic the bug: every read for the enabled key returns None,
+            # which `read_app_setting` translates into the caller's default.
+            if args and args[0] == mhp.ENABLED_KEY:
+                return None
+            return {"value": "5", "is_secret": False}
+
+        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+        pool.execute = AsyncMock()
+
+        result = await mhp.run_mcp_http_probe(
+            pool, http_client_factory=_make_http_factory(status_code=503),
+            now_fn=lambda: 0.0,
+        )
+        assert result == {
+            "ok": True, "status": "disabled",
+            "detail": "mcp_http_probe disabled",
+        }
+        assert _alert_rows(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_kill_switch_fails_closed_on_db_error(self):
+        """A swallowed asyncpg exception during the kill-switch read must
+        leave the probe disabled — not silently re-enable it for one cycle.
+        """
+        pool = MagicMock()
+
+        async def _fetchrow(query, *args):
+            raise RuntimeError("simulated DB hiccup")
+
+        pool.fetchrow = AsyncMock(side_effect=_fetchrow)
+        pool.execute = AsyncMock()
+
+        result = await mhp.run_mcp_http_probe(
+            pool, http_client_factory=_make_http_factory(status_code=503),
+            now_fn=lambda: 0.0,
+        )
+        assert result["status"] == "disabled"
+        assert _alert_rows(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_kill_switch_treats_unparseable_value_as_disabled(self):
+        """Garbage in the kill-switch row (operator typo, type drift) must
+        also fail closed rather than coercing to truthy via `bool('maybe')`.
+        """
+        pool = _make_pool(setting_values={mhp.ENABLED_KEY: "maybe"})
+        result = await mhp.run_mcp_http_probe(
+            pool, http_client_factory=_make_http_factory(status_code=503),
+            now_fn=lambda: 0.0,
+        )
+        assert result["status"] == "disabled"
+        assert _alert_rows(pool) == []
+
+    @pytest.mark.asyncio
     async def test_launcher_restart_cap_enforced(self):
         pool = _make_pool(
             setting_values={
