@@ -516,6 +516,80 @@ async def _setting_int(pool, key: str, default: int) -> int:
         return default
 
 
+async def _hydrate_notify_env_from_settings(pool) -> None:
+    """Populate operator_notifier's expected env vars from app_settings.
+
+    ``brain/operator_notifier.py`` is the no-DB-required failsafe paging
+    path. Its ``_try_telegram`` / ``_try_discord`` helpers read
+    ``os.getenv`` directly so they stay callable from bootstrap-time
+    code paths where the DB isn't reachable yet (see ``brain/bootstrap``).
+
+    The catch: once the brain daemon is up and HAS a DB pool, those
+    env-only readers still can't see the encrypted ``app_settings`` rows
+    like ``discord_ops_webhook_url``. Every ``operator_paged`` audit
+    entry says ``"no DISCORD_*_WEBHOOK_URL set"`` even though the value
+    is correctly seeded in app_settings — exactly the dead-seam class
+    feedback_filter_on_seams_not_slugs warns about (the structured
+    config field exists, it just isn't being read).
+
+    Hydrate the env vars here so subsequent ``notify_operator()`` calls
+    find them via ``os.getenv``. Idempotent — we overwrite each cycle
+    with whatever app_settings currently holds, so an operator-side
+    secret rotation propagates on next brain restart.
+
+    Sidesteps the Glad-Labs/poindexter#344 module-instance landmine
+    because we're writing to ``os.environ`` (process-global), not a
+    module-level constant that could end up cached in only one of two
+    duplicate brain_daemon imports.
+    """
+    try:
+        from brain.secret_reader import read_app_setting  # type: ignore[import-not-found]
+    except ImportError:
+        try:
+            from secret_reader import read_app_setting  # type: ignore[no-redef]
+        except ImportError:
+            logger.warning(
+                "[BRAIN] secret_reader unavailable — "
+                "skipping notify env hydration; operator_notifier "
+                "will see whatever env vars docker-compose provided"
+            )
+            return
+
+    # (app_settings key, env var name).
+    # Mirrors the env names ``brain/operator_notifier._try_telegram``
+    # and ``_try_discord`` read.
+    mapping = [
+        ("discord_ops_webhook_url", "DISCORD_OPS_WEBHOOK_URL"),
+        ("discord_lab_logs_webhook_url", "DISCORD_LAB_LOGS_WEBHOOK_URL"),
+        ("telegram_bot_token", "TELEGRAM_BOT_TOKEN"),
+        ("telegram_chat_id", "TELEGRAM_CHAT_ID"),
+    ]
+    hydrated: list[str] = []
+    for setting_key, env_key in mapping:
+        try:
+            value = await read_app_setting(pool, setting_key, "")
+        except Exception as e:  # noqa: BLE001 — hydration is best-effort
+            logger.debug(
+                "[BRAIN] notify-env hydrate skipped %s: %s",
+                setting_key, e,
+            )
+            continue
+        if value:
+            os.environ[env_key] = value
+            hydrated.append(env_key)
+    if hydrated:
+        logger.info(
+            "[BRAIN] Hydrated %d notify env var(s) from app_settings: %s",
+            len(hydrated), ", ".join(hydrated),
+        )
+    else:
+        logger.warning(
+            "[BRAIN] No notify env vars hydrated — operator_paged "
+            "events will fall through to alerts.log only "
+            "(seed discord_ops_webhook_url / telegram_bot_token in app_settings)"
+        )
+
+
 async def _setup_brain_pyroscope(pool, service_name: str = "poindexter-brain") -> None:
     """Configure the pyroscope-io agent for the brain daemon.
 
@@ -2374,6 +2448,20 @@ async def main():
         logger.info(
             "[BRAIN] notify_operator → audit_log sink wired (operator_paged events)"
         )
+
+    # Hydrate operator_notifier's expected env vars from app_settings.
+    # operator_notifier is the no-DB-required failsafe paging path —
+    # _try_discord / _try_telegram read os.getenv directly so they stay
+    # callable from bootstrap-time code paths where the DB isn't up yet
+    # (see brain/bootstrap.py). Once the brain daemon HAS a DB pool,
+    # we can populate the env vars from app_settings so subsequent
+    # notify_operator() calls find them. Without this, encrypted
+    # secrets like discord_ops_webhook_url are invisible to the
+    # env-only paths and every operator page audit-logs
+    # "no DISCORD_*_WEBHOOK_URL set" even though the value IS seeded
+    # — the dead-seam class called out in
+    # feedback_filter_on_seams_not_slugs applied to notification config.
+    await _hydrate_notify_env_from_settings(pool)
 
     shutdown = asyncio.Event()
 
