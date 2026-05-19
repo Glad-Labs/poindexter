@@ -1,6 +1,6 @@
 """Backfill ``posts.word_count`` + ``posts.reading_time`` for legacy rows.
 
-ISSUE: Glad-Labs/glad-labs-stack#480 jank-audit finding #2.
+ISSUE: Glad-Labs/poindexter#480 jank-audit finding #2.
 
 Why: ``posts.word_count`` and ``posts.reading_time`` columns have existed
 on the table since the baseline (both ``integer`` NULL-allowed) but the

@@ -103,7 +103,7 @@ def _reset_state() -> None:
 # distinguish "operator explicitly set this" from "we couldn't read it" —
 # the distinction that was missing when `mcp_http_probe_enabled='false'`
 # was being silently overridden after transient read failures
-# (Glad-Labs/glad-labs-stack#468).
+# (Glad-Labs/poindexter#468).
 _UNSET = "\x00brain.mcp_http_probe._UNSET\x00"
 
 
@@ -120,7 +120,7 @@ async def _read_bool(
             DB exception, empty value, unparseable bool) returns ``False``.
             Use for kill-switches: per ``feedback_no_silent_defaults``, a
             transient DB hiccup must not silently re-enable a gate the
-            operator explicitly disabled (Glad-Labs/glad-labs-stack#468).
+            operator explicitly disabled (Glad-Labs/poindexter#468).
     """
     raw = await _read_app_setting(pool, key, _UNSET)
     if raw == _UNSET:
@@ -261,7 +261,7 @@ async def run_mcp_http_probe(
     clock = now_fn or time.monotonic
 
     # Kill-switch: an uncertain read must NOT silently re-enable the probe
-    # (Glad-Labs/glad-labs-stack#468 — 10 hourly false-positive alerts/24h
+    # (Glad-Labs/poindexter#468 — 10 hourly false-positive alerts/24h
     # while `mcp_http_probe_enabled='false'` had been set for five days).
     enabled = await _read_bool(pool, ENABLED_KEY, DEFAULT_ENABLED, fail_closed=True)
     if not enabled:

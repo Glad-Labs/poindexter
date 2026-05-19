@@ -107,7 +107,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 # by publish_service.publish_post_from_task. Defaults
                 # to empty array when omitted so legacy callers don't
                 # silently inherit a "spawn everything" behavior.
-                # Closes the seam gap from Glad-Labs/glad-labs-stack#480.
+                # Closes the seam gap from Glad-Labs/poindexter#480.
                 media_to_generate = list(post_data.get("media_to_generate") or [])
 
                 # word_count + reading_time — both columns exist on the

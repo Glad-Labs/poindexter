@@ -682,7 +682,7 @@ async def publish_post_from_task(
     # by migration 20260519_134736). Falls back to an empty array when
     # the niche row is missing or has no policy set — safer to skip
     # media generation than to silently default to "spawn everything"
-    # for an unknown niche. Closes Glad-Labs/glad-labs-stack#480 and
+    # for an unknown niche. Closes Glad-Labs/poindexter#480 and
     # the post-mortem from #481 (slug-pattern filter Matt rejected
     # 2026-05-19).
     niche_slug = task.get("niche_slug") or ""
