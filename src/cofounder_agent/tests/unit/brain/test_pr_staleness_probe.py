@@ -48,7 +48,7 @@ def _default_settings() -> dict[str, str]:
         psp.POLL_INTERVAL_MINUTES_KEY: "60",
         psp.MIN_HOURS_KEY: "24",
         psp.DEDUP_HOURS_KEY: "12",
-        psp.REPO_KEY: "Glad-Labs/glad-labs-stack",
+        psp.REPO_KEY: "Glad-Labs/poindexter",
         psp.MAX_PRS_PER_ALERT_KEY: "5",
         # gh_token row exists with a value so _read_token short-circuits
         # without falling through to the GITHUB_TOKEN env var (which the
@@ -395,7 +395,7 @@ class TestStalePRAlerts:
 
         # Per-PR dedup row was written with the right fingerprint.
         upserts = _executed_dedup_upserts(pool)
-        assert upserts == ["pr_stale_Glad-Labs/glad-labs-stack_309"]
+        assert upserts == ["pr_stale_Glad-Labs/poindexter_309"]
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +411,7 @@ class TestDedupSuppression:
         # alert_dedup_state -> the PR is skipped before the alert_events
         # insert. We simulate "cycle 1 already happened" by pre-seeding
         # the dedup set passed to the pool.
-        deduped = {"pr_stale_Glad-Labs/glad-labs-stack_309"}
+        deduped = {"pr_stale_Glad-Labs/poindexter_309"}
         pool = _make_pool(deduped_fingerprints=deduped)
         factory = _factory_for(
             prs=[
