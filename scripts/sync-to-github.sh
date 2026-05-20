@@ -245,6 +245,38 @@ for rel in tracked:
 print(f"[sync] cosmetic substitution: rewrote glad-labs-stack -> poindexter in {changed} files")
 PYSUB
 
+# === CHANGELOG.md private-key redaction ============================
+# release-please's auto-generated CHANGELOG entries pick up commit
+# messages mentioning private app_settings keys (mercury_api_token,
+# operator hardware values, Tailnet IPs etc). The leak guard below
+# catches these, but only by aborting the push — that means every
+# release-please merge wedges the mirror until someone hand-edits.
+# Strip offending lines from CHANGELOG.md instead so the sync stays
+# unattended. Single line-redact pass — preserves all OTHER changelog
+# entries so the public CHANGELOG stays useful.
+if [[ -f CHANGELOG.md ]]; then
+  python3 -c "
+import pathlib, re
+p = pathlib.Path('CHANGELOG.md')
+text = p.read_text(encoding='utf-8')
+# Patterns that warrant redaction at LINE granularity (whole bullet
+# point dropped). Must match the strictest LEAK_PATTERNS below so the
+# guard doesn't re-fire after this filter runs.
+LINE_REDACT_RE = re.compile(r'(?:mercury_|nightrider|taild4f626|7877\.14|362\.75|mattg-stack)', re.IGNORECASE)
+out = []
+dropped = 0
+for line in text.splitlines(keepends=True):
+    if LINE_REDACT_RE.search(line):
+        dropped += 1
+        continue
+    out.append(line)
+if dropped:
+    p.write_text(''.join(out), encoding='utf-8', newline='\n')
+    print(f'[sync] CHANGELOG.md: redacted {dropped} private-key line(s)')
+"
+  git add CHANGELOG.md 2>/dev/null || true
+fi
+
 # Commit the removal + substitutions (temporary — only pushed to github, never to origin/glad-labs-stack)
 git commit -m "sync: exclude private files for public repo" --allow-empty 2>/dev/null
 

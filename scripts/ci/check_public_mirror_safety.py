@@ -200,6 +200,21 @@ _SUBSTRATE_LINE_STRIPS: dict[str, tuple[str, ...]] = {
         "from .finance import finance_group",
         'main.add_command(finance_group, name="finance")',
     ),
+    # release-please's auto-generated CHANGELOG entries can pick up commit
+    # messages that mention private app_settings keys, hardware values, or
+    # Tailnet hostnames. The sync filter (sync-to-github.sh, the CHANGELOG
+    # line-redact pass) drops these whole lines before pushing, so the
+    # lint must skip them too — otherwise every release-please merge
+    # wedges the mirror on a line that won't actually ship.
+    # Keep in lock-step with the LINE_REDACT_RE in sync-to-github.sh.
+    "CHANGELOG.md": (
+        "mercury_",
+        "nightrider",
+        "taild4f626",
+        "7877.14",
+        "362.75",
+        "mattg-stack",
+    ),
 }
 
 
