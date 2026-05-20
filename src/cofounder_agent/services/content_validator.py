@@ -382,6 +382,45 @@ BANNED_TRANSITION_OPENERS = (
 )
 
 
+# LLM-tell vocabulary — words and phrases that almost-exclusively signal
+# machine-generated prose. From Matt's 2026-05-19 anti-LLM-tells list
+# (``feedback_writing_anti_llm_tells`` memory). The writer prompts
+# (``prompts/blog_generation.yaml``) already discourage these as
+# negative constraints at generation time; this list is the
+# deterministic QA-time enforcement floor that catches drafts the
+# local LLMs produce despite the prompt.
+#
+# Match grammar is case-INSENSITIVE on purpose — "Delve into..." at the
+# start of a paragraph is just as much an LLM tell as "...delve into..."
+# mid-sentence. Word boundaries (``\b``) prevent false positives
+# inside longer compound words (e.g. matching "delve" should not fire
+# on "delver" or "manifested" — only the bare offending token).
+#
+# Some entries are multi-word phrases ("at its core") and use
+# ``\s+`` between words so any whitespace count matches. The
+# constructed alternation regex compiles once at module load (see
+# ``_LLM_TELL_RE`` below).
+LLM_TELL_BUZZWORDS: tuple[str, ...] = (
+    r"delve",
+    r"delves",
+    r"delving",
+    r"delved",
+    r"testament",
+    r"tapestry",
+    r"multifaceted",
+    r"at\s+its\s+core",
+    r"at\s+the\s+heart\s+of",
+)
+
+# Pre-compile the alternation regex so each scan is cheap. The
+# ``(?:...)`` grouping is non-capturing so ``finditer`` returns each
+# whole match without spurious group captures.
+_LLM_TELL_RE = re.compile(
+    r"\b(?:" + "|".join(LLM_TELL_BUZZWORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+
 @dataclass
 class ValidationIssue:
     """A single quality issue found in the content."""
@@ -1454,6 +1493,33 @@ def validate_content(
                     "paragraphs so the writing doesn't read as machine-templated."
                 ),
                 matched_text=_bto_matches[0].group(0)[:80],
+            ))
+
+    # 8b. Check for LLM-tell buzzword density (delve / testament /
+    # tapestry / multifaceted / at-its-core / at-the-heart-of). Threshold
+    # is the COUNT OF DISTINCT BUZZWORDS used, not total occurrences —
+    # a single piece using "delve" four times is one writer falling in
+    # love with one word (annoying but localised), whereas a piece
+    # using delve + testament + tapestry once each is the unmistakable
+    # cadence of an unmodified LLM draft. Default threshold 2 (matches
+    # Matt's "≥3 distinct buzzwords = clearly LLM" spec; we trip at
+    # >2 = 3 distinct, mirroring the banned_transition_opener pattern
+    # of "> threshold").
+    if _enabled("buzzword_density"):
+        _bd_threshold = site_config.get_int("buzzword_density_threshold", 2)
+        _bd_matches = list(_LLM_TELL_RE.finditer(content))
+        _bd_distinct = sorted({m.group(0).lower() for m in _bd_matches})
+        if len(_bd_distinct) > _bd_threshold:
+            issues.append(ValidationIssue(
+                severity="warning",
+                category="buzzword_density",
+                description=(
+                    f"LLM-tell buzzwords used: {len(_bd_distinct)} distinct "
+                    f"(threshold {_bd_threshold}), {len(_bd_matches)} total occurrences. "
+                    f"Found: {', '.join(_bd_distinct)} — replace with more specific verbs/"
+                    "nouns. See feedback_writing_anti_llm_tells for the rationale."
+                ),
+                matched_text=_bd_matches[0].group(0)[:80] if _bd_matches else "",
             ))
 
     # 9. Check for late acronym expansions — e.g. "CRM (Customer Relationship Management)"

@@ -612,6 +612,95 @@ class TestBannedTransitionOpeners:
 
 
 # ============================================================================
+# Buzzword-density (LLM-tell vocabulary) — anti-LLM-tells follow-up to #493
+# ============================================================================
+
+
+class TestBuzzwordDensity:
+    """Distinct LLM-tell buzzwords (delve / testament / tapestry / etc.) above
+    the threshold = 2 should emit ONE warning per post. From the 2026-05-19
+    feedback_writing_anti_llm_tells memory: ≥3 distinct buzzwords reads as
+    clearly machine-written and trips the rule.
+    """
+
+    def test_three_distinct_buzzwords_emits_warning(self):
+        content = (
+            "Let's delve into the architecture. The new system is a testament "
+            "to careful design. It weaves together a tapestry of components, "
+            "each well-tested.\n"
+        )
+        result = validate_content("Arch post", content, "infra")
+        warnings = [i for i in result.issues if i.category == "buzzword_density"]
+        assert len(warnings) == 1
+        # Description should call out the count and list the offenders.
+        assert "delve" in warnings[0].description
+        assert "testament" in warnings[0].description
+        assert "tapestry" in warnings[0].description
+
+    def test_two_distinct_buzzwords_stays_silent(self):
+        """Two distinct stays at the threshold (not >threshold), no fire."""
+        content = (
+            "We delve into the topic. The result is a testament to discipline. "
+            "Nothing else is going on here.\n"
+        )
+        result = validate_content("Two buzzwords", content, "infra")
+        assert not any(i.category == "buzzword_density" for i in result.issues)
+
+    def test_one_buzzword_repeated_many_times_stays_silent(self):
+        """One word four times = one writer in love with one word, NOT the
+        LLM-cadence pattern. The rule counts DISTINCT buzzwords, not total."""
+        content = (
+            "We delve into the topic. We delve more deeply. We delve further. "
+            "And we delve again, because the topic is rich.\n"
+        )
+        result = validate_content("Delvers anonymous", content, "infra")
+        assert not any(i.category == "buzzword_density" for i in result.issues)
+
+    def test_multiword_phrase_at_its_core_counts(self):
+        """``at its core`` and ``at the heart of`` are multi-word LLM tells."""
+        content = (
+            "At its core, the design is simple. At the heart of the system "
+            "is a queue. The multifaceted approach pays off.\n"
+        )
+        result = validate_content("Multi-word", content, "infra")
+        warnings = [i for i in result.issues if i.category == "buzzword_density"]
+        assert len(warnings) == 1
+        assert "at its core" in warnings[0].description
+        assert "at the heart of" in warnings[0].description
+        assert "multifaceted" in warnings[0].description
+
+    def test_case_insensitive_matching(self):
+        """Sentence-start "Delve..." should match as well as lowercase."""
+        content = (
+            "Delve into this. The system is a Testament to good design. "
+            "It's a multifaceted approach.\n"
+        )
+        result = validate_content("Caps post", content, "infra")
+        warnings = [i for i in result.issues if i.category == "buzzword_density"]
+        assert len(warnings) == 1
+
+    def test_word_boundaries_no_false_positive_on_substring(self):
+        """``delver`` (not a banned word) shouldn't match ``delve``."""
+        content = (
+            "A delver into ancient lore. A testament that holds promise. "
+            "Multifaceted means many-sided.\n"
+        )
+        result = validate_content("Word boundaries", content, "infra")
+        warnings = [i for i in result.issues if i.category == "buzzword_density"]
+        # "testament" + "multifaceted" = 2 distinct ≤ threshold 2 → no fire
+        assert not warnings
+
+    def test_clean_post_passes(self):
+        content = (
+            "Postgres connection pooling deserves a real budget. "
+            "Without it, a burst of cold-cache reads will queue behind every "
+            "long write. PgBouncer in transaction mode is the default.\n"
+        )
+        result = validate_content("Pooling", content, "infra")
+        assert not any(i.category == "buzzword_density" for i in result.issues)
+
+
+# ============================================================================
 # Known-Wrong Hardware Facts (added 2026-04-11, Gitea #192)
 # ============================================================================
 
