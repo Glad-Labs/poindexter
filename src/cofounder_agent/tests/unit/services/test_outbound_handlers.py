@@ -105,6 +105,48 @@ class TestDiscordPost:
                 pool=None,
             )
 
+    @pytest.mark.asyncio
+    async def test_secret_key_ref_takes_precedence_over_row_url(self, patch_httpx):
+        """Resolution preference: secret_key_ref → row.url.
+
+        Operator rotates the URL in ``app_settings``; the dispatcher row's
+        denormalized ``url`` field will be stale until something syncs it.
+        Preferring ``secret_key_ref`` makes rotation propagate immediately
+        and avoids the 2026-05-20 incident where the embedded URL kept
+        getting Discord 404 "Unknown Webhook" responses even after Matt
+        had rotated the value in ``app_settings.discord_ops_webhook_url``.
+        """
+        transport = patch_httpx(_CapturingTransport(status_code=204, body=b""))
+        live_url = "https://discord.com/api/webhooks/NEW/live-from-app-settings"
+        stale_url = "https://discord.com/api/webhooks/OLD/stale-embedded"
+        sc = _FakeSiteConfig({"discord_ops_webhook_url": live_url})
+        row = {
+            "name": "discord_ops",
+            "url": stale_url,
+            "secret_key_ref": "discord_ops_webhook_url",
+        }
+        await outbound_discord.discord_post(
+            "ping", site_config=sc, row=row, pool=None,
+        )
+        req = transport.captured
+        assert req is not None
+        assert str(req.url) == live_url, (
+            "discord_post must prefer the secret_key_ref-resolved URL "
+            "over any stale value denormalized into row.url"
+        )
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_row_url_when_no_secret_key_ref(self, patch_httpx):
+        """Back-compat: rows without secret_key_ref still work via row.url."""
+        transport = patch_httpx(_CapturingTransport(status_code=204, body=b""))
+        embedded = "https://discord.com/api/webhooks/legacy/embedded-url"
+        row = {"name": "discord_legacy", "url": embedded}
+        await outbound_discord.discord_post(
+            "ping", site_config=_FakeSiteConfig(), row=row, pool=None,
+        )
+        assert transport.captured is not None
+        assert str(transport.captured.url) == embedded
+
 
 # ---------------------------------------------------------------------------
 # telegram_post

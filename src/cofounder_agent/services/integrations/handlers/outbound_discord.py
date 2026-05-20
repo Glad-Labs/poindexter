@@ -9,15 +9,21 @@ Posts a message to a Discord webhook URL. Payload shape:
       "embeds": [...]   # optional, Discord embed objects
     }
 
-``content`` is the only required field. Matches the existing
-``_notify_discord`` helper in :mod:`services.task_executor`, which
-will migrate onto this handler in a follow-up.
+``content`` is the only required field.
 
 Row configuration:
 
-- ``url`` — the Discord webhook URL (the webhook URL itself is the
-  bearer token for a Discord webhook, so ``signing_algorithm`` should
-  be ``none`` and ``secret_key_ref`` unset).
+- ``secret_key_ref`` — preferred. App-settings key holding the
+  Discord webhook URL (typically ``discord_ops_webhook_url``,
+  encrypted). When set, the handler resolves the live URL on every
+  call, so an operator rotating the URL in ``app_settings`` takes
+  effect immediately without needing to also UPDATE the dispatcher
+  row. Mirrors the pattern telegram_post / vercel_isr already use.
+- ``url`` — legacy fallback, used only when ``secret_key_ref`` is
+  unset. The whole webhook URL acts as the bearer credential, so
+  embedding it on the dispatcher row breaks rotation (the row
+  becomes a denormalized stale copy of ``app_settings`` and never
+  resyncs). Prefer ``secret_key_ref`` for any new rows.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from typing import Any
 import httpx
 
 from services.integrations.registry import register_handler
+from services.integrations.secret_resolver import resolve_secret
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +59,23 @@ async def discord_post(
     row: dict[str, Any],
     pool: Any,
 ) -> dict[str, Any]:
-    """POST ``payload`` to ``row["url"]`` as a Discord webhook message."""
-    url = row.get("url")
+    """POST ``payload`` to the row's Discord webhook URL.
+
+    Resolution order:
+
+    1. ``secret_key_ref`` (preferred) — resolves to the live URL in
+       ``app_settings`` every call, so operator rotations propagate.
+    2. ``row['url']`` (legacy fallback) — used only if no
+       ``secret_key_ref`` is configured on the row.
+    """
+    url = await resolve_secret(row, site_config)
     if not url:
-        raise ValueError("discord_post: row.url is required")
+        url = row.get("url")
+    if not url:
+        raise ValueError(
+            "discord_post: no webhook URL — set secret_key_ref (preferred) "
+            "or row.url on the dispatcher row"
+        )
 
     body: dict[str, Any]
     if isinstance(payload, str):
