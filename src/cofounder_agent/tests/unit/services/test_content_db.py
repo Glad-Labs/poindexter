@@ -750,3 +750,80 @@ class TestCacheHelpers:
     def test_init_creates_empty_cache(self):
         db = _make_db()
         assert db._cache == {}
+
+
+@pytest.mark.unit
+class TestPostTagsInsertCast:
+    """Pins the contract that closes finding #197.
+
+    The ``post_tags.tag_id`` column is a uuid. The insert MUST cast
+    the unnest argument to ``uuid[]``, not ``text[]`` — the latter
+    was a leftover from when tag_ids lived in a ``text[]`` column on
+    posts (pre-#703) and tripped every approve-with-tags publish with
+    ``column "tag_id" is of type uuid but expression is of type text``.
+    The partial commit left posts in the DB without their tag links
+    AND with the downstream ``media_to_generate`` stamp lost (see
+    finding #195 for the cascade).
+    """
+
+    @pytest.mark.asyncio
+    async def test_post_tags_insert_casts_to_uuid_array(self):
+        opaque = object()
+        pool = _make_pool(fetchrow_result=opaque)
+        db = _make_db(pool)
+
+        # Capture the SQL the create_post path sends.
+        captured_sql: list[str] = []
+        # Get the conn we yielded — re-wrap so `execute` records.
+        captured_execute = AsyncMock(return_value=None)
+
+        async def _capture_acquire():
+            class _Ctx:
+                async def __aenter__(self_inner):
+                    return _conn
+
+                async def __aexit__(self_inner, *a):
+                    return False
+
+            return _Ctx()
+
+        _conn = MagicMock()
+        _conn.fetchrow = AsyncMock(return_value=opaque)
+        _conn.fetchval = AsyncMock(return_value=0)
+        _conn.fetch = AsyncMock(return_value=[])
+
+        async def _execute(sql, *args):
+            captured_sql.append(sql)
+            return None
+
+        _conn.execute = AsyncMock(side_effect=_execute)
+
+        from contextlib import asynccontextmanager as _acm
+
+        @_acm
+        async def _acquire():
+            yield _conn
+
+        pool.acquire = _acquire
+
+        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=opaque):
+            await db.create_post({
+                "slug": "x",
+                "title": "T",
+                "tag_ids": ["a1b2c3d4-e5f6-7890-abcd-ef0123456789"],
+            })
+
+        # post_tags insert MUST cast to uuid[]. Search captured SQL.
+        post_tags_inserts = [s for s in captured_sql if "post_tags" in s and "INSERT" in s]
+        assert post_tags_inserts, (
+            "create_post should have emitted an INSERT INTO post_tags "
+            "when tag_ids was non-empty"
+        )
+        assert any("::uuid[]" in s for s in post_tags_inserts), (
+            "post_tags insert MUST cast unnest to ::uuid[] (finding #197). "
+            f"Got SQL: {post_tags_inserts!r}"
+        )
+        assert not any("::text[]" in s for s in post_tags_inserts), (
+            "post_tags insert MUST NOT cast to ::text[] — that's the bug "
+            "from finding #197. Got SQL: {post_tags_inserts!r}"
+        )
