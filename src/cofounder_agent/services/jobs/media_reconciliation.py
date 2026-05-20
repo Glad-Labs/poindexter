@@ -153,12 +153,19 @@ class MediaReconciliationJob:
         podcast_cap = max(0, int(config.get("podcast_cap_per_cycle", 3)))
         video_cap = max(0, int(config.get("video_cap_per_cycle", 2)))
         alert_on_drift = bool(config.get("alert_on_drift", True))
-        # Slug prefixes whose posts are EXEMPT from podcast/video drift
-        # detection. dev_diary "What we shipped" build-in-public posts
-        # don't have a podcast/video derivative by design (Matt 2026-05-15:
-        # "the dev blogs don't need podcasts or videos"). Operator can
-        # extend the list via app_settings to exclude any future
-        # text-only post type without a code change.
+        # Filtering moved off slug-prefix patterns onto the canonical
+        # ``posts.media_to_generate`` array (Glad-Labs/glad-labs-stack
+        # #482 + #195). A post's media policy is the array of media
+        # types it should produce; an empty array means the post is
+        # exempt from podcast/video reconciliation by design (the
+        # dev_diary niche seeds this way per
+        # ``niches.default_media_to_generate``).
+        #
+        # The slug-prefix exclude is retained as a secondary safety
+        # net only — operators with a niche whose seed array is wrong
+        # can still skip a slug pattern while the niche policy is
+        # being repaired. Drop the slug exclude entirely once that
+        # backstop is no longer needed.
         exclude_slug_prefixes = await _resolve_exclude_slug_prefixes(
             pool, config,
         )
@@ -214,17 +221,25 @@ class MediaReconciliationJob:
                 # filter. Pass as a single text[] so the SQL stays
                 # parameterized — no string concatenation into the query.
                 exclude_patterns = [f"{p}%" for p in exclude_slug_prefixes]
+                # Pull ``media_to_generate`` so the per-row check can
+                # distinguish "expected and missing" from "not expected
+                # at all" — only the former counts as drift. Skip rows
+                # whose policy array is empty or NULL (treated as
+                # "exempt") via the SQL filter so the HEAD-check fan-out
+                # below stays small.
                 rows = await conn.fetch(
                     """
                     SELECT id::text AS id,
                            COALESCE(title, '(untitled)') AS title,
                            COALESCE(content, '') AS content,
-                           published_at
+                           published_at,
+                           COALESCE(media_to_generate, ARRAY[]::text[]) AS media_to_generate
                       FROM posts
                      WHERE status = 'published'
                        AND published_at IS NOT NULL
                        AND published_at >= $1
                        AND NOT (slug ILIKE ANY($2::text[]))
+                       AND cardinality(COALESCE(media_to_generate, ARRAY[]::text[])) > 0
                      ORDER BY published_at DESC
                     """,
                     since,
@@ -414,12 +429,27 @@ class MediaReconciliationJob:
             except Exception:
                 return False
 
-        podcast_exists, video_exists = await asyncio.gather(
-            _exists(podcast_url),
-            _exists(video_url),
+        # Per-type policy: only flag missing if the post's
+        # ``media_to_generate`` array opts in to that media type. A
+        # post whose array is empty (dev_diary etc.) has already been
+        # filtered out by the SELECT above, but checking again here
+        # keeps this method correct under direct callers / tests.
+        media_policy = set(row.get("media_to_generate") or [])
+        wants_podcast = "podcast" in media_policy
+        wants_video = bool(
+            {"video", "video_long", "video_short"} & media_policy
         )
-        row["podcast_missing"] = not podcast_exists
-        row["video_missing"] = not video_exists
+
+        # Skip the HEAD entirely when the post doesn't want that media
+        # type — saves an HTTP round-trip on every reconciliation cycle
+        # for every text-only post, and avoids spurious "404" noise in
+        # the R2 access logs.
+        podcast_exists = await _exists(podcast_url) if wants_podcast else True
+        video_exists = await _exists(video_url) if wants_video else True
+        # A post that doesn't want a podcast/video is never "missing"
+        # one — the upstream pipeline correctly declined to produce it.
+        row["podcast_missing"] = wants_podcast and not podcast_exists
+        row["video_missing"] = wants_video and not video_exists
         return row
 
     async def _record_media_asset(

@@ -60,6 +60,13 @@ def _post(*, id_: str = "post-1", title: str = "A title", **overrides):
         "podcast_url": None,
         "video_url": None,
         "published_at": datetime.now(timezone.utc),
+        # Default to the full glad-labs niche policy so existing tests
+        # exercising drift + regen still report missing media. Tests
+        # that need an exempt post (dev_diary-shape) pass an empty list
+        # via overrides. Added 2026-05-20 (finding #195) when the
+        # reconciliation job was migrated off slug-prefix filtering
+        # onto the canonical ``posts.media_to_generate`` seam.
+        "media_to_generate": ["podcast", "video", "video_short"],
     }
     base.update(overrides)
     return base
@@ -421,3 +428,120 @@ class TestMediaReconciliation:
         ]
         prefix_arg = posts_calls[0].args[2]
         assert prefix_arg == ["override-prefix-%"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestMediaToGenerateFilter:
+    """Pins the contract that closes finding #195.
+
+    Pre-fix: `media_reconciliation` filtered posts by slug-prefix LIKE
+    exclusion only. A post with ``media_to_generate=[]`` (the dev_diary
+    seed value) whose slug didn't match the exclude list was reported
+    as drift and the job tried to regenerate non-existent podcasts +
+    videos. Symptom: alert #293 fired on post ``dcd86ea6...`` whose
+    media policy was an empty array — the same slug-not-array filter
+    pattern PR #482 fixed for the backfill jobs.
+
+    Post-fix: SELECT filters `cardinality(media_to_generate) > 0` AND
+    `_check_post_media` consults the per-row policy so HEAD checks
+    fire only for the media types the post actually wants.
+    """
+
+    async def test_post_with_empty_media_to_generate_is_filtered_out(self):
+        """SELECT must not return a post with empty media_to_generate.
+        Even if the slug-prefix exclude doesn't match, an empty policy
+        means 'no media expected'."""
+        from services.jobs.media_reconciliation import MediaReconciliationJob
+
+        conn = MagicMock()
+
+        async def _fetchrow(query, *args):
+            if "FROM app_settings" in query:
+                return {"value": "https://r2.test", "is_secret": False}
+            return None
+
+        captured_sql: list[str] = []
+
+        async def _fetch(query, *args):
+            captured_sql.append(query)
+            if "FROM posts" in query:
+                # The fix's SQL filter MUST cull empty-array rows. If
+                # the SELECT still returns them, this test catches the
+                # regression.
+                return []
+            return []
+
+        conn.fetchrow = AsyncMock(side_effect=_fetchrow)
+        conn.fetch = AsyncMock(side_effect=_fetch)
+        conn.execute = AsyncMock(return_value=None)
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+
+        result = await MediaReconciliationJob().run(pool, config={})
+
+        assert result.ok is True
+        # The post-fix SQL MUST include the cardinality filter; if a
+        # future refactor drops it, this assert fails loud.
+        posts_query = next(q for q in captured_sql if "FROM posts" in q)
+        assert "cardinality" in posts_query, (
+            "media_reconciliation SELECT must filter on "
+            "cardinality(media_to_generate) > 0 so empty-policy posts "
+            "(e.g. dev_diary) are never reported as drift. See finding "
+            "#195."
+        )
+
+    async def test_check_post_media_skips_head_when_policy_empty(self):
+        """``_check_post_media`` directly. A row whose
+        ``media_to_generate`` is empty must report podcast_missing=False
+        AND video_missing=False — and the HTTP client must NOT be hit."""
+        from services.jobs.media_reconciliation import MediaReconciliationJob
+
+        client = AsyncMock()
+        client.head = AsyncMock()  # Should NEVER be called.
+
+        row = {
+            "id": "dcd86ea6-9d8e-4841-9543-a46a55d96283",
+            "title": "Test post with empty media policy",
+            "content": "body",
+            "media_to_generate": [],
+        }
+        out = await MediaReconciliationJob()._check_post_media(
+            client, "https://r2.test", "v2", row,
+        )
+        assert out["podcast_missing"] is False
+        assert out["video_missing"] is False
+        client.head.assert_not_awaited()
+
+    async def test_check_post_media_only_heads_requested_types(self):
+        """A row with ``media_to_generate=['podcast']`` should HEAD the
+        podcast URL but NOT the video URL."""
+        from services.jobs.media_reconciliation import MediaReconciliationJob
+
+        # Stub HEAD to return 200 OK for any URL.
+        async def _head(url, **kw):
+            r = MagicMock()
+            r.status_code = 200
+            return r
+
+        client = AsyncMock()
+        client.head = AsyncMock(side_effect=_head)
+
+        row = {
+            "id": "post-with-podcast-only",
+            "title": "podcast-only",
+            "content": "body",
+            "media_to_generate": ["podcast"],
+        }
+        out = await MediaReconciliationJob()._check_post_media(
+            client, "https://r2.test", "v2", row,
+        )
+        # podcast was checked (200 OK), video was NOT checked.
+        assert client.head.await_count == 1
+        head_url = client.head.await_args.args[0]
+        assert "/podcast/" in head_url
+        assert out["podcast_missing"] is False  # 200 means present.
+        assert out["video_missing"] is False  # Not requested → not missing.
