@@ -625,3 +625,104 @@ class TestDegradedSummary:
         # Repeat count + duration must still be present so the operator
         # can tell something is up.
         assert "fired" in summary_text or "times" in summary_text
+
+
+# ---------------------------------------------------------------------------
+# Regression test for finding #499: dedup window vs Grafana repeat_interval.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestSuppressWindowVsGrafanaRepeatInterval:
+    """Pins the contract that closes finding #499.
+
+    Grafana's default ``repeat_interval`` is 1h. For an ongoing FIRING
+    alert, a webhook arrives every ~60 minutes. Before the
+    2026-05-20 baseline bump, ``alert_repeat_suppress_window_minutes``
+    defaulted to ``30`` — so each Grafana cycle landed at
+    ``age_since_last_seen=60min`` > ``window=30min`` and tripped the
+    reset branch. The operator got re-paged on every cycle even though
+    the upstream alert never resolved.
+
+    Bumping the window to ``120`` (issue #499 path 3) makes the gap
+    fall back inside the window so the suppress branch trips on
+    subsequent fires instead of the reset branch.
+    """
+
+    async def test_60min_interval_with_120min_window_suppresses(self):
+        """Two fires 60min apart with a 120-min window: first dispatches,
+        second is suppressed (repeat_count=2, not a reset back to 1)."""
+        pool = _StatePool(
+            app_settings={"alert_repeat_suppress_window_minutes": "120"}
+        )
+        base = datetime(2026, 5, 20, 0, 44, 0, tzinfo=timezone.utc)
+        config = {
+            "suppress_window_minutes": 120,
+            "summarize_threshold_minutes": 30,
+        }
+
+        # First fire at base.
+        decision1 = await ad._evaluate_dedup_decision(
+            pool,
+            message="quality drop",
+            severity="warning",
+            alertname="Content Quality Drop",
+            category="content",
+            config=config,
+            now_fn=lambda: base,
+        )
+        assert decision1["action"] == "dispatch"
+        assert decision1["repeat_count"] == 1
+
+        # Second fire 60min later (Grafana's default repeat_interval).
+        decision2 = await ad._evaluate_dedup_decision(
+            pool,
+            message="quality drop",
+            severity="warning",
+            alertname="Content Quality Drop",
+            category="content",
+            config=config,
+            now_fn=lambda: base + timedelta(minutes=60),
+        )
+        # MUST be suppress, not dispatch — that's the whole bug.
+        assert decision2["action"] != "dispatch", (
+            "With 120-min window and 60-min gap, the second fire MUST "
+            "stay inside the suppression window. Got action="
+            f"{decision2['action']}. Either the window default regressed "
+            "below Grafana's repeat_interval (finding #499) or the "
+            "reset-branch heuristic changed."
+        )
+        assert decision2["repeat_count"] == 2
+
+    async def test_60min_interval_with_30min_window_resets_the_bug_case(self):
+        """Pin the OLD (broken) behavior so a future tuner sees what
+        the regression looks like. With a 30-min window and 60-min
+        interval, the reset branch trips on the second fire — exactly
+        the pattern from finding #499."""
+        pool = _StatePool(
+            app_settings={"alert_repeat_suppress_window_minutes": "30"}
+        )
+        base = datetime(2026, 5, 20, 0, 44, 0, tzinfo=timezone.utc)
+        config = {
+            "suppress_window_minutes": 30,
+            "summarize_threshold_minutes": 30,
+        }
+
+        decision1 = await ad._evaluate_dedup_decision(
+            pool, message="x", severity="warning", alertname="X",
+            category="c", config=config, now_fn=lambda: base,
+        )
+        decision2 = await ad._evaluate_dedup_decision(
+            pool, message="x", severity="warning", alertname="X",
+            category="c", config=config,
+            now_fn=lambda: base + timedelta(minutes=60),
+        )
+        # The bug: second fire treated as fresh dispatch because the
+        # 60-min Grafana interval > 30-min window. repeat_count=1 (NOT 2).
+        # This test exists ONLY to document why we bumped the default
+        # to 120 — if the underlying heuristic ever gets fixed (path 2
+        # from #499: track upstream RESOLVED), this assertion will flip
+        # and the test should be deleted alongside.
+        assert decision2["action"] == "dispatch"
+        assert decision2["repeat_count"] == 1
