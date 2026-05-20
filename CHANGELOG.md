@@ -2,6 +2,78 @@
 
 ## Unreleased
 
+## [0.10.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.9.0...v0.10.0) (2026-05-20)
+
+
+### Features
+
+* **boot:** wire per-module migrations into startup ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 2) ([939fada](https://github.com/Glad-Labs/glad-labs-stack/commit/939fada3e289ddf4cfa653be522b05a0b9441041))
+* **brain:** re-add Anthropic to external-services watcher ([cf8b280](https://github.com/Glad-Labs/glad-labs-stack/commit/cf8b2808f5887032c37a91186d008d202dda864b))
+* **db:** module_schema_migrations table ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 2) ([8bbdd75](https://github.com/Glad-Labs/glad-labs-stack/commit/8bbdd75053ab4a4205b38a9ac1750f050eb35b15))
+* **finance:** F2 — DB schema + hourly Mercury polling job ([723acc1](https://github.com/Glad-Labs/glad-labs-stack/commit/723acc14316c64d918661f493e450298511feddc))
+* **langgraph:** default template_runner_use_postgres_checkpointer=true ([ee00da0](https://github.com/Glad-Labs/glad-labs-stack/commit/ee00da06aeec1161eabaa6dc1934d5d6c9fe5cc9))
+* **modules:** ContentModule skeleton — first concrete Module v1 ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 3-lite) ([a361382](https://github.com/Glad-Labs/glad-labs-stack/commit/a36138216223eeb85fa15d63d13b12845daa9aa8))
+* **modules:** FinanceModule F1 — Mercury read-only bank integration ([314547f](https://github.com/Glad-Labs/glad-labs-stack/commit/314547f2613b89e20374edf00375383c247afa56))
+* **observability:** default enable_tracing=true ([#409](https://github.com/Glad-Labs/glad-labs-stack/issues/409)) ([9b03285](https://github.com/Glad-Labs/glad-labs-stack/commit/9b032852ac06086a7f0316d0695ec3c90f137a9b))
+* **observability:** route writer pipeline through dispatcher for Langfuse traces ([#407](https://github.com/Glad-Labs/glad-labs-stack/issues/407)) ([#433](https://github.com/Glad-Labs/glad-labs-stack/issues/433)) ([5264dfa](https://github.com/Glad-Labs/glad-labs-stack/commit/5264dfab9eed861d635f1fc136df42f704d3f087))
+* **plugins:** add Module Protocol + ModuleManifest dataclass ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 1) ([c28352c](https://github.com/Glad-Labs/glad-labs-stack/commit/c28352c9d0f03531893fd116085b9485fd5853b8))
+* **plugins:** get_modules() registry accessor + manifest validation ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 1) ([9e12894](https://github.com/Glad-Labs/glad-labs-stack/commit/9e12894b52b3bb9e041a6a1800fc6e77eb8b2823))
+* **plugins:** per-module migration runner ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 2) ([36b1a8f](https://github.com/Glad-Labs/glad-labs-stack/commit/36b1a8fca5c1c85a95709b7c8810d8750dd7712e))
+* **podcast/video:** make RSS feeds Spotify-submittable ([#475](https://github.com/Glad-Labs/glad-labs-stack/issues/475)) ([d48018e](https://github.com/Glad-Labs/glad-labs-stack/commit/d48018ea423936e46ab7bba34987a71b31a14be0))
+* **qa-rails:** wire Ragas score → audit_log + Grafana panels ([5f2b490](https://github.com/Glad-Labs/glad-labs-stack/commit/5f2b490703cb6cd3433c05bef048e8d35f0a8e29))
+* **routes:** Module v1 route auto-discovery in register_all_routes ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 4-lite) ([6eb5481](https://github.com/Glad-Labs/glad-labs-stack/commit/6eb5481afc9dcff7a287b2068281794de03b2bf4))
+
+
+### Bug Fixes
+
+* **alertmanager:** coerce ISO timestamps + escalate insert failures ([9d1744f](https://github.com/Glad-Labs/glad-labs-stack/commit/9d1744f61b7215bdbf65fe099968e57c2c08a923))
+* **backfill:** exclude dev_diary from podcast + video backfill sweeps ([#481](https://github.com/Glad-Labs/glad-labs-stack/issues/481)) ([a2d0d4b](https://github.com/Glad-Labs/glad-labs-stack/commit/a2d0d4beed30638922480ce494992324a285fbad))
+* backup-visibility bind mount + Grafana folder UID setting ([b9af4a3](https://github.com/Glad-Labs/glad-labs-stack/commit/b9af4a3ae18ec86809202019de3753881f1ecf1d))
+* **brain:** bump alert dedup window 30→120m for Grafana 1h repeat_interval (closes [#499](https://github.com/Glad-Labs/glad-labs-stack/issues/499)) ([#503](https://github.com/Glad-Labs/glad-labs-stack/issues/503)) ([a9f0d9d](https://github.com/Glad-Labs/glad-labs-stack/commit/a9f0d9d06b8939e7a04ce0f26991b086ac4caf13))
+* **brain:** decrypt discord_ops_webhook_url in alert_dispatcher ([d1a4cc6](https://github.com/Glad-Labs/glad-labs-stack/commit/d1a4cc6045ecf32ffffb2d9ed791e48a247b7d65))
+* **brain:** decrypt grafana_api_token via secret_reader in alert_sync ([3b087aa](https://github.com/Glad-Labs/glad-labs-stack/commit/3b087aadf5df392336458a72bca2132c2c50f644))
+* **brain:** hydrate operator_notifier env vars from app_settings at startup ([#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485)) ([2089177](https://github.com/Glad-Labs/glad-labs-stack/commit/2089177d5d4b40d2dfb38640f091455239960cf1))
+* **brain:** mcp_http_probe kill-switch fails closed on uncertain read (closes Glad-Labs/glad-labs-stack[#468](https://github.com/Glad-Labs/glad-labs-stack/issues/468)) ([#478](https://github.com/Glad-Labs/glad-labs-stack/issues/478)) ([b7433e5](https://github.com/Glad-Labs/glad-labs-stack/commit/b7433e5035314b571ab80ed23c102e37a7c97d17))
+* **brain:** pre-check container existence before docker restart ([17d8bb3](https://github.com/Glad-Labs/glad-labs-stack/commit/17d8bb31f5d38642119b7e53b33c67c6da1cb99c))
+* **brain:** skip mcp_http + voice_join in operator_url_probe (finding [#188](https://github.com/Glad-Labs/glad-labs-stack/issues/188)) ([#498](https://github.com/Glad-Labs/glad-labs-stack/issues/498)) ([70a6835](https://github.com/Glad-Labs/glad-labs-stack/commit/70a6835928c7de27477c3d24f88806c13caaae5d))
+* business_probes Grafana token + Mercury upsert new-vs-update counter ([da967fc](https://github.com/Glad-Labs/glad-labs-stack/commit/da967fc1e39a0daea7a927df3684ea0641c38ccf))
+* **cli:** decrypt is_secret=true rows in experiments + setup --check ([175c5df](https://github.com/Glad-Labs/glad-labs-stack/commit/175c5df7dee78c7e3c3582f2461606b7d86253e3))
+* **cli:** dev-diary trigger — load POINDEXTER_SECRET_KEY + drop dead singleton ([2db4c22](https://github.com/Glad-Labs/glad-labs-stack/commit/2db4c22f6270c4bb9056eccc9a57a457ae3da47d))
+* **dependabot:** use 'development' (not 'dev') for dependency-type ([ab14c0b](https://github.com/Glad-Labs/glad-labs-stack/commit/ab14c0bf0f0a76d3f1417fd836acd6bac53c19c9))
+* **finance:** correct setting key name — mercury_api_token (not _api_key) ([306df87](https://github.com/Glad-Labs/glad-labs-stack/commit/306df8769bfcef4303b68e742f689c11cadaa953))
+* **finance:** decrypt mercury_api_token via plugins.secrets ([3acae53](https://github.com/Glad-Labs/glad-labs-stack/commit/3acae53063300d6d7ee3cde723e76b963aa4b406))
+* four schema/dependency bugs surfaced by the post-audit health check ([3952816](https://github.com/Glad-Labs/glad-labs-stack/commit/3952816fd77f1076f2ae89c8cb43edbc3cedf6ad))
+* **grafana:** use OAuth JWT for webhook auth ([#2](https://github.com/Glad-Labs/glad-labs-stack/issues/2) re-attempt) ([#497](https://github.com/Glad-Labs/glad-labs-stack/issues/497)) ([541e90b](https://github.com/Glad-Labs/glad-labs-stack/commit/541e90b0b18224027a83b96b20017e510362852e))
+* **jobs:** decrypt discord_ops_webhook_url in morning_brief ([a77ab42](https://github.com/Glad-Labs/glad-labs-stack/commit/a77ab428b577b163f5ed2f1831cc4fdd4374742b))
+* **media:** per-niche media policy via niches.default_media_to_generate ([#482](https://github.com/Glad-Labs/glad-labs-stack/issues/482)) ([a68590e](https://github.com/Glad-Labs/glad-labs-stack/commit/a68590e129e7f33357c89f6fa7a067aae66fff4a))
+* **notifier:** gate Telegram routing on severity to stop warning-level spam ([#496](https://github.com/Glad-Labs/glad-labs-stack/issues/496)) ([9bd4f32](https://github.com/Glad-Labs/glad-labs-stack/commit/9bd4f3291f06d959365474d4fd40ba6525838263))
+* **observability:** correct OTLP endpoint + tighten boot audit ([#505](https://github.com/Glad-Labs/glad-labs-stack/issues/505)) ([2b736e8](https://github.com/Glad-Labs/glad-labs-stack/commit/2b736e8acf4fb2bab891c7e8b95229000166ee2b))
+* **observability:** wire OTel + Langfuse in prefect-worker process ([#486](https://github.com/Glad-Labs/glad-labs-stack/issues/486)) ([43be8e7](https://github.com/Glad-Labs/glad-labs-stack/commit/43be8e7d8a2b1217db2117529e799b9bf2a5ba4f))
+* **pipeline:** explicit writer-model unload before SDXL phase to avoid 24GB-card OOM ([#488](https://github.com/Glad-Labs/glad-labs-stack/issues/488)) ([2646ce0](https://github.com/Glad-Labs/glad-labs-stack/commit/2646ce0f4d08bf28c9e75cc66e91a2de81c14287))
+* **pipeline:** populate posts.featured_image_data dead seam ([#495](https://github.com/Glad-Labs/glad-labs-stack/issues/495)) ([db0dadf](https://github.com/Glad-Labs/glad-labs-stack/commit/db0dadfd810e160542ffd96e75876f10aa927e69))
+* **pipeline:** resolve template_slug via niches -&gt; app_settings on task create (finding [#3](https://github.com/Glad-Labs/glad-labs-stack/issues/3)) ([#489](https://github.com/Glad-Labs/glad-labs-stack/issues/489)) ([097acf3](https://github.com/Glad-Labs/glad-labs-stack/commit/097acf3dd1d264d43810eaa8fb1ae683c6e6d9ce))
+* **plugins:** register 5 never-loaded plugins in core_samples ([#502](https://github.com/Glad-Labs/glad-labs-stack/issues/502)) ([e6b7e33](https://github.com/Glad-Labs/glad-labs-stack/commit/e6b7e331a5f85f9716c4380cbbb3a768035e2249))
+* **prompts:** migrate 5 inline LLM prompts to UnifiedPromptManager ([#483](https://github.com/Glad-Labs/glad-labs-stack/issues/483)) ([7a4ccc5](https://github.com/Glad-Labs/glad-labs-stack/commit/7a4ccc5b30af3b05e071e314e1ccf3439328f965))
+* **public-mirror:** allowlist regen-script in leak guard ([1eac493](https://github.com/Glad-Labs/glad-labs-stack/commit/1eac4936977044bc0bea357e406fd2107fa4b610))
+* **public-mirror:** de-Matt test fixtures + extend leak guard ([8e8260b](https://github.com/Glad-Labs/glad-labs-stack/commit/8e8260bba8dde7c3577e26b36b75f341233db62c))
+* **public-mirror:** strip mercury_balance row + broaden leak guard ([b7505f1](https://github.com/Glad-Labs/glad-labs-stack/commit/b7505f1fdf0b37706d1d706acb92e6dca99c7473))
+* **public-mirror:** video_service host_home loud-fail + sync filter polish ([32f23fa](https://github.com/Glad-Labs/glad-labs-stack/commit/32f23fa16f9b60d107c587e22a50630cb79210c4))
+* **public-site:** canonical featured-image fallback across list + detail ([508f627](https://github.com/Glad-Labs/glad-labs-stack/commit/508f6279431b790a83a6bac43ac3b4eed3527b8f))
+* **qa:** add buzzword_density validator rule for LLM-tell vocabulary ([#494](https://github.com/Glad-Labs/glad-labs-stack/issues/494)) ([c89637f](https://github.com/Glad-Labs/glad-labs-stack/commit/c89637fe776c87c59037420aca3d154af31033c0))
+* **sync:** allowlist the CI lint script in the sync-time leak guard ([fab873e](https://github.com/Glad-Labs/glad-labs-stack/commit/fab873ef23284bf46f7850080dfeaaf4ff20ff1a))
+* **sync:** strip FinanceModule from public Glad-Labs/poindexter mirror ([e7dfbc0](https://github.com/Glad-Labs/glad-labs-stack/commit/e7dfbc0a659534959351b473d4a0709662e7e1cf))
+* **telemetry:** finish [#505](https://github.com/Glad-Labs/glad-labs-stack/issues/505) + route automated writes to glad-labs-stack ([#462](https://github.com/Glad-Labs/glad-labs-stack/issues/462)) ([65bd2fc](https://github.com/Glad-Labs/glad-labs-stack/commit/65bd2fc675bbda8ebf8e59910cc7b11145376288))
+* **tests:** unstale prompt_manager + metrics_exporter assertions ([2deff7a](https://github.com/Glad-Labs/glad-labs-stack/commit/2deff7a4c2a5351e421e9fe2a387b9b18e93e1f7))
+* **voice-agent:** retry first turn with --resume on session collision (closes Glad-Labs/poindexter[#431](https://github.com/Glad-Labs/glad-labs-stack/issues/431)) ([#436](https://github.com/Glad-Labs/glad-labs-stack/issues/436)) ([02dee74](https://github.com/Glad-Labs/glad-labs-stack/commit/02dee74f258bc936af6c0fec3f9fa17d1c14c2dd))
+* **worker:** cast $3::text in heartbeat UPDATE to fix IndeterminateDatatypeError ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490)) ([efb0586](https://github.com/Glad-Labs/glad-labs-stack/commit/efb0586d4b0afb08a7ea0bb3070edc5a04b2a022))
+* **worker:** log heartbeat failures at WARNING + diagnose silent loop death ([#487](https://github.com/Glad-Labs/glad-labs-stack/issues/487)) ([75865e5](https://github.com/Glad-Labs/glad-labs-stack/commit/75865e5f53735035528595e5a70b33a440ed9bd4))
+* **writer:** strip stray empty []s + harden prompt against LLM tells ([#493](https://github.com/Glad-Labs/glad-labs-stack/issues/493)) ([4c633d1](https://github.com/Glad-Labs/glad-labs-stack/commit/4c633d13b4499e0fbd1ccfebf6177f6ea24dee73))
+
+
+### Performance Improvements
+
+* **scene_visuals:** bounded concurrency for SDXL fan-out (closes Glad-Labs/poindexter[#164](https://github.com/Glad-Labs/glad-labs-stack/issues/164)) ([#456](https://github.com/Glad-Labs/glad-labs-stack/issues/456)) ([7323fdb](https://github.com/Glad-Labs/glad-labs-stack/commit/7323fdb379d28abf81a2723c925dfd3b0869ef37))
+
 ## [0.9.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.8.0...v0.9.0) (2026-05-13)
 
 ### Features
