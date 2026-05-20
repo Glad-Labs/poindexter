@@ -411,6 +411,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # 2026-04-30; the corresponding settings.taps.gitea_issues row
         # is harmless and is left in app_settings for historical reference.
         ("taps", "services.taps.claude_code_sessions", "ClaudeCodeSessionsTap"),
+        # OpenClawSQLiteTap — ingests pre-embedded chunks from OpenClaw
+        # into pgvector. Registered 2026-05-20 (finding #189): had the
+        # pyproject.toml entry_point but was never added here, so it's
+        # never run in production despite the seed settings being live.
+        ("taps", "services.taps.openclaw_sqlite", "OpenClawSQLiteTap"),
         # Core Jobs — apscheduler-driven housekeeping. Ship as imperative
         # loads until the poetry packaging issue is resolved.
         ("jobs", "services.jobs.sync_page_views", "SyncPageViewsJob"),
@@ -515,10 +520,27 @@ def get_core_samples() -> dict[str, list[Any]]:
         # (every 30m). PruneOrphan/PruneStale handle embedding cleanup
         # (cron 03:23 / 03:17). RegenerateStockImages replaces Pexels
         # stock with SDXL on already-published posts (every 6h, GPU-cap).
+        # CollapseOldEmbeddings clusters+summarizes old per-source_table
+        # rows (every 7 days, opt-in via embedding_collapse_enabled) —
+        # added 2026-05-20 (finding #189): entry_point was declared in
+        # pyproject.toml since the writer joined the registry but the
+        # imperative discovery path never registered it, so the job
+        # never ran and ``memory_sync_stale`` was paging on its
+        # never-updating ``writer='collapse_job'``.
         ("jobs", "services.jobs.check_memory_staleness", "CheckMemoryStalenessJob"),
         ("jobs", "services.jobs.prune_orphan_embeddings", "PruneOrphanEmbeddingsJob"),
         ("jobs", "services.jobs.prune_stale_embeddings", "PruneStaleEmbeddingsJob"),
         ("jobs", "services.jobs.regenerate_stock_images", "RegenerateStockImagesJob"),
+        ("jobs", "services.jobs.collapse_old_embeddings", "CollapseOldEmbeddingsJob"),
+        # Media backfill jobs — same finding #189 root cause. PR #482
+        # fixed their slug-hack filter to use ``posts.media_to_generate``
+        # but they're never scheduled because their entry_points in
+        # pyproject.toml never made it into this imperative list. Without
+        # them, no derived media (podcasts, videos) is ever produced for
+        # already-published posts. The 2026-05-20 audit caught this:
+        # 0 audit_log rows from either job, ever.
+        ("jobs", "services.jobs.backfill_podcasts", "BackfillPodcastsJob"),
+        ("jobs", "services.jobs.backfill_videos", "BackfillVideosJob"),
         # Anomaly detection — z-score outlier detection across failure
         # rate, quality, cost, and error-log rate (every 4h). Emits a
         # finding via utils.findings (routes through notify_operator
@@ -537,6 +559,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Dev_diary topic source — pulls 24h of PRs/commits/decisions for
         # the daily build-in-public post (PR #160).
         ("topic_sources", "services.topic_sources.dev_diary_source", "DevDiarySource"),
+        # IGDB topic source — recent indie game releases for the gaming
+        # niche. Registered 2026-05-20 (finding #189): seed migration
+        # 20260512_182304 created the app_settings rows but the source
+        # was never plugged into the imperative load path.
+        ("topic_sources", "services.topic_sources.igdb", "IGDBSource"),
         # Core ImageProviders — Phase G migration. Pexels first (search);
         # SDXL generation provider lands in a follow-up slice.
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),

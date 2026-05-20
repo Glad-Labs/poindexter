@@ -213,3 +213,133 @@ def test_known_unregistered_links_to_an_issue() -> None:
             f"KNOWN_UNREGISTERED[{module_path!r}] must reference an "
             f"issue (Glad-Labs/poindexter#NNN); got {note!r}."
         )
+
+
+# ---------------------------------------------------------------------------
+# Cross-check: every pyproject.toml entry_point must be in ``_SAMPLES``.
+#
+# Captured 2026-05-20 (finding #189). Five plugins (CollapseOldEmbeddingsJob,
+# BackfillPodcastsJob, BackfillVideosJob, OpenClawSQLiteTap, IGDBSource)
+# had ``[tool.poetry.plugins."poindexter.*"]`` declarations in pyproject.toml
+# but were never added to ``_SAMPLES``. In production the worker doesn't
+# pip-install the package (it only bind-mounts the source), so
+# ``importlib.metadata.entry_points()`` returns 0 and the imperative
+# ``_SAMPLES`` list is the only thing that loads plugins. Without registry
+# entries the plugins are dead code — schedules don't fire, lookups miss,
+# operators don't notice until the silent-staleness probes catch up days
+# later.
+#
+# This test fails when pyproject.toml declares an entry_point whose class
+# isn't found in any ``_SAMPLES`` entry under the matching plugin group.
+# ---------------------------------------------------------------------------
+
+
+# Plugin groups in pyproject.toml that we cross-check. Excludes
+# ``modules`` because its section's TOML keys ('name', 'url', 'priority')
+# aren't class names — module manifest validation lives in
+# ``test_module_registry.py``.
+_CROSSCHECK_GROUPS: tuple[str, ...] = (
+    "taps",
+    "probes",
+    "jobs",
+    "topic_sources",
+    "image_providers",
+    "stages",
+    "llm_providers",
+)
+
+
+def _pyproject_entry_points() -> dict[str, list[tuple[str, str]]]:
+    """Parse pyproject.toml + return ``{group: [(ep_name, target), ...]}``.
+
+    ``target`` is the raw ``module.path:ClassName`` string from TOML.
+    Uses regex instead of tomllib so the test stays runnable on Python
+    3.10 (tomllib is 3.11+).
+    """
+    import re as _re
+    pyproject = _SRC_ROOT.parent / "pyproject.toml"
+    if not pyproject.exists():
+        # When pytest runs from the package root, _SRC_ROOT.parent is
+        # already the cofounder_agent dir. Walk one more up.
+        pyproject = _SRC_ROOT / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+
+    out: dict[str, list[tuple[str, str]]] = {}
+    sections = _re.findall(
+        r'\[tool\.poetry\.plugins\."poindexter\.([^"]+)"\](.*?)(?=^\[tool|\Z)',
+        text, _re.DOTALL | _re.MULTILINE,
+    )
+    for group, section in sections:
+        entries = _re.findall(
+            r'^([a-zA-Z_][a-zA-Z_0-9]*)\s*=\s*"([^"]+)"',
+            section, _re.MULTILINE,
+        )
+        out[group] = entries
+    return out
+
+
+def _registered_class_names_per_group() -> dict[str, set[str]]:
+    """Parse ``_SAMPLES`` and return ``{plugin_type: {ClassName, ...}}``.
+
+    Same AST walk as :func:`_registered_modules` but keeps the
+    ``(plugin_type, ClassName)`` split so the cross-check can match
+    entry_points by their (group, class) pair.
+    """
+    registry_file = _SRC_ROOT / "plugins" / "registry.py"
+    tree = ast.parse(registry_file.read_text(encoding="utf-8"))
+    out: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if not any(
+            isinstance(t, ast.Name) and t.id == "_SAMPLES" for t in targets
+        ):
+            continue
+        if not isinstance(node.value, ast.List):
+            continue
+        for elt in node.value.elts:
+            if not isinstance(elt, ast.Tuple) or len(elt.elts) != 3:
+                continue
+            type_node, _mod_node, cls_node = elt.elts
+            if not (
+                isinstance(type_node, ast.Constant)
+                and isinstance(type_node.value, str)
+                and isinstance(cls_node, ast.Constant)
+                and isinstance(cls_node.value, str)
+            ):
+                continue
+            out.setdefault(type_node.value, set()).add(cls_node.value)
+    return out
+
+
+@pytest.mark.parametrize("group", _CROSSCHECK_GROUPS)
+def test_pyproject_entry_points_are_registered_in_samples(group: str) -> None:
+    """Every entry_point declared in ``[tool.poetry.plugins."poindexter.<group>"]``
+    must appear in ``_SAMPLES`` under the same plugin type.
+
+    In production the worker bind-mounts the source rather than
+    pip-installing it, so entry_points discovery returns nothing.
+    The imperative ``_SAMPLES`` list is the sole load path. A drift
+    here = a plugin that never runs. See finding #189 for the silent
+    failure mode this caught (5 plugins dead for weeks).
+    """
+    ep_per_group = _pyproject_entry_points()
+    declared = ep_per_group.get(group, [])
+    registered = _registered_class_names_per_group().get(group, set())
+
+    missing: list[str] = []
+    for _ep_name, target in declared:
+        cls = target.rsplit(":", 1)[-1]
+        if cls not in registered:
+            missing.append(cls)
+
+    assert not missing, (
+        f"pyproject.toml declares entry_points under "
+        f"poindexter.{group} whose classes are NOT in "
+        f"plugins.registry._SAMPLES: {sorted(missing)}. "
+        "Either add the class to _SAMPLES (recommended — it's the "
+        "only load path in production since the worker doesn't "
+        "pip-install the package) or remove the dead entry_point "
+        "from pyproject.toml. See finding #189."
+    )
