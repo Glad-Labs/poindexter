@@ -273,6 +273,7 @@ class SourceFeaturedImageStage:
                 await _record_featured_image_asset(
                     site_config=site_config,
                     post_id=post_id,
+                    task_id=task_id,
                     public_url=sdxl_image.url,
                     width=width,
                     height=height,
@@ -338,6 +339,7 @@ class SourceFeaturedImageStage:
                 await _record_featured_image_asset(
                     site_config=site_config,
                     post_id=post_id,
+                    task_id=task_id,
                     public_url=pexels.url,
                     width=getattr(pexels, "width", 650),
                     height=getattr(pexels, "height", 433),
@@ -383,6 +385,7 @@ async def _record_featured_image_asset(
     *,
     site_config: Any,
     post_id: Any,
+    task_id: Any,
     public_url: str,
     width: int,
     height: int,
@@ -395,6 +398,12 @@ async def _record_featured_image_asset(
     Wraps :func:`services.media_asset_recorder.record_media_asset` so
     the call site stays one line and never propagates DB errors out
     of the Stage. Used by both the SDXL and Pexels success branches.
+
+    ``task_id`` is required as a kwarg because this stage runs BEFORE
+    the post exists in the canonical_blog pipeline — ``post_id`` is
+    typically ``None`` here, and the row needs the task_id so the
+    publish path can back-stamp the FK once the post is created (see
+    Glad-Labs/glad-labs-stack#193).
     """
     try:
         from services.media_asset_recorder import record_media_asset
@@ -412,6 +421,7 @@ async def _record_featured_image_asset(
     await record_media_asset(
         pool=pool,
         post_id=post_id,
+        task_id=task_id,
         asset_type="featured_image",
         public_url=public_url,
         storage_path="",

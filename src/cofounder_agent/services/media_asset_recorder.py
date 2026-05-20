@@ -77,6 +77,7 @@ async def record_media_asset(
     source: str = "pipeline",
     storage_provider: str = "local",
     metadata: dict[str, Any] | None = None,
+    task_id: Any = None,
 ) -> str | None:
     """Insert a row into ``media_assets`` for a freshly-produced file.
 
@@ -86,7 +87,16 @@ async def record_media_asset(
 
     Args:
         pool: asyncpg connection pool (e.g. ``site_config._pool``).
-        post_id: Post UUID this asset belongs to. May be ``None``.
+        post_id: Post UUID this asset belongs to. May be ``None`` when
+            the producer stage runs before the post exists (e.g.
+            ``source_featured_image``); the publish path back-stamps
+            the FK via ``task_id`` after the post is created.
+        task_id: ``pipeline_tasks.task_id`` for the producing task.
+            Pass it whenever the producer has it in scope — even when
+            ``post_id`` is also supplied — so the row remains linkable
+            after the post is renamed/regenerated. Pre-2026-05-20 rows
+            have ``task_id=NULL`` for this column and are orphans
+            (see Glad-Labs/glad-labs-stack#193).
         asset_type: One of ``video_long``, ``video_short``, ``podcast``,
             ``featured_image``, ``inline_image``. Stored verbatim in
             ``media_assets.type``.
@@ -129,14 +139,14 @@ async def record_media_asset(
                 """
                 INSERT INTO media_assets (
                     type, source, storage_provider, url, storage_path,
-                    metadata, post_id, provider_plugin,
+                    metadata, post_id, task_id, provider_plugin,
                     width, height, duration_ms, file_size_bytes,
                     mime_type, cost_usd, electricity_kwh
                 ) VALUES (
                     $1, $2, $3, $4, $5,
-                    $6::jsonb, $7, $8,
-                    $9, $10, $11, $12,
-                    $13, $14, $15
+                    $6::jsonb, $7, $8, $9,
+                    $10, $11, $12, $13,
+                    $14, $15, $16
                 )
                 RETURNING id
                 """,
@@ -147,6 +157,7 @@ async def record_media_asset(
                 storage_path or "",
                 _json_dumps(metadata),
                 post_id,
+                task_id,
                 provider_plugin or "",
                 width,
                 height,

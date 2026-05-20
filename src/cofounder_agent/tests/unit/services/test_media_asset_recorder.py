@@ -102,6 +102,37 @@ class TestRecordMediaAsset:
         args = conn.fetchval.await_args.args
         assert "image/png" in args
         # Default 'image/jpeg' should NOT have been used.
+
+    async def test_task_id_is_persisted_when_provided(self):
+        """task_id must reach the INSERT so back-stamp works later.
+
+        Producer stages run before the post exists (canonical_blog:
+        source_featured_image → ... → finalize → publish). They get
+        post_id=None but DO have task_id in scope. Persisting task_id
+        is what lets publish_post_from_task close the FK afterward
+        (Glad-Labs/glad-labs-stack#193).
+        """
+        pool, conn = _fake_pool()
+        await record_media_asset(
+            pool=pool, post_id=None, task_id="task-abc-xyz",
+            asset_type="featured_image",
+        )
+        args = conn.fetchval.await_args.args
+        assert "task-abc-xyz" in args, (
+            "record_media_asset must pass task_id through to the INSERT"
+        )
+
+    async def test_task_id_omitted_defaults_to_none(self):
+        """Existing callers that don't pass task_id still work; NULL goes in."""
+        pool, conn = _fake_pool()
+        await record_media_asset(
+            pool=pool, post_id="p", asset_type="podcast",
+        )
+        args = conn.fetchval.await_args.args
+        # task_id is the 8th positional after SQL (post_id, task_id, ...).
+        # Just confirm None appears among the args (other params are
+        # non-None default values like "" / 0 / 0.0).
+        assert None in args
         assert "image/jpeg" not in args
 
     async def test_unknown_asset_type_uses_octet_stream(self):

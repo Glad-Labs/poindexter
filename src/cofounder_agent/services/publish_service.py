@@ -763,6 +763,35 @@ async def publish_post_from_task(
         task_id, post_id, publisher, slug,
     )
 
+    # Back-stamp media_assets rows that were recorded by upstream stages
+    # (e.g. source_featured_image) before this post existed. Those rows
+    # are persisted with ``post_id=NULL`` but carry the producing
+    # ``task_id`` — closing the FK here turns them into proper child
+    # rows of the post. Glad-Labs/glad-labs-stack#193.
+    try:
+        pool = getattr(db_service, "pool", None)
+        if pool is not None and task_id and post_id:
+            async with pool.acquire() as _conn:
+                result = await _conn.execute(
+                    """
+                    UPDATE media_assets
+                       SET post_id = $1
+                     WHERE task_id = $2
+                       AND post_id IS NULL
+                    """,
+                    post_id,
+                    task_id,
+                )
+                logger.info(
+                    "[publish_service] media_assets back-stamp: task_id=%s post_id=%s %s",
+                    task_id, post_id, result,
+                )
+    except Exception as exc:  # noqa: BLE001 — back-stamp is best-effort
+        logger.warning(
+            "[publish_service] media_assets back-stamp failed for task_id=%s post_id=%s: %s",
+            task_id, post_id, exc,
+        )
+
     # ---------------------------------------------------------------
     # 6. Update task result with post info
     # ---------------------------------------------------------------
