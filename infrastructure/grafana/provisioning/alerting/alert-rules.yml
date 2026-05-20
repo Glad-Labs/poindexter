@@ -268,7 +268,22 @@ groups:
                   reducer:
                     type: last
 
-      # 6. CONTENT QUALITY DROP — avg quality_score over last 7 days below 70
+      # 6. CONTENT QUALITY DROP — avg quality_score of PUBLISHED/APPROVED
+      #    tasks over last 7 days below 70.
+      #
+      #    Filtering to status IN ('published','approved') is the whole point
+      #    of this alert: it should measure quality of what readers actually
+      #    see, NOT the quality of every generation attempt. Including
+      #    rejected tasks here makes the alert fire when the auto_publish_gate
+      #    is doing its job — catching bad output (scores like 0, 7, 27)
+      #    before it reaches the site.
+      #
+      #    2026-05-20 incident: alert firing at 69.36 with rejected scores
+      #    0/7/27/64 dragging the unfiltered average below 70, while the
+      #    published+approved-only average was 83.30 (healthy). Brain
+      #    auto-triage misdiagnosed the same incident as "outdated worker
+      #    build" via the unrelated probe.migration_drift_unknown signal —
+      #    see ~/.claude/.../memory/feedback_verify_brain_triage_before_acting.
       - uid: brain-content-quality-drop
         title: Content Quality Drop
         condition: C
@@ -279,8 +294,8 @@ groups:
           severity: warning
           team: glad-labs
         annotations:
-          summary: "Average content quality score dropped below 70"
-          description: "7-day average quality score is {{ $values.B.Value }}. Review pipeline prompts or model performance."
+          summary: "Average published-content quality score dropped below 70"
+          description: "7-day average quality score (published+approved tasks only) is {{ $values.B.Value }}. Review pipeline prompts or model performance."
         data:
           - refId: A
             datasourceUid: local-brain-db
@@ -288,7 +303,7 @@ groups:
               from: 604800
               to: 0
             model:
-              rawSql: "SELECT COALESCE(AVG(quality_score), 100) as avg_score FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND updated_at > NOW() - INTERVAL '7 days'"
+              rawSql: "SELECT COALESCE(AVG(quality_score), 100) as avg_score FROM pipeline_tasks_view WHERE quality_score IS NOT NULL AND status IN ('published','approved') AND updated_at > NOW() - INTERVAL '7 days'"
               format: table
               editorMode: code
           - refId: B
