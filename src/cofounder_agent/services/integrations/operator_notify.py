@@ -150,6 +150,13 @@ async def notify_operator(
         from services.integrations.shared_context import get_database_service
 
         db_service = get_database_service()
+        # Fall back to the lifespan-bound SiteConfig when callers don't
+        # have one in scope (most internal callers don't). Without this,
+        # secret_resolver short-circuits with "no site_config in scope"
+        # and every operator notification fails to authenticate even
+        # when the bot token is correctly seeded in app_settings.
+        if site_config is None:
+            site_config = _resolve_site_config()
         if db_service is not None and getattr(db_service, "pool", None) is not None:
             row_name = "telegram_ops" if critical else "discord_ops"
             payload: dict[str, Any] = (
