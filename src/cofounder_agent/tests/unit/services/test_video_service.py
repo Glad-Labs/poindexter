@@ -326,7 +326,15 @@ class TestGenerateVideoForPost:
 
     @pytest.mark.asyncio
     async def test_host_path_conversion(self, tmp_path):
-        """Container paths should be converted to host paths for the video server."""
+        """Container paths should be converted to host paths for the video server.
+
+        The container's ``$HOME/.poindexter`` prefix is derived dynamically
+        from ``os.path.expanduser('~')`` — patched here to a known value
+        so the test is independent of the test runner's actual home dir.
+        Previous version hardcoded ``/root/.poindexter`` which silently
+        no-op'd once the container user changed from root to appuser
+        (Glad-Labs/glad-labs-stack#198).
+        """
         video_dir = tmp_path / "video"
         video_dir.mkdir()
         podcast_file = tmp_path / "podcast.mp3"
@@ -350,15 +358,16 @@ class TestGenerateVideoForPost:
              patch("services.video_service._generate_images_for_video", new_callable=AsyncMock) as mock_gen, \
              patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
              patch.dict(os.environ, {"HOST_HOME": "/host/home"}), \
+             patch("services.video_service.os.path.expanduser", return_value="/home/appuser"), \
              patch("services.video_service.os.path.exists", return_value=True):
             mock_gen.return_value = [
-                "/root/.poindexter/video/frames/frame_00.png",
-                "/root/.poindexter/video/frames/frame_01.png",
+                "/home/appuser/.poindexter/video/frames/frame_00.png",
+                "/home/appuser/.poindexter/video/frames/frame_01.png",
             ]
             await generate_video_for_post(
                 post_id="post123",
                 title="Test",
-                podcast_path="/root/.poindexter/podcast/post123.mp3",
+                podcast_path="/home/appuser/.poindexter/podcast/post123.mp3",
             )
 
         # Inspect the JSON payload sent to the video server
@@ -369,6 +378,60 @@ class TestGenerateVideoForPost:
             "/host/home/.poindexter/video/frames/frame_00.png",
             "/host/home/.poindexter/video/frames/frame_01.png",
         ]
+
+    @pytest.mark.asyncio
+    async def test_host_path_translation_no_ops_on_wrong_container_prefix(self, tmp_path):
+        """Regression for #198: a hardcoded /root prefix silently passed
+        /home/appuser/... paths through to the host-side video-server,
+        which then returned "Audio file not found" for every regen.
+
+        This test pins the contract: paths NOT matching the container's
+        actual ``$HOME/.poindexter`` prefix must pass through unchanged
+        — the bug only happens when the prefix the code looks for and the
+        prefix in the actual paths don't match, so the assertion is "if
+        we ever change the container prefix again, no path translation
+        happens" (i.e. we'd see this test fail and remember to fix the
+        code, instead of failing silently in production).
+        """
+        video_dir = tmp_path / "video"
+        video_dir.mkdir()
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {
+            "content-type": "video/mp4",
+            "X-Duration-Seconds": "60",
+            "X-Elapsed-Seconds": "5",
+        }
+        mock_resp.content = b"video"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("services.video_service.VIDEO_DIR", video_dir), \
+             patch("services.video_service._generate_images_for_video", new_callable=AsyncMock) as mock_gen, \
+             patch("services.video_service.httpx.AsyncClient", return_value=mock_client), \
+             patch.dict(os.environ, {"HOST_HOME": "/host/home"}), \
+             patch("services.video_service.os.path.expanduser", return_value="/home/appuser"), \
+             patch("services.video_service.os.path.exists", return_value=True):
+            # Paths NOT prefixed with the container's $HOME/.poindexter
+            # (e.g. the old /root/.poindexter shape) — should pass through
+            # without translation since they don't match the replace's
+            # search key. This pins the failure mode for future regressions.
+            mock_gen.return_value = ["/root/.poindexter/video/frames/frame_00.png"]
+            await generate_video_for_post(
+                post_id="post123",
+                title="Test",
+                podcast_path="/root/.poindexter/podcast/post123.mp3",
+            )
+
+        call_kwargs = mock_client.post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")
+        # Pass-through — NOT translated. This is the symptom the production
+        # bug exhibited: /root/... paths reaching the host-side video-server
+        # unchanged because the replace's search key didn't match.
+        assert payload["audio_path"] == "/root/.poindexter/podcast/post123.mp3"
 
 
 # ---------------------------------------------------------------------------

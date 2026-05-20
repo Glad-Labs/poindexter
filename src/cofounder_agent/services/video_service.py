@@ -405,7 +405,14 @@ async def generate_video_for_post(
         return VideoResult(success=False, error="No images could be generated")
 
     # Convert container paths to host paths for the video server.
-    # Container mount: /root/.poindexter -> $host_home/.poindexter (bind mount).
+    # The worker container's ~/.poindexter is bind-mounted from the host's
+    # $host_home/.poindexter. The container home prefix is derived
+    # dynamically from the running process so changing the container user
+    # (e.g. root → appuser on 2026-04-something) doesn't silently break
+    # path translation — the previous version hardcoded "/root/.poindexter"
+    # and silently no-op'd on /home/appuser/... paths, so the video-server
+    # received an unmangled container path and returned "Audio file not
+    # found" for every video regen attempt (Glad-Labs/glad-labs-stack#198).
     host_home = site_config.get("host_home", "")
     if not host_home:
         return VideoResult(
@@ -417,8 +424,12 @@ async def generate_video_for_post(
                 "from the container mount."
             ),
         )
+    _container_poindexter_root = (
+        f"{os.path.expanduser('~')}/.poindexter".replace("\\", "/")
+    )
+    _host_poindexter_root = f"{host_home}/.poindexter"
     def _to_host_path(container_path: str) -> str:
-        return container_path.replace("/root/.poindexter", f"{host_home}/.poindexter")
+        return container_path.replace(_container_poindexter_root, _host_poindexter_root)
 
     host_image_paths = [_to_host_path(p) for p in image_paths]
     host_audio_path = _to_host_path(podcast_path)
@@ -682,6 +693,8 @@ async def generate_short_video_for_post(
     if not image_paths:
         return VideoResult(success=False, error="No images could be generated")
 
+    # See path-translation comment in ``generate_video_for_post``; same
+    # bind-mount shape applies to the shorts pipeline.
     host_home = site_config.get("host_home", "")
     if not host_home:
         return VideoResult(
@@ -693,8 +706,12 @@ async def generate_short_video_for_post(
                 "from the container mount."
             ),
         )
+    _container_poindexter_root = (
+        f"{os.path.expanduser('~')}/.poindexter".replace("\\", "/")
+    )
+    _host_poindexter_root = f"{host_home}/.poindexter"
     def _to_host_path(container_path: str) -> str:
-        return container_path.replace("/root/.poindexter", f"{host_home}/.poindexter")
+        return container_path.replace(_container_poindexter_root, _host_poindexter_root)
 
     host_image_paths = [_to_host_path(p) for p in image_paths]
     host_audio_path = _to_host_path(short_audio)
