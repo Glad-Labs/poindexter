@@ -758,7 +758,7 @@ class of issue this prevents. If the PR body doesn''t state a "why",
 say "Closes #N" and link the issue if a number appears in the
 title.>
 
-[PR #N](https://github.com/Glad-Labs/glad-labs-stack/pull/N) by author
+PR #N by author
 
 ## <next PR>
 
@@ -772,14 +772,14 @@ add a final section:
 ```
 ## Other commits
 
-- [`SHA[:7]`](https://github.com/Glad-Labs/glad-labs-stack/commit/SHA) <subject>
+- `SHA[:7]` <subject>
 - ...
 ```
 
 End with this exact footer:
 
 ```
-_Auto-compiled by Poindexter from today''s commits and PRs._
+_Auto-compiled by Poindexter from today''s commits and PRs. [See the work: github.com/Glad-Labs/poindexter](https://github.com/Glad-Labs/poindexter)._
 ```
 
 If the bundle has zero PRs and zero commits and zero decisions, output
@@ -787,7 +787,7 @@ exactly:
 
 > Quiet day — no shipped work to report.
 >
-> _Auto-compiled by Poindexter from today''s commits and PRs._
+> _Auto-compiled by Poindexter from today''s commits and PRs. [See the work: github.com/Glad-Labs/poindexter](https://github.com/Glad-Labs/poindexter)._
 
 Style: short paragraphs. Plain language. No marketing voice. No
 opening hook. No closing CTA. Issue, Fix, Why — three sentences each
