@@ -171,6 +171,73 @@ async def _resolve_all_placeholders(
     return new_content, resolved_count, stripped_count
 
 
+# Empty-bracket scrubber — strips stray ``[]`` that the writer LLM leaves
+# at the end of sentences when it wanted to drop a citation but didn't
+# have one. Matt flagged these 2026-05-19 in stress-test post c4e62c7c
+# (3 occurrences, all at sentence ends like "...user devices []."). The
+# writer-prompt update (in the same PR) tells the model not to emit
+# these in the first place; this scrubber is the deterministic safety
+# net for drafts that slip through.
+#
+# Anchors:
+#   - Single literal ``[]`` (no characters between the brackets).
+#   - Allow optional leading whitespace and an optional trailing
+#     sentence-ending punctuation so the whitespace before/after the
+#     bracket also gets cleaned up. "...devices []." → "...devices."
+#   - Skip empty brackets that look like markdown link images or
+#     legitimate ``![](image.png)`` — those are caught by a different
+#     stage (replace_inline_images).
+#   - Skip empty brackets inside fenced code blocks (``` ... ```) and
+#     inline-code spans (`` ` ``); Python lists like ``arr = []`` must
+#     survive.
+#
+# Idempotent — a re-run on cleaned content matches nothing.
+_FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+# Match ``[]`` with optional leading space and optional trailing
+# punctuation. Capture the trailing punctuation so we preserve it.
+_EMPTY_BRACKET_RE = re.compile(r"[ \t]*\[\]([.,;:!?])?")
+
+
+def _strip_empty_brackets(content: str) -> tuple[str, int]:
+    """Strip empty ``[]`` markers from prose; preserve them inside code.
+
+    Returns ``(new_content, strip_count)``.
+    """
+    # Carve out code-protected zones (fenced blocks first, then inline
+    # code) by replacing them with sentinel placeholders we restore
+    # afterwards. This is cheaper than building a code-aware lexer and
+    # is good enough for the typical mid-prose ``[]`` shape.
+    protected: list[str] = []
+
+    def _protect(match: re.Match[str]) -> str:
+        protected.append(match.group(0))
+        return f"\x00PROTECTED{len(protected) - 1}\x00"
+
+    masked = _FENCED_BLOCK_RE.sub(_protect, content)
+    masked = _INLINE_CODE_RE.sub(_protect, masked)
+
+    # Strip empty brackets from the (now code-free) prose. The trailing
+    # punctuation, if captured, comes back attached to the preceding
+    # word — so "devices []." becomes "devices.".
+    count = 0
+
+    def _strip(match: re.Match[str]) -> str:
+        nonlocal count
+        count += 1
+        trailing = match.group(1) or ""
+        return trailing
+
+    masked = _EMPTY_BRACKET_RE.sub(_strip, masked)
+
+    # Restore protected zones.
+    def _restore(match: re.Match[str]) -> str:
+        idx = int(match.group(1))
+        return protected[idx]
+
+    return re.sub(r"\x00PROTECTED(\d+)\x00", _restore, masked), count
+
+
 class ResolveInternalLinkPlaceholdersStage:
     """Resolve / strip ``[posts/<slug>]`` placeholders before validation.
 
@@ -246,6 +313,19 @@ class ResolveInternalLinkPlaceholdersStage:
             )
         context["internal_link_placeholders_resolved"] = resolved
         context["internal_link_placeholders_stripped"] = stripped
+
+        # Second pass: scrub stray empty ``[]`` markers from prose.
+        # See ``_strip_empty_brackets`` for rationale; the writer-prompt
+        # update bans these but legacy / stress-test posts leak them.
+        current_content = context.get("content") or new_content
+        cleaned_content, empty_bracket_count = _strip_empty_brackets(current_content)
+        if empty_bracket_count:
+            context["content"] = cleaned_content
+            logger.info(
+                "[resolve_internal_link_placeholders] stripped %d empty bracket(s) from prose",
+                empty_bracket_count,
+            )
+        context["empty_brackets_stripped"] = empty_bracket_count
         context.setdefault("stages", {})["resolve_internal_link_placeholders"] = True
 
         return StageResult(

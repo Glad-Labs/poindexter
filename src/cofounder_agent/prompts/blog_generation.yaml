@@ -27,11 +27,25 @@
     - Do NOT include lines like "*A dramatic scene of...*" or "[IMAGE: ...]" or "![description]".
     - Do NOT describe what illustrations, photos, or diagrams should look like.
     - Images are handled separately — your job is text only.
+    - Do NOT leave empty markdown brackets like " []" at the end of a sentence. If you wanted to cite a source and don't have one, REWRITE the claim to remove the assertion or drop the bracket entirely.
+
+    STYLE — avoid sounding like an LLM:
+    - Vary sentence length deliberately. Mix 4-word sentences with 25-word ones. The default "every sentence is 15-18 words" cadence is a giveaway. One-sentence paragraphs are good for emphasis.
+    - Vary paragraph length. Some 4-5 sentences, others 1-2. Uniform paragraph blocks read as machine-generated.
+    - Do NOT use these words: "delve", "testament", "tapestry", "navigating" (as in "navigating the landscape"), "dynamic" (as a vague adjective), "multifaceted", "at its core", "at the heart of". Each is an immediate LLM tell.
+    - Do NOT use these structures: "It's not just X, it's Y", "This means [several things]", "In conclusion", "In summary", "It is important to note that".
+    - Do NOT open with sycophantic framing ("Absolutely!", "Great question!", "Of course"). Drop the response into the topic.
+    - Take a stance. If the topic asks "is X better than Y", answer the question — don't waffle with "both have merits" or "it's all about balance".
+    - Resist the urge to summarise every section with a bullet list. If something is genuinely a list of N items, list them. If it's prose, leave it prose. Don't manufacture bullets to feel "complete".
+    - Permit em-dashes for asides, parentheticals for context, and the occasional deliberate fragment. Sterile-correct grammar with zero rhythm is itself a tell.
+    - Surface real-world messiness where the topic permits. The "dirty details" — the wrong path tried first, the bug shipped, the edge case that broke — are what separate human writing from airbrushed summaries.
 
     SELF-CHECK before returning:
     - Did you use "we" or "our" in an authorial sense? Rewrite each occurrence.
     - Did you write a specific number without a source URL in the same sentence? Rewrite to qualitative.
     - Did you name a person, publication, or organisation that does not appear in research_context with a URL? Remove the name.
+    - Any sentence still ending in " []" or "[]." with nothing in the brackets? Strip the brackets or rewrite the sentence.
+    - Used any of the banned LLM-tell words above? Replace with a more specific verb/noun.
 
 - key: blog_generation.seo_and_social
   category: blog_generation
@@ -71,7 +85,16 @@
 
     Output pure markdown article text only. Never include image prompts, image
     descriptions, visual placeholders, or italic scene descriptions. Images are
-    handled by a separate system.
+    handled by a separate system. Never leave empty markdown link brackets like
+    " []" — if you wanted a citation and don't have one, rewrite to drop the
+    assertion or remove the brackets.
+
+    Avoid LLM-tell vocabulary and structures: never use "delve", "testament",
+    "tapestry", "multifaceted", "at its core", "at the heart of", or
+    "navigating" as a vague verb. Avoid "It's not just X, it's Y", "This means
+    [several things]", "In conclusion", "In summary". Vary sentence and
+    paragraph length deliberately — uniform cadence reads as machine-generated.
+    Take a position rather than waffling with both-sides framing.
 
 - key: blog_generation.blog_generation_request
   category: blog_generation

@@ -17,7 +17,72 @@ from services.stages.resolve_internal_link_placeholders import (
     _PLACEHOLDER_RE,
     _resolve_all_placeholders,
     _resolve_one,
+    _strip_empty_brackets,
 )
+
+
+# ---- Empty-bracket scrubber (#TBD anti-LLM-tells PR) -----------------------
+
+
+def test_strip_empty_brackets_removes_trailing_bracket_keeping_period():
+    """Matt's 2026-05-19 stress-test finding: ``...user devices [].``
+    becomes ``...user devices.`` — period preserved, bracket stripped."""
+    src = "shift towards deploying agents directly on user devices []."
+    out, n = _strip_empty_brackets(src)
+    assert out == "shift towards deploying agents directly on user devices."
+    assert n == 1
+
+
+def test_strip_empty_brackets_handles_multiple_in_same_doc():
+    src = (
+        "Industry observers note a significant shift [].\n"
+        "Solutions are gaining traction [].\n"
+        "Observability layers provide insights [].\n"
+    )
+    out, n = _strip_empty_brackets(src)
+    assert "[]" not in out
+    assert "significant shift.\n" in out
+    assert "gaining traction.\n" in out
+    assert "provide insights.\n" in out
+    assert n == 3
+
+
+def test_strip_empty_brackets_preserves_code_block_empty_lists():
+    """Python ``arr = []`` inside a fenced block must survive — that's
+    legitimate code, not a writer-side citation tell."""
+    src = "Prose with stray [].\n\n```python\narr = []\nprint(arr)\n```\n\nMore prose []."
+    out, n = _strip_empty_brackets(src)
+    assert "arr = []" in out  # code preserved
+    assert "Prose with stray." in out  # prose stripped
+    assert "More prose." in out
+    assert n == 2  # only the two prose strips counted
+
+
+def test_strip_empty_brackets_preserves_inline_code_empty_lists():
+    """``arr = []`` inside backticks should survive."""
+    src = "Initialise with `arr = []` to start, then mutate []."
+    out, n = _strip_empty_brackets(src)
+    assert "`arr = []`" in out
+    assert "mutate." in out
+    assert n == 1
+
+
+def test_strip_empty_brackets_idempotent():
+    """A re-run on cleaned content matches nothing."""
+    src = "Already clean prose. With a `arr = []` code span."
+    out, n = _strip_empty_brackets(src)
+    assert out == src
+    assert n == 0
+
+
+def test_strip_empty_brackets_handles_punctuation_variants():
+    """The trailing-punctuation capture covers `,` `;` `:` `!` `?`."""
+    for punct in (",", ";", ":", "!", "?"):
+        src = f"observation []{punct} continues"
+        out, n = _strip_empty_brackets(src)
+        assert n == 1
+        assert "[]" not in out
+        assert out.startswith(f"observation{punct}")
 
 
 # ---- Pure helpers ----------------------------------------------------------
