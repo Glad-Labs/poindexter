@@ -523,6 +523,24 @@ async def publish_post_from_task(
         seo_description = re.sub(r"\s+", " ", seo_description)
     seo_keywords = merged.get("seo_keywords", [])
     featured_image_url = merged.get("featured_image_url") or task.get("featured_image_url")
+    # featured_image_data — reproducibility blob (SDXL prompt / model /
+    # seed / generation_seconds for the SDXL branch, basic provenance
+    # for the Pexels branch). Sourced by source_featured_image.execute
+    # and threaded through pipeline_versions.stage_data ->
+    # task_metadata.featured_image_data so it survives the
+    # finalize_task → publish hand-off. Lands on
+    # posts.featured_image_data via content_db.create_post. Closes the
+    # 2026-05-19 jank-audit dead-seam finding for the column.
+    featured_image_data = (
+        merged.get("featured_image_data")
+        or task.get("featured_image_data")
+        or {}
+    )
+    if not isinstance(featured_image_data, dict):
+        # Defensive: stage_data round-trips through JSONB so the value
+        # should always be a dict on arrival, but we shouldn't crash
+        # the publisher if some legacy upstream wrote a string.
+        featured_image_data = {}
     metadata = merged.get("metadata", {})
 
     if not draft_content or not topic:
@@ -722,6 +740,7 @@ async def publish_post_from_task(
         "metadata": metadata,
         "tag_ids": tag_ids or None,
         "media_to_generate": media_to_generate,
+        "featured_image_data": featured_image_data,
     }
     if scheduled_at:
         post_data["published_at"] = scheduled_at

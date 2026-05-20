@@ -315,6 +315,96 @@ class TestPublishHappyPath:
         assert post_data["status"] == "published"
         assert post_data["seo_description"] == "A great post"
         assert post_data["seo_keywords"] == "ai, ml"
+        # featured_image_data — sourced from merged task data when
+        # source_featured_image populated it. Empty dict when the
+        # task didn't carry the blob (this test). Closes the
+        # 2026-05-19 jank-audit dead-seam contract.
+        assert post_data["featured_image_data"] == {}
+
+    @pytest.mark.asyncio
+    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    async def test_threads_featured_image_data_from_task_result(self, mock_sched, mock_ping, mock_hooks, mock_export):
+        """SDXL reproducibility blob flows task.result → post_data.
+
+        ``source_featured_image`` writes ``featured_image_data`` into
+        the pipeline state, which lands on ``pipeline_versions.stage_data``
+        and then on ``task.result`` via the finalize_task hand-off.
+        ``publish_post_from_task`` must pluck it through to
+        ``content_db.create_post`` so it ends up on
+        ``posts.featured_image_data``.
+        """
+        db = _make_db()
+        sdxl_blob = {
+            "source": "sdxl_local",
+            "provider_plugin": "image.sdxl_local",
+            "sdxl_model": "sdxl_lightning",
+            "sdxl_seed": 1234,
+            "sdxl_prompt": "editorial illustration",
+            "generation_seconds": 2.05,
+            "width": 1024,
+            "height": 1024,
+            "topic": "AI",
+        }
+        task = _make_task(
+            content="# Hello\n\nBody.",
+            result={
+                "seo_description": "desc",
+                "seo_keywords": ["ai"],
+                "featured_image_data": sdxl_blob,
+            },
+        )
+
+        with _LazyImportContext():
+            await publish_post_from_task(
+                db_service=db,
+                task=task,
+                task_id="11111111-2222-3333-4444-555555555555",
+                publisher="t",
+                trigger_revalidation=False,
+                queue_social=False,
+            )
+
+        db.create_post.assert_awaited_once()
+        post_data = db.create_post.call_args[0][0]
+        assert post_data["featured_image_data"] == sdxl_blob
+
+    @pytest.mark.asyncio
+    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    async def test_featured_image_data_coerces_non_dict_to_empty(self, mock_sched, mock_ping, mock_hooks, mock_export):
+        """A legacy non-dict featured_image_data on the task is coerced safely.
+
+        Defensive — stage_data round-trips through JSONB so the value
+        should always be a dict on arrival, but the publisher must
+        never crash on a string / None.
+        """
+        db = _make_db()
+        task = _make_task(
+            content="# Hello\n\nBody.",
+            result={
+                "seo_description": "desc",
+                "seo_keywords": [],
+                "featured_image_data": "junk-string-value",
+            },
+        )
+
+        with _LazyImportContext():
+            await publish_post_from_task(
+                db_service=db,
+                task=task,
+                task_id="22222222-2222-3333-4444-555555555555",
+                publisher="t",
+                trigger_revalidation=False,
+                queue_social=False,
+            )
+
+        post_data = db.create_post.call_args[0][0]
+        assert post_data["featured_image_data"] == {}
 
     @pytest.mark.asyncio
     async def test_idempotency_guard_skips_duplicate(self):

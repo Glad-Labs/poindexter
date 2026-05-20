@@ -123,6 +123,19 @@ class ContentDatabase(DatabaseServiceMixin):
                 word_count = len(content_for_count.split())
                 reading_time = max(1, round(word_count / 200)) if word_count else 0
 
+                # featured_image_data — JSONB reproducibility blob from
+                # source_featured_image (SDXL prompt / model / seed /
+                # negative_prompt / generation_seconds for the SDXL
+                # branch; basic provenance for the Pexels branch).
+                # Defaults to {} so legacy callers that never carried
+                # this dict don't NULL the column out. Same dead-seam
+                # class as media_to_generate before #482 and word_count
+                # / reading_time before the 2026-05-19 audit. Closes
+                # the audit's featured_image_data dead-seam finding.
+                featured_image_data = post_data.get("featured_image_data") or {}
+                if not isinstance(featured_image_data, dict):
+                    featured_image_data = {}
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (
@@ -132,6 +145,7 @@ class ContentDatabase(DatabaseServiceMixin):
                         content,
                         excerpt,
                         featured_image_url,
+                        featured_image_data,
                         cover_image_url,
                         author_id,
                         category_id,
@@ -148,7 +162,7 @@ class ContentDatabase(DatabaseServiceMixin):
                         created_at,
                         updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
                     RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url,
                               author_id, category_id, status, published_at, created_at, updated_at
                     """,
@@ -158,6 +172,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("content"),
                     post_data.get("excerpt"),
                     post_data.get("featured_image_url"),
+                    json.dumps(featured_image_data),
                     post_data.get("cover_image_url"),
                     post_data.get("author_id"),
                     post_data.get("category_id"),

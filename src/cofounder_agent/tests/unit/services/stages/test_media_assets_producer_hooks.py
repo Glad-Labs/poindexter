@@ -144,6 +144,188 @@ class TestSourceFeaturedImageRecordsAsset:
 
 
 # ---------------------------------------------------------------------------
+# source_featured_image — featured_image_data context updates
+# (closes the 2026-05-19 jank-audit dead-seam finding for the column)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestFeaturedImageDataContextUpdates:
+    """``source_featured_image`` populates context["featured_image_data"] so the
+    publisher can persist it on ``posts.featured_image_data``.
+
+    Pre-2026-05-19 the column was a silent dead seam — never written by
+    any production code. These tests pin the contract for both SDXL and
+    Pexels success branches.
+    """
+
+    async def test_sdxl_branch_populates_featured_image_data(self):
+        pool = MagicMock()
+        sc = _fake_site_config(pool=pool)
+        ctx: dict[str, Any] = {
+            "task_id": "task-id-1",
+            "post_id": "post-uuid-1",
+            "topic": "Designing autonomous agents",
+            "tags": [],
+            "generate_featured_image": True,
+            "image_service": SimpleNamespace(
+                sdxl_available=True, sdxl_initialized=True,
+                search_featured_image=AsyncMock(),
+            ),
+            "site_config": sc,
+        }
+        sdxl_img = GeneratedImage(
+            url="https://r2.example/img.png",
+            photographer="AI Generated (SDXL)",
+            source="sdxl_local",
+            sdxl_meta={
+                "model": "sdxl_lightning",
+                "seed": 42,
+                "prompt": "editorial illustration of agents",
+                "negative_prompt": "text, faces, hands",
+                "generation_time_ms": 1850,
+                "width": 1024,
+                "height": 1024,
+                "filename": "sdxl_abc.png",
+            },
+        )
+        with patch(
+            "services.stages.source_featured_image._try_sdxl_featured",
+            AsyncMock(return_value=sdxl_img),
+        ), patch(
+            "services.media_asset_recorder.record_media_asset",
+            AsyncMock(return_value="asset-row"),
+        ):
+            result = await SourceFeaturedImageStage().execute(ctx, {})
+
+        assert result.ok is True
+        fid = result.context_updates["featured_image_data"]
+        assert fid["source"] == "sdxl_local"
+        assert fid["provider_plugin"] == "image.sdxl_local"
+        assert fid["sdxl_model"] == "sdxl_lightning"
+        assert fid["sdxl_seed"] == 42
+        assert fid["sdxl_prompt"] == "editorial illustration of agents"
+        assert fid["sdxl_negative_prompt"] == "text, faces, hands"
+        assert fid["sdxl_dimensions"] == [1024, 1024]
+        # generation_time_ms = 1850 → 1.85s, rounded to 3 decimals
+        assert fid["generation_seconds"] == 1.85
+        assert fid["width"] == 1024
+        assert fid["height"] == 1024
+        assert fid["topic"] == "Designing autonomous agents"
+        assert fid["photographer"] == "AI Generated (SDXL)"
+        # generated_at must be ISO-8601 — exact value isn't pinned (it's
+        # ``datetime.now``-derived), but the field must exist.
+        assert "generated_at" in fid
+
+    async def test_sdxl_branch_extends_media_assets_metadata(self):
+        """The media_assets row gets the same SDXL params for one-stop debugging."""
+        pool = MagicMock()
+        sc = _fake_site_config(pool=pool)
+        ctx: dict[str, Any] = {
+            "task_id": "task-id-1",
+            "post_id": "post-uuid-1",
+            "topic": "AI",
+            "tags": [],
+            "generate_featured_image": True,
+            "image_service": SimpleNamespace(
+                sdxl_available=True, sdxl_initialized=True,
+                search_featured_image=AsyncMock(),
+            ),
+            "site_config": sc,
+        }
+        sdxl_img = GeneratedImage(
+            url="https://r2.example/img.png",
+            photographer="AI Generated (SDXL)",
+            source="sdxl_local",
+            sdxl_meta={
+                "model": "sdxl_lightning",
+                "seed": 7,
+                "prompt": "p",
+                "negative_prompt": "n",
+                "generation_time_ms": 100,
+            },
+        )
+        recorder = AsyncMock(return_value="row")
+        with patch(
+            "services.stages.source_featured_image._try_sdxl_featured",
+            AsyncMock(return_value=sdxl_img),
+        ), patch(
+            "services.media_asset_recorder.record_media_asset",
+            recorder,
+        ):
+            await SourceFeaturedImageStage().execute(ctx, {})
+
+        recorder.assert_awaited_once()
+        meta = recorder.await_args.kwargs["metadata"]
+        assert meta["sdxl_model"] == "sdxl_lightning"
+        assert meta["sdxl_seed"] == 7
+        assert meta["sdxl_prompt"] == "p"
+        assert meta["sdxl_negative_prompt"] == "n"
+        assert meta["sdxl_generation_time_ms"] == 100
+
+    async def test_pexels_branch_populates_featured_image_data(self):
+        sc = _fake_site_config(pool=MagicMock())
+        pexels_img = SimpleNamespace(
+            url="https://pex.example/p.jpg",
+            photographer="Alex",
+            source="pexels",
+            width=800, height=600,
+        )
+        image_service = SimpleNamespace(
+            sdxl_available=False, sdxl_initialized=True,
+            search_featured_image=AsyncMock(return_value=pexels_img),
+        )
+        ctx: dict[str, Any] = {
+            "task_id": "t",
+            "post_id": "post-uuid-2",
+            "topic": "Cats",
+            "tags": ["kittens"],
+            "generate_featured_image": True,
+            "image_service": image_service,
+            "site_config": sc,
+        }
+        with patch(
+            "services.media_asset_recorder.record_media_asset",
+            AsyncMock(return_value="row"),
+        ):
+            result = await SourceFeaturedImageStage().execute(ctx, {})
+
+        fid = result.context_updates["featured_image_data"]
+        assert fid["source"] == "pexels"
+        assert fid["provider_plugin"] == "image.pexels"
+        assert fid["width"] == 800
+        assert fid["height"] == 600
+        assert fid["photographer"] == "Alex"
+        assert fid["topic"] == "Cats"
+        # SDXL-only keys must NOT appear on the Pexels branch — keeps
+        # operator queries like ``WHERE sdxl_model IS NOT NULL`` clean.
+        assert "sdxl_model" not in fid
+        assert "sdxl_seed" not in fid
+        assert "sdxl_prompt" not in fid
+
+    async def test_disabled_branch_omits_featured_image_data(self):
+        """When generation is disabled, no featured_image_data is set.
+
+        The publisher then writes ``{}`` (the default), which is the
+        right value for the no-image branch.
+        """
+        sc = _fake_site_config(pool=MagicMock())
+        ctx: dict[str, Any] = {
+            "task_id": "t",
+            "post_id": "post-uuid",
+            "topic": "X",
+            "tags": [],
+            "generate_featured_image": False,
+            "image_service": SimpleNamespace(
+                sdxl_available=False, sdxl_initialized=True,
+            ),
+            "site_config": sc,
+        }
+        result = await SourceFeaturedImageStage().execute(ctx, {})
+        assert "featured_image_data" not in result.context_updates
+
+
+# ---------------------------------------------------------------------------
 # replace_inline_images — SDXL + Pexels both record per placeholder
 # ---------------------------------------------------------------------------
 

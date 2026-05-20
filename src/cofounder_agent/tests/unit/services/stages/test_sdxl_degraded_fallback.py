@@ -94,8 +94,16 @@ class TestRenderSdxlNon200ReturnsNone:
     )
     @pytest.mark.asyncio
     async def test_non_200_response_returns_none(self, status_code, scenario):
-        """``_render_sdxl`` returns None on any non-200 — the stage's
-        Pexels-fallback branch keys on that None."""
+        """``_render_sdxl`` returns ``(None, {})`` on any non-200 — the
+        stage's Pexels-fallback branch keys on the None local path.
+
+        Post-2026-05-19 the function returns a tuple of
+        ``(local_path, sdxl_meta)`` so the SDXL response payload can be
+        threaded onto ``posts.featured_image_data``. The Pexels-fallback
+        contract on non-200 is preserved by returning ``None`` in
+        position 0; ``sdxl_meta`` is ``{}`` because there's no JSON to
+        parse on an error response.
+        """
         from services.stages.source_featured_image import _render_sdxl
 
         post_resp = _fake_response(status_code)
@@ -105,16 +113,19 @@ class TestRenderSdxlNon200ReturnsNone:
         ), patch(
             "services.gpu_scheduler.gpu", _gpu_lock_noop(),
         ):
-            result = await _render_sdxl(
+            output_path, sdxl_meta = await _render_sdxl(
                 sdxl_url="http://sdxl.example:9836",
                 sdxl_prompt="a serene server room",
                 negative_prompt="text, words",
                 task_id="task-degraded-test",
             )
 
-        assert result is None, (
-            f"_render_sdxl must return None on HTTP {status_code} ({scenario}) "
-            f"so the featured-image stage falls through to Pexels."
+        assert output_path is None, (
+            f"_render_sdxl must return None local-path on HTTP {status_code} "
+            f"({scenario}) so the featured-image stage falls through to Pexels."
+        )
+        assert sdxl_meta == {}, (
+            "sdxl_meta must be empty on the error branch — no JSON to parse."
         )
 
 

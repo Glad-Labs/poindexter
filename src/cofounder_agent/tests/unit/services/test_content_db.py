@@ -167,6 +167,122 @@ class TestCreatePost:
         with pytest.raises(DatabaseError):
             await db.create_post({"slug": "x", "title": "T"})
 
+    @pytest.mark.asyncio
+    async def test_featured_image_data_json_encoded_and_passed(self):
+        """``featured_image_data`` lands in the INSERT as a JSON-encoded JSONB.
+
+        Closes the 2026-05-19 jank-audit dead-seam finding — the column
+        existed but ``content_db.create_post`` never listed it in the
+        INSERT, so every row defaulted to ``'{}'``. This test pins the
+        contract going forward.
+        """
+        # Opaque row — column shape not under test (GH#337).
+        pool = _make_pool(fetchrow_result=object())
+        db = _make_db(pool)
+
+        sdxl_blob = {
+            "source": "sdxl_local",
+            "provider_plugin": "image.sdxl_local",
+            "sdxl_model": "sdxl_lightning",
+            "sdxl_seed": 42,
+            "sdxl_prompt": "editorial illustration of agents",
+            "generation_seconds": 2.13,
+            "topic": "AI agents",
+            "width": 1024,
+            "height": 1024,
+        }
+
+        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=object()):
+            await db.create_post({
+                "slug": "test-slug",
+                "title": "T",
+                "content": "Hello world.",
+                "featured_image_data": sdxl_blob,
+            })
+
+        # Inspect the fetchrow call args — positional params include
+        # the JSON-encoded featured_image_data string.
+        conn = None
+        async with pool.acquire() as c:
+            conn = c
+        conn.fetchrow.assert_awaited()
+        call_args = conn.fetchrow.await_args.args
+        # call_args[0] is the SQL, call_args[1:] are the parameter values.
+        sql = call_args[0]
+        params = call_args[1:]
+        assert "featured_image_data" in sql, (
+            "INSERT SQL must include featured_image_data column"
+        )
+        # The JSON-encoded blob must appear in params as a string. We
+        # don't pin the positional index — find by value to keep the
+        # test robust to INSERT column-order changes.
+        json_param = next(
+            (p for p in params if isinstance(p, str) and '"sdxl_model"' in p),
+            None,
+        )
+        assert json_param is not None, (
+            "featured_image_data dict must be JSON-encoded into params"
+        )
+        decoded = json.loads(json_param)
+        assert decoded["sdxl_model"] == "sdxl_lightning"
+        assert decoded["sdxl_seed"] == 42
+        assert decoded["source"] == "sdxl_local"
+
+    @pytest.mark.asyncio
+    async def test_featured_image_data_defaults_to_empty_dict_when_omitted(self):
+        """Legacy callers that don't pass featured_image_data still work.
+
+        The column defaults to ``'{}'`` at the DB level, but
+        ``create_post`` should also pass ``'{}'`` so the INSERT is
+        explicit about the value (matching how ``media_to_generate``
+        was wired in #482).
+        """
+        pool = _make_pool(fetchrow_result=object())
+        db = _make_db(pool)
+
+        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=object()):
+            await db.create_post({
+                "slug": "test-slug",
+                "title": "T",
+                "content": "Hi.",
+                # No featured_image_data key at all.
+            })
+
+        conn = None
+        async with pool.acquire() as c:
+            conn = c
+        params = conn.fetchrow.await_args.args[1:]
+        json_params = [p for p in params if isinstance(p, str) and p.startswith("{")]
+        assert "{}" in json_params, (
+            "Empty featured_image_data must serialize to '{}', not None"
+        )
+
+    @pytest.mark.asyncio
+    async def test_featured_image_data_non_dict_coerced_to_empty(self):
+        """A junk featured_image_data value (e.g. legacy string) becomes ``{}``.
+
+        Defensive: stage_data round-trips through JSONB so the value
+        should always be a dict on arrival, but a non-dict shouldn't
+        crash the insert.
+        """
+        pool = _make_pool(fetchrow_result=object())
+        db = _make_db(pool)
+
+        with patch(f"{_CONVERTER_PATCH_BASE}.to_post_response", return_value=object()):
+            await db.create_post({
+                "slug": "test-slug",
+                "title": "T",
+                "content": "Hi.",
+                "featured_image_data": "this-is-not-a-dict",
+            })
+
+        conn = None
+        async with pool.acquire() as c:
+            conn = c
+        params = conn.fetchrow.await_args.args[1:]
+        json_params = [p for p in params if isinstance(p, str) and p.startswith("{")]
+        assert "{}" in json_params
+
 
 # ---------------------------------------------------------------------------
 # get_post_by_slug

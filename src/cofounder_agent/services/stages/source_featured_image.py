@@ -39,6 +39,14 @@ first, falls back to a Pexels photo if SDXL is unavailable or fails.
 - ``featured_image_photographer`` (str)
 - ``featured_image_source`` (str: "sdxl_local" / "sdxl_cloudinary" / "pexels")
 - ``image_style`` (str, set when SDXL's rotation picked one)
+- ``featured_image_data`` (dict) — reproducibility metadata for the
+  featured image: ``source``, ``provider_plugin``, ``width``, ``height``,
+  ``photographer``, ``generated_at``, ``image_style``, ``topic``. For the
+  SDXL branch this also captures ``sdxl_model``, ``sdxl_seed``,
+  ``sdxl_prompt``, ``sdxl_negative_prompt``, ``sdxl_dimensions``, and
+  ``generation_seconds`` so an operator can regenerate a similar image
+  later. Lands on ``posts.featured_image_data`` via
+  ``publish_service.publish_post_from_task``.
 - ``stages["3_featured_image_found"]`` (bool)
 - ``stages["3_image_source"]`` (str, "sdxl" or "pexels")
 """
@@ -53,6 +61,7 @@ import tempfile
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -86,11 +95,74 @@ DEFAULT_NEGATIVE = (
 
 @dataclass
 class GeneratedImage:
-    """Return shape for an SDXL-generated featured image."""
+    """Return shape for an SDXL-generated featured image.
+
+    ``sdxl_meta`` carries the reproducibility payload (model name,
+    seed, prompt, negative prompt, dimensions, generation time) so
+    callers can stash it on ``posts.featured_image_data`` for later
+    regeneration / debugging. Empty dict on Pexels and on the
+    image-bytes branch where the SDXL server didn't return JSON.
+    """
 
     url: str
     photographer: str
     source: str
+    sdxl_meta: dict[str, Any] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.sdxl_meta is None:
+            self.sdxl_meta = {}
+
+
+# ---------------------------------------------------------------------------
+# featured_image_data composer
+# ---------------------------------------------------------------------------
+
+
+def _build_sdxl_featured_image_data(
+    *,
+    sdxl_image: GeneratedImage,
+    sdxl_meta: dict[str, Any],
+    topic: str,
+    width: int,
+    height: int,
+    image_style: str,
+) -> dict[str, Any]:
+    """Compose the reproducibility blob persisted on posts.featured_image_data.
+
+    The shape is intentionally flat and stable so operator-side queries
+    (``WHERE featured_image_data->>'sdxl_model' = 'sdxl_lightning'``)
+    don't need to know about nested envelopes. ``sdxl_*`` keys mirror
+    the SDXL server's response fields; the prompt + negative_prompt
+    were the ones the worker sent, not the ones the server echoed
+    (the server doesn't echo them).
+    """
+    gen_ms = int(sdxl_meta.get("generation_time_ms") or 0)
+    payload: dict[str, Any] = {
+        "source": sdxl_image.source,
+        "provider_plugin": f"image.{sdxl_image.source}",
+        "width": int(width),
+        "height": int(height),
+        "photographer": sdxl_image.photographer,
+        "topic": topic,
+        "image_style": image_style or "",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generation_seconds": round(gen_ms / 1000.0, 3) if gen_ms else 0.0,
+        "sdxl_dimensions": [int(width), int(height)],
+    }
+    # Pull each SDXL response field if present. Missing fields stay
+    # absent — never emit empty placeholders ("no mock/dummy data").
+    if "model" in sdxl_meta:
+        payload["sdxl_model"] = sdxl_meta["model"]
+    if "seed" in sdxl_meta:
+        payload["sdxl_seed"] = sdxl_meta["seed"]
+    if sdxl_meta.get("prompt"):
+        payload["sdxl_prompt"] = sdxl_meta["prompt"]
+    if sdxl_meta.get("negative_prompt"):
+        payload["sdxl_negative_prompt"] = sdxl_meta["negative_prompt"]
+    if sdxl_meta.get("filename"):
+        payload["sdxl_filename"] = sdxl_meta["filename"]
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -161,31 +233,61 @@ class SourceFeaturedImageStage:
             if sdxl_image is not None:
                 stages["3_featured_image_found"] = True
                 stages["3_image_source"] = "sdxl"
+                # Prefer dimensions reported by the SDXL server (it can
+                # return non-1024 sizes), fall back to the historical
+                # default. ``sdxl_meta`` is empty on the legacy
+                # image-bytes branch — same fallback applies there.
+                sdxl_meta = sdxl_image.sdxl_meta or {}
+                width = int(sdxl_meta.get("width") or 1024)
+                height = int(sdxl_meta.get("height") or 1024)
+                # featured_image_data — reproducibility blob landing on
+                # posts.featured_image_data via publish_service.
+                # Closes the dead seam from the 2026-05-19 jank-audit:
+                # the column existed but nothing wrote to it.
+                featured_image_data = _build_sdxl_featured_image_data(
+                    sdxl_image=sdxl_image,
+                    sdxl_meta=sdxl_meta,
+                    topic=topic,
+                    width=width,
+                    height=height,
+                    image_style=updates.get("image_style", ""),
+                )
                 updates.update({
                     "featured_image": sdxl_image,
                     "featured_image_url": sdxl_image.url,
                     "featured_image_alt": f"{topic} — AI generated illustration"[:200],
-                    "featured_image_width": 1024,
-                    "featured_image_height": 1024,
+                    "featured_image_width": width,
+                    "featured_image_height": height,
                     "featured_image_photographer": sdxl_image.photographer,
                     "featured_image_source": sdxl_image.source,
+                    "featured_image_data": featured_image_data,
                     "stages": stages,
                 })
                 # Glad-Labs/poindexter#161: record media_assets row for
                 # cleanup / retention / cost-attribution. Best-effort —
-                # never breaks the Stage.
+                # never breaks the Stage. We extend the metadata blob
+                # with the SDXL reproducibility payload so media_assets
+                # carries the same info as posts.featured_image_data
+                # (one seam for retention-time queries, one seam for
+                # operator-debug-time queries).
                 await _record_featured_image_asset(
                     site_config=site_config,
                     post_id=post_id,
                     public_url=sdxl_image.url,
-                    width=1024,
-                    height=1024,
+                    width=width,
+                    height=height,
                     provider_plugin=f"image.{sdxl_image.source}",
                     metadata={
                         "topic": topic,
                         "task_id": str(task_id or ""),
                         "photographer": sdxl_image.photographer,
                         "image_style": updates.get("image_style", ""),
+                        **{
+                            f"sdxl_{k}": v
+                            for k, v in sdxl_meta.items()
+                            if k in ("model", "seed", "prompt",
+                                     "negative_prompt", "generation_time_ms")
+                        },
                     },
                     mime_type="image/png",
                 )
@@ -206,16 +308,28 @@ class SourceFeaturedImageStage:
             if pexels:
                 stages["3_featured_image_found"] = True
                 stages["3_image_source"] = "pexels"
+                pexels_width = getattr(pexels, "width", 650)
+                pexels_height = getattr(pexels, "height", 433)
+                featured_image_data = {
+                    "source": pexels.source,
+                    "provider_plugin": "image.pexels",
+                    "width": int(pexels_width),
+                    "height": int(pexels_height),
+                    "photographer": pexels.photographer,
+                    "topic": topic,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
                 updates.update({
                     "featured_image": pexels,
                     "featured_image_url": pexels.url,
                     "featured_image_alt": (
                         f"{topic} — Photo by {pexels.photographer} on Pexels"[:200]
                     ),
-                    "featured_image_width": getattr(pexels, "width", 650),
-                    "featured_image_height": getattr(pexels, "height", 433),
+                    "featured_image_width": pexels_width,
+                    "featured_image_height": pexels_height,
                     "featured_image_photographer": pexels.photographer,
                     "featured_image_source": pexels.source,
+                    "featured_image_data": featured_image_data,
                     "stages": stages,
                 })
                 # Glad-Labs/poindexter#161 — same insert as the SDXL
@@ -325,7 +439,15 @@ async def _try_sdxl_featured(
     *,
     site_config: Any = None,
 ) -> GeneratedImage | None:
-    """Full SDXL path: pick style → build prompt → render → upload to R2."""
+    """Full SDXL path: pick style → build prompt → render → upload to R2.
+
+    The returned ``GeneratedImage`` carries ``sdxl_meta`` populated with
+    the prompt + negative_prompt actually sent to the SDXL server PLUS
+    the response payload (model name, seed, generation_time_ms,
+    dimensions). Empty when the SDXL server returns raw image bytes
+    instead of JSON (legacy code path — current SDXL server always
+    emits JSON).
+    """
     # site_config is the DI seam (glad-labs-stack#330) — passed by execute().
     try:
         negative = (
@@ -343,7 +465,7 @@ async def _try_sdxl_featured(
             if site_config is not None
             else "http://host.docker.internal:9836"
         )
-        output_path = await _render_sdxl(
+        output_path, server_meta = await _render_sdxl(
             sdxl_url, sdxl_prompt, negative, task_id=task_id,
         )
         if output_path is None:
@@ -351,10 +473,19 @@ async def _try_sdxl_featured(
 
         image_url = await _upload_featured_to_r2(output_path, task_id)
         source = "sdxl_cloudinary" if "cloudinary" in image_url else "sdxl_local"
+        # Compose the reproducibility blob — prompt + negative come
+        # from this function (the server doesn't echo them back), the
+        # rest is the SDXL JSON response.
+        sdxl_meta: dict[str, Any] = {
+            "prompt": sdxl_prompt,
+            "negative_prompt": negative,
+        }
+        sdxl_meta.update(server_meta or {})
         return GeneratedImage(
             url=image_url,
             photographer="AI Generated (SDXL)",
             source=source,
+            sdxl_meta=sdxl_meta,
         )
     except Exception as e:
         logger.info("SDXL generation skipped (%s), falling back to Pexels", e)
@@ -470,8 +601,15 @@ async def _render_sdxl(
     sdxl_prompt: str,
     negative_prompt: str,
     task_id: str | None = None,
-) -> str | None:
-    """Call the SDXL server and return the local path of the generated image."""
+) -> tuple[str | None, dict[str, Any]]:
+    """Call the SDXL server, return (local_path, sdxl_meta).
+
+    ``sdxl_meta`` carries the response payload the SDXL server emits
+    (``model``, ``seed``, ``generation_time_ms``, ``width``, ``height``,
+    ``filename``) so the caller can persist it on
+    ``posts.featured_image_data`` for later regeneration. Empty dict
+    on the image-bytes branch (no JSON to parse) or on failure.
+    """
     from services.gpu_scheduler import gpu
 
     async with gpu.lock(
@@ -493,14 +631,14 @@ async def _render_sdxl(
             )
 
     if resp.status_code != 200:
-        return None
+        return None, {}
 
     return await _resolve_sdxl_featured_response(resp, sdxl_url=sdxl_url)
 
 
 async def _resolve_sdxl_featured_response(
     resp: httpx.Response, *, sdxl_url: str,
-) -> str | None:
+) -> tuple[str | None, dict[str, Any]]:
     """Materialise the SDXL server's featured-image response on disk.
 
     Fetches bytes via ``GET <sdxl_url>/images/<filename>`` when SDXL
@@ -510,6 +648,10 @@ async def _resolve_sdxl_featured_response(
     them lands on ``/root/.poindexter/`` while the SDXL server writes
     to ``/home/appuser/.poindexter/``, so the worker never sees the
     file on disk. Closes Glad-Labs/poindexter#459.
+
+    Returns ``(local_path, sdxl_meta)`` — ``sdxl_meta`` carries the
+    JSON the SDXL server emitted on the JSON branch, empty dict on
+    the image-bytes branch.
     """
     ct = resp.headers.get("content-type", "")
     if ct.startswith("application/json"):
@@ -522,7 +664,7 @@ async def _resolve_sdxl_featured_response(
             logger.warning(
                 "[IMAGE] SDXL returned JSON without filename / image_path",
             )
-            return None
+            return None, {}
         try:
             output_path = await _download_featured_sdxl_image(
                 sdxl_url, filename,
@@ -531,15 +673,26 @@ async def _resolve_sdxl_featured_response(
             logger.warning(
                 "[IMAGE] SDXL /images fetch failed for %s: %s", filename, e,
             )
-            return None
+            return None, {}
         logger.info(
             "[IMAGE] Featured SDXL generated: %s (%dms)",
             os.path.basename(output_path), gen_ms,
         )
-        return output_path
+        # The SDXL server's GenerateResponse pins ``model``,
+        # ``generation_time_ms``, ``seed``, ``width``, ``height``. Capture
+        # all of them so reproducibility doesn't depend on which fields
+        # the operator later regenerates from.
+        meta = {
+            "filename": filename,
+            "generation_time_ms": int(gen_ms or 0),
+        }
+        for key in ("model", "seed", "width", "height"):
+            if key in data:
+                meta[key] = data[key]
+        return output_path, meta
     if ct.startswith("image/"):
-        return _write_featured_bytes_to_tempfile(resp.content)
-    return None
+        return _write_featured_bytes_to_tempfile(resp.content), {}
+    return None, {}
 
 
 def _featured_generated_images_dir() -> str:

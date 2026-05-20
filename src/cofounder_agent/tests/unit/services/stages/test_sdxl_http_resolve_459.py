@@ -242,10 +242,21 @@ class TestFeaturedResolverFetchesViaHttp:
 
     @pytest.mark.asyncio
     async def test_json_response_triggers_http_fetch(self, tmp_path):
+        """JSON branch returns ``(local_path, sdxl_meta)`` post-2026-05-19.
+
+        ``sdxl_meta`` carries the SDXL server's response payload
+        (``filename``, ``generation_time_ms``, plus ``model``,
+        ``seed``, ``width``, ``height`` when present) so the stage
+        can persist it on ``posts.featured_image_data``.
+        """
         sdxl_resp = _json_resp({
             "image_path": "/home/appuser/.poindexter/generated-images/sdxl_feat.png",
             "filename": "sdxl_feat.png",
             "generation_time_ms": 1234,
+            "model": "sdxl_lightning",
+            "seed": 7,
+            "width": 1024,
+            "height": 1024,
         })
         client = _get_client_returning(200, content=b"feature-bytes")
 
@@ -256,27 +267,33 @@ class TestFeaturedResolverFetchesViaHttp:
             "services.stages.source_featured_image._featured_generated_images_dir",
             return_value=str(tmp_path),
         ):
-            result = await _resolve_sdxl_featured_response(
+            output_path, sdxl_meta = await _resolve_sdxl_featured_response(
                 sdxl_resp, sdxl_url="http://sdxl.internal:9836",
             )
 
-        assert result is not None
-        assert os.path.exists(result)
-        assert result.startswith(str(tmp_path))
-        with open(result, "rb") as f:
+        assert output_path is not None
+        assert os.path.exists(output_path)
+        assert output_path.startswith(str(tmp_path))
+        with open(output_path, "rb") as f:
             assert f.read() == b"feature-bytes"
 
         get_url = client.get.await_args.args[0]
         assert get_url == "http://sdxl.internal:9836/images/sdxl_feat.png"
+        # Reproducibility payload captured for posts.featured_image_data.
+        assert sdxl_meta["filename"] == "sdxl_feat.png"
+        assert sdxl_meta["generation_time_ms"] == 1234
+        assert sdxl_meta["model"] == "sdxl_lightning"
+        assert sdxl_meta["seed"] == 7
+        assert sdxl_meta["width"] == 1024
+        assert sdxl_meta["height"] == 1024
 
     @pytest.mark.asyncio
     async def test_get_failure_returns_none(self):
-        """Featured path degrades to None on fetch failure → Pexels fallback.
+        """Featured path degrades to ``(None, {})`` on fetch failure.
 
-        Differs from the inline resolver (which raises) because the
-        featured-image stage already has a built-in Pexels fallback at
-        the stage level — surfacing the error as None lets that path
-        kick in cleanly without an exception traceback in every log.
+        Pexels fallback keys on position 0 being None — same contract
+        as before the 2026-05-19 tuple-return change. ``sdxl_meta`` is
+        empty because the JSON response was never reachable.
         """
         sdxl_resp = _json_resp({"filename": "sdxl_feat.png"})
         client = _get_client_returning(500)
@@ -285,20 +302,22 @@ class TestFeaturedResolverFetchesViaHttp:
             "services.stages.source_featured_image.httpx.AsyncClient",
             return_value=client,
         ):
-            result = await _resolve_sdxl_featured_response(
+            output_path, sdxl_meta = await _resolve_sdxl_featured_response(
                 sdxl_resp, sdxl_url="http://sdxl:9836",
             )
 
-        assert result is None
+        assert output_path is None
+        assert sdxl_meta == {}
 
     @pytest.mark.asyncio
     async def test_missing_filename_returns_none(self):
-        """JSON response with neither filename nor image_path → None."""
+        """JSON response with neither filename nor image_path → ``(None, {})``."""
         sdxl_resp = _json_resp({})
-        result = await _resolve_sdxl_featured_response(
+        output_path, sdxl_meta = await _resolve_sdxl_featured_response(
             sdxl_resp, sdxl_url="http://sdxl:9836",
         )
-        assert result is None
+        assert output_path is None
+        assert sdxl_meta == {}
 
     @pytest.mark.asyncio
     async def test_filename_basename_stripped_to_block_path_traversal(self, tmp_path):
@@ -322,28 +341,35 @@ class TestFeaturedResolverFetchesViaHttp:
 
     @pytest.mark.asyncio
     async def test_image_content_type_still_writes_bytes_locally(self, tmp_path):
-        """Legacy bytes-content path returns the local tempfile."""
+        """Legacy bytes-content path returns ``(local_path, {})``.
+
+        ``sdxl_meta`` is empty on the image-bytes branch because there
+        is no JSON payload to parse — the SDXL server emits raw bytes,
+        not the GenerateResponse shape.
+        """
         resp = _bytes_resp(b"feature-bytes-direct")
 
         with patch(
             "services.stages.source_featured_image._featured_generated_images_dir",
             return_value=str(tmp_path),
         ):
-            result = await _resolve_sdxl_featured_response(
+            output_path, sdxl_meta = await _resolve_sdxl_featured_response(
                 resp, sdxl_url="http://unused:9836",
             )
 
-        assert result is not None
-        assert os.path.exists(result)
-        with open(result, "rb") as f:
+        assert output_path is not None
+        assert os.path.exists(output_path)
+        with open(output_path, "rb") as f:
             assert f.read() == b"feature-bytes-direct"
+        assert sdxl_meta == {}
 
     @pytest.mark.asyncio
     async def test_unknown_content_type_returns_none(self):
-        """An unexpected content-type degrades to None (caller → Pexels)."""
+        """An unexpected content-type degrades to ``(None, {})``."""
         resp = MagicMock(spec=httpx.Response)
         resp.headers = {"content-type": "text/html"}
-        result = await _resolve_sdxl_featured_response(
+        output_path, sdxl_meta = await _resolve_sdxl_featured_response(
             resp, sdxl_url="http://sdxl:9836",
         )
-        assert result is None
+        assert output_path is None
+        assert sdxl_meta == {}
