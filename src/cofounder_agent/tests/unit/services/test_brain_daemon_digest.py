@@ -240,3 +240,253 @@ class TestDigestSqlSnapshotsMixedStatuses:
                 f"lingering published_at timestamps and would inflate "
                 f"this count otherwise. Block was: {sub_select!r}"
             )
+
+
+def _patch_now(monkeypatch, hour: int, minute: int = 30) -> None:
+    """Freeze ``datetime.now(tz)`` to a deterministic UTC instant.
+
+    ``generate_daily_digest`` does ``from datetime import datetime`` at
+    call-time, so patching the stdlib ``datetime`` module attribute
+    after import covers the late-bound reference.
+    """
+    import datetime as _dt_mod
+    from datetime import timezone
+
+    real_datetime = _dt_mod.datetime
+
+    class _PatchDT(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return real_datetime(2026, 4, 27, hour, minute, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(_dt_mod, "datetime", _PatchDT)
+
+
+_STATS_ROW = {
+    "total_posts": 46,
+    "approval_queue": 5,
+    "pending": 2,
+    "failed_24h": 0,
+    "published_24h": 1,
+    "views_today": 100,
+    "month_spend": 0.0,
+}
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDailyDigestEdgeCases:
+    """Edge cases around ``generate_daily_digest`` not covered by the
+    GH-158 SQL-shape tests above:
+
+    - last-sent date comparison (same-day skip + malformed handling)
+    - hour-window boundary semantics
+    - stats=None graceful exit
+    - window-hours setting propagating into the SQL INTERVAL
+    - both notification surfaces firing + last_sent UPSERT recorded
+    """
+
+    async def test_same_day_skip_returns_before_stats_query(self, monkeypatch):
+        """When ``last_sent`` is already today, the function must
+        exit BEFORE running the stats fetchrow. Otherwise the operator
+        would receive duplicate digests every 5-minute cycle inside
+        the 13:00-14:00 UTC window."""
+        _patch_now(monkeypatch, hour=13)
+        send_telegram = AsyncMock()
+        send_discord = AsyncMock()
+        monkeypatch.setattr(bd, "send_telegram", send_telegram)
+        monkeypatch.setattr(bd, "send_discord", send_discord)
+
+        # last_sent's first 10 chars must match today (2026-04-27).
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(return_value={"value": "2026-04-27T09:00:00+00:00"})
+        pool.fetchval = AsyncMock(return_value="24")
+        pool.execute = AsyncMock()
+
+        await bd.generate_daily_digest(pool)
+
+        # Only the last_sent guard fetchrow ran — stats was never queried.
+        assert pool.fetchrow.await_count == 1
+        send_telegram.assert_not_awaited()
+        send_discord.assert_not_awaited()
+        pool.execute.assert_not_awaited()
+
+    async def test_yesterday_last_sent_proceeds_to_send(self, monkeypatch):
+        """When ``last_sent`` is from a prior day, the date compare must
+        FAIL and the function must proceed to send. Guards against an
+        accidental inversion of the equality check."""
+        _patch_now(monkeypatch, hour=13)
+        send_telegram = AsyncMock()
+        send_discord = AsyncMock()
+        monkeypatch.setattr(bd, "send_telegram", send_telegram)
+        monkeypatch.setattr(bd, "send_discord", send_discord)
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=[
+            {"value": "2026-04-26T09:00:00+00:00"},  # yesterday
+            _STATS_ROW,
+        ])
+        pool.fetchval = AsyncMock(return_value="24")
+        pool.execute = AsyncMock()
+
+        await bd.generate_daily_digest(pool)
+
+        assert pool.fetchrow.await_count == 2
+        send_telegram.assert_awaited_once()
+        send_discord.assert_awaited_once()
+
+    async def test_malformed_last_sent_proceeds_and_logs_warning(
+        self, monkeypatch, caplog
+    ):
+        """poindexter#455: malformed ``last_sent`` used to silently fall
+        through. The fix keeps the fall-through (so digest still sends)
+        but adds a WARNING log so the operator can clean up the bad
+        row. We assert both behaviours."""
+        import logging
+
+        _patch_now(monkeypatch, hour=13)
+        send_telegram = AsyncMock()
+        send_discord = AsyncMock()
+        monkeypatch.setattr(bd, "send_telegram", send_telegram)
+        monkeypatch.setattr(bd, "send_discord", send_discord)
+
+        pool = MagicMock()
+        # ``None`` as last_sent.value triggers TypeError on subscription.
+        pool.fetchrow = AsyncMock(side_effect=[
+            {"value": None},
+            _STATS_ROW,
+        ])
+        pool.fetchval = AsyncMock(return_value="24")
+        pool.execute = AsyncMock()
+
+        with caplog.at_level(logging.WARNING, logger=bd.logger.name):
+            await bd.generate_daily_digest(pool)
+
+        # Proceeded despite malformed value.
+        send_telegram.assert_awaited_once()
+        # Warning surfaces the malformed value for operator triage.
+        warning_msgs = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("malformed" in m for m in warning_msgs), (
+            "expected a 'malformed' warning per poindexter#455; "
+            f"got: {warning_msgs}"
+        )
+
+    async def test_stats_none_exits_without_sending(self, monkeypatch):
+        """If the stats fetchrow returns ``None`` (DB hiccup, view
+        missing, etc.) the function bails before calling either
+        notification surface. Operator gets nothing rather than a
+        digest full of ``None``s."""
+        _patch_now(monkeypatch, hour=13)
+        send_telegram = AsyncMock()
+        send_discord = AsyncMock()
+        monkeypatch.setattr(bd, "send_telegram", send_telegram)
+        monkeypatch.setattr(bd, "send_discord", send_discord)
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=[None, None])
+        pool.fetchval = AsyncMock(return_value="24")
+        pool.execute = AsyncMock()
+
+        await bd.generate_daily_digest(pool)
+
+        # Both fetchrows fired (guard + stats) but no send / no upsert.
+        assert pool.fetchrow.await_count == 2
+        send_telegram.assert_not_awaited()
+        send_discord.assert_not_awaited()
+        pool.execute.assert_not_awaited()
+
+    async def test_window_hours_setting_flows_into_interval(self, monkeypatch):
+        """``brain_digest_window_hours`` is operator-tunable (#198).
+        A value of 48 must materialise as ``INTERVAL '48 hours'`` in
+        BOTH the failed_24h and published_24h sub-selects (the SQL is
+        an f-string interpolation, easy to regress by hardcoding 24)."""
+        _patch_now(monkeypatch, hour=13)
+        monkeypatch.setattr(bd, "send_telegram", AsyncMock())
+        monkeypatch.setattr(bd, "send_discord", AsyncMock())
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=[None, _STATS_ROW])
+        pool.fetchval = AsyncMock(return_value="48")
+        pool.execute = AsyncMock()
+
+        await bd.generate_daily_digest(pool)
+
+        stats_sql = pool.fetchrow.call_args_list[1].args[0]
+        assert "INTERVAL '48 hours'" in stats_sql, (
+            "configured window hours (48) must replace the default 24 "
+            "in the INTERVAL literal; got SQL: "
+            f"{stats_sql!r}"
+        )
+        # Both windowed sub-selects must use the configured value.
+        assert stats_sql.count("INTERVAL '48 hours'") == 2
+
+    @pytest.mark.parametrize("hour", [0, 12, 14, 23])
+    async def test_outside_hour_window_skips(self, monkeypatch, hour):
+        """The window predicate is ``13 <= now.hour < 14`` — a half-open
+        interval. Parametrising over the just-outside boundaries (12,
+        14) plus midnight and 23:00 protects against either edge being
+        flipped (``<=`` instead of ``<`` would let 14:00 fire)."""
+        _patch_now(monkeypatch, hour=hour)
+        send_telegram = AsyncMock()
+        send_discord = AsyncMock()
+        monkeypatch.setattr(bd, "send_telegram", send_telegram)
+        monkeypatch.setattr(bd, "send_discord", send_discord)
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(return_value=None)
+        pool.fetchval = AsyncMock(return_value="24")
+        pool.execute = AsyncMock()
+
+        await bd.generate_daily_digest(pool)
+
+        # last_sent guard fired (1 call). Stats was NOT reached.
+        assert pool.fetchrow.await_count == 1
+        send_telegram.assert_not_awaited()
+        send_discord.assert_not_awaited()
+
+    async def test_inside_window_at_hour_13_sends(self, monkeypatch):
+        """Symmetric check for the boundary test: at hour=13 we DO
+        send. Without this, ``test_outside_hour_window_skips`` could
+        pass with a function that never sends."""
+        _patch_now(monkeypatch, hour=13)
+        send_telegram = AsyncMock()
+        send_discord = AsyncMock()
+        monkeypatch.setattr(bd, "send_telegram", send_telegram)
+        monkeypatch.setattr(bd, "send_discord", send_discord)
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=[None, _STATS_ROW])
+        pool.fetchval = AsyncMock(return_value="24")
+        pool.execute = AsyncMock()
+
+        await bd.generate_daily_digest(pool)
+
+        send_telegram.assert_awaited_once()
+        send_discord.assert_awaited_once()
+
+    async def test_last_sent_upsert_records_iso_timestamp(self, monkeypatch):
+        """After a successful send, ``brain_knowledge`` must be UPSERTed
+        with the current ISO-8601 timestamp. Otherwise the same-day
+        skip in the NEXT cycle never engages and the operator gets a
+        burst of digests for the rest of the window hour."""
+        _patch_now(monkeypatch, hour=13, minute=30)
+        monkeypatch.setattr(bd, "send_telegram", AsyncMock())
+        monkeypatch.setattr(bd, "send_discord", AsyncMock())
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=[None, _STATS_ROW])
+        pool.fetchval = AsyncMock(return_value="24")
+        pool.execute = AsyncMock()
+
+        await bd.generate_daily_digest(pool)
+
+        pool.execute.assert_awaited_once()
+        executed_sql, executed_arg = pool.execute.call_args.args
+        assert "INSERT INTO brain_knowledge" in executed_sql
+        assert "ON CONFLICT" in executed_sql, (
+            "must be an UPSERT so subsequent cycles same-day-skip"
+        )
+        # The arg is now.isoformat() — frozen at 2026-04-27 13:30 UTC.
+        assert executed_arg.startswith("2026-04-27T13:30"), (
+            f"expected frozen ISO timestamp; got: {executed_arg!r}"
+        )
