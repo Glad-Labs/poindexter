@@ -978,12 +978,33 @@ async def publish_post_from_task(
         )
 
     # ---------------------------------------------------------------
-    # 11b. Generate podcast episode (fire-and-forget, local worker only)
+    # 11b/c/d. Generate derived media (podcast / video / short).
     # ---------------------------------------------------------------
+    # Per-type gating on ``media_to_generate`` so a post whose niche
+    # policy excludes a media type (e.g. dev_diary with ``[]``) doesn't
+    # silently spawn unwanted media on initial publish. The gate-clearing
+    # path (``fire_post_distribution_hooks`` below) already gates on this
+    # array; the initial publish path was missing the same check —
+    # captured 2026-05-20 (finding #196) on post ``dcd86ea6...`` whose
+    # ``media_to_generate=[]`` still triggered podcast + video generation
+    # at publish time. Matches the spawn-conditions in
+    # ``fire_post_distribution_hooks`` so the two paths stay aligned.
     _pre_script = merged.get("podcast_script") or ""
     _video_scenes = merged.get("video_scenes") or []
     _short_summary = merged.get("short_summary_script") or ""
-    if _should_run_post_publish_hooks() and not _gates_block_distribution:
+    _wants_podcast = "podcast" in (media_to_generate or [])
+    _wants_video = any(
+        v in (media_to_generate or [])
+        for v in ("video", "video_long")
+    )
+    _wants_short = "video_short" in (media_to_generate or [])
+
+    # 11b. Podcast episode.
+    if (
+        _should_run_post_publish_hooks()
+        and not _gates_block_distribution
+        and _wants_podcast
+    ):
         try:
             from services.podcast_service import generate_podcast_episode
 
@@ -1002,10 +1023,12 @@ async def publish_post_from_task(
         except Exception as e:
             logger.warning("[PODCAST] Failed to queue episode (non-fatal): %s", e)
 
-    # ---------------------------------------------------------------
-    # 11c. Generate video episode (fire-and-forget, local worker only)
-    # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks() and not _gates_block_distribution:
+    # 11c. Long-form video episode.
+    if (
+        _should_run_post_publish_hooks()
+        and not _gates_block_distribution
+        and _wants_video
+    ):
         try:
             from services.video_service import generate_video_episode
 
@@ -1024,10 +1047,12 @@ async def publish_post_from_task(
         except Exception as e:
             logger.warning("[VIDEO] Failed to queue video (non-fatal): %s", e)
 
-    # ---------------------------------------------------------------
-    # 11d. Generate short-form video (fire-and-forget, local worker only)
-    # ---------------------------------------------------------------
-    if _should_run_post_publish_hooks() and not _gates_block_distribution:
+    # 11d. Short-form video.
+    if (
+        _should_run_post_publish_hooks()
+        and not _gates_block_distribution
+        and _wants_short
+    ):
         try:
             from services.video_service import generate_short_video_for_post
 

@@ -1434,3 +1434,140 @@ class TestPingSearchEnginesEmptyConfig:
 
         # Both pings were skipped → no GET calls
         mock_client.get.assert_not_called()
+
+
+@pytest.mark.unit
+class TestMediaSpawnRespectsPolicy:
+    """Pins the contract that closes finding #196.
+
+    Pre-fix: ``publish_post_from_task`` sections 11b/c/d (podcast,
+    video, short) spawned background tasks for every non-gated,
+    non-draft publish — regardless of the post's
+    ``media_to_generate`` array. dev_diary posts (policy: ``[]``)
+    still got podcasts + videos kicked off, wasting GPU + creating
+    drift the reconciliation job then complained about.
+
+    Post-fix: each section checks the per-type policy. A post whose
+    array doesn't opt in to a media type doesn't spawn it.
+    """
+
+    @pytest.mark.asyncio
+    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("services.publish_service._post_has_pending_gates", new_callable=AsyncMock, return_value=False)
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("services.publish_service._spawn_background")
+    @patch("services.podcast_service.generate_podcast_episode", new_callable=AsyncMock)
+    @patch("services.video_service.generate_video_episode", new_callable=AsyncMock)
+    @patch("services.video_service.generate_short_video_for_post", new_callable=AsyncMock)
+    async def test_dev_diary_post_skips_all_media_spawns(
+        self,
+        mock_short, mock_video, mock_podcast, mock_spawn,
+        mock_sched, mock_ping, mock_hooks, mock_export, mock_gates,
+    ):
+        """A dev_diary task (niche_slug='dev_diary') should produce a
+        post whose policy is ``[]`` (per niche seed) and trigger NO
+        podcast / video / short spawns at publish time."""
+        db = _make_db()
+        task = _make_task(
+            topic="What we shipped",
+            content="# Daily diary\n\nSome work today.",
+        )
+        task["niche_slug"] = "dev_diary"
+        # Simulate the niches lookup returning an empty array.
+        # publish_service hits db_service.pool.acquire().fetchrow — the
+        # _make_db helper builds a db with a pool that returns whatever
+        # the niches lookup needs. Patch the niches lookup directly so
+        # the test stays self-contained.
+        async def _fake_niche_fetchrow(query, *args):
+            if "FROM niches" in query:
+                return {"default_media_to_generate": []}
+            return {"value": "https://test.example", "is_secret": False}
+        db.pool.acquire().__aenter__.return_value.fetchrow.side_effect = _fake_niche_fetchrow
+
+        with _LazyImportContext():
+            result = await publish_post_from_task(
+                db_service=db,
+                task=task,
+                task_id="dev-diary-task-id",
+                publisher="test-user",
+                trigger_revalidation=False,
+                queue_social=False,
+            )
+
+        assert result.success is True
+        # The post was created with empty media_to_generate.
+        post_data = db.create_post.call_args[0][0]
+        assert post_data["media_to_generate"] == []
+
+        # None of the media services should have been called.
+        mock_podcast.assert_not_called()
+        mock_video.assert_not_called()
+        mock_short.assert_not_called()
+        # _spawn_background may have been called for other things
+        # (ping_search_engines etc) but NOT with podcast/video/short
+        # task names.
+        spawn_names = [
+            c.kwargs.get("name", "")
+            for c in mock_spawn.call_args_list
+        ]
+        for nm in spawn_names:
+            assert "podcast_episode" not in nm
+            assert "video_episode" not in nm
+            assert "short_video" not in nm
+
+    @pytest.mark.asyncio
+    @patch("services.publish_service._post_has_pending_gates", new_callable=AsyncMock, return_value=False)
+    @patch("services.static_export_service.export_post", new_callable=AsyncMock)
+    @patch("services.publish_service._should_run_post_publish_hooks", return_value=True)
+    @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
+    @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
+    @patch("services.publish_service._spawn_background")
+    async def test_glad_labs_post_spawns_all_three_media(
+        self, mock_spawn, mock_sched, mock_ping, mock_hooks, mock_export, mock_gates,
+    ):
+        """Glad-labs niche policy is ``{podcast,video,video_short}`` —
+        all three sections must fire."""
+        db = _make_db()
+        task = _make_task(
+            topic="AI Revolution",
+            content="# Great title\n\nBody.",
+        )
+        task["niche_slug"] = "glad-labs"
+
+        async def _fake_niche_fetchrow(query, *args):
+            if "FROM niches" in query:
+                return {
+                    "default_media_to_generate": [
+                        "podcast", "video", "video_short",
+                    ],
+                }
+            return {"value": "https://test.example", "is_secret": False}
+        db.pool.acquire().__aenter__.return_value.fetchrow.side_effect = _fake_niche_fetchrow
+
+        with _LazyImportContext():
+            result = await publish_post_from_task(
+                db_service=db,
+                task=task,
+                task_id="glad-labs-task-id",
+                publisher="test-user",
+                trigger_revalidation=False,
+                queue_social=False,
+            )
+
+        assert result.success is True
+        post_data = db.create_post.call_args[0][0]
+        assert set(post_data["media_to_generate"]) == {
+            "podcast", "video", "video_short",
+        }
+
+        # All three spawn paths fired.
+        spawn_names = [
+            c.kwargs.get("name", "")
+            for c in mock_spawn.call_args_list
+        ]
+        joined = " ".join(spawn_names)
+        assert "podcast_episode" in joined
+        assert "video_episode" in joined
+        assert "short_video" in joined
